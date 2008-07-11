@@ -1,0 +1,339 @@
+#!/bin/bash
+#
+# Invoked upon installation or removal of a kernel package, the following
+# tasks are/can be done here:
+# creation/removal of initrd
+# run of depmod/removal of depmod generated files
+# addition/removal of kernel images from grub/lilo configuration (via grubby)
+#
+# Copyright (C) 2002, 2003 Red Hat, Inc.
+# 
+
+PATH=/sbin:/bin:$PATH
+
+lilo=/sbin/lilo
+
+# some defaults that are sane for most arches
+kernelName=memtest86+
+
+if [ -x ./grubby ]; then
+    grubby=./grubby
+else
+    grubby=/sbin/grubby
+fi
+
+cfgGrub=""
+cfgLilo=""
+runLilo=""
+grubConfig=""
+
+ARCH=$(uname -m)
+
+if [ $ARCH = 'ia64' ]; then
+    liloConfig=/boot/efi/EFI/redhat/elilo.conf
+    bootPrefix=/boot/efi/EFI/redhat
+    liloFlag=elilo
+    isx86=""
+elif [ $ARCH = 'ppc64' -o $ARCH = 'ppc' ]; then
+    liloConfig=/etc/yaboot.conf
+    bootPrefix=/boot
+    lilo=/sbin/ybin
+    kernelName=vmlinux
+    liloFlag=yaboot
+    runLilo="yes"
+    isx86=""
+elif [ $ARCH = 'sparc' -o $ARCH = 'sparc64' ]; then
+    liloConfig=/etc/silo.conf
+    bootPrefix=/boot
+    liloFlag=silo
+    lilo=/sbin/silo
+    isx86=""
+elif [ $ARCH = 's390' -o $ARCH = 's390x' ]; then
+    liloConfig=/etc/zipl.conf
+    bootPrefix=/boot
+    liloFlag=zipl
+    lilo=/sbin/zipl
+    runLilo="yes"
+    isx86=""
+else
+    # this leaves i?86 and x86_64
+    liloConfig=/etc/lilo.conf
+    grubConfig=/boot/grub/grub.conf
+    bootPrefix=/boot
+    liloFlag=lilo
+    isx86="yes"
+fi
+
+mode=""
+version=""
+initrd=""
+initrdfile=""
+moddep=""
+verbose=""
+
+usage() {
+    echo "Usage: `basename $0` [-v] [--mkinitrd] [--rminitrd]" >&2 
+    echo "       [--initrdfile=<initrd-image>] [--depmod] [--rmmoddep]" >&2
+    echo "       [--kernel-args=<args>] [--banner=<banner>]" >&2
+    echo "       <--install | --remove> <kernel-version>" >&2
+    echo "       (ex: `basename $0` --mkinitrd --depmod --install 2.4.7-2)" >&2
+    exit 1
+}
+
+install() {
+    # XXX kernel should be able to be specified also (or work right on ia64)
+    if [ ! -f $bootPrefix/$kernelName-$version ] ; then
+	[ -n "$verbose" ] && echo "kernel for $version does not exist, not running grubby"
+	return
+    fi
+    
+    INITRD=""
+    if [ -f $initrdfile ]; then
+	[ -n "$verbose" ] && echo "found $initrdfile and using it with grubby"
+	INITRD="--initrd $initrdfile"
+    fi
+
+    # FIXME: is this a good heuristic to find out if we're on iSeries?
+    if [ -d /proc/iSeries ]; then
+	[ -n "$verbose" ] && echo "On an iSeries, just making img file"
+	if [ -z $initrdfile  ]; then
+	    [ -n "$verbose" ] && echo "No initrd, just adding system map"
+	    /sbin/addSystemMap $bootPrefix/System.map-$version $bootPrefix/$kernelName-$version $bootPrefix/vmlinitrd-$version
+	else
+	    /sbin/addSystemMap $bootPrefix/System.map-$version $bootPrefix/$kernelName-$version $bootPrefix/vmlinux.sm-$version
+	    /sbin/addRamDisk $initrdfile $bootPrefix/System.map-$version $bootPrefix/vmlinux.sm-$version $bootPrefix/vmlinitrd-$version 2>/dev/null
+	    rm $bootPrefix/vmlinux.sm-$version
+	fi
+	return
+    fi
+
+    # get the root filesystem to use; if it's on a label make sure it's
+    # been configured. if not, get the root device from mount
+    rootdevice=$(awk '{ if ($1 !~ /^[ \t]*#/ && $2 == "/") { print $1; }}' /etc/fstab)
+    short=$(echo $rootdevice | cut -d= -f1)
+    if [ "$short" == "LABEL" ]; then
+	label=$(echo $rootdevice | cut -d= -f2 |head -n 1)
+	device=$(echo "showlabels" | /sbin/nash  --force --quiet | 
+			awk '$2 == "'$label'" {print $1}')
+	if [ -z "$device" ]; then
+	    rootdevice=$(mount | awk '$3 == "/" { print $1 }')
+	fi
+    fi
+
+    if [ -n "$cfgGrub" ]; then
+	[ -n "$verbose" ] && echo "adding $version to $grubConfig"
+
+	if [ -n "$banner" ]; then
+            title="$banner ($version)"
+	elif [ -f /etc/redhat-release ]; then
+	    title="$(sed 's/ release.*$//' < /etc/redhat-release) ($version)"
+	else
+	    title="Red Hat Linux ($version)"
+	fi
+	/sbin/grubby --add-kernel=$bootPrefix/$kernelName-$version $INITRD    \
+		     --copy-default --title "$title"		    \
+		     --args="root=$rootdevice $kernargs"			    \
+		     --remove-kernel="TITLE=$title"
+    else
+	[ -n "$verbose" ] && echo "$grubConfig does not exist, not running grubby"
+    fi
+
+    if [ -n "$cfgLilo" ]; then
+	[ -n "$verbose" ] && echo "adding $version to $liloConfig"
+
+	/sbin/grubby --add-kernel=$bootPrefix/$kernelName-$version $INITRD    \
+		     --copy-default --title $version		    \
+		     --args="root=$rootdevice $kernargs"			    \
+		     --remove-kernel="TITLE=$version"		    \
+		     --$liloFlag
+
+	if [ -n "$runLilo" ]; then 
+	    [ -n "$verbose" ] && echo "running $lilo"
+	    if [ ! -x $lilo ] ; then
+		[ -n "$verbose" ] && echo "$lilo does not exist"
+	    else
+		$lilo > /dev/null
+	    fi
+	fi
+    else
+	[ -n "$verbose" ] && echo "$liloConfig does not exist, not running grubby"
+    fi
+
+}
+
+remove() {
+    # FIXME: is this a good heuristic to find out if we're on iSeries?
+    if [ -d /proc/iSeries ]; then
+	[ -n "$verbose" ] && echo "On an iSeries, remove img file"
+	rm -f $bootPrefix/$kernelName-$version.img 2>/dev/null
+	return
+    fi
+
+    if [ -n "$cfgGrub" ]; then
+	[ -n "$verbose" ] && echo "removing $version from $grubConfig"
+	/sbin/grubby --remove-kernel=$bootPrefix/$kernelName-$version
+    else
+	[ -n "$verbose" ] && echo "$grubConfig does not exist, not running grubby"
+    fi
+
+    if [ -n "$cfgLilo" ]; then
+	[ -n "$verbose" ] && echo "removing $version from $liloConfig"
+	/sbin/grubby --remove-kernel=$bootPrefix/$kernelName-$version	    \
+		     --$liloFlag
+
+	if [ -n "$runLilo" ]; then 
+	    [ -n "$verbose" ] && echo "running $lilo"
+	    if [ ! -x $lilo ] ; then
+		[ -n "$verbose" ] && echo "$lilo does not exist"
+	    else
+		$lilo > /dev/null
+	    fi
+	fi
+    else
+	[ -n "$verbose" ] && echo "$liloConfig does not exist, not running grubby"
+    fi
+}
+
+mkinitrd() {
+    [ -n "$verbose" ] && echo "creating initrd $initrdfile using $version"
+    /sbin/mkinitrd -f $initrdfile $version
+    rc=$?
+    if [ $rc != 0 ]; then
+	echo "mkinitrd failed" >&2
+	exit 1
+    fi
+}
+
+rminitrd() {
+    [ -n "$verbose" ] && echo "removing initrd $initrdfile"
+    [ -f $initrdfile ] && rm -f $initrdfile
+}
+
+doDepmod() {
+    [ -n "$verbose" ] && echo "running depmod for $version"
+    depmod -ae -F /boot/System.map-$version $version
+}
+
+doRmmoddep() {
+    [ -n "$verbose" ] && echo "removing modules.dep info for $version"
+    [ -d /lib/modules/$version ] && rm -f /lib/modules/$version/modules.*    
+}
+
+
+while [ $# -gt 0 ]; do
+    case $1 in
+	--mkinitrd)
+	    initrd="make"
+	    ;;
+
+	--rminitrd)
+	    initrd="remove"
+	    ;;
+
+	--initrdfile*)
+	    if echo $1 | grep '=' >/dev/null ; then
+	    	initrdfile=`echo $1 | sed 's/^--initrdfile=//'`
+	    else
+		initrdfile=$2
+		shift
+	    fi		    
+	    ;;
+
+	--kernel-args*)
+	    if echo $1 | grep '=' >/dev/null ; then
+	    	kernargs=`echo $1 | sed 's/^--kernel-args=//'`
+	    else
+		kernargs=$2
+		shift
+	    fi		    
+	    ;;
+
+	--banner*)
+	    if echo $1 | grep '=' >/dev/null ; then
+	    	banner=`echo $1 | sed 's/^--banner=//'`
+	    else
+		banner=$2
+		shift
+	    fi		    
+	    ;;
+
+	--depmod)
+	    moddep="make"
+	    ;;
+
+	--rmmoddep)
+	    moddep="remove"
+	    ;;
+
+	-v)
+	    verbose=-v
+	    ;;
+
+	*)
+	    if [ -z "$mode" ]; then
+		mode=$1
+	    elif [ -z "$version" ]; then
+		version=$1
+	    else
+		usage
+	    fi
+	    ;;
+    esac
+
+    shift
+done
+
+# make sure the mode is valid
+if [ "$mode" != "--install" -a "$mode" != "--remove" ] ; then
+    usage
+fi
+
+if [ -z "$version" ]; then
+    usage
+fi
+
+# set the initrd file based on arch; ia64 is the only currently known oddball
+if [ -z "$initrdfile" ]; then
+    if [ `uname -m` = "ia64" ]; then
+	initrdfile="/boot/efi/EFI/redhat/initrd-$version.img"
+    else
+	initrdfile="/boot/initrd-$version.img"
+    fi
+
+fi
+[ -n "$verbose" ] && echo "initrdfile is $initrdfile"
+
+if [ "$moddep" == "make" ]; then
+    doDepmod
+elif [ "$moddep" == "remove" ]; then
+    doRmmoddep
+fi
+
+if [ "$initrd" == "make" ]; then
+    mkinitrd
+elif [ "$initrd" == "remove" ]; then
+    rminitrd
+fi
+
+if [ ! -x $grubby ] ; then
+    [ -n "$verbose" ] && echo "$grubby does not exist"
+    exit 0
+fi
+
+
+[ -n "$grubConfig" ] && [ -f "$grubConfig" ] && cfgGrub=1;
+[ -n "$liloConfig" ] && [ -f "$liloConfig" ] && cfgLilo=1;
+
+# if we have a lilo config on an x86 box, see if the default boot loader
+# is lilo to determine if it should be run
+if [ -n "$cfgLilo" -a -n "$isx86" ]; then
+    runLilo=$($grubby --bootloader-probe | grep lilo)
+fi
+
+if [ "$mode" == "--install" ]; then
+    install
+elif [ "$mode" == "--remove" ]; then
+    remove
+fi
+
+exit 0

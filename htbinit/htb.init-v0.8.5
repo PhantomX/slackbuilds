@@ -1,0 +1,1008 @@
+#!/bin/bash
+#
+#    htb.init v0.8.5
+#    Copyright (C) 2002-2004  Lubomir Bulej <pallas@kadan.cz>
+#
+#    chkconfig:   2345 11 89
+#    description: script to set up HTB traffic control
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+#    To get the latest version, check on Freshmeat for actual location:
+#
+#		http://freshmeat.net/projects/htb.init
+#
+#
+# VERSION HISTORY
+# ---------------
+# v0.8.5- Nathan Shafer <nicodemus at users.sourceforge.net>
+#	  - allow symlins to class files
+#	- Seth J. Blank <antifreeze at users.sourceforge.net>
+#	  - replace hardcoded ip/tc location with variables
+#	- Mark Davis <mark.davis at gmx.de>
+#	  - allow setting of PRIO_{MARK,RULE,REALM} in class file
+# v0.8.4- Lubomir Bulej <pallas at kadan.cz>
+#	  - fixed small bug in RULE parser to correctly parse
+#	    rules with identical source and destination fields
+#	  - removed the experimental INJECT keyword
+#	  - ignore *~ backup files when looking for classes
+#	- Mike Boyer <boyer at administrative.com>
+#	  - fix to allow arguments to be passed to "restart" command
+#	- <face at pos.sk>
+#	  - fix to preserve class priority after timecheck
+# v0.8.3- Lubomir Bulej <pallas at kadan.cz>
+#	  - use LC_COLLATE="C" when sorting class files
+#	- Paulo Sedrez
+#	  - fix time2abs to allow hours with leading zero in TIME rules
+# v0.8.2- Lubomir Bulej <pallas at kadan.cz>
+#	  - thanks to Hasso Tepper for reporting the following problems
+#	  - allow dots in interface names for use with VLAN interfaces
+#	  - fixed a thinko resulting from "cosmetic overdosage" :)
+# v0.8.1- Lubomir Bulej <pallas at kadan.cz>
+#	  - added function alternatives for sed/find with less features. To
+#	    enable them, you need to set HTB_BASIC to nonempty string.
+#	  - added posibility to refer to RATE/CEIL of parent class when
+#	    setting RATE/CEIL for child class. Look for "prate" or "pceil"
+#	    in the documentation.
+#	  - fixed broken "timecheck" invocation
+# v0.8	- Lubomir Bulej <pallas at kadan.cz>
+#	  - simplified and converted CBQ.init 0.7 into HTB.init
+#	  - changed configuration file naming conventions
+#	  - lots of HTB specific changes
+#
+#
+# INTRODUCTION
+# ------------
+#
+# This script is a clone of CBQ.init and is meant to simplify setup of HTB
+# based traffic control. HTB setup itself is pretty simple compared to CBQ,
+# so the purpose of this script is to allow the administrator of large HTB
+# configurations to manage individual classes using simple, human readable
+# files.
+#
+# The "H" in HTB stands for "hierarchical", so while many people did not use
+# (or know about) the possibility to build hierarchical structures using
+# CBQ.init, it should be obvious thing to expect from HTB.init :-)
+#
+# In HTB.init this is done differently, compared to CBQ.init: the usage of
+# PARENT keyword was dropped and instead, class file naming convetion was
+# introduced. This convention allows the child class to determine ID of its
+# parent class from the filename and also (if not abused :) enforces file
+# ordering so that the parent classes are created before their children.
+#
+# HTB.init uses simple caching mechanism to speed up "start" invocation if the
+# configuration is unchanged. When invoked for the first time, it compiles the
+# configuration files into simple shell script containing the sequence of "tc"
+# commands required to setup the traffic control. This cache-script is stored
+# in /var/cache/htb.init by default and is invalidated either by presence of
+# younger class config file, or by invoking HTB.init with "start invalidate".
+#
+# If you want to HTB.init to setup the traffic control directly without the
+# cache, invoke it with "start nocache" parameters. Caching is also disabled
+# if you have logging enabled (ie. HTB_DEBUG is not empty).
+#
+# If you only want HTB.init to translate your configuration to "tc" commands,
+# invoke it using the "compile" command. Bear in mind that "compile" does not
+# check if the "tc" commands were successful - this is done (in certain places)
+# only when invoked with "start nocache" command. When you are testing your
+# configuration, you should use it to check whether it is completely valid.
+#
+# In case you are getting strange sed/find errors, try to uncomment line with
+# HTB_BASIC setting, or set the variable to nonempty string. This will enable
+# function alternatives which require less advanced sed/find functionality. As
+# a result, the script will run slower but will probably run. Also the caching
+# will not work as expected and you will have to invalidate the cache manually
+# by invoking HTB.init with "start invalidate".
+#
+#
+# CONFIGURATION
+# -------------
+#
+# Every traffic class is described by a single file in placed in $HTB_PATH
+# directory, /etc/sysconfig/htb by default. The naming convention is different
+# compared to CBQ.init. First notable change is missing 'htb-' prefix. This
+# was replaced by interface name to improve human readability and to separate
+# qdisc-only configuration.
+#
+# Global qdisc options are placed in $HTB_PATH/<ifname>, where <ifname> is
+# (surprisingly) name of the interface, made of characters and numbers. This
+# file must be present if you want to setup HTB on that interface. If you
+# don't have any options to put into it, leave it empty, but present.
+#
+# Class options belong to files with names matching this expression:
+# $HTB_PATH/<ifname>-<clsid>(:<clsid>)*<description>
+#
+# <clsid> is class ID which is hexadecimal number in range 0x2-0xFFFF, without
+# the "0x" prefix. If a colon-delimited list of class IDs is specified, the
+# last <clsid> in the list represents ID of the class in the config file.
+#
+# <clsid> preceding the last <clsid> is class ID of the parent class. To keep
+# ordering so that parent classes are always created before their children, it
+# is recommended to include full <clsid> path from root class to the leaf one.
+#
+# <description> is (almost) arbitrary string where you can put symbolic
+# class names for better readability.
+#
+# Examples of valid names:
+#
+#	eth0-2		root class with ID 2, on device eth0
+#	eth0-2:3	child class with ID 3 and parent 2, on device eth0
+#	eth0-2:3:4	child class with ID 4 and parent 3, on device eth0
+#	eth1-2.root	root class with ID 2, on device eth1
+#
+#
+# The configuration files may contain the following parameters. For detailed
+# description of HTB parameters see http://luxik.cdi.cz/~devik/qos/htb.
+#
+### HTB qdisc parameters
+#
+# The following parameters apply to HTB root queuening discipline only and
+# are expected to be put into $HTB_PATH/<ifname> files. These files must
+# exist (even empty) if you want to configure HTB on given interface.
+#
+# DEFAULT=<clsid>				optional, default 0
+# DEFAULT=30
+#
+#	<dclsid> is ID of the default class where UNCLASSIFIED traffic goes.
+#	Unlike HTB qdisc, HTB.init uses 0 as default class ID, which is
+#	internal FIFO queue that will pass packets along at FULL speed!
+#
+#	If you want to avoid surprises, always define default class and
+#	allocate minimal portion of bandwidth to it.
+#
+# R2Q=<number>					optional, default 10
+# R2Q=100
+#
+#	This allows you to set coefficient for computing DRR (Deficit
+#	Round Robin) quanta. The default value of 10 is good for rates
+#	from 5-500kbps and should be increased for higher rates.
+#
+# DCACHE=yes|no					optional, default "no"
+#
+#	This parameters turns on "dequeue cache" which results in degraded
+#	fairness but allows HTB to be used on very fast network devices.
+#	This is turned off by default.
+#
+### HTB class parameters
+#
+# The following are parameters for HTB classes and are expected
+# to be put into $HTB_PATH/<ifname>-<clsid>(:<clsid>)*.* files.
+#
+# RATE=<speed>|prate|pceil			mandatory
+# RATE=5Mbit
+#
+#	Bandwidth allocated to the class. Traffic going through the class is
+#	shaped to conform to specified rate. You can use Kbit, Mbit or bps,
+#	Kbps and Mbps as suffices. If you don't specify any unit, bits/sec
+#	are used. Also note that "bps" means "bytes per second", not bits.
+#
+#	The "prate" or "pceil" values will resolve to RATE or CEIL of parent
+#	class. This feature is meant to help humans to keep configuration
+#	files consistent.
+#
+# CEIL=<speed>|prate|pceil			optional, default $RATE
+# CEIL=6MBit
+#
+#	The maximum bandwidth that can be used by the class. The difference
+#	between CEIL and RATE amounts to bandwidth the class can borrow, if
+#	there is unused bandwidth left.
+#
+#	By default, CEIL is equal to RATE so the class cannot borrow bandwidth
+#	from its parent. If you want the class to borrow unused bandwidth, you
+#	must specify the maximal amount it can use, if available.
+#
+#	When several classes compete for the unused bandwidth, each of the
+#	classes is given share proportional to their RATE.
+#
+# BURST=<bytes>					optional, default computed
+# BURST=10Kb
+#
+# CBURST=<bytes>				optional, default computed
+# CBURST=2Kb
+#
+#	BURST and CBURST parameters control the amount of data that can
+#	be sent from one class at maximum (hardware) speed before trying
+#	to service other class.
+#
+#	If CBURST is small (one packet size) it shapes bursts not to
+#	exceed CEIL rate the same way PEAK works for TBF.
+#
+# PRIO=<number>					optional, default 0
+# PRIO=5
+#
+#	Priority of class traffic. The higher the number, the lesser the
+#	priority. Also, classes with higher priority are offered excess
+#	bandwidth first.
+#
+# LEAF=none|sfq|pfifo|bfifo			optional, default "none"
+#
+#	Tells the script to attach specified leaf queueing discipline to HTB
+#	class. By default, no leaf qdisc is used.
+#
+#	If you want to ensure (approximately) fair sharing of bandwidth among
+#	several hosts in the same class, you should specify LEAF=sfq to attach
+#	SFQ as leaf queueing discipline to the class.
+#
+# MTU=<bytes>  					optional, default "1600"
+#
+#	Maximum packet size HTB creates rate maps for. The default should
+#	be sufficient for most cases, it certainly is for Ethernet.
+#
+### SFQ qdisc parameters
+#
+# The SFQ queueing discipline is a cheap way to fairly share class bandwidth
+# among several hosts. The fairness is approximate because it is stochastic,
+# but is not CPU intensive and will do the job in most cases. If you desire
+# real fairness, you should probably use WRR (weighted round robin) or WFQ
+# queueing disciplines. Note that SFQ does not do any traffic shaping - the
+# shaping is done by the HTB class the SFQ is attached to.
+#
+# QUANTUM=<bytes>				optional, qdisc default
+#
+#	Amount of data in bytes a stream is allowed to dequeue before next
+#	queue gets a turn. Defaults to one MTU-sized packet. Do not set
+#	this parameter below the MTU!
+#
+# PERTURB=<seconds>				optional, default "10"
+#
+#	Period of hash function perturbation. If unset, hash reconfiguration
+#	will never take place which is what you probably don't want. The
+#	default value of 10 seconds is probably a good value.
+#
+### PFIFO/BFIFO qdisc parameters
+#
+# Those are simple FIFO queueing disciplines. They only have one parameter
+# which determines their length in bytes or packets.
+#
+# LIMIT=<packets>|<bytes>			optional, qdisc default
+# LIMIT=1000
+#
+#	Number of packets/bytes the queue can hold. The unit depends on
+#	the type of queue used.
+#
+### Filtering parameters
+#
+# RULE=[[saddr[/prefix]][:port[/mask]],][daddr[/prefix]][:port[/mask]]
+#
+#	These parameters make up "u32" filter rules that select traffic for
+#	each of the classes. You can use multiple RULE fields per config.
+#
+#	The optional port mask should only be used by advanced users who
+#	understand how the u32 filter works.
+#
+# Some examples:
+#
+#	RULE=10.1.1.0/24:80
+#		selects traffic going to port 80 in network 10.1.1.0
+#
+#	RULE=10.2.2.5
+#		selects traffic going to any port on single host 10.2.2.5
+#
+#	RULE=10.2.2.5:20/0xfffe
+#		selects traffic going to ports 20 and 21 on host 10.2.2.5
+#
+#	RULE=:25,10.2.2.128/26:5000
+#		selects traffic going from anywhere on port 50 to
+#		port 5000 in network 10.2.2.128
+#
+#	RULE=10.5.5.5:80,
+#		selects traffic going from port 80 of single host 10.5.5.5
+#
+#
+#
+# REALM=[srealm,][drealm]
+#
+#	These parameters make up "route" filter rules that classify traffic
+#	according to packet source/destination realms. For information about
+#	realms, see Alexey Kuznetsov's IP Command Reference. This script
+#	does not define any realms, it justs builds "tc filter" commands
+#	for you if you need to classify traffic this way.
+#
+#	Realm is either a decimal number or a string referencing entry in
+#	/etc/iproute2/rt_realms (usually).
+#
+# Some examples:
+#
+#	REALM=russia,internet
+#		selects traffic going from realm "russia" to realm "internet"
+#
+#	REALM=freenet,
+#		selects traffic going from realm "freenet"
+#
+#	REALM=10
+#		selects traffic going to realm 10
+#
+#
+#
+# MARK=<mark>
+#
+#	These parameters make up "fw" filter rules that select traffic for
+#	each of the classes accoring to firewall "mark". Mark is a decimal
+#	number packets are tagged with if firewall rules say so. You can
+#	use multiple MARK fields per config.
+#
+#
+# Note:	Rules for different filter types can be combined. Attention must be
+#	paid to the priority of filter rules, which can be set below through
+#	the PRIO_{RULE,MARK,REALM} variables.
+#
+### Time ranging parameters
+#
+# TIME=[<dow><dow>.../]<from>-<till>;<rate>[/<burst>][,<ceil>[/<cburst>]]
+# TIME=60123/18:00-06:00;256Kbit/10Kb,384Kbit
+# TIME=18:00-06:00;256Kbit
+#
+#	This parameter allows you to change class bandwidth during the day or
+#	week. You can use multiple TIME rules. If there are several rules with
+#	overlapping time periods, the last match is taken. The <rate>, <burst>,
+#	<ceil> and <cburst> fields correspond to parameters RATE, BURST, CEIL
+#	and CBURST.
+#
+#	<dow> is single digit in range 0-6 and represents day of week as
+#	returned by date(1). To specify several days, just concatenate the
+#	digits together.
+#
+#
+#
+# TRIVIAL EXAMPLE
+# ---------------
+#
+# Consider the following example:
+# (taken from Linux Advanced Routing & Traffic Control HOWTO)
+#
+# You have a Linux server with total of 5Mbit available bandwidth. On this
+# machine, you want to limit webserver traffic to 5Mbit, SMTP traffic to 3Mbit
+# and everything else (unclassified traffic) to 1Kbit. In case there is unused
+# bandwidth, you want to share it between SMTP and unclassified traffic.
+#
+# The "total bandwidth" implies one top-level class with maximum bandwidth
+# of 5Mbit. Under the top-level class, there are three child classes.
+#
+# First, the class for webserver traffic is allowed to use 5Mbit of bandwidth.
+#
+# Second, the class for SMTP traffic is allowed to use 3Mbit of bandwidth and
+# if there is unused bandwidth left, it can use it but must not exceed 5Mbit
+# in total.
+#
+# And finally third, the class for unclassified traffic is allowed to use
+# 1Kbit of bandwidth and borrow unused bandwith, but must not exceed 5Mbit.
+#
+# If there is demand in all classes, each of them gets share of bandwidth
+# proportional to its default rate. If there unused is bandwidth left, they
+# (again) get share proportional to their default rate.
+#
+# Configuration files for this scenario:
+# ---------------------------------------------------------------------------
+# eth0		eth0-2.root	eth0-2:10.www	eth0-2:20.smtp	eth0-2:30.dfl
+# ----		-----------	-------------	--------------	-------------
+# DEFAULT=30	RATE=5Mbit	RATE=5Mbit	RATE=3Mbit	RATE=1Kbit
+#		BURST=15k	BURST=15k	CEIL=5Mbit	CEIL=5Mbit
+#				LEAF=sfq	BURST=15k	BURST=15k
+#				RULE=*:80,	LEAF=sfq	LEAF=sfq
+#						RULE=*:25
+# ---------------------------------------------------------------------------
+#
+# Remember that you can only control traffic going out of your linux machine.
+# If you have a host connected to network and want to control its traffic on
+# the gateway in both directions (with respect to the host), you need to setup
+# traffic control for that host on both (or all) gateway interfaces.
+#
+# Enjoy.
+#
+#############################################################################
+
+export LC_ALL=C
+
+### Command locations
+TC=/sbin/tc
+IP=/sbin/ip
+MP=/sbin/modprobe
+
+### Default filter priorities (must be different)
+PRIO_RULE_DEFAULT=${PRIO_RULE:-100}
+PRIO_MARK_DEFAULT=${PRIO_MARK:-200}
+PRIO_REALM_DEFAULT=${PRIO_REALM:-300}
+
+### Default HTB_PATH & HTB_CACHE settings
+HTB_PATH=${HTB_PATH:-/etc/sysconfig/htb}
+HTB_CACHE=${HTB_CACHE:-/var/cache/htb.init}
+
+### Uncomment for sed/find with less features (useful for busybox)
+#HTB_BASIC="yes"
+
+### Uncomment to enable logfile for debugging
+#HTB_DEBUG="/var/run/htb-$1"
+
+### Modules to probe for. Uncomment the last HTB_PROBE
+### line if you have QoS support compiled into kernel
+HTB_PROBE="sch_htb sch_sfq cls_fw cls_u32 cls_route"
+#HTB_PROBE=""
+
+### Config keywords
+HTB_QDISC="DEFAULT\|DCACHE\|R2Q"
+HTB_CLASS="RATE\|CEIL\|BURST\|CBURST\|PRIO\|LEAF\|MTU"
+HTB_CLASS="$HTB_CLASS\|PRIO_RULE\|PRIO_MARK\|PRIO_REALM"
+HTB_CLASS="$HTB_CLASS\|LIMIT\|QUANTUM\|PERTURB"
+
+
+#############################################################################
+############################# SUPPORT FUNCTIONS #############################
+#############################################################################
+
+if [ -z "$HTB_BASIC" ]; then
+	### List of network devices
+	all_device_list () {
+		ip link show \
+		| sed -n "/^[0-9]/ { s/[[:space:]]//g; \
+		s/^[0-9]\+:\([^@-]\+\)\(@.\+\)\?:<.*/\1/; p; }"
+	} # all_device_list
+
+
+	### Load & filter file $HTB_PATH/$1
+	htb_filter_file () {
+		sed -n "s/#.*//; s/[^a-zA-Z0-9.,;:=/*-_]\+//g; \
+		/^[a-zA-Z0-9]\+=[a-zA-Z0-9.,:;/*-_]\+$/ p" $HTB_PATH/$1
+	} # htb_filter_file
+
+
+	### Parse class ID chain from file name
+	htb_clsid_chain () {
+		echo "${1#*-}" \
+		| sed -n "/^[0-9a-fA-F]/ { s/^\([0-9a-fA-F:]\+\).*/\1/; \
+		s/::/:/g; s/:$//; p; }"
+	} # htb_clsid_chain
+
+
+	### List of classes in $HTB_PATH
+	htb_class_list () {
+		for dev in `htb_device_list`; do
+			find $HTB_PATH \( -type f -or -type l \) \
+			-name "$dev-*" -not -name '*~' -maxdepth 1 \
+			-printf "%f\n"| sort
+		done
+	} # htb_class_list
+
+	### Gather $1 rules from $CFILE
+	htb_cfile_rules () {
+		echo "$CFILE"| sed -n "/^$1=/ { s/.*=//; p; }"
+	} # htb_cfile_rules
+
+
+	### Validate cache against config files
+	htb_valid_cache () {
+		for dev in `htb_device_list`; do
+			[ `find $HTB_PATH \( -type f -or -type l \) \
+			  -name "$dev*" -maxdepth 1 -newer $HTB_CACHE| \
+			  wc -l` -gt 0 ] && VALID=0
+			[ $VALID -ne 1 ] && break
+		done
+	} # htb_valid_cache
+
+
+	### Find class config for device $1, which is newer than cache
+	htb_cache_older () {
+		[ `find $HTB_PATH -type f -name "$1*" -maxdepth 1 \
+		   -newer $HTB_CACHE| wc -l` -gt 0 ] && return 0
+		return 1
+	} # htb_cache_older
+
+
+	### Get current RATE and CEIL
+	htb_class_state () {
+		tc class show dev $1 \
+		| sed -n "s/[[:space:]]\+/ /g; /^class htb 1:$2 / \
+		{ s/.*rate \(.\+\) burst.*/\1/; p; q; }"
+	} # htb_class_state
+
+else ### Less feature-hungry versions of above functions
+
+	all_device_list () {
+		ip link show \
+		| grep "^[0-9]" \
+		| sed "s/[[:space:]]//g; \
+		s/^[0-9]\+:\([^@-]\+\)\(@.\+\)\?:<.*/\1/"
+	} # all_device_list
+
+	htb_filter_file () {
+		sed 's/#.*//; s/[^a-zA-Z0-9.,;:=/*-_]\+//g' $HTB_PATH/$1 \
+		| grep '^[a-zA-Z0-9]\+=[a-zA-Z0-9.,;:/*-_]\+$'
+	} # htb_filter_file
+
+	htb_clsid_chain () {
+		echo "${1#*-}" \
+		| grep '^[a-fA-F0-9]' \
+		| sed 's/^\([a-fA-F0-9:]\+\).*/\1/; s/::/:/g; s/:$//'
+	} # htb_clsid_chain
+
+	htb_class_list () {
+		PFX=`echo "$HTB_PATH"| sed 's/\//\\\\\//g'`
+		for dev in `htb_device_list`; do
+			find $HTB_PATH -type f -name "$dev-*" \
+			| grep "^$HTB_PATH/$dev-[^/]\+[^~]$" \
+			| sed "s/$PFX\///" \
+			| sort
+		done
+	} # htb_class_list
+
+	htb_cfile_rules () {
+		echo "$CFILE"| grep "^$1="| cut -d"=" -f2
+	} # htb_cfile_rules
+
+	htb_cache_older () {
+		### cache is always up-to-date
+		return 1
+	} # htb_cache_older
+
+	htb_class_state () {
+		tc class show dev $1 \
+		| sed 's/[[:space:]]\+/ /g' \
+		| grep "^class htb 1:$2 " \
+		| sed 's/.*rate \(.\+\) burst.*/\1/'
+	} # htb_class_state
+fi # HTB_BASIC
+
+
+### List of HTB devices
+htb_device_list () {
+	for dev in `all_device_list`; do
+		[ -f $HTB_PATH/$dev ] && echo $dev
+	done
+} # htb_device_list
+
+
+### Remove root class from device $1
+htb_device_off () {
+	tc qdisc del dev $1 root 2> /dev/null
+} # htb_device_off
+
+
+### Remove HTB from all devices
+htb_off () {
+	for dev in `htb_device_list`; do
+		htb_device_off $dev
+	done
+} # htb_off
+
+
+### Prefixed message
+htb_message () {
+	echo -e "**HTB: $@"
+} # htb_message
+
+### Failure message
+htb_failure () {
+	htb_message "$@"
+	exit 1
+} # htb_failure
+
+### Failure w/htb_off
+htb_fail_off () {
+	htb_message "$@"
+	htb_off
+	exit 1
+} # htb_fail_off
+
+
+### Convert time to absolute value
+htb_time2abs () {
+	local min=${1##*:}; min=${min##0}
+	local hrs=${1%%:*}; hrs=${hrs##0}
+	echo $[hrs*60 + min]
+} # htb_time2abs
+
+
+### Display traffic control setup
+htb_show () {
+	for dev in `all_device_list`; do
+		[ `tc qdisc show dev $dev| wc -l` -eq 0 ] && continue
+		echo -e "### $dev: queueing disciplines\n"
+		tc $1 qdisc show dev $dev; echo
+
+		[ `tc class show dev $dev| wc -l` -eq 0 ] && continue
+		echo -e "### $dev: traffic classes\n"
+		tc $1 class show dev $dev; echo
+
+		[ `tc filter show dev $dev| wc -l` -eq 0 ] && continue
+		echo -e "### $dev: filtering rules\n"
+		tc $1 filter show dev $dev; echo
+	done
+} # htb_show
+
+
+
+### Derive DEVICE, CLASS and PARENT from $1
+### Check validity of CLASS and PARENT class IDs
+### Load class configuration from $HTP_PATH/$1
+### Configure class parameters from CFILE
+htb_load_class () {
+	DEVICE=${1%%-*}
+	CLSIDS=`htb_clsid_chain $1`
+	CLASS=${CLSIDS##*:}; [ -z "$CLASS" ] &&
+		htb_fail_off "$1 has invalid class ID!"
+
+	[ $[0x$CLASS] -lt 2 -o $[0x$CLASS] -gt 65535 ] &&
+		htb_fail_off "class ID of $1 must be in range 0x2-0xFFFF!"
+
+	CLSIDS=${CLSIDS%$CLASS}; CLSIDS=${CLSIDS%:}
+	PARENT=${CLSIDS##*:}; [ -n "$PARENT" ] &&
+		[ $[0x$PARENT] -lt 2 -o $[0x$PARENT] -gt 65535 ] &&
+			htb_fail_off "parent ID of $1 must be in range 0x2-0xFFFF!"
+
+	CFILE=`htb_filter_file $1`
+
+
+	### Set defaults & load class
+	MTU=""; LEAF=none; PERTURB=10
+	RATE=""; BURST=""; CEIL=""; CBURST=""
+	PRIO=""; LIMIT=""; QUANTUM=""
+	
+	PRIO_RULE=$PRIO_RULE_DEFAULT
+	PRIO_MARK=$PRIO_MARK_DEFAULT
+	PRIO_REALM=$PRIO_REALM_DEFAULT
+
+	eval `echo "$CFILE"| grep "^\($HTB_CLASS\)="`
+	RNAME=""; CNAME=""
+
+	### Resolve RATE if needed
+	[ "$RATE" = "prate" ] && RNAME=RATE_$PARENT
+	[ "$RATE" = "pceil" ] && RNAME=CEIL_$PARENT
+	[ -n "$RNAME" ] && RATE=${!RNAME}
+
+	### RATE is required
+	[ -z "$RATE" ] &&
+		htb_fail_off "missing or unresolvable RATE in $1!"
+
+	### Resolve CEIL if needed
+	[ "$CEIL" = "prate" ] && CNAME=RATE_$PARENT
+	[ "$CEIL" = "pceil" ] && CNAME=CEIL_$PARENT
+	[ -n "$CNAME" ] && CEIL=${!CNAME}
+
+	### Store CEIL & RATE for children
+	eval RATE_$CLASS=$RATE
+	eval CEIL_$CLASS=${CEIL:-$RATE}
+} # htb_load_class
+
+
+#############################################################################
+#################################### INIT ###################################
+#############################################################################
+
+### Check iproute2 tools
+[ -x $TC -a -x $IP ] ||
+	htb_failure "iproute2 utilities not installed or executable!"
+
+### Check $HTB_PATH directory
+[ -d $HTB_PATH -a -r $HTB_PATH -a -x $HTB_PATH ] ||
+	htb_failure "$HTB_PATH does not exist or is not readable!"
+
+### ip/tc wrappers
+if [ "$1" = "compile" ]; then
+	### no module probing
+	HTB_PROBE=""
+
+	ip () {
+		$IP "$@"
+	} # ip
+	
+	### echo-only version of "tc" command
+	tc () {
+		echo "$TC $@"
+	} # tc
+
+elif [ -n "$HTB_DEBUG" ]; then
+	echo -e "# `date`" > $HTB_DEBUG
+
+	### Logging version of "ip" command
+	ip () {
+		echo -e "\n# ip $@" >> $HTB_DEBUG
+		$IP "$@" 2>&1 | tee -a $HTB_DEBUG
+	} # ip
+
+	### Logging version of "tc" command
+	tc () {
+		echo -e "\n# tc $@" >> $HTB_DEBUG
+		$TC "$@" 2>&1 | tee -a $HTB_DEBUG
+	} # tc
+else
+	# default wrappers
+	
+	ip () {
+		$IP "$@"
+	} # ip
+	
+	tc () {
+		$TC "$@"
+	} # tc
+fi # ip/tc wrappers
+
+
+case "$1" in
+
+#############################################################################
+############################### START/COMPILE ###############################
+#############################################################################
+
+start|compile)
+
+### Probe QoS modules (start only)
+for module in $HTB_PROBE; do
+	$MP $module || htb_failure "failed to load module $module"
+done
+
+### If we are in compile/nocache/logging mode, don't bother with cache
+if [ "$1" != "compile" -a "$2" != "nocache" -a -z "$HTB_DEBUG" ]; then
+	VALID=1
+
+	### validate the cache
+	[ "$2" = "invalidate" -o ! -f $HTB_CACHE ] && VALID=0
+	[ $VALID -eq 1 ] && for dev in `htb_device_list`; do
+		htb_cache_older $dev && VALID=0
+		[ $VALID -ne 1 ] && break
+	done
+
+	### compile the config if the cache is invalid
+	if [ $VALID -ne 1 ]; then
+		$0 compile > $HTB_CACHE ||
+			htb_fail_off "failed to compile HTB configuration!"
+	fi
+
+	### run the cached commands
+	exec /bin/sh $HTB_CACHE 2> /dev/null
+fi
+
+
+### Setup root qdisc on all configured devices
+DEVICES=`htb_device_list`
+[ -z "$DEVICES" ] && htb_failure "no configured devices found!"
+
+for dev in $DEVICES; do
+	### Retrieve root qdisc options
+	DEFAULT=""; DCACHE=""; R2Q=""
+	eval `htb_filter_file $dev| grep "^\($HTB_QDISC\)="`
+	[ "$DCACHE" = "yes" ] && DCACHE="dcache" || DCACHE=""
+
+	### Remove old root qdisc from device
+	htb_device_off $dev
+
+	### Setup root qdisc for the device
+	tc qdisc add dev $dev root handle 1 htb \
+	default ${DEFAULT:-0} ${R2Q:+r2q $R2Q} $DCACHE ||
+		htb_fail_off "failed to set root qdisc on $dev!"
+
+	[ "$1" = "compile" ] && echo
+done # dev
+
+
+### Setup traffic classes (if configured)
+for classfile in `htb_class_list`; do
+	htb_load_class $classfile
+
+	### Create the class
+	tc class add dev $DEVICE parent 1:$PARENT classid 1:$CLASS \
+	htb rate $RATE ${CEIL:+ceil $CEIL} ${BURST:+burst $BURST} \
+	${PRIO:+prio $PRIO} ${CBURST:+cburst $CBURST} ${MTU:+mtu $MTU} ||
+		htb_fail_off "failed to add class $CLASS with parent $PARENT on $DEVICE!"
+
+	### Create leaf qdisc if set
+	if [ "$LEAF" != "none" ]; then
+		if [ "$LEAF" = "sfq" ]; then
+			LEAFPARM="${PERTURB:+perturb $PERTURB} ${QUANTUM:+quantum $QUANTUM}"
+		elif [ "$LEAF" = "pfifo" -o "$LEAF" = "bfifo" ]; then
+			LEAFPARM="${LIMIT:+limit $LIMIT}"
+		else
+			htb_fail_off "unknown leaf qdisc ($LEAF) in $classfile!"
+		fi
+
+		tc qdisc add dev $DEVICE \
+		parent 1:$CLASS handle $CLASS $LEAF $LEAFPARM ||
+			htb_fail_off "failed to add leaf qdisc to class $CLASS on $DEVICE!"
+	fi
+
+
+	### Create fw filter for MARK fields
+	for mark in `htb_cfile_rules MARK`; do
+		### Attach fw filter to root class
+		tc filter add dev $DEVICE parent 1:0 protocol ip \
+		prio $PRIO_MARK handle $mark fw classid 1:$CLASS
+	done ### mark
+
+	### Create route filter for REALM fields
+	for realm in `htb_cfile_rules REALM`; do
+		### Split realm into source & destination realms
+		SREALM=${realm%%,*}; DREALM=${realm##*,}
+		[ "$SREALM" = "$DREALM" ] && SREALM=""
+
+		### Convert asterisks to empty strings
+		SREALM=${SREALM#\*}; DREALM=${DREALM#\*}
+
+		### Attach route filter to the root class
+		tc filter add dev $DEVICE parent 1:0 protocol ip \
+		prio $PRIO_REALM route ${SREALM:+from $SREALM} \
+		${DREALM:+to $DREALM} classid 1:$CLASS
+	done ### realm
+
+	### Create u32 filter for RULE fields
+	for rule in `htb_cfile_rules RULE`; do
+		### Split rule into source & destination
+		SRC=${rule%%,*}; DST=${rule##*,}
+		[ "$SRC" = "$rule" ] && SRC=""
+
+
+		### Split destination into address, port & mask fields
+		DADDR=${DST%%:*}; DTEMP=${DST##*:}
+		[ "$DADDR" = "$DST" ] && DTEMP=""
+
+		DPORT=${DTEMP%%/*}; DMASK=${DTEMP##*/}
+		[ "$DPORT" = "$DTEMP" ] && DMASK="0xffff"
+
+
+		### Split up source (if specified)
+		SADDR=""; SPORT=""
+		if [ -n "$SRC" ]; then
+			SADDR=${SRC%%:*}; STEMP=${SRC##*:}
+			[ "$SADDR" = "$SRC" ] && STEMP=""
+
+			SPORT=${STEMP%%/*}; SMASK=${STEMP##*/}
+			[ "$SPORT" = "$STEMP" ] && SMASK="0xffff"
+		fi
+
+
+		### Convert asterisks to empty strings
+		SADDR=${SADDR#\*}; DADDR=${DADDR#\*}
+
+		### Compose u32 filter rules
+		u32_s="${SPORT:+match ip sport $SPORT $SMASK}"
+		u32_s="${SADDR:+match ip src $SADDR} $u32_s"
+		u32_d="${DPORT:+match ip dport $DPORT $DMASK}"
+		u32_d="${DADDR:+match ip dst $DADDR} $u32_d"
+
+		### Uncomment the following if you want to see parsed rules
+		#echo "$rule: $u32_s $u32_d"
+
+		### Attach u32 filter to the appropriate class
+		tc filter add dev $DEVICE parent 1:0 protocol ip \
+		prio $PRIO_RULE u32 $u32_s $u32_d classid 1:$CLASS
+	done ### rule
+
+	[ "$1" = "compile" ] && echo
+done ### classfile
+;;
+
+
+#############################################################################
+################################# TIME CHECK ################################
+#############################################################################
+
+timecheck)
+
+### Get time + weekday
+TIME_TMP=`date +%w/%k:%M`
+TIME_DOW=${TIME_TMP%%/*}
+TIME_NOW=${TIME_TMP##*/}
+TIME_ABS=`htb_time2abs $TIME_NOW`
+
+### Check all classes (if configured)
+for classfile in `htb_class_list`; do
+	### Load class and gather all TIME rules
+	htb_load_class $classfile
+	TIMESET=`htb_cfile_rules TIME`
+	[ -z "$TIMESET" ] && continue
+
+	MATCH=0; CHANGE=0
+	for timerule in $TIMESET; do
+		### Split TIME rule to pieces
+		TIMESPEC=${timerule%%;*}; PARAMS=${timerule##*;}
+		WEEKDAYS=${TIMESPEC%%/*}; INTERVAL=${TIMESPEC##*/}
+		BEG_TIME=${INTERVAL%%-*}; END_TIME=${INTERVAL##*-}
+
+		### Check the day-of-week (if present)
+		[ "$WEEKDAYS" != "$INTERVAL" -a \
+		  -n "${WEEKDAYS##*$TIME_DOW*}" ] && continue
+
+		### Compute interval boundaries
+		BEG_ABS=`htb_time2abs $BEG_TIME`
+		END_ABS=`htb_time2abs $END_TIME`
+
+		### Midnight wrap fixup
+		if [ $BEG_ABS -gt $END_ABS ]; then
+			[ $TIME_ABS -le $END_ABS ] &&
+				TIME_ABS=$[TIME_ABS + 24*60]
+
+			END_ABS=$[END_ABS + 24*60]
+		fi
+
+		### If time period matches, remember params and set MATCH flag
+		if [ $TIME_ABS -ge $BEG_ABS -a $TIME_ABS -lt $END_ABS ]; then
+			RATESPEC=${PARAMS%%,*}; CEILSPEC=${PARAMS##*,}
+			[ "$RATESPEC" = "$CEILSPEC" ] && CEILSPEC=""
+
+			NEW_RATE=${RATESPEC%%/*}; NEW_BURST=${RATESPEC##*/}
+			[ "$NEW_RATE" = "$NEW_BURST" ] && NEW_BURST=""
+
+			NEW_CEIL=${CEILSPEC%%/*}; NEW_CBURST=${CEILSPEC##*/}
+			[ "$NEW_CEIL" = "$NEW_CBURST" ] && NEW_CBURST=""
+
+			MATCH=1
+		fi
+	done ### timerule
+
+
+	### Get current RATE and CEIL of a class
+	read RATE_NOW JUNK CEIL_NOW <<-EOT
+	`htb_class_state $DEVICE $CLASS`
+	EOT
+
+	[ -z "$RATE_NOW" -o -z "$CEIL_NOW" ] && continue
+
+
+	### Fill empty values if matched
+	if [ $MATCH -ne 0 ]; then
+		NEW_RATE=${NEW_RATE:-$RATE_NOW}
+		NEW_CEIL=${NEW_CEIL:-$CEIL_NOW}
+
+		NEW_BURST=${NEW_BURST:-$BURST}
+		NEW_CBURST=${NEW_CBURST:-$CBURST}
+
+	### Force configured values if not matched
+	else
+		NEW_RATE=$RATE; NEW_CEIL=$CEIL
+		NEW_BURST=$BURST; NEW_CBURST=$CBURST
+	fi
+
+
+
+	### Check for RATE and CEIL changes
+	[ "$RATE_NOW" != "$NEW_RATE" ] && CHANGE=1
+	[ "$CEIL_NOW" != "$NEW_CEIL" ] && CHANGE=1
+
+	### If there are no changes, go for next class
+	[ $CHANGE -eq 0 ] && continue
+
+
+	### Replace HTB class
+	tc class change dev $DEVICE classid 1:$CLASS htb \
+	prio $PRIO rate $NEW_RATE ${NEW_CEIL:+ceil $NEW_CEIL} \
+	${NEW_BURST:+burst $NEW_BURST} ${NEW_CBURST:+cburst $NEW_CBURST}
+
+	htb_message "$TIME_NOW: change on $DEVICE:$CLASS ($RATE_NOW/$CEIL_NOW -> $NEW_RATE/$NEW_CEIL)"
+done ### class file
+;;
+
+
+#############################################################################
+################################## THE REST #################################
+#############################################################################
+
+stop)
+	htb_off
+	;;
+
+list)
+	htb_show
+	;;
+
+stats)
+	htb_show -s
+	;;
+
+restart)
+	shift
+	$0 stop
+	$0 start "$@"
+	;;
+
+*)
+	echo "Usage: `basename $0` {start|compile|stop|restart|timecheck|list|stats}"
+esac

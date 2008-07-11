@@ -1,0 +1,342 @@
+#!/bin/sh
+#-- openssl for Slackware --
+# Build script by Phantom X <megaphantomx@bol.com.br>
+# Suggested usage: $ openssl.SlackBuild 2>&1 | tee build.log
+#--
+# Copyright 2008 Phantom X, Goiania, Brazil.
+# Copyright 2006 Martijn Dekker, Groningen, Netherlands.
+#
+# Redistribution and use of this script, with or without modification, is
+# permitted provided that the following conditions are met:
+#
+# 1. Redistributions of this script must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR `AS IS'' AND ANY EXPRESS OR IMPLIED
+#  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+#  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+#  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+#  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+#  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# http://www.openssl.org/
+
+PACKAGER_ID=${PACKAGER_ID:-$USER}
+PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
+
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
+CWD=$(pwd)
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
+
+NAME=openssl
+NAME2=openssl-solibs
+PKGF=${PKGF:-${TMP}/package-${NAME}}
+PKG=${PKGF}/${NAME}
+PKG2=${PKGF}/${NAME2}
+
+VERSION=${VERSION:-0.9.8g}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+SLKTARGET=${SLKTARGET:-i486}
+BUILD=${BUILD:-1}
+NJOBS=${NJOBS:-2}
+DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
+DOCDIR2=${PKG2}/usr/doc/${NAME}-${VERSION}
+SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
+PKGDEST=${PKGDEST:-${CWD}}
+PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+PKGNAME2=${NAME2}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable test
+SB_TEST=${SB_TEST:-NO}
+# Number of threads to test
+SB_THREADS=${SB_THREAD:-1}
+
+DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+SRCDIR=${NAME}-${VERSION}
+SRCARCHIVE=${SRCDIR}.tar.bz2
+
+DL_TO=${DL_TO:-5}
+DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
+#DL_URL="ftp://ftp.openssl.org/source/${SRCARCHIVE}"
+DL_URL="ftp://ftp.slackware.com/pub/slackware/slackware-current/source/n/${NAME}/${SRCARCHIVE}"
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O3 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O3 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O3"
+                 ;;
+    x86_64)      SLKCFLAGS="-O3 -fPIC"
+                 ;;
+  esac
+fi
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  [ "$(echo ${SB_ECFLAGS} |egrep 'msse2|msse3' )" ] || SSEOPT="no-sse2"
+  echo "${SSEOPT}"
+fi
+
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+
+if [ -d ${PKGF} ]; then
+  # Clean up a previous build
+  rm -rf ${PKGF}
+fi
+mkdir -p ${PKG} ${PKG2}
+
+cd ${TMP}
+rm -rf ${SRCDIR}
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
+cd ${SRCDIR} || exit 1
+
+chmod -R u+w,go+r-w,a-s .
+
+# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+# These are the known patent issues with OpenSSL:
+# name   #         expires
+# MDC-2: 4,908,861  2007-03-13, included.  :-)
+# IDEA:  5,214,703  2010-05-25, not included.
+# RC5:   5,724,428  2015-03-03, not included.
+
+export SLKCFLAGS="${SLKCFLAGS} -Wa,--noexecstack"
+
+./config \
+ --prefix=/usr \
+ --openssldir=/etc/ssl \
+ no-idea \
+ no-rc5 ${SSEOPT} \
+ shared || exit 1
+
+make depend || exit 1
+
+# Use -j1 here if you know what's good for you.
+make || exit 1
+
+if [ "${SB_TEST}" = "YES" ] ;then
+echo '===========TESTING=============='
+zcat ${CWD}/${NAME}-thread-test.c.gz > ${NAME}-thread-test.c || exit 1
+# Verify that what was compiled actually works.
+( LD_LIBRARY_PATH=$(pwd)${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+  export LD_LIBRARY_PATH
+  make -C test apps tests || exit 1
+  gcc -o openssl-thread-test \
+    -I./include \
+    ${SLKCFLAGS} \
+    ${NAME}-thread-test.c \
+    -L. \
+    -lssl -lcrypto \
+    -lpthread -lz -ldl || exit 1
+  ./openssl-thread-test --threads ${SB_THREADS} || exit 1
+) || exit 1
+echo '=========TESTING ENDED==========='
+fi
+
+zcat ${SB_PATCHDIR}/${NAME}-0.9.7f-ca-dir.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+make install INSTALL_PREFIX=${PKG} || exit 1
+
+# Add a cron script to warn root if a certificate is going to expire soon:
+mkdir -p ${PKG}/etc/cron.daily
+zcat ${CWD}/certwatch.gz > ${PKG}/etc/cron.daily/certwatch.new || exit 1
+chmod 755 ${PKG}/etc/cron.daily/certwatch.new
+
+mv ${PKG}/etc/ssl/openssl.cnf ${PKG}/etc/ssl/openssl.cnf.new || exit 1
+
+# Install a makefile for generating keys and self-signed certs, and a script
+# for generating them on the fly.
+mkdir -p ${PKG}/etc/pki/tls/certs
+zcat ${CWD}/Makefile.certificate.gz > ${PKG}/etc/pki/tls/certs/Makefile || exit 1
+zcat ${CWD}/make-dummy-cert.gz > ${PKG}/etc/pki/tls/certs/make-dummy-cert || exit 1
+chmod 0755 ${PKG}/etc/pki/tls/certs/make-dummy-cert
+
+# Make sure we actually include the headers we built against.
+for header in ${PKG}/usr/include/openssl/* ; do
+  if [ -f ${header} -a -f include/openssl/$(basename ${header}) ] ; then
+    install -m644 include/openssl/$(basename ${header}) ${header} || exit 1
+  fi
+done
+
+( cd ${PKG}
+  find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+  find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+)
+
+( cd ${PKG}/usr/lib ; /sbin/ldconfig -l * 2> /dev/null ) || exit 1
+( cd ${PKG}/usr/lib
+  ln -sf libcrypto.so.0 libcrypto.so || exit 1
+  ln -sf libssl.so.0 libssl.so || exit 1
+) || exit 1
+mv ${PKG}/etc/ssl/man ${PKG}/usr
+( cd ${PKG}/usr/man/man1 ; mv passwd.1 ssl_passwd.1 ) || exit 1
+( cd ${PKG}/usr/man/man3 
+  mv rand.3 ssl_rand.3 || exit 1
+  mv err.3 ssl_err.3 || exit 1
+) || exit 1
+
+# Make runtime package:
+mkdir -p ${PKG2}/usr/lib
+cp -a ${PKG}/usr/lib/lib*.so.*.*.* ${PKG2}/usr/lib/ || exit 1
+( cd ${PKG2}/usr/lib ; /sbin/ldconfig -l * ) || exit 1
+mkdir -p ${PKG2}/etc
+cp -a ${PKG}/etc/ssl ${PKG2}/etc/ || exit 1
+
+# Add a documentation directory:
+mkdir -p ${DOCDIR} ${DOCDIR2}
+cp -a \
+  CHANGES CHANGES.SSLeay FAQ LICENSE NEWS README README.ENGINE \
+  doc ${CWD}/ChangeLog.SB \
+  ${DOCDIR2}/
+find ${DOCDIR2}/ -type d -print0 | xargs -0 chmod 0755
+find ${DOCDIR2}/ -type f -print0 | xargs -0 chmod 0644
+
+cp -a doc ${DOCDIR2}/* ${DOCDIR}/ || exit 1
+
+# Compress and link manpages, if any:
+if [ -d ${PKG}/usr/share/man ]; then
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
+fi
+if [ -d ${PKG}/usr/man ]; then
+  ( cd ${PKG}/usr/man
+    for manpagedir in $(find . -type d -name "man*") ; do
+      ( cd ${manpagedir}
+        for eachpage in $( find . -type l -maxdepth 1) ; do
+          ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
+          rm -f ${eachpage}
+        done
+        gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
+      )
+    done
+  )
+fi
+
+# Compress info pages, if any:
+if [ -d ${PKG}/usr/info ]; then
+  ( cd ${PKG}/usr/info
+    rm -f dir
+    gzip -9 *
+  )
+fi
+
+mkdir -p ${PKG}/install ${PKG2}/install
+cat ${CWD}/slack-desc.${NAME} > ${PKG}/install/slack-desc
+cat ${CWD}/slack-required > ${PKG}/install/slack-required
+cat ${CWD}/slack-desc.${NAME2} > ${PKG2}/install/slack-desc
+
+for dir in ${PKG} ${PKG2} ; do
+cat > ${dir}/install/doinst.sh <<EOF
+#!/bin/sh
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${dir}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${dir}/install/doinst.sh
+  echo >> ${dir}/install/doinst.sh
+)
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       ${dir}/install/slack-desc
+
+done
+
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc* ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${CWD}/*.c.gz ${CWD}/certwatch.gz \
+                 ${CWD}/Makefile.*.gz ${CWD}/make-*.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+  mkdir -p ${PKG2}/usr/src/slackbuilds
+  cp -a ${SBDIR} ${PKG2}/usr/src/slackbuilds
+fi
+
+# Build package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
+  /bin/chown --recursive root:root .  ;"
+ROOTCOMMANDS2="set -o errexit -o xtrace ; cd ${PKG2} ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDS="${ROOTCOMMANDS}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
+ROOTCOMMANDS2="${ROOTCOMMANDS2}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME2}.tgz "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDS}
+  eval ${ROOTCOMMANDS2}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDS} | fakeroot
+  echo ${ROOTCOMMANDS2} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDS}"
+  /bin/su -c "${ROOTCOMMANDS2}"
+fi
+
+# Clean up the extra stuff:
+if [ "$1" = "--cleanup" ]; then
+  echo "Cleaning..."
+  if [ -d ${TMP}/${SRCDIR} ]; then
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
+  fi
+  if [ -d ${PKGF} ]; then
+    rm -rf ${PKGF} && echo "${PKGF} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
+fi
+exit 0

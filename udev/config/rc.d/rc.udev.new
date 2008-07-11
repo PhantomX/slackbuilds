@@ -1,0 +1,127 @@
+#!/bin/sh
+# This is a script to initialize udev, which populates the /dev
+# directory with device nodes, scans for devices, loads the
+# appropriate kernel modules, and configures the devices.
+
+PATH="/sbin:/bin"
+OPT=""
+
+. /etc/udev/udev.conf
+
+# remove trailing slash from udev_root
+UDEV_ROOT=$(echo "${udev_root}" |sed 's/\/*$//')
+
+case "$1" in
+    start)
+	# Sanity check #2, udev requires that the kernel support tmpfs:
+        if ! grep -wq tmpfs /proc/filesystems ; then
+          echo "Sorry, but you need tmpfs support in the kernel to use udev."
+          echo
+          echo "FATAL:  Refusing to run /etc/rc.d/rc.udev."
+          exit 1
+        fi
+
+        # Sanity check #3, make sure that a 2.6.x kernel is new enough:
+        if [ "$(uname -r | cut -f 1,2 -d .)" = "2.6" ]; then
+          if [ "$(uname -r | cut -f 3 -d . | sed 's/[^[:digit:]].*//')" -lt "15" ]; then
+            echo "Sorry, but you need a 2.6.15+ kernel to use udev."
+            echo "Your kernel version is only $(uname -r)."
+            echo
+            echo "FATAL:  Refusing to run /etc/rc.d/rc.udev."
+            exit 1
+          fi
+        fi
+
+        # Sanity check #4, make sure the udev package was not removed.  If udevd
+        # is not there, this will also shut off this script to prevent further
+        # problems:
+        if [ ! -x /sbin/udevd ]; then
+          chmod 644 /etc/rc.d/rc.udev
+          echo "No udevd daemon found."
+          echo "Turning off udev:  chmod 644 /etc/rc.d/rc.udev"
+          echo "FATAL:  Refusing to run /etc/rc.d/rc.udev."
+          exit 1
+        fi
+
+        # Disable hotplug helper since udevd listens to netlink:
+        if [ -e /proc/sys/kernel/hotplug ]; then
+          echo "" > /proc/sys/kernel/hotplug
+        fi
+
+	# if udevd is already running, rc.udev start will try to re-run
+	# failed events. Else, it will start udevd.
+	if ps axc | grep -q udevd ; then
+	  OPT="--retry-failed $OPT"
+	  ( cd ${udev_root}/.udev
+	    for TMPFILE in tmp-rules-*.rules ; do
+		mv $TMPFILE ${udev_rules}/${TMPFILE/tmp-rules--/} 2>/dev/null
+	    done
+	  ) 
+	else
+	  # Mount tmpfs on $UDEV_ROOT:
+	  if ! grep -E -q "^[^[:space:]]+ $UDEV_ROOT tmpfs" /proc/mounts; then
+		# umount shm if needed
+		if grep -E -q "^[^[:space:]]+ $UDEV_ROOT/shm tmpfs" /proc/mounts; then
+			umount -l $UDEV_ROOT/shm
+		fi
+
+		# Umount pts if needed, we will remount it later:
+		if grep -E -q "^[^[:space:]]+ $UDEV_ROOT/pts devpts" /proc/mounts; then
+			umount -l $UDEV_ROOT/pts
+		fi
+
+		# Mount tmpfs on $UDEV_ROOT:
+		# the -n is because we don't want $UDEV_ROOT umounted when
+		# someone (rc.[06]) calls umount -a
+		mount -n -o mode=0755 -t tmpfs tmpfs $UDEV_ROOT 
+
+		# Remount pts:
+		mkdir $UDEV_ROOT/pts 2> /dev/null
+		mount -n -o mode=0620,gid=5 -t devpts devpts $UDEV_ROOT/pts
+	  fi
+
+	  # Add the static nodes to $UDEV_ROOT:
+	  cp --preserve=all --recursive --remove-destination /lib/udev/devices/* $UDEV_ROOT 
+
+	  # Start udevd:
+	  echo "Starting udevd:  /sbin/udevd --daemon"
+	  /sbin/udevd --daemon
+
+	  mkdir -p $UDEV_ROOT/.udev/queue
+	fi
+
+	echo "Triggering udev events:  /sbin/udevtrigger $OPT"	
+	# Call udevtrigger and udevsettle to do the device configuration:
+	/sbin/udevtrigger $OPT && /sbin/udevsettle --timeout=120
+
+	;;
+    stop)
+	echo "Stopping udevd"
+        if [ -e /proc/sys/kernel/hotplug ]; then
+          echo /sbin/hotplug > /proc/sys/kernel/hotplug
+        fi
+	killall udevd 
+	;;
+    restart)
+	echo "Restarting udevd"
+	killall udevd
+	sleep 5
+	udevd --daemon
+	;;
+    reload)
+	echo "Reloading udev rules"
+	udevcontrol reload_rules
+	cp --preserve=all --recursive --update /lib/udev/devices/* $UDEV_ROOT
+	;;
+    force-reload)
+	echo "Updating all available device nodes in $UDEV_ROOT"
+	udevcontrol reload_rules
+	rm -rf $UDEV_ROOT/.udev $UDEV_ROOT/disk
+	cp --preserve=all --recursive --update /lib/udev/devices/* $UDEV_ROOT
+	;;
+	
+    *)
+	echo "Usage: $0 {start|stop|restart|reload|force-reload}"
+	exit 1
+	;;
+esac

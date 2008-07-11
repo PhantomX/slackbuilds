@@ -1,0 +1,656 @@
+#!/bin/bash
+## build glibc-${VERSION} for Slackware
+## by Patrick J. Volkerding <volkerdi@slackware.com>
+
+#-- glibc for Slackware --
+# Build script modified by Phantom X <megaphantomx@bol.com.br>
+# Suggested usage: $ glibc.SlackBuild 2>&1 | tee build.log
+
+# Copyright 2008 Phantom X, Goiania, Brazil.
+# Copyright 2006 Martijn Dekker, Groningen, Netherlands.
+#
+# Redistribution and use of this script, with or without modification, is
+# permitted provided that the following conditions are met:
+#
+# 1. Redistributions of this script must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR `AS IS'' AND ANY EXPRESS OR IMPLIED
+#  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+#  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+#  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+#  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+#  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# http://www.gnu.org/software/libc/
+# ftp://elsie.nci.nih.gov/pub/
+
+PACKAGER_ID=${PACKAGER_ID:-$USER}
+PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
+
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
+CWD=$(pwd)
+
+# Temporary build location.  This should not be a directory
+# path a non-root user could create later...
+TMP=${TMP:-/tmp/glibc-tmp-$(mcookie)}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
+
+NAME=glibc
+VERSION=${VERSION:-2.7}
+CVSVER=${CVSVER:-2.7}
+TZCVER=${TZCVER:-2008a}
+TZDVER=${TZDVER:-2008c}
+
+# Fill in the kernel version to build against:
+KERNEL_HEADERS=${KERNEL_HEADERS:-2.6.25.9-1xinc}
+
+# ${ARCH} may be preset, otherwise i486 compatibility with i686 binary
+# structuring is the Slackware default, since this is what gcc-3.2+
+# requires for binary compatibility with previous releases.
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+
+# This should be i486 for all 32-bit x86 arch:
+TARGET=${TARGET:-i486}
+
+BUILD=${BUILD:-17}
+
+NJOBS=${NJOBS:-2}
+
+DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+SRCDIR=${NAME}-${CVSVER}
+SRCARCHIVE=${SRCDIR}.tar.bz2
+SRCDIR2=${NAME}-libidn-${CVSVER}
+SRCARCHIVE2=${SRCDIR2}.tar.bz2
+SRCARCHIVE3=tzcode${TZCVER}.tar.gz
+SRCARCHIVE4=tzdata${TZDVER}.tar.gz
+
+DL_TO=${DL_TO:-5}
+DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
+DL_URL="http://ftp.gnu.org/gnu/${NAME}/${SRCARCHIVE}"
+DL_URL2="http://ftp.gnu.org/gnu/${NAME}/${SRCARCHIVE2}"
+DL_URL3="ftp://elsie.nci.nih.gov/pub/${SRCARCHIVE3}"
+DL_URL4="ftp://elsie.nci.nih.gov/pub/${SRCARCHIVE4}"
+
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+if ! test -r ${SRCARCHIVE2}; then
+  test -r ${CWD}/${SRCARCHIVE2} || wget ${DL_OPTS} ${DL_URL2} || exit 1
+fi
+if ! test -r ${SRCARCHIVE3}; then
+  test -r ${CWD}/${SRCARCHIVE3} || wget ${DL_OPTS} ${DL_URL3} || exit 1
+fi
+if ! test -r ${SRCARCHIVE4}; then
+  test -r ${CWD}/${SRCARCHIVE4} || wget ${DL_OPTS} ${DL_URL4} || exit 1
+fi
+
+# This is a patch function to put all glibc patches in the build script
+# up near the top.
+apply_patches() {
+  if [ -r ${CWD}/apply-patches.sh ]; then
+    . ${CWD}/apply-patches.sh || exit 1
+  fi
+
+  # Update the timezone information.
+  ( cd timezone
+    tar xzf ${CWD}/${SRCARCHIVE4} || exit 1
+    #chown root:root *
+    mv yearistype.sh yearistype
+    chmod 644 *
+    chmod 755 yearistype
+    mkdir tzcode
+    cd tzcode || exit 1
+    tar xzf ${CWD}/${SRCARCHIVE3} || exit 1
+    #chown -R root:root .
+    chmod 644 *
+    cp -a *.c *.h ..
+  )
+}
+
+unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
+
+# I'll break this out as an option for fun  :-)
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  OPTIMIZ="-O3 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    OPTIMIZ="-O3 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        OPTIMIZ="-O3"
+                 ;;
+    x86_64)      OPTIMIZ="-O3 -fPIC"
+                 ;;
+  esac
+fi
+
+# This is going to be the initial $DESTDIR:
+PKGF=${PKGF:-${TMP}/package-${NAME}}
+PKG=${PKGF}/package-glibc-incoming-tree
+export PKG
+PGLIBC=${PKGF}/${NAME}
+PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+PSOLIBS=${PKGF}/${NAME}-solibs
+PKGNAMES=${NAME}-solibs-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+PZONE=${PKGF}/${NAME}-zoneinfo
+PKGNAMEZ=${NAME}-zoneinfo-$(echo ${VERSION} | tr - . )-noarch-${BUILD}${PACKAGER_ID}
+PI18N=${PKGF}/${NAME}-i18n
+PKGNAMEI=${NAME}-i18n-$(echo ${VERSION} | tr - . )-noarch-${BUILD}${PACKAGER_ID}
+PPROFILE=${PKGF}/${NAME}-profile
+PKGNAMEP=${NAME}-profile-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+PDEBUG=${PKGF}/${NAME}-debug
+PKGNAMED=${NAME}-debug-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
+SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
+PKGDEST=${PKGDEST:-${CWD}}
+
+# Empty these locations first:
+if [ -d ${PKGF} ]; then
+  rm -rf ${PKGF}
+fi
+mkdir -p ${PKG} ${PGLIBC} ${PSOLIBS} ${PZONE} ${PI18N} ${PPROFILE} ${PDEBUG}
+
+if [ -d ${TMP}/glibc-${VERSION} ]; then
+  rm -rf ${TMP}/glibc-${VERSION}
+fi
+
+# Create an incoming directory structure for glibc to be built into:
+mkdir -p ${PKG}/lib
+mkdir -p ${PKG}/sbin
+mkdir -p ${PKG}/usr/bin
+mkdir -p ${PKG}/usr/lib
+mkdir -p ${PKG}/usr/sbin
+mkdir -p ${PKG}/usr/include
+mkdir -p ${DOCDIR}
+mkdir -p ${PKG}/usr/man
+mkdir -p ${PKG}/usr/share
+mkdir -p ${PKG}/var/db/nscd
+mkdir -p ${PKG}/var/run/nscd
+
+# Begin extract/compile:
+cd ${TMP}
+rm -rf glibc-${CVSVER}
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
+cd glibc-${CVSVER} || exit 1
+if $(file -L ${CWD}/${SRCARCHIVE2} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE2} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE2} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE2} || exit 1
+fi
+mv glibc-libidn-${VERSION} libidn || exit 1
+
+#chown -R root:root .
+chmod -R u+w,go+r-w,a-s .
+
+# Clean up leftover CVS directories:
+find . -type d -name CVS -exec rm -r {} \;
+
+# Apply patches; exit if any fail.
+apply_patches
+if [ ! $? = 0 ]; then
+  exit 1
+fi
+
+# Make build directory:
+mkdir -p build-glibc-${VERSION}
+cd build-glibc-${VERSION} || exit 1
+
+#SB_HEADERS=${SB_HEADERS:-/usr/src/linux-${KERNEL_HEADERS}/include}
+SB_HEADERS=${SB_HEADERS:-/usr/include}
+
+echo "BUILDING DAS NPTL GLIBC"
+CFLAGS="-g ${OPTIMIZ}" \
+../configure \
+  --prefix=/usr \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --enable-kernel=2.6.21 \
+  --with-headers=${SB_HEADERS} \
+  --enable-add-ons=libidn,nptl \
+  --enable-profile \
+  --with-tls \
+  --with-__thread \
+  --without-cvs \
+  --build=${TARGET}-slackware-linux || exit 1
+
+make -j${NJOBS} || exit 1
+make install install_root=${PKG} || exit 1
+make localedata/install-locales install_root=${PKG} || exit 1
+
+# The prevailing standard seems to be putting unstripped libraries in
+# /usr/lib/debug/ and stripping the debugging symbols from all the other
+# libraries.
+mkdir -p ${PKG}/usr/lib/debug
+cp -a ${PKG}/lib/l*.so* ${PKG}/usr/lib/debug
+cp -a ${PKG}/usr/lib/*.a ${PKG}/usr/lib/debug
+# Don't need debug+profile:
+( cd ${PKG}/usr/lib/debug ; rm -f *_p.* )
+# NOTE:  Is there really a reason for the glibc-debug package?
+# If you're debugging glibc, you can also compile it, right?
+
+## COMMENTED OUT:  There's no reason for profile libs to include -g information.
+## Put back unstripped profiling libraries:
+#mv ${PKG}/usr/lib/debug/*_p.a ${PKG}/usr/lib
+# It might be best to put the unstripped and profiling libraries in glibc-debug and glibc-profile.
+
+# I don't think "strip -g" causes the pthread problems.  It's --strip-unneeded that does.
+strip -g ${PKG}/lib/l*.so*
+strip -g ${PKG}/usr/lib/l*.so*
+strip -g ${PKG}/usr/lib/lib*.a
+
+# rquota.x and rquota.h are now provided by quota
+#rm -f ${PKG}/usr/include/rpcsvc/rquota.[hx]
+
+# Back to the sources dir to add some files/docs:
+cd ${TMP}/glibc-${CVSVER} || exit 1
+
+# We'll automatically install the config file for the Name Server Cache Daemon.
+# Perhaps this should also have some commented-out startup code in rc.inet2...
+mkdir -p ${PKG}/etc
+cat nscd/nscd.conf > ${PKG}/etc/nscd.conf.new
+
+# Install some scripts to help select a timezone:
+mkdir -p ${PKG}/var/log/setup
+cp -a ${CWD}/timezone-scripts/setup.timeconfig ${PKG}/var/log/setup
+#chown root:root ${PKG}/var/log/setup/setup.timeconfig
+chmod 755 ${PKG}/var/log/setup/setup.timeconfig
+mkdir -p ${PKG}/usr/sbin
+cp -a ${CWD}/timezone-scripts/timeconfig ${PKG}/usr/sbin
+#chown root:root ${PKG}/usr/sbin/timeconfig
+chmod 755 ${PKG}/usr/sbin/timeconfig
+
+## Install docs:
+( mkdir -p ${DOCDIR}/
+  cp -a \
+    BUGS CONFORMANCE COPYING COPYING.LIB FAQ INSTALL LICENSES NAMESPACE \
+    NEWS NOTES PROJECTS README README.libm ${CWD}/ChangeLog.SB \
+    ${DOCDIR}/
+)
+
+# Don't forget to add the /usr/share/zoneinfo/localtime -> /etc/localtime symlink! :)
+if [ ! -r ${PKG}/usr/share/zoneinfo/localtime ]; then
+  ( cd ${PKG}/usr/share/zoneinfo ; ln -sf /etc/localtime . )
+fi
+
+# OK, there are some very old Linux standards that say that any binaries in a /bin or
+# /sbin directory (and the directories themselves) should be group bin rather than
+# group root, unless a specific group is really needed for some reason.
+#
+# I can't find any mention of this in more recent standards docs, and always thought
+# that it was pretty cosmetic anyway (hey, if there's a reason -- fill me in!), so
+# it's possible that this ownership change won't be followed in the near future
+# (it's a PITA, and causes many bug reports when the perms change is occasionally
+# forgotten).
+#
+# But, it's hard to get me to break old habits, so we'll continue the tradition here:
+#
+# No, no we won't.  You know how we love to break traditions.
+
+# Strip most binaries:
+( cd ${PKG}
+  find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+  find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip -g 2> /dev/null
+)
+
+# Fix info dir:
+rm -f ${PKG}/usr/info/dir
+gzip -9 ${PKG}/usr/info/*
+
+# This is junk
+rm -f ${PKG}/etc/ld.so.cache
+( cd ${PKG}
+  find . -name "*.orig" -exec rm -f {} \;
+)
+
+##################################
+# OK, time to make some packages #
+##################################
+
+# glibc-zoneinfo.  We will start with an easy one to avoid breaking a sweat.  ;-)
+cd ${PZONE} || exit 1
+# Install some scripts to help select a timezone:
+mkdir -p ${PZONE}/var/log/setup
+cp -a ${CWD}/timezone-scripts/setup.timeconfig ${PZONE}/var/log/setup
+#chown root:root ${PZONE}/var/log/setup/setup.timeconfig
+chmod 755 ${PZONE}/var/log/setup/setup.timeconfig
+mkdir -p ${PZONE}/usr/sbin
+cp -a ${CWD}/timezone-scripts/timeconfig ${PZONE}/usr/sbin
+#chown root:root ${PZONE}/usr/sbin/timeconfig
+chmod 755 ${PZONE}/usr/sbin/timeconfig
+mkdir -p ${PZONE}/install
+cat ${CWD}/doinst.sh-glibc-zoneinfo > ${PZONE}/install/doinst.sh
+cat ${CWD}/slack-desc.glibc-zoneinfo > ${PZONE}/install/slack-desc
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       install/slack-desc
+
+echo "${NAME}-solibs = $(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID} || ${NAME} = $(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}" > \
+     install/slack-required
+
+PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+PSOLIBS=${PKGF}/${NAME}-solibs
+PKGNAMES=${NAME}-solibs-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+mkdir -p ${PZONE}/usr/share
+cd ${PZONE}/usr/share
+cp -a --verbose ${PKG}/usr/share/zoneinfo . || exit 1
+cd ${PZONE}
+mkdir -p ${PZONE}/etc
+# This is already hard-coded into doinst.sh (like it'll be there anyway ;-):
+rm -f etc/localtime
+# Wrap it up:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDSZ="set -o errexit -o xtrace ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDSZ="${ROOTCOMMANDSZ}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAMEZ}.tgz "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDSZ}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDSZ} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDSZ}"
+fi
+
+# glibc-profile:
+cd ${PPROFILE} || exit 1
+mkdir -p usr/lib
+# Might as well just grab these with 'mv' to simplify things later:
+mv ${PKG}/usr/lib/lib*_p.a usr/lib
+# Profile libs should be stripped.  Use the debug libs to debug...
+( cd usr/lib ; strip -g *.a )
+mkdir -p install
+cp -a ${CWD}/slack-desc.glibc-profile install/slack-desc
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       install/slack-desc
+
+echo "${NAME}-solibs = $(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID} || ${NAME} = $(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}" > \
+     install/slack-required
+
+# Build the package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDSP="set -o errexit -o xtrace ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDSP="${ROOTCOMMANDSP}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAMEP}.tgz "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDSP}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDSP} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDSP}"
+fi
+
+# THIS IS NO LONGER PACKAGED (or is it?  might be better to let it be made, and then ship it or not...)
+# glibc-debug:
+cd ${PDEBUG} || exit 1
+mkdir -p usr/lib
+# Might as well just grab these with 'mv' to simplify things later:
+mv ${PKG}/usr/lib/debug usr/lib
+mkdir -p install
+cp -a ${CWD}/slack-desc.glibc-debug install/slack-desc
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       install/slack-desc
+
+echo "${NAME}-solibs = $(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID} || ${NAME} = $(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}" > \
+     install/slack-required
+
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDSD="set -o errexit -o xtrace ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDSD="${ROOTCOMMANDSD}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAMED}.tgz "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDSD}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDSD} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDSD}"
+fi
+
+## INSTEAD, NUKE THESE LIBS
+#rm -rf ${PKG}/usr/lib/debug
+
+# glibc-i18n:
+cd ${PI18N} || exit 1
+mkdir -p usr/lib
+rm -rf usr/lib/locale
+cp -a ${PKG}/usr/lib/locale usr/lib
+mkdir -p usr/share
+cp -a ${PKG}/usr/share/i18n usr/share
+cp -a ${PKG}/usr/share/locale usr/share
+mkdir -p install
+cp -a ${CWD}/slack-desc.glibc-i18n install/slack-desc
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       install/slack-desc
+
+echo "${NAME}-solibs = $(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID} || ${NAME} = $(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}" > \
+     install/slack-required
+
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDSI="set -o errexit -o xtrace ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDSI="${ROOTCOMMANDSI}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAMEI}.tgz "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDSI}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDSI} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDSI}"
+fi
+
+# glibc-solibs:
+cd ${PSOLIBS} || exit 1
+mkdir -p etc/ld.so.conf.d
+mkdir -p etc/profile.d
+cp -a ${CWD}/profile.d/glibc.*sh* etc/profile.d
+#chown -R root:root etc
+chmod 755 etc/profile.d/glibc.*sh*
+mkdir -p lib
+cp -a ${PKG}/lib/* lib
+( cd lib
+  mkdir -p incoming
+  mv *so* incoming
+  mv incoming/libSegFault.so .
+)
+mkdir -p usr
+cp -a ${PKG}/usr/bin usr
+mv usr/bin/ldd .
+rm -f usr/bin/*
+mv ldd usr/bin
+mkdir -p usr/lib
+# The gconv directory has a lot of stuff, but including it here will save some problems.
+# Seems standard elsewhere.
+cp -a ${PKG}/usr/lib/gconv usr/lib
+# Another manpage abandoned by GNU...
+#mkdir -p usr/man/man1
+#cp -a ${PKG}/usr/man/man1/ldd.1.gz usr/man/man1
+mkdir -p usr/libexec
+cp -a ${PKG}/usr/libexec/pt_chown usr/libexec
+# Same usr.bin deal:
+cp -a ${PKG}/sbin .
+mv sbin/ldconfig .
+rm -f sbin/*
+mv ldconfig sbin/
+mkdir -p install
+cp -a ${CWD}/slack-desc.glibc-solibs install/slack-desc
+cp -a ${CWD}/doinst.sh-glibc-solibs install/doinst.sh
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       install/slack-desc
+
+# Ditch links:
+find . -type l -exec rm -f {} \;
+# Build the package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDSS="set -o errexit -o xtrace ;
+  /bin/chown --recursive root:root .  ;
+  /bin/chmod 4755 ./usr/libexec/pt_chown ;"
+
+ROOTCOMMANDSS="${ROOTCOMMANDSS}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAMES}.tgz "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDSS}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDSS} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDSS}"
+fi
+
+# Replicate slackbuild and patches
+mkdir -p ${SBDIR}/{patches,profile.d,timezone-scripts/parts}
+install -m0644 ${CWD}/slack-desc* ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+               ${CWD}/apply-patches.sh ${CWD}/doinst.sh* ${CWD}/*checkout.sh \
+               ${SBDIR}/
+install -m0755 ${CWD}/${NAME}.SlackBuild \
+               ${SBDIR}/${NAME}.SlackBuild
+install -m0644 ${CWD}/patches/*.{diff,patch}.gz \
+               ${SBDIR}/patches/
+install -m0755 ${CWD}/profile.d/glibc.*sh* \
+               ${SBDIR}/profile.d/
+install -m0755 ${CWD}/timezone-scripts/*timeconfig* \
+               ${SBDIR}/timezone-scripts/
+install -m0755 ${CWD}/timezone-scripts/parts/0? \
+               ${SBDIR}/timezone-scripts/parts/
+sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+        /^BUILD=/s/:-.*}/:-$BUILD}/
+        /^  ARCH=/s/:-.*}/:-$ARCH}/
+        " ${SBDIR}/${NAME}.SlackBuild
+
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/{patches,profile.d,timezone-scripts/parts}
+  install -m0644 ${CWD}/slack-desc* ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${CWD}/doinst.sh* ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.{diff,patch}.gz \
+                 ${SBDIR}/patches/
+  install -m0755 ${CWD}/profile.d/glibc.*sh* \
+                 ${SBDIR}/profile.d/
+  install -m0755 ${CWD}/timezone-scripts/*timeconfig* \
+                 ${SBDIR}/timezone-scripts/
+  install -m0755 ${CWD}/timezone-scripts/parts/0? \
+                 ${SBDIR}/timezone-scripts/parts/
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
+
+# And finally, the complete "all-in-one" glibc package is created
+# from whatever was leftover:
+cd ${PGLIBC} || exit 1
+mv ${PKG}/* .
+mkdir -p etc/ld.so.conf.d
+mkdir -p etc/profile.d
+cp -a ${CWD}/profile.d/* etc/profile.d/ || exit 1
+#chown -R root:root etc
+chmod 755 etc/profile.d/*
+# Ditch links (these are in doinst.sh-glibc):
+find . -type l -exec rm -f {} \;
+mkdir -p install
+cp -a ${CWD}/slack-desc.glibc install/slack-desc
+cp -a ${CWD}/doinst.sh-glibc install/doinst.sh
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       install/slack-desc
+
+( cd lib
+  mkdir -p incoming
+  mv *so* incoming
+  mv incoming/libSegFault.so .
+)
+
+# Build the package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDS="set -o errexit -o xtrace ;
+  /bin/chown --recursive root:root .  ;
+  /bin/chmod 4755 ./usr/libexec/pt_chown ;"
+
+ROOTCOMMANDS="${ROOTCOMMANDS}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDS}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDS} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDS}"
+fi
+
+# Done!
+echo
+echo "glibc packages built in ${TMP}!"
+
+# Clean up the extra stuff:
+if [ "$1" = "--cleanup" ]; then
+  echo "Cleaning..."
+  if [ -d ${TMP}/${SRCDIR} ]; then
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
+  fi
+  if [ -d ${PKGF} ]; then
+    rm -rf ${PKGF} && echo "${PKGF} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
+fi
+exit 0

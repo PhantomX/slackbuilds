@@ -1,0 +1,372 @@
+#!/bin/bash
+#-- vmware-server for Slackware --
+# Build script by Phantom X <megaphantomx@bol.com.br>
+# Suggested usage: $ vmware-server.SlackBuild 2>&1 | tee build.log
+#--
+# Copyright 2008 Phantom X, Goiania, Brazil.
+# Copyright 2006 Martijn Dekker, Groningen, Netherlands.
+#
+# Redistribution and use of this script, with or without modification, is
+# permitted provided that the following conditions are met:
+#
+# 1. Redistributions of this script must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR `AS IS'' AND ANY EXPRESS OR IMPLIED
+#  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+#  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+#  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+#  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+#  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# http://www.vmware.com/products/server/
+
+PACKAGER_ID=${PACKAGER_ID:-$USER}
+PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
+
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
+CWD=$(pwd)
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
+
+PNAME=VMware-server
+NAME=vmware-server
+PKG=${PKG:-${TMP}/package-${NAME}}
+
+VERSION=${VERSION:-1.0.6}
+VMBUILD=${VMBUILD:-91891}
+ARCH=i386
+BUILD=${BUILD:-1}
+NJOBS=${NJOBS:-2}
+DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
+SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
+PKGDEST=${PKGDEST:-${CWD}}
+PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Fix for "/" key in some keyboards.
+SB_KBFIX=${SB_KBFIX:-YES}
+
+DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+SRCDIR=${NAME}-distrib
+SRCARCHIVE=${PNAME}-${VERSION}-${VMBUILD}.tar.gz
+
+DL_TO=${DL_TO:-5}
+DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
+DL_URL="http://download3.vmware.com/software/vmserver/${SRCARCHIVE}"
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
+fi
+
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+
+if [ -d ${PKG} ]; then
+  # Clean up a previous build
+  rm -rf ${PKG}
+fi
+mkdir -p ${PKG}
+
+cd ${TMP}
+rm -rf ${SRCDIR}
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
+cd ${SRCDIR} || exit 1
+
+chmod -R u+w,go+r-w,a-s .
+
+# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-initsh.patch.gz | patch -p0 -E --backup --verbose || exit 1
+
+mkdir -p build-perl-module
+( cd build-perl-module
+  tar -xvf ../lib/perl/control.tar
+  cd control-only
+  perl Makefile.PL INSTALLDIRS="vendor" OPTIMIZE="${SLKCFLAGS}"
+  make -j${NJOBS} OPTIMIZE="${SLKCFLAGS}"
+  make pure_install PERL_INSTALL_ROOT=${PKG}
+
+  rm -rf ${PKG}/usr/lib/vmware/perl?/site_perl
+
+  find ${PKG} -type f -name perllocal.pod -exec rm -f {} ';'
+  find ${PKG} -type f -name .packlist -exec rm -f {} ';'
+  find ${PKG} -type f -name '*.bs' -a -size 0 -exec rm -f {} ';'
+  find ${PKG} -type d -depth -exec rmdir {} 2>/dev/null ';'
+  chmod -R u+w ${PKG}/*
+  ( cd ${PKG}
+    find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+    find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+  )
+) || exit 1
+
+rm -rf lib/modules/binary/*
+
+if [ "${SB_KBFIX}" = "YES" ]; then
+  echo 'xkeymap.usekeycodeMapIfXFree86 = true' >> lib/config || exit 1
+  echo 'xkeymap.keycode.211 = 0x073' >> lib/config || exit 1
+fi
+
+mkdir -p ${PKG}/usr/bin
+( cd bin/
+install -m0755 vmnet-natd vmrun vmnet-dhcpd vmware-mount.pl \
+               vmware-authtrusted vmware-loop vmware-ping vmnet-sniffer \
+               vmware vmnet-netifup vmnet-bridge vm-support vmware-cmd \
+               vmware-vdiskmanager \
+               ${PKG}/usr/bin/
+) || exit 1
+
+mkdir -p ${PKG}/usr/sbin
+install -m0755 sbin/{vmware-authd,vmware-serverd} \
+               ${PKG}/usr/sbin/ || exit 1
+
+mkdir -p ${PKG}/usr/lib/vmware
+cp -a lib/* ${PKG}/usr/lib/vmware/ || exit 1
+
+cat lib/serverd/init.pl.default | sed -e \
+    '/$PREFIX_PATH/s|%libdir%|/usr/lib/vmware|g' > \
+     ${PKG}/usr/lib/vmware/serverd/init.pl || exit 1
+
+cp -a vmware-vix/lib/lib*.so* ${PKG}/usr/lib/ || exit 1
+chmod 0755 ${PKG}/usr/lib/lib*.so.*
+
+mkdir -p ${PKG}/usr/lib/pkgconfig
+zcat ${CWD}/vmware-vix.pc.in.gz | sed -e \
+      "/^Version/s|_VIXVER|${VERSION}|g;/^Version/s|_VIXBUILD|${VMBUILD}|g" > \
+       ${PKG}/usr/lib/pkgconfig/vmware-vix.pc || exit 1
+
+mkdir -p ${PKG}/usr/include/vmware-vix
+install -m0644 vmware-vix/include/*.h \
+               ${PKG}/usr/include/vmware-vix/ || exit 1
+
+mkdir -p ${PKG}/etc/pam.d
+zcat ${CWD}/vmware-authd.gz > \
+     ${PKG}/etc/pam.d/vmware-authd || exit 1
+
+mkdir -p ${PKG}/etc/vmware/{pam.d,ssl}
+mkdir -p ${PKG}/etc/vmware/{vmnet1/dhcpd,vmnet8/{dhcpd,nat}}
+
+for file in signing-key.pub config locations vm-list{,-private} \
+            netmap.conf pam.d/vmware-authd vmnet1/dhcpd/dhcpd.{conf,leases} \
+            vmnet8/{nat/nat.conf,dhcpd/dhcpd.{conf,leases}}; do
+  install -m0644 ${CWD}/config/${file} ${PKG}/etc/vmware/${file}.new || exit 1
+done
+
+# Do not needed in Slackware >= 12
+#mkdir -p ${PKG}/etc/rc.d/rc{0,1,2,3,4,5,6}.d
+mkdir -p ${PKG}/etc/rc.d
+install -m0755 installer/services.sh \
+     ${PKG}/etc/rc.d/rc.vmware || exit 1
+
+mkdir -p ${PKG}/var/log/setup
+zcat ${CWD}/setup.onlyonce.rcvmware.gz > \
+     ${PKG}/var/log/setup/setup.onlyonce.rcvmware || exit 1
+chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rcvmware || exit 1
+
+mkdir -p ${PKG}/var/log/vmware
+mkdir -p ${PKG}/var/lib/vmware/VMs
+
+find ${PKG}/usr/lib/vmware/perl? -type f -name '*.bs' -a -size 0 -exec rm -f {} ';'
+
+mkdir -p ${PKG}/usr/share/applications
+cat > ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
+[Desktop Entry]
+Encoding=UTF-8
+Name=VMware Server
+Comment=Run and manage virtual machines
+Exec=vmware
+Terminal=false
+Type=Application
+Icon=${NAME}
+StartupNotify=true
+Categories=System;
+X-Desktop-File-Install-Version=0.10
+MimeType=application/x-vmware-vm;
+EOF
+
+cat > ${PKG}/usr/share/applications/vmware-console-uri-handler.desktop <<EOF
+[Desktop Entry]
+Encoding=UTF-8
+Name=VMware Server Console
+Comment=Run and manage remote virtual machines
+Exec=vmware -o %f
+Terminal=false
+Type=Application
+Icon=${NAME}
+StartupNotify=true
+Categories=System;
+X-Desktop-File-Install-Version=0.10
+MimeType=application/x-vmware-console;
+NoDisplay=true
+EOF
+
+mkdir -p ${PKG}/usr/share/icons/hicolor
+cp -a lib/share/icons/* ${PKG}/usr/share/icons/hicolor/ || exit 1
+
+mkdir -p ${PKG}/usr/share/pixmaps
+install -m0644 lib/share/icons/48x48/apps/${NAME}.png \
+               ${PKG}/usr/share/pixmaps/${NAME}.png || exit 1
+
+mkdir -p ${PKG}/usr/share/mime/packages
+zcat ${CWD}/vmware.xml.gz > ${PKG}/usr/share/mime/packages/vmware.xml || exit 1
+
+# Add a documentation directory:
+mkdir -p ${DOCDIR}
+mv vmware-vix/doc doc/vmware-vix || exit 1
+cp -a \
+  doc/* bin/vmware-config.pl ${CWD}/ChangeLog.SB \
+  ${DOCDIR}/
+find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
+find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+
+# Compress and link manpages, if any:
+if [ -d ${PKG}/usr/share/man ]; then
+    mv ${PKG}/usr/share/man ${PKG}/usr/man
+fi
+mkdir -p ${PKG}/usr/man/man1
+install -m0644 man/man1/*.1.gz ${PKG}/usr/man/man1/ || exit 1
+if [ -d ${PKG}/usr/man ]; then
+  ( cd ${PKG}/usr/man
+    for manpagedir in $(find . -type d -name "man*") ; do
+      ( cd ${manpagedir}
+        for eachpage in $( find . -type l -maxdepth 1) ; do
+          ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
+          rm ${eachpage}
+        done
+        gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
+      )
+    done
+  )
+fi
+
+# Compress info pages, if any:
+if [ -d ${PKG}/usr/info ]; then
+  ( cd ${PKG}/usr/info
+      rm -f dir
+      gzip -9 *
+  )
+fi
+
+mkdir -p ${PKG}/install
+cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
+cat ${CWD}/slack-required > ${PKG}/install/slack-required
+
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+  echo "chmod 4555 usr/bin/vmware-ping" >> ${PKG}/install/doinst.sh
+  echo "chmod 4555 usr/sbin/vmware-authd" >> ${PKG}/install/doinst.sh
+  echo "chmod 4555 usr/lib/vmware/bin/vmware-vmx" >> ${PKG}/install/doinst.sh
+  echo "chmod 4555 usr/lib/vmware/bin-debug/vmware-vmx" >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       ${PKG}/install/slack-desc
+
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                  ${CWD}/*-vix.pc.in.gz ${CWD}/*-authd.gz ${CWD}/*.xml.gz \
+                  ${CWD}/setup.onlyonce.rc*.gz ${CWD}/vmware.orig.gz \
+                  ${CWD}/${NAME}-*patch.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  mkdir -p ${SBDIR}/config/{pam.d,vmnet1/dhcpd,vmnet8/{dhcpd,nat}}
+  install -m0644 \
+    ${CWD}/config/{signing-key.pub,config,locations,vm-list{,-private},netmap.conf} \
+    ${SBDIR}/config/
+  install -m0644 ${CWD}/config/pam.d/vmware-authd ${SBDIR}/config/pam.d/vmware-authd
+  install -m0644 ${CWD}/config/vmnet1/dhcpd/dhcpd.{conf,leases} \
+                 ${SBDIR}/config/vmnet1/dhcpd/
+  install -m0644 ${CWD}/config/vmnet8/nat/nat.conf \
+                 ${SBDIR}/config/vmnet8/nat/nat.conf
+  install -m0644 ${CWD}/config/vmnet8/dhcpd/dhcpd.{conf,leases} \
+                 ${SBDIR}/config/vmnet8/dhcpd/
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
+
+# Build package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
+  /bin/chown --recursive root:root .  ;
+  chmod 4555 usr/bin/vmware-ping ;
+  chmod 4555 usr/sbin/vmware-authd ;
+  chmod 4555 usr/lib/vmware/bin/vmware-vmx ;
+  chmod 4555 usr/lib/vmware/bin-debug/vmware-vmx ; "
+
+ROOTCOMMANDS="${ROOTCOMMANDS}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDS}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDS} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDS}"
+fi
+
+# Clean up the extra stuff:
+if [ "$1" = "--cleanup" ]; then
+  echo "Cleaning..."
+  if [ -d ${TMP}/${SRCDIR} ]; then
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
+  fi
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
+fi
+exit 0

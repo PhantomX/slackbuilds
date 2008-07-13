@@ -19,6 +19,7 @@ snap=${snap:-$(date +%Y%m%d)}
 
 pushd "${tmp}"
   svn --non-recursive checkout ${snaproot} ${module}-${snap}
+  svn --non-recursive checkout svn://anonsvn.kde.org/home/kde/branches/KDE/3.5/kde-common/admin/ ${module}-${snap}/admin
   ## auto*/configure bits
   svn up ${module}-${snap}
   ## app

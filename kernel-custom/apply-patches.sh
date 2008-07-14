@@ -47,6 +47,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-x86-dont-use-disabled-vdso-for-signals.patch.gz | 
 #
 # USB
 zcat ${SB_PATCHDIR}/linux-2.6-usb-ehci-hcd-respect-nousb.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-usb-storage-nikond80-quirk.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-usb-fix-interrupt-disabling.patch.gz | ${PATCHCOM} || exit 1
 
 # ACPI
 # acpi has a bug in the sizeof function causing thermal panics (from 2.6.26)
@@ -106,6 +108,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-serial-460800.patch.gz | ${PATCHCOM} || exit 1
 # Silence some useless messages that still get printed with 'quiet'
 zcat ${SB_PATCHDIR}/linux-2.6-silence-noise.patch.gz | ${PATCHCOM} || exit 1
 
+# Fix reiserfs list corruption
+zcat ${SB_PATCHDIR}/linux-2.6-reiserfs-discard-prealloc.patch.gz | ${PATCHCOM} || exit 1
+
 # libata
 # fix hangs on undock (#439197)
 zcat ${SB_PATCHDIR}/linux-2.6-libata-acpi-hotplug-fixups.patch.gz | ${PATCHCOM} || exit 1
@@ -119,6 +124,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-libata-acpi-handle-bay-devices-in-dock-stations.pa
 zcat ${SB_PATCHDIR}/linux-2.6-libata-pata_atiixp-dont-disable.patch.gz | ${PATCHCOM} || exit 1
 # retry enabling AHCI mode before reporting error
 zcat ${SB_PATCHDIR}/linux-2.6-libata-retry-enabling-ahci.patch.gz | ${PATCHCOM} || exit 1
+# fix ahci / ich6m conflict
+zcat ${SB_PATCHDIR}/linux-2.6-libata-ata_piix-dont-attach-to-ich6m-in-ahci-mode.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # VM related fixes.
@@ -154,6 +161,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
 
 # atl2 driver for eeepc (and others)
 zcat ${SB_PATCHDIR}/linux-2.6-netdev-atl2.patch.gz | ${PATCHCOM} || exit 1
+
+# fix bluetooth kbd disconnect
+zcat ${SB_PATCHDIR}/linux-2.6-bluetooth-signal-userspace-for-socket-errors.patch.gz | ${PATCHCOM} || exit 1
 
 # Nouveau DRM + drm fixes
 zcat ${SB_PATCHDIR}/linux-2.6-drm-git-mm.patch.gz | ${PATCHCOM} || exit 1

@@ -28,6 +28,12 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -37,8 +43,13 @@ fi
 NAME=xvidcap
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.1.7rc1}
-ARCH=${ARCH:-i686}
+VERSION=${VERSION:-1.1.7}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+SLKTARGET=${SLKTARGET:-i486}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-1}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -46,35 +57,36 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to enable external ffmpeg
+SB_FFMPEG=${SB_FFMPEG:-NO}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}-1.1.6 ##${VERSION}
-SRCARCHIVE=${NAME}-${VERSION}.tar.gz
+SRCDIR=${NAME}-${VERSION}
+SRCARCHIVE=${SRCDIR}.tar.gz
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://dl.sf.net/sourceforge/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://prdownloads.sourceforge.net/${NAME}/${SRCARCHIVE}"
+#DL_URL="http://dl.sf.net/sourceforge/${NAME}/${SRCARCHIVE}"
+DL_URL="http://prdownloads.sourceforge.net/${NAME}/${SRCARCHIVE}"
 #DL_URL="http://download.sf.net/${NAME}/${SRCARCHIVE}"
-
-if [ "${ARCH}" = "i386" ]; then
-  SLKCFLAGS="-O2 -march=i386 -mtune=i686"
-  SLKTARGET=${SLKTARGET:-i486}
-elif [ "${ARCH}" = "i486" ]; then
-  SLKCFLAGS="-O2 -march=i486 -mtune=i686"
-  SLKTARGET=${SLKTARGET:-i486}
-elif [ "${ARCH}" = "i686" ]; then
-  SLKCFLAGS="-O2 -march=athlon64 -mtune=athlon64 -msse3 -pipe -fomit-frame-pointer"
-  SLKTARGET=${SLKTARGET:-i486}
-elif [ "${ARCH}" = "s390" ]; then
-  SLKCFLAGS="-O2"
-elif [ "${ARCH}" = "x86_64" ]; then
-  SLKCFLAGS="-O2"
-fi
 
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
   test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
 fi
 
 if [ -d ${PKG} ]; then
@@ -85,21 +97,44 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-#zcat ${CWD}/${NAME}-sharedffmpeg.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
-#sed -i -e '/#include <ffmpeg\/dsputil.h>/d' \
-#           src/xtoffmpeg.c || exit 1
+if [ "${SB_FFMPEG}" = "YES" ] ; then
+  # Fix for new ffmpeg revisions
+  sed -i -e '/avcodec.h/s|ffmpeg|libavcodec|g' \
+            src/codecs.c src/main.c src/xtoffmpeg.c
+  sed -i -e '/avformat.h/s|ffmpeg|libavformat|g' \
+            src/codecs.c src/xtoffmpeg.c || exit 1
+  sed -i \
+      -e '/avdevice.h/s|ffmpeg|libavdevice|g' \
+      -e '/swscale.h/,/rgb2rgb.h/s|ffmpeg|libswscale|g' \
+      -e '/ffmpeg\/fifo.h/s|ffmpeg|libavutil|g' \
+      src/xtoffmpeg.c || exit 1
+  sed -i -e 's|av_free_static|av_free|g' \
+            src/main.c src/ffmpeg.c
 
-sed -i -e 's|"ppm2mpeg.sh|"/usr/share/xvidcap/ppm2mpeg.sh|' src/app_data.c
+  SB_FFMPEGOPTS="--without-forced-embedded-ffmpeg"
+  export CPPFLAGS="$(pkg-config libavcodec libavformat libavdevice libswscale libavutil --cflags)"
+fi
 
-sed -i -e '/Categories=G/s|=.*|=GTK;AudioVideo;|g' \
+sed -i -e 's|--enable-libogg||g' configure.in || exit 1
+
+sed -i -e 's|"ppm2mpeg.sh|"/usr/share/xvidcap/ppm2mpeg.sh|' \
+           src/app_data.c || exit 1
+
+sed -i -e '/^Icon=/s|.png||g' \
            ${NAME}.desktop || exit 1
+
+autoreconf -ivf || exit 1
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -110,7 +145,7 @@ CXXFLAGS="${SLKCFLAGS}" \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
-  --with-forced-embedded-ffmpeg \
+  ${SB_FFMPEGOPTS} \
   --enable-libmp3lame \
   --enable-libtheora \
   --build=${SLKTARGET}-slackware-linux || exit 1
@@ -126,6 +161,11 @@ chmod 0755 ${PKG}/usr/share/xvidcap/ppm2mpeg.sh
   find . | xargs file | grep "current ar archive" | cut -f 1 -d : | xargs strip --strip-debug 2> /dev/null
 )
 
+desktop-file-install --delete-original --vendor="" \
+  --dir ${PKG}/usr/share/applications  \
+  --remove-category="Application" \
+  ${PKG}/usr/share/applications/*.desktop
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 rm -rf ${PKG}/usr/share/doc
@@ -138,7 +178,8 @@ find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -146,9 +187,11 @@ if [ -d ${PKG}/usr/man ]; then
       ( cd ${manpagedir}
         for eachpage in $( find . -type l -maxdepth 1) ; do
           ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
-          rm ${eachpage}
+          rm -f ${eachpage}
         done
         gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
       )
     done
   )
@@ -157,8 +200,8 @@ fi
 # Compress info pages, if any:
 if [ -d ${PKG}/usr/info ]; then
   ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
+    rm -f dir
+    gzip -9 *
   )
 fi
 
@@ -168,27 +211,36 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
 #!/bin/sh
-if [ -x /usr/bin/scrollkeeper-update ]; then
-  /usr/bin/scrollkeeper-update -q -o /usr/share/omf/${NAME} > /dev/null 2>&1
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/scrollkeeper-update ]; then
+  \${CHROOT} /usr/bin/scrollkeeper-update -q -o /usr/share/omf/${NAME} > /dev/null 2>&1
 fi
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${NAME}*.patch.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/${NAME}*.patch.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
-set +o xtrace			# no longer print commands upon execution
+set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
@@ -196,7 +248,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
 
-if test $UID = 0; then
+if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then

@@ -9,8 +9,8 @@ tmp=$(mktemp -d)
 
 trap cleanup EXIT
 cleanup() {
-    set +e
-    [ -z "$tmp" -o ! -d "$tmp" ] || rm -rf "$tmp"
+  set +e
+  [ -z "${tmp}" -o ! -d "${tmp}" ] || rm -rf "${tmp}"
 }
 
 unset CDPATH
@@ -20,7 +20,7 @@ snap=${snap:-$(date +%Y%m%d)}
 pushd "${tmp}"
   svn checkout -r {$snap} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    ./version.sh .
+    ./version.sh . version.h
     find . -type d -name .svn -print0 | xargs -0r rm -rf
     sed -i -e '/^\.PHONY: version\.h$/d' Makefile
   popd

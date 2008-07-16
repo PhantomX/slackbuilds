@@ -20,6 +20,9 @@ snap=${snap:-$(date +%Y%m%d)}
 pushd "${tmp}"
   svn checkout -r {$snap} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
+    # Fix svn revision
+    SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"
+    sed -i -e "/^revision=/s|=.*$|=${SVNREV}|g" autogen.sh
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd
   tar -jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}

@@ -46,7 +46,8 @@ zcat ${SB_PATCHDIR}/fix-kwallet.patch.gz | patch -p1 -E --backup --verbose || ex
 
 
 # KDEmod patches
-zcat ${SB_PATCHDIR}/02-kip_rounded_selection_box.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# Bugging iconview.
+#zcat ${SB_PATCHDIR}/02-kip_rounded_selection_box.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/03-kip_rubberband.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/04-execute_feedback.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/11-xinerama.patch.gz | patch -p1 -E --backup --verbose || exit 1

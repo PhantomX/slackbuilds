@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -46,9 +49,9 @@ PKG=${PKG:-${TMP}/package-${NAME}}
 if [ "${SNAPBUILD}" = "YES" ] ;then
   VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
 else
-  VERSION=${VERSION:-0.8}
+  VERSION=${VERSION:-0.9}
 fi
-if [ "${SB_NATIVE}" = "NO" ] ;then
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
@@ -72,6 +75,15 @@ DL_URL="http://hal.freedesktop.org/releases/${SRCARCHIVE}"
 SNAPUPDATE=${NAME}-snapshot.sh
 export snap=${VERSION}
 
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  if [ "${SNAPBUILD}" = "YES" ] ;then
+    test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+  else
+    test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+  fi
+fi
+
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
 else
@@ -83,15 +95,6 @@ else
     x86_64)      SLKCFLAGS="-O2 -fPIC"
                  ;;
   esac
-fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  if [ "${SNAPBUILD}" = "YES" ] ;then
-    test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
-  else
-    test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-  fi
 fi
 
 if [ -d ${PKG} ]; then
@@ -112,6 +115,8 @@ cd ${SRCDIR} || exit 1
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${CWD}/pk-ck-api-change.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
 
 # Remove pam header include cause shadow support do not needed.
 sed -i -e '/^#include <security\/pam_appl.h>/d' \
@@ -184,8 +189,8 @@ fi
 # Compress info pages, if any:
 if [ -d ${PKG}/usr/info ]; then
   ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
+    rm -f dir
+    gzip -9 *
   )
 fi
 
@@ -209,8 +214,27 @@ if ! grep --quiet '^polkituser:' etc/group ;then
             -g ${POLKIT_ID} \
             polkituser 2> /dev/null
 fi
-# Set up user.
-if ! grep --quiet '^polkituser:' etc/passwd ;then
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^polkituser:' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "polkituser"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+            -u ${POLKIT_ID} \
+            -g ${POLKIT_ID} \
+            -s /bin/false \
+            -d '/' \
+            ${OLD_USER} 2> /dev/null
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
   ${CHROOT} /usr/sbin/useradd \
             -u ${POLKIT_ID} \
             -g ${POLKIT_ID} \
@@ -244,8 +268,8 @@ EOF
 )
 
 cat >> ${PKG}/install/doinst.sh <<'EOF'
-${CHROOT} /bin/chown root.polkituser /usr/libexec/polkit-set-default-helper
-${CHROOT} /bin/chmod 2755 /usr/libexec/polkit-set-default-helper
+${CHROOT} /bin/chown polkituser.root /usr/libexec/polkit-set-default-helper
+${CHROOT} /bin/chmod 4755 /usr/libexec/polkit-set-default-helper
 
 ${CHROOT} /bin/chown root.polkituser /usr/libexec/polkit-read-auth-helper
 ${CHROOT} /bin/chmod 2755 /usr/libexec/polkit-read-auth-helper
@@ -253,18 +277,16 @@ ${CHROOT} /bin/chown root.polkituser /usr/libexec/polkit-revoke-helper
 ${CHROOT} /bin/chmod 2755 /usr/libexec/polkit-revoke-helper
 ${CHROOT} /bin/chown root.polkituser /usr/libexec/polkit-explicit-grant-helper
 ${CHROOT} /bin/chmod 2755 /usr/libexec/polkit-explicit-grant-helper
-${CHROOT} /bin/chown root.polkituser /usr/libexec/polkit-explicit-grant-helper
-${CHROOT} /bin/chmod 2755 /usr/libexec/polkit-explicit-grant-helper
 ${CHROOT} /bin/chown root.polkituser /usr/libexec/polkit-grant-helper
 ${CHROOT} /bin/chmod 2755 /usr/libexec/polkit-grant-helper
 ${CHROOT} /bin/chown root.polkituser /usr/libexec/polkit-grant-helper-shadow
-${CHROOT} /bin/chmod 4750 /usr/libexec/polkit-grant-helper-shadow
+${CHROOT} /bin/chmod 4754 /usr/libexec/polkit-grant-helper-shadow
 ${CHROOT} /bin/chown root.polkituser /usr/libexec/polkit-resolve-exe-helper
 ${CHROOT} /bin/chmod 4755 /usr/libexec/polkit-resolve-exe-helper
 
-${CHROOT} /bin/chown polkituser.polkituser /var/run/PolicyKit
+${CHROOT} /bin/chown root.polkituser /var/run/PolicyKit
 ${CHROOT} /bin/chmod 0770 /var/run/PolicyKit
-${CHROOT} /bin/chown polkituser.polkituser /var/lib/PolicyKit
+${CHROOT} /bin/chown polkituser.root /var/lib/PolicyKit
 ${CHROOT} /bin/chmod 0770 /var/lib/PolicyKit
 ${CHROOT} /bin/chown polkituser.polkituser /var/lib/PolicyKit-public
 ${CHROOT} /bin/chmod 0775 /var/lib/PolicyKit-public
@@ -278,25 +300,24 @@ EOF
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${SNAPUPDATE} ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/${SNAPUPDATE} ${CWD}/*.patch.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;
-  /bin/chmod 0770 var/run/PolicyKit ;
-  /bin/chmod 0770 var/lib/PolicyKit ;
-  /bin/chmod 0775 var/lib/PolicyKit-public ;"
+  /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "

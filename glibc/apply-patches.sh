@@ -45,3 +45,6 @@ zcat ${SB_PATCHDIR}/fix-makecontext.patch.gz | patch -p1 --verbose || exit 1
 # fix some broken locales (upstream fixes)
 zcat ${SB_PATCHDIR}/fix_broken_locales.patch.gz | patch -p1 --verbose || exit 1
 
+# Update manuals
+zcat ${SB_PATCHDIR}/glibc-2.7-branch_update-1A.patch.gz | patch -p1 --verbose || exit 1
+

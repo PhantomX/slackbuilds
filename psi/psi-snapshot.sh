@@ -9,8 +9,8 @@ tmp=$(mktemp -d)
 
 trap cleanup EXIT
 cleanup() {
-    set +e
-    [ -z "$tmp" -o ! -d "$tmp" ] || rm -rf "$tmp"
+  set +e
+  [ -z "$tmp" -o ! -d "$tmp" ] || rm -rf "$tmp"
 }
 
 unset CDPATH

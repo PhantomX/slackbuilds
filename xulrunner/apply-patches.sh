@@ -12,5 +12,8 @@ zcat ${SB_PATCHDIR}/mozilla-mochitest.patch.gz | patch -p1 -E --backup --verbose
 # Fedora specific patches
 zcat ${SB_PATCHDIR}/mozilla-pkgconfig.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
+# Fix build with system hunspell (from gentoo)
+zcat ${SB_PATCHDIR}/mozilla-system-hunspell-corrections.patch.gz | patch -p0 -E --backup --verbose || exit 1
+
 # Upstream patches
 zcat ${SB_PATCHDIR}/mozilla-ps-pdf-simplify-operators.patch.gz | patch -p1 -E --backup --verbose || exit 1

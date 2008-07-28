@@ -1,7 +1,7 @@
 
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-2.6.0-desktop.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-2.6.4-desktop.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.6.0-boolean.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # abiword-plugins

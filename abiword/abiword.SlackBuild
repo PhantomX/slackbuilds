@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -40,9 +43,9 @@ fi
 NAME=abiword
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.6.2}
-SVER=$(echo ${VERSION} | awk -F. '{ print $1"."$2 }')
-if [ "${SB_NATIVE}" = "NO" ] ;then
+VERSION=${VERSION:-2.6.4}
+SVER=$(echo ${VERSION} | cut -d . -f1-2)
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
@@ -74,6 +77,16 @@ DL_URL2="http://abisource.com/downloads/${NAME}/${VERSION}/source"
 #DL_URL="http://prdownloads.sourceforge.net/${NAME}/${SRCARCHIVE}"
 #DL_URL="http://download.sf.net/${NAME}/${SRCARCHIVE}"
 
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+for file in ${SRCARCHIVES} ;do
+  if ! test -r ${file}; then
+    test -r ${CWD}/${file} || wget ${DL_OPTS} ${DL_URL2}/${file} || exit 1
+  fi
+done
+
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
 else
@@ -86,16 +99,6 @@ else
                  ;;
   esac
 fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-fi
-for file in ${SRCARCHIVES} ;do
-  if ! test -r ${file}; then
-    test -r ${CWD}/${file} || wget ${DL_OPTS} ${DL_URL2}/${file} || exit 1
-  fi
-done
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -126,8 +129,10 @@ chmod -R u+w,go+r-w,a-s .
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
+sed -i -e '/str/s|/icons/abiword_48.png|/icons/hicolor/48x48/apps/abiword.png|g' \
+    src/af/xap/unix/xap_UnixDlg_About.cpp || exit 1
 
-sed -i -e '/Icon=/s|_48\.png||g' \
+sed -i -e '/Icon=/s|_48||g' \
            ${NAME}.desktop || exit 1
 
 export CFLAGS="${SLKCFLAGS}"
@@ -151,22 +156,18 @@ SB_CONFIGURE() {
 }
 
 SB_CONFIGURE \
-  --with-libxml2 ${SB_GNOMEOPTS} || exit 1
+  --with-libxml2 --enable-libabiword ${SB_GNOMEOPTS} || exit 1
 
 make -j${NJOBS} || exit 1
 
 # build abiword-plugins
 ( cd ${SRCDIR2} || exit 1
-  # we need to re-autogen, as we have changed the abicollab automake configuration
-  zcat ${CWD}/nextgen.sh.gz > nextgen.sh || exit 1
-  chmod 755 nextgen.sh
-  ./nextgen.sh || exit 1
+  export PKG_CONFIG_PATH="${TMP}/${SRCDIR}"
+  CXXFLAGS="-L${TMP}/${SRCDIR}/src/wp/main/unix/" \
   SB_CONFIGURE \
     --disable-gda \
-    --disable-gremlin \
-    --disable-abicapi \
-    --disable-presentation \
-    --with-abiword=../ || exit 1
+    --enable-libabiword \
+    --with-abiword=${TMP}/${SRCDIR} || exit 1
   # Remove libtool predep_objects and postdep_objects wonkiness so that
   # building without -nostdlib doesn't include them twice.  Because we
   # already link with g++, weird stuff happens if you don't let the
@@ -181,9 +182,8 @@ make -j${NJOBS} || exit 1
 ( cd ${SRCDIR3} || exit 1
   # abiword-extras looks at the abiword-${VERSION}.pc pkg-config file to get its location info 
   # however, that file is not installed yet, so just point to it in the abiword source tree 
-  export PKG_CONFIG_PATH="../"
-  # we need to re-autogen, as we have changed the destdir configuration
-  ./autogen.sh
+  export PKG_CONFIG_PATH="${TMP}/${SRCDIR}"
+  SB_CONFIGURE || exit 1
   make || exit 1
 ) || exit 1
 
@@ -194,6 +194,8 @@ make -j${NJOBS} || exit 1
 
 # install abiword
 make install DESTDIR=${PKG} || exit 1
+# overwrite the static binary with the dynamic one
+mv -f src/wp/main/unix/abiword-dynamic ${PKG}/usr/bin/abiword || exit 1
 # Fix script permission
 chmod +x ${PKG}/usr/share/${NAME}-*/scripts/abw2html.pl
 
@@ -210,7 +212,7 @@ chmod +x ${PKG}/usr/share/${NAME}-*/scripts/abw2html.pl
 ( cd ${SRCDIR4} || exit 1
   mkdir -p ${PKG}/usr/share/${NAME}-${SVER}/AbiWord/help
   cp -rp help/* ${PKG}/usr/share/${NAME}-${SVER}/AbiWord/help/
-  # some of the help dirs have bad perms (#109261)
+  # some of the help dirs have bad perms
   find ${PKG}/usr/share/${NAME}-${SVER}/AbiWord/help/ -type d -exec chmod -c o+rx {} \;
 ) || exit 1
 
@@ -237,7 +239,7 @@ application/x-abiword
 EOF
 
 mkdir -p ${PKG}/usr/share/icons/hicolor/48x48/apps
-cp ${NAME}_48.png \
+mv ${PKG}/usr/share/icons/${NAME}_48.png \
    ${PKG}/usr/share/icons/hicolor/48x48/apps/${NAME}.png || exit 1
 
 # Add a documentation directory:
@@ -250,7 +252,8 @@ find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -271,8 +274,8 @@ fi
 # Compress info pages, if any:
 if [ -d ${PKG}/usr/info ]; then
   ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
+    rm -f dir
+    gzip -9 *
   )
 fi
 
@@ -283,18 +286,20 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}/patches
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/apply-patches.sh ${CWD}/*.sh.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-install -m0644 ${CWD}/patches/*.gz \
-               ${SBDIR}/patches/
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution

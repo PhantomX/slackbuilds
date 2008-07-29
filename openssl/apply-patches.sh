@@ -25,9 +25,5 @@ zcat ${SB_PATCHDIR}/${NAME}-0.9.8g-no-extssl.patch.gz | patch -p1 -E --backup --
 #zcat ${SB_PATCHDIR}/${NAME}-0.9.7-beta6-ia64.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.9.6-x509.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.9.7-beta5-version-add-engines.patch.gz | patch -p1 -E --backup --verbose || exit 1
-#zcat ${SB_PATCHDIR}/${NAME}-0.9.8a-reuse-cipher-change.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-0.9.8a-reuse-cipher-change.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.9.8g-ipv6-apps.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-# Backported fixes including security fixes
-zcat ${SB_PATCHDIR}/${NAME}-0.9.8g-speed-bug.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-0.9.8g-bn-mul-bug.patch.gz | patch -p1 -E --backup --verbose || exit 1

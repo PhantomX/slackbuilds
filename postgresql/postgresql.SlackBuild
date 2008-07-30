@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -40,12 +43,12 @@ fi
 NAME=postgresql
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-8.3.0}
-DVER=${DVER:-8.3.0}
+VERSION=${VERSION:-8.3.3}
+DVER=${DVER:-8.3.3}
 PVER=${PVER:-3.8.1}
 TVER=${TVER:-1.6.2}
 DTVER=${DTVER:-20070115}
-if [ "${SB_NATIVE}" = "NO" ] ;then
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
@@ -82,19 +85,6 @@ DL_URL2="http://www.postgresql.org/docs/manuals/${SRCARCHIVE2}"
 DL_URL3="ftp://ftp.pygresql.org/pub/distrib/${SRCARCHIVE3}"
 DL_URL4="http://pgfoundry.org/projects/pgtclng"
 
-if [ "${SB_NATIVE}" = "YES" ] ;then
-  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
-else
-  case "${ARCH}" in
-    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
-                 ;;
-    s390)        SLKCFLAGS="-O2"
-                 ;;
-    x86_64)      SLKCFLAGS="-O2 -fPIC"
-                 ;;
-  esac
-fi
-
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
   test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
@@ -110,6 +100,19 @@ for file in ${SRCARCHIVE4} ${SRCARCHIVE5} ;do
   test -r ${CWD}/${file} || wget ${DL_OPTS} ${DL_URL4}/${file} || exit 1
   fi
 done
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -243,10 +246,9 @@ mkdir -p ${PKG}/usr/lib/Pgtcl
 cp Pgtcl/pkgIndex.tcl ${PKG}/usr/lib/Pgtcl/ || exit 1
 cp Pgtcl/libpgtcl*.so ${PKG}/usr/lib/Pgtcl/ || exit 1
 
-chmod 0700 ${PKG}/var/lib/pgsql
-
 # PGDATA needs removal of group and world permissions due to pg_pwd hole.
 mkdir -p ${PKG}/var/lib/pgsql/data
+chmod 0700 ${PKG}/var/lib/pgsql
 chmod 700 ${PKG}/var/lib/pgsql/data
 
 # backups of data go here...
@@ -263,8 +265,8 @@ chmod 0700 ${PKG}/etc/pgsql
 
 mkdir -p ${PKG}/etc/rc.d
 zcat ${CWD}/rc.${NAME}.gz | sed "s/^PGVERSION=.*$/PGVERSION=${VERSION}/" > \
-     ${PKG}/etc/rc.d/rc.${NAME} || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME} || exit 1
+     ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
+chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
 zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
@@ -292,7 +294,8 @@ find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -313,8 +316,8 @@ fi
 # Compress info pages, if any:
 if [ -d ${PKG}/usr/info ]; then
   ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
+    rm -f dir
+    gzip -9 *
   )
 fi
 
@@ -327,8 +330,8 @@ cat > ${PKG}/install/doinst.sh <<'EOF'
 ROOTDIR=$(pwd)
 unset CHROOT
 if test "${ROOTDIR}" != "/"; then
- 	CHROOT="chroot ${ROOTDIR} "
- 	ROOTDIR="${ROOTDIR}/"
+  CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
 
 GROUP_ID=26
@@ -339,8 +342,29 @@ if ! grep --quiet '^postgres:' etc/group ;then
             postgres 2> /dev/null
 fi
 
-# Set up user.
-if ! grep --quiet '^postgres:' etc/passwd ;then
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^postgres:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/lib/pgsql:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "postgres"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+            -d /var/lib/pgsql \
+            -u ${USER_ID} \
+            -s /bin/bash \
+            -g postgres \
+            ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
   ${CHROOT} /usr/sbin/useradd \
             -c 'PostgreSQL Server' \
             -u ${GROUP_ID} \
@@ -349,7 +373,6 @@ if ! grep --quiet '^postgres:' etc/passwd ;then
             -d /var/lib/pgsql \
             postgres 2> /dev/null
 fi
-
 EOF
 
 cat >> ${PKG}/install/doinst.sh <<EOF
@@ -365,6 +388,14 @@ config() {
   fi
   # Otherwise, we leave the .new copy for the admin to consider...
 }
+
+# Keep same perms on rc.${NAME}.new:
+if [ -e etc/rc.d/rc.${NAME} ]; then
+  cp -a etc/rc.d/rc.${NAME} etc/rc.d/rc.${NAME}.new.incoming
+  cat etc/rc.d/rc.${NAME}.new > etc/rc.d/rc.${NAME}.new.incoming
+  mv etc/rc.d/rc.${NAME}.new.incoming etc/rc.d/rc.${NAME}.new
+fi
+
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
@@ -387,20 +418,22 @@ EOF
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}/patches
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/apply-patches.sh ${CWD}/${NAME}-bashprofile.gz ${CWD}/*.h.gz \
-               ${CWD}/README.*.gz ${CWD}/{rc.,setup.onlyonce.rc}*.gz \
-               ${CWD}/Makefile*.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-install -m0644 ${CWD}/patches/*.gz \
-               ${SBDIR}/patches/
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${CWD}/${NAME}-bashprofile.gz ${CWD}/*.h.gz \
+                 ${CWD}/README.*.gz ${CWD}/{rc.,setup.onlyonce.rc}*.gz \
+                 ${CWD}/Makefile*.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution

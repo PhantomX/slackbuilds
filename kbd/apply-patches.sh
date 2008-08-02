@@ -15,3 +15,4 @@ zcat ${SB_PATCHDIR}/${NAME}-1.12-no-user-map.patch.gz | patch -p1 -E --backup --
 zcat ${SB_PATCHDIR}/${NAME}-1.12-gr-el.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.12-keycodes-man.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.12-resizecon-x86.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.12-trq-map.patch.gz | patch -p1 -E --backup --verbose || exit 1

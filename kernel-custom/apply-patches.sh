@@ -43,6 +43,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-x86-dont-map-vdso-when-disabled.patch.gz | ${PATCH
 zcat ${SB_PATCHDIR}/linux-2.6-x86-dont-use-disabled-vdso-for-signals.patch.gz | ${PATCHCOM} || exit 1
 # dump *PIC state at boot with apic=debug
 zcat ${SB_PATCHDIR}/linux-2.6-x86-apic-dump-all-regs-v3.patch.gz | ${PATCHCOM} || exit 1
+# fix 64-bit resource on 32-bit kernels
+zcat ${SB_PATCHDIR}/linux-2.6-x86-mm-ioremap-64-bit-resource-on-32-bit-kernel.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # bugfixes to drivers and filesystems
@@ -99,8 +101,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-fs-fat-relax-permission-check-of-fat_setattr.patch
 # Networking
 # Disable easy to trigger printk's.
 zcat ${SB_PATCHDIR}/linux-2.6-net-silence-noisy-printks.patch.gz | ${PATCHCOM} || exit 1
-# CVE-2008-2750: l2tp heap overflow
-zcat ${SB_PATCHDIR}/linux-2.6-net-l2tp-fix-potential-memory-corruption-in-pppol2tp_recvmsg.patch.gz | ${PATCHCOM} || exit 1
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
@@ -123,10 +123,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-libata-be-a-bit-more-slack-about-early-devices.pat
 zcat ${SB_PATCHDIR}/linux-2.6-sata-eeepc-faster.patch.gz | ${PATCHCOM} || exit 1
 # fix dock/undock on docking stations that have a bay
 zcat ${SB_PATCHDIR}/linux-2.6-libata-acpi-handle-bay-devices-in-dock-stations.patch.gz | ${PATCHCOM} || exit 1
-# fix DMA disable on atiixp
-zcat ${SB_PATCHDIR}/linux-2.6-libata-pata_atiixp-dont-disable.patch.gz | ${PATCHCOM} || exit 1
-# retry enabling AHCI mode before reporting error
-zcat ${SB_PATCHDIR}/linux-2.6-libata-retry-enabling-ahci.patch.gz | ${PATCHCOM} || exit 1
 # fix ahci / ich6m conflict
 zcat ${SB_PATCHDIR}/linux-2.6-libata-ata_piix-dont-attach-to-ich6m-in-ahci-mode.patch.gz | ${PATCHCOM} || exit 1
 # fix calling sleeping function in irq context (#451896, #454954)

@@ -15,6 +15,7 @@ zcat ${SB_PATCHDIR}/${NAME}-3.4.92-inttype.patch.gz | patch -p1 --verbose --back
 zcat ${SB_PATCHDIR}/${NAME}-3.5.2-kdebug-kmail-quiet.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.2-cupsdconf2-group.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.4-kabc-make.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.4-kdeprint-utf8.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.6-lang.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.8-kate-vhdl.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-cupsserverbin.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
@@ -51,4 +52,5 @@ zcat ${SB_PATCHDIR}/fix-kwallet.patch.gz | patch -p1 -E --backup --verbose || ex
 zcat ${SB_PATCHDIR}/03-kip_rubberband.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/04-execute_feedback.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/11-xinerama.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/12-kspell_spellcheck_default_utf8.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/13-konqueror_textcompletion_editor.patch.gz | patch -p1 -E --backup --verbose || exit 1

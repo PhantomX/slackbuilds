@@ -17,6 +17,4 @@ zcat ${SB_PATCHDIR}/${NAME}-runlibfileifexists.patch.gz | patch -p1 --verbose ||
 zcat ${SB_PATCHDIR}/${NAME}-system-jasper.patch.gz | patch -p1 --verbose || exit 1
 # Fix pksmraw output (bug #308211).
 zcat ${SB_PATCHDIR}/${NAME}-pksmraw.patch.gz | patch -p1 --verbose || exit 1
-# Applied patch from upstream to fix box_fill_path for shfill
-zcat ${SB_PATCHDIR}/${NAME}-r8591.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-incomplete-ccittfax.patch.gz | patch -p1 --verbose || exit 1
+

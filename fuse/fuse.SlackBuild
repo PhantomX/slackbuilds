@@ -43,14 +43,14 @@ fi
 NAME=fuse
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.7.3}
+VERSION=${VERSION:-2.7.4}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
 fi
 SLKTARGET=${SLKTARGET:-i486}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -103,7 +103,7 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-#disable device creation during build/install
+# disable device creation during build/install
 sed -i 's|mknod|echo Disabled: mknod |g' util/Makefile.in || exit 1
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
@@ -125,6 +125,8 @@ CXXFLAGS="${SLKCFLAGS}" \
   --mandir=/usr/man \
   --with-pkgconfigdir=/usr/lib/pkgconfig \
   --docdir=/usr/doc/${NAME}-${VERSION} \
+  --enable-lib \
+  --enable-util \
   --disable-kernel-module \
   --build=${SLKTARGET}-slackware-linux || exit 1
 
@@ -135,39 +137,24 @@ find ${PKG} -type f -name "*.la" -exec rm -f {} ';'
 # Get rid of static libs
 rm -f ${PKG}/lib/*.a
 
-# Put pc file in correct place
-if [ -f ${PKG}/lib/pkgconfig ] ;then
-  mkdir -p ${PKG}/usr/lib
-  mv ${PKG}/lib/pkgconfig ${PKG}/usr/lib/ || exit 1
-fi
-
-# FIXME change from 60 to 99
-# mkdir -p ${PKG}/etc/udev/makedev.d/
-# install -p -m 0644 ${CWD}/${NAME}-udev.nodes.gz \
-#                       ${PKG}/etc/udev/makedev.d/99-fuse.nodes
-# mkdir -p ${PKG}/etc/makedev.d/
-# install -p -m 0644 ${CWD}/${NAME}-makedev.d-fuse \
-#                       ${PKG}/etc/makedev.d/z-fuse
-
-# change from 4755 to 0755 to allow stripping -- fixed later in files
 chmod 0755 ${PKG}/bin/fusermount
 
-rmdir ${PKG}/dev
+rm -rf ${PKG}/dev
 
 # Compatibility symlinks
 mkdir -p ${PKG}/usr/bin
 ( cd ${PKG}/usr/bin
-  ln -s /bin/fusermount fusermount || exit 1
-  ln -s /bin/ulockmgr_server ulockmgr_server || exit 1
+  ln -s ../../bin/fusermount fusermount || exit 1
+  ln -s ../../bin/ulockmgr_server ulockmgr_server || exit 1
 ) || exit 1
 
 # adapt startup/stop script to slackware
-if test -d ${PKG}/etc/init.d; then
+if [ -d ${PKG}/etc/init.d ] ; then
   mkdir ${PKG}/etc/rc.d
   sed 's,/etc/init\.d/,/etc/rc.d/rc.,g' \
-       ${PKG}/etc/init.d/fuse > ${PKG}/etc/rc.d/rc.fuse || exit 1
+       ${PKG}/etc/init.d/fuse > ${PKG}/etc/rc.d/rc.fuse.new || exit 1
   rm -rf ${PKG}/etc/init.d || exit 1
-  chmod 0755 ${PKG}/etc/rc.d/rc.fuse
+  chmod 0755 ${PKG}/etc/rc.d/rc.fuse.new
 fi
 
 mkdir -p ${PKG}/var/log/setup
@@ -185,8 +172,8 @@ chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 mkdir -p ${DOCDIR}
 cp -a \
   AUTHORS ChangeLog COPYING* FAQ Filesystems NEWS README README.NFS \
-  ${CWD}/ChangeLog.SB ${DOCDIR}/
-zcat ${CWD}/${NAME}-README.fedora.gz > ${DOCDIR}/README.fedora
+  doc/how-fuse-works ${CWD}/ChangeLog.SB ${DOCDIR}/
+zcat ${CWD}/${NAME}-README.fedora.gz > ${DOCDIR}/README.security
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
@@ -214,8 +201,8 @@ fi
 # Compress info pages, if any:
 if [ -d ${PKG}/usr/info ]; then
   ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
+    rm -f dir
+    gzip -9 *
   )
 fi
 
@@ -249,7 +236,32 @@ if ! grep --quiet '^fuse:' etc/group ;then
 fi
 EOF
 
+cat >> ${PKG}/install/doinst.sh <<EOF
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+# Keep same perms on rc.${NAME}.new:
+if [ -e etc/rc.d/rc.${NAME} ]; then
+  cp -a etc/rc.d/rc.${NAME} etc/rc.d/rc.${NAME}.new.incoming
+  cat etc/rc.d/rc.${NAME}.new > etc/rc.d/rc.${NAME}.new.incoming
+  mv etc/rc.d/rc.${NAME}.new.incoming etc/rc.d/rc.${NAME}.new
+fi
+
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
 ( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
   echo '# Fix permissions' >> ${PKG}/install/doinst.sh
   echo '${CHROOT} /bin/chown root.fuse /bin/fusermount' >> ${PKG}/install/doinst.sh
@@ -263,9 +275,8 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}*.patch.gz ${CWD}/${NAME}-README.*.gz  \
-                 ${CWD}/${NAME}-udev.nodes.gz ${CWD}/setup.onlyonce.rc*.gz \
-                 ${CWD}/${NAME}-makedev*.gz ${SBDIR}/
+                 ${CWD}/${NAME}*.patch.gz ${CWD}/${NAME}-README.*.gz \
+                 ${CWD}/setup.onlyonce.rc*.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/

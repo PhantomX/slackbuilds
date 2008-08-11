@@ -43,8 +43,8 @@ fi
 NAME=oss
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-4.1-080509}
-SVER="$(echo ${VERSION} | cut -d . -f1-2)"
+VERSION=${VERSION:-4.1-080705}
+SVER="$(echo ${VERSION} | cut -d - -f1)"
 BVER="$(echo ${VERSION} | cut -d - -f2)"
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -87,6 +87,8 @@ else
   esac
 fi
 
+unset CFLAGS CXXFLAGS CPPFLAGS OSFLAGS LIBRARIES
+
 if [ -d ${PKG} ]; then
   # Clean up a previous build
   rm -rf ${PKG}
@@ -96,70 +98,130 @@ mkdir -p ${PKG}
 cd ${TMP}
 rm -rf ${SRCDIR}
 mkdir -p ${SRCDIR}/build
+cd ${SRCDIR} || exit 1
 if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
   tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
 elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
   tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
 fi
-cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
 FSRCDIR="${TMP}/${SRCDIR}/${RSRCDIR}"
-
-# Avoid these flags conflicting with OSS build system.
-unset CFLAGS
-unset OSFLAGS
-unset LIBRARIES
+OSSETC=/etc/oss
 
 ( cd build || exit 1
 
- "${FSRCDIR}/configure" || exit 1
+  "${FSRCDIR}/configure" || exit 1
 
- make build || return 1
+  sed -i -e 's|/usr/lib/oss/etc|/etc/oss|g' \
+    os_cmd/Linux/ossdetect/ossdetect.c \
+    cmd/ossdevlinks/ossdevlinks.c \
+    cmd/savemixer/savemixer.c || exit 1
+  
+  for file in $(find -name "*.man") ;do
+    sed -i -e 's|/usr/lib/oss/etc|/etc/oss|g' ${file} 
+  done
 
-  ( cd prototype || exit 1
+  sed -i -e '/^SUBDIRS=/s|=.*$|=cmd lib os_cmd|g' Makefile || exit 1
+  echo > .makefile
+  sed -i -e '/^SUBDIRS=/s|=.*$|=libOSSlib|g' lib/Makefile || exit 1
 
-    # ALSA emulation is currently outdated (exports an old ALSA API).
-    # Disable it to avoid symbol conflicts with software linked against
-    # the newer ALSA API.
-    rm -f usr/lib/osslibsalsa.so* || exit 1
+  for file in $(find cmd os_cmd -name Makefile) ;do
+    sed -i \
+        -e "/^CFLAGS=/s|=.*$|=${SLKCFLAGS}|g" \
+        -e "/^LDFLAGS=/s|$| ${LDFLAGS}|g" ${file} || exit 1
+  done
 
-    # Copy libflashsupport, so Flash plugin works by default.
-    cp "${FSRCDIR}/oss/lib/flashsupport.c" usr/lib/oss/lib/ || exit 1
+  sed -i \
+      -e "/^CFLAGS=/s|=.*$|=${SLKCFLAGS} -fPIC|g" \
+      -e "/^LDFLAGS=/s|$| ${LDFLAGS}|g" lib/libOSSlib/Makefile || exit 1
 
-    rm -f usr/lib/oss/etc/S89oss
-    zcat ${CWD}/${NAME}.rm-init-scripts.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-    cp -R * ${PKG}/ || exit 1
+  make build || exit 1
 
 ) || exit 1
 
-mv ${PKG}/etc/${NAME}.conf ${PKG}/etc/${NAME}.conf.new || exit 1
+( cd build/prototype || exit 1
+
+  # ALSA emulation is currently outdated (exports an old ALSA API).
+  # Disable it to avoid symbol conflicts with software linked against
+  # the newer ALSA API.
+  rm -f usr/lib/libsalsa.so*
+
+  cp -R * ${PKG}/ || exit 1
+    
+) || exit 1
+
+rm -rf ${PKG}/etc
+mkdir -p ${PKG}/${OSSETC}/conf
+
+for conf in ${PKG}/usr/lib/oss/conf.tmpl/*.conf ; do
+  confbase=$(basename ${conf})
+  install -m0644 ${conf} ${PKG}/${OSSETC}/conf/${confbase}.new
+done
+
+rm -f ${PKG}/${OSSETC}/devices.list
+for file in $(find build/kernel/ -name .devices) ;
+do
+  cat ${file} >> ${PKG}/${OSSETC}/devices.list
+done
+
+mkdir -p ${PKG}/usr/share/misc
+mv ${PKG}/usr/lib/oss/version.dat ${PKG}/usr/share/misc/ossversion.dat || exit 1
+
+mv ${PKG}/usr/lib/oss/lib/*.so ${PKG}/usr/lib/ || exit 1
+
+rm -rf ${PKG}/usr/lib/oss
+
+rm -f ${PKG}/usr/sbin/sound*
 
 # Startup scripts.
 mkdir -p ${PKG}/etc/rc.d
 zcat ${CWD}/rc.${NAME}.gz > \
-     ${PKG}/etc/rc.d/rc.${NAME} || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}
+     ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
+chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}.new
 
 mkdir -p ${PKG}/var/log/setup
 zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
     ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}
 
+mkdir -p ${PKG}/var/log
+
+touch ${PKG}/var/log/${NAME}.log
+touch ${PKG}/${OSSETC}/installed_drivers
+touch ${PKG}/${OSSETC}/legacy_devices
+
 ( cd ${PKG}
   find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
   find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
-  find . | xargs file | grep "current ar archive" | cut -f 1 -d : | xargs strip --strip-debug 2> /dev/null
 )
+
+mkdir -p ${PKG}/usr/share/applications
+cat > ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
+[Desktop Entry]
+Encoding=UTF-8
+Name=OSSmix
+Comment=OSS mixer tool
+Exec=ossxmix
+Icon=ossxmix
+Terminal=false
+Type=Application
+StartupNotify=false
+Categories=GTK;AudioVideo;
+EOF
+
+mkdir -p ${PKG}/usr/share/icons/hicolor/{48x48,scalable}/apps
+zcat ${CWD}/ossxmix.png.gz > \
+     ${PKG}/usr/share/icons/hicolor/48x48/apps/ossxmix.png || exit 1
+zcat ${CWD}/ossxmix.svg.gz > \
+     ${PKG}/usr/share/icons/hicolor/scalable/apps/ossxmix.svg || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
-cp -a \
-  AUTHORS COPYING ChangeLog LICENSE README NEWS THANKS TODO ${CWD}/ChangeLog.SB \
+cp -a ${FSRCDIR}/{COPYING,Changelog,RELNOTES.txt} ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
@@ -206,10 +268,6 @@ if test "\${ROOTDIR}" != "/"; then
   CHROOT="chroot \${ROOTDIR} "
   ROOTDIR="\${ROOTDIR}/"
 fi
-# Install the info files for this package
-if [ -x usr/bin/install-info ] ; then
-  \${CHROOT} /usr/bin/install-info --info-dir=/usr/info usr/info/${NAME}.info.gz 2>/dev/null
-fi
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -222,6 +280,14 @@ config() {
   fi
   # Otherwise, we leave the .new copy for the admin to consider...
 }
+
+# Keep same perms on rc.${NAME}.new:
+if [ -e etc/rc.d/rc.${NAME} ]; then
+  cp -a etc/rc.d/rc.${NAME} etc/rc.d/rc.${NAME}.new.incoming
+  cat etc/rc.d/rc.${NAME}.new > etc/rc.d/rc.${NAME}.new.incoming
+  mv etc/rc.d/rc.${NAME}.new.incoming etc/rc.d/rc.${NAME}.new
+fi
+
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
@@ -230,6 +296,15 @@ EOF
   echo >> ${PKG}/install/doinst.sh
 )
 
+cat > ${PKG}/install/doinst.sh <<'EOF'
+if [ -f etc/oss/installed_drivers ] ;then
+  ${CHROOT} /bin/rm -f /etc/oss/installed_drivers
+fi
+if [ -f etc/oss/legacy_devices ] ;then
+  ${CHROOT} /bin/rm -f /etc/oss/legacy_devices
+fi
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -237,7 +312,8 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/rc.${NAME}.gz ${CWD}/setup.*.rc${NAME}.gz ${SBDIR}/
+                 ${CWD}/rc.${NAME}.gz ${CWD}/setup.*.rc${NAME}.gz \
+                 ${CWD}/COPYING.*.gz ${CWD}/ossxmix.*.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/

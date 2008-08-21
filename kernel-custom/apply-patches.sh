@@ -32,8 +32,6 @@ if [ "$C" -gt 10 ]; then
   zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | ${PATCHCOM} || exit 1
 fi
 
-zcat ${SB_PATCHDIR}/linux-2.6-stable-queue.patch.gz | ${PATCHCOM} || exit 1
-
 # revert patches from upstream that conflict or that we get via other means
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-upstream-reverts.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
@@ -63,7 +61,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 
 # USB
 zcat ${SB_PATCHDIR}/linux-2.6-usb-ehci-hcd-respect-nousb.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-usb-storage-nikond80-quirk.patch.gz | ${PATCHCOM} || exit 1
 
 # ACPI
 

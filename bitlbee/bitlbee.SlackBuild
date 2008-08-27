@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -40,14 +43,14 @@ fi
 NAME=bitlbee
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.0.4}
-if [ "${SB_NATIVE}" = "NO" ] ;then
+VERSION=${VERSION:-1.2.2}
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
 fi
 SLKTARGET=${SLKTARGET:-i486}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -63,6 +66,11 @@ DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://get.bitlbee.org/src/${SRCARCHIVE}"
 
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
 else
@@ -74,11 +82,6 @@ else
     x86_64)      SLKCFLAGS="-O2 -fPIC"
                  ;;
   esac
-fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 fi
 
 if [ -d ${PKG} ]; then
@@ -99,7 +102,16 @@ cd ${SRCDIR} || exit 1
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-1.2.2-libresolv.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
+sed -i \
+    -e 's|\$\(BINDIR\)|\$(sbindir)|g' \
+    -e 's|\$\(DATADIR\)|\$(datadir)/bitlbee|g' \
+    -e 's|\$\(ETCDIR\)|\$(sysconfdir)/bitlbee|g' \
+    -e 's|\$\(MANDIR\)|\$(mandir)|g' \
+    Makefile */Makefile */*/Makefile || exit 1
+
+CFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
   --bindir=/usr/sbin \
@@ -108,10 +120,8 @@ chmod -R u+w,go+r-w,a-s .
   --datadir=/usr/share/${NAME} \
   --config=/var/lib/${NAME} \
   --ssl=gnutls \
-  --strip=0 || exit 1
-
-sed -i -e "/^CFLAGS=/s/=.*$/=${SLKCFLAGS}/" \
-          Makefile.settings || exit 1
+  --strip=0 \
+  --plugins=1 || exit 1
 
 make -j${NJOBS} || exit 1
 make install DESTDIR=${PKG} || exit 1
@@ -131,8 +141,8 @@ zcat ${CWD}/${NAME}opts.conf.gz >\
 
 mkdir -p ${PKG}/etc/rc.d
 zcat ${CWD}/rc.${NAME}.gz > \
-     ${PKG}/etc/rc.d/rc.${NAME} || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME} || exit 1
+     ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
+chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
 zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
@@ -172,14 +182,6 @@ if [ -d ${PKG}/usr/man ]; then
         rm -f *.gz.gz
       )
     done
-  )
-fi
-
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
   )
 fi
 
@@ -255,12 +257,6 @@ EOF
 
 
 cat >> ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
-# Install the info files for this package
-if [ -x /usr/bin/install-info ]
-then
-   /usr/bin/install-info --info-dir=/usr/info /usr/info/${NAME}.info.gz 2>/dev/null
-fi
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -273,6 +269,14 @@ config() {
   fi
   # Otherwise, we leave the .new copy for the admin to consider...
 }
+
+# Keep same perms on rc.${NAME}.new:
+if [ -e etc/rc.d/rc.${NAME} ]; then
+  cp -a etc/rc.d/rc.${NAME} etc/rc.d/rc.${NAME}.new.incoming
+  cat etc/rc.d/rc.${NAME}.new > etc/rc.d/rc.${NAME}.new.incoming
+  mv etc/rc.d/rc.${NAME}.new.incoming etc/rc.d/rc.${NAME}.new
+fi
+
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
@@ -295,7 +299,7 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 mkdir -p ${SBDIR}
 install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
                ${CWD}/${NAME}opts.conf.gz ${CWD}/{rc.,setup.onlyonce.rc}*.gz \
-               ${CWD}/${NAME}.xinetd.gz ${SBDIR}/
+               ${CWD}/${NAME}.xinetd.gz ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
 install -m0755 ${CWD}/${NAME}.SlackBuild \
                ${SBDIR}/${NAME}.SlackBuild
 sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/

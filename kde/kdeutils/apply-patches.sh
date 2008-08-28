@@ -8,4 +8,3 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.4-bz\#205553.patch.gz | patch -p1 --verbose || e
 
 # KDEmod patches
 zcat ${SB_PATCHDIR}/04_xmms-dynamic.patch.gz | patch -p1 --verbose || exit 1
-

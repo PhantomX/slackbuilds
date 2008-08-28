@@ -3,10 +3,6 @@ SB_PATCHDIR=${CWD}/patches
 
 #zcat ${SB_PATCHDIR}/kdebase.startkde.xdg.diff.gz | patch -p1 --verbose --suffix=.orig --backup || exit 1
 zcat ${SB_PATCHDIR}/kdebase-3.5.0_beta2-noimake.patch.gz | patch -p1 --verbose --suffix=.orig --backup || exit 1
-# Xinerama patches from Lubos Lunak.
-# http://ktown.kde.org/~seli/xinerama/
-#zcat ${SB_PATCHDIR}/kdesktop-3.5.7-seli-xinerama.patch.gz | patch -p1 -E --backup --verbose || exit 1
-#zcat ${SB_PATCHDIR}/kwin-3.5.7-seli-xinerama.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-redhat-startkde.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
@@ -17,22 +13,19 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.3-khelpcenter-sort.patch.gz | patch -p1 -E --bac
 zcat ${SB_PATCHDIR}/${NAME}-3.5.4-tango-icon-theme.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.4-konqueror-shortcut.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.7-kio_media_mounthelper.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.7-konsolesu.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-konsolesu.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # fixes NTFS and adds PolicyKit support
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-userdiskmount.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # upstream patches
-#zcat ${SB_PATCHDIR}/${NAME}-3.5.9-lmsensors.patch.gz | patch -p0 -E --backup --verbose || exit 1
-#zcat ${SB_PATCHDIR}/${NAME}-3.5-khotkeys-crash.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/branch-r805675.diff.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/fix-async_history.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # KDEmod patches
 zcat ${SB_PATCHDIR}/01-kip_rubberband.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/02-kip_kdesktop_rounded_icon_text_corners.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/05-transparent_lock_logout_applet.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#zcat ${SB_PATCHDIR}/05-transparent_lock_logout_applet.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/06-systray_order.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/07-konqueror_textcompletion_editor.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/13-ksmserver_dont_save_compiz_session_ugly.patch.gz | patch -p1 -E --backup --verbose || exit 1

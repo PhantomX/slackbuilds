@@ -3,7 +3,7 @@
 set -e
 
 module=midori
-snaproot="http://software.twotoasts.de/media/${module}.git"
+snaproot="git://git.xfce.org/kalikiana/${module}"
 
 tmp=$(mktemp -d)
 

@@ -6,3 +6,6 @@ zcat ${SB_PATCHDIR}/koffice-xpdf-CVE-2007-3387.diff.gz | patch -p0 --verbose || 
 
 # http://www.kde.org/info/security/advisory-20071107-1.txt
 zcat ${SB_PATCHDIR}/koffice-1.6.3-xpdf2-CVE-2007-4352-5392-5393.diff.gz | patch -p0 --verbose || exit 1
+
+# Fix ODT order
+zcat ${SB_PATCHDIR}/KWDocument.cpp.diff.gz | patch -p0 --verbose || exit 1

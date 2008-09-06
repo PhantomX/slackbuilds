@@ -28,41 +28,68 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
-if [ "${TMP}" = "" ]; then
-  TMP=/tmp
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
 fi
 
 PNAME=gpupetexgl
 NAME=psemu-${PNAME}2
-PKG=${TMP}/package-${NAME}
+PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.0.8}
-ARCH=i386
+VERSION=${VERSION:-2.0.9}
+CFGVER=${CFGVER:-2.08}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+SLKTARGET=${SLKTARGET:-i486}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
-SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
+SBDIR=${PKG}/usr/src/slackbuilds/psemu-plugins/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${PNAME}$(echo ${VERSION} | sed -e 's|\.||g' )
+SRCDIR=${PNAME}${VERSION//.}
 SRCARCHIVE=${SRCDIR}.tar.gz
+CFGSRCARCHIVE=gpu_xgl2_cfg_${CFGVER/./_}.tar.gz
 SRCARCHIVE2=pete_ogl2_shader_scale2x.zip
 SRCARCHIVE3=pete_ogl2_shader_simpleblur.zip
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://www.pbernert.com/${SRCARCHIVE}"
+DL_URL="http://www.pbernert.com"
 
 # if source is not present, download in source rootdir if possible, or in /tmp
-for file in ${SRCARCHIVE} ${SRCARCHIVE2} ${SRCARCHIVE3} ;do
+for file in ${SRCARCHIVE} ${SRCARCHIVE2} ${SRCARCHIVE3} ${OSRCARCHIVE} ;do
   if ! test -r ${file}; then
-  test -r ${CWD}/${file} || wget ${DL_OPTS} ${DL_URL}/${file} || exit 1
+    test -r ${CWD}/${file} || wget ${DL_OPTS} ${DL_URL}/${file} || exit 1
   fi
 done
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -74,21 +101,49 @@ cd ${TMP}
 rm -rf ${SRCDIR}
 mkdir -p ${SRCDIR}
 cd ${SRCDIR} || exit 1
-tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
+tar -xzvf ${CWD}/${CFGSRCARCHIVE} || exit 1
 unzip ${CWD}/${SRCARCHIVE2} || exit 1
 unzip ${CWD}/${SRCARCHIVE3} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
+( cd gpucfg2 || exit 1
+
+  find . -type f -exec sed -e 's/\r//' -i "{}" ';'
+
+  NOCONFIGURE=1 sh ./autogen.sh || exit 
+
+  CFLAGS="${SLKCFLAGS}" \
+  CXXFLAGS="${SLKCFLAGS}" \
+  ./configure \
+    --prefix=/usr \
+    --sysconfdir=/etc \
+    --localstatedir=/var/lib \
+    --infodir=/usr/info \
+    --mandir=/usr/man \
+    --docdir=/usr/doc/${NAME}-${VERSION} \
+    --build=${SLKTARGET}-slackware-linux || exit 1
+
+    make clean
+    make -j${NJOBS} || exit 1
+) || exit 1
+
 mkdir -p ${PKG}/usr/lib/psemu/{cfg,plugins,shaders}
 install -m0755 lib*.so.* \
                ${PKG}/usr/lib/psemu/plugins/ || exit 1
-install -m0755 cfgPeteXGL2 \
-               ${PKG}/usr/lib/psemu/cfg/ || exit 1
+install -m0755 gpucfg2/src/gpucfg \
+               ${PKG}/usr/lib/psemu/cfg/cfgPeteXGL2 || exit 1
 install -m0644 *.cfg \
                ${PKG}/usr/lib/psemu/cfg/ || exit 1
 install -m0644 *.fp *.vp *.slf *.slv \
                ${PKG}/usr/lib/psemu/shaders/ || exit 1
+
+strip --strip-unneeded ${PKG}/usr/lib/psemu/cfg/cfgPeteXGL2
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -98,32 +153,6 @@ cp -a \
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
-# Compress and link manpages, if any:
-if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
-fi
-if [ -d ${PKG}/usr/man ]; then
-  ( cd ${PKG}/usr/man
-    for manpagedir in $(find . -type d -name "man*") ; do
-      ( cd ${manpagedir}
-        for eachpage in $( find . -type l -maxdepth 1) ; do
-          ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
-          rm ${eachpage}
-        done
-        gzip -9 *.?
-      )
-    done
-  )
-fi
-
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -131,19 +160,21 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
-set +o xtrace			# no longer print commands upon execution
+set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
@@ -151,7 +182,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
 
-if test $UID = 0; then
+if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then
@@ -165,7 +196,12 @@ fi
 # Clean up the extra stuff:
 if [ "$1" = "--cleanup" ]; then
   echo "Cleaning..."
-  rm -rf ${TMP}/${SRCDIR}
-  rm -rf ${PKG}
-  echo "Cleanup completed"
+  if [ -d ${TMP}/${SRCDIR} ]; then
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
+  fi
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
 fi
+exit 0

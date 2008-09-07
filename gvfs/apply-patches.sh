@@ -10,3 +10,5 @@ zcat ${SB_PATCHDIR}/${NAME}-obexftp-fallback-icon.patch.gz | patch -p0 -E --back
 
 # http://bugzilla.gnome.org/show_bug.cgi?id=525779
 zcat ${SB_PATCHDIR}/${NAME}-0.2.4-trash-automount.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/bug536614.patch.gz | patch -p2 -E --backup --verbose || exit 1

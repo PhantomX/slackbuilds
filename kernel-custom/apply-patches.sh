@@ -49,6 +49,15 @@ zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
 # Architecture patches
 # dump *PIC state at boot with apic=debug
 zcat ${SB_PATCHDIR}/linux-2.6-x86-apic-dump-all-regs-v3.patch.gz | ${PATCHCOM} || exit 1
+# x86 f00f bug not handled properly (#197455)
+zcat ${SB_PATCHDIR}/linux-2.6-x86-64-fix-overlap-of-modules-and-fixmap-areas.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-fdiv-bug-detection-fix.patch.gz | ${PATCHCOM} || exit 1
+# another machine needing io_delay=0xed
+zcat ${SB_PATCHDIR}/linux-2.6-x86-io-delay-add-hp-f700-quirk.patch.gz | ${PATCHCOM} || exit 1
+# oprofile / hibernation fix
+zcat ${SB_PATCHDIR}/linux-2.6-x86-fix-oprofile-and-hibernation-issues.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-32-amd-c1e-force-timer-broadcast-late.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-pat-proper-tracking-of-set_memory_uc.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # Exec shield
@@ -63,6 +72,12 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-usb-ehci-hcd-respect-nousb.patch.gz | ${PATCHCOM} || exit 1
 
 # ACPI
+# obvious bug in processor driver
+zcat ${SB_PATCHDIR}/linux-2.6-acpi-processor-use-signed-int.patch.gz | ${PATCHCOM} || exit 1
+# fix cpuidle misbehavior
+zcat ${SB_PATCHDIR}/linux-2.6-cpuidle-1-do-not-use-poll_idle-unless-user-asks-for-it.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-cpuidle-2-menu-governor-fix-wrong-usage-of-measured_us.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-cpuidle-3-make-ladder-governor-honor-latency-requirements.patch.gz | ${PATCHCOM} || exit 1
 
 # Various low-impact patches to aid debugging.
 zcat ${SB_PATCHDIR}/linux-2.6-debug-sizeof-structs.patch.gz | ${PATCHCOM} || exit 1
@@ -90,7 +105,14 @@ zcat ${SB_PATCHDIR}/linux-2.6-scsi-cpqarray-set-master.patch.gz | ${PATCHCOM} ||
 # ALSA
 #
 
+# block/bio
+#
+# don't discard barrier flags
+zcat ${SB_PATCHDIR}/linux-2.6-block-submit_bh-discards-barrier-flag.patch.gz | ${PATCHCOM} || exit 1
+
 # Filesystem patches.
+# cifs
+zcat ${SB_PATCHDIR}/linux-2.6-fs-cifs-turn-off-unicode-during-session-establishment.patch.gz | ${PATCHCOM} || exit 1
 # Squashfs
 zcat ${SB_PATCHDIR}/linux-2.6-squashfs.patch.gz | ${PATCHCOM} || exit 1
 
@@ -131,6 +153,11 @@ zcat ${SB_PATCHDIR}/linux-2.6-at76.patch.gz | ${PATCHCOM} || exit 1
 
 # fixups to make current wireless patches build on this kernel
 #zcat ${SB_PATCHDIR}/linux-2.6-wireless-fixups.patch.gz | ${PATCHCOM} || exit 1
+
+C=$(zcat ${SB_PATCHDIR}/linux-2.6-wireless-stable-backports.patch.gz | wc -l | awk '{print $1}')
+if [ "$C" -gt 10 ]; then
+  zcat ${SB_PATCHDIR}/linux-2.6-wireless-stable-backports.patch.gz | ${PATCHCOM} || exit 1
+fi
 
 # fix for long-standing rt2500usb issues
 zcat ${SB_PATCHDIR}/linux-2.6-rt2500usb-fix.patch.gz | ${PATCHCOM} || exit 1

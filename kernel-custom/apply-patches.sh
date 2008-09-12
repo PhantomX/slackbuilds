@@ -58,6 +58,11 @@ zcat ${SB_PATCHDIR}/linux-2.6-x86-io-delay-add-hp-f700-quirk.patch.gz | ${PATCHC
 zcat ${SB_PATCHDIR}/linux-2.6-x86-fix-oprofile-and-hibernation-issues.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-x86-32-amd-c1e-force-timer-broadcast-late.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-x86-pat-proper-tracking-of-set_memory_uc.patch.gz | ${PATCHCOM} || exit 1
+# hpet fixes from 2.6.27
+zcat ${SB_PATCHDIR}/linux-2.6-x86-hpet-01-fix-moronic-32-64-bit-thinko.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-hpet-02-read-back-compare-register.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-hpet-03-make-minimum-reprogramming-delta-useful.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-hpet-04-workaround-sb700-bios.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # Exec shield
@@ -138,6 +143,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-defaults-fat-utf8.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-libata-pata_it821x-driver-updates-and-reworking.patch.gz | ${PATCHCOM} || exit 1
 # Make Eee disk faster.
 zcat ${SB_PATCHDIR}/linux-2.6-sata-eeepc-faster.patch.gz | ${PATCHCOM} || exit 1
+# don't use ahci for pata_marvell adapters
+zcat ${SB_PATCHDIR}/linux-2.6-libata-pata_marvell-play-nice-with-ahci.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # VM related fixes.
@@ -181,6 +188,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-netdev-atl2.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-netdev-atl1e.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-net-tulip-interrupt.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/linux-2.6-netdev-e1000e-add-support-for-82567lm-4.patch.gz | ${PATCHCOM} || exit 1
 
 # Nouveau DRM + drm fixes
 zcat ${SB_PATCHDIR}/drm-fedora9-rollup.patch.gz | ${PATCHCOM} || exit 1

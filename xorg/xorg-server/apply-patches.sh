@@ -5,8 +5,10 @@ zcat ${SB_PATCHDIR}/x11.startwithblackscreen.diff.gz | patch -p1 --verbose || ex
 zcat ${SB_PATCHDIR}/xorgconfig.diff.gz | patch -p1 --verbose || exit 1
 #zcat ${SB_PATCHDIR}/xorg-server.dpi.diff.gz | patch -p1 --verbose || exit 1
 
-# Patches from Fedora
+# Patches from Fedora or Debian
 zcat ${SB_PATCHDIR}/001_fedora_extramodes.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/121_only_switch_vt_when_active.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/135_rethrow_signals.patch.gz | patch -p1 --verbose || exit 1
 # OpenGL compositing manager feature/optimization patches.
 zcat ${SB_PATCHDIR}/xorg-x11-server-1.1.0-no-move-damage.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.4.99-dont-backfill-bg-none.patch.gz | patch -p1 --verbose || exit 1

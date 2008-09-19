@@ -28,6 +28,12 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -37,11 +43,14 @@ fi
 NAME=librsvg
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-WITH_GNOME_SB=${WITH_GNOME_SB:-NO}
-
-VERSION=${VERSION:-2.20.0}
-SVER=$(echo ${VERSION} | awk -F. '{ print $1"."$2 }')
-ARCH=${ARCH:-i686}
+VERSION=${VERSION:-2.22.2}
+SVER=$(echo ${VERSION} | cut -d . -f1-2)
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+SLKTARGET=${SLKTARGET:-i486}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -59,24 +68,22 @@ DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://ftp.gnome.org/pub/gnome/sources/${NAME}/${SVER}/${SRCARCHIVE}"
 
-if [ "${ARCH}" = "i386" ]; then
-  SLKCFLAGS="-O2 -march=i386 -mtune=i686"
-  SLKTARGET=${SLKTARGET:-i486}
-elif [ "${ARCH}" = "i486" ]; then
-  SLKCFLAGS="-O2 -march=i486 -mtune=i686"
-  SLKTARGET=${SLKTARGET:-i486}
-elif [ "${ARCH}" = "i686" ]; then
-  SLKCFLAGS="-O2 -march=athlon64 -mtune=athlon64 -msse3 -pipe"
-  SLKTARGET=${SLKTARGET:-i486}
-elif [ "${ARCH}" = "s390" ]; then
-  SLKCFLAGS="-O2"
-elif [ "${ARCH}" = "x86_64" ]; then
-  SLKCFLAGS="-O2"
-fi
-
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
   test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
 fi
 
 if [ -d ${PKG} ]; then
@@ -87,7 +94,11 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
@@ -100,12 +111,6 @@ sed -i -e 's|mozilla-config|seamonkey-config|g' \
 
 autoconf || exit 1
 
-if [ "${WITH_GNOME_SB}" = "NO" ] ;then
- BUILD_GNOME_OPTS="--disable-gnome-vfs --disable-gnome-print"
-else
- BUILD_GNOME_OPTS="--enable-gnome-vfs --enable-gnome-print"
-fi
-
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
@@ -116,7 +121,7 @@ CXXFLAGS="${SLKCFLAGS}" \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --enable-static=no \
-  --with-svgz ${BUILD_GNOME_OPTS} \
+  --with-svgz \
   --enable-mozilla-plugin \
   --build=${SLKTARGET}-slackware-linux || exit 1
 
@@ -125,11 +130,11 @@ make install DESTDIR=${PKG} || exit 1
 
 # Do not remove .la files for compatibility with Slackware stock package.
 #rm -f ${PKG}/usr/lib/*.la
-#rm -f ${PKG}/usr/lib/gtk-2.0/*/engines/libsvg.la
-#rm -f ${PKG}/usr/lib/gtk-2.0/*/loaders/svg_loader.la
-#rm -f ${PKG}/usr/lib/mozilla/plugins/libmozsvgdec.la
+rm -f ${PKG}/usr/lib/gtk-2.0/*/*/*.la
+rm -f ${PKG}/usr/lib/mozilla/plugins/libmozsvgdec.la
 #rm -f ${PKG}/usr/lib/mozilla/plugins/libmozsvgdec.so
 rm -f ${PKG}/etc/gtk-2.0/gdk-pixbuf.loaders
+rmdir -p ${PKG}/etc/gtk-2.0
 #rm -f ${PKG}/usr/share/pixmaps/svg-viewer.svg
 
 ( cd ${PKG}
@@ -148,7 +153,8 @@ find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -164,14 +170,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -179,19 +177,21 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/*.patch.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/*.patch.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
-set +o xtrace			# no longer print commands upon execution
+set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
@@ -199,7 +199,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
 
-if test $UID = 0; then
+if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then

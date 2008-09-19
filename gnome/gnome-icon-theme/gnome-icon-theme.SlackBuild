@@ -28,6 +28,9 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -37,10 +40,10 @@ fi
 NAME=gnome-icon-theme
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.22.0}
-SVER=$(echo ${VERSION} | awk -F. '{ print $1"."$2 }')
+VERSION=${VERSION:-2.23.92}
+SVER=$(echo ${VERSION} | cut -d . -f1-2)
 ARCH=noarch
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/gnome/${NAME}
@@ -51,6 +54,7 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.bz2
+SRCARCHIVE2=${NAME}-extra-device-icons-4.tar.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
@@ -81,6 +85,8 @@ chmod -R u+w,go+r-w,a-s .
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${CWD}/${NAME}.pkgconfig.path.diff.gz | patch -p1 -E --backup --verbose || exit 1
 
+zcat ${CWD}/legacy-icon-mapping.xml.gz > legacy-icon-mapping.xml || exit 1
+
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
@@ -96,17 +102,6 @@ make install DESTDIR=${PKG} || exit 1
 
 ## remove these bogus files
 rm -rf ${PKG}/usr/share/locale/*
-
-rm -rf ${PKG}/usr/share/icons/gnome/*/apps/susehelpcenter.*
-
-## correct some bogus symlinks created by icon-naming-utils
-# https://bugzilla.redhat.com/bugzilla/show_bug.cgi?id=217090
-rm -f ${PKG}/usr/share/icons/gnome/*/emblems/stock_mail-priority-high.*
-for i in 16x16 24x24; do
-  ( cd ${PKG}/usr/share/icons/gnome/${i}/stock/net
-    ln -s ../../emblems/emblem-important.png stock_mail-priority-high.png || exit 1
-  ) || exit 1
-done
 
 ## create symlinks so the all icon themes know some extra icons we've added
 for i in 24x24; do
@@ -143,7 +138,21 @@ mkdir -p ${PKG}/usr/share/icons/hicolor/${i}/apps
 
 done
 
+# create symlinks for gtk stock icons, these are not really 'legacy'
+# this uses the legacy-icon-mapping.xml file in cvs
+for size in 8x8 16x16 22x22 24x24 32x32 48x48 scalable; do
+  ( cd ${PKG}/usr/share/icons/gnome/${size} || exit 1
+    for context in *; do
+      if [ -d ${context} ]; then
+        ( cd ${context} || exit 1
+          INU_DATA_DIR=${TMP}/${SRCDIR} /usr/bin/icon-name-mapping -c ${context}
+        )
+      fi
+    done
+  ) || exit 1
+done
 
+tar xj -C ${PKG}/usr/share/icons/gnome -f ${CWD}/${SRCARCHIVE2} || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -155,7 +164,8 @@ find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -173,14 +183,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -195,8 +197,7 @@ if test "\${ROOTDIR}" != "/"; then
 fi
 if [ -d usr/share/icons/hicolor ]; then
   if [ -x usr/bin/gtk-update-icon-cache ]; then
-    ${CHROOT} /usr/bin/gtk-update-icon-cache -f -t usr/share/icons/hicolor 1> /dev/null
- 2> /dev/null
+    ${CHROOT} /usr/bin/gtk-update-icon-cache -f -t usr/share/icons/hicolor 1> /dev/null 2> /dev/null
   fi
 fi
 EOF
@@ -204,16 +205,19 @@ EOF
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${NAME}.*.diff.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/${NAME}.*.diff.gz ${CWD}/${SRCARCHIVE2} \
+                 ${CWD}/legacy-*.xml.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution

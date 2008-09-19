@@ -6,5 +6,3 @@ zcat ${SB_PATCHDIR}/${NAME}-htmlview.patch.gz | patch -p0 -E --backup --verbose 
 # Patch to remove port locking and apply the system-wide /usr/sbin directory
 # to the path instead of the default /usr/local
 zcat ${SB_PATCHDIR}/${NAME}-config.patch.gz | patch -p0 -E --backup --verbose || exit 1
-# Patch to rename smdsd to gnokii-smsd (also in doc)
-zcat ${SB_PATCHDIR}/${NAME}-smsd-rename.patch.gz | patch -p0 -E --backup --verbose || exit 1

@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -38,19 +41,16 @@ if [ ! -d ${TMP} ]; then
 fi
 
 NAME=gnome-mount
-NAME2=${NAME}-nautilus
-PKGF=${PKGF:-${TMP}/package-${NAME}}
-PKG=${PKGF}/${NAME}
-PKG2=${PKGF}/${NAME2}
+PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-0.8}
-if [ "${SB_NATIVE}" = "NO" ] ;then
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
 fi
 SLKTARGET=${SLKTARGET:-i486}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-4}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/gnome/${NAME}
@@ -58,14 +58,22 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 PKGNAME2=${NAME2}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to enable nautilus extension
+SB_NAUTILUS=${SB_NAUTILUS:-YES}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.svn20080225.tar.gz
+SRCARCHIVE=${SRCDIR}.tar.gz
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://people.freedesktop.org/~david/dist/${SRCARCHIVE}"
+DL_URL="http://hal.freedesktop.org/releases/${SRCARCHIVE}"
+
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -80,16 +88,11 @@ else
   esac
 fi
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-fi
-
-if [ -d ${PKGF} ]; then
+if [ -d ${PKG} ]; then
   # Clean up a previous build
-  rm -rf ${PKGF}
+  rm -rf ${PKG}
 fi
-mkdir -p ${PKG} ${PKG2}
+mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
@@ -103,7 +106,8 @@ cd ${SRCDIR} || exit 1
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-no-passphrase-dialog-on-interface-locked.patch.gz | patch -p0 -E --backup --verbose || exit 1
+
+[ "${SB_NAUTILUS}" = "YES" ] || SB_NAUTILUSOPTS="--disable-nautilus-extension"
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -113,8 +117,7 @@ CXXFLAGS="${SLKCFLAGS}" \
   --localstatedir=/var/lib \
   --infodir=/usr/info \
   --mandir=/usr/man \
-  --docdir=/usr/doc/${NAME}-${VERSION} \
-  --enable-nautilus-extension \
+  --docdir=/usr/doc/${NAME}-${VERSION} ${SB_NAUTILUSOPTS} \
   --build=${SLKTARGET}-slackware-linux || exit 1
 
 make -j${NJOBS} || exit 1
@@ -128,13 +131,6 @@ find ${PKG} -name '*.a' -exec rm -f {} \;
   find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
   find . | xargs file | grep "current ar archive" | cut -f 1 -d : | xargs strip --strip-debug 2> /dev/null
 )
-
-if [ -f ${PKG}/usr/lib/nautilus/extensions-2.0/libgnome-mount.so ] ;then
-  mkdir -p ${PKG2}/usr/lib/nautilus/extensions-2.0
-  mv ${PKG}/usr/lib/nautilus/extensions-2.0/libgnome-mount.so \
-     ${PKG2}/usr/lib/nautilus/extensions-2.0/libgnome-mount.so || exit 1
-  rmdir -p ${PKG}/usr/lib/nautilus/extensions-2.0
-fi
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -165,21 +161,9 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
-
-mkdir -p ${PKG2}/install
-cat ${CWD}/slack-desc.nautilus > ${PKG2}/install/slack-desc
-cat ${CWD}/slack-required.nautilus > ${PKG2}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
 #!/bin/sh
@@ -200,42 +184,37 @@ EOF
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc ${PKG2}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc* ${CWD}/slack-required* ${CWD}/ChangeLog.SB \
-               ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
-ROOTCOMMANDS2="set -o errexit -o xtrace ; cd ${PKG2} ;
-  /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
-ROOTCOMMANDS2="${ROOTCOMMANDS2}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME2}.tgz "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
-  eval ${ROOTCOMMANDS2}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then
   echo -e "\e[1mEntering fakeroot environment.\e[0m"
   echo ${ROOTCOMMANDS} | fakeroot
-  echo ${ROOTCOMMANDS2} | fakeroot
 else
   echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
   /bin/su -c "${ROOTCOMMANDS}"
-  /bin/su -c "${ROOTCOMMANDS2}"
 fi
 
 # Clean up the extra stuff:
@@ -244,8 +223,8 @@ if [ "$1" = "--cleanup" ]; then
   if [ -d ${TMP}/${SRCDIR} ]; then
     rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
   fi
-  if [ -d ${PKGF} ]; then
-    rm -rf ${PKGF} && echo "${PKGF} cleanup completed"
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
   fi
   rmdir ${TMP} && echo "${TMP} cleanup completed"
 fi

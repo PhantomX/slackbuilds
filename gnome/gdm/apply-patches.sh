@@ -25,20 +25,18 @@ zcat ${SB_PATCHDIR}/${NAME}-2.19.6-pass-ats-to-session.patch.gz | patch -p1 -E -
 # make gdmsetup work with consolehelper
 zcat ${SB_PATCHDIR}/${NAME}setup-path.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-# https://bugzilla.redhat.com/bugzilla/show_bug.cgi?id=254164
-zcat ${SB_PATCHDIR}/${NAME}-2.19.8-selinux.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
 # http://bugzilla.gnome.org/show_bug.cgi?id=482348
 zcat ${SB_PATCHDIR}/pixbuf-ref.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # http://bugzilla.redhat.com/show_bug.cgi?id=246399
 zcat ${SB_PATCHDIR}/${NAME}-2.20.1-keymouselistener-segfault.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-# hack around broken tcp wrappers support
-# FIXME need to file upstream and get fixed in 2.20
-zcat ${SB_PATCHDIR}/${NAME}-2.18.4-tcp-wrappers.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
 # https://bugzilla.redhat.com/show_bug.cgi?id=383051
 zcat ${SB_PATCHDIR}/${NAME}-2.20.3-cap-user-list-length.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
+# https://bugzilla.redhat.com/show_bug.cgi?id=452567
+zcat ${SB_PATCHDIR}/${NAME}-2.20.5-fix-non-utf8.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
 zcat ${SB_PATCHDIR}/${NAME}-2.20.2-change-defaults.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/stupid-bullets.patch.gz | patch -p1 -E --backup --verbose || exit 1

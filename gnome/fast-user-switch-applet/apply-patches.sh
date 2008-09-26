@@ -10,7 +10,5 @@ zcat ${SB_PATCHDIR}/${NAME}-2.17.3-defaults.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/no-session.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # http://bugzilla.gnome.org/show_bug.cgi?id=477639
 zcat ${SB_PATCHDIR}/throttle.patch.gz | patch -p1 -E --backup --verbose || exit 1
-# http://bugzilla.gnome.org/show_bug.cgi?id=477656
-zcat ${SB_PATCHDIR}/error-dialog.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # http://bugzilla.gnome.org/show_bug.cgi?id=477666
 zcat ${SB_PATCHDIR}/many-users.patch.gz | patch -p1 -E --backup --verbose || exit 1

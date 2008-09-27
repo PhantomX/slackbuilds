@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -40,9 +43,11 @@ fi
 NAME=epiphany
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.22.1.1}
-SVER=$(echo ${VERSION} | awk -F. '{ print $1"."$2 }')
-if [ "${SB_NATIVE}" = "NO" ] ;then
+VERSION=${VERSION:-2.24.0.1}
+SVER=$(echo ${VERSION} | cut -d . -f1-2)
+SLKDIST=${SLKDIST:-Slackware}
+SLKVER=${SLKVER:-12.2.0}
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
@@ -55,6 +60,9 @@ SBDIR=${PKG}/usr/src/slackbuilds/gnome/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to enable webkit
+SB_WEBKIT=${SB_WEBKIT:-YES}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
@@ -63,6 +71,11 @@ SRCARCHIVE=${SRCDIR}.tar.bz2
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://ftp.gnome.org/pub/gnome/sources/${NAME}/${SVER}/${SRCARCHIVE}"
+
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -75,11 +88,6 @@ else
     x86_64)      SLKCFLAGS="-O2 -fPIC"
                  ;;
   esac
-fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 fi
 
 if [ -d ${PKG} ]; then
@@ -104,6 +112,15 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+# Add Slackware to custom dists (fix some web user agent recognizing scripts)
+[ "${SLKDIST}" = "Slackware" ] || export SLKDIST="${SLKDIST} (Slackware)"
+
+cat >> data/default-prefs-common.js << EOF
+pref("general.useragent.vendor", "${SLKDIST}");
+pref("general.useragent.vendorSub", "${SLKVER}");
+EOF
+
+SB_CONFIGURE() {
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
@@ -114,14 +131,44 @@ CXXFLAGS="${SLKCFLAGS}" \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-scrollkeeper \
+  --enable-zeroconf \
   --enable-python \
-  --with-engine=webkit \
-  --build=${SLKTARGET}-slackware-linux || exit 1
+  --build=${SLKTARGET}-slackware-linux "$@"
+}
+
+CPPFLAGS="$(nspr-config --cflags)" \
+SB_CONFIGURE \
+  --with-gecko=libxul-embedding || exit 1
 
 make -j${NJOBS} || exit 1
+
+( cd po
+  grep -v ".*[.]desktop[.]in[.]in$\|.*[.]server[.]in[.]in$\|.*[.]schemas[.]in$" POTFILES.in > POTFILES.keep
+  mv POTFILES.keep POTFILES.in
+  intltool-update --pot
+  for p in *.po; do
+    msgmerge $p ${NAME}.pot > $p.out
+    msgfmt -o `basename $p .po`.gmo $p.out
+  done
+)
+
 export GCONF_DISABLE_MAKEFILE_SCHEMA_INSTALL=1
 make install DESTDIR=${PKG} || exit 1
 unset GCONF_DISABLE_MAKEFILE_SCHEMA_INSTALL
+
+if [ "${SB_WEBKIT}" = "YES" ] ;then
+  make distclean
+  SB_CONFIGURE \
+    --with-engine=webkit \
+    --program-suffix=-webkit || exit 1
+
+  make -j${NJOBS} || exit 1
+  install -m0755 src/${NAME} ${PKG}/usr/bin/${NAME}-webkit || exit 1
+
+  sed -e "/^.*Name.*=/s|$| (WebKit)|g;/^Exec=/s|${NAME}|${NAME}-webkit|g" \
+      ${PKG}/usr/share/applications/${NAME}.desktop >\
+      ${PKG}/usr/share/applications/${NAME}-webkit.desktop || exit 1
+fi
 
 # Remove the bookmarks editor menu item
 rm -f ${PKG}/usr/share/applications/bme.desktop
@@ -168,14 +215,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -212,17 +251,20 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 # Replicate slackbuild and patches
-mkdir -p ${SBDIR}/patches
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/apply-patches.sh ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-install -m0644 ${CWD}/patches/*.gz \
-               ${SBDIR}/patches/
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution

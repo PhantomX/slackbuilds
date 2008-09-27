@@ -54,7 +54,7 @@ else
   ARCH=${ARCH:-i686}
 fi
 SLKTARGET=${SLKTARGET:-i486}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 KDOCDIR=${PKG}/usr/doc/${KNAME}-${KSYMVER}
@@ -71,13 +71,15 @@ SRCDIR=${NAME}-${VERSION}
 KSRCDIR=${KNAME}-${KSYMVER}
 SRCARCHIVE=${SRCDIR}.tar.bz2
 SRCARCHIVE2=release.${NAME}-${VERSION}
+SRCARCHIVE3=${NAME}-${VERSION}-output-format.sed.gz
 KSRCARCHIVE=${KSRCDIR}.tar.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="ftp://ftp.kernel.org/pub/linux/devel/${NAME}/${SRCARCHIVE}"
-DL_URL2="ftp://ftp.kernel.org/pub/linux/devel/${NAME}/${SRCARCHIVE2}"
-KDL_URL="http://www.kernel.org/pub/linux/utils/kernel/${KNAME}/v${KSVER}/${KSRCARCHIVE}"
+KERNEL_MIRROR=${SF_MIRROR:-http://www.kernel.org/pub}
+DL_URL="${KERNEL_MIRROR}/linux/devel/${NAME}/${SRCARCHIVE}"
+DL_URL2="${KERNEL_MIRROR}/linux/devel/${NAME}/${SRCARCHIVE2}"
+KDL_URL="${KERNEL_MIRROR}/linux/utils/kernel/${KNAME}/v${KSVER}/${KSRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
@@ -125,6 +127,13 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+sed -i -e '/^libopcodes_la_\(DEPENDENCIES\|LIBADD\)/s,$, ../bfd/libbfd.la,' \
+          opcodes/Makefile.{am,in}
+if gcc ${SLKCFLAGS} -v --help 2>&1 | grep -q -- -Bsymbolic-functions; then
+  sed -i -e 's/^libbfd_la_LDFLAGS = /&-Wl,-Bsymbolic-functions /' bfd/Makefile.{am,in}
+  sed -i -e 's/^libopcodes_la_LDFLAGS = /&-Wl,-Bsymbolic-functions /' opcodes/Makefile.{am,in}
+fi
+
 # Build for an x86 glibc2-based Linux system:
 CFLAGS="${SLKCFLAGS}" \
 ./configure \
@@ -132,6 +141,7 @@ CFLAGS="${SLKCFLAGS}" \
   --enable-shared \
   --enable-targets=${SLKTARGET}-slackware-linux \
   --enable-64-bit-bfd \
+  --disable-werror \
   --build=${SLKTARGET}-slackware-linux || exit 1
 
 make clean || exit 1
@@ -144,12 +154,24 @@ make -k check < /dev/null > check.log 2>&1
   cat check.log || exit 1
   echo '====================TESTING END====================='
 fi
+
+# Install into the $PKG location:
+make install DESTDIR=${PKG} || exit 1
+make prefix=${PKG}/usr infodir=/usr/info install-info
+
 # Rebuild libiberty.a with -fPIC
 make -C libiberty clean || exit 1
 make CFLAGS="-g -fPIC ${SLKCFLAGS}" -C libiberty || exit 1
 
-# Install into the $PKG location:
-make install DESTDIR=${PKG} || exit 1
+# Rebuild libbfd.a with -fPIC.
+# Without the hidden visibility the 3rd party shared libraries would export
+# the bfd non-stable ABI.
+make -C bfd clean
+make CFLAGS="-g -fPIC ${SLKCFLAGS} -fvisibility=hidden" -C bfd || exit 1
+
+install -m 644 bfd/libbfd.a ${PKG}/usr/lib/ || exit 1
+install -m 644 libiberty/libiberty.a ${PKG}/usr/lib/ || exit 1
+install -m 644 include/libiberty.h ${PKG}/usr/include/ || exit 1
 
 rm -rf ${PKG}/usr/lib/ldscripts
 
@@ -163,9 +185,6 @@ chmod +x ${PKG}/usr/lib/lib*.so*
 
 # Missing?
 cp -a gas/doc/as.1 ${PKG}/usr/man/man1/
-
-# "make install" skips this, but binutils.spec doesn't.  Sneaky, huh?
-cp -a include/libiberty.h ${PKG}/usr/include/libiberty.h
 
 # Remove Windows/Novell only man pages
 rm -f ${PKG}/usr/man/man1/{dlltool,nlmconv,windres}*
@@ -223,6 +242,33 @@ rm -f ${PKG}/usr/lib/lib{bfd,opcodes}.so || exit 1
 # Remove libtool files, which reference the .so libs
 rm -f ${PKG}/usr/lib/lib{bfd,opcodes}.la
 
+# Generate .so linker scripts for dependencies; imported from glibc/Makerules:
+
+# This fragment of linker script gives the OUTPUT_FORMAT statement
+# for the configuration we are building.
+zcat ${CWD}/${SRCARCHIVE3} > ${SRCARCHIVE3%.gz} || exit 1
+OUTPUT_FORMAT="\
+/* Ensure this .so library will not be used by a link for a different format
+   on a multi-architecture system.  */
+$(gcc ${SLKCFLAGS} ${LDFLAGS} -shared -x c /dev/null -o /dev/null -Wl,--verbose -v 2>&1 | sed -n -f "${SRCARCHIVE3%.gz}")"
+
+tee ${PKG}/usr/lib/libbfd.so <<EOH
+/* GNU ld script */
+
+$OUTPUT_FORMAT
+
+/* The libz dependency is unexpected by legacy build scripts.  */
+INPUT ( /usr/lib/libbfd.a -liberty -lz )
+EOH
+
+tee ${PKG}/usr/lib/libopcodes.so <<EOH
+/* GNU ld script */
+
+$OUTPUT_FORMAT
+
+INPUT ( /usr/lib/libopcodes.a -lbfd )
+EOH
+
 ( cd ${PKG}
   find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
   find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -257,20 +303,11 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-rm -rf ${PKG}/usr/info
-mkdir -p ${PKG}/usr/info
-find . -name "as.info*" -exec cp -a {} ${PKG}/usr/info \;
-find . -name "bfd.info*" -exec cp -a {} ${PKG}/usr/info \;
-find . -name "ld.info*" -exec cp -a {} ${PKG}/usr/info \;
-find . -name "gasp.info*" -exec cp -a {} ${PKG}/usr/info \;
-find . -name "gprof.info*" -exec cp -a {} ${PKG}/usr/info \;
-find . -name "binutils.info*" -exec cp -a {} ${PKG}/usr/info \;
-
 # Compress info pages, if any:
 if [ -d ${PKG}/usr/info ]; then
   ( cd ${PKG}/usr/info
     rm -f dir
-    gzip -9 *
+    gzip -9 *.info*
   )
 fi
 
@@ -301,7 +338,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${CWD}/${SRCARCHIVE3} ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.gz \

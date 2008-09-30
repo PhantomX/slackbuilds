@@ -3,7 +3,7 @@ SB_PATCHDIR=${CWD}/patches
 
 zcat ${SB_PATCHDIR}/${NAME}-2.19.5-vendor.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.10.1-speak-to-us-ye-old-wise-fish.patch.gz | patch -p1 -E --backup --verbose || exit 1
-#zcat ${SB_PATCHDIR}/${NAME}-2.17.91-about-fedora.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#zcat ${SB_PATCHDIR}/${NAME}-2.17.91-about-fedora.patch.gz | patch -p1 -E --backup --verbose || exit 1s
 zcat ${SB_PATCHDIR}/${NAME}-2.16.1-search.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.23.4-about-this-computer.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # the next three patches belong together
@@ -18,5 +18,7 @@ zcat ${SB_PATCHDIR}/applet-error.patch.gz | patch -p1 -E --backup --verbose || e
 
 # http://bugzilla.gnome.org/show_bug.cgi?id=520111
 zcat ${SB_PATCHDIR}/${NAME}-2.21.92-allow-spurious-view-done-signals.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/${NAME}-2.24.0-smoother-slide-in.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/clock-wakeups.patch.gz | patch -p1 -E --backup --verbose || exit 1

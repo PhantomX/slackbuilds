@@ -1,7 +1,7 @@
 
 SB_PATCHDIR=${CWD}/patches
 
-bzcat ${SB_PATCHDIR}/${NAME}-5.6-20080621-patch.sh.bz2 | patch -p1 --verbose || exit 1
+bzcat ${CWD}/${NAME}-5.6-20080621-patch.sh.bz2 | patch -p1 --verbose || exit 1
 rm -rf tack
 for file in ${SB_PATCHDIR}/${NAME}-${VERSION}-2???????.patch.gz ; do
   zcat ${file} | patch -p1 --verbose || exit 1

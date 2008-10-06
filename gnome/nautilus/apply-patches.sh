@@ -1,6 +1,8 @@
 
 SB_PATCHDIR=${CWD}/patches
 
+# Disable automount
+zcat ${SB_PATCHDIR}/${NAME}-2.24.0-noautomount.patch.gz | patch -p0 -E --backup --verbose || exit 1
 # Some changes to default config
 zcat ${SB_PATCHDIR}/${NAME}-2.5.7-rhconfig.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/background-no-delay.patch.gz | patch -p1 -E --backup --verbose || exit 1

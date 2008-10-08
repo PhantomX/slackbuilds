@@ -8,3 +8,5 @@ zcat ${SB_PATCHDIR}/${PNAME}-0.90-playlist.patch.gz | patch -p1 -E --backup --ve
 #zcat ${SB_PATCHDIR}/${NAME}-xshape.patch.gz | patch -p0 -E --backup --verbose || exit 1
 #zcat ${SB_PATCHDIR}/${NAME}-chanmap2.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-ivtv.patch.gz | patch -p0 -E --backup --verbose || exit
+
+zcat ${SB_PATCHDIR}/${NAME}-1.0_rc2_p27725-libx264.patch.gz | patch -p1 -E --backup --verbose || exit

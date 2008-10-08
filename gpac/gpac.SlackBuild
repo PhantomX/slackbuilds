@@ -28,6 +28,12 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -40,8 +46,13 @@ PKG=${PKG:-${TMP}/package-${NAME}}
 VERSION=${VERSION:-0.4.4}
 SVER=${SVER:-610}
 WVER=${WVER:-600}
-ARCH=${ARCH:-i686}
-BUILD=${BUILD:-2}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+SLKTARGET=${SLKTARGET:-i486}
+BUILD=${BUILD:-3}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -52,41 +63,44 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}
 SRCARCHIVE=${SRCDIR}-${VERSION}.tar.gz
-
+PSRCARCHIVE=${SRCDIR}-${VERSION}-patches-6.tar.bz2
 ESRCARCHIVE=26104-${SVER}.zip
 ESRCARCHIVE2=26204-${WVER}.zip
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://dl.sf.net/sourceforge/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://prdownloads.sourceforge.net/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://download.sf.net/${NAME}/${SRCARCHIVE}"
-
-EDL_URL=http://www.3gpp.org/ftp/Specs/archive/26_series/26.104/${ESRCARCHIVE}
-EDL_URL2=http://www.3gpp.org/ftp/Specs/archive/26_series/26.204/${ESRCARCHIVE2}
-
-
-if [ "${ARCH}" = "i386" ]; then
-  SLKCFLAGS="-O2 -march=i386 -mtune=i686"
-elif [ "${ARCH}" = "i486" ]; then
-  SLKCFLAGS="-O2 -march=i486 -mtune=i686"
-elif [ "${ARCH}" = "i686" ]; then
-  SLKCFLAGS="-O2 -march=athlon64 -mtune=athlon64 -msse3 -pipe"
-elif [ "${ARCH}" = "s390" ]; then
-  SLKCFLAGS="-O2"
-elif [ "${ARCH}" = "x86_64" ]; then
-  SLKCFLAGS="-O2"
-fi
+SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
+DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+GENTOO_MIRROR=${GENTOO_MIRROR:-ftp://ftp.ussg.iu.edu/pub/linux/gentoo}
+PDL_URL="${GENTOO_MIRROR}/distfiles/${SRCARCHIVE}"
+EDL_URL="http://www.3gpp.org/ftp/Specs/archive/26_series/26.104/${ESRCARCHIVE}"
+EDL_URL2="http://www.3gpp.org/ftp/Specs/archive/26_series/26.204/${ESRCARCHIVE2}"
 
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
   test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+if ! test -r ${PSRCARCHIVE}; then
+  test -r ${CWD}/${PSRCARCHIVE} || wget ${DL_OPTS} ${PDL_URL} || exit 1
 fi
 if ! test -r ${ESRCARCHIVE}; then
   test -r ${CWD}/${ESRCARCHIVE} || wget ${DL_OPTS} ${EDL_URL} || exit 1
 fi
 if ! test -r ${ESRCARCHIVE2}; then
   test -r ${CWD}/${ESRCARCHIVE2} || wget ${DL_OPTS} ${EDL_URL2} || exit 1
+fi
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
 fi
 
 if [ -d ${PKG} ]; then
@@ -97,7 +111,11 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
 cd ${SRCDIR} || exit 1
 
 ( cd modules/amr_float_dec
@@ -107,22 +125,26 @@ cd ${SRCDIR} || exit 1
   unzip -jaq 26204-${WVER}_ANSI-C_source_code.zip -d amr_wb_ft || exit 1
 ) || exit 1
 
+tar -xvjf ${CWD}/${PSRCARCHIVE} || exit 1
+
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-if [ -r ${CWD}/apply-patches.sh ]; then
-  . ${CWD}/apply-patches.sh || exit 1
-fi
+for i in $( < patches/series ); do
+  patch -p1 --verbose --backup --suffix=".pdeb" -i patches/${i} || exit 1
+done
 
 sed -ie '/ldconfig / d' Makefile || exit 1
 
+sed -i -e '/^#include/s|openjpeg.h|openjpeg/openjpeg.h|g' \
+          modules/img_in/jp2_dec.c || exit 1
+
 chmod +x configure
-# make sure configure looks for wx-2.6
-WX_GTK_VER=2.6
-sed -i -e "s:wx-config:wx-2.6-config:g" configure || exit 1
+# make sure configure looks for wx-2.8
+WX_GTK_VER=2.8
 
 # make sure mozilla won't be used
-	sed -i -e 's/osmozilla//g' applications/Makefile || exit 1
+sed -i -e 's/osmozilla//g' applications/Makefile || exit 1
 
 ./configure \
   --prefix=/usr \
@@ -137,6 +159,7 @@ sed -i -e "s:wx-config:wx-2.6-config:g" configure || exit 1
   --enable-shared \
   --enable-debug \
   --use-ogg=system \
+  --use-openjpeg=system \
   --use-vorbis=system \
   --use-theora=system \
   --extra-cflags="${SLKCFLAGS} -fno-strict-aliasing" || exit 1
@@ -160,7 +183,8 @@ find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -168,19 +192,13 @@ if [ -d ${PKG}/usr/man ]; then
       ( cd ${manpagedir}
         for eachpage in $( find . -type l -maxdepth 1) ; do
           ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
-          rm ${eachpage}
+          rm -f ${eachpage}
         done
         gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
       )
     done
-  )
-fi
-
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
   )
 fi
 
@@ -191,19 +209,21 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/apply-patches.sh ${CWD}/*.patch.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/${PSRCARCHIVE} ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
-set +o xtrace			# no longer print commands upon execution
+set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
@@ -211,7 +231,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
 
-if test $UID = 0; then
+if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then

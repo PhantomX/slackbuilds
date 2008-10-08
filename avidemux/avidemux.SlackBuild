@@ -40,10 +40,16 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
+SNAPBUILD=${SNAPBUILD:-YES}
+
 NAME=avidemux
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.4.3}
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+else
+  VERSION=${VERSION:-2.4.3}
+fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -57,21 +63,37 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to enable gtk port.
+SB_GTK=${SB_GTK:-YES}
+# Set to YES to enable qt4 port.
+SB_QT=${SB_QT:-YES}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}_${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  SRCDIR=${NAME}-${VERSION}
+  SRCARCHIVE=${SRCDIR}.tar.bz2
+else
+  SRCDIR=${NAME}_${VERSION}
+  SRCARCHIVE=${SRCDIR}.tar.gz
+fi
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://download.berlios.de/${NAME}/${SRCARCHIVE}"
 #DL_URL="http://download2.berlios.de/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://prdownloads.sourceforge.net/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://download.sf.net/${NAME}/${SRCARCHIVE}"
+SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
+#DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
 
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+  if [ "${SNAPBUILD}" = "YES" ] ;then
+    test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+  else
+    test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+  fi
 fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -106,6 +128,13 @@ chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${CWD}/${NAME}-2.4-aften.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-2.4-libdca.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-2.4-i18n.patch.gz | patch -p01 -E --backup --verbose || exit 1
+
+[ "${SB_GTK}" != "YES" -a "${SB_QT}" != "YES" ] && SB_GTK=YES
+
+[ "${SB_GTK}" = "YES" ] || SB_GTKOPTS="Y"
+[ "${SB_QT}" = "YES" ] || SB_QTOPTS="Y"
 
 mkdir -p build
 ( cd build || exit 1
@@ -116,7 +145,9 @@ mkdir -p build
     cmake .. \
       -DCMAKE_INSTALL_PREFIX:PATH=/usr \
       -DCMAKE_SKIP_RPATH:BOOL=Y \
-      -DNO_QT4:BOOL=Y -DNO_ARTS:BOOL=Y \
+      -DNO_GTK:BOOL=${SB_GTKOPTS} \
+      -DNO_QT4:BOOL=${SB_QTOPTS} \
+      -DNO_ARTS:BOOL=Y \
     || exit 1
 
   make -j${NJOBS} VERBOSE=1 || exit 1
@@ -133,18 +164,23 @@ find ${PKG} -type f -name "*.la" -exec rm -f {} ';'
 )
 
 mkdir -p ${PKG}/usr/share/applications
-cat > ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
+rm -f ${PKG}/usr/share/applications/*
+SB_DESKTOP () {
+cat > ${PKG}/usr/share/applications/${NAME}_${1}.desktop <<EOF
 [Desktop Entry]
-Encoding=UTF-8
-Name=Avidemux Video Editor
+Name=Avidemux Video Editor ($2)
 Comment=Graphical video editing tool
 Icon=${NAME}
-Exec=${NAME}2_gtk
+Exec=${NAME}2_$1
 Terminal=false
 Type=Application
-Categories=GTK;AudioVideo;
-MimeType=video/mpeg;video/quicktime;video/x-msvideo;video/x-anim;audio/x-mp3;audio/x-mp2;
+Categories=$2;AudioVideo;
+MimeType=video/mpeg;video/quicktime;video/x-msvideo;video/x-anim;audio/x-mp3;audio/x-mp2;application/x-shockwave-flash;video/x-flv;
 EOF
+}
+
+[ "${SB_GTK}" = "YES" ] && SB_DESKTOP gtk GTK
+[ "${SB_QT}" = "YES" ] && SB_DESKTOP qt4 Qt
 
 mkdir -p ${PKG}/usr/share/icons/hicolor/64x64/apps
 install -m 0644 ${NAME}_icon.png \
@@ -185,14 +221,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-    rm -f dir
-    gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -205,7 +233,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+                 ${CWD}/${SNAPUPDATE} ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/

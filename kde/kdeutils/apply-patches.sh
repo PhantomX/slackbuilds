@@ -8,3 +8,5 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.4-bz\#205553.patch.gz | patch -p1 --verbose || e
 
 # KDEmod patches
 zcat ${SB_PATCHDIR}/04_xmms-dynamic.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/kde-python-2.6.patch.gz | patch -p0 -E --backup --verbose || exit 1

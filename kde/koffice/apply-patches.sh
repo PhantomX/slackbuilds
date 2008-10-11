@@ -9,3 +9,5 @@ zcat ${SB_PATCHDIR}/koffice-1.6.3-xpdf2-CVE-2007-4352-5392-5393.diff.gz | patch 
 
 # Fix ODT order
 zcat ${SB_PATCHDIR}/KWDocument.cpp.diff.gz | patch -p0 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/kde-python-2.6.patch.gz | patch -p0 -E --backup --verbose || exit 1

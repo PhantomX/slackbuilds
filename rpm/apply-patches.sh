@@ -1,6 +1,7 @@
 
 SB_PATCHDIR=${CWD}/patches
 
+zcat ${SB_PATCHDIR}/remove_redhat_references.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/rpm-4.4.1-prereq.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/rpm-4.4.2-ghost-conflicts.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/rpm-4.4.2-trust.patch.gz | patch -p1 -E --backup --verbose || exit 1

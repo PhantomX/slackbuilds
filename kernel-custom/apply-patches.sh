@@ -58,14 +58,20 @@ zcat ${SB_PATCHDIR}/linux-2.6-x86-hpet-04-workaround-sb700-bios.patch.gz | ${PAT
 # fix e820 reservation checking
 zcat ${SB_PATCHDIR}/linux-2.6-x86-pci-detect-end_bus_number.patch.gz | ${PATCHCOM} || exit 1
 # don't oops if there's no IRQ stack available
-#zcat ${SB_PATCHDIR}/linux-2.6-x86-check-for-null-irq-context.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-check-for-null-irq-context.patch.gz | ${PATCHCOM} || exit 1
 # add config option to disable adding CPUs after boot
-zcat ${SB_PATCHDIR}/linux-2.6-x86-cpu-hotplug-allow-setting-additional-cpus.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-improve-up-kernel-when-cpu-hotplug-and-smp.patch.gz | ${PATCHCOM} || exit 1
+# fix oops in get_wchan()
+zcat ${SB_PATCHDIR}/linux-2.6-x86-avoid-dereferencing-beyond-stack-THREAD_SIZE.patch.gz | ${PATCHCOM} || exit 1
+# reserve first device vector on x86-32
+zcat ${SB_PATCHDIR}/linux-2.6-x86-Reserve-FIRST_DEVICE_VECTOR-in-used_vectors-bit.patch.gz | ${PATCHCOM} || exit 1
 
 # disable ASPM on devices that don't support it
 zcat ${SB_PATCHDIR}/linux-2.6-pci-disable-aspm-per-acpi-fadt-setting.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-pci-disable-aspm-on-pre-1.1-devices.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-pci-add-an-option-to-allow-aspm-enabled-forcibly.patch.gz | ${PATCHCOM} || exit 1
+# check range on pci mmap
+zcat ${SB_PATCHDIR}/linux-2.6-pci-check-mapped-ranges-on-sysfs-resource-files.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # Exec shield
@@ -78,6 +84,11 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 
 # USB
 zcat ${SB_PATCHDIR}/linux-2.6-usb-ehci-hcd-respect-nousb.patch.gz | ${PATCHCOM} || exit 1
+
+# uvcvideo buffer overflow
+zcat ${SB_PATCHDIR}/linux-2.6-uvcvideo-return-sensible-min-max-values.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-uvcvideo-dont-use-stack-based-buffers.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-uvcvideo-fix-another-buffer-overflow.patch.gz | ${PATCHCOM} || exit 1
 
 # ACPI
 # fix cpuidle misbehavior
@@ -121,6 +132,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-fs-cifs-turn-off-unicode-during-session-establishm
 zcat ${SB_PATCHDIR}/linux-2.6-squashfs.patch.gz | ${PATCHCOM} || exit 1
 # fix CIFS plaintext passwords
 zcat ${SB_PATCHDIR}/linux-2.6-fs-cifs-fix-plaintext-authentication.patch.gz | ${PATCHCOM} || exit 1
+# don't allow splice to files opened with O_APPEND
+zcat ${SB_PATCHDIR}/linux-2.6-dont-allow-splice-to-files-opened-with-o_append.patch.gz | ${PATCHCOM} || exit 1
 
 # Networking
 # Disable easy to trigger printk's.
@@ -219,3 +232,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-merge-efifb-imacfb.patch.gz | ${PATCHCOM} || exit 
 
 zcat ${SB_PATCHDIR}/linux-2.6-intel-msr-backport.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-libata-sff-kill-spurious-WARN_ON-in-ata_hsm_move.patch.gz | ${PATCHCOM} || exit 1
+
+# for kerneloops reports
+zcat ${SB_PATCHDIR}/linux-2.6-net-print-module-name-as-part-of-the-message.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-warn-add-WARN-macro.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-warn-Turn-the-netdev-timeout-WARN_ON-into-WARN.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-warn-rename-WARN-to-WARNING.patch.gz | ${PATCHCOM} || exit 1

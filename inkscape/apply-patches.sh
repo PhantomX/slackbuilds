@@ -8,3 +8,5 @@ zcat ${SB_PATCHDIR}/${NAME}-0.46-fixlatex.patch.gz | patch -p1 -E --backup --ver
 zcat ${SB_PATCHDIR}/${NAME}-0.46-gtkopen.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.46-gtk2.13.3.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.46-poppler-0.8.3.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-0.46-uniconv.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-perl-5.10.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -41,21 +41,23 @@ KERNNAME=${KERNNAME:-custom}
 PNAME=linux
 NAME=kernel-${KERNNAME}
 MNAME=kernel-modules-${KERNNAME}
+FNAME=kernel-firmware
 HNAME=kernel-headers
 DNAME=kernel-doc
 PKGF=${PKGF:-${TMP}/package-${NAME}}
 PKG=${PKGF}/${NAME}
 MPKG=${PKGF}/${MNAME}
+FPKG=${PKGF}/${FNAME}
 HPKG=${PKGF}/${HNAME}
 DPKG=${PKGF}/${DNAME}
 
 # Fill this stuff in:
 
-VERSION=${VERSION:-2.6.26.6}
+VERSION=${VERSION:-2.6.27.1}
 SVER="$( echo ${VERSION} | cut -d . -f 1-2 )"
 PVER="$( echo ${VERSION} | cut -d . -f 1-3 )"
 ARCH=${ARCH:-i686}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 FVER="${VERSION}-${BUILD}${PACKAGER_ID}"
 DOCDIR=${DPKG}/usr/doc/${NAME}-${FVER}
 SBDIR=${PKG}/usr/src/slackbuilds/kernel/${NAME}-${FVER}
@@ -64,6 +66,7 @@ KERNELSDIR=/usr/src/kernels/${FVER}-${ARCH}
 MODDIR=/lib/modules/${FVER}
 PKGNAME=${NAME}-$( echo ${FVER} | tr - _ )-${ARCH}-${BUILD}${PACKAGER_ID}
 MPKGNAME=${MNAME}-$( echo ${FVER} | tr - _ )-${ARCH}-${BUILD}${PACKAGER_ID}
+FPKGNAME=${FNAME}-$( echo ${FVER} | tr - _ )-${ARCH}-${BUILD}${PACKAGER_ID}
 HPKGNAME=${HNAME}-$( echo ${FVER} | tr - _ )-x86-${BUILD}${PACKAGER_ID}
 DPKGNAME=${DNAME}-$( echo ${FVER} | tr - _ )-noarch-${BUILD}${PACKAGER_ID}
 
@@ -110,7 +113,7 @@ if [ -d ${PKGF} ]; then
   # Clean up a previous build
   rm -rf ${PKGF}
 fi
-mkdir -p ${PKG} ${MPKG} ${HPKG} ${DPKG}
+mkdir -p ${PKG} ${MPKG} ${FPKG} ${HPKG} ${DPKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
@@ -125,9 +128,11 @@ chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ "${SB_PATCH}" = "YES" ] ;then
+  echo "Applying upstream patch"
   bzcat ${CWD}/${PSRCARCHIVE} | patch -p1
 fi
 if [ -r ${CWD}/apply-patches.sh ]; then
+  echo "Applying extra patches"
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
@@ -155,8 +160,9 @@ sed -i -e "/^CONFIG_LOCALVERSION=/s|=.*|=\"-${BUILD}${PACKAGER_ID}\"|g" \
 make || exit 1
 
 mkdir -p ${PKG}/${MODDIR}
-make INSTALL_MOD_PATH=${MPKG} modules_install KERNELRELEASE=${FVER} || exit 1
+make INSTALL_MOD_PATH=${MPKG} modules_install KERNELRELEASE=${FVER} mod-fw= || exit 1
 make INSTALL_MOD_PATH=${MPKG} vdso_install KERNELRELEASE=${FVER} || exit 1
+make INSTALL_FW_PATH=${FPKG}/lib/firmware firmware_install || exit 1
 
 # =================================================================
 # Main package
@@ -253,7 +259,7 @@ ln -sf ../../..${KERNELSDIR} ${MPKG}/${MODDIR}/build || exit 1
 # Write out the doinst.sh:
 mkdir -p ${MPKG}/install
 cat ${CWD}/slack-desc.modules > ${MPKG}/install/slack-desc
-echo "${NAME} = $( echo ${FVER} | tr - _ )-${PARCH}-${BUILD}${PACKAGER_ID}" \
+echo "${NAME} = $( echo ${FVER} | tr - _ )-${PARCH}-${BUILD}${PACKAGER_ID}" > \
      ${MPKG}/install/slack-required
 
 cat > ${MPKG}/install/doinst.sh << EOF
@@ -288,6 +294,15 @@ if [ -x sbin/depmod ]; then
 fi
 
 EOF
+
+# =================================================================
+# firmware package
+# =================================================================
+
+mkdir -p ${FPKG}/install
+cat ${CWD}/slack-desc.firmware > ${FPKG}/install/slack-desc
+echo "${NAME} = $( echo ${FVER} | tr - _ )-${PARCH}-${BUILD}${PACKAGER_ID}" > \
+     ${FPKG}/install/slack-required
 
 # =================================================================
 # Headers package
@@ -370,6 +385,8 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 MROOTCOMMANDS="set -o errexit -o xtrace ; cd ${MPKG} ;
   /bin/chown --recursive root:root .  ;"
+FROOTCOMMANDS="set -o errexit -o xtrace ; cd ${FPKG} ;
+  /bin/chown --recursive root:root .  ;"
 HROOTCOMMANDS="set -o errexit -o xtrace ; cd ${HPKG} ;
   /bin/chown --recursive root:root .  ;"
 DROOTCOMMANDS="set -o errexit -o xtrace ; cd ${DPKG} ;
@@ -379,6 +396,8 @@ ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
 MROOTCOMMANDS="${MROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${MPKGNAME}.tgz "
+FROOTCOMMANDS="${FROOTCOMMANDS}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${FPKGNAME}.tgz "
 HROOTCOMMANDS="${HROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${HPKGNAME}.tgz "
 DROOTCOMMANDS="${DROOTCOMMANDS}
@@ -387,6 +406,7 @@ DROOTCOMMANDS="${DROOTCOMMANDS}
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   eval ${MROOTCOMMANDS}
+  eval ${FROOTCOMMANDS}
   eval ${HROOTCOMMANDS}
   eval ${DROOTCOMMANDS}
   set +o xtrace
@@ -394,12 +414,14 @@ elif test "$(type -t fakeroot)" = 'file'; then
   echo -e "\e[1mEntering fakeroot environment.\e[0m"
   echo ${ROOTCOMMANDS} | fakeroot
   echo ${MROOTCOMMANDS} | fakeroot
+  echo ${FROOTCOMMANDS} | fakeroot
   echo ${HROOTCOMMANDS} | fakeroot
   echo ${DROOTCOMMANDS} | fakeroot
 else
   echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
   /bin/su -c "${ROOTCOMMANDS}"
   /bin/su -c "${MROOTCOMMANDS}"
+  /bin/su -c "${FROOTCOMMANDS}"
   /bin/su -c "${HROOTCOMMANDS}"
   /bin/su -c "${DROOTCOMMANDS}"
 fi

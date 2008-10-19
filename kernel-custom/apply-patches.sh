@@ -54,10 +54,10 @@ zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
 
 # Architecture patches
 
-# add config option to disable adding CPUs after boot
-zcat ${SB_PATCHDIR}/linux-2.6-x86-improve-up-kernel-when-cpu-hotplug-and-smp.patch.gz | ${PATCHCOM} || exit 1
 # fix oops in get_wchan()
 zcat ${SB_PATCHDIR}/linux-2.6-x86-avoid-dereferencing-beyond-stack-THREAD_SIZE.patch.gz | ${PATCHCOM} || exit 1
+# fix resume on UP systems with SMP kernel
+zcat ${SB_PATCHDIR}/linux-2.6-x86-acpi-fix-resume-on-64-bit-UP-systems.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # Exec shield
@@ -73,7 +73,6 @@ zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-stable-patch-queue.patch.gz | ${PATCHCOM} 
 zcat ${SB_PATCHDIR}/linux-2.6.27-fs-disable-fiemap.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
-zcat ${SB_PATCHDIR}/linux-2.6.27-xfs-barrier-fix.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6.27-xfs-remount-fix.patch.gz | ${PATCHCOM} || exit 1
 
 # USB
@@ -154,8 +153,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-defaults-fat-utf8.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-iwlwifi-use-dma_alloc_coherent.patch.gz | ${PATCHCOM} || exit 1
 # make jarod's iwl4965 not panic near N APs, hopefully
 zcat ${SB_PATCHDIR}/linux-2.6-iwlagn-downgrade-BUG_ON-in-interrupt.patch.gz | ${PATCHCOM} || exit 1
-# -stable fix for mac80211 debugf-related panics
-zcat ${SB_PATCHDIR}/linux-2.6-mac80211-debugfs-stable-fix.patch.gz | ${PATCHCOM} || exit 1
 
 # Add misc wireless bits from upstream wireless tree
 zcat ${SB_PATCHDIR}/linux-2.6-at76.patch.gz | ${PATCHCOM} || exit 1
@@ -196,6 +193,7 @@ zcat ${SB_PATCHDIR}/nvidia-agp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-modesetting-i915.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.27-drm-i915-fix-ioctl-security.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
 zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1

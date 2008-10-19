@@ -32,3 +32,9 @@ zcat ${SB_PATCHDIR}/xserver-1.5.1-mode-debug.patch.gz | patch -p1 --verbose || e
 
 zcat ${SB_PATCHDIR}/xserver-1.5.1-global-backtrace.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.2-mieq-backtrace.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.2-backtrace-defines.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.2-lies-damn-lies-and-aspect-ratios.patch.gz | patch -p1 --verbose || exit 1
+
+# No evdev grab, disable kbd/mouse
+zcat ${SB_PATCHDIR}/xserver-1.5.2-enable-RAW-console.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.2-disable-kbd-mouse.patch.gz | patch -p1 --verbose || exit 1

@@ -38,3 +38,7 @@ zcat ${SB_PATCHDIR}/xserver-1.5.2-lies-damn-lies-and-aspect-ratios.patch.gz | pa
 # No evdev grab, disable kbd/mouse
 zcat ${SB_PATCHDIR}/xserver-1.5.2-enable-RAW-console.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.2-disable-kbd-mouse.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.2-no-duplicate-devices.patch.gz | patch -p1 --verbose || exit 1
+
+# exa performance fix
+zcat ${SB_PATCHDIR}/xserver-1.5.2-exa-sync-less.patch.gz | patch -p1 --verbose || exit 1

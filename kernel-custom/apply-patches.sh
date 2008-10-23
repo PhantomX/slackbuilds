@@ -37,6 +37,12 @@ if [ "$C" -gt 10 ]; then
   zcat ${SB_PATCHDIR}/linux-2.6-compile-fixes.patch.gz | ${PATCHCOM} || exit 1
 fi
 
+# revert patches from upstream that conflict or that we get via other means
+C=$(zcat ${SB_PATCHDIR}/linux-2.6-upstream-reverts.patch.gz | wc -l | awk '{print $1}')
+if [ "$C" -gt 10 ]; then
+  zcat ${SB_PATCHDIR}/linux-2.6-upstream-reverts.patch.gz | ${PATCHCOM} -R || exit 1
+fi
+
 zcat ${SB_PATCHDIR}/git-cpufreq.patch.gz | ${PATCHCOM} || exit 1
 
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | wc -l | awk '{print $1}')
@@ -71,9 +77,10 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-stable-patch-queue.patch.gz | ${PATCHCOM} || exit 1
 # Disable fiemap until it is really truly upstream & released
 zcat ${SB_PATCHDIR}/linux-2.6.27-fs-disable-fiemap.patch.gz | ${PATCHCOM} || exit 1
+# CVE-2008-3528, ext-fs dir corruption
+zcat ${SB_PATCHDIR}/linux-2.6.27-ext-dir-corruption-fix.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
-zcat ${SB_PATCHDIR}/linux-2.6.27-xfs-remount-fix.patch.gz | ${PATCHCOM} || exit 1
 
 # USB
 zcat ${SB_PATCHDIR}/linux-2.6-usb-ehci-hcd-respect-nousb.patch.gz | ${PATCHCOM} || exit 1
@@ -188,12 +195,12 @@ zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-82567LM-3-and-82567LF-3-ICH
 zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-new-82574L-part.patch.gz | ${PATCHCOM} || exit 1
 
 # Nouveau DRM + drm fixes
-zcat ${SB_PATCHDIR}/drm-next.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/nvidia-agp.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-agp-intel-cantiga-fix.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-next.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/drm-modesetting-i915.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/drm-modesetting-i915.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6.27-drm-i915-fix-ioctl-security.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
 zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
@@ -215,3 +222,5 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || e
 zcat ${SB_PATCHDIR}/linux-2.6-amd64-yes-i-know-you-live.patch.gz | ${PATCHCOM} || exit 1
 # hush pci bar allocation failures
 zcat ${SB_PATCHDIR}/linux-2.6.27-pci-hush-allocation-failures.patch.gz | ${PATCHCOM} || exit 1
+# EC storms aren't anything you can fix, shut up already
+zcat ${SB_PATCHDIR}/linux-2.6.27-acpi-ec-drizzle.patch.gz | ${PATCHCOM} || exit 1

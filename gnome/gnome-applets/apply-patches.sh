@@ -13,6 +13,3 @@ zcat ${SB_PATCHDIR}/${NAME}-2.18.0-node-leak.patch.gz | patch -p1 -E --backup --
 
 # do the nullapplet dance for battstat
 zcat ${SB_PATCHDIR}/${NAME}-null-battstat.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-http://bugzilla.gnome.org/show_bug.cgi?id=553996
-zcat ${SB_PATCHDIR}/mount-auth.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -21,4 +21,10 @@ zcat ${SB_PATCHDIR}/${NAME}-2.21.92-allow-spurious-view-done-signals.patch.gz | 
 
 zcat ${SB_PATCHDIR}/${NAME}-2.24.0-smoother-slide-in.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
+# http://bugzilla.gnome.org/show_bug.cgi?id=536915
+zcat ${SB_PATCHDIR}/${NAME}-2.24.0-hide-shutdown-if-unavailable.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
 zcat ${SB_PATCHDIR}/clock-wakeups.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# http://bugzilla.gnome.org/show_bug.cgi?id=555710
+zcat ${SB_PATCHDIR}/tryexec.patch.gz | patch -p1 -E --backup --verbose || exit 1

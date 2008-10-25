@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -41,13 +44,13 @@ NAME=openbox
 PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-3.4.7.2}
-if [ "${SB_NATIVE}" = "NO" ] ;then
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
 fi
 SLKTARGET=${SLKTARGET:-i486}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -65,6 +68,14 @@ DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://icculus.org/${NAME}/releases/${SRCARCHIVE}"
 DL_URL2="http://icculus.org/${NAME}/tools/${SRCARCHIVE2}"
 
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+if ! test -r ${SRCARCHIVE2}; then
+  test -r ${CWD}/${SRCARCHIVE2} || wget ${DL_OPTS} ${DL_URL2} || exit 1
+fi
+
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
 else
@@ -77,15 +88,6 @@ else
                  ;;
   esac
 fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-fi
-if ! test -r ${SRCARCHIVE2}; then
-  test -r ${CWD}/${SRCARCHIVE2} || wget ${DL_OPTS} ${DL_URL2} || exit 1
-fi
-
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -105,6 +107,8 @@ cd ${SRCDIR} || exit 1
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-3.4.7.1-autostartdir.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-3.4.7.2-gdm.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -125,18 +129,44 @@ make -j${NJOBS} || exit 1
 make install DESTDIR=${PKG} || exit 1
 
 ( set -o xtrace
-  gcc ${SLKCFLAGS} -o setlayout ${CWD}/${SRCARCHIVE2} -lX11 || exit 1
+  gcc ${SLKCFLAGS} ${LDFLAGS} -o setlayout ${CWD}/${SRCARCHIVE2} -lX11 || exit 1
 ) || exit 1
 
 install -m0755 setlayout ${PKG}/usr/bin/ || exit 1
 
 rm -f ${PKG}/usr/lib/*.la
 
+rm -f ${PKG}/usr/share/xsessions/${NAME}-gnome.desktop
+rm -f ${PKG}/usr/bin/${NAME}-gnome-session
+
 ( cd ${PKG}
   find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
   find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
-  find . | xargs file | grep "current ar archive" | cut -f 1 -d : | xargs strip --strip-debug 2> /dev/null
 )
+
+zcat ${CWD}/${NAME}-xdg-menu.gz > ${PKG}/usr/share/${NAME}/xdg-menu || exit 1
+chmod 0755 ${PKG}/usr/share/${NAME}/xdg-menu
+zcat ${CWD}/openbox-menu.xml.gz | \
+  sed -e "s|_XDGMENU_|/usr/share/${NAME}/xdg-menu|g" >\
+    ${PKG}/usr/share/${NAME}/menu.xml || exit 1
+
+mkdir -p ${PKG}/etc/X11/xinit
+zcat ${CWD}/xinitrc.${NAME}.gz > \
+     ${PKG}/etc/X11/xinit/xinitrc.${NAME} || exit 1
+chmod 0755 ${PKG}/etc/X11/xinit/xinitrc.${NAME}
+
+mkdir -p ${PKG}/usr/share/applications
+cat > ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Openbox
+Exec=${NAME}
+Icon=${NAME}
+NoDisplay=true
+X-GNOME-Autostart-Phase=WindowManager
+X-GNOME-Provides=windowmanager
+X-GNOME-Autostart-Notify=true
+EOF
 
 # Add a documentation directory:
 rm -rf ${PKG}/usr/share/doc
@@ -168,14 +198,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -184,15 +206,21 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 # Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${SRCARCHIVE2} ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/${NAME}-*.patch.gz ${CWD}/${SRCARCHIVE2} ${CWD}/xinitrc.*.gz \
+                 ${CWD}/*xdg-menu.gz ${CWD}/*-menu.xml.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution

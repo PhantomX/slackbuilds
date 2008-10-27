@@ -58,12 +58,14 @@ zcat ${SB_PATCHDIR}/linux-2.6.27-x86-tracehook-syscall-arg-order.patch.gz | ${PA
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
 
+# scheduler
+zcat ${SB_PATCHDIR}/linux-2.6-sched-features-disable-hrtick.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-sched_clock-prevent-scd-clock-from-moving-backwards.gz | ${PATCHCOM} || exit 1
+
 # Architecture patches
 
 # fix oops in get_wchan()
 zcat ${SB_PATCHDIR}/linux-2.6-x86-avoid-dereferencing-beyond-stack-THREAD_SIZE.patch.gz | ${PATCHCOM} || exit 1
-# fix resume on UP systems with SMP kernel
-zcat ${SB_PATCHDIR}/linux-2.6-x86-acpi-fix-resume-on-64-bit-UP-systems.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # Exec shield
@@ -84,6 +86,8 @@ zcat ${SB_PATCHDIR}/linux-2.6.27-ext-dir-corruption-fix.patch.gz | ${PATCHCOM} |
 
 # USB
 zcat ${SB_PATCHDIR}/linux-2.6-usb-ehci-hcd-respect-nousb.patch.gz | ${PATCHCOM} || exit 1
+# fix I/O errors on jmicron usb-ata bridge
+zcat ${SB_PATCHDIR}/linux-2.6-usb-storage-unusual-devs-jmicron-ata-bridge.patch.gz | ${PATCHCOM} || exit 1
 
 # Add the ability to turn FIPS-compliant mode on or off at boot
 zcat ${SB_PATCHDIR}/linux-2.6-crypto-fips_enable.patch.gz | ${PATCHCOM} || exit 1
@@ -128,6 +132,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-squashfs.patch.gz | ${PATCHCOM} || exit 1
 # Networking
 # Disable easy to trigger printk's.
 zcat ${SB_PATCHDIR}/linux-2.6-net-silence-noisy-printks.patch.gz | ${PATCHCOM} || exit 1
+# Fix tcp option ordering.
+zcat ${SB_PATCHDIR}/linux-2.6-net-tcp-option-ordering.patch.gz | ${PATCHCOM} || exit 1
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
@@ -193,6 +199,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-the-82567LM-4-device.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-82567LM-3-and-82567LF-3-ICH10D-parts.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-new-82574L-part.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/linux-2.6-r8169-fix-RxMissed-register-access.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-r8169-wake-up-the-phy-of-the-8168.patch.gz | ${PATCHCOM} || exit 1
 
 # Nouveau DRM + drm fixes
 zcat ${SB_PATCHDIR}/nvidia-agp.patch.gz | ${PATCHCOM} || exit 1

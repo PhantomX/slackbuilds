@@ -2,9 +2,7 @@
 SB_PATCHDIR=${CWD}/patches
 
 if [ "${file}" = "xfdesktop-${VERSION}.tar.bz2" ]; then
-  # Official patch to fix memory leak in xfdesktop:
-  zcat ${SB_PATCHDIR}/xfdesktop-desktop-menu-dentry.diff.gz | patch -p1 --verbose || exit 1
-  
+  echo
   if [ "${SB_SLKART}" = "YES" ] ;then
     zcat ${SB_PATCHDIR}/xfdesktop-image-4.3.90.1.patch.gz | patch -p1 --verbose || exit 1
     zcat ${SB_PATCHDIR}/xfdesktop-4.4.2-show-backdrop-by-default.patch.gz | patch -p1 --verbose || exit 1

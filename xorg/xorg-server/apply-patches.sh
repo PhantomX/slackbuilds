@@ -42,3 +42,6 @@ zcat ${SB_PATCHDIR}/xserver-1.5.2-no-duplicate-devices.patch.gz | patch -p1 --ve
 
 # exa performance fix
 zcat ${SB_PATCHDIR}/xserver-1.5.2-exa-sync-less.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/xserver-1.5.2-more-sanity-checks.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.2-drain-console.patch.gz | patch -p1 --verbose || exit 1

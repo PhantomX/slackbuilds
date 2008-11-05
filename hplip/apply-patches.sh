@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/${NAME}-desktop.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # Quieten hpssd on startup.
-zcat ${SB_PATCHDIR}/${NAME}-quiet.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#zcat ${SB_PATCHDIR}/${NAME}-quiet.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # Low ink is a warning condition, not an error.
 zcat ${SB_PATCHDIR}/${NAME}-marker-supply.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -12,7 +12,7 @@ zcat ${SB_PATCHDIR}/135_rethrow_signals.patch.gz | patch -p1 --verbose || exit 1
 # OpenGL compositing manager feature/optimization patches.
 zcat ${SB_PATCHDIR}/xorg-x11-server-1.1.0-no-move-damage.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.4.99-dont-backfill-bg-none.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.5.0-exa-master-upgrade.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.2-exa-master-upgrade.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-bg-none-root.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-exa-master-fix-x11perf-crash.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.1-exa-fix-glyph-segfault.patch.gz | patch -p1 --verbose || exit 1
@@ -30,18 +30,4 @@ zcat ${SB_PATCHDIR}/xserver-1.5.0-edid-backport.patch.gz | patch -p1 --verbose |
 # force mode debugging on for randr 1.2 drivers
 zcat ${SB_PATCHDIR}/xserver-1.5.1-mode-debug.patch.gz | patch -p1 --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/xserver-1.5.1-global-backtrace.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.5.2-mieq-backtrace.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.5.2-backtrace-defines.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.5.2-lies-damn-lies-and-aspect-ratios.patch.gz | patch -p1 --verbose || exit 1
-
-# No evdev grab, disable kbd/mouse
-zcat ${SB_PATCHDIR}/xserver-1.5.2-enable-RAW-console.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.5.2-disable-kbd-mouse.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.5.2-no-duplicate-devices.patch.gz | patch -p1 --verbose || exit 1
-
-# exa performance fix
-zcat ${SB_PATCHDIR}/xserver-1.5.2-exa-sync-less.patch.gz | patch -p1 --verbose || exit 1
-
 zcat ${SB_PATCHDIR}/xserver-1.5.2-more-sanity-checks.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.5.2-drain-console.patch.gz | patch -p1 --verbose || exit 1

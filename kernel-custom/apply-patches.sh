@@ -58,14 +58,7 @@ zcat ${SB_PATCHDIR}/linux-2.6.27-x86-tracehook-syscall-arg-order.patch.gz | ${PA
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
 
-# scheduler
-zcat ${SB_PATCHDIR}/linux-2.6-sched-features-disable-hrtick.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-sched_clock-prevent-scd-clock-from-moving-backwards.gz | ${PATCHCOM} || exit 1
-
 # Architecture patches
-
-# fix oops in get_wchan()
-zcat ${SB_PATCHDIR}/linux-2.6-x86-avoid-dereferencing-beyond-stack-THREAD_SIZE.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # Exec shield
@@ -81,13 +74,13 @@ zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-stable-patch-queue.patch.gz | ${PATCHCOM} 
 zcat ${SB_PATCHDIR}/linux-2.6.27-fs-disable-fiemap.patch.gz | ${PATCHCOM} || exit 1
 # CVE-2008-3528, ext-fs dir corruption
 zcat ${SB_PATCHDIR}/linux-2.6.27-ext-dir-corruption-fix.patch.gz | ${PATCHCOM} || exit 1
+# Delay capability() checks 'til last in ext4
+zcat ${SB_PATCHDIR}/linux-2.6.27-delay-ext4-free-block-cap-check.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
 
 # USB
 zcat ${SB_PATCHDIR}/linux-2.6-usb-ehci-hcd-respect-nousb.patch.gz | ${PATCHCOM} || exit 1
-# fix I/O errors on jmicron usb-ata bridge
-zcat ${SB_PATCHDIR}/linux-2.6-usb-storage-unusual-devs-jmicron-ata-bridge.patch.gz | ${PATCHCOM} || exit 1
 
 # Add the ability to turn FIPS-compliant mode on or off at boot
 zcat ${SB_PATCHDIR}/linux-2.6-crypto-fips_enable.patch.gz | ${PATCHCOM} || exit 1
@@ -95,7 +88,7 @@ zcat ${SB_PATCHDIR}/linux-2.6-crypto-fips_enable.patch.gz | ${PATCHCOM} || exit 
 # ACPI
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-acpi-video.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-dos.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-acpi-clear-wake-status.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-acpi-handle-ec-init-failure.patch.gz | ${PATCHCOM} || exit 1
 
 # Various low-impact patches to aid debugging.
 zcat ${SB_PATCHDIR}/linux-2.6-debug-sizeof-structs.patch.gz | ${PATCHCOM} || exit 1
@@ -105,6 +98,7 @@ zcat ${SB_PATCHDIR}/linux-2.6-debug-spinlock-taint.patch.gz | ${PATCHCOM} || exi
 #zcat ${SB_PATCHDIR}/linux-2.6-debug-no-quiet.patch.gz | ${PATCHCOM} || exit 1
 # try to find out what is breaking acpi-cpufreq
 zcat ${SB_PATCHDIR}/linux-2.6-debug-vm-would-have-oomkilled.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-mm-pagefault-enable-ints.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-debug-always-inline-kzalloc.patch.gz | ${PATCHCOM} || exit 1
 
 #
@@ -112,6 +106,12 @@ zcat ${SB_PATCHDIR}/linux-2.6-debug-always-inline-kzalloc.patch.gz | ${PATCHCOM}
 #
 # disable message signaled interrupts
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-pci_no_msi.patch.gz | ${PATCHCOM} || exit 1
+
+# update the pciehp driver
+zcat ${SB_PATCHDIR}/linux-2.6-pciehp-update.patch.gz | ${PATCHCOM} || exit 1
+
+# default to enabling passively listening for hotplug events
+zcat ${SB_PATCHDIR}/linux-2.6-defaults-pciehp.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # SCSI Bits.
@@ -132,8 +132,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-squashfs.patch.gz | ${PATCHCOM} || exit 1
 # Networking
 # Disable easy to trigger printk's.
 zcat ${SB_PATCHDIR}/linux-2.6-net-silence-noisy-printks.patch.gz | ${PATCHCOM} || exit 1
-# Fix tcp option ordering.
-zcat ${SB_PATCHDIR}/linux-2.6-net-tcp-option-ordering.patch.gz | ${PATCHCOM} || exit 1
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
@@ -148,6 +146,10 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-noise.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 1
 
 # Changes to upstream defaults.
+
+# fix overlow with large disk
+zcat ${SB_PATCHDIR}/linux-2.6-libata-avoid-overflow-with-large-disks.patch.gz | ${PATCHCOM} || exit 1
+
 # Use UTF-8 by default on VFAT.
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-fat-utf8.patch.gz | ${PATCHCOM} || exit 1
 
@@ -163,18 +165,31 @@ zcat ${SB_PATCHDIR}/linux-2.6-defaults-fat-utf8.patch.gz | ${PATCHCOM} || exit 1
 #zcat ${SB_PATCHDIR}/linux-2.6-wireless-pending.patch.gz | ${PATCHCOM} || exit 1
 
 # fix spot's iwlwifi, hopefully...
-zcat ${SB_PATCHDIR}/linux-2.6-iwlwifi-use-dma_alloc_coherent.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-iwlwifi-use-dma_alloc_coherent.patch.gz | ${PATCHCOM} || exit 1
 # make jarod's iwl4965 not panic near N APs, hopefully
 zcat ${SB_PATCHDIR}/linux-2.6-iwlagn-downgrade-BUG_ON-in-interrupt.patch.gz | ${PATCHCOM} || exit 1
+# iwl3945 fix for stable ad-hoc mode connections (#459401)
+zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-ibss-tsf-fix.patch.gz | ${PATCHCOM} || exit 1
+# hostap hack to still work w/ quetionable skb->cb usage
+zcat ${SB_PATCHDIR}/linux-2.6-hostap-skb-cb-hack.patch.gz | ${PATCHCOM} || exit 1
 
 # Add misc wireless bits from upstream wireless tree
 zcat ${SB_PATCHDIR}/linux-2.6-at76.patch.gz | ${PATCHCOM} || exit 1
+
+# atl2 network driver
+zcat ${SB_PATCHDIR}/linux-2.6-netdev-atl2.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/linux-2.6-net-tulip-interrupt.patch.gz | ${PATCHCOM} || exit 1
 
 # implement smarter atime updates support.
 zcat ${SB_PATCHDIR}/linux-2.6-smarter-relatime.patch.gz | ${PATCHCOM} || exit 1
 
 # NFS Client mounts hang when exported directory do not exist
 zcat ${SB_PATCHDIR}/linux-2.6-nfs-client-mounts-hang.patch.gz | ${PATCHCOM} || exit 1
+
+# implement whitelist for ac97
+zcat ${SB_PATCHDIR}/linux-2.6-alsa-ac97-whitelist.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-alsa-ac97-whitelist-AD1981B.patch.gz | ${PATCHCOM} || exit 1
 
 # build id related enhancements
 zcat ${SB_PATCHDIR}/linux-2.6-default-mmf_dump_elf_headers.patch.gz | ${PATCHCOM} || exit 1
@@ -191,10 +206,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-cdrom-door-status.patch.gz | ${PATCHCOM} || exit 1
 # fix sysfs links for the cciss driver
 zcat ${SB_PATCHDIR}/linux-2.6-blk-cciss-fix-regression-sysfs-symlink-missing.patch.gz | ${PATCHCOM} || exit 1
 
-# fix RTC on systems with broken PnP
-zcat ${SB_PATCHDIR}/linux-2.6-rtc-cmos-look-for-pnp-rtc-first.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-x86-register-platform-rtc-if-pnp-doesnt-describe-it.patch.gz | ${PATCHCOM} || exit 1
-
 zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-the-82567LM-4-device.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-82567LM-3-and-82567LF-3-ICH10D-parts.patch.gz | ${PATCHCOM} || exit 1
@@ -205,21 +216,23 @@ zcat ${SB_PATCHDIR}/linux-2.6-r8169-wake-up-the-phy-of-the-8168.patch.gz | ${PAT
 
 # Nouveau DRM + drm fixes
 zcat ${SB_PATCHDIR}/nvidia-agp.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-agp-intel-cantiga-fix.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-next.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-gem-x86-64-faster.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
 #zcat ${SB_PATCHDIR}/drm-modesetting-i915.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
-zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
-#C=$(zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | wc -l | awk '{print $1}')
-#if [ "$C" -gt 10 ]; then
-  #zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | ${PATCHCOM} || exit 1
-#fi
+#zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
+C=$(zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | wc -l | awk '{print $1}')
+if [ "$C" -gt 10 ]; then
+  zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | ${PATCHCOM} || exit 1
+fi
 
 # get rid of imacfb and make efifb work everywhere it was used
 zcat ${SB_PATCHDIR}/linux-2.6-merge-efifb-imacfb.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/linux-2.6-dmi-autoload.patch.gz | ${PATCHCOM} || exit 1
 
 # silence piix3 in quiet boot (ie, qemu)
 zcat ${SB_PATCHDIR}/linux-2.6-piix3-silence-quirk.patch.gz | ${PATCHCOM} || exit 1
@@ -231,5 +244,3 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || e
 zcat ${SB_PATCHDIR}/linux-2.6-amd64-yes-i-know-you-live.patch.gz | ${PATCHCOM} || exit 1
 # hush pci bar allocation failures
 zcat ${SB_PATCHDIR}/linux-2.6.27-pci-hush-allocation-failures.patch.gz | ${PATCHCOM} || exit 1
-# EC storms aren't anything you can fix, shut up already
-zcat ${SB_PATCHDIR}/linux-2.6.27-acpi-ec-drizzle.patch.gz | ${PATCHCOM} || exit 1

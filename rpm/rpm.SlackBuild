@@ -43,14 +43,15 @@ fi
 NAME=rpm
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-4.4.2.3}
+VERSION=${VERSION:-4.6.0-rc1}
+SVER=$(echo ${VERSION} | cut -d. -f1-2)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
 fi
 SLKTARGET=${SLKTARGET:-i486}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -62,16 +63,21 @@ PYABI=$(python -c 'import sys; print ".".join(sys.version.split(".")[:2])' | awk
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
+RPMHOME=/usr/lib/rpm
+
+grep --quiet '^rpm:' /etc/group && SB_HGROUP=1
+grep --quiet '^rpm:' /etc/group && SB_HUSER=1
+
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+SRCARCHIVE=${SRCDIR}.tar.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://rpm.org/releases/${NAME}-4.4.x/${SRCARCHIVE}"
+DL_URL="http://rpm.org/releases"
 
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL}/{${NAME}-${SVER}.x,testing}/${SRCARCHIVE} || exit 1
 fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -109,49 +115,22 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-sed -i -e '/^AC_CONFIG_SUBDIRS/s|file ||g' configure.ac || exit 1
-sed -i -e '/^rpmfile.c/s|$(top_srcdir)/file/src/file.c||g' tools/Makefile.* || exit 1
-sed -i \
-    -e '/^#include/s|"file.h"|<file.h>|g;/^#include/s|"magic.h"|<magic.h>|g' \
-    -e '/^#include/s|"patchlevel.h"|<file-patchlevel.h>|g' \
-    tools/rpmfile.c || exit 1
-
-# force external popt
-rm -rf popt/ file/
-
-# XXX for popt removal 
-autoreconf -ivf || exit 1
-
-# Ugly fix to po bulding erros
-cp -f po/Makefile.in.in~ po/Makefile.in.in
-
-# XXX pull in updated config.guess and config.sub as done by %%configure
-# which cannot be used to build rpm itself due to makefile brokenness
-#for i in $(find . -name config.guess -o -name config.sub) ; do 
-    #[ -f /usr/lib/rpm/$(basename $i) ] && %{__rm} -f $i && cp -fv /usr/lib/rpm/$(basename $i) $i 
-#done 
-
 export CFLAGS="${SLKCFLAGS}"
+export CPPFLAGS="$(pkg-config --cflags nss)"
 ./configure \
   --prefix=/usr \
   --sysconfdir=/etc \
   --localstatedir=/var \
   --infodir=/usr/info \
   --mandir=/usr/man \
+  --with-external-db \
+  --with-lua \
   --without-selinux \
-  --with-python=${PYABI} \
-  --enable-posixmutexes \
-  --without-javaglue \
-  --without-apidocs \
-  --build=${SLKTARGET}-rpm-linux || exit 1
+  --with-python \
+  --build=${SLKTARGET}-slackware-linux || exit 1
 
 make -j${NJOBS} || exit 1
 make DESTDIR=${PKG} install || exit 1
-
-# Clean up useless symlinks
-for i in rpme rpmi rpmu; do
-    rm -f ${PKG}/usr/bin/${i}
-done
 
 # Save list of packages through cron
 # mkdir -p ${PKG}/etc/cron.daily
@@ -163,35 +142,26 @@ install -m 0644 scripts/rpm.log \
 
 mkdir -p ${PKG}/etc/rpm
 
-mkdir -p ${PKG}/var/spool/repackage
 mkdir -p ${PKG}/var/lib/rpm
-# for dbi in \
-# 	Basenames Conflictname Dirnames Group Installtid Name Packages \
-# 	Providename Provideversion Requirename Requireversion Triggername \
-# 	Filemd5s Pubkeys Sha1header Sigmd5 \
-# 	__db.001 __db.002 __db.003 __db.004 __db.005 __db.006 __db.007 \
-# 	__db.008 __db.009
-# do
-#     touch ${PKG}/var/lib/rpm/$dbi
-# done
+for dbi in \
+  Basenames Conflictname Dirnames Group Installtid Name Packages \
+  Providename Provideversion Requirename Requireversion Triggername \
+  Filemd5s Pubkeys Sha1header Sigmd5 \
+  __db.001 __db.002 __db.003 __db.004 __db.005 __db.006 __db.007 \
+  __db.008 __db.009
+do
+  touch ${PKG}/var/lib/rpm/${dbi}.new
+done
 
-# Stupid RPM should be taken out back and shot for installing making a chmod 755 /var/tmp:
-# rmdir $PKG/var/tmp
-# Sigh... have to maintain it for at least one build as an update..
-chmod 1777 ${PKG}/var/tmp
+find ${PKG} -name "*.la"|xargs rm -f
+
+# avoid dragging in tonne of perl libs for an unused script
+chmod 0644 ${PKG}/${RPMHOME}/perldeps.pl
+
+# Um, /var/tmp should NOT have mode 0755
+rmdir ${PKG}/var/tmp || exit 1
 
 mkdir -p ${PKG}/var/lib/rpm/tmp
-zcat ${CWD}/Packages.gz > \
-     ${PKG}/var/lib/rpm/tmp/Packages || exit 1
-
-# Filter all .la files (thanks much to Mark Post for the sed script):
-( cd ${PKG}
-  for file in $(find . -type f -name "*.la") ; do
-    cat ${file} | sed -e 's%-L/tmp/[[:graph:]]* % %g' > ${TMP}/tmp-la-file
-    cat ${TMP}/tmp-la-file > ${file}
-  done
-  rm ${TMP}/tmp-la-file
-)
 
 # Here's a bug that's been around forever:
 ( cd ${PKG}/usr/lib/rpm
@@ -202,46 +172,23 @@ zcat ${CWD}/Packages.gz > \
   fi
 )
 
-strip -g ${PKG}/usr/lib/*.a
-# Since rpm linked statically is generally segfaulting after each glibc
-# upgrade, these static libraries are very likely equally useless.
-rm -f ${PKG}/usr/lib/*.a
-
-# Get rid of unpackaged files
-( cd ${PKG}
-  rm -f ./usr/lib/lib*.la
-  rm -f ./usr/lib/rpm/{Specfile.pm,cpanflute,cpanflute2,rpmdiff,rpmdiff.cgi,sql.prov,sql.req,tcl.req,rpm.*}
-  rm -rf ./usr/man/{fr,ko}
-  rm -f .${PYSITEARCH}/*.{a,la}
-  rm -f .${PYSITEARCH}/rpm/*.{a,la}
-  rm -f .${PYSITEARCH}/rpmdb/*.{a,la}
-)
-
-find ${PKG}/usr/lib/python${PYABI} -name "*.py"|xargs chmod 644
-
 ( cd ${PKG}
   find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
   find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
-  find . | xargs file | grep "current ar archive" | cut -f 1 -d : | xargs strip --strip-debug 2> /dev/null
 )
-
-# copy db and file/libmagic license info to distinct names
-cp -p db/LICENSE LICENSE-bdb
-cp -p file/LEGAL.NOTICE LEGAL.NOTICE-file
-cp -p lua/COPYRIGHT COPYRIGHT-lua
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  CHANGES GROUPS COPYING  LICENSE-bdb LEGAL.NOTICE-file CREDITS \
-  ChangeLog COPYRIGHT-lua doc/manual/[a-z]* ${CWD}/ChangeLog.SB \
+  CHANGES GROUPS COPYING CREDITS ChangeLog doc/manual/[a-z]* ${CWD}/ChangeLog.SB \
   ${CWD}/${NAME}.spec ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -249,7 +196,7 @@ if [ -d ${PKG}/usr/man ]; then
       ( cd ${manpagedir}
         for eachpage in $( find . -type l -maxdepth 1) ; do
           ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
-          rm ${eachpage}
+          rm -f ${eachpage}
         done
         gzip -9 *.?
         # Prevent errors
@@ -309,60 +256,30 @@ EOF
 
 ( cd ${PKG}
   find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find var/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
 cat >> ${PKG}/install/doinst.sh <<'EOF'
 # Fix permissions'
-${CHROOT} /bin/chown rpm.rpm /bin/rpm 
-${CHROOT} /bin/chown rpm.rpm /usr/bin/{rpmbuild,rpm2cpio,gendiff,rpmdb}
-${CHROOT} /bin/chown rpm.rpm /usr/bin/{rpmgraph,rpmsign,rpmquery,rpmverify}
+${CHROOT} /bin/chown rpm.rpm /var/lib/rpm/*
+${CHROOT} /bin/rm -f /var/lib/rpm/*.new
 
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/config.{guess,sub}
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/convertrpmrc.sh
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/freshen.sh
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/macros
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/mkinstalldirs
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/rpm2cpio.sh
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/rpm{d,e,i,u,k,q,v,b,t}
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/tgpg
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/rpmpopt*
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/rpmrc
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/{i[3-6],athlon,pentium,noarch}*
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/rpmdb_*
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/rpmfile
-
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/rpmcache
-
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/brp-*
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/check-*
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/config.site
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/cross-build
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/find-*
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/get_magic.pl
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/getpo.sh
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/http.req
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/javadeps
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/magic*
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/mono-find-*
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/perl*
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/pythondeps.sh
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/{rpmdeps,trpm}
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/u_pkg.sh
-${CHROOT} /bin/chown rpm.rpm /usr/lib/rpm/vpkg-*
-
-${CHROOT} /bin/chown rpm.rpm /var/lib/rpm
-${CHROOT} /bin/chown rpm.rpm /var/spool/repackage
-
-${CHROOT} /bin/chown rpm.rpm /var/lib/rpm/[A-Z]*
-
-if [ ! -r var/lib/rpm/Packages ]; then
-  ( cd var/lib/rpm/tmp ; cp -a * .. )
+if [ -x /usr/bin/db_stat ] ; then
+  dbstat=/usr/bin/db_stat
+elif [ -x /usr/bin/db45_stat ] ; then
+  dbstat=/usr/bin/db45_stat
+elif [ -x /usr/bin/db44_stat ] ; then
+  dbstat=/usr/bin/db44_stat
 fi
-( cd var/lib/rpm && rm -f tmp/* && rmdir tmp )
+if [ -x "${dbstat}" ]; then
+  if "${dbstat}" -e -h var/lib/rpm 2>&1 | grep -q "doesn't match environment version \| Invalid argument"; then
+    rm -f /var/lib/rpm/__db.* 
+  fi
+fi
+
 ${CHROOT} /bin/rpm --rebuilddb
-${CHROOT} /bin/chown rpm.rpm /var/lib/rpm/[A-Z]*
+
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -372,8 +289,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/${NAME}.spec ${CWD}/Packages.gz \
-                 ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${CWD}/${NAME}.spec ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.gz \
@@ -388,8 +304,8 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;
-  /bin/chmod 1777 var/tmp ; "
+  /bin/chown --recursive root:root .  ; 
+  [ "${SB_HGROUP}" = 1 ] && [ "${SB_HUSER}" = 1 ] && /bin/chown rpm.rpm ./var/lib/rpm/* ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "

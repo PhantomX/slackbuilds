@@ -23,6 +23,7 @@ if [ "${SB_HUNSPELL}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/${NAME}-3.5.8-kspell2-no-ispell.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 fi
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-cupsserverbin.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.9-KDE3.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 #fix flock and flock64 redefinition in newer kernels
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-fix-flock-redefinition.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 # use /etc/kde in addition to /usr/share/config, borrowed from debian

@@ -18,6 +18,11 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.10-konsolesu.patch.gz | patch -p1 -E --backup --
 # fixes NTFS and adds PolicyKit support
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-userdiskmount.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
+# don't link kcm_colors against libkrdb (and don't call runRdb)
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-libkrd.gz | patch -p1 -E --backup --verbose || exit 1
+# http://aseigo.blogspot.com/2008/10/dear-kde3-kdesktop-users.html
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-minicli-decimal-comma.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
 # upstream patches
 
 zcat ${SB_PATCHDIR}/fix-async_history.patch.gz | patch -p1 -E --backup --verbose || exit 1

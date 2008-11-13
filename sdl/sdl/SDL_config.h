@@ -53,6 +53,10 @@
 #include "SDL_config-arm.h"
 #elif defined(__alpha__)
 #include "SDL_config-alpha.h"
+#elif defined(__sparc__) && defined (__arch64__)
+#include "SDL_config-sparc64.h"
+#elif defined(__sparc__)
+#include "SDL_config-sparc.h"
 #else
 #error "The SDL-devel package is not usable with the architecture."
 #endif

@@ -55,6 +55,10 @@ zcat ${SB_PATCHDIR}/linux-2.6-utrace.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-x86-tracehook.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6.27-x86-tracehook-syscall-arg-order.patch.gz | ${PATCHCOM} || exit 1
 
+zcat ${SB_PATCHDIR}/linux-2.6-x86-mtrr-kill-bogus-warning.patch.gz | ${PATCHCOM} || exit 1
+# check for more ATI timer bugs
+zcat ${SB_PATCHDIR}/linux-2.6-x86-sb600-skip-acpi-irq0-override-if-not-routed-to-int2.patch.gz | ${PATCHCOM} || exit 1
+
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
 
@@ -69,13 +73,10 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 # bugfixes to drivers and filesystems
 #
 # Pending ext4 patch queue, minus fiemap, includes s/ext4dev/ext4
-zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-stable-patch-queue.patch.gz | ${PATCHCOM} || exit 1
-# Disable fiemap until it is really truly upstream & released
-zcat ${SB_PATCHDIR}/linux-2.6.27-fs-disable-fiemap.patch.gz | ${PATCHCOM} || exit 1
-# CVE-2008-3528, ext-fs dir corruption
-zcat ${SB_PATCHDIR}/linux-2.6.27-ext-dir-corruption-fix.patch.gz | ${PATCHCOM} || exit 1
-# Delay capability() checks 'til last in ext4
-zcat ${SB_PATCHDIR}/linux-2.6.27-delay-ext4-free-block-cap-check.patch.gz | ${PATCHCOM} || exit 1
+# ext4/jbd changes up to 2.6.28-rc3-git6
+zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-2.6.28-rc3-git6.patch.gz | ${PATCHCOM} || exit 1
+# Fixups for the upstream ext4 code to build cleanly in 2.6.27.
+zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-2.6.28-backport-fixups.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
 
@@ -181,6 +182,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-netdev-atl2.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-net-tulip-interrupt.patch.gz | ${PATCHCOM} || exit 1
 
+zcat ${SB_PATCHDIR}/linux-2.6-net-qla-silence-debug-printks.patch.gz | ${PATCHCOM} || exit 1
+
 # implement smarter atime updates support.
 zcat ${SB_PATCHDIR}/linux-2.6-smarter-relatime.patch.gz | ${PATCHCOM} || exit 1
 
@@ -190,6 +193,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-nfs-client-mounts-hang.patch.gz | ${PATCHCOM} || e
 # implement whitelist for ac97
 zcat ${SB_PATCHDIR}/linux-2.6-alsa-ac97-whitelist.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-alsa-ac97-whitelist-AD1981B.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/linux-2.6-alsa-revo51-headphone.patch.gz | ${PATCHCOM} || exit 1
 
 # build id related enhancements
 zcat ${SB_PATCHDIR}/linux-2.6-default-mmf_dump_elf_headers.patch.gz | ${PATCHCOM} || exit 1
@@ -203,27 +208,25 @@ zcat ${SB_PATCHDIR}/linux-2.6-hdpvr.patch.gz | ${PATCHCOM} || exit 1
 # but the drive isn't yet ready.
 zcat ${SB_PATCHDIR}/linux-2.6-cdrom-door-status.patch.gz | ${PATCHCOM} || exit 1
 
-# fix sysfs links for the cciss driver
-zcat ${SB_PATCHDIR}/linux-2.6-blk-cciss-fix-regression-sysfs-symlink-missing.patch.gz | ${PATCHCOM} || exit 1
-
 zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-the-82567LM-4-device.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-82567LM-3-and-82567LF-3-ICH10D-parts.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-new-82574L-part.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/linux-2.6-r8169-fix-RxMissed-register-access.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-r8169-wake-up-the-phy-of-the-8168.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-netdev-r8169-2.6.28.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/linux-2.6-quieter-mmc.patch.gz | ${PATCHCOM} || exit 1
 
 # Nouveau DRM + drm fixes
 zcat ${SB_PATCHDIR}/nvidia-agp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-next.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/drm-intel-gem-x86-64-faster.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
 #zcat ${SB_PATCHDIR}/drm-modesetting-i915.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-8xx-pae-no-gem.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
-#zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
   zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | ${PATCHCOM} || exit 1
@@ -244,3 +247,7 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || e
 zcat ${SB_PATCHDIR}/linux-2.6-amd64-yes-i-know-you-live.patch.gz | ${PATCHCOM} || exit 1
 # hush pci bar allocation failures
 zcat ${SB_PATCHDIR}/linux-2.6.27-pci-hush-allocation-failures.patch.gz | ${PATCHCOM} || exit 1
+# fix backtrace in pciehp
+zcat ${SB_PATCHDIR}/linux-2.6-pci-fix-pciehp.patch.gz | ${PATCHCOM} || exit 1
+# don't allocate IRQ 0 in pciehp
+zcat ${SB_PATCHDIR}/linux-2.6-pci-fix-pciehp-irq0.patch.gz | ${PATCHCOM} || exit 1

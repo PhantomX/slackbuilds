@@ -16,12 +16,19 @@ zcat ${SB_PATCHDIR}/xserver-1.5.2-exa-master-upgrade.patch.gz | patch -p1 --verb
 zcat ${SB_PATCHDIR}/xserver-1.5.0-bg-none-root.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-exa-master-fix-x11perf-crash.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.1-exa-fix-glyph-segfault.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.3-exa-fix-x-y-src-dst.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.3-exa-fix-composite-rects.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.3-exa-fix-unneeded-copies.patch.gz | patch -p1 --verbose || exit 1
+
 zcat ${SB_PATCHDIR}/xserver-1.4.99-pic-libxf86config.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-projector-fb-size.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/xserver-1.4.99-alloca-poison.patch.gz | patch -p1 --verbose || exit 1
 # This really could be done prettier.
 zcat ${SB_PATCHDIR}/xserver-1.4.99-ssh-isnt-local.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.1-xgi.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-bad-fbdev-thats-mine.patch.gz | patch -p1 --verbose || exit 1
+
 zcat ${SB_PATCHDIR}/xserver-1.4.99-endian.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-force-SwitchCoreKeyboard-for-evdev.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-hide-cursor.patch.gz | patch -p1 --verbose || exit 1
@@ -31,3 +38,6 @@ zcat ${SB_PATCHDIR}/xserver-1.5.0-edid-backport.patch.gz | patch -p1 --verbose |
 zcat ${SB_PATCHDIR}/xserver-1.5.1-mode-debug.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.5.2-more-sanity-checks.patch.gz | patch -p1 --verbose || exit 1
+
+# Bug 471221
+zcat ${SB_PATCHDIR}/xserver-1.5.3-AEI-on-by-default.patch.gz | patch -p1 --verbose || exit 1

@@ -171,11 +171,12 @@ zcat ${SB_PATCHDIR}/linux-2.6-defaults-fat-utf8.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-iwlagn-downgrade-BUG_ON-in-interrupt.patch.gz | ${PATCHCOM} || exit 1
 # iwl3945 fix for stable ad-hoc mode connections (#459401)
 zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-ibss-tsf-fix.patch.gz | ${PATCHCOM} || exit 1
-# hostap hack to still work w/ quetionable skb->cb usage
-zcat ${SB_PATCHDIR}/linux-2.6-hostap-skb-cb-hack.patch.gz | ${PATCHCOM} || exit 1
 
 # Add misc wireless bits from upstream wireless tree
 zcat ${SB_PATCHDIR}/linux-2.6-at76.patch.gz | ${PATCHCOM} || exit 1
+
+# disable ath9k when swiotlb is in use
+zcat ${SB_PATCHDIR}/linux-2.6-wireless-ath9k-check-broken-iommu.patch.gz | ${PATCHCOM} || exit 1
 
 # atl2 network driver
 zcat ${SB_PATCHDIR}/linux-2.6-netdev-atl2.patch.gz | ${PATCHCOM} || exit 1
@@ -195,6 +196,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-alsa-ac97-whitelist.patch.gz | ${PATCHCOM} || exit
 zcat ${SB_PATCHDIR}/linux-2.6-alsa-ac97-whitelist-AD1981B.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-alsa-revo51-headphone.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/linux-2.6-uvc-hg.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-uvc-spca525.patch.gz | ${PATCHCOM} || exit 1
 
 # build id related enhancements
 zcat ${SB_PATCHDIR}/linux-2.6-default-mmf_dump_elf_headers.patch.gz | ${PATCHCOM} || exit 1
@@ -220,10 +224,12 @@ zcat ${SB_PATCHDIR}/linux-2.6-quieter-mmc.patch.gz | ${PATCHCOM} || exit 1
 # Nouveau DRM + drm fixes
 zcat ${SB_PATCHDIR}/nvidia-agp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-next.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-next-intel-irq-test.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
 #zcat ${SB_PATCHDIR}/drm-modesetting-i915.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-8xx-pae-no-gem.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-fix-vt-switch-hang.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
 zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1

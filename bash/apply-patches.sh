@@ -2,14 +2,14 @@
 SB_PATCHDIR=${CWD}/patches
 
 for i in $( seq -w ${PATCHLEVEL} ) ; do
-  patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${NAME}32-${i} || exit 1
+  patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}32-${i} || exit 1
 done
 
 # Other patches
 zcat ${SB_PATCHDIR}/${NAME}-2.03-paths.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.02-security.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.03-profile.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-requires.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#zcat ${SB_PATCHDIR}/${NAME}-requires.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.05a-interpreter.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-readline-oom.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-xcc.patch.gz | patch -p1 -E --backup --verbose || exit 1

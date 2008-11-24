@@ -19,3 +19,6 @@ zcat ${SB_PATCHDIR}/${NAME}-1.6f-i18n_makewhatis_2.patch.gz | patch -p1 -E --bac
 zcat ${SB_PATCHDIR}/${NAME}-1.6f-fr_translation.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.6f-loc.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.6f-tty.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.6f-dashes2.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.6f-star.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.6f-lang_C.patch.gz | patch -p1 -E --backup --verbose || exit 1

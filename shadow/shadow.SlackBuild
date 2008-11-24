@@ -1,7 +1,7 @@
 #!/bin/sh
-#-- libv4l for Slackware --
+#-- shadow for Slackware --
 # Build script by Phantom X <megaphantomx@bol.com.br>
-# Suggested usage: $ libv4l.SlackBuild 2>&1 | tee build.log
+# Suggested usage: $ shadow.SlackBuild 2>&1 | tee build.log
 #--
 # Copyright 2008 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
@@ -23,7 +23,7 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# http://hansdegoede.livejournal.com/3636.html
+# http://pkg-shadow.alioth.debian.org/
 
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
@@ -40,10 +40,10 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
-NAME=libv4l
+NAME=shadow
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.5.5}
+VERSION=${VERSION:-4.1.2.2}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -57,14 +57,19 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to add /etc/limits file with 400 max processes (shellbomb protection)
+SB_LIMITS=${SB_LIMITS:-YES}
+# Set to YES to enable redhat system user patch (useradd -r)
+SB_RH=${SB_RH:-NO}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+SRCARCHIVE=${SRCDIR}.tar.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://people.atrpms.net/~hdegoede/${SRCARCHIVE}"
+DL_URL="ftp://pkg-shadow.alioth.debian.org/pub/pkg-${NAME}/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
@@ -102,24 +107,90 @@ cd ${SRCDIR} || exit 1
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+sed -i -e '/^GROUP=/s|1000|500|g' etc/useradd || exit 1
+
+if [ "${SB_LIMITS}" = "YES" ] ; then
+  echo >> etc/limits || exit 1
+  echo '# Limit user process number to prevent shellbomb' >> etc/limits || exit 1
+  echo '* U 400' >> etc/limits || exit 1
+fi
+
+rm -f po/*.gmo
+rm -f po/stamp-po
+
+autoreconf -ivf || exit 1
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
+./configure \
+  --prefix=/usr \
+  --sysconfdir=/etc \
+  --localstatedir=/var/lib \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --docdir=/usr/doc/${NAME}-${VERSION} \
+  --disable-shared \
+  --disable-desrpc \
+  --without-libpam \
+  --build=${SLKTARGET}-slackware-linux || exit 1
 
-make -j${NJOBS} CFLAGS="${SLKCFLAGS}" \
-  PREFIX=/usr LIBDIR=/usr/lib || exit 1
+make -j${NJOBS} || exit 1
+make install DESTDIR=${PKG} \
+  gnulocaledir=${PKG}/usr/share/locale \
+  MKINSTALLDIRS=$(pwd)/mkinstalldirs || exit 1
 
-make install PREFIX=/usr LIBDIR=/usr/lib DESTDIR=${PKG} || exit 1
+install -m0755 src/sulogin ${PKG}/sbin/sulogin || exit 1
+ln -sf ../sbin/sulogin ${PKG}/bin/sulogin
+
+mv ${PKG}/usr/bin/faillog ${PKG}/usr/bin/lastlog ${PKG}/usr/sbin/ || exit 1
+mkdir -p ${PKG}/var/log
+touch ${PKG}/var/log/faillog.new
+chmod 0640 ${PKG}/var/log/faillog.new
 
 ( cd ${PKG}
   find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
   find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 )
 
+( cd ${PKG}/etc || exit 1
+  for file in limits login.access login.defs default/useradd ; do
+    mv ${file} ${file}.new || exit 1
+  done
+) || exit 1
+
+install -m0755 ${CWD}/adduser ${PKG}/usr/sbin/adduser || exit 1
+zcat ${CWD}/shadowconfig.sh.gz > ${PKG}/usr/sbin/shadowconfig || exit 1
+chmod 0755 ${PKG}/usr/sbin/shadowconfig
+
+ln -s useradd.8 ${PKG}/usr/man/man8/adduser.8
+for subdir in ${PKG}/usr/man/{??,??_??,??_??.*}/man* ; do
+  test -d ${subdir} && test -e ${subdir}/useradd.8 && echo ".so man8/useradd.8" > ${subdir}/adduser.8
+done
+
+( cd man || exit 1
+  for file in shadowconfig.8 sulogin.8 ; do
+    install -pm0644 ${file} ${PKG}/usr/man/man8/ || exit 1
+    for dir in * ; do
+      if [ -d ${dir} ] ; then
+        ( cd ${dir}
+          if [ -r ${file} ]; then
+            mkdir -p ${PKG}/usr/man/${dir}/man8
+            install -pm0644 ${file} ${PKG}/usr/man/${dir}/man8/ || exit 1
+          fi
+        )
+      fi
+    done
+  done
+) || exit 1
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  COPYING.LIB ChangeLog README TODO ${CWD}/ChangeLog.SB \
+  NEWS doc/HOWTO README ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
@@ -149,16 +220,63 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -r sbin/adduser ]; then
+  rm -f sbin/adduser
+fi
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+# Fix permissions
+${CHROOT}/bin/chmod 4711 /bin/su
+${CHROOT} /bin/chmod 4711 /usr/bin/chage
+${CHROOT} /bin/chmod 4711 /usr/bin/chfn
+${CHROOT} /bin/chmod 4711 /usr/bin/chsh
+${CHROOT} /bin/chmod 4711 /usr/bin/expiry
+${CHROOT} /bin/chmod 4711 /usr/bin/gpasswd
+${CHROOT} /bin/chmod 4711 /usr/bin/newgrp
+${CHROOT} /bin/chmod 4711 /usr/bin/passwd
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${CWD}/adduser ${CWD}/shadowconfig.sh.gz \
                  ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
   sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
           /^BUILD=/s/:-.*}/:-$BUILD}/
           /^  ARCH=/s/:-.*}/:-$ARCH}/
@@ -169,7 +287,10 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  for f in chage chfn chsh expiry gpasswd newgrp passwd ;
+  do /bin/chmod 4711 ./usr/bin/\${f} ;done ;
+  /bin/chmod 4711 ./bin/su ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "

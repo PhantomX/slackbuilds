@@ -15,8 +15,3 @@ zcat ${SB_PATCHDIR}/${PNAME}-2.12.0-flash-workaround.patch.gz | patch -p1 -E --b
 
 # Don't break inclusion of gtkclist.h, upstream bug 536767
 zcat ${SB_PATCHDIR}/${PNAME}-2.14.3-limit-gtksignal-includes.patch.gz | patch -p0 -E --backup --verbose || exit 1
-
-# from upstream
-zcat ${SB_PATCHDIR}/randr-fix.patch.gz | patch -p1 -E --backup --verbose || exit 1
-# from upstream
-zcat ${SB_PATCHDIR}/${PNAME}-2.14.4-fallback-file-icon.patch.gz | patch -p0 -E --backup --verbose || exit 1

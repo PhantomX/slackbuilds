@@ -51,7 +51,7 @@ else
   ARCH=${ARCH:-i686}
 fi
 SLKTARGET=${SLKTARGET:-i486}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -70,9 +70,8 @@ SRCARCHIVE=${SRCDIR}.tar.gz
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-#DL_URL="http://dl.sf.net/sourceforge/${NAME}/${SRCARCHIVE}"
-DL_URL="http://prdownloads.sourceforge.net/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://download.sf.net/${NAME}/${SRCARCHIVE}"
+SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
+DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
 #DL_URL="http://aboenterprises.ca/${NAME}/files/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible, or in /tmp
@@ -101,7 +100,11 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
@@ -110,7 +113,41 @@ chmod -R u+w,go+r-w,a-s .
 
 sed -i -e "/^Icon=/s|\.png||g" data/pcsx.desktop || exit 1
 
-sed -i -e '/^pcsx_LDADD/s|=|= -lpthread|g' gui/Makefile.* || exit 1
+sed -i -e '/^pcsx_LDADD/s|=|= -lpthread `pkg-config gtk+-2.0 --libs`|g' gui/Makefile.* || exit 1
+
+# Link .so files with GTK+ too. (Fixes ePSXe)
+sed -i -e '/^lib.*_la_LIBADD =/s|$| $(GTK2_LIBS)|g' plugins/*/Makefile* || exit 1
+
+# Save configuration in cfg directory.
+sed -i -e '/sprintf/s|"dfcdrom.cfg"|"cfg/dfcdrom.cfg"|g' \
+          plugins/dfcdrom/cfg*.c || exit 1
+sed -i -e 's|"dfinput.cfg"|"cfg/dfinput.cfg"|g' \
+          plugins/dfinput/*.c || exit 1
+
+# Fixes from Gentoo
+sed -i \
+  -e "s:/lib/games/psemu/:/lib/psemu/plugins/:" \
+  -e 's:^icondir = .*:icondir = "/usr/share/pixmaps":' \
+  -e 's:-DPIXMAPDIR=\\"${datadir}/pixmaps/\\":-DPIXMAPDIR=\\"/usr/share/pixmaps/\\":' \
+  -e 's:-DLOCALE_DIR=\\"${datadir}/locale/\\":-DLOCALE_DIR=\\"/usr/share/locale/\\":' \
+  -e "s:^localedir = .*:localedir = /usr/share/locale/:" \
+  -e "s:^gnulocaledir = .*:gnulocaledir = /usr/share/locale/:" \
+  -e 's:^desktopdir = .*:desktopdir = /usr/share/applications:' \
+  $(find . -name "*.in") || exit 1
+
+# Use /usr/lib/psemu
+sed -i \
+  -e "/ScanPlugins/s:/usr/lib/games/psemu/:/usr/lib/psemu/plugins:" \
+  -e "/ScanPlugins/s:/usr/local/lib/games/psemu/:/usr/lib/psemu/cfg:" \
+  -e "s:filename, \".*\\.so$\":filename, \"lib.*\":" \
+  gui/Gtk2Gui.c || exit 1
+
+sed -i \
+  -e "s:/usr/lib/games/psemu/lib:/usr/lib/psemu/plugins:" \
+  -e "s:/usr/lib/games/psemu/config:/usr/lib/psemu/cfg:" \
+  -e '/usr\/lib\/games/d' \
+  -e '/usr\/local/d' \
+  gui/LnxMain.c || exit 1
 
 [ "${SB_NB}" = "YES" ] || SB_NBOPTS="--disable-nautilusburn"
 # Set to YES to enable dfbinimage plugin (build may fail)
@@ -130,23 +167,23 @@ CXXFLAGS="${SLKCFLAGS}" \
   --disable-static \
   --enable-alsa ${SB_NBOPTS} ${SB_DFBIOPTS} \
   --build=${SLKTARGET}-slackware-linux || exit 1
--lpthread
+
 make -j${NJOBS} || exit 1
 make install DESTDIR=${PKG} || exit 1
 
 find ${PKG} -name "*.la" -exec rm -rf {} ';'
 
-# Buggy
-rm -rf ${PKG}/usr/share/locale
+mkdir -p ${PKG}/usr/lib/psemu/cfg
+mv ${PKG}/usr/lib/psemu/plugins/cfg* ${PKG}/usr/lib/psemu/cfg/ || exit 1
 
 ( cd ${PKG}
   find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
   find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
-  find . | xargs file | grep "current ar archive" | cut -f 1 -d : | xargs strip --strip-debug 2> /dev/null
 )
 
 desktop-file-install --delete-original --vendor="" \
-  --dir ${PKG}/usr/share/applications  \
+  --dir ${PKG}/usr/share/applications \
+  --remove-key="Encoding" \
   --remove-category="Application" \
   ${PKG}/usr/share/applications/*.desktop
 
@@ -176,14 +213,6 @@ if [ -d ${PKG}/usr/man ]; then
         rm -f *.gz.gz
       )
     done
-  )
-fi
-
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-    rm -f dir
-    gzip -9 *
   )
 fi
 

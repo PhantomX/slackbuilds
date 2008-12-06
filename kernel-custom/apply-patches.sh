@@ -56,8 +56,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-x86-tracehook.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6.27-x86-tracehook-syscall-arg-order.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-x86-mtrr-kill-bogus-warning.patch.gz | ${PATCHCOM} || exit 1
-# check for more ATI timer bugs
-zcat ${SB_PATCHDIR}/linux-2.6-x86-sb600-skip-acpi-irq0-override-if-not-routed-to-int2.patch.gz | ${PATCHCOM} || exit 1
 
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
@@ -74,7 +72,7 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 #
 # Pending ext4 patch queue, minus fiemap, includes s/ext4dev/ext4
 # ext4/jbd changes up to 2.6.28-rc3-git6
-zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-2.6.28-rc3-git6.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-2.6.28-rc7-git5.patch.gz | ${PATCHCOM} || exit 1
 # Fixups for the upstream ext4 code to build cleanly in 2.6.27.
 zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-2.6.28-backport-fixups.patch.gz | ${PATCHCOM} || exit 1
 
@@ -90,6 +88,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-crypto-fips_enable.patch.gz | ${PATCHCOM} || exit 
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-acpi-video.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-dos.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-acpi-handle-ec-init-failure.patch.gz | ${PATCHCOM} || exit 1
+# fix dock bugs
+zcat ${SB_PATCHDIR}/linux-2.6-acpi-dock-fix-eject-request-process.patch.gz | ${PATCHCOM} || exit 1
 
 # Various low-impact patches to aid debugging.
 zcat ${SB_PATCHDIR}/linux-2.6-debug-sizeof-structs.patch.gz | ${PATCHCOM} || exit 1
@@ -137,6 +137,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-net-silence-noisy-printks.patch.gz | ${PATCHCOM} |
 # Misc fixes
 # The input layer spews crap no-one cares about.
 zcat ${SB_PATCHDIR}/linux-2.6-input-kill-stupid-messages.patch.gz | ${PATCHCOM} || exit 1
+# 448656
+zcat ${SB_PATCHDIR}/linux-2.6-input.git-i8042-add-xps-m1530-to-nomux.patch.gz | ${PATCHCOM} || exit 1
+
 
 # Allow to use 480600 baud on 16C950 UARTs
 zcat ${SB_PATCHDIR}/linux-2.6-serial-460800.patch.gz | ${PATCHCOM} || exit 1
@@ -147,9 +150,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-noise.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 1
 
 # Changes to upstream defaults.
-
-# fix overlow with large disk
-zcat ${SB_PATCHDIR}/linux-2.6-libata-avoid-overflow-with-large-disks.patch.gz | ${PATCHCOM} || exit 1
 
 # Use UTF-8 by default on VFAT.
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-fat-utf8.patch.gz | ${PATCHCOM} || exit 1
@@ -229,7 +229,6 @@ zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
 #zcat ${SB_PATCHDIR}/drm-modesetting-i915.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-8xx-pae-no-gem.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/drm-intel-fix-vt-switch-hang.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
 zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
@@ -253,7 +252,5 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || e
 zcat ${SB_PATCHDIR}/linux-2.6-amd64-yes-i-know-you-live.patch.gz | ${PATCHCOM} || exit 1
 # hush pci bar allocation failures
 zcat ${SB_PATCHDIR}/linux-2.6.27-pci-hush-allocation-failures.patch.gz | ${PATCHCOM} || exit 1
-# fix backtrace in pciehp
-zcat ${SB_PATCHDIR}/linux-2.6-pci-fix-pciehp.patch.gz | ${PATCHCOM} || exit 1
 # don't allocate IRQ 0 in pciehp
 zcat ${SB_PATCHDIR}/linux-2.6-pci-fix-pciehp-irq0.patch.gz | ${PATCHCOM} || exit 1

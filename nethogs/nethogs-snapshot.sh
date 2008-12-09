@@ -2,7 +2,7 @@
 
 set -e
 
-module=tidy
+module=nethogs
 snaproot="anonymous@${module}.cvs.sourceforge.net:/cvsroot/${module}"
 
 tmp=$(mktemp -d)
@@ -18,7 +18,7 @@ pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
 pushd "${tmp}"
-  #echo "Password is \"cvs\""
+  echo "Press enter"
   cvs -d:pserver:${snaproot} login
   cvs -z3 -d:pserver:${snaproot} co -d${module}-${snap} ${module}
   pushd ${module}-${snap}

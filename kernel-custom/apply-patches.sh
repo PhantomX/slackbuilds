@@ -60,6 +60,12 @@ zcat ${SB_PATCHDIR}/linux-2.6-x86-mtrr-kill-bogus-warning.patch.gz | ${PATCHCOM}
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
 
+# scheduler patches
+# performance fixes from 2.6.28
+zcat ${SB_PATCHDIR}/linux-2.6-sched-fine-tune-SD_MC_INIT.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-sched-fine-tune-SD_SIBLING_INIT.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-sched-wakeup-preempt-when-small-overlap.patch.gz | ${PATCHCOM} || exit 1
+
 # Architecture patches
 
 #
@@ -71,10 +77,7 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 # bugfixes to drivers and filesystems
 #
 # Pending ext4 patch queue, minus fiemap, includes s/ext4dev/ext4
-# ext4/jbd changes up to 2.6.28-rc3-git6
-zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-2.6.28-rc7-git5.patch.gz | ${PATCHCOM} || exit 1
-# Fixups for the upstream ext4 code to build cleanly in 2.6.27.
-zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-2.6.28-backport-fixups.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-rename-ext4dev-to-ext4.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
 
@@ -121,7 +124,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-defaults-pciehp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-scsi-cpqarray-set-master.patch.gz | ${PATCHCOM} || exit 1
 
 # ALSA
-#
+zcat ${SB_PATCHDIR}/linux-2.6.27.7-alsa-driver-1.0.18a.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.27.7-alsa-driver-fixups.patch.gz | ${PATCHCOM} || exit 1
 
 # block/bio
 #
@@ -191,12 +195,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-smarter-relatime.patch.gz | ${PATCHCOM} || exit 1
 # NFS Client mounts hang when exported directory do not exist
 zcat ${SB_PATCHDIR}/linux-2.6-nfs-client-mounts-hang.patch.gz | ${PATCHCOM} || exit 1
 
-# implement whitelist for ac97
-zcat ${SB_PATCHDIR}/linux-2.6-alsa-ac97-whitelist.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-alsa-ac97-whitelist-AD1981B.patch.gz | ${PATCHCOM} || exit 1
-
-zcat ${SB_PATCHDIR}/linux-2.6-alsa-revo51-headphone.patch.gz | ${PATCHCOM} || exit 1
-
 zcat ${SB_PATCHDIR}/linux-2.6-uvc-hg.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-uvc-spca525.patch.gz | ${PATCHCOM} || exit 1
 
@@ -224,9 +222,7 @@ zcat ${SB_PATCHDIR}/linux-2.6-quieter-mmc.patch.gz | ${PATCHCOM} || exit 1
 # Nouveau DRM + drm fixes
 zcat ${SB_PATCHDIR}/nvidia-agp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-next.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/drm-next-intel-irq-test.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
-#zcat ${SB_PATCHDIR}/drm-modesetting-i915.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-8xx-pae-no-gem.patch.gz | ${PATCHCOM} || exit 1
 
@@ -254,3 +250,4 @@ zcat ${SB_PATCHDIR}/linux-2.6-amd64-yes-i-know-you-live.patch.gz | ${PATCHCOM} |
 zcat ${SB_PATCHDIR}/linux-2.6.27-pci-hush-allocation-failures.patch.gz | ${PATCHCOM} || exit 1
 # don't allocate IRQ 0 in pciehp
 zcat ${SB_PATCHDIR}/linux-2.6-pci-fix-pciehp-irq0.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-pciehp-kill-annoying-messages.patch.gz | ${PATCHCOM} || exit 1

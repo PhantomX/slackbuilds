@@ -24,7 +24,7 @@ pushd "${tmp}"
   svn export ${snaproot}/patches ${EXPORT_DIR}/patches
 
   pushd ${EXPORT_DIR}
-    tar -cjf "${pwd}"/qt-copy-patches-${DATE}.tar.bz2 \
+    tar -cjf "${pwd}"/qt3-copy-patches-${DATE}.tar.bz2 \
       .applied_patches apply_patches README.qt-copy patches/ 
   popd
 popd >/dev/null

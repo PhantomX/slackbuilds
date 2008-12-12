@@ -33,11 +33,9 @@ zcat ${SB_PATCHDIR}/qt-3.3.6-fontrendering-ml_IN-217657.patch.gz | patch -p1 -E 
 zcat ${SB_PATCHDIR}/qt-3.3.6-fontrendering-gu-228452.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # immodule patches
-zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8-qt-x11-immodule-unified-qt3.3.7-20061229-pre.patch.gz | patch -p1 -E --backup --verbose || exit 1
-bzcat ${SB_PATCHDIR}/qt-x11-immodule-unified-qt3.3.7-20061229.diff.bz2 | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8-qt-x11-immodule-unified-qt3.3.7-20061229-post.patch.gz | patch -p1 -E --backup --verbose || exit 1
+bzcat ${SB_PATCHDIR}/qt-x11-immodule-unified-qt3.3.8-20071116.diff.bz2 | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-x11-immodule-unified-qt3.3.5-20051012-quiet.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/qt-x11-free-3.3.6-fix-key-release-event-with-imm.diff.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8b-fix-key-release-event-with-imm.diff.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.6-qt-x11-immodule-unified-qt3.3.5-20060318-resetinputcontext.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # qt-copy patches
@@ -51,6 +49,7 @@ test -x apply_patches && ./apply_patches
 
 # upstream patches
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.4-fullscreen.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8b-gcc43.patc | patch -p1 -E --backup --verbose || exit 1
 
 # security patches
 

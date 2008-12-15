@@ -34,3 +34,5 @@ zcat ${SB_PATCHDIR}/5063_all_glibc-dont-build-timezone.patch.gz | patch -p1 --ve
 # Upstream fixes. See sources.redhat.com bugzilla
 zcat ${SB_PATCHDIR}/glibc-2.7-bz4781.patch.gz | patch -p1 --verbose || exit 1
 
+zcat ${SB_PATCHDIR}/glibc-fixes1.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/glibc-nss_dns-gethostbyname4-disable.patch.gz | patch -p1 --verbose || exit 1

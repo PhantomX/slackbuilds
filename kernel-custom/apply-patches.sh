@@ -45,6 +45,9 @@ fi
 
 zcat ${SB_PATCHDIR}/git-cpufreq.patch.gz | ${PATCHCOM} || exit 1
 
+zcat ${SB_PATCHDIR}/linux-2.6-lib-idr-fix-bug-introduced-by-rcu-fix.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.27.7-vmi-fix-crash-on-boot.patch.gz | ${PATCHCOM} || exit 1
+
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
   zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | ${PATCHCOM} || exit 1
@@ -124,8 +127,11 @@ zcat ${SB_PATCHDIR}/linux-2.6-defaults-pciehp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-scsi-cpqarray-set-master.patch.gz | ${PATCHCOM} || exit 1
 
 # ALSA
-zcat ${SB_PATCHDIR}/linux-2.6.27.7-alsa-driver-1.0.18a.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-driver-1.0.18a.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6.27.7-alsa-driver-fixups.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-hda-add-a-quirk-for-dell-studio-15.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-hda-no-headphone-as-line-out-swich-without-line-outs.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-hda-mark-dell-studio-1535-quirk.patch.gz | ${PATCHCOM} || exit 1
 
 # block/bio
 #
@@ -197,6 +203,7 @@ zcat ${SB_PATCHDIR}/linux-2.6-nfs-client-mounts-hang.patch.gz | ${PATCHCOM} || e
 
 zcat ${SB_PATCHDIR}/linux-2.6-uvc-hg.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-uvc-spca525.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-gspca-vc0321-fix-frame-overflow.patch.gz | ${PATCHCOM} || exit 1
 
 # build id related enhancements
 zcat ${SB_PATCHDIR}/linux-2.6-default-mmf_dump_elf_headers.patch.gz | ${PATCHCOM} || exit 1

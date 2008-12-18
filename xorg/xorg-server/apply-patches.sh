@@ -42,6 +42,12 @@ zcat ${SB_PATCHDIR}/xserver-1.5.2-more-sanity-checks.patch.gz | patch -p1 --verb
 # Bug 471221
 zcat ${SB_PATCHDIR}/xserver-1.5.3-AEI-on-by-default.patch.gz | patch -p1 --verbose || exit 1
 
+zcat ${SB_PATCHDIR}/xserver-1.5.3-idletime-fix.patch.gz | patch -p1 --verbose || exit 1
+
+# fix SBUS autodetection, from upstream git
+# http://cgit.freedesktop.org/xorg/xserver/commit/?id=24e863b0eb6ff11010a14cfd252a39df87a09d0e
+zcat ${SB_PATCHDIR}/xserver-1.5.2-sbusAutoDetection.patch.gz | patch -p1 --verbose || exit 1
+
 if [ "${SB_HAL}" != "YES" ] ;then
   # Fix dbus/hal disable-config configure parameters do not working
   zcat ${SB_PATCHDIR}/xserver-1.5.3-force-hal-disable.patch.gz | patch -p0 --verbose || exit 1

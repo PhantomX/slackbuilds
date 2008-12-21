@@ -45,9 +45,6 @@ fi
 
 zcat ${SB_PATCHDIR}/git-cpufreq.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/linux-2.6-lib-idr-fix-bug-introduced-by-rcu-fix.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6.27.7-vmi-fix-crash-on-boot.patch.gz | ${PATCHCOM} || exit 1
-
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
   zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | ${PATCHCOM} || exit 1
@@ -132,6 +129,8 @@ zcat ${SB_PATCHDIR}/linux-2.6.27.7-alsa-driver-fixups.patch.gz | ${PATCHCOM} || 
 zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-hda-add-a-quirk-for-dell-studio-15.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-hda-no-headphone-as-line-out-swich-without-line-outs.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-hda-mark-dell-studio-1535-quirk.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-alsa-backport-beep-switch.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-defaults-alsa-hda-beep-off.patch.gz | ${PATCHCOM} || exit 1
 
 # block/bio
 #
@@ -182,11 +181,14 @@ zcat ${SB_PATCHDIR}/linux-2.6-iwlagn-downgrade-BUG_ON-in-interrupt.patch.gz | ${
 # iwl3945 fix for stable ad-hoc mode connections (#459401)
 zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-ibss-tsf-fix.patch.gz | ${PATCHCOM} || exit 1
 
+# Backported ath9k DMA fixes from pre-2.6.28
+zcat ${SB_PATCHDIR}/linux-2.6-wireless-ath9k-dma-fixes.patch.gz | ${PATCHCOM} || exit 1
+
+# iwlwifi: use GFP_KERNEL to allocate Rx SKB memory
+zcat ${SB_PATCHDIR}/linux-2.6-iwlwifi-use-GFP_KERNEL-to-allocate-Rx-SKB-memory.patch.gz | ${PATCHCOM} || exit 1
+
 # Add misc wireless bits from upstream wireless tree
 zcat ${SB_PATCHDIR}/linux-2.6-at76.patch.gz | ${PATCHCOM} || exit 1
-
-# disable ath9k when swiotlb is in use
-zcat ${SB_PATCHDIR}/linux-2.6-wireless-ath9k-check-broken-iommu.patch.gz | ${PATCHCOM} || exit 1
 
 # atl2 network driver
 zcat ${SB_PATCHDIR}/linux-2.6-netdev-atl2.patch.gz | ${PATCHCOM} || exit 1

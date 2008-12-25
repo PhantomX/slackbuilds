@@ -8,3 +8,5 @@ zcat ${SB_PATCHDIR}/${NAME}-2.0.2-freenode.patch.gz | patch -p0 -E --backup --ve
 zcat ${SB_PATCHDIR}/${NAME}-2.8.4-disable-tray-icon-by-default.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.8.4-shm-pixmaps.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/xc286-smallfixes.diff.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-new-gtk-type.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-query.patch.gz | patch -p0 -E --backup --verbose || exit 1

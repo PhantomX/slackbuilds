@@ -43,7 +43,7 @@ if [ "$C" -gt 10 ]; then
   zcat ${SB_PATCHDIR}/linux-2.6-upstream-reverts.patch.gz | ${PATCHCOM} -R || exit 1
 fi
 
-zcat ${SB_PATCHDIR}/git-cpufreq.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/git-cpufreq.patch.gz | ${PATCHCOM} || exit 1
 
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
@@ -52,19 +52,11 @@ fi
 
 # Roland's utrace ptrace replacement.
 zcat ${SB_PATCHDIR}/linux-2.6-utrace.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-x86-tracehook.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6.27-x86-tracehook-syscall-arg-order.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-x86-mtrr-kill-bogus-warning.patch.gz | ${PATCHCOM} || exit 1
 
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
-
-# scheduler patches
-# performance fixes from 2.6.28
-zcat ${SB_PATCHDIR}/linux-2.6-sched-fine-tune-SD_MC_INIT.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-sched-fine-tune-SD_SIBLING_INIT.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-sched-wakeup-preempt-when-small-overlap.patch.gz | ${PATCHCOM} || exit 1
 
 # Architecture patches
 
@@ -76,23 +68,14 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 #
 # bugfixes to drivers and filesystems
 #
-# Pending ext4 patch queue, minus fiemap, includes s/ext4dev/ext4
-zcat ${SB_PATCHDIR}/linux-2.6.27-ext4-rename-ext4dev-to-ext4.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
 
 # USB
-zcat ${SB_PATCHDIR}/linux-2.6-usb-ehci-hcd-respect-nousb.patch.gz | ${PATCHCOM} || exit 1
-
-# Add the ability to turn FIPS-compliant mode on or off at boot
-zcat ${SB_PATCHDIR}/linux-2.6-crypto-fips_enable.patch.gz | ${PATCHCOM} || exit 1
 
 # ACPI
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-acpi-video.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-dos.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-acpi-handle-ec-init-failure.patch.gz | ${PATCHCOM} || exit 1
-# fix dock bugs
-zcat ${SB_PATCHDIR}/linux-2.6-acpi-dock-fix-eject-request-process.patch.gz | ${PATCHCOM} || exit 1
 
 # Various low-impact patches to aid debugging.
 zcat ${SB_PATCHDIR}/linux-2.6-debug-sizeof-structs.patch.gz | ${PATCHCOM} || exit 1
@@ -102,7 +85,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-debug-spinlock-taint.patch.gz | ${PATCHCOM} || exi
 #zcat ${SB_PATCHDIR}/linux-2.6-debug-no-quiet.patch.gz | ${PATCHCOM} || exit 1
 # try to find out what is breaking acpi-cpufreq
 zcat ${SB_PATCHDIR}/linux-2.6-debug-vm-would-have-oomkilled.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-mm-pagefault-enable-ints.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-debug-always-inline-kzalloc.patch.gz | ${PATCHCOM} || exit 1
 
 #
@@ -124,12 +106,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-defaults-pciehp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-scsi-cpqarray-set-master.patch.gz | ${PATCHCOM} || exit 1
 
 # ALSA
-zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-driver-1.0.18a.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6.27.7-alsa-driver-fixups.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-hda-add-a-quirk-for-dell-studio-15.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-hda-no-headphone-as-line-out-swich-without-line-outs.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6.27.9-alsa-hda-mark-dell-studio-1535-quirk.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-alsa-backport-beep-switch.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-alsa-hda-beep-off.patch.gz | ${PATCHCOM} || exit 1
 
 # block/bio
@@ -146,9 +122,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-net-silence-noisy-printks.patch.gz | ${PATCHCOM} |
 # Misc fixes
 # The input layer spews crap no-one cares about.
 zcat ${SB_PATCHDIR}/linux-2.6-input-kill-stupid-messages.patch.gz | ${PATCHCOM} || exit 1
-# 448656
-zcat ${SB_PATCHDIR}/linux-2.6-input.git-i8042-add-xps-m1530-to-nomux.patch.gz | ${PATCHCOM} || exit 1
-
 
 # Allow to use 480600 baud on 16C950 UARTs
 zcat ${SB_PATCHDIR}/linux-2.6-serial-460800.patch.gz | ${PATCHCOM} || exit 1
@@ -159,9 +132,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-noise.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 1
 
 # Changes to upstream defaults.
-
-# Use UTF-8 by default on VFAT.
-zcat ${SB_PATCHDIR}/linux-2.6-defaults-fat-utf8.patch.gz | ${PATCHCOM} || exit 1
 
 # libata
 
@@ -174,16 +144,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-defaults-fat-utf8.patch.gz | ${PATCHCOM} || exit 1
 # wireless patches headed for 2.6.28
 #zcat ${SB_PATCHDIR}/linux-2.6-wireless-pending.patch.gz | ${PATCHCOM} || exit 1
 
-# fix spot's iwlwifi, hopefully...
-#zcat ${SB_PATCHDIR}/linux-2.6-iwlwifi-use-dma_alloc_coherent.patch.gz | ${PATCHCOM} || exit 1
-# make jarod's iwl4965 not panic near N APs, hopefully
-zcat ${SB_PATCHDIR}/linux-2.6-iwlagn-downgrade-BUG_ON-in-interrupt.patch.gz | ${PATCHCOM} || exit 1
-# iwl3945 fix for stable ad-hoc mode connections (#459401)
-zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-ibss-tsf-fix.patch.gz | ${PATCHCOM} || exit 1
-
-# Backported ath9k DMA fixes from pre-2.6.28
-zcat ${SB_PATCHDIR}/linux-2.6-wireless-ath9k-dma-fixes.patch.gz | ${PATCHCOM} || exit 1
-
 # iwlwifi: use GFP_KERNEL to allocate Rx SKB memory
 zcat ${SB_PATCHDIR}/linux-2.6-iwlwifi-use-GFP_KERNEL-to-allocate-Rx-SKB-memory.patch.gz | ${PATCHCOM} || exit 1
 
@@ -195,20 +155,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-netdev-atl2.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-net-tulip-interrupt.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/linux-2.6-net-qla-silence-debug-printks.patch.gz | ${PATCHCOM} || exit 1
-
 # implement smarter atime updates support.
 zcat ${SB_PATCHDIR}/linux-2.6-smarter-relatime.patch.gz | ${PATCHCOM} || exit 1
-
-# NFS Client mounts hang when exported directory do not exist
-zcat ${SB_PATCHDIR}/linux-2.6-nfs-client-mounts-hang.patch.gz | ${PATCHCOM} || exit 1
-
-zcat ${SB_PATCHDIR}/linux-2.6-uvc-hg.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-uvc-spca525.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-gspca-vc0321-fix-frame-overflow.patch.gz | ${PATCHCOM} || exit 1
-
-# build id related enhancements
-zcat ${SB_PATCHDIR}/linux-2.6-default-mmf_dump_elf_headers.patch.gz | ${PATCHCOM} || exit 1
 
 # http://www.lirc.org/
 zcat ${SB_PATCHDIR}/linux-2.6-lirc.patch.gz | ${PATCHCOM} || exit 1
@@ -220,43 +168,22 @@ zcat ${SB_PATCHDIR}/linux-2.6-hdpvr.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-cdrom-door-status.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-the-82567LM-4-device.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-82567LM-3-and-82567LF-3-ICH10D-parts.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-e1000e-add-support-for-new-82574L-part.patch.gz | ${PATCHCOM} || exit 1
-
-#zcat ${SB_PATCHDIR}/linux-2.6-netdev-r8169-2.6.28.patch.gz | ${PATCHCOM} || exit 1
-
-zcat ${SB_PATCHDIR}/linux-2.6-quieter-mmc.patch.gz | ${PATCHCOM} || exit 1
 
 # Nouveau DRM + drm fixes
-zcat ${SB_PATCHDIR}/nvidia-agp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-next.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/drm-intel-8xx-pae-no-gem.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
-zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
   zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | ${PATCHCOM} || exit 1
 fi
 
-# get rid of imacfb and make efifb work everywhere it was used
-zcat ${SB_PATCHDIR}/linux-2.6-merge-efifb-imacfb.patch.gz | ${PATCHCOM} || exit 1
-
-zcat ${SB_PATCHDIR}/linux-2.6-dmi-autoload.patch.gz | ${PATCHCOM} || exit 1
-
 # silence piix3 in quiet boot (ie, qemu)
 zcat ${SB_PATCHDIR}/linux-2.6-piix3-silence-quirk.patch.gz | ${PATCHCOM} || exit 1
-# Hush IOMMU warnings, you typically can't fix them anyway
-zcat ${SB_PATCHDIR}/linux-2.6-quiet-iommu.patch.gz | ${PATCHCOM} || exit 1
 # silence the ACPI blacklist code
 zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || exit 1
-# it's... it's ALIVE!
-zcat ${SB_PATCHDIR}/linux-2.6-amd64-yes-i-know-you-live.patch.gz | ${PATCHCOM} || exit 1
 # hush pci bar allocation failures
 zcat ${SB_PATCHDIR}/linux-2.6.27-pci-hush-allocation-failures.patch.gz | ${PATCHCOM} || exit 1
-# don't allocate IRQ 0 in pciehp
-zcat ${SB_PATCHDIR}/linux-2.6-pci-fix-pciehp-irq0.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-pciehp-kill-annoying-messages.patch.gz | ${PATCHCOM} || exit 1

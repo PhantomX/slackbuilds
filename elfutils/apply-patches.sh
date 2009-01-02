@@ -13,6 +13,4 @@ fi
 
 zcat ${SB_PATCHDIR}/${NAME}-robustify.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/${NAME}-0.137-fixes.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
 zcat ${SB_PATCHDIR}/${NAME}-0.137-old-addr2line.patch.gz | patch -p0 -E --backup --verbose || exit 1

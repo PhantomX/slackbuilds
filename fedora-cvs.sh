@@ -33,14 +33,32 @@ dist="${2}"
 
 fedoraroot=":pserver:anonymous@cvs.fedoraproject.org:/cvs/pkgs"
 
-if [ -z "${module}" -o -z "${dist}" ] ;then
+txt() {
   echo "Usage: $0 module dist"
   echo "module is package name"
   echo "dist is Fedora version (F-??/devel)"
   echo
   echo "In case of other errors, try to download in a Fedora mirror or change file format extension."
+}
+
+txt2() {
+  echo "Select correct dist: F-8, F-9 or devel"
+}
+
+if [ -z "${module}" ] ;then
+  txt
   exit 1
 fi
+
+case "${2}" in
+  F-8|F-9|devel)
+    dist="${2}"
+    ;;
+  *)
+    txt2
+    exit 1
+    ;;
+esac
 
 echo "Downloading from ${module}/${dist}"
 

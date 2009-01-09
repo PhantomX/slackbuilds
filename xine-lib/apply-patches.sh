@@ -7,6 +7,3 @@ touch -r m4/optimizations.m4.stamp m4/optimizations.m4
 touch -r m4/pthreads.m4 m4/pthreads.m4.stamp
 touch -r m4/pthreads.m4.stamp m4/pthreads.m4
 zcat ${SB_PATCHDIR}/${NAME}-1.1.1-deepbind-939.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-zcat ${SB_PATCHDIR}/${NAME}-1.1.15-buffer_h_ansi.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-1.1.15-ffmpeg.patch.gz | patch -p1 -E --backup --verbose || exit 1

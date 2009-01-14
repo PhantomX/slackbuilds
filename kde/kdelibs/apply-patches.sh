@@ -4,6 +4,7 @@ SB_PATCHDIR=${CWD}/patches
 
 zcat ${SB_PATCHDIR}/${NAME}-utempter.diff.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 
+# Fedora patches
 zcat ${SB_PATCHDIR}/${NAME}-3.0.0-ndebug.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.0.4-ksyscoca.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.7-openssl.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
@@ -54,3 +55,11 @@ zcat ${SB_PATCHDIR}/04-execute_feedback.patch.gz | patch -p1 -E --backup --verbo
 zcat ${SB_PATCHDIR}/11-xinerama.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/12-kspell_spellcheck_default_utf8.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/13-konqueror_textcompletion_editor.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# Mandriva patches
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-glibc-inotify.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.3-fix-enable-dialogbox.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.4-dcop_wrong_reply.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.8-add-bookmark-dialog.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.8-lzma_support.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.9-kio-kfile-grouplist.patch.gz | patch -p1 -E --backup --verbose || exit 1

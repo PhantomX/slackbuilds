@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = kdelibs-extramimetypes
-VERSION = 5.2
+VERSION = 5.3
 
 DESTDIR =
 PREFIX = /usr
@@ -27,7 +27,7 @@ DOCDIR = $(PREFIX)/share/doc/kdelibs-extramimetypes-$(PACKAGE)
 
 HIDDENFILES = geany-desktop.desktop geany-hash.desktop geany-xgettext.desktop gimp-ico.desktop gimp-xcf.desktop kwrite-desktop.desktop kwrite-hash.desktop kwrite-php.desktop kwrite-xgettext.desktop mozilla-firefox-maf.desktop redhat-audio-player-extra.desktop
 
-APPFILES = x-bin.desktop x-c2d.desktop x-cdi.desktop x-img.desktop x-la.desktop x-lzma.desktop x-maf.desktop x-mdf.desktop x-nrg.desktop x-ofc.desktop x-ofr.desktop x-ofs.desktop x-shorten.desktop x-tlz.desktop
+APPFILES = x-bin.desktop x-c2d.desktop x-cdi.desktop x-img.desktop x-la.desktop x-lzma.desktop x-maf.desktop x-mdf.desktop x-nrg.desktop x-ofc.desktop x-ofr.desktop x-ofs.desktop x-shorten.desktop x-tlz.desktop x-txz.desktop x-xz.desktop
 
 AUDIOFILES = x-ape.desktop x-bonk.desktop x-gym.desktop x-mac.desktop x-nsf.desktop x-pac.desktop x-psf.desktop x-spc.desktop x-tta.desktop x-wavpack-correction.desktop x-wavpack.desktop
 

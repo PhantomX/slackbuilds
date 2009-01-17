@@ -17,10 +17,12 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
+# Export to YES to checkout the latest revision
+[ "${SB_SNAPUP}" = "YES" ] || SNAP_COOPTS="-r {$snap}"
+
 pushd "${tmp}"
-  svn checkout -r {$snap} ${snaproot} ${module}-${snap}
+  svn checkout ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    [ "${SB_SNAPUP}" = "YES" ] && svn up
     ./version.sh . version.h
     find . -type d -name .svn -print0 | xargs -0r rm -rf
     sed -i -e '/^\.PHONY: version\.h$/d' Makefile

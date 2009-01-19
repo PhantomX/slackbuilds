@@ -143,12 +143,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 
 # wireless patches headed for 2.6.28
 #zcat ${SB_PATCHDIR}/linux-2.6-wireless-pending.patch.gz | ${PATCHCOM} || exit 1
 
-# iwlwifi: use GFP_KERNEL to allocate Rx SKB memory
-zcat ${SB_PATCHDIR}/linux-2.6-iwlwifi-use-GFP_KERNEL-to-allocate-Rx-SKB-memory.patch.gz | ${PATCHCOM} || exit 1
-
-# ath5k: ignore the return value of ath5k_hw_noise_floor_calibration
-zcat ${SB_PATCHDIR}/linux-2.6-ath5k-ignore-the-return-value-of-ath5k_hw_noise_floor_calibration.patch.gz | ${PATCHCOM} || exit 1
-
 # Add misc wireless bits from upstream wireless tree
 zcat ${SB_PATCHDIR}/linux-2.6-at76.patch.gz | ${PATCHCOM} || exit 1
 

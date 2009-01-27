@@ -12,4 +12,3 @@ if [ "${SB_COMPAT}" = "YES" ] ;then
 fi
 
 zcat ${SB_PATCHDIR}/${NAME}-robustify.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-0.138-libelf-padding-fix.patch.gz | patch -p1 -E --backup --verbose || exit 1

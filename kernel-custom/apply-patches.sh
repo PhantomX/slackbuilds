@@ -143,6 +143,12 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 
 # wireless patches headed for 2.6.28
 #zcat ${SB_PATCHDIR}/linux-2.6-wireless-pending.patch.gz | ${PATCHCOM} || exit 1
 
+# rtl8187: feedback transmitted packets using tx close descriptor for 8187B
+zcat ${SB_PATCHDIR}/linux-2.6-rtl8187b-tx-status-feedback.patch.gz | ${PATCHCOM} || exit 1
+
+# rt2x00: back-port activity LED init patches
+zcat ${SB_PATCHDIR}/linux-2.6-rt2x00-asus-leds.patch.gz | ${PATCHCOM} || exit 1
+
 # Add misc wireless bits from upstream wireless tree
 zcat ${SB_PATCHDIR}/linux-2.6-at76.patch.gz | ${PATCHCOM} || exit 1
 

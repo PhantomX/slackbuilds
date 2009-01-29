@@ -49,7 +49,7 @@ test -x apply_patches && ./apply_patches
 
 # upstream patches
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.4-fullscreen.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8b-gcc43.patc | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8b-gcc43.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # security patches
 

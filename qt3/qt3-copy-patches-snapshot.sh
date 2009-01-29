@@ -1,6 +1,5 @@
 #!/bin/bash
 
-DATE=$(date +%Y%m%d)
 EXPORT_DIR=qt-copy
 snaproot="svn://anonsvn.kde.org/home/kde/branches/qt/3.3/${EXPORT_DIR}"
 
@@ -24,7 +23,7 @@ pushd "${tmp}"
   svn export ${snaproot}/patches ${EXPORT_DIR}/patches
 
   pushd ${EXPORT_DIR}
-    tar -cjf "${pwd}"/qt3-copy-patches-${DATE}.tar.bz2 \
+    tar -cjf "${pwd}"/qt3-copy-patches-${snap}.tar.bz2 \
       .applied_patches apply_patches README.qt-copy patches/ 
   popd
 popd >/dev/null

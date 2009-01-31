@@ -11,7 +11,7 @@ export XDG_CONFIG_DIRS
 
 ## When/if using prelinking, avoids (some) use of kdeinit
 if [ -f /etc/prelinkopts.conf ]; then
-  if [ $(grep '^PRELINKING=yes' /etc/prelinkopts.conf) ] ; then
+  if [ $(grep '^PRELINKING=yes' /etc/default/prelink) ] ; then
     [ -z "$KDE_IS_PRELINKED" ] && KDE_IS_PRELINKED=1 && export KDE_IS_PRELINKED
   fi
 fi

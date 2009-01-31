@@ -11,7 +11,7 @@ endif
 
 #  When/if using prelinking, avoids (some) use of kdeinit
 if ( -f /etc/prelinkopts.conf ) then
-   set PRELINKING = `grep "^PRELINKING=" /etc/prelinkopts.conf | cut -d"=" -f2`
+   set PRELINKING = `grep "^PRELINKING=" /etc/default/prelink | cut -d"=" -f2`
    if ( "$PRELINKING" == "yes" )  then
       if ( ! $?KDE_IS_PRELINKED ) setenv KDE_IS_PRELINKED 1
    endif

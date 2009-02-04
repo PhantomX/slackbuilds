@@ -2,7 +2,7 @@
 
 set -e
 
-module=psi
+module=$(basename $0 -snapshot.sh)
 snaproot="http://svn.psi-im.org/${module}/trunk"
 
 tmp=$(mktemp -d)

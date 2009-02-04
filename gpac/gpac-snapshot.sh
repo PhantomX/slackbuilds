@@ -2,7 +2,7 @@
 
 set -e
 
-module=gpac
+module=$(basename $0 -snapshot.sh)
 snaproot="anonymous@gpac.cvs.sourceforge.net:/cvsroot/${module}"
 
 tmp=$(mktemp -d)

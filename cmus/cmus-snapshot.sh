@@ -2,7 +2,7 @@
 
 set -e
 
-module=cmus
+module=$(basename $0 -snapshot.sh)
 snaproot="git://repo.or.cz/${module}.git"
 
 tmp=$(mktemp -d)

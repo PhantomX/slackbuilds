@@ -2,7 +2,7 @@
 
 set -e
 
-module=pcsx2
+module=$(basename $0 -snapshot.sh)
 snaproot="http://pcsx2.googlecode.com/svn/trunk"
 
 tmp=$(mktemp -d)

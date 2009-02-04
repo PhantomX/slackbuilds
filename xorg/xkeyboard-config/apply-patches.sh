@@ -8,6 +8,7 @@ zcat ${SB_PATCHDIR}/usinet.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.4-battery.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # Sent to svu
 zcat ${SB_PATCHDIR}/${NAME}-1.4-jp-tilde.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.5-evdevkbds.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # From debian
 zcat ${SB_PATCHDIR}/mac_poweroff.diff.gz | patch -p1 -E --backup --verbose || exit 1

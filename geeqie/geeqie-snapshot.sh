@@ -2,7 +2,7 @@
 
 set -e
 
-module=geeqie
+module=$(basename $0 -snapshot.sh)
 snaproot="https://${module}.svn.sourceforge.net/svnroot/${module}/trunk"
 
 tmp=$(mktemp -d)

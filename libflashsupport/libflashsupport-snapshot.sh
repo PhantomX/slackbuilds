@@ -2,7 +2,7 @@
 
 set -e
 
-module=libflashsupport
+module=$(basename $0 -snapshot.sh)
 snaproot="http://git.0pointer.de/repos/${module}.git"
 
 tmp=$(mktemp -d)

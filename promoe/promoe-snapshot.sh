@@ -2,7 +2,7 @@
 
 set -e
 
-module=promoe
+module=$(basename $0 -snapshot.sh)
 snaproot="git://git.xmms.se/xmms2/${module}.git/"
 
 tmp=$(mktemp -d)

@@ -2,7 +2,7 @@
 
 set -e
 
-module=opentyrian
+module=$(basename $0 -snapshot.sh)
 snaproot="http://opentyrian.googlecode.com/svn/classic/trunk"
 
 tmp=$(mktemp -d)

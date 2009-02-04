@@ -2,7 +2,7 @@
 
 set -e
 
-module=arora
+module=$(basename $0 -snapshot.sh)
 snaproot="git://github.com/Arora/${module}.git"
 
 tmp=$(mktemp -d)

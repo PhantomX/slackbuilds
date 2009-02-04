@@ -2,7 +2,7 @@
 
 set -e
 
-module=x264
+module=$(basename $0 -snapshot.sh)
 snaproot="git://git.videolan.org/${module}.git"
 
 tmp=$(mktemp -d)

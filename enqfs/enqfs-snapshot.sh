@@ -2,7 +2,7 @@
 
 set -e
 
-module=enqfs
+module=$(basename $0 -snapshot.sh)
 snaproot="http://enqfs.googlecode.com/svn/trunk/"
 
 tmp=$(mktemp -d)

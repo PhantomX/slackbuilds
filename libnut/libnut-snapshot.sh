@@ -2,7 +2,7 @@
 
 set -e
 
-module=libnut
+module=$(basename $0 -snapshot.sh)
 snaproot="svn://svn.mplayerhq.hu/nut"
 
 tmp=$(mktemp -d)

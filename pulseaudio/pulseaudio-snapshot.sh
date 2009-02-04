@@ -2,7 +2,7 @@
 
 set -e
 
-module=pulseaudio
+module=$(basename $0 -snapshot.sh)
 snaproot="git://0pointer.de/${module}.git"
 
 tmp=$(mktemp -d)

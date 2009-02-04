@@ -2,7 +2,7 @@
 
 set -e
 
-module=netpbm
+module=$(basename $0 -snapshot.sh)
 snaproot="https://netpbm.svn.sourceforge.net/svnroot/${module}/stable"
 snaproot2="https://netpbm.svn.sourceforge.net/svnroot/${module}/userguide"
 

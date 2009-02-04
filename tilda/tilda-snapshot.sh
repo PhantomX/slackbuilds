@@ -2,7 +2,7 @@
 
 set -e
 
-module=tilda
+module=$(basename $0 -snapshot.sh)
 snaproot="anonymous@tilda.cvs.sourceforge.net:/cvsroot/tilda"
 
 tmp=$(mktemp -d)

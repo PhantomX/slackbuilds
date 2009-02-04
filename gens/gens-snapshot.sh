@@ -2,7 +2,7 @@
 
 set -e
 
-module=gens
+module=$(basename $0 -snapshot.sh)
 snaproot=":pserver:anonymous@gens.cvs.sourceforge.net:/cvsroot/${module}"
 
 tmp=$(mktemp -d)

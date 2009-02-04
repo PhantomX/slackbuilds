@@ -2,7 +2,7 @@
 
 set -e
 
-module=mrxvt
+module=$(basename $0 -snapshot.sh)
 snaproot="https://materm.svn.sourceforge.net/svnroot/materm/mrxvt05utf8"
 
 tmp=$(mktemp -d)

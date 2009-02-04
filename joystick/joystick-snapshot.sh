@@ -2,7 +2,7 @@
 
 set -e
 
-module=joystick
+module=$(basename $0 -snapshot.sh)
 snaproot="https://linuxconsole.svn.sourceforge.net/svnroot/linuxconsole/trunk/utils"
 
 tmp=$(mktemp -d)

@@ -2,7 +2,7 @@
 
 set -e
 
-module=mplayer
+module=$(basename $0 -snapshot.sh)
 snaproot="svn://svn.mplayerhq.hu/${module}/trunk"
 
 tmp=$(mktemp -d)

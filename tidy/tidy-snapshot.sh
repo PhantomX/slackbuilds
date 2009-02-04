@@ -2,7 +2,7 @@
 
 set -e
 
-module=tidy
+module=$(basename $0 -snapshot.sh)
 snaproot="anonymous@${module}.cvs.sourceforge.net:/cvsroot/${module}"
 
 tmp=$(mktemp -d)

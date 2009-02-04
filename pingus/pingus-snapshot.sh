@@ -2,7 +2,7 @@
 
 set -e
 
-module=pingus
+module=$(basename $0 -snapshot.sh)
 snaproot="svn://svn.berlios.de/${module}/branches/${module}_sdl"
 
 tmp=$(mktemp -d)
@@ -15,12 +15,14 @@ cleanup() {
 
 unset CDPATH
 pwd=$(pwd)
-svn=${svn:-$(date +%Y%m%d)}
+snap=${snap:-$(date +%Y%m%d)}
+
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
 
 pushd "${tmp}"
-  svn checkout -r {$svn} ${snaproot} ${module}-${svn}
-  pushd ${module}-${svn}
+  svn checkout ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
+  pushd ${module}-${snap}
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd
-tar jcf "${pwd}"/${module}-${svn}.tar.bz2 ${module}-${svn}
+  tar -jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}
 popd >/dev/null

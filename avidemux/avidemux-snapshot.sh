@@ -2,7 +2,7 @@
 
 set -e
 
-module=avidemux
+module=$(basename $0 -snapshot.sh)
 snaproot="svn://svn.berlios.de/avidemux/branches/${module}_2.4_branch"
 
 tmp=$(mktemp -d)

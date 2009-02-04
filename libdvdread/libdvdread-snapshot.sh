@@ -2,7 +2,7 @@
 
 set -e
 
-module=libdvdread
+module=$(basename $0 -snapshot.sh)
 snaproot="svn://svn.mplayerhq.hu/dvdnav/trunk/${module}"
 
 tmp=$(mktemp -d)

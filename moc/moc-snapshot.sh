@@ -2,7 +2,7 @@
 
 set -e
 
-module=moc
+module=$(basename $0 -snapshot.sh)
 snaproot="svn://daper.net/${module}/trunk"
 
 tmp=$(mktemp -d)

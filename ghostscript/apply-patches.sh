@@ -2,7 +2,7 @@
 SB_PATCHDIR=${CWD}/patches
 
 # Patch gs_res.ps to find resources in the correct directories:
-zcat ${SB_PATCHDIR}/${NAME}-8.62.gs_res.ps.diff.gz | patch -p1 --verbose || exit 1
+#zcat ${SB_PATCHDIR}/${NAME}-8.62.gs_res.ps.diff.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-8.62-versioned_ijs.patch.gz | patch -p0 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/${NAME}-multilib.patch.gz | patch -p1 --verbose || exit 1

@@ -52,12 +52,22 @@ else
   ARCH=${ARCH:-i686}
 fi
 SLKTARGET=${SLKTARGET:-i486}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable gtk gui
+SB_GTK2=${SB_GTK2:-YES}
+# Set to YES to enable qt gui
+SB_QT=${SB_QT:-NO}
+
+# Set to YES to enable building gtk2 applications
+SB_GTK2B=${SB_GTK2B:-YES}
+# Set to YES to enable building qt applications
+SB_QTB=${SB_QTB:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -93,26 +103,60 @@ chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${CWD}/Makefile_patch.diff.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${CWD}/Desktop_patch.diff.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${CWD}/Desktop_patch.diff.gz | patch -p1 -E --backup --verbose || exit 1
 
 rm -rf debian
 rm -rf tools/install/cross_unix/debian_crosswin32
-rm tools/install/cross_unix/create_linux_cross_win32_deb.sh
-rm tools/install/cross_unix/HowToCreate_fpc_crosswin32_deb.txt
+rm -f tools/install/cross_unix/create_linux_cross_win32_deb.sh
+rm -f tools/install/cross_unix/HowToCreate_fpc_crosswin32_deb.txt
+# Remove scripts vulnerable to symlink-attacks (bug 460642)
+rm -f tools/convert_po_file_to_utf-8.sh
+rm -f tools/install/build_fpc_snaphot_rpm.sh
+rm -f tools/install/check_fpc_dependencies.sh
+rm -f tools/install/create_fpc_deb.sh
+rm -f tools/install/create_fpc_export_tgz.sh
+rm -f tools/install/create_fpc_rpm.sh
+rm -f tools/install/create_fpc-src_rpm.sh
+rm -f tools/install/create_fpc_tgz_from_local_dir.sh
+rm -f tools/install/create_lazarus_export_tgz.sh 
+
+[ "${SB_GTK2}" != "YES" -a "${SB_QT}" != "YES" ] && SB_GTK2=YES
+[ "${SB_GTK2}" = "NO" -a "${SB_QT}" = "NO" ] && SB_GTK2=YES
+
+[ "${SB_GTK2}" = "YES" ] && export LCL_PLATFORM=gtk2
+[ "${SB_QT}" = "YES" ] && export LCL_PLATFORM=qt
 
 export FPCDIR=/usr/share/fpcsrc
 fpcmake -Tall || exit 1
-make all OPT='-gl' || exit 1
-# Add the ability to create gtk2-applications
-make -C lcl/interfaces/gtk2/ OPT='-gl' || exit 1
+make tools OPT='-gl' || exit 1
+make bigide OPT='-gl' || exit 1
+make lazbuilder OPT='-gl' || exit 1
+
+(
+  if [ "${SB_GTK2}" = "YES" -a "${SB_QTB}" = "YES" ] ;then
+    # Add the ability to create qt-applications
+    export LCL_PLATFORM=qt
+  elif [ "${SB_QT}" = "YES" -a "${SB_GTK2B}" = "YES" ] ;then
+    # Add the ability to create gtk2-applications
+    export LCL_PLATFORM=gtk2
+  fi
+  make lcl ideintf packager/registration bigidecomponents OPT='-gl' || exit 1
+)
 
 make install INSTALL_PREFIX=${PKG}/usr _LIB=/lib || exit 1
+make -C install/man INSTALL_MANDIR=${PKG}/usr/man || exit 1
 
 ln -sf ../lib/${NAME}/lazarus ${PKG}/usr/bin/lazarus-ide
 ln -sf ../lib/${NAME}/startlazarus ${PKG}/usr/bin/startlazarus
 ln -sf ../lib/${NAME}/lazbuild ${PKG}/usr/bin/lazbuild
 
-chmod 755 ${PKG}/usr/lib/${NAME}/components/lazreport/doc/cvs2cl.pl
+mkdir -p ${PKG}/etc/${NAME}
+install -p -m 0644 tools/install/linux/editoroptions.xml \
+                   ${PKG}/etc/${NAME}/editoroptions.xml.new  || exit 1
+sed 's#/\$(FPCVER)##' \
+  tools/install/linux/environmentoptions.xml > \
+  ${PKG}/etc/${NAME}/environmentoptions.xml.new || exit 1
+
 chmod 755 ${PKG}/usr/lib/${NAME}/components/lazreport/tools/localize.sh
 
 mkdir -p ${PKG}/usr/share/applications
@@ -120,13 +164,12 @@ desktop-file-install --vendor "" --delete-original \
   --dir ${PKG}/usr/share/applications \
   install/${NAME}.desktop || exit 1
 
+mkdir -p ${PKG}/usr/share/mime/packages
+install -p -m 0644 install/${NAME}-mime.xml \
+                   ${PKG}/usr/share/mime/packages/${NAME}.xml || exit 1
 mkdir -p ${PKG}/usr/share/icons/hicolor/48x48/apps
 install -p -m 0644 images/ide_icon48x48.png \
                    ${PKG}/usr/share/icons/hicolor/48x48/apps/${NAME}.png || exit 1
-
-rm -rf ${PKG}/usr/share/man ${PKG}/usr/man/*
-mkdir -p ${PKG}/usr/man/man1
-install -pm0644 install/man/man1/*.1 ${PKG}/usr/man/man1/ || exit 1
 
 # Remove patches backups
 find ${PKG}/usr/lib/${NAME}/ -name '*~' -delete
@@ -168,6 +211,38 @@ fi
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
+
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/update-mime-database ]; then
+  \${CHROOT} /usr/bin/update-mime-database /usr/share/mime &> /dev/null
+fi
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc

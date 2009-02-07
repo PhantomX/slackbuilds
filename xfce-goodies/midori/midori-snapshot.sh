@@ -2,7 +2,7 @@
 
 set -e
 
-module=midori
+module=$(basename $0 -snapshot.sh)
 snaproot="git://git.xfce.org/kalikiana/${module}"
 
 tmp=$(mktemp -d)

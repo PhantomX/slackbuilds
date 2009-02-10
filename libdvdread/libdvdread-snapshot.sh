@@ -17,8 +17,10 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+
 pushd "${tmp}"
-  svn checkout -r {$snap} ${snaproot} ${module}-${snap}
+  svn checkout ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
     # Force revision number
     SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"

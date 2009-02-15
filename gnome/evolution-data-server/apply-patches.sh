@@ -10,5 +10,3 @@ zcat ${SB_PATCHDIR}/${NAME}-1.8.0-fix-ldap-query.patch.gz | patch -p1 -E --backu
 zcat ${SB_PATCHDIR}/${NAME}-1.10.1-camel-folder-summary-crash.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # RH bug #243296
 #zcat ${SB_PATCHDIR}/${NAME}-1.11.5-fix-64bit-acinclude.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-zcat ${SB_PATCHDIR}/${NAME}-2.24.3-compiler-warnings.patch.gz | patch -p1 -E --backup --verbose || exit 1

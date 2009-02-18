@@ -1,0 +1,1 @@
+../gettext/apply-patches.sh

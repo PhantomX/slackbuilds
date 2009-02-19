@@ -28,14 +28,20 @@ zcat ${SB_PATCHDIR}/xserver-1.4.99-endian.patch.gz | patch -p1 --verbose || exit
 zcat ${SB_PATCHDIR}/xserver-1.5.1-mode-debug.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.5.99.3-dmx-xcalloc.patch.gz | patch -p1 --verbose || exit 1
-# hack around broken mtrr.h.  drop me as soon as possible.
-zcat ${SB_PATCHDIR}/xserver-1.5.99.3-broken-mtrr-header.patch.gz | patch -p1 --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/xserver-1.5.99.3-fix-core-fonts.patch.gz | patch -p1 --verbose || exit 1
-# Pushed to master, should be in 1.6
-zcat ${SB_PATCHDIR}/xserver-1.5.99.902-xinerama.patch.gz | patch -p1 --verbose || exit 1
+# ensure HAL can start after X, upstream soon, not 1.6 yet.
+zcat ${SB_PATCHDIR}/xserver-1.5.99.902-listen-for-hal.patch.gz | patch -p1 --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/xserver-1.5.99.902-mediakeys-crash.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.99.902-sod-off-poulsbo.patch.gz | patch -p1 --verbose || exit 1
+
+# https://bugs.freedesktop.org/show_bug.cgi?id=20087
+zcat ${SB_PATCHDIR}/xserver-1.5.99.902-vnc.patch.gz | patch -p1 --verbose || exit 1
+
+# Make autoconfiguration chose nouveau driver for NVIDIA GPUs
+zcat ${SB_PATCHDIR}/xserver-1.5.99.902-nouveau.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/xserver-1.5.99.903-glx-visual-score.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.5.99.903-fontmod.h.patch.gz | patch -p1 --verbose || exit 1
 
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.5.99.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1

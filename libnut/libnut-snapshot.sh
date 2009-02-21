@@ -17,9 +17,11 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+
 pushd "${tmp}"
-  svn checkout -r {$snap} ${snaproot}/src/trunk ${module}-${snap}
-  svn checkout -r {$snap} ${snaproot}/docs ${module}-${snap}/docs
+  svn checkout ${SNAP_COOPTS} ${snaproot}/src/trunk ${module}-${snap}
+  svn checkout ${SNAP_COOPTS} ${snaproot}/docs ${module}-${snap}/docs
   pushd ${module}-${snap}
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd

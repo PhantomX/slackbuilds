@@ -23,7 +23,7 @@ KDEMIMEDIR = `kde-config --expandvars --install mime`
 MANDIR = $(PREFIX)/share/man/man1
 SYSCONFDIR = /etc
 LOCALEDIR = $(KDEPREFIX)/share/locale
-DOCDIR = $(PREFIX)/share/doc/kdelibs-extramimetypes-$(PACKAGE)
+DOCDIR = $(PREFIX)/share/doc/$(PACKAGE)-$(VERSION)
 
 HIDDENFILES = geany-desktop.desktop geany-hash.desktop geany-xgettext.desktop gimp-ico.desktop gimp-xcf.desktop kwrite-desktop.desktop kwrite-hash.desktop kwrite-php.desktop kwrite-xgettext.desktop mozilla-firefox-maf.desktop redhat-audio-player-extra.desktop
 

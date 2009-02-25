@@ -11,20 +11,10 @@ else
 fi
 
 # From upstream
-zcat ${SB_PATCHDIR}/${NAME}-futimensatkoji.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-authors.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-who_texinfo.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-6.12-date_timerelsnumber.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-6.12-seqdecimalutf8.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-6.12-catch-known-testsuite-failures.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-446294-lsexitstatuses.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # Our patches
 zcat ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-6.10-manpages.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-6.11-sparc-shafix.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-6.12-utimenstouchcp.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-6.12-dd-fullblock.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # sh-utils
 zcat ${SB_PATCHDIR}/sh-utils-2.0.11-dateman.patch.gz | patch -p1 -E --backup --verbose || exit 1
@@ -37,7 +27,3 @@ zcat ${SB_PATCHDIR}/${NAME}-i18n.patch.gz | patch -p1 -E --backup --verbose || e
 zcat ${SB_PATCHDIR}/${NAME}-getgrouplist.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-overflow.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-getfacl-exit-code.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-# ls enhancements
-zcat ${SB_PATCHDIR}/${NAME}-6.12-ls-libcap.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-6.12-ls-constant_mem.patch.gz | patch -p1 -E --backup --verbose || exit 1

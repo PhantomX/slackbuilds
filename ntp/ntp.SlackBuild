@@ -1,0 +1,361 @@
+#!/bin/sh
+#-- ntp for Slackware --
+# Build script by Phantom X <megaphantomx@bol.com.br>
+# Suggested usage: $ ntp.SlackBuild 2>&1 | tee build.log
+#--
+# Copyright 2008 Phantom X, Goiania, Brazil.
+# Copyright 2006 Martijn Dekker, Groningen, Netherlands.
+#
+# Redistribution and use of this script, with or without modification, is
+# permitted provided that the following conditions are met:
+#
+# 1. Redistributions of this script must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR `AS IS'' AND ANY EXPRESS OR IMPLIED
+#  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+#  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+#  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+#  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+#  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# http://www.ntp.org
+
+PACKAGER_ID=${PACKAGER_ID:-$USER}
+PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
+
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
+CWD=$(pwd)
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
+
+NAME=ntp
+PKG=${PKG:-${TMP}/package-${NAME}}
+
+VERSION=${VERSION:-4.2.4p6}
+SVER=$(echo ${VERSION} | cut -d. -f1-2)
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+SLKTARGET=${SLKTARGET:-i486}
+SLKDTARGET=${SLKDTARGET:-slackware}
+BUILD=${BUILD:-1}
+NJOBS=${NJOBS:-2}
+DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
+SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
+PKGDEST=${PKGDEST:-${CWD}}
+PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable avahi
+SB_AVAHI=${SB_AVAHI:-NO}
+
+DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+grep --quiet '^ntp:' /etc/group && SB_HGROUP=1
+grep --quiet '^ntp:' /etc/passwd && SB_HUSER=1
+
+SRCDIR=${NAME}-${VERSION}
+SRCARCHIVE=${SRCDIR}.tar.gz
+SRCARCHIVE2=ntpstat-0.2.tgz
+
+DL_TO=${DL_TO:-5}
+DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
+DL_URL="http://www.eecis.udel.edu/~ntp/ntp_spool/${NAME}4/${NAME}-${SVER}/${SRCARCHIVE}"
+
+# if source is not present, download in source rootdir if possible, or in /tmp
+if ! test -r ${SRCARCHIVE}; then
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+fi
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
+fi
+
+if [ -d ${PKG} ]; then
+  # Clean up a previous build
+  rm -rf ${PKG}
+fi
+mkdir -p ${PKG}
+
+cd ${TMP}
+rm -rf ${SRCDIR}
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
+cd ${SRCDIR} || exit 1
+tar -xvzf ${CWD}/${SRCARCHIVE2} || exit 1
+
+chmod -R u+w,go+r-w,a-s .
+
+# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+export CFLAGS="${SLKCFLAGS}"
+if echo 'int main () { return 0; }' | gcc -pie -fPIE -O2 -xc - -o pietest 2>/dev/null; then
+  ./pietest && export CFLAGS="${SLKCFLAGS} -pie -fPIE"
+  rm -f pietest
+fi
+
+./configure \
+  --prefix=/usr \
+  --bindir=/usr/sbin \
+  --sbindir=/usr/sbin \
+  --sysconfdir=/etc/ntp/crypto \
+  --localstatedir=/var \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --enable-all-clocks \
+  --enable-parse-clocks \
+  --enable-linuxcaps \
+  --with-openssl-libdir=/usr/lib \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+
+echo '#define KEYFILE "/etc/ntp/keys"' >> ntpdate/ntpdate.h || exit 1
+echo '#define NTP_VAR "/var/log/ntpstats/"' >> config.h || exit 1
+
+make -j${NJOBS} || exit 1
+
+sed -i 's|$ntpq = "ntpq"|$ntpq = "/usr/sbin/ntpq"|' scripts/ntptrace || exit 1
+sed -i 's|ntpq -c |/usr/sbin/ntpq -c |' scripts/ntp-wait || exit 1
+
+( cd html
+  ../scripts/html2man
+  # remove adjacent blank lines
+  sed -i 's/^[\t\ ]*$//;/./,/^$/!d' man/man*/*.[58]
+)
+
+make install DESTDIR=${PKG} bindir=/usr/sbin || exit 1
+
+mkdir -p ${PKG}/usr/man/man{5,8}
+rm -rf ${PKG}/usr/man/man1
+
+( cd ntpstat-0.2 || exit 1
+  make CFLAGS="${SLKCFLAGS} ${LDFLAGS}" || exit 1
+  mkdir -p ${PKG}/usr/bin
+  install -m 755 ntpstat ${PKG}/usr/bin/ || exit 1
+  install -m 644 ntpstat.1 ${PKG}/usr/man/man8/ntpstat.8 || exit 1
+) || exit 1
+
+mkdir -p ${PKG}/var/{lib/ntp,log/ntpstats}
+touch ${PKG}/var/lib/ntp/drift.new || exit 1
+
+mkdir -p ${PKG}/etc/ntp/crypto
+sed -e 's|ETCNTP|/etc/ntp|' -e 's|VARNTP|/var/lib/ntp|' ${CWD}/ntp.conf > \
+  ${PKG}/etc/ntp.conf.new || exit 1
+
+cat > ${PKG}/etc/ntp/ntp.keys.new <<'EOF'
+65535	M	akey
+1	M	pass
+EOF
+chmod 600 ${PKG}/etc/ntp/ntp.keys.new
+
+cat > ${PKG}/etc/ntp/step-tickers.new <<EOF
+# List of servers used for initial synchronization.
+EOF
+
+cat > ${PKG}/etc/ntp/crypto/pw.new <<EOF
+# Specify the password to decrypt files containing private keys and identity
+# parameters.  This is required only if these files have been encrypted.
+#
+#crypto pw apassword
+EOF
+chmod 600 ${PKG}/etc/ntp/crypto/pw.new
+
+mkdir -p ${PKG}/etc/rc.d
+cat ${CWD}/rc.ntpd > ${PKG}/etc/rc.d/rc.ntpd.new
+
+rmdir ${PKG}/usr/lib
+
+( cd ${PKG}
+  find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+  find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+)
+
+# fix section numbers
+sed -i 's/\(\.TH[a-zA-Z ]*\)[1-9]\(.*\)/\18\2/' ${PKG}/usr/man/man8/*.8
+cp -r html/man/man[58] ${PKG}/usr/man/
+
+# prepare html documentation
+find html | egrep '\.(html|css|txt|jpg|gif)$' | grep -v '/build/\|sntp' | \
+  cpio -pmd htmldoc
+find htmldoc -type f | xargs chmod 644
+find htmldoc -type d | xargs chmod 755
+
+# Add a documentation directory:
+mkdir -p ${DOCDIR}
+cp -a \
+  COPYRIGHT NEWS README* TODO WHERE-TO-START *.y2kfixes clockstuff \
+  conf htmldoc/html scripts ${CWD}/ChangeLog.SB \
+  ${DOCDIR}/
+cp -a util/README ${DOCDIR}/README.util
+cp -a ntpdate/README ${DOCDIR}/README.ntpdate
+find ${DOCDIR}/ -type d -name .deps -exec rm -rf {} \; 2> /dev/null
+find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
+find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+
+# Compress and link manpages, if any:
+if [ -d ${PKG}/usr/share/man ]; then
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
+fi
+if [ -d ${PKG}/usr/man ]; then
+  ( cd ${PKG}/usr/man
+    for manpagedir in $(find . -type d -name "man*") ; do
+      ( cd ${manpagedir}
+        for eachpage in $( find . -type l -maxdepth 1) ; do
+          ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
+          rm -f ${eachpage}
+        done
+        gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
+      )
+    done
+  )
+fi
+
+mkdir -p ${PKG}/install
+cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
+cat ${CWD}/slack-required > ${PKG}/install/slack-required
+
+cat > ${PKG}/install/doinst.sh <<'EOF'
+# Figure out our root directory
+ROOTDIR=$(pwd)
+unset CHROOT
+if test "${ROOTDIR}" != "/"; then
+  CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
+fi
+
+GROUP_ID=38
+# Set up group.
+if ! grep --quiet '^ntp:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+            -g ${GROUP_ID} \
+            ntp 2> /dev/null
+fi
+# Set up user.
+if ! grep --quiet '^ntp:' etc/passwd ;then
+  ${CHROOT} /usr/sbin/useradd \
+            -u ${GROUP_ID} \
+            -g ntp \
+            -s /bin/false \
+            -d '/etc/ntp' \
+            ntp 2> /dev/null
+fi
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+if [ -r etc/rc.d/rc.ntpd -a -r etc/rc.d/rc.ntpd.new ]; then
+  chmod --reference=etc/rc.d/rc.ntpd etc/rc.d/rc.ntpd.new
+fi
+
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find var/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+# Fix permissions'
+${CHROOT} /bin/chown root.ntp /etc/ntp/crypto
+${CHROOT} /bin/chmod 0700 /etc/ntp/crypto
+
+${CHROOT} /bin/chown ntp.ntp /var/lib/ntp /var/lib/ntp/drift*
+${CHROOT} /bin/chown ntp.ntp /var/log/ntpstats
+
+EOF
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       ${PKG}/install/slack-desc
+
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${CWD}/ntp.conf ${CWD}/rc.ntp \
+                 ${CWD}/${SRCARCHIVE2} ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
+
+# Build package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.ntp ./etc/ntp/crypto ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown ntp.ntp ./var/lib/ntp ./var/lib/ntp/drift.new ./var/log/ntpstats ; "
+
+ROOTCOMMANDS="${ROOTCOMMANDS}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDS}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDS} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDS}"
+fi
+
+# Clean up the extra stuff:
+if [ "$1" = "--cleanup" ]; then
+  echo "Cleaning..."
+  if [ -d ${TMP}/${SRCDIR} ]; then
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
+  fi
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
+fi
+exit 0

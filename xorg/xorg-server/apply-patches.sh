@@ -29,9 +29,6 @@ zcat ${SB_PATCHDIR}/xserver-1.5.1-mode-debug.patch.gz | patch -p1 --verbose || e
 
 zcat ${SB_PATCHDIR}/xserver-1.5.99.3-dmx-xcalloc.patch.gz | patch -p1 --verbose || exit 1
 
-# ensure HAL can start after X, upstream soon, not 1.6 yet.
-zcat ${SB_PATCHDIR}/xserver-1.5.99.902-listen-for-hal.patch.gz | patch -p1 --verbose || exit 1
-
 zcat ${SB_PATCHDIR}/xserver-1.5.99.902-sod-off-poulsbo.patch.gz | patch -p1 --verbose || exit 1
 
 # https://bugs.freedesktop.org/show_bug.cgi?id=20087
@@ -39,9 +36,6 @@ zcat ${SB_PATCHDIR}/xserver-1.5.99.902-vnc.patch.gz | patch -p1 --verbose || exi
 
 # Make autoconfiguration chose nouveau driver for NVIDIA GPUs
 zcat ${SB_PATCHDIR}/xserver-1.5.99.902-nouveau.patch.gz | patch -p1 --verbose || exit 1
-
-zcat ${SB_PATCHDIR}/xserver-1.5.99.903-glx-visual-score.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.5.99.903-fontmod.h.patch.gz | patch -p1 --verbose || exit 1
 
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.5.99.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1

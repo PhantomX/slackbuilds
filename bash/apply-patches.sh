@@ -22,3 +22,4 @@ zcat ${SB_PATCHDIR}/${NAME}-infotags.patch.gz | patch -p1 -E --backup --verbose 
 zcat ${SB_PATCHDIR}/${NAME}-setlocale.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-tty-tests.patch.gz | patch -p1 -E --backup --verbose || exit 1
 #zcat ${SB_PATCHDIR}/${NAME}-ulimit-m.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/pcomplete-save-parser-state.patch.gz | patch -p1 -E --backup --verbose || exit 1

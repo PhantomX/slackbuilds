@@ -11,6 +11,7 @@ else
 fi
 
 # From upstream
+zcat ${SB_PATCHDIR}/${NAME}-7.1-sort-endoffields.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # Our patches
 zcat ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch.gz | patch -p1 -E --backup --verbose || exit 1

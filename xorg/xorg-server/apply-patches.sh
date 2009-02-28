@@ -37,6 +37,10 @@ zcat ${SB_PATCHDIR}/xserver-1.5.99.902-vnc.patch.gz | patch -p1 --verbose || exi
 # Make autoconfiguration chose nouveau driver for NVIDIA GPUs
 zcat ${SB_PATCHDIR}/xserver-1.5.99.902-nouveau.patch.gz | patch -p1 --verbose || exit 1
 
+# from master, may end up in 1.6.1.
+zcat ${SB_PATCHDIR}/xserver-1.6.0-XIPropToInt.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.0-XATOM_FLOAT.patch.gz | patch -p1 --verbose || exit 1
+
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.5.99.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1
 fi

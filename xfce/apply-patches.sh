@@ -35,7 +35,5 @@ if [ "${BASENAME}" = "xfce4-session-${VERSION}" ]; then
 fi
 
 if [ "${BASENAME}" = "xfce4-utils-${VERSION}" ]; then
-  if [ "${SB_PA}" = "YES" ] ; then
-    zcat ${SB_PATCHDIR}/xfce-utils-4.5.91-startxfce-data-dirs.patch.gz | patch -p1 --verbose || exit 1
-  fi
+  zcat ${SB_PATCHDIR}/xfce-utils-4.5.91-startxfce-data-dirs.patch.gz | patch -p1 --verbose || exit 1
 fi

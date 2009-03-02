@@ -16,9 +16,7 @@ zcat ${SB_PATCHDIR}/${NAME}-libsane.patch.gz | patch -p1 -E --backup --verbose |
 
 zcat ${SB_PATCHDIR}/${NAME}-dbus.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-if [ "${SB_QT4}" = "YES" ] ;then
-  zcat ${SB_PATCHDIR}/${NAME}-systray.patch.gz | patch -p1 -E --backup --verbose || exit 1
-fi
+zcat ${SB_PATCHDIR}/${NAME}-strstr-const.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # Prevent SELinux audit message from the CUPS backends
 # zcat ${CWD}/${NAME}-no-root-config.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="http://opentyrian.googlecode.com/svn/classic/trunk"
+snaproot="http://opentyrian.googlecode.com/svn/trunk/classic"
 
 tmp=$(mktemp -d)
 
@@ -17,8 +17,10 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+
 pushd "${tmp}"
-  svn checkout -r {$snap} ${snaproot} ${module}-${snap}
+  svn checkout ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
     SVNREV=$(svnversion src -n)
     sed -i -e "/^SVN_REV/s|:=.*|:= ${SVNREV}|g" Makefile

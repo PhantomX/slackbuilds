@@ -8,6 +8,7 @@ zcat ${SB_PATCHDIR}/${NAME}-version.patch.gz | patch -p1 -E --backup --verbose |
 zcat ${SB_PATCHDIR}/mozilla-sqlite.patch.gz | patch -p1 -E --backup --verbose || exit 1
 autoconf-2.13 || exit 1
 zcat ${SB_PATCHDIR}/mozilla-mochitest.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/mozilla-about-firefox-version.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # Fedora specific patches
 zcat ${SB_PATCHDIR}/mozilla-pkgconfig.patch.gz | patch -p1 -E --backup --verbose || exit 1

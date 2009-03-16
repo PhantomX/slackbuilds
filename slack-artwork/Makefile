@@ -1,4 +1,4 @@
-# kdelibs-extramimetypes Makefile
+# slack-artwork Makefile
 
 # Copyright (C) 2008 Phantom X, Goiania, Brazil.
 # This Makefile.in is free software; the author

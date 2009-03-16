@@ -14,6 +14,8 @@ zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.0-rc1-ppc64.patch.gz | patch
 ## upstreamable bits
 # http://bugzilla.redhat.com/485677
 zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.0-rc1-qhostaddress.patch.gz | patch -p1 -E --verbose || exit 1
+zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.0-qdoc3.patch.gz | patch -p1 -E --verbose || exit 1
+zcat ${SB_PATCHDIR}/${PNAME}-4.5-sparc64.patch.gz | patch -p1 -E --verbose || exit 1
 
 # qt-copy patches
 echo "0250" >> patches/DISABLED

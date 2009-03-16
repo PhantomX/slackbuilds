@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="https://vnc-tight.svn.sourceforge.net/svnroot/vnc-tight/trunk"
+snaproot="https://${module}.svn.sourceforge.net/svnroot/${module}/trunk"
 
 tmp=$(mktemp -d)
 

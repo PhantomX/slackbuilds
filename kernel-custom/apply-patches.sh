@@ -22,6 +22,8 @@ PATCHCOM="patch ${DRYRUN_OPT} -p1 -F1 -s ${VERBOSE_OPT}"
 # Adds layer 7 iptables support
 #zcat ${SB_PATCHDIR}/kernel-2.6.25-layer7-2.20.patch.gz | ${PATCHCOM} || exit 1
 
+zcat ${SB_PATCHDIR}/acpi-dsdt-initrd-v0.9c-2.6.28.patch.gz | ${PATCHCOM} || exit 1
+
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
 # also gives a list of missing options at the end. Useful for automated
 # builds (as used in the buildsystem).
@@ -52,8 +54,6 @@ fi
 
 # Roland's utrace ptrace replacement.
 zcat ${SB_PATCHDIR}/linux-2.6-utrace.patch.gz | ${PATCHCOM} || exit 1
-
-zcat ${SB_PATCHDIR}/linux-2.6-x86-mtrr-kill-bogus-warning.patch.gz | ${PATCHCOM} || exit 1
 
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1

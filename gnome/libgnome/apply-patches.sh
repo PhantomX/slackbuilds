@@ -13,3 +13,4 @@ zcat ${SB_PATCHDIR}/${NAME}-2.8.0-default-browser.patch.gz | patch -p1 -E --back
 zcat ${SB_PATCHDIR}/${NAME}-2.19.1-default-settings.patch.gz | patch -p1 -E --backup --verbose || exit 1
 #zcat ${SB_PATCHDIR}/${NAME}-2.22.0-default-sound-effects.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/im-setting.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-2.24.1-default-noblink.patch.gz | patch -p1 -E --backup --verbose || exit 1

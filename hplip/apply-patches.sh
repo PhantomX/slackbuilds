@@ -23,3 +23,7 @@ zcat ${SB_PATCHDIR}/${NAME}-strstr-const.patch.gz | patch -p1 -E --backup --verb
 
 # Make utils.checkPyQtImport() look for the gui sub-package.
 zcat ${SB_PATCHDIR}/${NAME}-ui-optional.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# From Slackware stock
+# Fix an issue that could cause high CPU utilization after switching to a different user.
+zcat ${SB_PATCHDIR}/${NAME}-3.9.2-high_cpu_utilization_logout.patch.gz | patch -p0 -E --backup --verbose || exit 1

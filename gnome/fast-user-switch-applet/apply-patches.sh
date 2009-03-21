@@ -12,3 +12,5 @@ zcat ${SB_PATCHDIR}/no-session.patch.gz | patch -p1 -E --backup --verbose || exi
 zcat ${SB_PATCHDIR}/throttle.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # http://bugzilla.gnome.org/show_bug.cgi?id=477666
 zcat ${SB_PATCHDIR}/many-users.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/${NAME}-2.24.0-libgnomeui.patch.gz | patch -p0 -E --backup --verbose || exit 1

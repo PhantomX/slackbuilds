@@ -5,10 +5,7 @@ zcat ${SB_PATCHDIR}/x11.startwithblackscreen.diff.gz | patch -p1 --verbose || ex
 #zcat ${SB_PATCHDIR}/xorgconfig.diff.gz | patch -p1 --verbose || exit 1
 #zcat ${SB_PATCHDIR}/xorg-server.dpi.diff.gz | patch -p1 --verbose || exit 1
 
-# Patches from Fedora or Debian
-zcat ${SB_PATCHDIR}/001_fedora_extramodes.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/121_only_switch_vt_when_active.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/135_rethrow_signals.patch.gz | patch -p1 --verbose || exit 1
+# Patches from Fedora
 # OpenGL compositing manager feature/optimization patches.
 zcat ${SB_PATCHDIR}/xorg-x11-server-1.1.0-no-move-damage.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.4.99-dont-backfill-bg-none.patch.gz | patch -p1 --verbose || exit 1
@@ -31,6 +28,9 @@ zcat ${SB_PATCHDIR}/xserver-1.5.99.3-dmx-xcalloc.patch.gz | patch -p1 --verbose 
 
 zcat ${SB_PATCHDIR}/xserver-1.5.99.902-sod-off-poulsbo.patch.gz | patch -p1 --verbose || exit 1
 
+# don't build the (broken) acpi code
+zcat ${SB_PATCHDIR}/xserver-1.6.0-less-acpi-brokenness.patch.gz | patch -p1 --verbose || exit 1
+
 # https://bugs.freedesktop.org/show_bug.cgi?id=20087
 zcat ${SB_PATCHDIR}/xserver-1.5.99.902-vnc.patch.gz | patch -p1 --verbose || exit 1
 
@@ -40,6 +40,8 @@ zcat ${SB_PATCHDIR}/xserver-1.5.99.902-nouveau.patch.gz | patch -p1 --verbose ||
 # from master, may end up in 1.6.1.
 zcat ${SB_PATCHDIR}/xserver-1.6.0-XIPropToInt.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.6.0-XATOM_FLOAT.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.0-preferred-thinko.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.0-primary.patch.gz | patch -p1 --verbose || exit 1
 
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.5.99.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1

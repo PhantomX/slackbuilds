@@ -46,6 +46,7 @@ if [ "$C" -gt 10 ]; then
 fi
 
 #zcat ${SB_PATCHDIR}/git-cpufreq.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/git-bluetooth.patch.gz | ${PATCHCOM} || exit 1
 
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
@@ -53,7 +54,13 @@ if [ "$C" -gt 10 ]; then
 fi
 
 # Roland's utrace ptrace replacement.
+zcat ${SB_PATCHDIR}/linux-2.6-tracehook.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-utrace.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-utrace-ftrace.patch.gz | ${PATCHCOM} || exit 1
+
+# DMA API debugging
+zcat ${SB_PATCHDIR}/linux-2.6-debug-dma-api.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/dma-api-debug-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
@@ -69,13 +76,23 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 # bugfixes to drivers and filesystems
 #
 
+# ext4
+zcat ${SB_PATCHDIR}/linux-2.6-ext4-flush-on-close.patch.gz | ${PATCHCOM} || exit 1
+
 # xfs
+
+# btrfs
+zcat ${SB_PATCHDIR}/linux-2.6-btrfs-experimental-branch.patch.gz | ${PATCHCOM} || exit 1
 
 # USB
 
 # ACPI
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-acpi-video.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-dos.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-acpi-strict-resources.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-hwmon-atk0110.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-didl-intel-outputs.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-sony-laptop-rfkill.patch.gz | ${PATCHCOM} || exit 1
 
 # Various low-impact patches to aid debugging.
 zcat ${SB_PATCHDIR}/linux-2.6-debug-sizeof-structs.patch.gz | ${PATCHCOM} || exit 1
@@ -93,10 +110,13 @@ zcat ${SB_PATCHDIR}/linux-2.6-debug-always-inline-kzalloc.patch.gz | ${PATCHCOM}
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-pci_no_msi.patch.gz | ${PATCHCOM} || exit 1
 
 # update the pciehp driver
-zcat ${SB_PATCHDIR}/linux-2.6-pciehp-update.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-pciehp-update.patch.gz | ${PATCHCOM} || exit 1
 
 # default to enabling passively listening for hotplug events
-zcat ${SB_PATCHDIR}/linux-2.6-defaults-pciehp.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-defaults-pciehp.patch.gz | ${PATCHCOM} || exit 1
+
+# Add /sys/bus/pci/devices/*/remove_id
+zcat ${SB_PATCHDIR}/linux-2.6-pci-sysfs-remove-id.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # SCSI Bits.
@@ -105,25 +125,29 @@ zcat ${SB_PATCHDIR}/linux-2.6-defaults-pciehp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-scsi-cpqarray-set-master.patch.gz | ${PATCHCOM} || exit 1
 
 # ALSA
-zcat ${SB_PATCHDIR}/linux-2.6-defaults-alsa-hda-beep-off.patch.gz | ${PATCHCOM} || exit 1
 
 # block/bio
 #
 
 # Filesystem patches.
-# Squashfs
-zcat ${SB_PATCHDIR}/linux-2.6-squashfs.patch.gz | ${PATCHCOM} || exit 1
 
 # Networking
-# Disable easy to trigger printk's.
-zcat ${SB_PATCHDIR}/linux-2.6-net-silence-noisy-printks.patch.gz | ${PATCHCOM} || exit 1
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
 zcat ${SB_PATCHDIR}/linux-2.6-input-kill-stupid-messages.patch.gz | ${PATCHCOM} || exit 1
 
+# Get away from having to poll Toshibas
+zcat ${SB_PATCHDIR}/linux-2.6-input-fix-toshiba-hotkeys.patch.gz | ${PATCHCOM} || exit 1
+
+# HID: add support for another version of 0e8f:0003 device in hid-pl
+zcat ${SB_PATCHDIR}/linux-2.6-input-hid-extra-gamepad.patch.gz | ${PATCHCOM} || exit 1
+
 # Allow to use 480600 baud on 16C950 UARTs
 zcat ${SB_PATCHDIR}/linux-2.6-serial-460800.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/increase-MAX_LOCKDEP_ENTRIES.patch.gz | ${PATCHCOM} || exit 1
+
 # Silence some useless messages that still get printed with 'quiet'
 zcat ${SB_PATCHDIR}/linux-2.6-silence-noise.patch.gz | ${PATCHCOM} || exit 1
 
@@ -131,6 +155,10 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-noise.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 1
 
 # Changes to upstream defaults.
+
+# squelch hda_beep by default
+zcat ${SB_PATCHDIR}/linux-2.6-defaults-alsa-hda-beep-off.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/hda_intel-prealloc-4mb-dmabuffer.patch.gz | ${PATCHCOM} || exit 1
 
 # libata
 
@@ -143,27 +171,15 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 
 # wireless patches headed for 2.6.28
 #zcat ${SB_PATCHDIR}/linux-2.6-wireless-pending.patch.gz | ${PATCHCOM} || exit 1
 
-# rtl8187: feedback transmitted packets using tx close descriptor for 8187B
-zcat ${SB_PATCHDIR}/linux-2.6-rtl8187b-tx-status-feedback.patch.gz | ${PATCHCOM} || exit 1
-
 # rt2x00: back-port activity LED init patches
 zcat ${SB_PATCHDIR}/linux-2.6-rt2x00-asus-leds.patch.gz | ${PATCHCOM} || exit 1
 
-# Add misc wireless bits from upstream wireless tree
-zcat ${SB_PATCHDIR}/linux-2.6-at76.patch.gz | ${PATCHCOM} || exit 1
-
-# atl2 network driver
-zcat ${SB_PATCHDIR}/linux-2.6-netdev-atl2.patch.gz | ${PATCHCOM} || exit 1
-
-zcat ${SB_PATCHDIR}/linux-2.6-net-tulip-interrupt.patch.gz | ${PATCHCOM} || exit 1
-
-# implement smarter atime updates support.
-zcat ${SB_PATCHDIR}/linux-2.6-smarter-relatime.patch.gz | ${PATCHCOM} || exit 1
+# back-port scan result aging patches
+zcat ${SB_PATCHDIR}/linux-2.6-mac80211-age-scan-results-on-resume.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-ipw2x00-age-scan-results-on-resume.patch.gz | ${PATCHCOM} || exit 1
 
 # http://www.lirc.org/
 zcat ${SB_PATCHDIR}/linux-2.6-lirc.patch.gz | ${PATCHCOM} || exit 1
-# http://hg.jannau.net/hdpvr/
-zcat ${SB_PATCHDIR}/linux-2.6-hdpvr.patch.gz | ${PATCHCOM} || exit 1
 
 # Fix the return code CD accesses when the CDROM drive door is closed
 # but the drive isn't yet ready.
@@ -171,20 +187,34 @@ zcat ${SB_PATCHDIR}/linux-2.6-cdrom-door-status.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
 
+# implement smarter atime updates support.
+zcat ${SB_PATCHDIR}/linux-2.6-smarter-relatime.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/agp-set_memory_ucwb.patch.gz | ${PATCHCOM} || exit 1
 # Nouveau DRM + drm fixes
+zcat ${SB_PATCHDIR}/drm-next.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-no-gem-on-i8xx.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-i915-resume-force-mode.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-big-hammer.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
-#zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
-C=$(zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | wc -l | awk '{print $1}')
-if [ "$C" -gt 10 ]; then
-  zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | ${PATCHCOM} || exit 1
-fi
+zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
+#C=$(zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | wc -l | awk '{print $1}')
+#if [ "$C" -gt 10 ]; then
+  #zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | ${PATCHCOM} || exit 1
+#fi
 
-# silence piix3 in quiet boot (ie, qemu)
-zcat ${SB_PATCHDIR}/linux-2.6-piix3-silence-quirk.patch.gz | ${PATCHCOM} || exit 1
 # silence the ACPI blacklist code
 zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || exit 1
-# hush pci bar allocation failures
-zcat ${SB_PATCHDIR}/linux-2.6.27-pci-hush-allocation-failures.patch.gz | ${PATCHCOM} || exit 1
+
+# V4L/DVB updates/fixes/experimental drivers
+zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-fixes.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-update.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-experimental.patch.gz | ${PATCHCOM} || exit 1
+
+# revert 8b249b6856f16f09b0e5b79ce5f4d435e439b9d6
+zcat ${SB_PATCHDIR}/revert-fix-modules_install-via-nfs.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/cpufreq-add-atom-to-p4-clockmod.patch.gz | ${PATCHCOM} || exit 1

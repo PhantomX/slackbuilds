@@ -20,6 +20,7 @@ zcat ${SB_PATCHDIR}/glibc.nis-netgroups.diff.gz | patch -p1 --verbose || exit 1
 # Fix missing MAX macro in getcwd.c:
 zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose || exit 1
 # Gentoo patches
+zcat ${SB_PATCHDIR}/0008_all_glibc-2.9-linker-scripts.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/0030_all_glibc-respect-env-CPPFLAGS.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/1040_all_2.3.3-localedef-fix-trampoline.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/1055_all_glibc-resolv-dynamic.patch.gz | patch -p1 --verbose || exit 1

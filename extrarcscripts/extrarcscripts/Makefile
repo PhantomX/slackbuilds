@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = extrarcscripts
-VERSION = 4.8
+VERSION = 4.8.1
 
 DESTDIR =
 PREFIX = /usr

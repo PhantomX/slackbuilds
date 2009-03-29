@@ -158,6 +158,7 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 
 
 # squelch hda_beep by default
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-alsa-hda-beep-off.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/alsa-rewrite-hw_ptr-updaters.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/hda_intel-prealloc-4mb-dmabuffer.patch.gz | ${PATCHCOM} || exit 1
 
 # libata
@@ -187,8 +188,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-cdrom-door-status.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
 
-# implement smarter atime updates support.
-zcat ${SB_PATCHDIR}/linux-2.6-smarter-relatime.patch.gz | ${PATCHCOM} || exit 1
+# relatime
+zcat ${SB_PATCHDIR}/linux-2.6-relatime-by-default.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/agp-set_memory_ucwb.patch.gz | ${PATCHCOM} || exit 1
 # Nouveau DRM + drm fixes
@@ -213,8 +214,14 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || e
 zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-fixes.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-update.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-experimental.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-revert-dvb-net-kabi-change.patch.gz | ${PATCHCOM} || exit 1
 
 # revert 8b249b6856f16f09b0e5b79ce5f4d435e439b9d6
 zcat ${SB_PATCHDIR}/revert-fix-modules_install-via-nfs.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/cpufreq-add-atom-to-p4-clockmod.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/linux-2.6-dropwatch-protocol.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/linux-2.6-net-fix-gro-bug.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-net-xfrm-fix-spin-unlock.patch.gz | ${PATCHCOM} || exit 1

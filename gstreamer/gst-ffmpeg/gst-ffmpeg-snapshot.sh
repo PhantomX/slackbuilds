@@ -2,7 +2,7 @@
 
 set -e
 
-module=gst-ffmpeg
+module=$(basename $0 -snapshot.sh)
 
 tmp=$(mktemp -d)
 

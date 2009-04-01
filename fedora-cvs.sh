@@ -42,7 +42,7 @@ txt() {
 }
 
 txt2() {
-  echo "Select correct dist: F-8, F-9 or devel"
+  echo "Select correct dist: F-8, F-9, F-10, F11 or devel"
 }
 
 if [ -z "${module}" ] ;then
@@ -51,7 +51,7 @@ if [ -z "${module}" ] ;then
 fi
 
 case "${2}" in
-  F-8|F-9|devel)
+  F-8|F-9|F-10|F-11|devel)
     dist="${2}"
     ;;
   *)

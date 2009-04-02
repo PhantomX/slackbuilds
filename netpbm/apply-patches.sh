@@ -15,8 +15,17 @@ zcat ${SB_PATCHDIR}/${NAME}-10.33-ppmtompeg.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/${NAME}-10.33-multilib.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-10.34-pamscale.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-10.35-ppmquantall.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-10.35-pbmtog3segfault.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-10.35-pbmtomacp.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-10.35-glibc.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-10.35-gcc43.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-10.35-rgbtxt.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/${NAME}-10.35-pamtosvgsegfault.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-10.35-pnmmontagefix.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-10.35-pnmtofiasco-stdin.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-10.35-64bitfix.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-10.35-ximtoppmsegfault.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-10.35-ppmfadeusage.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-10.35-ppmrainbowexit.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-10.35-ppmdfontfix.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-10.35-svgtopam.patch.gz | patch -p1 -E --backup --verbose || exit 1

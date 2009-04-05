@@ -28,17 +28,29 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
-CWD=`pwd`
-if [ "${TMP}" = "" ]; then
-  TMP=/tmp
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
+CWD=$(pwd)
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
 fi
 
 NAME=ardour
 NAME2=${NAME}2
-PKG=${TMP}/package-${NAME}
+PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.0.1}
-ARCH=${ARCH:-i686}
+VERSION=${VERSION:-2.8}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+SLKTARGET=${SLKTARGET:-i486}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -55,25 +67,32 @@ DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://ardour.org/files/releases/${SRCARCHIVE}"
 
-if [ "${ARCH}" = "i386" ]; then
-  SLKCFLAGS="-O2 -march=i386 -mtune=i686"
-  DIST_TARGET=i386
-elif [ "${ARCH}" = "i486" ]; then
-  SLKCFLAGS="-O2 -march=i486 -mtune=i686"
-  DIST_TARGET=i386
-elif [ "${ARCH}" = "i686" ]; then
-  SLKCFLAGS="-O3 -march=athlon64 -mtune=athlon64 -msse3 -pipe -fomit-frame-pointer"
-  DIST_TARGET=i686
-elif [ "${ARCH}" = "s390" ]; then
-  SLKCFLAGS="-O2"
-elif [ "${ARCH}" = "x86_64" ]; then
-  SLKCFLAGS="-O2"
-fi
-
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
   test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 fi
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ARCH_FLAGS="-DARCH_X86 -DBUILD_SSE_OPTIMIZATIONS"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ARCH_FLAGS="-DARCH_X86 -DBUILD_SSE_OPTIMIZATIONS -DUSE_X86_64_ASM"
+                 TARGETCPU="${ARCH}"
+                 ;;
+  esac
+fi
+
+case "${ARCH}" in
+  i[3-6]86)  ARCH_FLAGS="-DARCH_X86 -DBUILD_SSE_OPTIMIZATIONS"
+             TARGETCPU="${ARCH}"
+             ;;
+esac
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -83,70 +102,88 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
+  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
+  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
+fi
 cd ${SRCDIR} || exit 1
 
-find . -perm 777 -exec chmod 755 {} \;
-find . -perm 666 -exec chmod 644 {} \;
-find . -perm 664 -exec chmod 644 {} \;
-find . -perm 640 -exec chmod 644 {} \;
-find . -perm 444 -exec chmod 644 {} \;
+# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
-zcat ${CWD}/${NAME}-session.cc-_total_free_4k_blocks.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-session.cc-no_stomp.patch.gz | patch -p0 -E --backup --verbose || exit 1
+echo "GenericName=Digital Audio Workstation" >> gtk2_ardour/${NAME2}.desktop.in
 
-scons PREFIX=/usr \
-      DIST_TARGET=${DIST_TARGET} \
-      ARCH="${SLKCFLAGS}" \
-      SYSLIBS=1 \
-      USE_SSE_EVERYWHERE=1 \
-      BUILD_SSE_OPTIMIZATIONS=1 \
-      KSI=no || exit 1
+scons \
+  PREFIX="/usr" \
+  LIBDIR="lib" \
+  DIST_TARGET="${TARGETCPU}" \
+  ARCH="${SLKCFLAGS} ${ARCH_FLAGS} -ffast-math" \
+  SYSLIBS=1 \
+  FREESOUND=1 \
+  AUSTATE=1 || exit 1
 
-scons DESTDIR=${PKG} NOARCH="1" ARCH="${SLKCFLAGS}" install || exit 1
+scons DESTDIR=${PKG} install || exit 1
+
+mkdir -p ${PKG}/usr/libexec
+mv ${PKG}/usr/bin/${NAME2} ${PKG}/usr/libexec/ || exit 1
+zcat ${CWD}/${NAME}.sh.gz > ${PKG}/usr/bin/${NAME2} || exit 1
+chmod 0755 ${PKG}/usr/bin/${NAME2}
 
 for conf in ${PKG}/etc/${NAME2}/*.* ;do
-    mv ${conf} ${conf}.new
+  mv ${conf} ${conf}.new
 done
+
+( cd ${PKG}/usr/share/ardour2/templates || exit 1
+  for file in *.* ;do
+    mv "${f}" "${file}" "${file/ /_}"
+  done
+)
 
 ( cd ${PKG}
   find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
   find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
-  find . | xargs file | grep "current ar archive" | cut -f 1 -d : | xargs strip --strip-debug 2> /dev/null
 )
 
+# install the desktop entry
+mv gtk2_ardour/${NAME2}.desktop{.in,}
 mkdir -p ${PKG}/usr/share/applications
-cat > ${PKG}/usr/share/applications/${NAME2}.desktop <<EOF
-[Desktop Entry]
-Encoding=UTF-8
-Name=Ardour
-GenericName=Digital Audio Workstation
-Comment=Record, edit, and mix multi-track audio.
-Exec=${NAME2}
-Icon=${NAME}.png
-StartupNotify=true
-Terminal=false
-Type=Application
-Categories=GTK;AudioVideo;
-EOF
+desktop-file-install --vendor "" \
+  --dir ${PKG}/usr/share/applications \
+  gtk2_ardour/${NAME2}.desktop || exit 1
 
 for res in 16 22 32 48 ; do
    mkdir -p ${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
    install -m0644 gtk2_ardour/icons/ardour_icon_${res}px.png \
-                  ${PKG}/usr/share/icons/hicolor/${res}x${res}/apps/${NAME}.png
+                  ${PKG}/usr/share/icons/hicolor/${res}x${res}/apps/${NAME2}.png
+done
+
+# install mime entry
+mkdir -p ${PKG}/usr/share/mime/packages
+install -p -m 0644 gtk2_ardour/ardour2.xml ${PKG}/usr/share/mime/packages/ || exit 1
+
+# install the man pages
+mkdir -p ${PKG}/usr/man/man1
+install -p -m 0644 ardour.1 ${PKG}/usr/man/man1/ || exit 1
+for lang in es fr ru ; do
+  mkdir -p ${PKG}/usr/man/${lang}/man1/
+  install -p -m 0644 ardour.1.${lang} ${PKG}/usr/man/${lang}/man1/ || exit 1
 done
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  AUTHORS COPYING ChangeLog README DOCUMENTATION/* ${CWD}/ChangeLog.SB \
+  COPYING README ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -154,19 +191,13 @@ if [ -d ${PKG}/usr/man ]; then
       ( cd ${manpagedir}
         for eachpage in $( find . -type l -maxdepth 1) ; do
           ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
-          rm ${eachpage}
+          rm -f ${eachpage}
         done
         gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
       )
     done
-  )
-fi
-
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
   )
 fi
 
@@ -176,6 +207,22 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
 #!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/gtk-update-icon-cache ]; then
+  \${CHROOT} /usr/bin/gtk-update-icon-cache -q usr/share/icons/hicolor > /dev/null 2>&1
+fi
+if [ -x usr/bin/update-desktop-database ]; then
+  \${CHROOT} /usr/bin/update-desktop-database &> /dev/null
+fi
+if [ -x usr/bin/update-mime-database ]; then
+  \${CHROOT} /usr/bin/update-mime-database /usr/share/mime &> /dev/null
+fi
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -191,27 +238,26 @@ config() {
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
-( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  echo >> ${PKG}/install/doinst.sh
-)
-
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${NAME}*.patch.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${CWD}/${NAME}.sh.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
+  sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
+          /^BUILD=/s/:-.*}/:-$BUILD}/
+          /^  ARCH=/s/:-.*}/:-$ARCH}/
+          " ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
-set +o xtrace			# no longer print commands upon execution
+set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
@@ -219,7 +265,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.tgz "
 
-if test $UID = 0; then
+if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then
@@ -234,9 +280,11 @@ fi
 if [ "$1" = "--cleanup" ]; then
   echo "Cleaning..."
   if [ -d ${TMP}/${SRCDIR} ]; then
-    rm -rf ${TMP}/${SRCDIR}
-    echo "${TMP}/${SRCDIR} cleanup completed"
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
   fi
-  rm -rf ${PKG}
-  echo "Cleanup completed"
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
 fi
+exit 0

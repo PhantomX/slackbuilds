@@ -16,5 +16,8 @@ zcat ${SB_PATCHDIR}/${NAME}-0.10.1-xterm.patch.gz | patch -p1 -E --backup --verb
 zcat ${SB_PATCHDIR}/${NAME}-0.11.0-union.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # fix for open macro in new glibc 
 zcat ${SB_PATCHDIR}/${NAME}-0.11.3-macropen.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#upstream fix for out of screen dialogs
 zcat ${SB_PATCHDIR}/${NAME}-scroll.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# Port elinks to use NSS library for cryptography
+zcat ${SB_PATCHDIR}/${NAME}-nss.patch.gz | patch -p1 -E --backup --verbose || exit 1
 

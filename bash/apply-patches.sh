@@ -2,7 +2,7 @@
 SB_PATCHDIR=${CWD}/patches
 
 for i in $( seq -w ${PATCHLEVEL} ) ; do
-  patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}32-${i} || exit 1
+  patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}${SVER//.}-${i} || exit 1
 done
 
 # Other patches
@@ -22,4 +22,3 @@ zcat ${SB_PATCHDIR}/${NAME}-infotags.patch.gz | patch -p1 -E --backup --verbose 
 zcat ${SB_PATCHDIR}/${NAME}-setlocale.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-tty-tests.patch.gz | patch -p1 -E --backup --verbose || exit 1
 #zcat ${SB_PATCHDIR}/${NAME}-ulimit-m.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/pcomplete-save-parser-state.patch.gz | patch -p1 -E --backup --verbose || exit 1

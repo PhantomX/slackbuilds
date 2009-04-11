@@ -43,6 +43,18 @@ zcat ${SB_PATCHDIR}/xserver-1.6.0-XATOM_FLOAT.patch.gz | patch -p1 --verbose || 
 zcat ${SB_PATCHDIR}/xserver-1.6.0-preferred-thinko.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.6.0-primary.patch.gz | patch -p1 --verbose || exit 1
 
+zcat ${SB_PATCHDIR}/xserver-1.6.0-xinerama-cursors.patch.gz | patch -p1 --verbose || exit 1
+# https://bugzilla.redhat.com/show_bug.cgi?id=490984
+zcat ${SB_PATCHDIR}/xserver-1.6.0-xtest-pointerscreen.patch.gz | patch -p1 --verbose || exit 1
+# http://bugs.freedesktop.org/show_bug.cgi?id=20557
+zcat ${SB_PATCHDIR}/xserver-1.6.0-xinerama-crashes.patch.gz | patch -p1 --verbose || exit 1
+
+# ajax needs to upstream this
+zcat ${SB_PATCHDIR}/xserver-1.6.0-displayfd.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/xserver-1.6.0-restore-zap.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.0-no-i810.patch.gz | patch -p1 --verbose || exit 1
+
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.5.99.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1
 fi

@@ -8,6 +8,8 @@ zcat ${SB_PATCHDIR}/${NAME}-1.1.7-gdu-computer-expose-devices.patch.gz | patch -
 
 # http://bugzilla.gnome.org/show_bug.cgi?id=578681
 zcat ${SB_PATCHDIR}/${NAME}-bash-completion.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# From svn:
+zcat ${SB_PATCHDIR}/${NAME}-1.2.2-ssh-auth-sock.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
 # Gdu volume monitor patches, from http://cgit.freedesktop.org/~david/gvfs/log/?h=gdu-volume-monitor
 #

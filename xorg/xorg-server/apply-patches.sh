@@ -37,15 +37,9 @@ zcat ${SB_PATCHDIR}/xserver-1.5.99.902-vnc.patch.gz | patch -p1 --verbose || exi
 # Make autoconfiguration chose nouveau driver for NVIDIA GPUs
 zcat ${SB_PATCHDIR}/xserver-1.5.99.902-nouveau.patch.gz | patch -p1 --verbose || exit 1
 
-# from master, may end up in 1.6.1.
-zcat ${SB_PATCHDIR}/xserver-1.6.0-XIPropToInt.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.6.0-XATOM_FLOAT.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.6.0-preferred-thinko.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.6.0-primary.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.6.0-xinerama-cursors.patch.gz | patch -p1 --verbose || exit 1
-# https://bugzilla.redhat.com/show_bug.cgi?id=490984
-zcat ${SB_PATCHDIR}/xserver-1.6.0-xtest-pointerscreen.patch.gz | patch -p1 --verbose || exit 1
 # http://bugs.freedesktop.org/show_bug.cgi?id=20557
 zcat ${SB_PATCHDIR}/xserver-1.6.0-xinerama-crashes.patch.gz | patch -p1 --verbose || exit 1
 

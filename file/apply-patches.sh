@@ -21,5 +21,6 @@ zcat ${SB_PATCHDIR}/${NAME}-4.24-audio.patch.gz | patch -p1 -E --backup --verbos
 zcat ${SB_PATCHDIR}/${NAME}-4.20-add-lzma.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.26-xz-container.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-5.00-format-strings.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-5.00-xz-uncompress.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
 rm -f magic/Magdir/*~

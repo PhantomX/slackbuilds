@@ -5,9 +5,9 @@ SB_PATCHDIR=${CWD}/patches
 for patches in 02_all_db4.patch 12_all_distutils-rpath-gcc.patch \
   15_all_dbm_default_gdbm_compat.patch 21_all_ctypes-execstack.patch \
   22_all_internal-expat.patch ;do
-  patch -p0 -i ${SVER}/${patches} || exit 1
+  patch -p0 -i ${VERSION}/${patches} || exit 1
 done
-patch -p1 -i ${SVER}/18_all_distutils-cxxflags.patch || exit 1
+patch -p1 -i ${VERSION}/18_all_distutils-cxxflags.patch || exit 1
 
 # From Fedora
 #zcat ${SB_PATCHDIR}/${NAME}-2.6-config.patch.gz | patch -p1 -E --backup --verbose || exit 1

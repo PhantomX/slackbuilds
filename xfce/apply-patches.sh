@@ -37,8 +37,3 @@ fi
 if [ "${BASENAME}" = "xfce4-utils-${VERSION}" ]; then
   zcat ${SB_PATCHDIR}/xfce-utils-4.5.91-startxfce-data-dirs.patch.gz | patch -p1 --verbose || exit 1
 fi
-
-# Fix terminal so that it works if no shell entry is in the user's gecos
-if [ "${BASENAME}" = "Terminal-${TERMVER}" ]; then
-  zcat ${SB_PATCHDIR}/terminal-no_shell_gecos-fix.diff.gz | patch -p1 --verbose || exit 1
-fi

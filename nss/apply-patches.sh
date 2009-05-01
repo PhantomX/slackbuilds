@@ -7,3 +7,5 @@ zcat ${SB_PATCHDIR}/${NAME}-nolocalsql.patch.gz | patch -p0 -E --backup --verbos
 zcat ${SB_PATCHDIR}/${NAME}-pem-bug429175.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-enable-pem.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-fix-tests.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-disable-freebl-execstack.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-freebl-kernelfipsmode.patch.gz | patch -p1 -E --backup --verbose || exit 1

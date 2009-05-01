@@ -22,3 +22,8 @@ zcat ${SB_PATCHDIR}/${NAME}-1.6f-tty.patch.gz | patch -p1 -E --backup --verbose 
 zcat ${SB_PATCHDIR}/${NAME}-1.6f-dashes2.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.6f-star.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.6f-lang_C.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.6f-makewhatis_whis.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.6f-makewhatis_update.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.6f-makewhatis_perf.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# xz
+zcat ${SB_PATCHDIR}/${NAME}-1.6-xz.patch.gz | patch -p0 -E --backup --verbose || exit 1

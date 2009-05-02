@@ -22,7 +22,8 @@ snap=${snap:-$(date +%Y%m%d)}
 pushd "${tmp}"
   svn checkout ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    ./version.sh . version.h
+    SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"
+    sed -i -e "/^revision=/s|=.*|=${SVNREV}|g" ./version.sh
     find . -type d -name .svn -print0 | xargs -0r rm -rf
     sed -i -e '/^\.PHONY: version\.h$/d' Makefile
   popd

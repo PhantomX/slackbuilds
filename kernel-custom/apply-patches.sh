@@ -47,6 +47,8 @@ fi
 
 #zcat ${SB_PATCHDIR}/git-cpufreq.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/git-bluetooth.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/git-bluetooth2.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/git-bluetooth3.patch.gz | ${PATCHCOM} || exit 1
 
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
@@ -58,13 +60,15 @@ zcat ${SB_PATCHDIR}/linux-2.6-tracehook.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-utrace.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-utrace-ftrace.patch.gz | ${PATCHCOM} || exit 1
 
+# IOMMU fixes backported to 2.6.29
+zcat ${SB_PATCHDIR}/linux-2.6-iommu-fixes.patch.gz | ${PATCHCOM} || exit 1
+
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
 
 # Architecture patches
 # Architecture patches
 # x86(-64)
-zcat ${SB_PATCHDIR}/linux-2.6-e820-mark-esi-clobbered.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e820-save-restore-edi-ebp.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e820-acpi3-bios-workaround.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-e820-guard-against-pre-acpi3.patch.gz | ${PATCHCOM} || exit 1
@@ -80,6 +84,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 
 # ext4
 zcat ${SB_PATCHDIR}/linux-2.6-ext4-flush-on-close.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-ext4-really-print-warning-once.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-ext4-prealloc-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
 
@@ -93,10 +99,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-relatime-by-default.patch.gz | ${PATCHCOM} || exit
 # put fiemap.h into kernel-headers
 zcat ${SB_PATCHDIR}/linux-2.6-fiemap-header-install.patch.gz | ${PATCHCOM} || exit 1
 
-# Make strict devmem a boot arg
-zcat ${SB_PATCHDIR}/linux-2.6-bootarg-strict-devmem.patch.gz | ${PATCHCOM} || exit 1
-
 # USB
+zcat ${SB_PATCHDIR}/linux-2.6-add-qcserial.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-usb-cdc-acm-remove-low-latency-flag.patch.gz | ${PATCHCOM} || exit 1
 
 # ACPI
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-acpi-video.patch.gz | ${PATCHCOM} || exit 1
@@ -105,7 +110,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-acpi-strict-resources.patch.gz | ${PATCHCOM} || ex
 zcat ${SB_PATCHDIR}/linux-2.6-hwmon-atk0110.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-didl-intel-outputs.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-sony-laptop-rfkill.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-acer-wmi-bail-on-aao.patch.gz | ${PATCHCOM} || exit 1
 
 # Various low-impact patches to aid debugging.
 zcat ${SB_PATCHDIR}/linux-2.6-debug-sizeof-structs.patch.gz | ${PATCHCOM} || exit 1
@@ -147,7 +151,10 @@ zcat ${SB_PATCHDIR}/alsa-rewrite-hw_ptr-updaters.patch.gz | ${PATCHCOM} || exit 
 zcat ${SB_PATCHDIR}/alsa-pcm-always-reset-invalid-position.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/alsa-pcm-fix-delta-calc-at-overlap.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/alsa-pcm-safer-boundary-checks.patch.gz | ${PATCHCOM} || exit 1
-
+zcat ${SB_PATCHDIR}/alsa-hda-dont-reset-BDL-unnecessarily.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/alsa-dont-reset-stream-at-each-prepare-callb.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/alsa-hda_intel-fix-unexpected-ring-buffer-positio.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/alsa-pcm-midlevel-add-more-strict-buffer-position.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/hda_intel-prealloc-4mb-dmabuffer.patch.gz | ${PATCHCOM} || exit 1
 
 # block/bio
@@ -172,6 +179,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-input-wacom-bluetooth.patch.gz | ${PATCHCOM} || ex
 
 # Allow to use 480600 baud on 16C950 UARTs
 zcat ${SB_PATCHDIR}/linux-2.6-serial-460800.patch.gz | ${PATCHCOM} || exit 1
+# let users skip the TXEN bug test
+zcat ${SB_PATCHDIR}/linux-2.6-serial-add-txen-test-param.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/increase-MAX_LOCKDEP_ENTRIES.patch.gz | ${PATCHCOM} || exit 1
 
@@ -203,11 +212,14 @@ zcat ${SB_PATCHDIR}/linux-2.6-ipw2x00-age-scan-results-on-resume.patch.gz | ${PA
 zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-report-killswitch-changes-even-if-the-interface-is-down.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-iwlagn-fix-hw-rfkill-while-the-interface-is-down.patch.gz | ${PATCHCOM} || exit 1
 
-# fix locking in ipw3945 conf_tx callback
-zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-rely-on-priv-_lock-to-protect-priv-access.patch.gz | ${PATCHCOM} || exit 1
+# back-port mac80211: fix beacon loss detection after scan
+zcat ${SB_PATCHDIR}/linux-2.6-mac80211-fix-beacon-loss-detection-after-scan.patch.gz | ${PATCHCOM} || exit 1
 
 # Fix up DMA debug code
 zcat ${SB_PATCHDIR}/linux-2.6-dma-debug-fixes.patch.gz | ${PATCHCOM} || exit 1
+
+# /dev/crash driver.
+zcat ${SB_PATCHDIR}/linux-2.6-crash-driver.patch.gz | ${PATCHCOM} || exit 1
 
 # http://www.lirc.org/
 zcat ${SB_PATCHDIR}/linux-2.6-lirc.patch.gz | ${PATCHCOM} || exit 1
@@ -226,8 +238,13 @@ zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-no-gem-on-i8xx.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-i915-resume-force-mode.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-big-hammer.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/drm-radeon-reorder-bm.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-lying-systems-without-lvds.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-gen3-fb-hack.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-tiled-front.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-hdmi-edid-fix.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-tiling-transition.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-drm-r128-ioremap.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-radeon-kms-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
 zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
@@ -243,7 +260,14 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || e
 zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-fixes.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-update.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-experimental.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-fix-uint16_t-audio-h.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-revert-dvb-net-kabi-change.patch.gz | ${PATCHCOM} || exit 1
+
+# patches headed for -stable
+zcat ${SB_PATCHDIR}/squashfs-broken-when-pagesize-greater-than-blocksize.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-i2c-fix-bit-algorithm-timeout.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/hpet-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 # revert 8b249b6856f16f09b0e5b79ce5f4d435e439b9d6
 zcat ${SB_PATCHDIR}/revert-fix-modules_install-via-nfs.patch.gz | ${PATCHCOM} || exit 1
@@ -252,6 +276,8 @@ zcat ${SB_PATCHDIR}/cpufreq-add-atom-to-p4-clockmod.patch.gz | ${PATCHCOM} || ex
 
 zcat ${SB_PATCHDIR}/linux-2.6-dropwatch-protocol.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/linux-2.6-net-fix-another-gro-bug.patch.gz | ${PATCHCOM} || exit 1
+# kvm fixes
+zcat ${SB_PATCHDIR}/linux-2.6-kvm-skip-pit-check.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-xen-check-for-nx-support.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/linux-2.6.29-pat-fixes.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-64-fix-fpu-corruption-with-signals-and-preemption.patch.gz | ${PATCHCOM} || exit 1

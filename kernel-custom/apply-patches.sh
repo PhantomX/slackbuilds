@@ -60,7 +60,11 @@ zcat ${SB_PATCHDIR}/linux-2.6-tracehook.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-utrace.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-utrace-ftrace.patch.gz | ${PATCHCOM} || exit 1
 
-# IOMMU fixes backported to 2.6.29
+# vm patches
+zcat ${SB_PATCHDIR}/linux-2.6-mm-lru-evict-streaming-io-pages-first.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-mm-lru-dont-evict-mapped-executable-pages.patch.gz | ${PATCHCOM} || exit 1
+
+# Support suspend/resume, other crash fixes
 zcat ${SB_PATCHDIR}/linux-2.6-iommu-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 # enable sysrq-c on all kernels, not only kexec
@@ -240,11 +244,10 @@ zcat ${SB_PATCHDIR}/drm-i915-resume-force-mode.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-big-hammer.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-lying-systems-without-lvds.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-gen3-fb-hack.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/drm-intel-tiled-front.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-hdmi-edid-fix.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-tiling-transition.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-drm-r128-ioremap.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/drm-radeon-kms-fixes.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-next.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-debugfs-ringbuffer.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
 zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
@@ -279,5 +282,3 @@ zcat ${SB_PATCHDIR}/linux-2.6-dropwatch-protocol.patch.gz | ${PATCHCOM} || exit 
 # kvm fixes
 zcat ${SB_PATCHDIR}/linux-2.6-kvm-skip-pit-check.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-xen-check-for-nx-support.patch.gz | ${PATCHCOM} || exit 1
-
-zcat ${SB_PATCHDIR}/linux-2.6-x86-64-fix-fpu-corruption-with-signals-and-preemption.patch.gz | ${PATCHCOM} || exit 1

@@ -7,3 +7,4 @@ zcat ${SB_PATCHDIR}/${NAME}-1.19-xattrs.patch.gz | patch -p1 -E --backup --verbo
 zcat ${SB_PATCHDIR}/${NAME}-1.19-xattrs-conf.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.17-wildcards.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.22-xz-support.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.22-support_txz.diff.gz | patch -p1 -E --backup --verbose || exit 1

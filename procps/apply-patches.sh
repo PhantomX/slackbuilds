@@ -9,7 +9,7 @@ zcat ${SB_PATCHDIR}/${NAME}.w.showfrom.diff.gz | patch -p1 -E --backup --verbose
 #zcat ${SB_PATCHDIR}/${NAME}-3.2.7-selinux.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.1.15-misc.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.2.3-FAQ.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.2.1-selinux-workaround.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-selinux-workaround.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.2.3-noproc.patch.gz | patch -p1 -E --backup --verbose || exit 1
 #zcat ${SB_PATCHDIR}/${NAME}-3.2.3-pseudo.patch
 zcat ${SB_PATCHDIR}/${NAME}-3.2.4-0x9b.patch.gz | patch -p1 -E --backup --verbose || exit 1
@@ -32,10 +32,6 @@ zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-cpusteal.patch.gz | patch -p1 -E --back
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-longcmd.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # 189349 - 32bit vmstat on 64bit kernel
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-pgpg.patch.gz | patch -p1 -E --backup --verbose || exit 1
-# 206551 - top fails to convert to cpu single mode when hit '1'
-zcat ${SB_PATCHDIR}/${NAME}-3.2.7-top-single.patch.gz | patch -p1 -E --backup --verbose || exit 1
-# 199174 - top returns with exit code 1 even if no error occurs
-zcat ${SB_PATCHDIR}/${NAME}-3.2.7-top-exitcode.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # 212637 - sysctl using deprecated syscall
 # 228870 - process `sysctl' is using deprecated sysctl ...
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-sysctl-ignore.patch.gz | patch -p1 -E --backup --verbose || exit 1
@@ -45,7 +41,6 @@ zcat ${SB_PATCHDIR}/${NAME}-3.2.7-top-sorthigh.path.gz | patch -p1 -E --backup -
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-w-best.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # 183029 - watch ignores unicode characters
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-watch-unicode.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.2.7-sysctl-tmpname.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # 222251 - STIME can jitter by one second
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-ps-stime.patch.gz | patch -p1 -E --backup --verbose || exit 1
 #208217 - command "ps jax --sort=uid,-ppid,+pid" fails
@@ -62,3 +57,24 @@ zcat ${SB_PATCHDIR}/${NAME}-3.2.7-top-cpu0.patch.gz | patch -p1 -E --backup --ve
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-top-cpuint.patch
 #296471 - update top man page.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-top-manpage.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#440694 - strange text after selecting few field
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-top-clrscr.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#435453 - errors with man -t formatting of ps man page
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-ps-man-fmt.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#472783 - 'vmstat -p <partition name>', 
+# the detailed statistics of the partition name is not output.
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-partstats-long.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# Fix vmstat header to be 80 chars not 81
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-header.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# rhel bug #475963: slabtop -o should display the info once
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-slabtop-once.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#476134 - added timestamp to vmstat with new option -t
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-timestamp.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#manual page updated to document the -t functionality
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-timestamp-manpage.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#added cgroup display to ps
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-ps-cgroup.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# 'requested writes' display in partition statistics
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-partstats-reqwrites.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# '-l' option of 'free' documented
+zcat ${SB_PATCHDIR}/${NAME}-3.2.7-free-hlmem.patch.gz | patch -p1 -E --backup --verbose || exit 1

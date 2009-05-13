@@ -48,11 +48,19 @@ if [ ! -d ${TMP} ]; then
 fi
 
 NAME=glibc
-VERSION=${VERSION:-2.9}
-CVSVER=${CVSVER:-2.9-20090323}
+VERSION=${VERSION:-2.10.1}
+CHECKOUT=${CHECKOUT:-20090511}
 
-# Fill in the kernel version to build against:
-KERNEL_HEADERS=${KERNEL_HEADERS:-2.6.29-1xinc}
+if [ "${CHECKOUT}" ] ;then
+  CVSVER=${VERSION}-${CHECKOUT}
+else
+  CVSVER=${VERSION}
+fi
+
+# NOTE!!!  glibc needs to be built against the sanitized kernel headers,
+# which will be installed under /usr/include by the kernel-headers package.
+# Be sure the correct version of the headers package is installed BEFORE
+# building glibc!
 
 # ${ARCH} may be preset, otherwise i486 compatibility with i686 binary
 # structuring is the Slackware default, since this is what gcc-3.2+
@@ -67,7 +75,7 @@ fi
 SLKTARGET=${SLKTARGET:-i486}
 SLKDTARGET=${SLKDTARGET:-slackware}
 
-BUILD=${BUILD:-6}
+BUILD=${BUILD:-1}
 
 NJOBS=${NJOBS:-2}
 
@@ -75,26 +83,24 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${CVSVER}
 SRCARCHIVE=${SRCDIR}.tar.bz2
-SRCDIR2=${NAME}-libidn-${CVSVER}
-SRCARCHIVE2=${SRCDIR2}.tar.bz2
+SRCARCHIVEB=${NAME}-${CHECKOUT}.tar.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 GNU_MIRROR=${GNU_MIRROR:-http://ftp.gnu.org/gnu}
 DL_URL="${GNU_MIRROR}/${NAME}/${SRCARCHIVE}"
-DL_URL2="${GNU_MIRROR}/${NAME}/${SRCARCHIVE2}"
-FDL_URL="ftp://sources.redhat.com/pub/${NAME}"
+FDL_URL="ftp://sources.redhat.com/pub/${NAME}/snapshots"
 
 # if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || \
-    wget ${DL_OPTS} ${FDL_URL}/releases/${SRCARCHIVE} || \
-    wget ${DL_OPTS} ${FDL_URL}/snapshots/${SRCARCHIVE} || exit 1
+if ! test -r ${SRCARCHIVE} && ! test -r ${SRCARCHIVEB} ; then
+  ( test -r ${CWD}/${SRCARCHIVE} || test -r ${SRCARCHIVEB} ) || wget ${DL_OPTS} ${DL_URL} || \
+    wget ${DL_OPTS} ${FDL_URL}/${SRCARCHIVE} || \
+    ( test -r ${CWD}/${SRCARCHIVEB} || wget ${DL_OPTS} ${FDL_URL}/${SRCARCHIVEB} ) || exit 1
 fi
-if ! test -r ${SRCARCHIVE2}; then
-  test -r ${CWD}/${SRCARCHIVE2} || wget ${DL_OPTS} ${DL_URL2} || \
-    wget ${DL_OPTS} ${FDL_URL}/releases/${SRCARCHIVE2}
-    wget ${DL_OPTS} ${FDL_URL}/snapshots/${SRCARCHIVE2}
+
+if [ -r ${CWD}/${SRCARCHIVEB} ] ;then
+  SRCDIR=${NAME}-${CHECKOUT}
+  SRCARCHIVE=${SRCARCHIVEB}
 fi
 
 # This is a patch function to put all glibc patches in the build script
@@ -171,29 +177,19 @@ mkdir -p ${PKG}/var/run/nscd
 
 # Begin extract/compile:
 cd ${TMP}
-rm -rf glibc-${CVSVER}
+rm -rf ${SRCDIR}
 if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
   tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
 elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
   tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
 fi
-cd glibc-${CVSVER} || exit 1
-if [ ${CWD}/${SRCARCHIVE2} ] ;then
-  if $(file -L ${CWD}/${SRCARCHIVE2} | grep -q ": bzip2"); then
-    tar -xjvf ${CWD}/${SRCARCHIVE2} || exit 1
-  elif $(file -L ${CWD}/${SRCARCHIVE2} | grep -q ": gzip"); then
-    tar -xzvf ${CWD}/${SRCARCHIVE2} || exit 1
-  fi
-fi
-if [ -d glibc-libidn-${VERSION} ] ;then
-  mv glibc-libidn-${VERSION} libidn || exit 1
-fi
+cd ${SRCDIR} || exit 1
 
 #chown -R root:root .
 chmod -R u+w,go+r-w,a-s .
 
 # Clean up leftover CVS directories:
-find . -type d -name CVS -print0 | xargs -0r rm -rf
+find . -type d -name CVS -print0 | xargs -0r rm -rf 2> /dev/null
 
 # Apply patches; exit if any fail.
 apply_patches
@@ -201,12 +197,11 @@ if [ ! $? = 0 ]; then
   exit 1
 fi
 
+SOVER="$(grep VERSION version.h |awk '{print $3}' | tr -d \")"
+
 # Make build directory:
 mkdir -p build-glibc-${VERSION}
 cd build-glibc-${VERSION} || exit 1
-
-#SB_HEADERS=${SB_HEADERS:-/usr/src/linux-${KERNEL_HEADERS}/include}
-SB_HEADERS=${SB_HEADERS:-/usr/include}
 
 echo "BUILDING DAS NPTL GLIBC"
 CFLAGS="-g ${OPTIMIZ}" \
@@ -215,7 +210,7 @@ CFLAGS="-g ${OPTIMIZ}" \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --enable-kernel=2.6.21 \
-  --with-headers=${SB_HEADERS} \
+  --with-headers=/usr/include \
   --enable-add-ons=libidn,nptl \
   --enable-profile \
   --with-tls \
@@ -253,7 +248,7 @@ strip -g ${PKG}/usr/lib/*.o
 #rm -f ${PKG}/usr/include/rpcsvc/rquota.[hx]
 
 # Back to the sources dir to add some files/docs:
-cd ${TMP}/glibc-${CVSVER} || exit 1
+cd ${TMP}/${SRCDIR} || exit 1
 
 # We'll automatically install the config file for the Name Server Cache Daemon.
 # Perhaps this should also have some commented-out startup code in rc.inet2...
@@ -446,7 +441,7 @@ rm -f sbin/*
 mv ldconfig sbin/
 mkdir -p install
 cp -a ${CWD}/slack-desc.glibc-solibs install/slack-desc
-cp -a ${CWD}/doinst.sh-glibc-solibs install/doinst.sh
+cat ${CWD}/doinst.sh-glibc-solibs | sed -e "s|_VERSION|${SOVER}|g" > install/doinst.sh
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        install/slack-desc
@@ -504,7 +499,7 @@ chmod 755 etc/profile.d/*
 find . -type l -exec rm -f {} \;
 mkdir -p install
 cp -a ${CWD}/slack-desc.glibc install/slack-desc
-cp -a ${CWD}/doinst.sh-glibc install/doinst.sh
+cat ${CWD}/doinst.sh-glibc | sed -e "s|_VERSION|${SOVER}|g" > install/doinst.sh
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        install/slack-desc

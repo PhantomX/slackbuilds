@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = kdelibs-extramimetypes
-VERSION = 5.3
+VERSION = 5.4
 
 DESTDIR =
 PREFIX = /usr

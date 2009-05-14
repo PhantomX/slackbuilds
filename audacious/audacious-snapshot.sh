@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="http://atheme.org/audacious/${module}"
+snaproot="http://hg.atheme.org/audacious/${module}"
 
 tmp=$(mktemp -d)
 

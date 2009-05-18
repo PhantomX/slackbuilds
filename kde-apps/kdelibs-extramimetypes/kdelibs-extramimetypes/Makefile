@@ -166,12 +166,10 @@ dist-bzip2: distdir
 	tardir=$(distdir) && $(am__tar) | bzip2 -9 -c >$(distdir).tar.bz2
 	$(am__remove_distdir)
 
-dist-lzma: distdir
-	tardir=$(distdir) && $(am__tar) | lzma -9 -c >$(distdir).tar.lzma
+dist-xz: distdir
+	tardir=$(distdir) && $(am__tar) | xz -9 -c >$(distdir).tar.xz
 	$(am__remove_distdir)
 
-dist dist-all: distdir
-	tardir=$(distdir) && $(am__tar) | bzip2 -9 -c >$(distdir).tar.bz2
-	$(am__remove_distdir)
+dist dist-all: dist-xz
 
 .NOEXPORT:

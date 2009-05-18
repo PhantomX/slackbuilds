@@ -20,6 +20,6 @@ subdir = .
 
 all:
 	make dist -C $(srcdir)/kdelibs-extramimetypes
-	mv $(PACKAGE)/$(PACKAGE)*.tar.bz2 .
+	mv $(PACKAGE)/$(PACKAGE)*.tar.xz .
 
 .NOEXPORT:

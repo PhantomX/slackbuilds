@@ -12,9 +12,9 @@ zcat ${SB_PATCHDIR}/xserver-1.4.99-dont-backfill-bg-none.patch.gz | patch -p1 --
 zcat ${SB_PATCHDIR}/xserver-1.5.0-bg-none-root.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.4.99-pic-libxf86config.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.1-hush-warning.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-projector-fb-size.patch.gz | patch -p1 --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/xserver-1.4.99-alloca-poison.patch.gz | patch -p1 --verbose || exit 1
 # This really could be done prettier.
 zcat ${SB_PATCHDIR}/xserver-1.4.99-ssh-isnt-local.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-bad-fbdev-thats-mine.patch.gz | patch -p1 --verbose || exit 1
@@ -40,14 +40,26 @@ zcat ${SB_PATCHDIR}/xserver-1.5.99.902-nouveau.patch.gz | patch -p1 --verbose ||
 zcat ${SB_PATCHDIR}/xserver-1.6.0-primary.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.6.0-xinerama-cursors.patch.gz | patch -p1 --verbose || exit 1
-# http://bugs.freedesktop.org/show_bug.cgi?id=20557
-zcat ${SB_PATCHDIR}/xserver-1.6.0-xinerama-crashes.patch.gz | patch -p1 --verbose || exit 1
 
 # ajax needs to upstream this
 zcat ${SB_PATCHDIR}/xserver-1.6.0-displayfd.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.6.0-restore-zap.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.6.0-no-i810.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/xserver-1.6.0-randr-xinerama-crash.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.1-exa-avoid-swapped-out.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.1-randr-gamma.patch.gz | patch -p1 --verbose || exit 1
+
+# Nominated for 1.6.2
+zcat ${SB_PATCHDIR}/xserver-1.6.1-exa-create-pixmap2.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.1-avoid-malloc-for-logging.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/xserver-1.6.1-vt-switch.patch.gz | patch -p1 --verbose || exit 1
+# from upstream, nominated for 1.6.2 (#499792)
+zcat ${SB_PATCHDIR}/xserver-1.6.1-synaptics.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.1-proc-cmdline.patch.gz | patch -p1 --verbose || exit 1
+
 
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.5.99.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1

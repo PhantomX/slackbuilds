@@ -86,6 +86,11 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -115,6 +120,7 @@ mkdir -p build
     cmake .. \
       -DCMAKE_BUILD_TYPE="${SLKDIST}" \
       -DCMAKE_INSTALL_PREFIX=/usr \
+      -DLIB_SUFFIX=${LIBDIRSUFFIX} \
       -DSYSCONF_INSTALL_DIR=/etc \
       -DCMAKE_SKIP_RPATH:BOOL=ON \
       -DCMAKE_VERBOSE_MAKEFILE=ON \

@@ -47,8 +47,7 @@ fi
 
 #zcat ${SB_PATCHDIR}/git-cpufreq.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/git-bluetooth.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/git-bluetooth2.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/git-bluetooth3.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/git-bluetooth-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
@@ -73,9 +72,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
 # Architecture patches
 # Architecture patches
 # x86(-64)
-zcat ${SB_PATCHDIR}/linux-2.6-e820-save-restore-edi-ebp.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-e820-acpi3-bios-workaround.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-e820-guard-against-pre-acpi3.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-e820-save-restore-edi-ebp.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-e820-acpi3-bios-workaround.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-e820-guard-against-pre-acpi3.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # Exec shield
@@ -90,6 +89,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-ext4-flush-on-close.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-ext4-really-print-warning-once.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-ext4-prealloc-fixes.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-ext4-fake-delalloc-bno.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-ext4-clear-unwritten-flag.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-ext4-fix-i_cached_extent-race.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
 
@@ -160,6 +162,7 @@ zcat ${SB_PATCHDIR}/alsa-dont-reset-stream-at-each-prepare-callb.patch.gz | ${PA
 zcat ${SB_PATCHDIR}/alsa-hda_intel-fix-unexpected-ring-buffer-positio.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/alsa-pcm-midlevel-add-more-strict-buffer-position.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/hda_intel-prealloc-4mb-dmabuffer.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/alsa-hda-add-debugging.patch.gz | ${PATCHCOM} || exit 1
 
 # block/bio
 #
@@ -167,6 +170,7 @@ zcat ${SB_PATCHDIR}/hda_intel-prealloc-4mb-dmabuffer.patch.gz | ${PATCHCOM} || e
 # Filesystem patches.
 
 # Networking
+zcat ${SB_PATCHDIR}/net-revert-forcedeth-power-down-phy-when-interface-is.patch.gz | ${PATCHCOM} || exit 1
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
@@ -248,6 +252,12 @@ zcat ${SB_PATCHDIR}/drm-intel-hdmi-edid-fix.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-tiling-transition.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-next.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-debugfs-ringbuffer.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-edid-ignore-tiny-modes.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-include-965gme-pci-id.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.29.3-boot-vga.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-gem-use-dma32-on-pae.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-i8xx-cursors.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-vmalloc.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
 zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
@@ -268,7 +278,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-revert-dvb-net-kabi-change.patch.gz | ${PATCHCOM} 
 
 # patches headed for -stable
 zcat ${SB_PATCHDIR}/squashfs-broken-when-pagesize-greater-than-blocksize.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-i2c-fix-bit-algorithm-timeout.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/hpet-fixes.patch.gz | ${PATCHCOM} || exit 1
 
@@ -282,3 +291,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-dropwatch-protocol.patch.gz | ${PATCHCOM} || exit 
 # kvm fixes
 zcat ${SB_PATCHDIR}/linux-2.6-kvm-skip-pit-check.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-xen-check-for-nx-support.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-xen-fix_warning_when_deleting_gendisk.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-xen-xenbus_state_transition_when_not_connected.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6.29-xen-disable-gbpages.patch.gz | ${PATCHCOM} || exit 1

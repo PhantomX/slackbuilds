@@ -44,7 +44,7 @@ PNAME=gtk+
 NAME=gtk+2
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.16.1}
+VERSION=${VERSION:-2.16.2}
 SVER=$(echo ${VERSION} | cut -d . -f1-2)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -124,6 +124,10 @@ rm -f ./gtk/gtkmarshalers.h
 
 autoreconf -ivf || exit 1
 
+# Autoconf changes linux to linux-gnu.
+# Our host is $ARCH-slackware-linux not $ARCH-slackware-linux-gnu:
+sed -i -e 's#linux|linux-gnu|#linux|linux|#' config.sub
+
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
@@ -138,20 +142,58 @@ CXXFLAGS="${SLKCFLAGS}" \
   --disable-rebuilds \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
-make || exit 1
+make -j${NJOBS} || make || exit 1
 
-make install DESTDIR=${PKG} || exit 1
+# Check the host value that is passed to the compile to the one in this script:
+host="${SLKTARGET}-${SLKDTARGET}-linux"
+compile_host=$(grep 'host_triplet =' gtk/Makefile | sed -e "s/.* = //")
+if [ "x$compile_host" != "x$host" ]; then
+  echo "Host mismatch: compile='$compile_host', SlackBuild='$host'" && exit 1
+fi
+
+make install DESTDIR=${PKG} \
+  RUN_QUERY_IMMODULES_TEST=false RUN_QUERY_LOADER_TEST=false || exit 1
 
 # Do not remove .la file for compatibility with Slackware stock package
 #rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/*.la
 rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/gtk-2.0/*/*/*.la
 
-mkdir -p ${PKG}/etc/gtk-2.0
-touch ${PKG}/etc/gtk-2.0/gdk-pixbuf.loaders
-touch ${PKG}/etc/gtk-2.0/gtk.immodules
+mkdir -p ${PKG}/etc/gtk-2.0/${host}
+mv ${PKG}/etc/gtk-2.0/*.conf ${PKG}/etc/gtk-2.0/${host}/
+touch ${PKG}/etc/gtk-2.0/${host}/gdk-pixbuf.loaders
+touch ${PKG}/etc/gtk-2.0/${host}/gtk.immodules
 
-mv ${PKG}/etc/gtk-2.0/im-multipress.conf \
-   ${PKG}/etc/gtk-2.0/im-multipress.conf.new || exit 1
+mv ${PKG}/etc/gtk-2.0/${host}/im-multipress.conf \
+   ${PKG}/etc/gtk-2.0/${host}/im-multipress.conf.new || exit 1
+
+# We need to have separate 32-bit and 64-bit binaries
+# for places where we have two copies of the GTK+ package installed.
+# (we might have x86_64 and i486 packages on the same system, for example.)
+case "${host}" in
+  s390x*|x86_64*)
+   mv ${PKG}/usr/bin/gtk-query-immodules-2.0{,-64}
+   mv ${PKG}/usr/bin/gdk-pixbuf-query-loaders{,-64}
+   ( cd ${PKG}/usr/bin
+     ln -sf gtk-query-immodules-2.0-64 gtk-query-immodules-2.0
+     ln -sf gdk-pixbuf-query-loaders-64 gdk-pixbuf-query-loaders
+   )
+   ;;
+  *)
+   mv ${PKG}/usr/bin/gtk-query-immodules-2.0{,-32}
+   mv ${PKG}/usr/bin/gdk-pixbuf-query-loaders{,-32}
+   ( cd ${PKG}/usr/bin
+     ln -sf gtk-query-immodules-2.0-32 gtk-query-immodules-2.0
+     ln -sf gdk-pixbuf-query-loaders-32 gdk-pixbuf-query-loaders
+   )
+   ;;
+esac
+
+# Install wrappers for the binaries:
+for wrapper in update-gdk-pixbuf-loaders update-gtk-immodules ;do
+  zcat ${CWD}/${wrapper}.gz | sed -e "s|_SLKDTARGET|${SLKDTARGET}|g" \
+   > ${PKG}/usr/bin/${wrapper}
+done
+chmod 0755 ${PKG}/usr/bin/update-*
 
 mkdir -p ${PKG}/var/log/setup
 cat > ${PKG}/var/log/setup/setup.07.gtk-update-icon-cache  <<EOF
@@ -165,10 +207,8 @@ for file in ${PNAME}.{csh,sh} ;do
                  ${PKG}/etc/profile.d/${file}.new || exit 1
 done
 
-( cd ${PKG}
-  find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
-  find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
-)
+find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
+  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -240,15 +280,15 @@ EOF
   echo >> ${PKG}/install/doinst.sh
 )
 
-cat >> ${PKG}/install/doinst.sh <<'EOF'
+cat >> ${PKG}/install/doinst.sh <<EOF
 if [ -d usr/share/icons/hicolor ]; then
   if [ -x usr/bin/gtk-update-icon-cache ]; then
-    ${CHROOT} /usr/bin/gtk-update-icon-cache -f -t usr/share/icons/hicolor 1> /dev/null 2> /dev/null
+    \${CHROOT} /usr/bin/gtk-update-icon-cache -f -t usr/share/icons/hicolor 1> /dev/null 2> /dev/null
   fi
 fi
-if [ -e usr/lib/libX11.so.6 ]; then
-  ${CHROOT} /usr/bin/gdk-pixbuf-query-loaders > etc/gtk-2.0/gdk-pixbuf.loaders
-  ${CHROOT} /usr/bin/gtk-query-immodules-2.0 > etc/gtk-2.0/gtk.immodules
+if [ -e usr/lib/libX11.so.6 ] && [ -x usr/bin/gtk-query-immodules-2.0 ] ; then
+  \${CHROOT} /usr/bin/update-gdk-pixbuf-loaders
+  \${CHROOT} /usr/bin/update-gtk-immodules
 fi
 EOF
 
@@ -259,7 +299,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/{patches,profile.d}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${CWD}/update-*.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.gz \

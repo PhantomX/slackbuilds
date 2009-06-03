@@ -20,6 +20,6 @@ subdir = .
 
 all:
 	make dist -C $(srcdir)/extrarcscripts
-	mv $(PACKAGE)/$(PACKAGE)*.tar.bz2 .
+	mv $(PACKAGE)/$(PACKAGE)*.tar.xz .
 
 .NOEXPORT:

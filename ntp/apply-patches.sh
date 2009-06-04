@@ -6,6 +6,9 @@ zcat ${SB_PATCHDIR}/${NAME}-4.2.4p4-kernel.patch.gz | patch -p1 -E --backup --ve
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p0-droproot.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # ntpbz #812
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4-groups.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# ntpbz #1170
+zcat ${SB_PATCHDIR}/${NAME}-4.2.4p7-daemonpll.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#zcat ${SB_PATCHDIR}/${NAME}-4.2.4-linkfastmath.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p2-tentative.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # ntpbz #897
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p2-noseed.patch.gz | patch -p1 -E --backup --verbose || exit 1
@@ -19,33 +22,37 @@ zcat ${SB_PATCHDIR}/${NAME}-4.2.4p2-filegen.patch.gz | patch -p1 -E --backup --v
 # ntpbz #738
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4-sprintf.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # add option -m to lock memory
-zcat ${SB_PATCHDIR}/${NAME}-4.2.4p6-mlock.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.2.4p7-mlock.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # fixed in 4.2.5
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p2-clockselect.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # don't build sntp
-zcat ${SB_PATCHDIR}/${NAME}-4.2.4p2-nosntp.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.2.4p7-nosntp.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # ntpbz #802
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p5-sleep.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # ntpbz #779, #823
-zcat ${SB_PATCHDIR}/${NAME}-4.2.4p5-bcast.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.2.4p7-bcast.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # ntpbz #759
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p0-retcode.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # ntpbz #397
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p2-noif.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-4.2.4p4-ipv6.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.2.4p7-ipv6.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p4-cmsgalign.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # clock_gettime needs -lrt
 sed -i.gettime 's|^LIBS = @LIBS@|& -lrt|' ntp{d,q,dc,date}/Makefile.in
-zcat ${SB_PATCHDIR}/${NAME}-4.2.4p4-gettime.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.2.4p7-gettime.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p4-resinit.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # ntpbz #992
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p5-rtnetlink.patch.gz | patch -p1 -E --backup --verbose || exit 1
-# remove when #460561 is fixed
-zcat ${SB_PATCHDIR}/${NAME}-4.2.4p5-retryres.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# don't log STA_MODE (PLL/FLL) changes
+zcat ${SB_PATCHDIR}/${NAME}-4.2.4p7-stamode.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # ntpbz #808
 zcat ${SB_PATCHDIR}/${NAME}-4.2.4p5-driftonexit.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-#zcat ${SB_PATCHDIR}/${NAME}-4.2.4-linkfastmath.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# add missing nanokernel macros
+zcat ${SB_PATCHDIR}/${NAME}-4.2.4p7-nano.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# allow minpoll 3 as in 4.2.5
+zcat ${SB_PATCHDIR}/${NAME}p-4.2.4p7-minpoll.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# fix frequency mode, backported from 4.2.5
+zcat ${SB_PATCHDIR}/${NAME}-4.2.4p7-freqmode.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # replace BSD with advertising code in ntp{dc,q} to allow linking with readline
 for f in include/{ntp_rfc2553,rsa_md5}.h \

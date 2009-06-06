@@ -40,10 +40,19 @@ fi
 NAME=opera
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-9.64-2480}
-RVER="$(echo ${VERSION} | cut -d - -f1)"
-OPBUILD="$(echo ${VERSION} | cut -d - -f1)"
-ARCH=i386
+VERSION=${VERSION:-10.00-b1-4402}
+if [ $(echo ${VERSION} | cut -d - -f2 | grep b) ] ;then
+  RVER="$(echo ${VERSION} | cut -d - -f1,3)"
+  RVER2="$(echo ${VERSION} | cut -d - -f1-2)"
+  CRVER=${RVER2//.}
+  REL="beta$(echo ${RVER2} | cut -d - -f2 | cut -c 2)"
+else
+  RVER="$(echo ${VERSION} | cut -d - -f1)"
+  CRVER=${RVER2//.}
+  REL=final
+fi
+# x86 or x86_64
+ARCH=${ARCH:-x86}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -54,16 +63,32 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}-${VERSION}.gcc4-shared-qt3.${ARCH}
-SRCARCHIVE=${NAME}-${RVER}.gcc4-shared-qt3.${ARCH}.tar.bz2
+if [ "${ARCH}" = "x86_64" ] ;then
+  # x86_64 do not have qt4 build yet
+  PARCH=${ARCH}
+  SRCDIR=${NAME}-${RVER}.gcc4-shared-qt3.${PARCH}
+  SRCARCHIVE=${NAME}-${RVER2}.gcc4-shared-qt3.${PARCH}.tar.bz2
+else
+  PARCH=i386
+  SRCDIR=${NAME}-${RVER}.gcc4-qt4.${PARCH}
+  SRCARCHIVE=${NAME}-${RVER2}.gcc4-qt4.${PARCH}.tar.bz2
+fi
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://ftp.opera.com/pub/opera/linux/${RVER//.}/final/en/${ARCH}/shared/${SRCARCHIVE}"
+OPERA_MIRROR=${OPERA_MIRROR:-http://ftp.opera.com/pub/opera}
+DL_URL="${OPERA_MIRROR}/linux/${CRVER//-}/${REL}/en/${PARCH}/shared/${SRCARCHIVE}"
+DL_URLB="${OPERA_MIRROR}/linux/${CRVER//-}/${REL}/en/${PARCH}/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible, or in /tmp
 if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || wget ${DL_OPTS} ${DL_URLB} || exit 1
+fi
+
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+else
+  LIBDIRSUFFIX=""
 fi
 
 if [ -d ${PKG} ]; then
@@ -74,21 +99,20 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
+
+echo "Checking md5..."
+if ! md5sum --quiet -c Manifest.md5 &>/dev/null ;then
+  echo "Some files are corrupted, download ${SRCARCHIVE} again."
+  exit 1
+fi
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-
-mv usr/share/${NAME}/ini/standard_menu.ini \
-   usr/share/${NAME}/ini/standard_menu_orig.ini || exit 1
-zcat ${CWD}/standard_menu.ini.new.gz > \
-     usr/share/${NAME}/ini/standard_menu.ini || exit 1
+zcat ${CWD}/${NAME}-10-multilib.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-10-qt4-theme.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
 zcat ${CWD}/${NAME}.policy.gz > \
      usr/share/${NAME}/java/${NAME}.policy || exit 1
@@ -97,16 +121,16 @@ cat ${CWD}/BluecurveX.zip > \
     usr/share/${NAME}/skin/BluecurveX.zip || exit 1
 
 mkdir -p ${PKG}/usr/bin
-sed -i -e '/^OPERA_BINARYDIR=/s|usr/|/usr/|g;
-           /OPERA_PERSONALDIR=/s|=.*|=$HOME/.opera|g
-           s|^case.*esac$|OPERA_SCRIPT_PATH=$0|g;
-           s|$PWD||g' ${NAME} || exit 1
+sed -i \
+  -e '/OPERA_PERSONALDIR=/s|=.*|=$HOME/.opera|g' \
+  -e 's|^case.*esac$|OPERA_SCRIPT_PATH=$0|g' \
+  -e 's|$PWD||g' ${NAME} || exit 1
 install -m0755 ${NAME} ${PKG}/usr/bin/${NAME} || exit 1
 
-mkdir -p ${PKG}/usr/lib
+mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}
 cp -a usr/lib/${NAME} \
-      ${PKG}/usr/lib/${NAME} || exit 1
-chmod 0755 ${PKG}/usr/lib/${NAME}/*/*.so
+      ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME} || exit 1
+chmod 0755 ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME}/*.so
 
 mkdir -p ${PKG}/usr/share
 cp -a usr/share/{icons,${NAME}} \
@@ -116,8 +140,9 @@ zcat ${CWD}/${NAME}.svg.gz > \
      ${PKG}/usr/share/icons/hicolor/scalable/apps/${NAME}.svg || exit 1
 
 mkdir -p ${PKG}/etc
-install -m0644 etc/${NAME}6rc* \
-               ${PKG}/etc/ || exit 1
+for file in etc/${NAME}prefs*.ini ;do
+  install -m0644 ${file} ${PKG}/${file}.new || exit 1
+done
 
 mkdir -p ${PKG}/usr/man/man1
 install -m0644 usr/share/man/man1/${NAME}.1 \
@@ -159,6 +184,28 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
+
+cat > ${PKG}/install/doinst.sh <<EOF
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -166,8 +213,8 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}*.{desktop,policy}.gz ${CWD}/${NAME}.svg.gz \
-                 ${CWD}/standard_menu.ini.new.gz ${SBDIR}/
+                 ${CWD}/${NAME}-*.patch.gz ${CWD}/${NAME}*.{desktop,policy}.gz \
+                 ${CWD}/${NAME}.svg.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
 fi

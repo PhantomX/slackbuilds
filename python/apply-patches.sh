@@ -1,6 +1,16 @@
   
 SB_PATCHDIR=${CWD}/patches
 
+zcat ${SB_PATCHDIR}/${NAME}.readline.set_pre_input_hook.diff.gz | patch -p1 --verbose || exit 1
+
+if [ "${ARCH}" = "x86_64" ]; then
+  # Install to lib64 instead of lib:
+  zcat ${SB_PATCHDIR}/${NAME}.x86_64.diff.gz |  patch -p1 --verbose || exit 1
+  # Python must report /usr/lib64/python2.6/site-packages as python_lib_dir:
+  zcat ${SB_PATCHDIR}/${NAME}.pure64.diff.gz |  patch -p1 --verbose || exit 1
+fi
+
+
 # From Gentoo
 for patches in 02_all_db4.patch 12_all_distutils-rpath-gcc.patch \
   15_all_dbm_default_gdbm_compat.patch 21_all_ctypes-execstack.patch \

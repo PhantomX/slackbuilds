@@ -52,7 +52,7 @@ if [ "${SB_NATIVE}" = "YES" ] ;then
 else
   ARCH=${ARCH:-i686}
 fi
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -65,7 +65,10 @@ SB_PCH=${SB_PCH:-YES}
 
 # Set to YES to enable phonon support
 SB_PHONON=${SB_PHONON:-YES}
-SB_PHONON_BACKEND=${SB_PHONON_BACKEND:-NO}
+SB_PHONON_BACKEND=${SB_PHONON_BACKEND:-YES}
+
+# Set to YES to enable pulseaudio as default on phonon
+SB_PA=${SB_PA:-NO}
 
 # Set to YES to enable webkit module
 SB_WEBKIT=${SB_WEBKIT:-YES}
@@ -77,7 +80,7 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${PNAME}-x11-opensource-src-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.bz2
-SRCARCHIVE2=${NAME}-copy-patches-${PVER}.tar.bz2
+SRCARCHIVE2=${NAME}-copy-patches-${PVER}.tar.xz
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
@@ -122,13 +125,9 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
-tar -xjvf ${CWD}/${SRCARCHIVE2} || exit 1
+tar -xvf ${CWD}/${SRCARCHIVE2} || exit 1
 
 # these should match contents of qt4.macros:
 _qt4_prefix=/usr/lib${LIBDIRSUFFIX}/qt4
@@ -154,9 +153,16 @@ fi
 # drop -fexceptions from $SLKCFLAGS
 SLKCFLAGS="$(echo ${SLKCFLAGS} | sed 's|-fexceptions||g')"
 
+## customize our platform
+if [ "lib${LIBDIRSUFFIX}" == "lib64" ] ;then
+  platform=linux-g++-64
+else
+  platform=linux-g++
+fi
+
 sed -i \
   -e "s|-O2|${SLKCFLAGS}|g" \
-  -e "s|g++.conf|g++-multilib.conf|g" mkspecs/linux-g++/qmake.conf
+  -e "s|g++.conf|g++-multilib.conf|g" mkspecs/${platform}/qmake.conf
 sed -e "s|^QMAKE_CFLAGS_RELEASE|#QMAKE_CFLAGS_RELEASE|g" \
  mkspecs/common/g++.conf > mkspecs/common/g++-multilib.conf
 
@@ -175,24 +181,33 @@ unset LDFLAGS
 sed -i -e "s|^QMAKE_STRIP.*=.*|QMAKE_STRIP             =|" \
   mkspecs/common/linux.conf
 
+# set correct lib path
+if [ "lib${LIBDIRSUFFIX}" == "lib64" ] ; then
+  sed -i -e "s,/usr/lib /lib,/usr/lib${LIBDIRSUFFIX} /lib${LIBDIRSUFFIX},g" config.tests/{unix,x11}/*.test
+  sed -i -e "s,/lib /usr/lib,/lib${LIBDIRSUFFIX} /usr/lib${LIBDIRSUFFIX},g" config.tests/{unix,x11}/*.test
+fi
+
+# let syncqt to create new header
+rm -rf include
+
 if [ "${SB_DEMOS}" != "YES" ] ; then
   sed -i '/^CFG_NOBUILD_PARTS=/s|"$| demos examples"|g' \
     configure || exit 1
   SB_DEMOSOPTS="-nomake demos -nomake examples"
 fi
 
-[ "${SB_PCH}" = "YES" ] || SB_PCHOPTS="-no-pch"
-if [ "${SB_PHONON}" = "YES" ] ;then
+[ "${SB_PCH}" == "YES" ] || SB_PCHOPTS="-no-pch"
+if [ "${SB_PHONON}" == "YES" ] ;then
   SB_PHONONOPTS="-phonon"
 else
   SB_PHONONOPTS="-no-phonon"
 fi
-if [ "${SB_PHONON_BACKEND}" = "YES" ] ;then
+if [ "${SB_PHONON_BACKEND}" == "YES" ] ;then
   SB_PHONON_BACKENDOPTS="-phonon-backend"
 else
   SB_PHONON_BACKENDOPTS="-no-phonon-backend"
 fi
-[ "${SB_WEBKIT}" = "YES" ] || SB_WEBKITOPTS="-no-webkit"
+[ "${SB_WEBKIT}" == "YES" ] || SB_WEBKITOPTS="-no-webkit"
 
 # And here's what we are currently using.  The "-confirm-license" agrees to the GPL, so don't run this script if you
 # don't agree.  :-)
@@ -320,21 +335,28 @@ fi
 # .la files, die, die, die.
 rm -f ${PKG}/${_qt4_libdir}/lib*.la
 
-## multilib: qconfig
-# mv ${PKG}/${_qt4_headerdir}/Qt/qconfig.h \
-#    ${PKG}/${_qt4_headerdir}/QtCore/qconfig-i386.h || exit 1
-# zcat ${CWD}/qconfig-multilib.h.gz > \
-#      ${PKG}/${_qt4_headerdir}/QtCore/qconfig-multilib.h || exit 1
-# ln -sf qconfig-multilib.h ${PKG}/${_qt4_headerdir}/QtCore/qconfig.h || exit 1
-# ln -sf ../QtCore/qconfig.h ${PKG}/${_qt4_headerdir}/Qt/qconfig.h || exit 1
-
 # Put this back as shipped:
 sed -i -e "s|${SLKCFLAGS}|-O2|g" \
           ${PKG}/${_qt4_datadir}/mkspecs/*/qmake.conf || exit 1
 
-## multilib: mkspecs
+# multilib: qconfig.h
+case "${ARCH}" in
+  i[3-6]86)  QARCH=i386
+             ;;
+    s390)    QARCH=s390
+             ;;
+    x86_64)  QARCH=x86_64
+             ;;
+esac
+
+mv ${PKG}/${_qt4_headerdir}/Qt/qconfig.h ${PKG}/${_qt4_headerdir}/QtCore/qconfig-${QARCH}.h
+mkdir -p ${PKG}/${_qt4_headerdir}/QtCore
+zcat ${CWD}/qconfig-multilib.h.gz > ${PKG}/${_qt4_headerdir}/QtCore/qconfig-multilib.h
+ln -sf qconfig-multilib.h ${PKG}/${_qt4_headerdir}/QtCore/qconfig.h
+ln -sf ../QtCore/qconfig.h ${PKG}/${_qt4_headerdir}/Qt/qconfig.h
+
 if [ "${_qt4_datadir}" != "${_qt4_prefix}" ] ;then
-  # mkspecs
+  # multilib: mkspecs hacks, unfortunately, breaks some stuff
   mkdir -p ${PKG}/${_qt4_prefix}/mkspecs
   mv ${PKG}/${_qt4_datadir}/mkspecs/{default,linux-g++*,qconfig.pri} \
      ${PKG}/${_qt4_prefix}/mkspecs/
@@ -357,17 +379,13 @@ ${_qt4_libdir}
 EOF
 fi
 
-if [ "${SB_PHONON}" = "YES" ] ;then
-  # if building with phonon support, nuke it
-  rm -fv  ${PKG}/${_qt4_libdir}/libphonon.so*
-  rm -rfv ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig/phonon.pc
-  # contents slightly different between phonon-4.3.1 and qt-4.5.0
-  rm -fv  ${PKG}/usr/include/phonon/phononnamespace.h
-  # contents dup'd but should remove just in case
-  rm -fv  ${PKG}/usr/include/phonon/*.h
+mkdir -p ${PKG}/${_qt4_plugindir}/styles
 
-  #rm -rfv ${PKG}/${_qt4_headerdir}/phonon*
-  #rm -rfv ${PKG}/${_qt4_headerdir}/Qt/phonon*
+if [ "${SB_PHONON}" == "YES" ] ;then
+  mkdir -p ${PKG}/${_qt4_plugindir}/phonon_backend
+  ( cd ${PKG}/${_qt4_headerdir}
+    ln -s phonon Phonon
+  )
 fi
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
@@ -463,7 +481,7 @@ Type=Application
 Categories=Qt;Settings;
 EOF4
 
-if [ "${SB_DEMOS}" = "YES" ] ; then
+if [ "${SB_DEMOS}" == "YES" ] ; then
 cat > ${PKG}/usr/share/applications/${NAME}demo.desktop <<EOF5
 [Desktop Entry]
 Name=Qt4 Demo
@@ -501,6 +519,20 @@ for icon in tools/linguist/linguist/images/icons/linguist-*-32.png ; do
   install -p -m644 -D ${icon} \
     ${PKG}/usr/share/icons/hicolor/${size}x${size}/apps/linguist4.png
 done
+
+if [ "${SB_PHONON_BACKEND}" == "YES" ] ;then
+  mkdir -p ${PKG}/usr/share/icons/hicolor/scalable/apps
+  zcat ${CWD}/gstreamer-logo.svg.gz > \
+    ${PKG}/usr/share/icons/hicolor/scalable/apps/phonon-gstreamer.svg || exit 1
+  for i in 16 22 32 48 64 128; do
+    dir=${PKG}/usr/share/icons/hicolor/${i}x${i}/apps
+    mkdir -p ${dir}
+    convert ${PKG}/usr/share/icons/hicolor/scalable/apps/phonon-gstreamer.svg \
+      -background None -geometry ${i}x${i} ${dir}/phonon-gstreamer.png || exit 1
+  done
+  touch --reference ${CWD}/gstreamer-logo.svg.gz \
+    ${PKG}/usr/share/icons/hicolor/${i}x${i}/apps/phonon-gstreamer.png
+fi
 
 # Add a documentation directory:
 ( cd ${PKG}/usr/doc && ln -s ${NAME} ${NAME}-${VERSION} )
@@ -545,7 +577,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
                  ${CWD}/apply-patches.sh ${CWD}/*-multilib.h.gz ${CWD}/*.qm.gz \
                  ${CWD}/*.png.gz ${CWD}/Trolltech.conf.gz ${CWD}/${SNAPUPDATE} \
-                 ${SBDIR}/
+                 ${CWD}/gstreamer-*.svg.gz ${SBDIR}/
   install -m0644 ${CWD}/patches/* \
                  ${SBDIR}/patches/
   install -m0755 ${CWD}/${NAME}.SlackBuild \

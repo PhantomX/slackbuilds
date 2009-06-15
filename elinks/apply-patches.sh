@@ -20,4 +20,5 @@ zcat ${SB_PATCHDIR}/${NAME}-0.11.3-macropen.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/${NAME}-scroll.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # Port elinks to use NSS library for cryptography
 zcat ${SB_PATCHDIR}/${NAME}-nss.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
+# Port elinks to use NSS library for cryptography (#346861) - incremental patch
+zcat ${SB_PATCHDIR}/${NAME}-nss-inc.patch.gz | patch -p1 -E --backup --verbose || exit 1

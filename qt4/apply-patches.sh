@@ -19,6 +19,18 @@ zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.0-gcc_hack.patch.gz | patch 
 # qt fails to build on ia64: http://bugzilla.redhat.com/492174
 zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.0-ia64_boilerplate.patch.gz | patch -p1 -E --verbose || exit 1
 zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.1-enable_ft_lcdfilter.patch.gz | patch -p1 -E --verbose || exit 1
+# include kde4 plugin path, http://bugzilla.redhat.com/498809
+Patch16: qt-x11-opensource-src-4.5.1-kde4_plugins.patch.gz | patch -p1 -E --verbose || exit 1
+# make PulseAudio the default device in Phonon with the xine-lib backend
+# (The GStreamer backend handles this entirely differently, with a separate
+# "sink" setting, and should pick up the PulseAudio "sink" without patches.)
+if [ "${SB_PA}" = "YES" ] ;then
+  ( cd src/3rdparty/phonon || exit 1
+    zcat ${SB_PATCHDIR}/phonon-4.2.96-pulseaudio.patch.gz | patch -p1 -E --verbose || exit 1
+  ) || exit 1
+fi
+zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.1-syncqt-header.patch.gz | patch -p1 -E --verbose || exit 1
+zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.1-phonon.patch.gz | patch -p1 -E --verbose || exit 1
 
 ## upstreamable bits
 # http://bugzilla.redhat.com/485677
@@ -28,3 +40,6 @@ zcat ${SB_PATCHDIR}/${PNAME}-4.5-sparc64.patch.gz | patch -p1 -E --verbose || ex
 # should fix the reference counting in qt_toX11Pixmap and thus the Kolourpaint
 # crash with Qt 4.5
 zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.0-fix-qatomic-inline-asm.patch.gz | patch -p1 -E --verbose || exit 1
+# fix invalid assumptions about mysql_config --libs
+# http://bugzilla.redhat.com/440673
+zcat ${SB_PATCHDIR}/${PNAME}-x11-opensource-src-4.5.1-mysql_config.patch.gz | patch -p1 -E --verbose || exit 1

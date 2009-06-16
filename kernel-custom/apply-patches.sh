@@ -86,18 +86,11 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 #
 
 # ext4
-zcat ${SB_PATCHDIR}/linux-2.6-ext4-flush-on-close.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-ext4-really-print-warning-once.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-ext4-prealloc-fixes.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-ext4-fake-delalloc-bno.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-ext4-clear-unwritten-flag.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-ext4-fix-i_cached_extent-race.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
 
 # btrfs
-zcat ${SB_PATCHDIR}/linux-2.6-btrfs-experimental-branch.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-btrfs-fix-umount-hang.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-btrfs-unstable-update.patch.gz | ${PATCHCOM} || exit 1
 
 # relatime
 zcat ${SB_PATCHDIR}/linux-2.6-relatime-by-default.patch.gz | ${PATCHCOM} || exit 1
@@ -107,7 +100,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-fiemap-header-install.patch.gz | ${PATCHCOM} || ex
 
 # USB
 zcat ${SB_PATCHDIR}/linux-2.6-add-qcserial.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-usb-cdc-acm-remove-low-latency-flag.patch.gz | ${PATCHCOM} || exit 1
 
 # ACPI
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-acpi-video.patch.gz | ${PATCHCOM} || exit 1
@@ -156,7 +148,6 @@ zcat ${SB_PATCHDIR}/linux-2.6.29-alsa-update-quirks.patch.gz | ${PATCHCOM} || ex
 zcat ${SB_PATCHDIR}/alsa-rewrite-hw_ptr-updaters.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/alsa-pcm-always-reset-invalid-position.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/alsa-pcm-fix-delta-calc-at-overlap.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/alsa-pcm-safer-boundary-checks.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/alsa-hda-dont-reset-BDL-unnecessarily.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/alsa-dont-reset-stream-at-each-prepare-callb.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/alsa-hda_intel-fix-unexpected-ring-buffer-positio.patch.gz | ${PATCHCOM} || exit 1
@@ -184,6 +175,9 @@ zcat ${SB_PATCHDIR}/linux-2.6-input-hid-extra-gamepad.patch.gz | ${PATCHCOM} || 
 
 # HID: add support for Bluetooth Wacom pads
 zcat ${SB_PATCHDIR}/linux-2.6-input-wacom-bluetooth.patch.gz | ${PATCHCOM} || exit 1
+
+# atkbd: add forced key release quirks for four more notebooks
+zcat ${SB_PATCHDIR}/linux-2.6-input-atkbd-forced-release.patch.gz | ${PATCHCOM} || exit 1
 
 # Allow to use 480600 baud on 16C950 UARTs
 zcat ${SB_PATCHDIR}/linux-2.6-serial-460800.patch.gz | ${PATCHCOM} || exit 1
@@ -219,15 +213,21 @@ zcat ${SB_PATCHDIR}/linux-2.6-ipw2x00-age-scan-results-on-resume.patch.gz | ${PA
 # back-port iwlwifi rfkill while device down patches
 zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-report-killswitch-changes-even-if-the-interface-is-down.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-iwlagn-fix-hw-rfkill-while-the-interface-is-down.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-use-cancel_delayed_work_sync-to-cancel-rfkill_poll.patch.gz | ${PATCHCOM} || exit 1
 
 # back-port mac80211: fix beacon loss detection after scan
 zcat ${SB_PATCHDIR}/linux-2.6-mac80211-fix-beacon-loss-detection-after-scan.patch.gz | ${PATCHCOM} || exit 1
+
+zcat ${SB_PATCHDIR}/mac80211-don-t-drop-nullfunc-frames-during-software.patch.gz | ${PATCHCOM} || exit 1
 
 # Fix up DMA debug code
 zcat ${SB_PATCHDIR}/linux-2.6-dma-debug-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 # /dev/crash driver.
 zcat ${SB_PATCHDIR}/linux-2.6-crash-driver.patch.gz | ${PATCHCOM} || exit 1
+
+# neigh: fix state transition INCOMPLETE->FAILED via Netlink request
+zcat ${SB_PATCHDIR}/linux-2.6-neigh_-fix-state-transition-INCOMPLETE-_FAILED-via-Netlink-request.patch.gz | ${PATCHCOM} || exit 1
 
 # http://www.lirc.org/
 zcat ${SB_PATCHDIR}/linux-2.6-lirc.patch.gz | ${PATCHCOM} || exit 1
@@ -237,6 +237,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-lirc.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-cdrom-door-status.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
+# bz 498854
+zcat ${SB_PATCHDIR}/linux-2.6-netdev-ehea-fix-circular-locking.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/agp-set_memory_ucwb.patch.gz | ${PATCHCOM} || exit 1
 # Nouveau DRM + drm fixes
@@ -258,6 +260,10 @@ zcat ${SB_PATCHDIR}/linux-2.6.29.3-boot-vga.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-gem-use-dma32-on-pae.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-i8xx-cursors.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-vmalloc.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-copyback-ioctl-data-to-userspace-regardless-of-retcode.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-i915-apply-a-big-hammer-to-865-gem-object.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-i915-fix-tiling-pitch.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-set-domain-on-fault.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
 zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
@@ -271,15 +277,12 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || e
 
 # V4L/DVB updates/fixes/experimental drivers
 zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-fixes.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-update.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-experimental.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-fix-uint16_t-audio-h.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-revert-dvb-net-kabi-change.patch.gz | ${PATCHCOM} || exit 1
 
 # patches headed for -stable
 zcat ${SB_PATCHDIR}/squashfs-broken-when-pagesize-greater-than-blocksize.patch.gz | ${PATCHCOM} || exit 1
-
-zcat ${SB_PATCHDIR}/hpet-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 # revert 8b249b6856f16f09b0e5b79ce5f4d435e439b9d6
 zcat ${SB_PATCHDIR}/revert-fix-modules_install-via-nfs.patch.gz | ${PATCHCOM} || exit 1
@@ -292,5 +295,16 @@ zcat ${SB_PATCHDIR}/linux-2.6-dropwatch-protocol.patch.gz | ${PATCHCOM} || exit 
 zcat ${SB_PATCHDIR}/linux-2.6-kvm-skip-pit-check.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-xen-check-for-nx-support.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-xen-fix_warning_when_deleting_gendisk.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-xen-xenbus_state_transition_when_not_connected.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6.29-xen-disable-gbpages.patch.gz | ${PATCHCOM} || exit 1
+
+# via nano: disable mwait, add 64-bit padlock support
+zcat ${SB_PATCHDIR}/via-centaur-merge-32-64-bit-init.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/via-nano-disable-mwait.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/via-padlock-fix-might-sleep.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/via-padlock-cryptodev-1-64bit-enable.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/via-padlock-cryptodev-2-64bit-enable.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/via-padlock-nano-workarounds-ecb.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/via-padlock-nano-workarounds-cbc.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/via-sdmmc.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/via-rng-64-bit-enable.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/via-hwmon-temp-sensor.patch.gz | ${PATCHCOM} || exit 1

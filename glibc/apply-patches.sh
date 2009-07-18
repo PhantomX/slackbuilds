@@ -21,10 +21,14 @@ zcat ${SB_PATCHDIR}/glibc.nis-netgroups.diff.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose || exit 1
 # Gentoo patches
 zcat ${SB_PATCHDIR}/0030_all_glibc-respect-env-CPPFLAGS.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/1010_all_glibc-queue-header-updates.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/1040_all_2.3.3-localedef-fix-trampoline.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/1070_all_glibc-fadvise64_64.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/1055_all_glibc-resolv-dynamic.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/1080_all_glibc-no-inline-gmon.patch.gz | patch -p0 --verbose || exit 1
 zcat ${SB_PATCHDIR}/1090_all_glibc-2.3.6-fix-pr631.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/1085_all_glibc-2.9-check_native-headers.patch.gz | patch -p0 --verbose || exit 1
+zcat ${SB_PATCHDIR}/1095_all_glibc-2.9-assume-pipe2.patch.gz | patch -p0 --verbose || exit 1
 zcat ${SB_PATCHDIR}/1100_all_glibc-2.3.3-china.patch.gz | patch -p0 --verbose || exit 1
 zcat ${SB_PATCHDIR}/1103_all_glibc-new-valencian-locale.patch.gz | patch -p0 --verbose || exit 1
 zcat ${SB_PATCHDIR}/1130_all_glibc-2.4-undefine-__i686.patch.gz | patch -p0 --verbose || exit 1

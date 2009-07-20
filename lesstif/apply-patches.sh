@@ -1,7 +1,6 @@
   
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # put mwm conf file in %{_sysconfdir}, and install Dt in %_libdir
 zcat ${SB_PATCHDIR}/${NAME}-Makefile.in.diff.gz | patch -p1 -E --backup --verbose || exit 1
 # have motif-config honor libdir

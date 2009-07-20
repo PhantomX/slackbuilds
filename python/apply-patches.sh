@@ -10,7 +10,6 @@ if [ "${ARCH}" = "x86_64" ]; then
   zcat ${SB_PATCHDIR}/${NAME}.pure64.diff.gz |  patch -p1 --verbose || exit 1
 fi
 
-
 # From Gentoo
 for patches in 02_all_db4.patch 12_all_distutils-rpath-gcc.patch \
   15_all_dbm_default_gdbm_compat.patch 21_all_ctypes-execstack.patch \

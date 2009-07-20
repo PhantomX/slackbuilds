@@ -9,3 +9,6 @@ if [ "${SB_RH}" = "YES" ]; then
 fi
 
 zcat ${SB_PATCHDIR}/${NAME}-4.1.3-goodname.patch.gz | patch -p1 --verbose --backup || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.1.4.1-largeGroup.patch.gz | patch -p1 --verbose --backup || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.1.4.1-ldap.patch.gz | patch -p1 --verbose --backup || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.1.4.1-sysacc.patch.gz | patch -p1 --verbose --backup || exit 1

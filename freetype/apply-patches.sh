@@ -10,12 +10,16 @@ zcat ${SB_PATCHDIR}/${NAME}.illadvisederror.diff.gz | patch -p1 -E --backup --ve
 # for doing so.
 # Please see this web site for more details:
 #   http://www.freetype.org/patents.html
-#zcat ${SB_PATCHDIR}/${NAME}.bytecode.interpreter.diff.gz | patch -p1 -E --backup --verbose || exit 1
+if [ "${SB_BI}" = "YES" ] ; then
+  zcat ${SB_PATCHDIR}/${NAME}.bytecode.interpreter.diff.gz | patch -p1 -E --backup --verbose || exit 1
+fi
 
 # The line below enables code patented by Microsoft, so don't uncomment it
 # unless you have a license to use the code and take all legal responsibility
 # for doing so.
-#zcat ${SB_PATCHDIR}/${NAME}.subpixel.rendering.diff.gz | patch -p1 -E --backup --verbose || exit 1
+if [ "${SB_SPR}" = "YES" ] ; then
+  zcat ${SB_PATCHDIR}/${NAME}.subpixel.rendering.diff.gz | patch -p1 -E --backup --verbose || exit 1
+fi
 
 # Assorted fixes for 2.1.10 (thanks to Frederic Crozat)
 # CVS bug fixes, mostly for embolding

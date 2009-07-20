@@ -22,7 +22,7 @@ PATCHCOM="patch ${DRYRUN_OPT} -p1 -F1 -s ${VERBOSE_OPT}"
 # Adds layer 7 iptables support
 #zcat ${SB_PATCHDIR}/kernel-2.6.25-layer7-2.20.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/acpi-dsdt-initrd-v0.9c-2.6.28.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/acpi-dsdt-initrd-v0.9c-2.6.28.patch.gz | ${PATCHCOM} || exit 1
 
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
 # also gives a list of missing options at the end. Useful for automated
@@ -46,8 +46,8 @@ if [ "$C" -gt 10 ]; then
 fi
 
 #zcat ${SB_PATCHDIR}/git-cpufreq.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/git-bluetooth.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/git-bluetooth-fixes.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/git-bluetooth.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/git-bluetooth-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 C=$(zcat ${SB_PATCHDIR}/linux-2.6-hotfixes.patch.gz | wc -l | awk '{print $1}')
 if [ "$C" -gt 10 ]; then
@@ -81,7 +81,7 @@ zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
 #
 # Exec shield
 #
-zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # bugfixes to drivers and filesystems
@@ -104,19 +104,19 @@ zcat ${SB_PATCHDIR}/linux-2.6-fiemap-header-install.patch.gz | ${PATCHCOM} || ex
 zcat ${SB_PATCHDIR}/linux-2.6-add-qcserial.patch.gz | ${PATCHCOM} || exit 1
 
 # ACPI
-zcat ${SB_PATCHDIR}/linux-2.6-defaults-acpi-video.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-dos.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-acpi-strict-resources.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-hwmon-atk0110.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-didl-intel-outputs.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-sony-laptop-rfkill.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-defaults-acpi-video.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-dos.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-acpi-strict-resources.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-hwmon-atk0110.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-didl-intel-outputs.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-sony-laptop-rfkill.patch.gz | ${PATCHCOM} || exit 1
 
 # Various low-impact patches to aid debugging.
 zcat ${SB_PATCHDIR}/linux-2.6-debug-sizeof-structs.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-debug-nmi-timeout.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-debug-taint-vm.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-debug-spinlock-taint.patch.gz | ${PATCHCOM} || exit 1
-# try to find out what is breaking acpi-cpufreq
+## try to find out what is breaking acpi-cpufreq
 zcat ${SB_PATCHDIR}/linux-2.6-debug-vm-would-have-oomkilled.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-debug-always-inline-kzalloc.patch.gz | ${PATCHCOM} || exit 1
 
@@ -163,14 +163,14 @@ zcat ${SB_PATCHDIR}/alsa-hda-add-debugging.patch.gz | ${PATCHCOM} || exit 1
 # Filesystem patches.
 
 # Networking
-zcat ${SB_PATCHDIR}/net-revert-forcedeth-power-down-phy-when-interface-is.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/net-revert-forcedeth-power-down-phy-when-interface-is.patch.gz | ${PATCHCOM} || exit 1
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
 zcat ${SB_PATCHDIR}/linux-2.6-input-kill-stupid-messages.patch.gz | ${PATCHCOM} || exit 1
 
 # Get away from having to poll Toshibas
-zcat ${SB_PATCHDIR}/linux-2.6-input-fix-toshiba-hotkeys.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-input-fix-toshiba-hotkeys.patch.gz | ${PATCHCOM} || exit 1
 
 # HID: add support for another version of 0e8f:0003 device in hid-pl
 zcat ${SB_PATCHDIR}/linux-2.6-input-hid-extra-gamepad.patch.gz | ${PATCHCOM} || exit 1
@@ -179,22 +179,22 @@ zcat ${SB_PATCHDIR}/linux-2.6-input-hid-extra-gamepad.patch.gz | ${PATCHCOM} || 
 zcat ${SB_PATCHDIR}/linux-2.6-input-wacom-bluetooth.patch.gz | ${PATCHCOM} || exit 1
 
 # Allow to use 480600 baud on 16C950 UARTs
-zcat ${SB_PATCHDIR}/linux-2.6-serial-460800.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-serial-460800.patch.gz | ${PATCHCOM} || exit 1
 # let users skip the TXEN bug test
-zcat ${SB_PATCHDIR}/linux-2.6-serial-add-txen-test-param.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-serial-add-txen-test-param.patch.gz | ${PATCHCOM} || exit 1
 # fix oops in nozomi drver (#507005) plus two others
-zcat ${SB_PATCHDIR}/linux-2.6-drivers-char-low-latency-removal.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-drivers-char-low-latency-removal.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/increase-MAX_LOCKDEP_ENTRIES.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/increase-MAX_LOCKDEP_ENTRIES.patch.gz | ${PATCHCOM} || exit 1
 
 # Silence some useless messages that still get printed with 'quiet'
 zcat ${SB_PATCHDIR}/linux-2.6-silence-noise.patch.gz | ${PATCHCOM} || exit 1
 
 # Avoid efifb spew
-zcat ${SB_PATCHDIR}/linux-2.6-shut-up-efifb.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-shut-up-efifb.patch.gz | ${PATCHCOM} || exit 1
 
 # Make fbcon not show the penguins with 'quiet'
-zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 1
 
 # Changes to upstream defaults.
 
@@ -205,21 +205,21 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 
 #
 
 # rt2x00: back-port activity LED init patches
-zcat ${SB_PATCHDIR}/linux-2.6-rt2x00-asus-leds.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-rt2x00-asus-leds.patch.gz | ${PATCHCOM} || exit 1
 
 # back-port scan result aging patches
-zcat ${SB_PATCHDIR}/linux-2.6-mac80211-age-scan-results-on-resume.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-ipw2x00-age-scan-results-on-resume.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-mac80211-age-scan-results-on-resume.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-ipw2x00-age-scan-results-on-resume.patch.gz | ${PATCHCOM} || exit 1
 
 # back-port iwlwifi rfkill while device down patches
-zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-report-killswitch-changes-even-if-the-interface-is-down.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-iwlagn-fix-hw-rfkill-while-the-interface-is-down.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-use-cancel_delayed_work_sync-to-cancel-rfkill_poll.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-report-killswitch-changes-even-if-the-interface-is-down.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-iwlagn-fix-hw-rfkill-while-the-interface-is-down.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-iwl3945-use-cancel_delayed_work_sync-to-cancel-rfkill_poll.patch.gz | ${PATCHCOM} || exit 1
 
 # back-port mac80211: fix beacon loss detection after scan
-zcat ${SB_PATCHDIR}/linux-2.6-mac80211-fix-beacon-loss-detection-after-scan.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-mac80211-fix-beacon-loss-detection-after-scan.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/mac80211-don-t-drop-nullfunc-frames-during-software.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/mac80211-don-t-drop-nullfunc-frames-during-software.patch.gz | ${PATCHCOM} || exit 1
 
 # Fix up DMA debug code
 zcat ${SB_PATCHDIR}/linux-2.6-dma-debug-fixes.patch.gz | ${PATCHCOM} || exit 1
@@ -228,20 +228,20 @@ zcat ${SB_PATCHDIR}/linux-2.6-dma-debug-fixes.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-crash-driver.patch.gz | ${PATCHCOM} || exit 1
 
 # neigh: fix state transition INCOMPLETE->FAILED via Netlink request
-zcat ${SB_PATCHDIR}/linux-2.6-neigh_-fix-state-transition-INCOMPLETE-_FAILED-via-Netlink-request.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-neigh_-fix-state-transition-INCOMPLETE-_FAILED-via-Netlink-request.patch.gz | ${PATCHCOM} || exit 1
 
 # http://www.lirc.org/
-zcat ${SB_PATCHDIR}/linux-2.6.29-lirc.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6.29-lirc.patch.gz | ${PATCHCOM} || exit 1
 
 # Fix the return code CD accesses when the CDROM drive door is closed
 # but the drive isn't yet ready.
 zcat ${SB_PATCHDIR}/linux-2.6-cdrom-door-status.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
 # bz 498854
-zcat ${SB_PATCHDIR}/linux-2.6-netdev-ehea-fix-circular-locking.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-netdev-ehea-fix-page-alignment.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-netdev-ehea-remove-from-list.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-netdev-ehea-fix-circular-locking.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-netdev-ehea-fix-page-alignment.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-netdev-ehea-remove-from-list.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/agp-set_memory_ucwb.patch.gz | ${PATCHCOM} || exit 1
 # Nouveau DRM + drm fixes
@@ -279,7 +279,7 @@ zcat ${SB_PATCHDIR}/drm-pnp-add-resource-range-checker.patch.gz | ${PATCHCOM} ||
 zcat ${SB_PATCHDIR}/drm-i915-enable-mchbar.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
-zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
 #C=$(zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | wc -l | awk '{print $1}')
 #if [ "$C" -gt 10 ]; then
   #zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-pending.patch.gz | ${PATCHCOM} || exit 1
@@ -295,12 +295,12 @@ zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-fix-uint16_t-audio-h.patch.gz | ${PATCHCOM
 zcat ${SB_PATCHDIR}/linux-2.6-revert-dvb-net-kabi-change.patch.gz | ${PATCHCOM} || exit 1
 
 # revert 8b249b6856f16f09b0e5b79ce5f4d435e439b9d6
-zcat ${SB_PATCHDIR}/revert-fix-modules_install-via-nfs.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/revert-fix-modules_install-via-nfs.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/linux-2.6-dropwatch-protocol.patch.gz | ${PATCHCOM} || exit 1
 
 # patches headed for -stable
-zcat ${SB_PATCHDIR}/squashfs-broken-when-pagesize-greater-than-blocksize.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/squashfs-broken-when-pagesize-greater-than-blocksize.patch.gz | ${PATCHCOM} || exit 1
 
 # fix nfs reporting of short writes (#493500)
 zcat ${SB_PATCHDIR}/linux-2.6-nfsd-report-short-writes.patch.gz | ${PATCHCOM} || exit 1
@@ -313,8 +313,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-nfsd-cred-refcount-fix.patch.gz | ${PATCHCOM} || e
 zcat ${SB_PATCHDIR}/linux-2.6-fs-cifs-fix-port-numbers.patch.gz | ${PATCHCOM} || exit 1
 
 # cpufreq
-zcat ${SB_PATCHDIR}/cpufreq-add-atom-to-p4-clockmod.patch.gz | ${PATCHCOM} || exit 1
-zcat ${SB_PATCHDIR}/linux-2.6-cpufreq-enable-acpi-pstates-on-via.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/cpufreq-add-atom-to-p4-clockmod.patch.gz | ${PATCHCOM} || exit 1
+#zcat ${SB_PATCHDIR}/linux-2.6-cpufreq-enable-acpi-pstates-on-via.patch.gz | ${PATCHCOM} || exit 1
 
 # kvm fixes
 zcat ${SB_PATCHDIR}/linux-2.6-kvm-skip-pit-check.patch.gz | ${PATCHCOM} || exit 1

@@ -35,30 +35,28 @@ zcat ${SB_PATCHDIR}/xserver-1.6.0-less-acpi-brokenness.patch.gz | patch -p1 --ve
 zcat ${SB_PATCHDIR}/xserver-1.5.99.902-vnc.patch.gz | patch -p1 --verbose || exit 1
 
 # Make autoconfiguration chose nouveau driver for NVIDIA GPUs
-zcat ${SB_PATCHDIR}/xserver-1.5.99.902-nouveau.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.6.1-nouveau.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.6.0-primary.patch.gz | patch -p1 --verbose || exit 1
-
-zcat ${SB_PATCHDIR}/xserver-1.6.0-xinerama-cursors.patch.gz | patch -p1 --verbose || exit 1
 
 # ajax needs to upstream this
 zcat ${SB_PATCHDIR}/xserver-1.6.0-displayfd.patch.gz | patch -p1 --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/xserver-1.6.0-restore-zap.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.6.0-no-i810.patch.gz | patch -p1 --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/xserver-1.6.0-randr-xinerama-crash.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.6.1-exa-avoid-swapped-out.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.6.1-randr-gamma.patch.gz | patch -p1 --verbose || exit 1
 
 # Nominated for 1.6.2
 zcat ${SB_PATCHDIR}/xserver-1.6.1-exa-create-pixmap2.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/xserver-1.6.1-avoid-malloc-for-logging.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.6.1-vt-switch.patch.gz | patch -p1 --verbose || exit 1
 # from upstream, nominated for 1.6.2 (#499792)
 zcat ${SB_PATCHDIR}/xserver-1.6.1-synaptics.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.6.1-proc-cmdline.patch.gz | patch -p1 --verbose || exit 1
+# second part to xserver-1.6.1-synaptics.patch
+zcat ${SB_PATCHDIR}/xserver-1.6.1-mousedrivers.patch.gz | patch -p1 --verbose || exit 1
+# #492359, monitor doesn't set first detailed timing preferred bit
+zcat ${SB_PATCHDIR}/xserver-1.6.1-pea-quirk.patch.gz | patch -p1 --verbose || exit 1
 
 
 if [ "${SB_ZW}" = "YES" ] ;then

@@ -15,7 +15,7 @@ zcat ${SB_PATCHDIR}/qt-x11-free-3.3.7-umask.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.6-strip.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.2-quiet.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.3-qembed.patch.gz | patch -p1 -E --backup --verbose || exit 1
-#zcat ${SB_PATCHDIR}/qt-uic-nostdlib.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/qt-uic-nostdlib.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.6-qfontdatabase_x11.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.3-gl.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-3.3.3-gtkstyle.patch.gz | patch -p1 -E --backup --verbose || exit 1

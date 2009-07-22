@@ -45,6 +45,7 @@ NAME=torch
 PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-3.1}
+SONAMEVER=1
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -56,7 +57,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-4}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -68,15 +69,16 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${PNAME}
 SRCARCHIVE=${SRCDIR}src.tgz
+DSRCARCHIVE=${SRCDIR}doc.tgz
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://www.torch.ch/archives/${SRCARCHIVE}"
+DL_URL="http://www.torch.ch/archives"
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-fi
+# if source is not present, download in source rootdir if possible
+for file in ${SRCARCHIVE} ${DSRCARCHIVE} ;do
+  test -r ${CWD}/${file} || wget ${DL_OPTS} ${DL_URL}/${file} || exit 1
+done
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -90,6 +92,11 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -99,49 +106,58 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
+tar -xvf ${CWD}/${DSRCARCHIVE} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
-cp config/Makefile_options_Linux . || exit 1
-
-torch_packages="convolutions datasets decoder distributions gradients kernels matrix nonparametrics speech"
-
+ln -s config/Makefile_options_Linux .
+# use default gcc flags
 sed -i \
-  -e "s:^PACKAGES.*:PACKAGES = ${torch_packages}:" \
-  -e "s:^DEBUG.*:DEBUG = OPT:" \
-  -e "s:^CFLAGS_OPT_FLOAT.*:CFLAGS_OPT_FLOAT = -Wall ${SLKCFLAGS} -ffast-math ${extraflags}:" \
+  -e "s/CFLAGS_OPT_DOUBLE = -Wall -O2 -ffast-math -mcpu=i686 -march=i686 -malign-double -DUSE_DOUBLE/CFLAGS_OPT_DOUBLE = -DUSE_DOUBLE ${SLKCFLAGS} -fPIC -DPIC/" \
+  -e "s/CFLAGS_OPT_FLOAT = -Wall -O2 -ffast-math -mcpu=i686 -march=i686 -malign-double/CFLAGS_OPT_FLOAT = ${SLKCFLAGS} -fPIC -DPIC/" \
   Makefile_options_Linux || exit 1
+# add all packages to be built
+sed -i "s/PACKAGES =/PACKAGES = convolutions datasets decoder distributions gradients kernels matrix nonparametrics speech/" \
+  Makefile_options_Linux || exit 1
+# we DO want to see what's going on during the build
+find . -name Makefile -exec sed -i 's/@$(CC) $(CFLAGS_$(MODE)) $(INCS) -o $@ -c $</$(CC) $(CFLAGS_$(MODE)) $(INCS) -o $@ -c $</' {} \;
+# remove any exit() calls from library's code
+sed -i '/exit(-1);/d' core/{CmdLine.cc,general.cc}
+sed -i 's/exit (-1);/return NULL;/' datasets/IOHTK.cc
+# do not build a static library...
+sed -i "s/AR = ar -rus/AR = :/" Makefile_options_Linux || exit 1
 
-make -j${NJOBS} depend || exit 1
-
+make depend || exit 1
 make -j${NJOBS} || make || exit 1
 
-mkdir -p ${PKG}/usr/lib
-install -m0644 lib/Linux_OPT_FLOAT/libtorch.a \
-               ${PKG}/usr/lib/libtorch.a || exit 1
+( set -o xtrace
+  # ...but make a shared one
+  g++ ${SLKCFLAGS} ${LDFLAGS} -shared -Wl,-soname,libtorch.so.${SONAMEVER} \
+    -o libtorch.so.${SONAMEVER}.0.0 $(find . -name "*.o") || exit 1
+) || exit 1
+
+mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}
+install -p -m 755 libtorch.so.${SONAMEVER}.0.0 \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/ || exit 1
+
+( cd ${PKG}/usr/lib${LIBDIRSUFFIX}
+  /sbin/ldconfig -l * || exit 1
+  ln -sf libtorch.so.${SONAMEVER} libtorch.so || exit 1
+) || exit 1
 
 mkdir -p ${PKG}/usr/include/torch
-for dir in core ${torch_packages}; do
-    install -m0644 ${dir}/*.h ${PKG}/usr/include/torch/ || exit 1
-done
 
-sed -i \
-  -e "s:^LIBS_DIR.*:LIBS_DIR=/usr/lib:" \
-  -e 's|^INCS := .*|INCS := -I /usr/include/torch $(MYINCS)|' \
-  -e '/^INCS +=/c\\' \
-  Makefile_options_Linux || exit 1
+# install the headers
+find . -name "*.h" -exec install -p -m 644 {} ${PKG}/usr/include/torch \; | exit 1
 
-mkdir -p ${PKG}/usr/share/${NAME}
-install -m0644 Makefile_options_Linux \
-               ${PKG}/usr/share/${NAME} || exit 1
+# fix utf8
+iconv -f ISO-8859-2 -t UTF-8 LICENSE > LICENSE.utf8
+mv LICENSE.utf8 LICENSE
+rm examples/LICENSE
 
 sed -i \
   -e 's|^TORCHDIR.*|TORCHDIR := /usr/share/torch|' \
@@ -151,14 +167,13 @@ for ex in examples/*/Makefile; do
   echo -e '\t$(CC) $(CFLAGS_$(MODE)) $(INCS) -o $@ $< $(LIBS)' >> ${ex}
 done
 
-
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  LICENSE examples ${CWD}/ChangeLog.SB \
+  LICENSE docs examples ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
@@ -181,14 +196,6 @@ if [ -d ${PKG}/usr/man ]; then
         rm -f *.gz.gz
       )
     done
-  )
-fi
-
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-    rm -f dir
-    gzip -9 *
   )
 fi
 

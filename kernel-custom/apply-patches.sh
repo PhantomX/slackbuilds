@@ -22,7 +22,7 @@ PATCHCOM="patch ${DRYRUN_OPT} -p1 -F1 -s ${VERBOSE_OPT}"
 # Adds layer 7 iptables support
 #zcat ${SB_PATCHDIR}/kernel-2.6.25-layer7-2.20.patch.gz | ${PATCHCOM} || exit 1
 
-#zcat ${SB_PATCHDIR}/acpi-dsdt-initrd-v0.9c-2.6.28.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/acpi-dsdt-initrd-v0.9c-2.6.28.patch.gz | ${PATCHCOM} || exit 1
 
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
 # also gives a list of missing options at the end. Useful for automated

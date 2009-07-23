@@ -51,7 +51,7 @@ zcat ${SB_PATCHDIR}/27-konsole_url_handling.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/${NAME}-3.4.0-fix-scrnsaver.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.4.0-fix-vibrate-dialog.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.7-kdesktop_firstrun.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.7-lzma_support.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#zcat ${SB_PATCHDIR}/${NAME}-3.5.7-lzma_support.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.7-translation-override.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.8-ksmserver-timed.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-kdeject.patch.gz | patch -p1 -E --backup --verbose || exit 1

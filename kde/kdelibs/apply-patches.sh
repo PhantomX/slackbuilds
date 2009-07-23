@@ -61,5 +61,5 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.10-glibc-inotify.patch.gz | patch -p1 -E --backu
 zcat ${SB_PATCHDIR}/${NAME}-3.5.3-fix-enable-dialogbox.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.4-dcop_wrong_reply.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.8-add-bookmark-dialog.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.8-lzma_support.patch.gz | patch -p1 -E --backup --verbose || exit 1
+#zcat ${SB_PATCHDIR}/${NAME}-3.5.8-lzma_support.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-kio-kfile-grouplist.patch.gz | patch -p1 -E --backup --verbose || exit 1

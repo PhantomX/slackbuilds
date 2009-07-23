@@ -17,6 +17,8 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+
 pushd "${tmp}"
   svn --non-recursive checkout ${snaproot} ${module}-${snap}
   svn --non-recursive checkout svn://anonsvn.kde.org/home/kde/branches/KDE/3.5/kde-common/admin/ ${module}-${snap}/admin
@@ -28,5 +30,5 @@ pushd "${tmp}"
     find . -type d -name .svn -print0 | xargs -0r rm -r
     ln -s ${module} dnssd
   popd
-  tar -jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}
+  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

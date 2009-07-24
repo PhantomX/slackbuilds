@@ -115,13 +115,14 @@ mkdir -p build
   CFLAGS="${SLKCFLAGS}" \
   CXXFLAGS="${SLKCFLAGS}" \
   FFLAGS="${SLKCFLAGS}" \
-    cmake .. \
-      -DCMAKE_BUILD_TYPE="${SLKDIST}" \
-      -DCMAKE_INSTALL_PREFIX=/usr \
-      -DLIB_SUFFIX=${LIBDIRSUFFIX} \
-      -DSYSCONF_INSTALL_DIR=/etc \
-      -DCMAKE_SKIP_RPATH:BOOL=ON \
-      -DCMAKE_VERBOSE_MAKEFILE=ON \
+  cmake .. \
+    -DCMAKE_BUILD_TYPE="${SLKDIST}" \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSYSCONF_INSTALL_DIR=/etc \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE=ON \
     || exit 1
 
   make -j${NJOBS} || make || exit 1

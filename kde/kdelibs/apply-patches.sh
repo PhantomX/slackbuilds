@@ -7,7 +7,7 @@ zcat ${SB_PATCHDIR}/${NAME}-utempter.diff.gz | patch -p1 --verbose --backup --su
 # Fedora patches
 zcat ${SB_PATCHDIR}/${NAME}-3.0.0-ndebug.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.0.4-ksyscoca.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.7-openssl.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-openssl.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.4.91-buildroot.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.2.3-cups.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 #zcat ${SB_PATCHDIR}/${NAME}-3.4.0-qtdoc.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
@@ -27,10 +27,15 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.9-cupsserverbin.patch.gz | patch -p1 --verbose -
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-KDE3.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 #fix flock and flock64 redefinition in newer kernels
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-fix-flock-redefinition.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+# update the KatePart latex.xml syntax definition to the version from Kile 2.0.3
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-latex-syntax-kile-2.0.3.patchgz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+
 # use /etc/kde in addition to /usr/share/config, borrowed from debian
 zcat ${SB_PATCHDIR}/${NAME}-3.5.5-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 # http://bugs.kde.org/93359, alternative to export libltdl_cv_shlibext=".so" hack.
 zcat ${SB_PATCHDIR}/kde-3.5-libtool-shlibext.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-gcc44.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 
 # Add "(Slackware)" to khtml user agent (modified from Gentoo patch).
 zcat ${SB_PATCHDIR}/${NAME}-3.5-cattlebrand.patch.gz |sed \

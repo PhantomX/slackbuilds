@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="anonymous@cvs.freedesktop.org:/cvs/portland"
+snaproot="anoncvs@anoncvs.freedesktop.org:/cvs/portland"
 
 tmp=$(mktemp -d)
 
@@ -22,5 +22,5 @@ pushd "${tmp}"
   pushd ${module}-${snap}
     find . -type d -name CVS -print0 | xargs -0r rm -rf
   popd
-  tar jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}
+  tar Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

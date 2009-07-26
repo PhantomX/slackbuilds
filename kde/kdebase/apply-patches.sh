@@ -28,6 +28,7 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.10-minicli-decimal-comma.patch.gz | patch -p1 -E
 # upstream patches
 
 zcat ${SB_PATCHDIR}/fix-async_history.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-gcc44.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # KDEmod patches
 zcat ${SB_PATCHDIR}/01-kip_rubberband.patch.gz | patch -p1 -E --backup --verbose || exit 1

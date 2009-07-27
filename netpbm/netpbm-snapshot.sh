@@ -18,7 +18,7 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
-[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+#[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
 
 pushd "${tmp}"
   svn checkout ${SNAP_COOPTS} ${snaproot} ${module}-${snap}

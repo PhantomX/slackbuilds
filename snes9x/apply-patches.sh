@@ -6,3 +6,4 @@ zcat ${SB_PATCHDIR}/${NAME}-1.51-build.patch.gz | patch -p1 -E --backup --verbos
 zcat ${SB_PATCHDIR}/${NAME}-1.51-config.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.51-opengl.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.51-x11.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.51-glibc2.10.patch.gz | patch -p0 -E --backup --verbose || exit 1

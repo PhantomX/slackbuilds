@@ -21,8 +21,11 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.9-gnokii-no-libintl.patch.gz | patch -p0 -E --ba
 # https://bugzilla.redhat.com/show_bug.cgi?id=464622
 zcat ${SB_PATCHDIR}/${NAME}-3.5.10-kabcdistlistupdater.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
-## upstream patches
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-gcc44.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
+## upstream patches
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-r987045.patch.gz | patch -p4 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-r987046.patch.gz | patch -p4 -E --backup --verbose || exit 1
 
 # KDEmod patches
 zcat ${SB_PATCHDIR}/03_kmail-allow-tls-login-auth.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -21,5 +21,5 @@ pushd "${tmp}"
   pushd ${module}-${cvs}
     find . -type d -name CVS -print0 | xargs -0r rm -rf
   popd
-  tar jcf "${pwd}"/${module}-${cvs}.tar.bz2 ${module}-${cvs}
+  tar Jcf "${pwd}"/${module}-${cvs}.tar.xz ${module}-${cvs}
 popd >/dev/null

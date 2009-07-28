@@ -43,7 +43,7 @@ fi
 NAME=soundtouch
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.3.1}
+VERSION=${VERSION:-1.4.0}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -65,17 +65,15 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+SRCDIR=${NAME}
+SRCARCHIVE=${SRCDIR}-${VERSION}.tar.gz
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://www.surina.net/${NAME}/${SRCARCHIVE}"
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-fi
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -89,6 +87,11 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -98,25 +101,29 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-1.3.1-gcc43.patch.gz | patch -p1 -E --backup --verbose || exit 1
+sed -i -e 's/\r//' soundtouch/include/*.h
+zcat ${CWD}/${NAME}-1.4.0-x86_64-asm-broken.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-sed -i -e "s|-O3 -msse|${SLKCFLAGS} -msse|g" \
-           source/SoundTouch/Makefile.* || exit 1
-sed -i "s|-O3|${SLKCFLAGS}|g" source/example/*/Makefile.* || exit 1
-# fix compile with automake-1.10
-for i in install-sh depcomp missing config.guess config.sub; do
-  ln -f -s /usr/share/automake-1.10/${i} config/${i}
-done
+case "${ARCH}" in
+  i[3-6]86)
+    zcat ${CWD}/${NAME}-1.4.0-mmx-sse-compile-fix.patch.gz | patch -p1 -E --backup --verbose || exit 1
+    ;;
+  *)
+    sed -i 's|-O3 -msse2||' source/SoundTouch/Makefile.*
+    ;;
+esac
+sed -i 's|-O3||' source/SoundStretch/Makefile.*
+# set correct version for .so build
+ltversion=$(echo ${VERSION} | tr '.' ':')
+sed -i "s/-rpath \$(libdir)/-rpath \$(libdir) -version-number ${ltversion}/" \
+  source/SoundTouch/Makefile.in
+
 # cleanup a bit
 chmod -x README.html source/SoundTouch/RateTransposer.cpp
 sed -i 's|\r||g' README.html COPYING.TXT source/SoundTouch/RateTransposer.cpp
@@ -132,6 +139,7 @@ CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
   --localstatedir=/var/lib \
   --infodir=/usr/info \
@@ -146,15 +154,15 @@ CXXFLAGS="${SLKCFLAGS}" \
 sed -i 's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec=""|g' libtool || exit 1
 sed -i 's|^runpath_var=LD_RUN_PATH|runpath_var=DIE_RPATH_DIE|g' libtool || exit 1
 
-make -j${NJOBS} libBPM_la_LIBADD='../../SoundTouch/.libs/libSoundTouch.la' || exit 1
+make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} || exit 1
 
-rm -f ${PKG}/usr/lib/*.la
+rm -f ${PKG}/usr/lib*/*.la
 
-# some soundtouch using packages expect the pkgconfig to be called
-# libSoundTouch instead of soundtouch-1.0, probably it used to be called
-# libSoundTouch in the past, so lets provide a compat symlink for these:
-ln -s soundtouch-1.0.pc ${PKG}/usr/lib/pkgconfig/libSoundTouch.pc || exit 1
+# pkgconfig compat links for compat with older (API compatible) releases
+# dunno why upstream keeps changing the pkgconfig name
+ln -s soundtouch-1.4.pc ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig/libSoundTouch.pc || exit 1
+ln -s soundtouch-1.4.pc ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig/soundtouch-1.0.pc || exit 1
 
 # soundtouch installs an autoheader generated header file which could very
 # well conflict with other autoheader generated header files, so we override
@@ -194,14 +202,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-    rm -f dir
-    gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -213,7 +213,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.patch.gz  ${SBDIR}/
+                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
 fi

@@ -48,7 +48,7 @@ PKG=${PKG:-${TMP}/package-${NAME}}
 if [ "${SNAPBUILD}" = "YES" ] ;then
   VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
 else
-  VERSION=${VERSION:-2.4.4}
+  VERSION=${VERSION:-2.5.0}
 fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -61,7 +61,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -78,7 +78,7 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 if [ "${SNAPBUILD}" = "YES" ] ;then
   SRCDIR=${NAME}-${VERSION}
-  SRCARCHIVE=${SRCDIR}.tar.bz2
+  SRCARCHIVE=${SRCDIR}.tar.xz
 else
   SRCDIR=${NAME}_${VERSION}
   SRCARCHIVE=${SRCDIR}.tar.gz
@@ -94,12 +94,10 @@ SNAPUPDATE=${NAME}-snapshot.sh
 export snap=${VERSION}
 
 # if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  if [ "${SNAPBUILD}" = "YES" ] ;then
-    test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
-  else
-    test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || wget ${DL_OPTS} ${DL_URLB} || exit 1
-  fi
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+else
+  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || wget ${DL_OPTS} ${DL_URLB} || exit 1
 fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -114,6 +112,11 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -123,18 +126,17 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-2.4-aften.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-2.4-i18n.patch.gz | patch -p01 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+sed -i -e "/startDir/s|lib|lib${LIBDIRSUFFIX}|g" avidemux/main.cpp || exit 1
 
 sed -i -e '/add_libs_all_targets/s|dts|dca|g' avidemux/CMakeLists.txt || exit 1
 
@@ -151,25 +153,51 @@ else
   SB_QTOPTS="Y"
 fi
 
+SB_CONFIGURE() {
+  CFLAGS="${SLKCFLAGS}" \
+  CXXFLAGS="${SLKCFLAGS}" \
+  cmake .. \
+    -DCMAKE_BUILD_TYPE="${SLKDIST}" \
+    -DCMAKE_CXX_FLAGS_RELEASE:STRING="${SLKCFLAGS} -DNDEBUG" \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSYSCONF_INSTALL_DIR=/etc \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE=ON \
+    -DNO_GTK:BOOL=${SB_GTKOPTS} \
+    -DNO_QT4:BOOL=${SB_QTOPTS} \
+    -DNO_ARTS:BOOL=Y $@
+}
+
 mkdir -p build
 ( cd build || exit 1
 
-  # Build
-  CFLAGS="${SLKCFLAGS}" \
-  CXXFLAGS="${SLKCFLAGS}" \
-    cmake .. \
-      -DCMAKE_CXX_FLAGS_RELEASE:STRING="${SLKCFLAGS} -DNDEBUG" \
-      -DCMAKE_INSTALL_PREFIX:PATH=/usr \
-      -DCMAKE_SKIP_RPATH:BOOL=Y \
-      -DNO_GTK:BOOL=${SB_GTKOPTS} \
-      -DNO_QT4:BOOL=${SB_QTOPTS} \
-      -DNO_ARTS:BOOL=Y \
-    || exit 1
+  SB_CONFIGURE || exit 1
 
-  make -j${NJOBS} VERBOSE=1 || exit 1
+  make -j${NJOBS} || make || exit 1
+  make install DESTDIR=${PKG} || exit 1
+
+  mkdir -p lib
+  ( cd lib && find ../avidemux -name '*.so*' | xargs ln -sft . ) || exit 1
+) || exit 1
+
+mkdir -p plugins/build
+( cd plugins/build || exit 1
+
+  SB_CONFIGURE \
+    -DAVIDEMUX_SOURCE_DIR=${TMP}/${SRCDIR} \
+    -DAVIDEMUX_CORECONFIG_DIR=${TMP}/${SRCDIR}/build/config \
+    -DAVIDEMUX_INSTALL_PREFIX=${TMP}/${SRCDIR}/build || exit 1
+
+  make -j${NJOBS} || make || exit 1
   make install DESTDIR=${PKG} || exit 1
 
 ) || exit 1
+
+if [ "lib${LIBDIRSUFFIX}" = "lib64" ] ;then
+  mv ${PKG}/usr/lib ${PKG}/usr/lib${LIBDIRSUFFIX} || exit 1
+fi
 
 find ${PKG} -type f -name "*.la" -exec rm -f {} ';'
 
@@ -244,11 +272,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${SNAPUPDATE} ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+                 ${CWD}/${SNAPUPDATE} ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

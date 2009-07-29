@@ -20,4 +20,5 @@ zcat ${SB_PATCHDIR}/${NAME}-1.4.7-xim-wrong-format.patch.gz | patch -p1 -E --bac
 zcat ${SB_PATCHDIR}/${NAME}-1.4.7-bz462820.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.4.7-imdkit-read-property-properly.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.4.7-syslibltdl.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.4.8-fix-dlopen.patch.gz | patch -p1 -E --backup --verbose || exit 1
 rm -f src/ltdl.{cpp,h}

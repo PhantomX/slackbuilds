@@ -20,3 +20,6 @@ zcat ${SB_PATCHDIR}/applet-error.patch.gz | patch -p1 -E --backup --verbose || e
 zcat ${SB_PATCHDIR}/${NAME}-2.21.92-allow-spurious-view-done-signals.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/clock-wakeups.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# http://bugzilla.gnome.org/show_bug.cgi?id=579092
+zcat ${SB_PATCHDIR}/clock-network.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -6,4 +6,7 @@ zcat ${SB_PATCHDIR}/${NAME}-1.8.0-fix-ldap-query.patch.gz | patch -p1 -E --backu
 # GNOME bug #373146
 zcat ${SB_PATCHDIR}/${NAME}-1.10.1-camel-folder-summary-crash.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # RH bug #243296
-#zcat ${SB_PATCHDIR}/${NAME}-1.11.5-fix-64bit-acinclude.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.11.5-fix-64bit-acinclude.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# RH bug 511079 / GNOME bug #583507
+zcat ${SB_PATCHDIR}/${NAME}-2.26.3-camel-vee-folder.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -26,5 +26,5 @@ pushd "${tmp}"
     sed -i -e "/^SVN_REV/s|:=.*|:= ${SVNREV}|g" Makefile
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd
-  tar -jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}
+  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

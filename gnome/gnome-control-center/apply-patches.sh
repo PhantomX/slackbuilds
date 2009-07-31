@@ -26,3 +26,5 @@ zcat ${SB_PATCHDIR}/gcc-new-fingerprint-icons.patch.gz | patch -p0 -E --backup -
 # zcat ${SB_PATCHDIR}/control-center-2.25.2-gecos.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # change default preferred apps to programs we ship
 zcat ${SB_PATCHDIR}/default-applications.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/${NAME}-2.26.0-libxklavier4.patch.gz | patch -p1 -E --backup --verbose || exit 1

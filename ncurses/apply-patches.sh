@@ -12,10 +12,10 @@ if [ "$C" -gt 0 ]; then
   done
 fi
 
-zcat ${SB_PATCHDIR}/${NAME}.mkhashsize.diff.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/ncurses.mkhashsize.diff.gz | patch -p1 --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/${NAME}-5.7-20090124-config.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-5.6-20070612-libs.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-5.6-20080112-xterm.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-5.6-20080112-urxvt.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/ncurses-5.7-20090124-config.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/ncurses-5.6-20070612-libs.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/ncurses-5.6-20080112-xterm.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/ncurses-5.6-20080112-urxvt.patch.gz | patch -p1 --verbose || exit 1
 

@@ -48,6 +48,7 @@ if [ ! -d ${TMP} ]; then
 fi
 
 NAME=glibc
+NAME32=glibc-compat32
 VERSION=${VERSION:-2.10.1}
 # Set to 0 to enable release instead snapshot
 CHECKOUT=${CHECKOUT:-20090518}
@@ -68,22 +69,33 @@ fi
 # requires for binary compatibility with previous releases.
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
+  ARCH32=${ARCH32:-$(linux32 uname -m)}
 else
   ARCH=${ARCH:-i686}
 fi
 
 if [ "${ARCH}" = "x86_64" ] ;then
   SLKTARGET=${SLKTARGET:-x86_64}
+  ARCH32=${ARCH32:-i686}
 else
   # This should be i486 for all 32-bit x86 arch:
   SLKTARGET=${SLKTARGET:-i486}
+  export SB_MULTILIB=NO
+fi
+
+# This is only for compat32
+if [ "${SLKTARGET}" = "x86_64" ] ;then
+  SLKTARGET32=${SLKTARGET32:-i486}
 fi
 
 SLKDTARGET=${SLKDTARGET:-slackware}
 
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-4}
 
 NJOBS=${NJOBS:-2}
+
+# Set to YES to enable multilib build
+SB_MULTILIB=${SB_MULTILIB:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -167,16 +179,28 @@ PKGNAMEP=${NAME}-profile-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER
 PDEBUG=${PKGF}/${NAME}-debug
 PKGNAMED=${NAME}-debug-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+PKG_32=${PKGF}/package-glibc-compat32-incoming-tree
+export PKG_32
+PGLIBC_32=${PKGF}/${NAME32}
+PKGNAME_32=${NAME32}-$(echo ${VERSION} | tr - . )-${ARCH32}-${BUILD}${PACKAGER_ID}
+PSOLIBS_32=${PKGF}/${NAME}-solibs-compat32
+PKGNAMES_32=${NAME}-solibs-compat32-$(echo ${VERSION} | tr - . )-${ARCH32}-${BUILD}${PACKAGER_ID}
+PI18N_32=${PKGF}/${NAME}-i18n-compat32
+PKGNAMEI_32=${NAME}-i18n-compat32-$(echo ${VERSION} | tr - . )-noarch-${BUILD}${PACKAGER_ID}
+
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
+
+export SB_DESCDIR=${CWD}/descs
 
 # Empty these locations first:
 if [ -d ${PKGF} ]; then
   rm -rf ${PKGF}
 fi
 mkdir -p ${PKG} ${PGLIBC} ${PSOLIBS} ${PI18N} ${PPROFILE} ${PDEBUG}
+mkdir -p ${PKG_32} ${PGLIBC_32} ${PSOLIBS_32} ${PI18N_32}
 
 if [ -d ${TMP}/glibc-${VERSION} ]; then
   rm -rf ${TMP}/glibc-${VERSION}
@@ -218,11 +242,59 @@ fi
 
 SOVER="$(grep VERSION version.h |awk '{print $3}' | tr -d \")"
 
+SB_CONFIGURE() {
+echo "BUILDING DAS NPTL GLIBC"
+CFLAGS="-g ${OPTIMIZ}" \
+../configure \
+  --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --enable-kernel=2.6.21 \
+  --with-headers=/usr/include \
+  --enable-add-ons=libidn,nptl \
+  --enable-profile \
+  --with-tls \
+  --with-__thread \
+  --without-cvs \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux $@
+}
+
+if [ "${SB_MULTILIB}" = "YES" ]; then
+(
+  mkdir -p build-glibc-compat32-${VERSION}
+  cd build-glibc-compat32-${VERSION} || exit 1
+
+  export BUILD_ARCH=${SLKTARGET}-${SLKDTARGET}-linux
+  export LIBDIRSUFFIX=""
+  export CC="gcc -m32"
+
+  if [ "${SB_NATIVE}" = "YES" ] ;then
+    OPTIMIZ="-O3 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+  else
+    case "${ARCH32}" in
+      i[3-6]86)    OPTIMIZ="-O3 -march=${ARCH} -mtune=i686"
+      ;;
+    esac
+  fi
+  export OPTIMIZ=$( echo ${OPTIMIZ} | sed s/-fPIC// )
+  echo "BUILDING DAS 32-bit NPTL GLIBC"
+  SB_CONFIGURE \
+    --build=${SLKTARGET32}-${SLKDTARGET}-linux \
+    --target=${SLKTARGET32}-${SLKDTARGET}-linux || exit 1|| exit 1
+
+  make -j${NJOBS} || make || exit 1
+  make install install_root=${PKG_32} || exit 1
+  make localedata/install-locales install_root=${PKG_32} || exit 1
+)
+fi
+
 # Make build directory:
 mkdir -p build-glibc-${VERSION}
 cd build-glibc-${VERSION} || exit 1
 
 echo "BUILDING DAS NPTL GLIBC"
+SB_CONFIGURE || exit 1
 CFLAGS="-g ${OPTIMIZ}" \
 ../configure \
   --prefix=/usr \
@@ -313,6 +385,51 @@ rm -f ${PKG}/etc/ld.so.cache
   find . -name "*.orig" -exec rm -f {} \;
 )
 
+if [ "${SB_MULTILIB}" = "YES" ]; then
+(
+  export LIBDIRSUFFIX=""
+  mkdir -p ${PKG_32}/usr/lib/debug
+  cp -a ${PKG_32}/lib${LIBDIRSUFFIX}/l*.so* ${PKG_32}/usr/lib${LIBDIRSUFFIX}/debug
+  cp -a ${PKG_32}/usr/lib${LIBDIRSUFFIX}/*.a ${PKG_32}/usr/lib${LIBDIRSUFFIX}/debug
+
+  ( cd ${PKG_32}/usr/lib${LIBDIRSUFFIX}/debug ; rm -f *_p.* )
+
+  strip -g ${PKG_32}/lib${LIBDIRSUFFIX}/l*.so*
+  strip -g ${PKG_32}/usr/lib${LIBDIRSUFFIX}/l*.so*
+  strip -g ${PKG_32}/usr/lib${LIBDIRSUFFIX}/lib*.a
+  strip -g ${PKG_32}/usr/lib${LIBDIRSUFFIX}/*.o
+
+  ( cd ${PKG_32}
+  find . | xargs file | grep "executable" | grep ELF | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+  find . | xargs file | grep "shared object" | grep ELF | cut -f 1 -d : | xargs strip -g 2> /dev/null
+  )
+
+  rm -rf ${PKG_32}/usr/sbin ${PKG_32}/sbin ${PKG_32}/usr/lib/debug
+  rm -rf ${PKG_32}/etc
+  rm -rf ${PKG_32}/usr/{man,info,doc}
+  rm -rf ${PKG_32}/usr/share
+  rm -rf ${PKG_32}/var
+
+  mkdir -p tmp32/{bin,getconf,include}
+  mv ${PKG_32}/usr/bin/* tmp32/bin/
+  mv ${PKG_32}/usr/libexec/getconf/* tmp32/getconf/
+  mv ${PKG_32}/usr/include/* tmp32/include/
+
+  mkdir -p ${PKG_32}/usr/bin ${PKG_32}/usr/libexec/getconf
+  mv tmp32/bin/lddlibc4 ${PKG_32}/usr/bin/
+  mv ${PKG_32}/usr/libexec/getconf/POSIX_V6_IPL32* tmp32/
+  rm -rf ${PKG_32}/usr/libexec/*
+  mkdir -p ${PKG_32}/usr/libexec/getconf
+  mv tmp32/getconf/POSIX_V6_IPL32* ${PKG_32}/usr/libexec/getconf/
+
+  # And some headers
+  mkdir -p ${PKG_32}/usr/include/{gnu,sys}
+  mv tmp32/include/gnu/stubs-32.h ${PKG_32}/usr/include/gnu/
+  mv tmp32/include/sys/{elf.h,vm86.h} ${PKG_32}/usr/include/sys/
+
+)
+fi
+
 ##################################
 # OK, time to make some packages #
 ##################################
@@ -325,7 +442,7 @@ mv ${PKG}/usr/lib${LIBDIRSUFFIX}/lib*_p.a usr/lib${LIBDIRSUFFIX}
 # Profile libs should be stripped.  Use the debug libs to debug...
 ( cd usr/lib${LIBDIRSUFFIX} ; strip -g *.a )
 mkdir -p install
-cp -a ${CWD}/slack-desc.glibc-profile install/slack-desc
+cp -a ${SB_DESCDIR}/slack-desc.glibc-profile install/slack-desc
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        install/slack-desc
@@ -360,7 +477,7 @@ mkdir -p usr/lib${LIBDIRSUFFIX}
 # Might as well just grab these with 'mv' to simplify things later:
 mv ${PKG}/usr/lib${LIBDIRSUFFIX}/debug usr/lib${LIBDIRSUFFIX}
 mkdir -p install
-cp -a ${CWD}/slack-desc.glibc-debug install/slack-desc
+cp -a ${SB_DESCDIR}/slack-desc.glibc-debug install/slack-desc
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        install/slack-desc
@@ -399,7 +516,7 @@ mkdir -p usr/share
 cp -a ${PKG}/usr/share/i18n usr/share
 cp -a ${PKG}/usr/share/locale usr/share
 mkdir -p install
-cp -a ${CWD}/slack-desc.glibc-i18n install/slack-desc
+cp -a ${SB_DESCDIR}/slack-desc.glibc-i18n install/slack-desc
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        install/slack-desc
@@ -460,7 +577,7 @@ mv sbin/ldconfig .
 rm -f sbin/*
 mv ldconfig sbin/
 mkdir -p install
-cp -a ${CWD}/slack-desc.glibc-solibs install/slack-desc
+cp -a ${SB_DESCDIR}/slack-desc.glibc-solibs install/slack-desc
 cat ${CWD}/doinst.sh-glibc-solibs | sed \
   -e "s|_VERSION|${SOVER}|g;s|_LIBDIR|lib${LIBDIRSUFFIX}|g" > install/doinst.sh
 
@@ -496,11 +613,13 @@ fi
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/{patches,profile.d}
+  mkdir -p ${SBDIR}/{descs,patches,profile.d}
   install -m0644 ${CWD}/slack-desc* ${CWD}/slack-required ${CWD}/ChangeLog.SB \
                  ${CWD}/apply-patches.sh ${CWD}/doinst.sh* ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/descs/slack-required* \
+                 ${SBDIR}/descs/
   install -m0644 ${CWD}/patches/*.{diff,patch}.gz \
                  ${SBDIR}/patches/
   install -m0755 ${CWD}/profile.d/glibc.*sh* \
@@ -519,7 +638,7 @@ chmod 755 etc/profile.d/*
 # Ditch links (these are in doinst.sh-glibc):
 find . -type l -exec rm -f {} \;
 mkdir -p install
-cp -a ${CWD}/slack-desc.glibc install/slack-desc
+cp -a ${SB_DESCDIR}/slack-desc.glibc install/slack-desc
 cat ${CWD}/doinst.sh-glibc | sed \
   -e "s|_VERSION|${SOVER}|g;s|_LIBDIR|lib${LIBDIRSUFFIX}|g" > install/doinst.sh
 
@@ -556,6 +675,115 @@ else
   echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
   /bin/su -c "${ROOTCOMMANDS}"
 fi
+
+########################################################
+#################### 32 bits ###########################
+########################################################
+if [ "${SB_MULTILIB}" = "YES" ]; then
+(
+export LIBDIRSUFFIX=""
+# glibc-i18n:
+cd ${PI18N_32} || exit 1
+mkdir -p usr/lib${LIBDIRSUFFIX}
+rm -rf usr/lib${LIBDIRSUFFIX}/locale
+cp -a ${PKG_32}/usr/lib${LIBDIRSUFFIX}/locale usr/lib${LIBDIRSUFFIX}
+mkdir -p install
+cp -a ${SB_DESCDIR}/slack-desc.glibc-i18n-compat32 install/slack-desc
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       install/slack-desc
+
+echo "${NAME}-solibs-compat32 = $(echo ${VERSION} | tr - . )-${ARCH32}-${BUILD}${PACKAGER_ID} || ${NAME} = $(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}" > \
+     install/slack-required
+
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDSI_32="set -o errexit -o xtrace ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDSI_32="${ROOTCOMMANDSI_32}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAMEI_32}.${PKGFORMAT} "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDSI_32}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDSI_32} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDSI_32}"
+fi
+
+# glibc-solibs:
+cd ${PSOLIBS_32} || exit 1
+mkdir -p lib${LIBDIRSUFFIX}
+cp -a ${PKG_32}/lib${LIBDIRSUFFIX}/* lib${LIBDIRSUFFIX}
+mkdir -p usr/lib${LIBDIRSUFFIX}
+# The gconv directory has a lot of stuff, but including it here will save some problems.
+# Seems standard elsewhere.
+cp -a ${PKG_32}/usr/lib${LIBDIRSUFFIX}/gconv usr/lib${LIBDIRSUFFIX}
+mkdir -p install
+cp -a ${SB_DESCDIR}/slack-desc.glibc-solibs-compat32 install/slack-desc
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       install/slack-desc
+
+# Build the package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDSS_32="set -o errexit -o xtrace ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDSS_32="${ROOTCOMMANDSS_32}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAMES_32}.${PKGFORMAT} "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDSS_32}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDSS_32} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDSS_32}"
+fi
+
+# And finally, the complete "all-in-one" glibc package is created
+# from whatever was leftover:
+cd ${PGLIBC_32} || exit 1
+mv ${PKG_32}/* .
+mkdir -p install
+cp -a ${SB_DESCDIR}/slack-desc.glibc-compat32 install/slack-desc
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       install/slack-desc
+
+# Build the package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDS_32="set -o errexit -o xtrace ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDS_32="${ROOTCOMMANDS_32}
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME_32}.${PKGFORMAT} "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDS_32}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDS_32} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDS_32}"
+fi
+
+)
+fi
+########################################################
+#################### end of 32 bits ####################
+########################################################
 
 # Done!
 echo

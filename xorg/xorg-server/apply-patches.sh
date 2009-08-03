@@ -55,9 +55,6 @@ zcat ${SB_PATCHDIR}/xserver-1.6.1-synaptics.patch.gz | patch -p1 --verbose || ex
 zcat ${SB_PATCHDIR}/xserver-1.6.1-proc-cmdline.patch.gz | patch -p1 --verbose || exit 1
 # second part to xserver-1.6.1-synaptics.patch
 zcat ${SB_PATCHDIR}/xserver-1.6.1-mousedrivers.patch.gz | patch -p1 --verbose || exit 1
-# #492359, monitor doesn't set first detailed timing preferred bit
-zcat ${SB_PATCHDIR}/xserver-1.6.1-pea-quirk.patch.gz | patch -p1 --verbose || exit 1
-
 
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.5.99.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1

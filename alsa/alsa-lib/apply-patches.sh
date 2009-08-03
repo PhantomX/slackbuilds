@@ -1,0 +1,6 @@
+  
+SB_PATCHDIR=${CWD}/patches
+
+zcat ${SB_PATCHDIR}/alsa-lib-1.0.14rc1-config.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/alsa-lib-1.0.14-glibc-open.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/alsa-lib-1.0.16-no-dox-date.patch.gz | patch -p1 -E --backup --verbose || exit 1

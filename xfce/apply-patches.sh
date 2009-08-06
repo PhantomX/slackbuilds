@@ -34,6 +34,10 @@ if [ "${BASENAME}" = "xfce4-session-${VERSION}" ]; then
   zcat ${SB_PATCHDIR}/xfce4-session-4.5.92-hide-tips.patch.gz | patch -p1 --verbose || exit 1
 fi
 
+if [ "${BASENAME}" = "xfce4-settings-${VERSION}" ]; then
+  zcat ${SB_PATCHDIR}/xfce4-settings-4.6.1-xkl.patch.gz | patch -p1 --verbose || exit 1
+fi
+
 if [ "${BASENAME}" = "xfce4-utils-${VERSION}" ]; then
   zcat ${SB_PATCHDIR}/xfce-utils-4.5.91-startxfce-data-dirs.patch.gz | patch -p1 --verbose || exit 1
 fi

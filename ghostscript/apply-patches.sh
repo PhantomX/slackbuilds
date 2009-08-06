@@ -15,10 +15,6 @@ zcat ${SB_PATCHDIR}/${NAME}-runlibfileifexists.patch.gz | patch -p1 --verbose ||
 zcat ${SB_PATCHDIR}/${NAME}-system-jasper.patch.gz | patch -p1 --verbose || exit 1
 # Fix pksmraw output (bug #308211).
 zcat ${SB_PATCHDIR}/${NAME}-pksmraw.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-bitcmyk.patch.gz | patch -p1 --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/${NAME}-CVE-2009-0583,0584.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-CVE-2009-0792.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-CVE-2009-0196.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-jbig2dec-nullderef.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-gs-executable.patch.gz | patch -p1 --verbose || exit 1

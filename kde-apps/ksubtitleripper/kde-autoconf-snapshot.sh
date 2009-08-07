@@ -2,7 +2,7 @@
 
 set -e
 
-module=kde-autoconf
+module=kdemultimedia-autoconf
 snaproot="svn://anonsvn.kde.org/home/kde/trunk/playground/multimedia"
 
 tmp=$(mktemp -d)

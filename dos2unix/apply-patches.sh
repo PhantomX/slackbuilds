@@ -8,3 +8,6 @@ zcat ${SB_PATCHDIR}/${NAME}-3.1-manpage-update-57507.patch.gz | patch -p1 -E --b
 zcat ${SB_PATCHDIR}/${NAME}-3.1-preserve-file-modes.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-3.1-tmppath.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-c-missing-arg.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}missing-proto.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-manpage.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-preserve-file-modes.patch.gz | patch -p1 -E --backup --verbose || exit 1

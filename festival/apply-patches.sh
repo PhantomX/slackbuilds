@@ -56,7 +56,7 @@ zcat ${SB_PATCHDIR}/${NAME}-1.96-speechtools-1.2.96-beta+awb.patch.gz | patch -p
 # but that's something to take up with upstream.
 zcat ${SB_PATCHDIR}/${NAME}-1.96-kludge-etcpath-into-libarch.patch.gz | patch -p1 -E --backup --verbose || exit 1
 for f in speech_tools/main/siod_main.cc src/arch/festival/festival.cc; do
-  sed -i -e 's,{{HORRIBLELIBARCHKLUDGE}},"/usr/lib",' ${f}
+  sed -i -e "s,{{HORRIBLELIBARCHKLUDGE}},\"lib${LIBDIRSUFFIX}\"," ${f}
 done
 
 # For some reason, the Nitech voices (and the previous CMU versions) fail to
@@ -71,4 +71,9 @@ zcat ${SB_PATCHDIR}/${NAME}-1.96-nitech-fixmissingrequire.patch.gz | patch -p1 -
 # in all of them.
 zcat ${SB_PATCHDIR}/${NAME}-1.96-nitech-sltreferences.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-#zcat ${SB_PATCHDIR}/gcc43.patch.gzz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/gcc43.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# Work with pulseaudio
+zcat ${SB_PATCHDIR}/${NAME}-use-pacat.patch.gz | patch -p1 -E --backup -z .pa --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/gcc44.patch.gz | patch -p1 -E --backup --verbose || exit 1

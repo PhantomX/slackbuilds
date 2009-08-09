@@ -12,7 +12,9 @@ zcat ${SB_PATCHDIR}/${PNAME}-3.6-shion.patch.gz | patch -p1 -E --backup --verbos
 zcat ${SB_PATCHDIR}/${PNAME}-3.6-bonobo.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # Fix for buffer overrun
 zcat ${SB_PATCHDIR}/${PNAME}-3.6-wconv.patch.gz | patch -p1 -E --backup --verbose || exit 1
-#zcat ${SB_PATCHDIR}/${PNAME}-x86_64.patch.gz | patch -p1 -E --backup --verbose || exit 1
+if [ "${ARCH}" = "x86_64" ] ;then
+  zcat ${SB_PATCHDIR}/${PNAME}-x86_64.patch.gz | patch -p1 -E --backup --verbose || exit 1
+fi
 zcat ${SB_PATCHDIR}/${PNAME}-3.7p1-notimeout.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${PNAME}-oldsock.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # Patch from the upstream

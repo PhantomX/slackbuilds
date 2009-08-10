@@ -22,7 +22,7 @@ zcat ${SB_PATCHDIR}/qt-3.3.3-gtkstyle.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.5-gcc4-buildkey.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # Patch for uic includehint errors (aseigo patch)
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.5-uic.patch.gz | patch -p1 -E --backup --verbose || exit 1
-#zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8-uic-multilib.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8-uic-multilib.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-3.3.6-fontrendering-ml_IN-209097.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-3.3.8-fontrendering-as_IN-209972.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-3.3.6-fontrendering-te_IN-211259.patch.gz | patch -p1 -E --backup --verbose || exit 1

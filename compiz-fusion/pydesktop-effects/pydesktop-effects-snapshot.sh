@@ -17,10 +17,12 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+
 pushd "${tmp}"
-  svn checkout -r {$snap} ${snaproot}/ ${module}-${snap}
+  svn checkout ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd
-  tar -jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}
+  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

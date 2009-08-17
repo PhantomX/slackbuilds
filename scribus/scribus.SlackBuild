@@ -43,7 +43,7 @@ fi
 NAME=scribus
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.3.3.13}
+VERSION=${VERSION:-1.3.5.1}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,6 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
+SLKDIST=${SLKDIST:-Slackware}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -73,10 +74,8 @@ DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
 DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-fi
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -90,6 +89,11 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -97,40 +101,40 @@ if [ -d ${PKG} ]; then
 fi
 mkdir -p ${PKG}
 
-if [ -f /etc/profile.d/qt3.sh ] ;then
-  unset QTDIR QTINC QTLIB
-  source /etc/profile.d/qt3.sh
-else
-  QTDIR=/usr/lib/qt
-fi
+unset QTDIR QTINC QTLIB
+export QTDIR=$(qmake-qt4 -query QT_INSTALL_PREFIX)
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-1.3.5-system-hyphen.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+chmod a-x scribus/pageitem_latexframe.h
 
 mkdir -p build
 ( cd build || exit 1
 
-  # Build
   CFLAGS="${SLKCFLAGS}" \
   CXXFLAGS="${SLKCFLAGS}" \
   FFLAGS="${SLKCFLAGS}" \
   cmake .. \
-    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DCMAKE_BUILD_TYPE="${SLKDIST}" \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSYSCONF_INSTALL_DIR=/etc \
     -DBUILD_SHARED_LIBS:BOOL=ON \
-    -DWANT_CAIRO=1 \
-  || exit 1
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE=ON \
+    -DOPENSYNC_LIBEXEC_DIR=/usr/libexec \
+    || exit 1
 
-  make VERBOSE=1 || exit 1
+  make -j${NJOBS} || make || exit 1
   make install DESTDIR=${PKG} || exit 1
 
 ) || exit 1
@@ -140,27 +144,24 @@ find ${PKG} -type f -name "*.la" -exec rm -f {} ';'
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+# remove empty dirs in /usr/include
+rm -rf ${PKG}/usr/include/${NAME}/{dicts,doc,dtd,editorconfig,icons,keysets,loremipsum,manpages,profiles,swatches,templates,unicodemap}
+
+# install the global desktop file
+#rm -f ${PKG}/usr/share/mimelnk/application/*scribus.desktop
 mkdir -p ${PKG}/usr/share/applications
-zcat ${CWD}/${NAME}.desktop.gz > \
-     ${PKG}/usr/share/applications/${NAME}.desktop || exit 1
+desktop-file-install --vendor="" \
+  --dir=${PKG}/usr/share/applications \
+  ${NAME}.desktop || exit 1
 
 mkdir -p ${PKG}/usr/share/pixmaps
 install -p -m0644 scribus/icons/scribus{,doc}.png \
                   ${PKG}/usr/share/pixmaps/ || exit 1
 
-mkdir -p ${PKG}/usr/share/mime/packages
-zcat ${CWD}/${NAME}.xml.gz > \
-     ${PKG}/usr/share/mime/packages/${NAME}.xml || exit 1
-
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
-if [ -d ${PKG}/usr/share/doc ] ;then
-  mv ${PKG}/usr/share/doc/*/* ${DOCDIR}/
-  rm -rf ${PKG}/usr/share/doc
-  rmdir -p ${PKG}/usr/share
-fi
 cp -a \
-  ${CWD}/ChangeLog.SB \
+  AUTHORS ChangeLog ChangeLogSVN COPYING README TODO ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
@@ -199,12 +200,6 @@ if test "\${ROOTDIR}" != "/"; then
   CHROOT="chroot \${ROOTDIR} "
   ROOTDIR="\${ROOTDIR}/"
 fi
-if [ -x usr/bin/gtk-update-icon-cache ]; then
-  \${CHROOT} /usr/bin/gtk-update-icon-cache -q usr/share/icons/hicolor > /dev/null 2>&1
-fi
-if [ -x usr/bin/update-desktop-database ]; then
-  \${CHROOT} /usr/bin/update-desktop-database &> /dev/null
-fi
 if [ -x usr/bin/update-mime-database ]; then
   \${CHROOT} /usr/bin/update-mime-database /usr/share/mime &> /dev/null
 fi
@@ -217,7 +212,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}.{desktop,xml}.gz ${SBDIR}/
+                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
 fi

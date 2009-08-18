@@ -53,11 +53,16 @@ fi
 # Roland's utrace ptrace replacement.
 zcat ${SB_PATCHDIR}/linux-2.6-tracehook.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-utrace.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-utrace-ftrace.patch.gz | ${PATCHCOM} || exit 1
+
+# vm patches
+zcat ${SB_PATCHDIR}/linux-2.6-defaults-saner-vm-settings.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-mm-lru-evict-streaming-io-pages-first.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-mm-lru-report-vm-flags-in-page-referenced.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-mm-lru-dont-evict-mapped-executable-pages.patch.gz | ${PATCHCOM} || exit 1
 
 # enable sysrq-c on all kernels, not only kexec
 zcat ${SB_PATCHDIR}/linux-2.6-sysrq-c.patch.gz | ${PATCHCOM} || exit 1
-
-zcat ${SB_PATCHDIR}/linux-2.6-missing-rfc2465-stats.patch.gz | ${PATCHCOM} || exit 1
 
 # Architecture patches
 # x86(-64)
@@ -70,6 +75,7 @@ zcat ${SB_PATCHDIR}/via-padlock-40-nano-ecb.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/via-padlock-50-nano-cbc.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/via-rng-enable-64bit.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/via-sdmmc.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-x86-delay-tsc-barrier.patch.gz | ${PATCHCOM} || exit 1
 
 # Export xfrm[4|6] gc_thresh values to sysctl
 zcat ${SB_PATCHDIR}/linux-2.6-xfrm-export-gc_thresh.patch.gz | ${PATCHCOM} || exit 1
@@ -84,12 +90,14 @@ zcat ${SB_PATCHDIR}/linux-2.6-execshield.patch.gz | ${PATCHCOM} || exit 1
 #
 
 # ext4
-#zcat ${SB_PATCHDIR}/linux-2.6-ext4-prealloc-fixes.patch.gz | ${PATCHCOM} || exit 1
 
 # xfs
 
 # btrfs
-#zcat ${SB_PATCHDIR}/linux-2.6-btrfs-experimental-branch.patch.gz | ${PATCHCOM} || exit 1
+
+# cifs
+# fix cifs mount option "port=" (#506574)
+zcat ${SB_PATCHDIR}/linux-2.6-fs-cifs-fix-port-numbers.patch.gz | ${PATCHCOM} || exit 1
 
 # USB
 
@@ -99,8 +107,8 @@ zcat ${SB_PATCHDIR}/linux-2.6-acpi-video-dos.patch.gz | ${PATCHCOM} || exit 1
 
 # Various low-impact patches to aid debugging.
 zcat ${SB_PATCHDIR}/linux-2.6-debug-sizeof-structs.patch.gz | ${PATCHCOM} || exit 1
-#zcat ${SB_PATCHDIR}/linux-2.6-debug-nmi-timeout.patch.gz | ${PATCHCOM} || exit 1
-#zcat ${SB_PATCHDIR}/linux-2.6-debug-taint-vm.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-debug-nmi-timeout.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/linux-2.6-debug-taint-vm.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/linux-2.6-debug-spinlock-taint.patch.gz | ${PATCHCOM} || exit 1
 ## try to find out what is breaking acpi-cpufreq
 zcat ${SB_PATCHDIR}/linux-2.6-debug-vm-would-have-oomkilled.patch.gz | ${PATCHCOM} || exit 1
@@ -111,12 +119,6 @@ zcat ${SB_PATCHDIR}/linux-2.6-debug-always-inline-kzalloc.patch.gz | ${PATCHCOM}
 #
 # disable message signaled interrupts
 zcat ${SB_PATCHDIR}/linux-2.6-defaults-pci_no_msi.patch.gz | ${PATCHCOM} || exit 1
-
-# update the pciehp driver
-#zcat ${SB_PATCHDIR}/linux-2.6-pciehp-update.patch.gz | ${PATCHCOM} || exit 1
-
-# default to enabling passively listening for hotplug events
-#zcat ${SB_PATCHDIR}/linux-2.6-defaults-pciehp.patch.gz | ${PATCHCOM} || exit 1
 
 #
 # SCSI Bits.
@@ -133,6 +135,13 @@ zcat ${SB_PATCHDIR}/hda_intel-prealloc-4mb-dmabuffer.patch.gz | ${PATCHCOM} || e
 # Filesystem patches.
 
 # Networking
+zcat ${SB_PATCHDIR}/linux-2.6-missing-rfc2465-stats.patch.gz | ${PATCHCOM} || exit 1
+
+# neigh: fix state transition INCOMPLETE->FAILED via Netlink request
+zcat ${SB_PATCHDIR}/linux-2.6-neigh_-fix-state-transition-INCOMPLETE-_FAILED-via-Netlink-request.patch.gz | ${PATCHCOM} || exit 1
+
+# add ich9 lan
+zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
@@ -141,8 +150,16 @@ zcat ${SB_PATCHDIR}/linux-2.6-input-kill-stupid-messages.patch.gz | ${PATCHCOM} 
 # Get away from having to poll Toshibas
 zcat ${SB_PATCHDIR}/linux-2.6-input-fix-toshiba-hotkeys.patch.gz | ${PATCHCOM} || exit 1
 
+# HID: add support for Bluetooth Wacom pads
+zcat ${SB_PATCHDIR}/linux-2.6-input-wacom-bluetooth.patch.gz | ${PATCHCOM} || exit 1
+
 # Allow to use 480600 baud on 16C950 UARTs
 zcat ${SB_PATCHDIR}/linux-2.6-serial-460800.patch.gz | ${PATCHCOM} || exit 1
+
+# fix oops in nozomi drver (#507005) plus two others
+zcat ${SB_PATCHDIR}/linux-2.6-drivers-char-low-latency-removal.patch.gz | ${PATCHCOM} || exit 1
+# let users skip the TXEN bug test
+zcat ${SB_PATCHDIR}/linux-2.6-serial-add-txen-test-param.patch.gz | ${PATCHCOM} || exit 1
 
 # Silence some useless messages that still get printed with 'quiet'
 zcat ${SB_PATCHDIR}/linux-2.6-silence-noise.patch.gz | ${PATCHCOM} || exit 1
@@ -152,39 +169,40 @@ zcat ${SB_PATCHDIR}/linux-2.6-silence-fbcon-logo.patch.gz | ${PATCHCOM} || exit 
 
 # Changes to upstream defaults.
 
+# back-port scan result aging patches
+#zcat ${SB_PATCHDIR}/linux-2.6-mac80211-age-scan-results-on-resume.patch.gz | ${PATCHCOM} || exit 1
+
+# iwlwifi: fix TX queue race
+zcat ${SB_PATCHDIR}/linux-2.6-iwlwifi_-fix-TX-queue-race.patch.gz | ${PATCHCOM} || exit 1
+
 # libata
 
 #
 # VM related fixes.
 #
 
-# rt2x00: back-port activity LED init patches
-#zcat ${SB_PATCHDIR}/linux-2.6-rt2x00-asus-leds.patch.gz | ${PATCHCOM} || exit 1
-
-# back-port scan result aging patches
-#zcat ${SB_PATCHDIR}/linux-2.6-mac80211-age-scan-results-on-resume.patch.gz | ${PATCHCOM} || exit 1
-
 # /dev/crash driver.
 zcat ${SB_PATCHDIR}/linux-2.6-crash-driver.patch.gz | ${PATCHCOM} || exit 1
-
-# neigh: fix state transition INCOMPLETE->FAILED via Netlink request
-zcat ${SB_PATCHDIR}/linux-2.6-neigh_-fix-state-transition-INCOMPLETE-_FAILED-via-Netlink-request.patch.gz | ${PATCHCOM} || exit 1
 
 # http://www.lirc.org/
 zcat ${SB_PATCHDIR}/linux-2.6-lirc.patch.gz | ${PATCHCOM} || exit 1
 
-zcat ${SB_PATCHDIR}/linux-2.6-e1000-ich9.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/agp-set_memory_ucwb.patch.gz | ${PATCHCOM} || exit 1
 # Nouveau DRM + drm fixes
 #zcat ${SB_PATCHDIR}/drm-next.patch.gz | ${PATCHCOM} || exit 1
-#zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
-#zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
-# pm broken on my thinkpad t60p - airlied
-#zcat ${SB_PATCHDIR}/drm-radeon-pm.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-modesetting-radeon.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-nouveau.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-no-gem-on-i8xx.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-i915-resume-force-mode.patch.gz | ${PATCHCOM} || exit 1
 zcat ${SB_PATCHDIR}/drm-intel-big-hammer.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-gen3-fb-hack.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-intel-hdmi-edid-fix.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-modesetting-radeon-fixes.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-radeon-new-pciids.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-dont-frob-i2c.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-pnp-add-resource-range-checker.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/drm-i915-enable-mchbar.patch.gz | ${PATCHCOM} || exit 1
 
 # linux1394 git patches
 #zcat ${SB_PATCHDIR}/linux-2.6-firewire-git-update.patch.gz | ${PATCHCOM} || exit 1
@@ -195,6 +213,15 @@ zcat ${SB_PATCHDIR}/drm-intel-big-hammer.patch.gz | ${PATCHCOM} || exit 1
 
 # silence the ACPI blacklist code
 zcat ${SB_PATCHDIR}/linux-2.6-silence-acpi-blacklist.patch.gz | ${PATCHCOM} || exit 1
+
+# kvm
+zcat ${SB_PATCHDIR}/linux-2.6-kvm-skip-pit-check.patch.gz | ${PATCHCOM} || exit 1
+
+# xen
+zcat ${SB_PATCHDIR}/linux-2.6.29-xen-disable-gbpages.patch.gz | ${PATCHCOM} || exit 1
+
+# v12n
+zcat ${SB_PATCHDIR}/linux-2.6-virtio_blk-dont-bounce-highmem-requests.patch.gz | ${PATCHCOM} || exit 1
 
 # V4L/DVB updates/fixes/experimental drivers
 #zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-fixes.patch.gz | ${PATCHCOM} || exit 1

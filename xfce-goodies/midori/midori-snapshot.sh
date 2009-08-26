@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://git.xfce.org/kalikiana/${module}"
+snaproot="git://git.xfce.org/apps/${module}"
 
 tmp=$(mktemp -d)
 

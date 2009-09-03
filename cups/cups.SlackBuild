@@ -43,7 +43,7 @@ fi
 NAME=cups
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.3.11}
+VERSION=${VERSION:-1.4.0}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -62,6 +62,9 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable dnssd support (with avahi)
+SB_DNSSD=${SB_DNSSD:-NO}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -113,6 +116,18 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+# Let's look at the compilation command lines.
+sed -i -e "s,^.SILENT:,," Makedefs.in
+
+# Fix locale code for Norwegian (bug #520379).
+mv locale/cups_no.po locale/cups_nb.po
+
+# Rebuild configure script for --enable-avahi.
+aclocal -I config-scripts
+autoconf -I config-scripts
+
+[ "${SB_DNSSD}" = "YES" ] || SB_DNSSDOPTS='--disable-dnssd'
+
 sed -i.orig -e 's#$exec_prefix/lib/cups#$libdir/cups#g' configure
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -129,7 +144,7 @@ CXXFLAGS="${SLKCFLAGS}" \
   --enable-cdsassl=no \
   --docdir=/usr/doc \
   --without-php \
-  --disable-pam \
+  --disable-pam ${SB_DNSSDOPTS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
@@ -194,6 +209,35 @@ usr/sbin/lpc ; do
     ( cd $(dirname ${file}) ; ln -sf $(basename ${file})-${SUFFIX} $(basename ${file}) )
   )
 done
+
+
+# Install the udev rules.
+mkdir -p ${PKG}/lib/udev/udev/rules.d
+zcat ${CWD}/cups-libusb.rules.gz > \
+  ${PKG}/lib/udev/udev/rules.d/70-cups-libusb.rules || exit 1
+
+mkdir -p ${PKG}/etc/cron.daily
+cat > ${PKG}/etc/cron.daily/${NAME} <<'EOF'
+#!/bin/sh
+[ -x /usr/sbin/tmpwatch ] || exit 0
+for d in /var/spool/cups/tmp
+do
+  if [ -d "$d" ]; then
+    /usr/sbin/tmpwatch -f 720 "$d"
+  fi
+done
+exit 0
+EOF
+chmod 0755 ${PKG}/etc/cron.daily/${NAME} || exit 1
+
+mkdir -p ${PKG}/etc/logrotate.d
+cat > ${PKG}/etc/logrotate.d/${NAME} <<'EOF'
+/var/log/cups/*_log {
+    missingok
+    notifempty
+    sharedscripts
+}
+EOF
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -308,7 +352,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${CWD}/${NAME}-*.rules.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.gz \

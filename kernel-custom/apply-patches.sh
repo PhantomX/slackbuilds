@@ -185,8 +185,10 @@ zcat ${SB_PATCHDIR}/linux-2.6-iwlwifi_-fix-TX-queue-race.patch.gz | ${PATCHCOM} 
 zcat ${SB_PATCHDIR}/linux-2.6-crash-driver.patch.gz | ${PATCHCOM} || exit 1
 
 # http://www.lirc.org/
-zcat ${SB_PATCHDIR}/linux-2.6-lirc.patch.gz | ${PATCHCOM} || exit 1
-
+zcat ${SB_PATCHDIR}/lirc-2.6.31.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/hid-ignore-all-recent-imon-devices.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/hdpvr-ir-enable.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/lirc-revert-2.6.31-i2c-changes.patch.gz | ${PATCHCOM} || exit 1
 
 zcat ${SB_PATCHDIR}/agp-set_memory_ucwb.patch.gz | ${PATCHCOM} || exit 1
 # Nouveau DRM + drm fixes
@@ -228,3 +230,4 @@ zcat ${SB_PATCHDIR}/linux-2.6-virtio_blk-dont-bounce-highmem-requests.patch.gz |
 #zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-update.patch.gz | ${PATCHCOM} || exit 1
 #zcat ${SB_PATCHDIR}/linux-2.6-v4l-dvb-experimental.patch.gz | ${PATCHCOM} || exit 1
 #zcat ${SB_PATCHDIR}/linux-2.6-revert-dvb-net-kabi-change.patch.gz | ${PATCHCOM} || exit 1
+zcat ${SB_PATCHDIR}/v4l-dvb-fix-cx25840-firmware-load.patch.gz | ${PATCHCOM} || exit 1

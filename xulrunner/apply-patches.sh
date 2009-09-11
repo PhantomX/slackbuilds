@@ -7,6 +7,8 @@ zcat ${SB_PATCHDIR}/mozilla-build.patch.gz | patch -p1 -E --backup --verbose || 
 zcat ${SB_PATCHDIR}/mozilla-191-path.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/mozilla-jemalloc.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/mozilla-about-firefox-version.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/xulrunner-gtk-include.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/mozilla-libnotify.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # Fedora specific patches
 zcat ${SB_PATCHDIR}/mozilla-191-pkgconfig.patch.gz | patch -p1 -E --backup --verbose || exit 1

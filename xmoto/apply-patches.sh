@@ -8,3 +8,4 @@ zcat ${SB_PATCHDIR}/${NAME}-0.4.0-Environment-string.patch.gz | patch -p0 -E --b
 zcat ${SB_PATCHDIR}/${NAME}-0.5.0-xmargs-include.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.5.0-helpers-text-includes.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.5.0-helpers-log-include.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-amd64_gcc441.diff.gz | patch -p0 -E --backup --verbose || exit 1

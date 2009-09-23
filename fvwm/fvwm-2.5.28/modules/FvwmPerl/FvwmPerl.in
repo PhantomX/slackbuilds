@@ -1,0 +1,954 @@
+#!@PERL@ -w
+
+# Copyright (C) 2002-2009 Mikhael Goikhman <migo@cpan.org>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+# Filter this script to pod2man to get a man page:
+#   pod2man -c "Fvwm Module" FvwmPerl | nroff -man | less -e
+
+require 5.004;
+use strict;
+
+BEGIN {
+	use vars qw($prefix $datarootdir $datadir);
+	$prefix = "@prefix@";
+	$datarootdir = "@datarootdir@";
+	$datadir = "@datadir@";
+}
+
+use lib "@FVWM_PERLLIBDIR@";
+use FVWM::Module;
+use General::FileSystem "-quiet";
+use General::Parse;
+use Getopt::Long;
+
+# ----------------------------------------------------------------------------
+# variables
+
+my $line_to_eval = undef;
+my $file_to_load = undef;
+my $preprocess = 0;
+my $export_func_names = undef;
+# whether continue running after --eval, --load or --preprocess, default is no
+my $stay = 0;
+my $nolock = 0;
+my $debug = 0;
+my $detached = 0;
+my $pp_args = undef;
+my $preprocess_options = undef;
+my $pp_file_count = 0;
+my $pp_main_quote_ref = undef;
+
+sub init_preprocess_vars () {
+	$pp_args = {};
+	$pp_args->{quote} = $$pp_main_quote_ref if $pp_main_quote_ref;
+	$pp_main_quote_ref = \$pp_args->{quote} unless $pp_main_quote_ref;
+
+	$preprocess_options = {
+		"c|cmd|command" => \$pp_args->{command},
+		"q|quote=s"     => \$pp_args->{quote},
+		"w|winid=s"     => \$pp_args->{winid},
+		"nosend"        => \$pp_args->{nosend},
+		"noremove"      => \$pp_args->{noremove},
+	};
+}
+
+init_preprocess_vars();
+
+my $options = {
+	"e|eval=s"     => \$line_to_eval,
+	"l|load=s"     => \$file_to_load,
+	"p|preprocess" => \$preprocess,
+	"x|export:s"   => \$export_func_names,
+	"s|stay!"      => \$stay,
+	"nolock"       => \$nolock,
+	"debug=i"      => \$debug,
+	%$preprocess_options,
+};
+
+my $module = new FVWM::Module(
+	Name          => "FvwmPerl",
+	Mask          => M_STRING,
+	SyncMask      => M_STRING,
+	EnableOptions => $options,
+	EnableAlias   => 1,
+	Debug         => \$debug,  # $debug is not really ready yet
+);
+
+sub print_action_error ($$) {
+	my $action = shift;
+	my $err_msg = shift;
+	return if $err_msg =~ /^!/;
+	$err_msg =~ s/\s+$//s;
+	print STDERR "[", $module->name, "][$action]: $err_msg\n";
+}
+
+# ----------------------------------------------------------------------------
+# prepare the environment that may be used in the sent perl commands
+
+my $version = "@VERSION@";
+
+my ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j, $k, $l, $m, $n, $o, $p)
+	= ("", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "");
+my (@a, @b, @c, @d, @e, @f, @g, @h, @i, @j, @k, @l, @m, @n, @o, @p);
+my (%a, %b, %c, %d, %e, %f, %g, %h, %i, %j, %k, %l, %m, %n, %o, %p);
+
+sub cmd ($;$) {
+	my $command = shift;
+	my $win_id = shift;
+	$module->send($command, $win_id);
+}
+
+*command = \*cmd; *command = \*command;  # alias
+
+sub stop () {
+	# send a signal to the event loop to terminate the module
+	$module->terminate;
+}
+
+sub skip () {
+	# send a signal to the event loop to terminate the current event handler
+	$module->terminate("continue");
+}
+
+sub unlock () {
+	# enable asynchronous evaluation
+	$module->send_unlock;
+}
+
+sub detach () {
+	my $pid = fork();
+
+	# main process skips the remaining evaluation
+	skip() unless defined $pid && $pid == 0;
+
+	# child process will exit after evaluation
+	$detached = 1;
+}
+
+sub show_message ($;$$) {
+	require FVWM::Module::Toolkit;
+	FVWM::Module::Toolkit->show_message(
+		$_[0], $_[1] || "FvwmPerl user message", $_[2]
+	);
+}
+
+sub export ($;$) {
+	my $func_names = shift || "";
+	my $do_unexport = shift || 0;
+
+	my @func_names = split(/[\s,]+/, $func_names);
+	@func_names = qw(Eval .) if $func_names eq "";
+
+	my $name = $module->name;
+
+	foreach (@func_names) {
+		my $action =
+			/eval/i? 'eval':
+			/load/i? 'load':
+			/preprocess|pp/i || $_ eq "."? 'preprocess -c --':
+			die "Can't guess action for function '$_' to export\n";
+
+		$module->send(qq(
+			DestroyFunc $_
+		) . ($do_unexport ? "" : qq(
+			AddToFunc $_ I SendToModule $name $action \$*
+		)));
+	}
+}
+
+sub load ($) {
+	my $filename = shift;
+	my $contents = load_file($filename);
+	if (!defined $contents) {
+		print_action_error("load", "Can't find and read $filename: $!");
+		return;
+	}
+	eval $$contents;
+	print_action_error("load", "$@") if $@;
+}
+
+sub do_eval ($) {
+	my $string = shift;
+	eval $string;
+	print_action_error("eval", "$@") if $@;
+	if ($detached) {
+		# let's hope we should not clean-up anything
+		exit(0);
+	}
+}
+
+sub preprocess_directives ($;$) {
+	my $text_ref = shift;
+	my $depth = shift || 0;
+
+	my $quote = $PreprocessNamespace::PPP_QUOTE1;
+	my $processed_text = "";
+
+	my $error_sub = sub ($) {
+		print_action_error("preprocess", "$_[0], preprocessing failed");
+	};
+	my ($start, $directive, $params, $end);
+
+	while ($$text_ref =~ m{\A(.*?)^$quote(\w+)[ \t]*(.*?)\n(.*)\z}ms) {
+		($start, $directive, $params, $end) = ($1, $2, $3, $4);
+		$$text_ref = "";
+		#print "\t$depth $directive $params\n";
+
+		if (eqi($directive, "End")) {
+			if ($depth == 0) {
+				$error_sub->("Unexpected ${quote}End");
+				return undef;
+			}
+			$$text_ref = $processed_text . $start;
+			return $end;
+		}
+
+		my $subtext = $end;
+
+		if (eqi($directive, "Repeat")) {
+			my $count = get_token($params);
+			unless (defined $count && $count =~ /^\d+$/) {
+				$error_sub->("Usage: ${quote}Repeat count");
+				return undef;
+			}
+			$end = &preprocess_directives(\$subtext, $depth + 1);
+			return undef unless defined $end;
+			$start .= $subtext x $count;
+			next;
+		}
+		my $prefix = undef;
+		if (eqi($directive, "ModuleConfig")) {
+			my ($module_name, $destroy) = get_tokens($params, 2);
+			unless (defined $module_name) {
+				$error_sub->("Usage: ${quote}ModuleConfig module-name");
+				return undef;
+			}
+			if (defined $destroy && eqi($destroy, "destroy")) {
+				$start .= "DestroyModuleConfig $module_name: *\n";
+			};
+			$prefix = "*$module_name: ";
+		}
+		if (defined $prefix || eqi($directive, "Prefix")) {
+			$prefix = get_token($params) unless defined $prefix;
+			unless (defined $prefix) {
+				$error_sub->("Usage: ${quote}Prefix prefix");
+				return undef;
+			}
+			$end = &preprocess_directives(\$subtext, $depth + 1);
+			return undef unless defined $end;
+			foreach (split(/\n/s, $subtext)) {
+				$start .= "$prefix$_\n" unless /^\s*$/;
+			}
+			next;
+		}
+	} continue {
+		$processed_text .= $start;
+		$$text_ref = $end;
+	}
+
+	if ($depth == 0) {
+		$$text_ref = $processed_text . $$text_ref if $processed_text ne "";
+		return "";
+	}
+	$error_sub->("No corresponding ${quote}End found");
+	return undef;
+}
+
+sub preprocess ($;$) {
+	my $args = shift;
+	my $data = shift;
+
+	my $nosend   = $args->{nosend};
+	my $noremove = $args->{noremove};
+	my $command  = $args->{command};
+	my $quote    = $args->{quote} || '%';
+	my $winid    = $args->{winid} || undef;
+
+	my ($quote1, $quote2) = split(//, $quote, 2);
+	$quote2 ||= $quote1;
+	$winid = eval $winid if $winid && $winid =~ /^0(x[\da-f]+|[0-7]+)$/;
+
+	unlock() unless $command;
+
+	my $depth = $args->{depth};
+	$depth ||= 0;
+	if ($depth > 20) {
+		print_action_error("preprocess", "Too deep include depth=$depth");
+		return;
+	}
+
+	my $text_ref = $command? \$data: load_file($data);
+	unless (defined $text_ref) {
+		print_action_error("preprocess", "No file to preprocess ($data)");
+		return;
+	}
+
+	# there should be another way without running external programs
+	my @dimentions = `xdpyinfo | grep dimensions` =~ /(\d+)x(\d+)/;
+
+	{
+		package PreprocessNamespace;
+		no strict "vars";
+		# OR-ing is a work around for "used once" warning
+
+		$PPP_DEPTH    = $depth;
+		$PPP_QUOTE    = $quote;
+		$PPP_QUOTE1   = $quote1;
+		$PPP_QUOTE2   = $PPP_QUOTE2 || $quote2;
+		$PPP_NOSEND   = $nosend;
+		$PPP_NOREMOVE = $noremove;
+		$USER    = $USER    || $ENV{USER};
+		$DISPLAY = $DISPLAY || $ENV{DISPLAY};
+		$WIDTH   = $WIDTH   || $dimentions[0];
+		$HEIGHT  = $HEIGHT  || $dimentions[1];
+		$FVWM_VERSION = $FVWM_VERSION || $version;
+		$FVWM_MODULEDIR = $FVWM_MODULEDIR || $ENV{FVWM_MODULEDIR};
+		$FVWM_DATADIR = $FVWM_DATADIR || $module->site_data_dir;
+		$FVWM_USERDIR = $FVWM_USERDIR || $module->user_data_dir;
+	}
+
+	# perl code substitution first
+	$$text_ref =~ s/\Q$quote1\E { ( .*? ) } \Q$quote2\E/
+		my $result = eval "
+			no strict;
+			package PreprocessNamespace;
+			$1
+		";
+		if ($@) {
+			print_action_error("preprocess", $@);
+			$result = "";
+		}
+		$result;
+	/sgex;
+
+	# line based directives
+	preprocess_directives($text_ref);
+
+	if ($command) {
+		$module->send($$text_ref, $winid);
+		return;
+	}
+
+	my $temp_filename = $module->user_data_dir . "/.FvwmPerl-preprocess-$$";
+	$temp_filename .= "-" . (++$pp_file_count);
+	save_file($temp_filename, $text_ref);
+
+	unless ($nosend) {
+		$module->send("Read $temp_filename", $winid);
+		$module->send("Exec rm -f '$temp_filename'")
+			unless $noremove;
+	}
+}
+
+sub PreprocessNamespace::include ($) {
+	my $file = shift;
+	::preprocess({
+		depth    => $PreprocessNamespace::PPP_DEPTH + 1,
+		quote    => $PreprocessNamespace::PPP_QUOTE,
+		nosend   => $PreprocessNamespace::PPP_NOSEND,
+		noremove => $PreprocessNamespace::PPP_NOREMOVE,
+	}, $file);
+	return "";
+}
+
+# ----------------------------------------------------------------------------
+# event handlers
+
+sub process_message ($$) {
+	my $event = $_[1];
+	my $string = $event->_text;
+
+	$string =~ s/^\s+//;
+	return if $string eq "";
+	my ($action, $rest) = split(/\s+/, $string, 2);
+	$action = lc($action);
+
+	if ($action eq "eval") {
+		return unless defined $rest;
+		do_eval($rest);
+	}
+
+	elsif ($action eq "load") {
+		return unless defined $rest;
+		load(get_token($rest));
+	}
+
+	elsif ($action eq "preprocess") {
+		@ARGV = split(/ /, $rest);
+		init_preprocess_vars();
+		my $parser = new Getopt::Long::Parser(
+			config => [qw(pass_through require_order)]
+		);
+		$parser->getoptions(%$preprocess_options) || return;
+		$pp_args->{winid} = $event->_win_id || undef
+			unless defined $pp_args->{winid} && $pp_args->{winid} =~ /^\d/;
+
+		preprocess($pp_args, join(" ", @ARGV));
+	}
+
+	elsif ($action eq "export") {
+		export($rest);
+	}
+
+	elsif ($action eq "unexport") {
+		export($rest, 1);
+	}
+
+	elsif ($action eq "stop") {
+		stop();
+	}
+
+	elsif ($action eq "dump") {
+		# will dump non-void variables in the future
+	}
+
+	else {
+		print_action_error("process_message", "Unknown action ($action)");
+	}
+}
+
+$module->add_handler(M_STRING, \&process_message);
+
+# ----------------------------------------------------------------------------
+# execution
+
+# unlock fvwm earlier if requested
+$module->send_ready if $nolock;
+
+if (defined $export_func_names) {
+	export($export_func_names);
+	$stay = 1;
+}
+
+if (defined $line_to_eval) {
+	do_eval($line_to_eval);
+	exit(0) unless $stay;
+}
+
+if (defined $file_to_load) {
+	load($file_to_load);
+	exit(0) unless $stay;
+}
+
+if ($preprocess) {
+	preprocess($pp_args, join(" ", @ARGV));
+	exit(0) unless $stay;
+}
+
+$module->event_loop;
+
+__END__
+
+# ----------------------------------------------------------------------------
+# man page
+
+=head1 NAME
+
+FvwmPerl - the fvwm perl manipulator and preprocessor
+
+=head1 SYNOPSIS
+
+FvwmPerl should be spawned by fvwm(1) for normal functionality.
+
+To run this module, place this command somewhere in the configuration:
+
+    Module FvwmPerl [params]
+
+or:
+
+    ModuleSynchronize FvwmPerl [params]
+
+if you want to immediately start to send commands to FvwmPerl.
+
+=head1 DESCRIPTION
+
+This module is intended to extend fvwm commands with the perl scripting
+power.  It enables to embed perl expressions in the fvwm config files and
+construct fvwm commands.
+
+=head1 INVOCATION
+
+If you want to invoke the unique and persistent instanse of FvwmPerl, it is
+suggested to do this from the I<StartFunction>.  Calling it from the top is
+also possible, but involves some issues not discussed here.
+
+    AddToFunc StartFunction I Module FvwmPerl
+
+There are several command line switches:
+
+B<FvwmPerl>
+[ B<--eval> line ]
+[ B<--load> file ]
+[ B<--preprocess> [ B<--quote> char ] [ B<--winid> wid ] [ B<--cmd> ]
+[ B<--nosend> ] [ B<--noremove> ] [ line | file ] ]
+[ B<--export> [names] ]
+[ B<--stay> ]
+[ B<--nolock> ]
+[ alias ]
+
+Long switches may be abbreviated to short one-letter switches.
+
+B<-e>|B<--eval> line - evaluate the given perl code
+
+B<-l>|B<--load> file - evaluate perl code in the given file
+
+B<-p>|B<--preprocess> [ file ] - preprocess the given fvwm config file
+
+The following 5 options are only valid together with B<--preprocess>
+option.
+
+B<-c>|B<--cmd> line - an fvwm command to be preprocessed instead of file
+
+B<-q>|B<--quote> char - change the default '%' quote
+
+B<-w>|B<--winid> wid - set explicit window context (should begin with
+digit, may be in oct or hex form; this window id overwrites implicit
+window context if any)
+
+B<--nosend> - do not send the preprocessed file to I<fvwm> for B<Read>ing,
+the default is send. Useful for preprocessing non fvwm config files.
+
+B<--noremove> - do not remove the preprocessed file after sending
+it to I<fvwm> for B<Read>ing, the default is remove. Useful for debugging.
+
+B<-x>|B<--export> [names] - define fvwm shortcut functions (by default,
+two functions named "Eval" and ".").  This option implies B<--stay>.
+
+B<-s>|B<--stay> - continues an execution after B<--eval>, B<--load> or
+B<--preprocess> are processed.  By default, the module is not persistent
+in this case, i.e. B<--nostay> is assumed.
+
+B<--nolock> - when one of the 3 action options is given, this option causes
+unlocking I<fvwm> immediately. By default the requested action is executed
+synchronously; this only makes difference when invoked like:
+
+    ModuleSynchronous FvwmPerl --preprocess someconfig.ppp
+
+If B<--nolock> is added here, B<ModuleSynchronous> returns immediately.
+Note that B<Module> returns immediately regardless of this option.
+
+=head1 USING ALIAS
+
+Aliases allow to have several module invocations and work separately
+with all invocations, here is an example:
+
+    ModuleSynchronous FvwmPerl FvwmPerl-JustTest
+    SendToModule FvwmPerl-JustTest eval $a = 2 + 2; $b = $a
+    SendToModule FvwmPerl-JustTest eval cmd("Echo 2 + 2 = $b")
+    KillModule FvwmPerl FvwmPerl-JustTest
+
+=head1 PREPROCESSING EXAMPLE
+
+One of the effective proprocessing solutions is to pass the whole fvwm
+configuration with embeded perl code to "FvwmPerl --preprocess".
+An alternative approach is to write a perl script that produces fvwm
+commands and sends them for execution, this script may be loaded using
+"FvwmPerl --load". There are hovewer intermediate solutions that
+preprocess only separate configuration lines (or alternatively,
+execute separate perl commands that produce fvwm commands).
+
+The following code snippet adds ability of arithmetics and string scripting
+to certain lines that need this. To use this, you want to start FvwmPerl as
+your first command so that other commands may be asked to be preprosessed.
+
+    ModuleSynchronize FvwmPerl
+
+    AddToFunc .
+    + I SendToModule FvwmPerl preprocess -c -- $*
+
+    . Exec exec xterm -name xterm-%{++$i}%   # use unique name
+
+    . GotoDesk 0 %{ $[desk.n] + 1 }%         # go to next desk
+
+    . Exec exec %{ -x "/usr/bin/X11/aterm" ? "aterm" : "xterm" }% -sb
+
+    # center a window
+    Next (MyWindow) . Move \
+      %{($WIDTH - $[w.width]) / 2}%p %{($HEIGHT - $[w.height]) / 2}%p
+
+    . Exec exec xmessage %{2 + 2}%           # simple calculator
+
+    . %{main::show_message(2 + 2, "Yet another Calculator"); ""}%
+
+=head1 ACTIONS
+
+There are several actions that FvwmPerl may perform:
+
+=over 4
+
+=item B<eval> perl-code
+
+Evaluate a line of perl code.
+
+A special function B<cmd(>"command"B<)> may be used in perl code to send
+commands back to fvwm.
+
+If perl code contains an error, it is printed to the standard error stream
+with the I<[FvwmPerl][eval]:> header prepended.
+
+=item B<load> file-name
+
+Load a file of perl code.
+If the file is not fully qualified, it is searched in the user
+directory $FVWM_USERDIR (usually ~/.fvwm) and the system wide
+data directory $FVWM_DATADIR.
+
+A special function B<cmd(>"command"B<)> may be used in perl code to send
+commands back to fvwm.
+
+If perl code contains an error, it is printed to the standard error stream
+with the I<[FvwmPerl][load]:> header prepended.
+
+=item B<preprocess> [-q|--quote char] [-c|--cmd] [I<line> | I<file>]
+
+Preprocess fvwm config I<file> or (if --cmd is given) I<line>.
+This file contains lines that are not touched (usually fvwm commands)
+and specially preformatted perl code that is processed and replaced.
+Text enclosed in B<%{> ... B<}%> delimiters, that may start anywhere
+on the line and end anywhere on the same or an other line, is perl code.
+
+The I<quote> parameter changes perl code delimiters.  If a single char
+is given, like '@', the delimiters are B<@{> ... B<}@>.
+If the given quote is 2 chars, like B<E<lt>E<gt>>, the quotes are
+B<E<lt>{> ... B<}E<gt>>
+
+The perl code is substituted for the result of its evaluation.
+I.e. %{$a = "c"; ++$a}% is replaced with "d".
+
+The evaluation is unlike B<eval> and B<load> is done under the
+package PreprocessNamespace and without I<use strict>, so you are
+free to use any variable names without fear of conflicts. Just don't
+use uninitialized variables to mean undef or empty list (they may be in fact
+initialized by the previous preprocess action), and do a clean-up if needed.
+The variables and function in the I<main> package are still available,
+like ::cmd() or ::skip(), but it is just not a good idea to access them
+while preprocessing.
+
+There is a special function B<include>(I<file>) that loads a file,
+preprocesses it and returns the preprocessed result. Avoid recursion.
+
+If any embedded perl code contains an error, it is printed to the standard
+error stream and prepended with the I<[FvwmPerl][preprocess]:> header.
+The result of substitution is empty in this case.
+
+The following variables may be used in the perl code:
+
+$USER,
+$DISPLAY,
+$WIDTH,
+$HEIGHT,
+$FVWM_VERSION,
+$FVWM_MODULEDIR,
+$FVWM_DATADIR,
+$FVWM_USERDIR
+
+The following line based directives are recognized when preprocessing.
+They are processed after the perl code (if any) is substituted.
+
+=over 4
+
+=item %B<Repeat> I<count>
+
+Causes the following lines to be repeated I<count> times.
+
+=item %B<ModuleConfig> I<module-name> [ destroy ]
+
+Causes the following lines to be interpreted as the given module configuration.
+If "destroy" is specified the previous module configuration is destroyed first.
+
+=item %B<Prefix> I<prefix>
+
+Prefixes the following lines with the quoted I<prefix>.
+
+=item %B<End> any-optional-comment
+
+Ends any of the directives described above, may be nested.
+
+=back
+
+Examples:
+
+    %Prefix "AddToFunc SwitchToWindow I"
+        Iconify off
+        WindowShade off
+        Raise
+        WarpToWindow 50 50
+    %End
+
+    %ModuleConfig FvwmPager destroy
+        Colorset 0
+        Font lucidasans-10
+        DeskTopScale 28
+        MiniIcons
+    %End ModuleConfig FvwmPager
+
+    %Prefix "All (MyWindowToAnimate) ResizeMove "
+    100 100 %{($WIDTH - 100) / 2}% %{($HEIGHT - 100) / 2}%
+    %Repeat %{$count}%
+    br w+2c w+2c w-1c w-1c
+    %End
+    %Repeat %{$count}%
+    br w-2c w-2c w+1c w+1c
+    %End
+    %End Prefix
+
+Additional preprocess parameters --nosend and --noremove may be given too.
+See their description at the top.
+
+=item B<export> [I<func-names>]
+
+Send to I<fvwm> the definition of shortcut functions that help to activate
+different actions of the module (i.e. B<eval>, B<load> and B<preprocess>).
+
+Function names (I<func-names>) may be separated by commas or/and whitespace.
+By default, two functions "Eval" and "." are assumed.
+
+The actual action defined in a function is guessed from the function name
+if possible, where function name "." is reserved for B<preprocess> action.
+
+For example, any of these two fvwm commands
+
+   SendToModule MyPerl export PerlEval,PP
+   FvwmPerl --export PerlEval,PP MyPerl
+
+define the following two shortcut functions:
+
+  DestroyFunc PerlEval
+  AddToFunc I SendToModule MyPerl eval $*
+  DestroyFunc PP
+  AddToFunc I SendToModule MyPerl preprocess -c -- $*
+
+=back
+
+These 4 actions may be requested in one of 3 ways: 1) in the command line when
+FvwmPerl is invoked (in this case FvwmPerl is short-lived unless B<--stay>
+or B<--export> is also given), 2) by sending the corresponding message in
+fvwm config using SendToModule, 3) by calling the corresponding perl function
+in perl code.
+
+=head1 FUNCTIONS
+
+There are several functions that perl code may call:
+
+=over 4
+
+=item B<cmd(>I<$fvwm_command>B<)>
+
+In case of B<eval> or B<load> - send back to fvwm a string I<$fvwm_command>.
+In case of B<preprocess> - append a string I<$fvwm_command> to the output of
+the embedded perl code.
+
+=item B<do_eval(>I<$perl_code>B<)>
+
+This function is equivalent to the B<eval> functionality
+on the string I<$perl_code>, described above.
+
+=item B<load(>I<$filename>B<)>
+
+This function is equivalent to the B<load> functionality
+on the file $filename, described above.
+
+=item B<preprocess(>I<@params, ["-c $command"] [$filename]>B<)>
+
+This function is equivalent to the B<preprocess> functionality
+with the given parameters and the file $filename described above.
+
+=item B<export(>I<$func_names, [$do_unexport]>B<)>
+
+This function is equivalent to the B<export> functionality
+with the given $func_names, described above. May also B<unexport>
+the function names if the second parameter is true.
+
+Function names should be separated by commas or/and whitespace.
+If I<$func_names> is empty then functions "Eval" and "." are assumed.
+
+=item B<stop()>
+
+Terminates the module.
+
+=item B<skip()>
+
+Skips the rest of the event callback code, i.e. the module returns to listen
+to new module events.
+
+=item B<unlock()>
+
+Unsynchronizes the event callback from fvwm. This may be useful to prevent
+deadlocks, i.e. usually fvwm kills the non-responding module if the event
+callback is not finished in I<ModuleTimeout> seconds. This prevents it.
+
+This example causes FvwmPerl to suspend its execution for one minute:
+
+    SendModule FvwmPerl eval unlock(); sleep(60);
+
+However, verify that there is no way a new message is sent by fvwm while the
+module is busy, and fvwm stays locked on this new message for too long.
+See also the B<detach> solution if you need long lasting operations.
+
+=item B<detach()>
+
+Forks and detaches the rest of the event callback code from the main
+process. This may be useful to prevent killing the module if its event
+callback should take a long time to complete and it may be done in the
+detached child. The detached child may still send commands to fvwm (don't
+rely on this), but not receive the events of course, it exits immediately
+after the callback execution is finished.
+
+If you use detach(), better only send commands to fvwm in one process (the
+main one or the detached one), doing otherwise may often cause conflicts.
+
+=item B<show_message(>$msg, $title[, $use_stderr_too=1]B<)>
+
+Shows a dialog window with the given message, using whichever X tool is
+found in the system.
+
+See B<FVWM::Module::Toolkit>::B<show_message> for more information.
+
+=back
+
+=head1 VARIABLES
+
+There are several global variables in the I<main> namespace that may be used
+in the perl code:
+
+    $a, $b, ... $h
+    @a, @b, ... @h
+    %a, %b, ... %h
+
+They all are initialized to the empty value and may be used to store a state
+between different calls to FvwmPerl actions (B<eval> and B<load>).
+
+If you need more readable variable names, either write "no strict 'vars';"
+at the start of every perl code or use a hash for this, like:
+
+    $h{id} = $h{first_name} . " " . $h{second_name}
+
+or use a package name, like:
+
+    @MyMenu::terminals = qw( xterm rxvt );
+    $MyMenu::item_num = @MyMenu::terminals;
+
+There may be a configuration option to turn strictness on and off.
+
+=head1 MESSAGES
+
+FvwmPerl may receive messages using the fvwm command SendToModule.
+The names, meanings and parameters of the messages are the same as the
+corresponding actions, described above.
+
+Additionally, a message B<stop> causes a module to quit.
+
+A message B<unexport> [I<func-names>] undoes the effect of B<export>,
+described in the ACTIONS section.
+
+A message B<dump> dumps the contents of the changed variables (not yet).
+
+=head1 EXAMPLES
+
+A simple test:
+
+    SendToModule FvwmPerl eval $h{dir} = $ENV{HOME}
+    SendToModule FvwmPerl eval load($h{dir} . "/test.fpl")
+    SendToModule FvwmPerl load $[HOME]/test.fpl
+    SendToModule FvwmPerl preprocess config.ppp
+    SendToModule FvwmPerl export Eval,PerlEval,PerlLoad,PerlPP
+    SendToModule FvwmPerl unexport PerlEval,PerlLoad,PerlPP
+    SendToModule FvwmPerl stop
+
+The following example handles root backgrounds in fvwmrc.
+All these commands may be added to StartFunction.
+
+    Module FvwmPerl --export PerlEval
+
+    # find all background pixmaps for a later use
+    PerlEval $a = $ENV{HOME} . "/bg"; \
+      opendir DIR, $a; @b = grep { /xpm$/ } readdir(DIR); closedir DIR
+
+    # build a menu of background pixmaps
+    AddToMenu MyBackgrounds "My Backgrounds" Title
+    PerlEval foreach $b (@b) \
+      { cmd("AddToMenu MyBackgrounds '$b' Exec fvwm-root $a/$b") }
+
+    # choose a random background to load on start-up
+    PerlEval cmd("AddToFunc \
+      InitFunction + I Exec exec fvwm-root $a/" . $b[int(random(@b))])
+
+=head1 ESCAPING
+
+B<SendToModule> just like any other fvwm commands expands several dollar
+prefixed variables.  This may clash with the dollars perl uses.
+You may avoid this by prefixing SendToModule with a leading dash.
+The following 2 lines in each pair are equivalent:
+
+    SendToModule FvwmPerl eval $$d = "$[DISPLAY]"
+    -SendToModule FvwmPerl eval $d = "$ENV{DISPLAY}"
+
+    SendToModule FvwmPerl eval \
+        cmd("Echo desk=$d, display=$$d")
+    SendToModule FvwmPerl preprocess -c \
+        Echo desk=%("$d")%, display=%{$$d}%
+
+Another solution to avoid escaping of special symbols like dollars
+and backslashes is to create a perl file in ~/.fvwm and then load it:
+
+    SendToModule FvwmPerl load build-menus.fpl
+
+If you need to preprocess one command starting with a dash, you should
+precede it using "--".
+
+    # this prints the current desk, i.e. "0"
+    SendToModule FvwmPerl preprocess -c Echo "$%{$a = "c"; ++$a}%"
+    # this prints "$d"
+    SendToModule FvwmPerl preprocess -c -- -Echo "$%{"d"}%"
+    # this prints "$d" (SendToModule expands $$ to $)
+    SendToModule FvwmPerl preprocess -c -- -Echo "$$%{"d"}%"
+    # this prints "$$d"
+    -SendToModule FvwmPerl preprocess -c -- -Echo "$$%{"d"}%"
+
+Again, it is suggested to put your command(s) into file and preprocess
+the file instead.
+
+=head1 CAVEATS
+
+FvwmPerl being written in perl and dealing with perl, follows the famous
+perl motto: "There's more than one way to do it", so the choice is yours.
+
+Here are more pairs of equivalent lines:
+
+    Module FvwmPerl --load "my.fpl" --stay
+    Module FvwmPerl -e 'load("my.fpl")' -s
+
+    SendToModule FvwmPerl preprocess --quote '@' my.ppp
+    SendToModule FvwmPerl eval preprocess({quote => '@'}, "my.ppp");
+
+Warning, you may affect the way FvwmPerl works by evaluating appropriate
+perl code, this is considered a feature not a bug.  But please don't do this,
+write your own fvwm module in perl instead.
+
+=head1 SEE ALSO
+
+The fvwm(1) man page describes all available commands.
+
+Basically, in your perl code you may use any function or class method from
+the perl library installed with fvwm, see the man pages of perl packages
+B<General::FileSystem>, B<General::Parse> and B<FVWM::Module>.
+
+=head1 AUTHOR
+
+Mikhael Goikhman <migo@homemail.com>.
+
+=cut

@@ -1,11 +1,10 @@
 
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-2.23.4-vendor.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-vendor.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.10.1-speak-to-us-ye-old-wise-fish.patch.gz | patch -p1 -E --backup --verbose || exit 1
-#zcat ${SB_PATCHDIR}/${NAME}-2.17.91-about-fedora.patch.gz | patch -p1 -E --backup --verbose || exit 1s
-zcat ${SB_PATCHDIR}/${NAME}-2.25.3-search.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-2.21.92-about-this-computer.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-search.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-about.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # the next three patches belong together
 # http://bugzilla.gnome.org/show_bug.cgi?id=470966
 zcat ${SB_PATCHDIR}/launcher-desktop-files.patch.gz | patch -p1 -E --backup --verbose || exit 1

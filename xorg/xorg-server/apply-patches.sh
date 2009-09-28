@@ -59,9 +59,7 @@ zcat ${SB_PATCHDIR}/xserver-1.6.1-mousedrivers.patch.gz | patch -p1 --verbose ||
 # #510238, already upstream
 zcat ${SB_PATCHDIR}/xserver-1.6.2-vboxvideo.patch.gz | patch -p1 --verbose || exit 1
 
-# 501601, part 2, upstream.
-zcat ${SB_PATCHDIR}/xserver-1.6.99-dpms.patch.gz | patch -p1 --verbose || exit 1
-
+# Fix build with newer proto.
 zcat ${SB_PATCHDIR}/xserver-1.6.3.901-xextproto.patch.gz | patch -p1 --verbose || exit 1
 
 if [ "${SB_ZW}" = "YES" ] ;then

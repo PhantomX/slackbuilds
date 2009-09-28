@@ -122,6 +122,7 @@ ApplyPatch linux-2.6-fs-cifs-fix-port-numbers.patch.gz
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch.gz
+ApplyPatch linux-2.6.30-cpuidle-faster-io.patch.gz
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch.gz
@@ -161,6 +162,14 @@ ApplyPatch linux-2.6-neigh_-fix-state-transition-INCOMPLETE-_FAILED-via-Netlink-
 # add ich9 lan
 ApplyPatch linux-2.6-e1000-ich9.patch.gz
 
+# Virt Fixes
+# Xen Guest
+ApplyPatch linux-2.6-xen-fix-brkpoints-hw-watchpoints.patch.gz
+ApplyPatch linux-2.6-xen-clean-up-warnings.patch.gz
+
+# Misc Virt
+ApplyPatch linux-2.6-virtio_blk-revert-QUEUE_FLAG_VIRT-addition.patch.gz
+
 # Misc fixes
 # The input layer spews crap no-one cares about.
 ApplyPatch linux-2.6-input-kill-stupid-messages.patch.gz
@@ -193,6 +202,9 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 # iwlwifi: fix TX queue race
 ApplyPatch linux-2.6-iwlwifi_-fix-TX-queue-race.patch.gz
 
+# zd1211rw: adding 083a:e503 as a ZD1211B device
+ApplyPatch linux-2.6-zd1211rw_-adding-083a_e503-as-a-ZD1211B-device.patch.gz
+
 # libata
 
 #
@@ -218,9 +230,11 @@ ApplyPatch drm-i915-resume-force-mode.patch.gz
 ApplyPatch drm-intel-big-hammer.patch.gz
 ApplyPatch drm-intel-gen3-fb-hack.patch.gz
 ApplyPatch drm-intel-hdmi-edid-fix.patch.gz
+ApplyPatch drm-intel-gem-use-dma32-on-pae.patch.gz
 ApplyPatch drm-modesetting-radeon-fixes.patch.gz
 ApplyPatch drm-radeon-new-pciids.patch.gz
 ApplyPatch drm-dont-frob-i2c.patch.gz
+ApplyPatch drm-radeon-cs-oops-fix.patch.gz
 ApplyPatch drm-pnp-add-resource-range-checker.patch.gz
 ApplyPatch drm-i915-enable-mchbar.patch.gz
 
@@ -247,6 +261,14 @@ ApplyPatch linux-2.6-virtio_blk-dont-bounce-highmem-requests.patch.gz
 #ApplyPatch linux-2.6-revert-dvb-net-kabi-change.patch.gz
 ApplyPatch v4l-dvb-fix-cx25840-firmware-load.patch.gz
 
+# sched fixes cherry-picked from 2.6.32
+ApplyPatch sched-deal-with-low-load-in-wake-affine.patch.gz
+ApplyPatch sched-disable-NEW-FAIR-SLEEPERS-for-now.patch.gz
+ApplyPatch sched-ensure-child-cant-gain-time-over-its-parent-after-fork.patch.gz
+ApplyPatch sched-remove-shortcut-from-select-task-rq-fair.patch.gz
+# latency defaults from 2.6.32 but changed to be not so aggressive
+ApplyPatch sched-retune-scheduler-latency-defaults.patch.gz
+
 ApplyPatch make-mmap_min_addr-suck-less.patch.gz
 
 # ----- send for upstream inclusion -----
@@ -267,5 +289,21 @@ ApplyPatch linux-2.6-xen-rearrange-to-fix-stackprotector.patch.gz
 # fix lockdep warnings in cpufreq (#522685)
 ApplyPatch linux-2.6-cpufreq-eliminate-lockdep-warnings.patch.gz
 ApplyPatch linux-2.6-cpufreq-cleanup-locking-in-ondemand.patch.gz
+
+# fix hostap driver (#522269)
+ApplyPatch hostap-revert-toxic-part-of-conversion.patch.gz
+
+# fix cfq performance regression in 2.6.30
+ApplyPatch linux-2.6-cfq-choose-new-next-req.patch.gz
+
+# kvm fixes from 2.6.31.1, including fix for CVE-2009-3290
+ApplyPatch kvm-guest-fix-bogus-wallclock-physical-address-calculation.patch.gz
+ApplyPatch kvm-mmu-make-__kvm_mmu_free_some_pages-handle-empty-list.patch.gz
+ApplyPatch kvm-vmx-check-cpl-before-emulating-debug-register-access.patch.gz
+ApplyPatch kvm-vmx-fix-cr8-exiting-control-clobbering-by-ept.patch.gz
+ApplyPatch kvm-x86-disallow-hypercalls-for-guest-callers-in-rings-0.patch.gz
+
+# appletalk: fix skb leak (CVE-2009-2903)
+ApplyPatch appletalk-fix-skb-leak-when-ipddp-interface-is-not-loaded.patch.gz
 
 set +e

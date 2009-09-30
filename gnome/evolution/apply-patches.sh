@@ -11,6 +11,3 @@ zcat ${SB_PATCHDIR}/${NAME}-2.5.4-fix-conduit-dir.patch.gz | patch -p1 -E --back
 
 # RH bug #176400
 zcat ${SB_PATCHDIR}/${NAME}-2.9.1-im-context-reset.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-# Add missing GConf schemas
-zcat ${SB_PATCHDIR}/${NAME}-2.26.3-missing-gconf-schemas.patch.gz | patch -p1 -E --backup --verbose || exit 1

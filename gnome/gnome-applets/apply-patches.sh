@@ -13,3 +13,6 @@ if [ "${SB_MIXER}" != "YES" ] ;then
   # and keep the mixer hidden away from the add to panel dialog
   zcat ${SB_PATCHDIR}/gnome-applets-no-mixer-icon.patch.gz | patch -p1 -E --backup --verbose || exit 1
 fi
+
+# do the nullapplet dance for stickynotes
+zcat ${SB_PATCHDIR}/stickynotes-null.patch.gz | patch -p1 -E --backup --verbose || exit 1

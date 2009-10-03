@@ -11,12 +11,14 @@ if [ "${ARCH}" = "x86_64" ]; then
 fi
 
 # From Gentoo
-for patches in 02_all_db4.patch 12_all_distutils-rpath-gcc.patch \
-  15_all_dbm_default_gdbm_compat.patch 21_all_ctypes-execstack.patch \
-  22_all_internal-expat.patch ;do
+for patches in 01_all_static_library_location.patch 06_all_dbm_automagic.patch \
+  07_all_ctypes_execstack.patch 08_all_internal_expat.patch \
+  09_all_non-zero_exit_status_on_failure.patch 10_all_use_external_libffi.patch \
+  11_all_disable_multiprocessing_with_disabled_threads.patch 21_all_distutils_cxxflags.patch \
+  22_all_distutils_rpath_gcc.patch 23_all_turkish_locale.patch \
+  ;do
   patch -p0 -i ${VERSION}/${patches} || exit 1
 done
-patch -p1 -i ${VERSION}/18_all_distutils-cxxflags.patch || exit 1
 
 # From Fedora
 #zcat ${SB_PATCHDIR}/${NAME}-2.6-config.patch.gz | patch -p1 -E --backup --verbose || exit 1
@@ -24,7 +26,6 @@ zcat ${SB_PATCHDIR}/${NAME}-2.6-canonicalize.patch.gz | patch -p1 -E --backup --
 zcat ${SB_PATCHDIR}/${NAME}-2.5-cflags.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.5.1-plural-fix.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.5.1-sqlite-encoding.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-2.5.1-codec-ascii-tolower.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.5.1-socketmodule-constants.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.5.1-socketmodule-constants2.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.6-rpath.patch.gz | patch -p1 -E --backup --verbose || exit 1

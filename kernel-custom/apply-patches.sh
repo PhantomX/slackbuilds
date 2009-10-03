@@ -64,7 +64,7 @@ ApplyPatch linux-2.6-makefile-after_link.patch.gz
 ApplyOptionalPatch linux-2.6-compile-fixes.patch.gz
 
 # revert patches from upstream that conflict or that we get via other means
-ApplyOptionalPatch linux-2.6-upstream-reverts.patch.gz | ${PATCHCOM} -R || exit 1
+ApplyOptionalPatch linux-2.6-upstream-reverts.patch.gz -R
 
 ApplyOptionalPatch linux-2.6-hotfixes.patch.gz
 
@@ -263,7 +263,6 @@ ApplyPatch v4l-dvb-fix-cx25840-firmware-load.patch.gz
 
 # sched fixes cherry-picked from 2.6.32
 ApplyPatch sched-deal-with-low-load-in-wake-affine.patch.gz
-ApplyPatch sched-disable-NEW-FAIR-SLEEPERS-for-now.patch.gz
 ApplyPatch sched-ensure-child-cant-gain-time-over-its-parent-after-fork.patch.gz
 ApplyPatch sched-remove-shortcut-from-select-task-rq-fair.patch.gz
 # latency defaults from 2.6.32 but changed to be not so aggressive
@@ -302,6 +301,9 @@ ApplyPatch kvm-mmu-make-__kvm_mmu_free_some_pages-handle-empty-list.patch.gz
 ApplyPatch kvm-vmx-check-cpl-before-emulating-debug-register-access.patch.gz
 ApplyPatch kvm-vmx-fix-cr8-exiting-control-clobbering-by-ept.patch.gz
 ApplyPatch kvm-x86-disallow-hypercalls-for-guest-callers-in-rings-0.patch.gz
+
+# fixes bug #525743, send for -stable
+ApplyPatch linux-2.6-kvm-revert-x86-check-for-cr3-validity.patch.gz
 
 # appletalk: fix skb leak (CVE-2009-2903)
 ApplyPatch appletalk-fix-skb-leak-when-ipddp-interface-is-not-loaded.patch.gz

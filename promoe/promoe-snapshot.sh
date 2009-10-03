@@ -23,5 +23,5 @@ pushd "${tmp}"
     find . -type d -name .git -print0 | xargs -0r rm -rf
     find . -type f -name .gitignore -print0 | xargs -0r rm -f
   popd
-  tar jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}
+  tar Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

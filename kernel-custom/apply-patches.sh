@@ -169,6 +169,7 @@ ApplyPatch linux-2.6-xen-clean-up-warnings.patch.gz
 
 # Misc Virt
 ApplyPatch linux-2.6-virtio_blk-revert-QUEUE_FLAG_VIRT-addition.patch.gz
+ApplyPatch linux-2.6-virtio-net-refill-on-out-of-memory.patch.gz
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
@@ -270,9 +271,6 @@ ApplyPatch sched-retune-scheduler-latency-defaults.patch.gz
 
 ApplyPatch make-mmap_min_addr-suck-less.patch.gz
 
-# ----- send for upstream inclusion -----
-ApplyPatch linux-2.6-cifs-reenable-lanman-security.patch.gz
-
 # ----- patches headed for -stable -----
 
 # CVE-2009-2847
@@ -295,17 +293,10 @@ ApplyPatch hostap-revert-toxic-part-of-conversion.patch.gz
 # fix cfq performance regression in 2.6.30
 ApplyPatch linux-2.6-cfq-choose-new-next-req.patch.gz
 
-# kvm fixes from 2.6.31.1, including fix for CVE-2009-3290
-ApplyPatch kvm-guest-fix-bogus-wallclock-physical-address-calculation.patch.gz
-ApplyPatch kvm-mmu-make-__kvm_mmu_free_some_pages-handle-empty-list.patch.gz
-ApplyPatch kvm-vmx-check-cpl-before-emulating-debug-register-access.patch.gz
-ApplyPatch kvm-vmx-fix-cr8-exiting-control-clobbering-by-ept.patch.gz
-ApplyPatch kvm-x86-disallow-hypercalls-for-guest-callers-in-rings-0.patch.gz
-
-# fixes bug #525743, send for -stable
-ApplyPatch linux-2.6-kvm-revert-x86-check-for-cr3-validity.patch.gz
-
 # appletalk: fix skb leak (CVE-2009-2903)
 ApplyPatch appletalk-fix-skb-leak-when-ipddp-interface-is-not-loaded.patch.gz
+
+# copy stack randomization fix from 2.6.31.2
+ApplyPatch x86-increase-min_gap-to-include-randomized-stack.patch.gz
 
 set +e

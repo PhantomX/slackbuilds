@@ -123,6 +123,10 @@ ApplyPatch linux-2.6-fs-cifs-fix-port-numbers.patch.gz
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch.gz
 ApplyPatch linux-2.6.30-cpuidle-faster-io.patch.gz
+# EC fixes from 2.6.32 (#492699, #525681)
+ApplyPatch acpi-ec-merge-irq-and-poll-modes.patch.gz
+ApplyPatch acpi-ec-use-burst-mode-only-for-msi-notebooks.patch.gz
+ApplyPatch acpi-ec-restart-command-even-if-no-interrupts-from-ec.patch.gz
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch.gz
@@ -161,6 +165,9 @@ ApplyPatch linux-2.6-neigh_-fix-state-transition-INCOMPLETE-_FAILED-via-Netlink-
 
 # add ich9 lan
 ApplyPatch linux-2.6-e1000-ich9.patch.gz
+
+# fix forcedeth race
+ApplyPatch forcedeth-fix-napi-race.patch.gz
 
 # Virt Fixes
 # Xen Guest
@@ -298,5 +305,7 @@ ApplyPatch appletalk-fix-skb-leak-when-ipddp-interface-is-not-loaded.patch.gz
 
 # copy stack randomization fix from 2.6.31.2
 ApplyPatch x86-increase-min_gap-to-include-randomized-stack.patch.gz
+
+ApplyPatch x86-dont-leak-64-bit-kernel-register-values.patch.gz
 
 set +e

@@ -1,7 +1,13 @@
   
 SB_PATCHDIR=${CWD}/patches
 
-if [ "${BASENAME}" = "xfdesktop-${VERSION}" ]; then
+if [ "${SPNAME}" = "exo" ]; then
+  zcat ${SB_PATCHDIR}/exo-0.3.0-x86_64-build.patch.gz | patch -p1 --verbose || exit 1
+  # http://patches.ubuntu.com/e/exo/extracted/xubuntu-default-mount-options.patch
+  zcat ${SB_PATCHDIR}/exo-0.3.101-default-mount-options.patch.gz | patch -p1 --verbose || exit 1
+fi
+
+if [ "${SPNAME}" = "xfdesktop" ]; then
   echo
   if [ "${SB_SLKART}" = "YES" ] ;then
     zcat ${SB_PATCHDIR}/xfdesktop-4.5.92-backdrop-image.patch.gz | patch -p1 --verbose || exit 1
@@ -10,34 +16,34 @@ if [ "${BASENAME}" = "xfdesktop-${VERSION}" ]; then
     zcat ${SB_PATCHDIR}/xfdesktop-4.6.0-wine-menu.patch.gz | patch -p1 --verbose || exit 1
 fi
 
-if [ "${BASENAME}" = "xfwm4-${VERSION}" ]; then
+if [ "${SPNAME}" = "xfwm4" ]; then
   if [ "${SB_SLKART}" = "YES" ] ;then
     zcat ${SB_PATCHDIR}/xfwm4-4.6.0-clearlooks.patch.gz | patch -p1 --verbose || exit 1
   fi
+  zcat ${SB_PATCHDIR}/xfwm4-4.6.1-focus.patch.gz | patch -p1 --verbose || exit 1
 fi
 
-if [ "${BASENAME}" = "libxfcegui4-${VERSION}" ]; then
+if [ "${SPNAME}" = "libxfcegui4" ]; then
   zcat ${SB_PATCHDIR}/libxfcegui4-4.4.2-xfce-exec-use-thunar.patch.gz | patch -p1 --verbose || exit 1
 fi
 
-if [ "${BASENAME}" = "libxfcegui4-${VERSION}" ]; then
+if [ "${SPNAME}" = "xfce-utils" ]; then
   if [ "${SB_PA}" = "YES" ] ; then
     zcat ${SB_PATCHDIR}/xfce-utils-4.4.2-pulseaudio.patch.gz | patch -p1 --verbose || exit 1
   fi
+  zcat ${SB_PATCHDIR}/xfce-utils-4.4.3-xfterm4-bug.patch.gz | patch -p1 --verbose || exit 1
 fi
 
-if [ "${BASENAME}" = "xfce4-panel-${VERSION}" ]; then
+if [ "${SPNAME}" = "xfce4-panel" ]; then
   zcat ${SB_PATCHDIR}/xfce4-panel-4.6.0-defaults.patch.gz | patch -p1 --verbose || exit 1
 fi
 
-if [ "${BASENAME}" = "xfce4-session-${VERSION}" ]; then
+if [ "${SPNAME}" = "xfce4-session" ]; then
   zcat ${SB_PATCHDIR}/xfce4-session-4.5.92-hide-tips.patch.gz | patch -p1 --verbose || exit 1
+  # http://patches.ubuntu.com/x/xfce4-session/extracted/01_correct_shadows.patch
+  zcat ${SB_PATCHDIR}/xfce4-session-4.6.1-correct-shadows.patch.gz | patch -p1 --verbose || exit 1
 fi
 
-if [ "${BASENAME}" = "xfce4-settings-${VERSION}" ]; then
-  zcat ${SB_PATCHDIR}/xfce4-settings-4.6.1-xkl.patch.gz | patch -p1 --verbose || exit 1
-fi
-
-if [ "${BASENAME}" = "xfce4-utils-${VERSION}" ]; then
+if [ "${SPNAME}" = "xfce4-utils" ]; then
   zcat ${SB_PATCHDIR}/xfce-utils-4.5.91-startxfce-data-dirs.patch.gz | patch -p1 --verbose || exit 1
 fi

@@ -202,11 +202,6 @@ ApplyPatch linux-2.6-ahci-export-capabilities.patch.gz
 # iwl1000 support patches
 ApplyPatch linux-2.6-iwlwifi-reduce-noise-when-skb-allocation-fails.patch.gz
 
-# Mark kernel data as NX
-ApplyPatch linux-2.6.31-nx-data.patch.gz
-# Apply NX/RO to modules
-#ApplyPatch linux-2.6.31-modules-ro-nx.patch.gz
-
 #
 # VM related fixes.
 #
@@ -278,5 +273,8 @@ ApplyPatch linux-2.6-selinux-module-load-perms.patch.gz
 
 # Raid10 lockdep fix
 ApplyPatch linux-2.6-raidlockdep.patch.gz
+
+# make perf counter API available to userspace (#527264)
+ApplyPatch perf-make-perf-counter-h-available-to-userspace.patch.gz
 
 set +e

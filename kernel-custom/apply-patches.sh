@@ -52,8 +52,6 @@ ApplyOptionalPatch() {
 #ApplyPatch acpi-dsdt-initrd-v0.9c-2.6.28.patch.gz
 #ApplyPatch acpi-dsdt-initrd-v0.9c-fixes.patch.gz
 
-ApplyPatch acpi-clarify-resource-conflict-message.patch.gz
-
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
 # also gives a list of missing options at the end. Useful for automated
 # builds (as used in the buildsystem).
@@ -276,5 +274,13 @@ ApplyPatch linux-2.6-raidlockdep.patch.gz
 
 # make perf counter API available to userspace (#527264)
 ApplyPatch perf-make-perf-counter-h-available-to-userspace.patch.gz
+
+# Fix 2.6.31 regression that caused device failures with ACPI enabled.
+ApplyPatch pci-increase-alignment-to-make-more-space.patch.gz
+
+ApplyPatch improve-resource-counter-scalability.patch.gz
+
+# fix boot hang on some systems
+ApplyPatch acpi-revert-attach-device-to-handle-early.patch.gz
 
 set +e

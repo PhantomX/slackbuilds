@@ -117,6 +117,7 @@ ApplyPatch linux-2.6-execshield.patch.gz
 # NFSv4
 ApplyPatch linux-2.6-nfsd4-proots.patch.gz
 ApplyPatch linux-2.6-nfs4-ver4opt.patch.gz
+ApplyPatch linux-2.6-nfs4-callback-hidden.patch.gz
 
 # USB
 ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff.gz
@@ -282,5 +283,8 @@ ApplyPatch improve-resource-counter-scalability.patch.gz
 
 # fix boot hang on some systems
 ApplyPatch acpi-revert-attach-device-to-handle-early.patch.gz
+
+# disable 64-bit DMA on SB600 SATA controllers
+ApplyPatch ahci-revert-restore-sb600-sata-controller-64-bit-dma.patch.gz
 
 set +e

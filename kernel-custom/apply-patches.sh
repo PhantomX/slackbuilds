@@ -111,6 +111,7 @@ ApplyPatch linux-2.6-execshield.patch.gz
 # xfs
 
 # btrfs
+ApplyPatch linux-2.6-btrfs-upstream.patch.gz
 
 # cifs
 
@@ -286,5 +287,8 @@ ApplyPatch acpi-revert-attach-device-to-handle-early.patch.gz
 
 # disable 64-bit DMA on SB600 SATA controllers
 ApplyPatch ahci-revert-restore-sb600-sata-controller-64-bit-dma.patch.gz
+
+# fix ACPI boot hang/crash (#513680)
+ApplyPatch acpi-pci-fix-null-pointer-dereference-in-acpi-get-pci-dev.patch.gz
 
 set +e

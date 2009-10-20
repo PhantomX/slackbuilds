@@ -31,6 +31,8 @@ zcat ${SB_PATCHDIR}/xserver-1.6.99-default-modes.patch.gz | patch -p1 --verbose 
 zcat ${SB_PATCHDIR}/xserver-1.6.99-hush-prerelease-warning.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.7.0-randr-gamma-restore.patch.gz | patch -p1 --verbose || exit 1
 
+zcat ${SB_PATCHDIR}/xserver-1.7.0-glx-versioning.patch.gz | patch -p1 --verbose || exit 1
+
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.5.99.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1
 fi

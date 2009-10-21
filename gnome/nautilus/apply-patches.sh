@@ -10,7 +10,7 @@ zcat ${SB_PATCHDIR}/${NAME}-config.patch.gz | patch -p1 -E --backup --verbose ||
 zcat ${SB_PATCHDIR}/${NAME}-2.5.7-rhconfig.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 # Why is this not upstream ?
-zcat ${SB_PATCHDIR}/${NAME}-2.23.5-dynamic-search.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-2.28.1-dynamic-search.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/rtl-fix.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/${NAME}-gvfs-desktop-key-2.patch.gz | patch -p1 -E --backup --verbose || exit 1
@@ -20,6 +20,3 @@ zcat ${SB_PATCHDIR}/${NAME}-filetype-symlink-fix.patch.gz | patch -p0 -E --backu
 
 # Need to file upstream and investigate a real fix
 zcat ${SB_PATCHDIR}/${NAME}-2.28.0-revert-bg-fade-break.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-# from upstream
-zcat ${SB_PATCHDIR}/${NAME}-2.28.0-lacks-mount-do-not-use-activation-uri.patch.gz | patch -p1 -E --backup --verbose || exit 1

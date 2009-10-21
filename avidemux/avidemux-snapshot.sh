@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="svn://svn.berlios.de/avidemux/branches/${module}_2.4_branch"
+snaproot="svn://svn.berlios.de/${module}/tags/${module}_2.5.1"
 
 tmp=$(mktemp -d)
 

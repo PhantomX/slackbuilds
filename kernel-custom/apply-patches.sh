@@ -247,6 +247,7 @@ ApplyPatch drm-i915-resume-force-mode.patch.gz
 ApplyPatch drm-intel-big-hammer.patch.gz
 ApplyOptionalPatch drm-intel-next.patch.gz
 ApplyPatch drm-intel-no-tv-hotplug.patch.gz
+ApplyPatch drm-fix-palette.patch.gz
 
 # VGA arb + drm
 ApplyPatch linux-2.6-vga-arb.patch.gz
@@ -271,9 +272,6 @@ ApplyPatch linux-2.6-rtc-show-hctosys.patch.gz
 ApplyPatch linux-2.6-rfkill-all.patch.gz
 ApplyPatch linux-2.6-selinux-module-load-perms.patch.gz
 
-# Raid10 lockdep fix
-ApplyPatch linux-2.6-raidlockdep.patch.gz
-
 # make perf counter API available to userspace (#527264)
 ApplyPatch perf-make-perf-counter-h-available-to-userspace.patch.gz
 
@@ -290,5 +288,14 @@ ApplyPatch ahci-revert-restore-sb600-sata-controller-64-bit-dma.patch.gz
 
 # fix ACPI boot hang/crash (#513680)
 ApplyPatch acpi-pci-fix-null-pointer-dereference-in-acpi-get-pci-dev.patch.gz
+
+# fix for local DoS on AF_UNIX
+ApplyPatch af_unix-fix-deadlock-connecting-to-shutdown-socket.patch.gz
+
+# Fix exploitable OOPS in keyring code. (CVE-2009-3624)
+ApplyPatch keys-get_instantiation_keyring-should-inc-the-keyring-refcount.patch.gz
+
+# Fix kernel memory leak to userspace. (CVE-2009-3612)
+ApplyPatch netlink-fix-typo-in-initialization.patch.gz
 
 set +e

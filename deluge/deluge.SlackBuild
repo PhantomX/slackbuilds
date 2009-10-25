@@ -45,7 +45,7 @@ PKG=${PKG:-${TMP}/package-${NAME}}
 
 PYSITELIB=$(python -c 'from distutils import sysconfig; print sysconfig.get_python_lib()')
 
-VERSION=${VERSION:-1.1.9}
+VERSION=${VERSION:-1.2.0_rc1}
 [ -f ${PYSITELIB}/libtorrent.so ] && ARCH=noarch
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -71,6 +71,9 @@ PYABI=$(python -c 'import sys; print ".".join(sys.version.split(".")[:2])' | awk
 PYVER=$(python -c 'import sys; print sys.version.split(" ")[0]')
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+grep --quiet '^deluge:' /etc/group && SB_HGROUP=1
+grep --quiet '^deluge:' /etc/passwd && SB_HUSER=1
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.lzma
@@ -117,8 +120,32 @@ python setup.py build || exit 1
 
 python setup.py install -O1 --skip-build --root ${PKG} || exit 1
 
+mkdir -p ${PKG}/srv/${NAME}
+
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+# Startup scripts.
+mkdir -p ${PKG}/etc/rc.d
+zcat ${CWD}/rc.${NAME}d.gz > \
+     ${PKG}/etc/rc.d/rc.${NAME}d.new || exit 1
+chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}d.new
+
+mkdir -p ${PKG}/var/log/setup
+zcat ${CWD}/setup.onlyonce.rc${NAME}d.gz > \
+    ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}d || exit 1
+chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}d
+
+mkdir -p ${PKG}/etc/default
+cat > ${PKG}/etc/default/deluged.new <<EOF
+# /etc/default/deluged
+# Change this to the user you want to run deluged as.
+# You may specify a group too, after a colon
+DELUGED_USER="deluge:deluge"
+DELUGED_PORT="58846"
+DELUGEUI_START="NO"
+DELUGEUI_OPTS="-u web"
+EOF
 
 desktop-file-install --vendor "" \
   --dir ${PKG}/usr/share/applications \
@@ -160,6 +187,106 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
+cat > ${PKG}/install/doinst.sh <<'EOF'
+#!/bin/sh
+function free_user_id {
+  # Find a free user-ID >= 120 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
+# Figure out our root directory
+ROOTDIR=$(pwd)
+unset CHROOT
+if test "${ROOTDIR}" != "/"; then
+  CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
+fi
+
+# Set up group.
+if ! grep --quiet '^deluge:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+            -g $(free_group_id) \
+            deluge 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^deluge:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/srv/deluge:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "deluge"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+            -d /srv/deluge \
+            -u ${USER_ID} \
+            -s /bin/false \
+            -g deluge \
+            ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+           -d /srv/deluge \
+           -c "Deluge user" \
+           -u $(free_user_id) \
+           -s /bin/false \
+           -g deluge \
+           deluge
+fi
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+# Keep same perms on rc.${NAME}.new:
+if [ -r etc/rc.d/rc.${NAME} -a -r etc/rc.d/rc.${NAME}.new ]; then
+  chmod --reference=etc/rc.d/rc.${NAME} etc/rc.d/rc.${NAME}.new
+fi
+
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+# Fix permissions
+${CHROOT} /bin/chown -R deluge.deluge srv/deluge
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -167,7 +294,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${SBDIR}/
+                 ${CWD}/rc.${NAME}d.gz ${CWD}/setup.*.rc${NAME}d.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
 fi
@@ -176,7 +303,8 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown -R deluge.deluge ./srv/deluge ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

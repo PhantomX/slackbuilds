@@ -79,6 +79,7 @@ ApplyPatch sched-introduce-SCHED_RESET_ON_FORK-scheduling-policy-flag.patch.gz
 
 # vm patches
 
+ApplyPatch disable-stackprotector-all.patch.gz
 # enable sysrq-c on all kernels, not only kexec
 #ApplyPatch linux-2.6-sysrq-c.patch.gz
 
@@ -297,5 +298,9 @@ ApplyPatch keys-get_instantiation_keyring-should-inc-the-keyring-refcount.patch.
 
 # Fix kernel memory leak to userspace. (CVE-2009-3612)
 ApplyPatch netlink-fix-typo-in-initialization.patch.gz
+
+# fix perf for sysprof
+ApplyPatch perf-events-fix-swevent-hrtimer-sampling.patch.gz
+ApplyPatch perf-events-dont-generate-events-for-the-idle-task.patch.gz
 
 set +e

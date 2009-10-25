@@ -34,6 +34,14 @@ ApplyPatch() {
   esac
 }
 
+# The merged branch `archer' of: http://sourceware.org/gdb/wiki/ProjectArcher
+ApplyPatch gdb-archer.patch.gz
+
+# Support multiple directories for `set debug-file-directory' (BZ 528668).
+ApplyPatch gdb-bz528668-symfile-sepcrc.patch.gz
+ApplyPatch gdb-bz528668-symfile-cleanup.patch.gz
+ApplyPatch gdb-bz528668-symfile-multi.patch.gz
+
 # Work around out-of-date dejagnu that does not have KFAIL
 ApplyPatch gdb-6.3-rh-dummykfail-20041202.patch.gz
 
@@ -86,10 +94,6 @@ ApplyPatch gdb-6.3-threaded-watchpoints2-20050225.patch.gz
 # Fix printing of inherited members
 ApplyPatch gdb-6.3-inheritance-20050324.patch.gz
 
-# Print a warning when the separate debug info's CRC doesn't match.
-ApplyPatch gdb-6.3-test-sepcrc-20050402.patch.gz
-ApplyPatch gdb-6.3-sepcrc-20050402.patch.gz
-
 # Do not issue warning message about first page of storage for ia64 gcore
 ApplyPatch gdb-6.3-ia64-gcore-page0-20050421.patch.gz
 
@@ -107,6 +111,9 @@ ApplyPatch gdb-6.3-ia64-info-frame-fix-20050725.patch.gz
 
 # Verify printing of inherited members test
 ApplyPatch gdb-6.3-inheritancetest-20050726.patch.gz
+
+# Add readnever option
+ApplyPatch gdb-6.3-readnever-20050907.patch.gz
 
 # Fix ia64 gdb problem with user-specified SIGILL handling
 ApplyPatch gdb-6.3-ia64-sigill-20051115.patch.gz
@@ -278,8 +285,8 @@ ApplyPatch gdb-6.8-glibc-headers-compat.patch.gz
 ApplyPatch gdb-6.8-tui-singlebinary.patch.gz
 
 # Support transparent debugging of inlined functions for an optimized code.
-#ApplyPatch gdb-6.8-inlining-addon.patch.gz
-#ApplyPatch gdb-6.8-inlining-by-name.patch.gz
+ApplyPatch gdb-6.8-inlining-addon.patch.gz
+ApplyPatch gdb-6.8-inlining-by-name.patch.gz
 
 # Fix PRPSINFO in the core files dumped by gcore (BZ 254229).
 ApplyPatch gdb-6.8-bz254229-gcore-prpsinfo.patch.gz
@@ -307,7 +314,13 @@ ApplyPatch gdb-6.8-bz457187-largefile-test.patch.gz
 # Fix compatibility of --with-system-readline and readline-6.0+.
 ApplyPatch gdb-readline-6.0.patch.gz
 
+# Fix python pretty printers lookup on x86_64.
+ApplyPatch libstdc++-v3-python-common-prefix.patch.gz
+
 # New test for step-resume breakpoint placed in multiple threads at once.
 ApplyPatch gdb-simultaneous-step-resume-breakpoint-test.patch.gz
+
+# Fix GNU/Linux core open: Can't read pathname for load map: Input/output error.
+ApplyPatch gdb-core-open-vdso-warning.patch.gz
 
 set +e

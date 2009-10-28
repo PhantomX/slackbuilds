@@ -17,7 +17,7 @@ for patches in 01_all_static_library_location.patch 06_all_dbm_automagic.patch \
   11_all_disable_multiprocessing_with_disabled_threads.patch 21_all_distutils_cxxflags.patch \
   22_all_distutils_rpath_gcc.patch 23_all_turkish_locale.patch \
   ;do
-  patch -p0 -i ${VERSION}/${patches} || exit 1
+  patch -p0 -i ${PVER}/${patches} || exit 1
 done
 
 # From Fedora

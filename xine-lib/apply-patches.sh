@@ -12,3 +12,6 @@ zcat ${SB_PATCHDIR}/${NAME}-1.1.1-deepbind-939.patch.gz | patch -p1 -E --backup 
 zcat ${SB_PATCHDIR}/${NAME}-1.1.16.2-multilib.patch.gz | patch -p1 -E --backup --verbose || exit 1
 ## upstreamable patches
 zcat ${SB_PATCHDIR}/${NAME}-1.1.16.3-mod_mimetypes_typo.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# http://bugs.gentoo.org/164425
+zcat ${SB_PATCHDIR}/${NAME}-1.1.15-textrel-fix.patch.gz | patch -p1 -E --backup --verbose || exit 1

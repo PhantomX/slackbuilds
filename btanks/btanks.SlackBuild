@@ -28,16 +28,33 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
-if [ "${TMP}" = "" ]; then
-  TMP=/tmp
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
 fi
 
 NAME=btanks
-PKG=${TMP}/package-${NAME}
+PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.5.4740}
-ARCH=${ARCH:-i686}
+VERSION=${VERSION:-0.8.7686}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  SLKTARGET=${SLKTARGET:-x86_64}
+else
+  SLKTARGET=${SLKTARGET:-i486}
+fi
+SLKDTARGET=${SLKDTARGET:-slackware}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -53,25 +70,29 @@ SRCARCHIVE=${SRCDIR}.tar.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://dl.sf.net/sourceforge/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://prdownloads.sourceforge.net/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://download.sf.net/${NAME}/${SRCARCHIVE}"
+SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
+DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
 
-if [ "${ARCH}" = "i386" ]; then
-  SLKCFLAGS="-O2 -march=i386 -mtune=i686"
-elif [ "${ARCH}" = "i486" ]; then
-  SLKCFLAGS="-O2 -march=i486 -mtune=i686"
-elif [ "${ARCH}" = "i686" ]; then
-  SLKCFLAGS="-O2 -march=athlon64 -mtune=athlon64 -msse3 -pipe"
-elif [ "${ARCH}" = "s390" ]; then
-  SLKCFLAGS="-O2"
-elif [ "${ARCH}" = "x86_64" ]; then
-  SLKCFLAGS="-O2"
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
 fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
 fi
 
 if [ -d ${PKG} ]; then
@@ -82,47 +103,69 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-zcat ${CWD}/${NAME}-SConstruct.diff.gz | patch -p0 -E --backup --verbose || exit 1
+# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-0.8-remove-rpath.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# Rename libbt.so to libbtanks.so because of conflict with blackbox
+# http://sourceforge.net/tracker/?func=detail&atid=843095&aid=2722914&group_id=167474
+zcat ${CWD}/${NAME}-0.8-rename-lib.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-#sed -i -e 's|-O3||g' \
-           #SConstruct || exit 1
+sed 's/\r//' -i *.txt ChangeLog *.url LICENSE EXCEPTION
 
-#echo "CCFLAGS = ' ${SLKCFLAGS}  '" >> options.cache
-#echo "CXXFLAGS = ' ${SLKCFLAGS} '" >> options.cache
+iconv -f latin1 -t utf-8 EXCEPTION > EXCEPTION.new
+touch -r EXCEPTION{,.new}
+mv -f EXCEPTION{.new,}
 
-scons \
-     mode=release \
-     prefix=/usr \
-     resources_dir=/usr/share/${NAME} || exit 1
+iconv -f latin1 -t utf-8 README-fr.txt > README-fr.txt.new
+touch -r README-fr.txt{,.new}
+mv -f README-fr.txt{.new,}
 
+iconv -f cp1251 -t utf-8 README-ru.txt > README-ru.txt.new
+touch -r README-ru.txt{,.new}
+mv -f README-ru.txt{.new,}
+
+scons -j${NJOBS} \
+  prefix=/usr \
+  lib_dir=/usr/lib${LIBDIRSUFFIX} \
+  plugins_dir=/usr/lib${LIBDIRSUFFIX}/${NAME} \
+  resources_dir=/usr/share/${NAME} \
+  mode=release \
+  CFLAGS="${SLKCFLAGS}" \
+  CXXFLAGS="${SLKCFLAGS}" \
+  enable_lua=true || exit 1
+
+
+# binaries
 mkdir -p ${PKG}/usr/bin
-cat > ${PKG}/usr/bin/${NAME} <<EOF
-#!/bin/bash
-export LD_LIBRARY_PATH="/usr/lib/${NAME}:${LD_LIBRARY_PATH}"
-exec /usr/libexec/${NAME}/${NAME} "\$@"
-EOF
-chmod 0755 ${PKG}/usr/bin/${NAME}
+install -m 755 build/release/engine/${NAME} ${PKG}/usr/bin/ || exit 1
+install -m 755 build/release/editor/bted ${PKG}/usr/bin/ || exit 1
 
-mkdir -p ${PKG}/usr/libexec/${NAME}
-install -m0755 bt \
-               ${PKG}/usr/libexec/${NAME}/${NAME} || exit 1
+# libs
+mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME}
+install -m 755 build/release/engine/libbtanks.so \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/ || exit 1
+install -m 755 build/release/mrt/libmrt.so \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/ || exit 1
+install -m 755 build/release/sdlx/libsdlx.so \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/ || exit 1
+install -m 755 build/release/clunk/libclunk.so \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/ || exit 1
 
-mkdir -p ${PKG}/usr/lib/${NAME}
-install -m0755 lib*.so \
-               ${PKG}/usr/lib/${NAME}/ || exit 1
+# plugins
+install -m 755 build/release/objects/libbt_objects.so \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME}/ || exit 1
 
+# data-files (see pack-resources.sh)
 mkdir -p ${PKG}/usr/share/${NAME}/data
-cp -R data/* ${PKG}/usr/share/${NAME}/data/ || exit 1
+( cd data || exit 1
+  find . \( -wholename \*.svn\* -or -name \*.wav \) -exec rm -rf {} \;
+  cp -pR * ${PKG}/usr/share/${NAME}/data/ || exit 1
+) || exit 1
 
-ln -s /usr/lib/${NAME}/libbt_objects.so \
-  ${PKG}/usr/share/${NAME}/libbt_objects.so || exit 1
-ln -s /usr/lib/${NAME}/libbt.so \
-      ${PKG}/usr/share/${NAME}/libbt.so || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -130,39 +173,41 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 mkdir -p ${PKG}/usr/share/applications
 cat > ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
 [Desktop Entry]
-Version=1.0
-Encoding=UTF-8
-Name=Battle Tanks
-Comment=Fast 2d tank arcade game with multiplayer and split-screen modes
-Exec=${NAME}
-Icon=${NAME}.png
-Terminal=false
 Type=Application
-Categories=Game;ArcadeGame;
+Name=Battle Tanks
+Comment=Battle Tanks is a funny battle on your desk
+Exec=${NAME}
+Icon=${NAME}
+Categories=Game;ActionGame;
+EOF
+
+cat > ${PKG}/usr/share/applications/${NAME}-editor.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Battle Tanks map editor
+Name[ru]=Battle Tanks — редактор карт
+Comment=Battle Tanks map editor
+Exec=bted
+Icon=btanks
+Categories=Game;ActionGame;
 EOF
 
 mkdir -p ${PKG}/usr/share/icons/hicolor/48x48/apps
-convert src/bt.xpm -depth 8 \
-        ${PKG}/usr/share/icons/hicolor/48x48/apps/${NAME}.png || exit 1
-
-for size in 16x16 32x32 ; do
-  dir=${PKG}/usr/share/icons/hicolor/${size}/apps
-  mkdir -p ${dir}
-  convert src/bt.xpm -filter Lanczos \
-          -depth 8 -resize ${size} ${dir}/${NAME}.png || exit 1
-done
+install -pm0644 data/tiles/icon.png \
+  ${PKG}/usr/share/icons/hicolor/48x48/apps/${NAME}.png || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  about_us.txt ChangeLog LICENSE README-linux.txt *.url ${CWD}/ChangeLog.SB \
+  README-{editor,en,fr,ru}.txt ChangeLog *.url LICENSE EXCEPTION ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -170,19 +215,13 @@ if [ -d ${PKG}/usr/man ]; then
       ( cd ${manpagedir}
         for eachpage in $( find . -type l -maxdepth 1) ; do
           ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
-          rm ${eachpage}
+          rm -f ${eachpage}
         done
         gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
       )
     done
-  )
-fi
-
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
   )
 fi
 
@@ -193,19 +232,17 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${NAME}-*.diff.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
-set +o xtrace			# no longer print commands upon execution
+set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
@@ -213,7 +250,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
-if test $UID = 0; then
+if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then
@@ -228,11 +265,11 @@ fi
 if [ "$1" = "--cleanup" ]; then
   echo "Cleaning..."
   if [ -d ${TMP}/${SRCDIR} ]; then
-    rm -rf ${TMP}/${SRCDIR}
-    echo "${TMP}/${SRCDIR} cleanup completed"
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
   fi
   if [ -d ${PKG} ]; then
-    rm -rf ${PKG}
-    echo "${PKG} cleanup completed"
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
   fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
 fi
+exit 0

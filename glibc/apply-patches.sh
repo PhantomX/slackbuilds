@@ -39,8 +39,3 @@ zcat ${SB_PATCHDIR}/5063_all_glibc-dont-build-timezone.patch.gz | patch -p1 --ve
 zcat ${SB_PATCHDIR}/glibc-2.7-bz4781.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/glibc-nss_dns-gethostbyname4-disable.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/glibc-accept4.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/glibc-bz10162.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/glibc-nscd-cache-search.patch.gz | patch -p1 --verbose || exit 1
-
-zcat ${SB_PATCHDIR}/glibc-2.10.1-binutils-2.20.patch.gz | patch -p0 --verbose || exit 1

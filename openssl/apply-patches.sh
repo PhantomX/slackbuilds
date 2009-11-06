@@ -27,3 +27,8 @@ zcat ${SB_PATCHDIR}/openssl-0.9.6-x509.patch.gz | patch -p1 -E --backup --verbos
 zcat ${SB_PATCHDIR}/openssl-0.9.8j-version-add-engines.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/openssl-0.9.8a-reuse-cipher-change.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/openssl-0.9.8g-ipv6-apps.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# Upstream
+zcat ${SB_PATCHDIR}/openssl-0.9.8l-CVE-2009-1377.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/openssl-0.9.8l-CVE-2009-1378.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/openssl-0.9.8l-CVE-2009-1379.patch.gz | patch -p0 -E --backup --verbose || exit 1

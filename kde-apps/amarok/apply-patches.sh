@@ -1,11 +1,13 @@
   
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-1.4.8-gcc43.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-1.4.10-gcc43.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.4.7-xdg.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-libmtp8-buildfix.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/${NAME}-1.4.10-gcc44.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-libmp4v2.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-libmp4v2-2.patch.gz | patch -p3 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.4.10-post20090130.diff.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-1.4.10-desktop-entry.diff.gz | patch -p1 -E --backup --verbose || exit 1
 

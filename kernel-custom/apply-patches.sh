@@ -97,6 +97,7 @@ ApplyPatch linux-2.6-die-closed-source-bios-muppets-die.patch.gz
 # most importantly: notice when the BIOS points us to a region that returns
 # all 0xFF, and claims that there's an IOMMU there.
 ApplyPatch linux-2.6-intel-iommu-updates.patch.gz
+ApplyPatch linux-2.6-iommu-at-zero.patch.gz
 
 #
 # Exec shield
@@ -200,9 +201,6 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 # Make it possible to identify non-hotplug SATA ports
 ApplyPatch linux-2.6-ahci-export-capabilities.patch.gz
 
-# iwl1000 support patches
-ApplyPatch linux-2.6-iwlwifi-reduce-noise-when-skb-allocation-fails.patch.gz
-
 #
 # VM related fixes.
 #
@@ -218,7 +216,9 @@ ApplyPatch linux-2.6.31-cpuidle-faster-io.patch.gz
 
 # http://www.lirc.org/
 ApplyPatch lirc-2.6.31.patch.gz
+# tell usbhid to ignore all imon devices (sent upstream 2009.07.31)
 ApplyPatch hid-ignore-all-recent-imon-devices.patch.gz
+# enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
 ApplyPatch hdpvr-ir-enable.patch.gz
 
 # Add kernel KSM support
@@ -240,19 +240,23 @@ ApplyPatch linux-2.6-virtio_blk-add-support-for-cache-flush.patch.gz
 ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
 
 # Nouveau DRM + drm fixes
-ApplyPatch drm-next-d4ac6a05.patch.gz
+ApplyPatch kms-offb-handoff.patch.gz
+ApplyPatch drm-next-ea1495a6.patch.gz
+ApplyPatch drm-radeon-agp-font-fix.patch.gz
+ApplyPatch drm-radeon-fix-ring-rmw-issue.patch.gz
+ApplyPatch drm-r600-lenovo-w500-fix.patch.gz
+ApplyPatch drm-conservative-fallback-modes.patch.gz
+ApplyPatch drm-radeon-fix-agp-resume.patch.gz
 
-# Nouveau DRM + drm fixes
 ApplyPatch drm-nouveau.patch.gz
 ApplyPatch drm-i915-resume-force-mode.patch.gz
-ApplyPatch drm-intel-big-hammer.patch.gz
 ApplyOptionalPatch drm-intel-next.patch.gz
 ApplyPatch drm-intel-no-tv-hotplug.patch.gz
-ApplyPatch drm-fix-palette.patch.gz
 
 # VGA arb + drm
 ApplyPatch linux-2.6-vga-arb.patch.gz
 ApplyPatch drm-vga-arb.patch.gz
+ApplyPatch drm-radeon-kms-arbiter-return-ignore.patch.gz
 
 # linux1394 git patches
 #ApplyPatch linux-2.6-firewire-git-update.patch.gz
@@ -276,31 +280,21 @@ ApplyPatch linux-2.6-selinux-module-load-perms.patch.gz
 # make perf counter API available to userspace (#527264)
 ApplyPatch perf-make-perf-counter-h-available-to-userspace.patch.gz
 
-# Fix 2.6.31 regression that caused device failures with ACPI enabled.
-ApplyPatch pci-increase-alignment-to-make-more-space.patch.gz
-
 ApplyPatch improve-resource-counter-scalability.patch.gz
-
-# fix boot hang on some systems
-ApplyPatch acpi-revert-attach-device-to-handle-early.patch.gz
-
-# disable 64-bit DMA on SB600 SATA controllers
-ApplyPatch ahci-revert-restore-sb600-sata-controller-64-bit-dma.patch.gz
-
-# fix ACPI boot hang/crash (#513680)
-ApplyPatch acpi-pci-fix-null-pointer-dereference-in-acpi-get-pci-dev.patch.gz
-
-# fix for local DoS on AF_UNIX
-ApplyPatch af_unix-fix-deadlock-connecting-to-shutdown-socket.patch.gz
-
-# Fix exploitable OOPS in keyring code. (CVE-2009-3624)
-ApplyPatch keys-get_instantiation_keyring-should-inc-the-keyring-refcount.patch.gz
-
-# Fix kernel memory leak to userspace. (CVE-2009-3612)
-ApplyPatch netlink-fix-typo-in-initialization.patch.gz
 
 # fix perf for sysprof
 ApplyPatch perf-events-fix-swevent-hrtimer-sampling.patch.gz
 ApplyPatch perf-events-dont-generate-events-for-the-idle-task.patch.gz
+
+# Fix oops in padlock
+ApplyPatch crypto-via-padlock-fix-nano-aes.patch.gz
+
+# tg3 fixes (#527209)
+ApplyPatch tg3-01-delay-mdio-bus-init-until-fw-finishes.patch.gz
+ApplyPatch tg3-02-fix-tso-test-against-wrong-flags-var.patch.gz
+ApplyPatch tg3-03-fix-57780-asic-rev-pcie-link-receiver-errors.patch.gz
+ApplyPatch tg3-04-prevent-tx-bd-corruption.patch.gz
+ApplyPatch tg3-05-assign-flags-to-fixes-in-start_xmit_dma_bug.patch.gz
+ApplyPatch tg3-06-fix-5906-transmit-hangs.patch.gz
 
 set +e

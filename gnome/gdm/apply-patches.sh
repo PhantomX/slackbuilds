@@ -1,7 +1,7 @@
 
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-2.20.10-xsession-ck.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-2.20.10-xsession.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/${NAME}-2.13.0.4-update-switchdesk-location.patch.gz | patch -p1 -E --backup --verbose || exit 1
 

@@ -54,7 +54,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-4}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/gnome/${NAME}
@@ -63,6 +63,9 @@ PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+grep --quiet '^gdm:' /etc/group && SB_HGROUP=1
+grep --quiet '^gdm:' /etc/passwd && SB_HUSER=1
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.bz2
@@ -216,6 +219,12 @@ mv ${PKG}/etc/gdm/custom.conf \
 
 mkdir -p ${PKG}/usr/share/gdm/dm/Sessions
 
+mkdir -p ${PKG}/var/lib/gdm/.pulse
+chmod 0770 ${PKG}/var/lib/gdm
+chmod 0700 ${PKG}/var/lib/gdm/.pulse
+zcat ${CWD}/default.pa-for-gdm.gz > ${PKG}/var/lib/gdm/.pulse/default.pa || exit 1
+chmod 0600 ${PKG}/var/lib/gdm/.pulse/default.pa
+
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
@@ -257,15 +266,58 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<EOF
+cat > ${PKG}/install/doinst.sh <<'EOF'
 # Figure out our root directory
-ROOTDIR=\$(pwd)
+ROOTDIR=$(pwd)
 unset CHROOT
-if test "\${ROOTDIR}" != "/"; then
-  CHROOT="chroot \${ROOTDIR} "
-  ROOTDIR="\${ROOTDIR}/"
+if test "${ROOTDIR}" != "/"; then
+ CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
 
+GROUP_ID=42
+
+# Set up groups.
+if ! grep --quiet '^gdm:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+            -g ${GROUP_ID} \
+            gdm 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^gdm:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/lib/gdm:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  if test "${OLD_USER}" = "gdm"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+            -d '/var/lib/gdm' \
+            -u ${USER_ID} \
+            -s /bin/false \
+            -g gdm \
+            ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+            -c 'GDM' \
+            -u ${GROUP_ID} \
+            -g gdm \
+            -s /bin/false \
+            -d '/var/lib/gdm' \
+            gdm 2> /dev/null
+fi
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
 if [ -x usr/bin/scrollkeeper-update ]; then
   \${CHROOT} /usr/bin/scrollkeeper-update -q > /dev/null 2>&1
 fi
@@ -292,8 +344,12 @@ EOF
   find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
   echo '# Fix permissions' >> ${PKG}/install/doinst.sh
-  echo '${CHROOT} /bin/chown root.gdm /var/gdm' >> ${PKG}/install/doinst.sh
-  echo '${CHROOT} /bin/chmod 1770 /var/gdm' >> ${PKG}/install/doinst.sh
+  echo '${CHROOT} /bin/chown root.gdm /var/lib/gdm' >> ${PKG}/install/doinst.sh
+  echo '${CHROOT} /bin/chmod 1770 /var/lib/gdm' >> ${PKG}/install/doinst.sh
+  echo '${CHROOT} /bin/chown gdm.gdm /var/lib/gdm/.pulse ' >> ${PKG}/install/doinst.sh
+  echo '${CHROOT} /bin/chmod 0700 /var/lib/gdm/.pulse' >> ${PKG}/install/doinst.sh
+  echo '${CHROOT} /bin/chown gdm.gdm /var/lib/gdm/.pulse/default.pa' >> ${PKG}/install/doinst.sh
+  echo '${CHROOT} /bin/chmod 0600 /var/lib/gdm/.pulse/default.pa' >> ${PKG}/install/doinst.sh
 )
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -304,7 +360,8 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/*.desktop.gz ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${CWD}/*.desktop.gz ${CWD}/default.*.gz \
+                 ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.gz \
@@ -315,7 +372,12 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.gdm ./var/lib/gdm ;
+  /bin/chmod 1770 ./var/lib/gdm ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown gdm.gdm ./var/lib/gdm/.pulse ./var/lib/gdm/.pulse/default.pa ;
+  /bin/chmod 0700 ./var/lib/gdm/.pulse ;
+  /bin/chmod 0600 ./var/lib/gdm/.pulse/default.pa ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

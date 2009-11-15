@@ -28,17 +28,34 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
-if [ "${TMP}" = "" ]; then
-  TMP=/tmp
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
 fi
 
 NAME=hot-babe
 PKG=${TMP}/package-${NAME}
 
 VERSION=${VERSION:-0.2.2}
-ARCH=${ARCH:-i686}
-BUILD=${BUILD:-3}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  SLKTARGET=${SLKTARGET:-x86_64}
+else
+  SLKTARGET=${SLKTARGET:-i486}
+fi
+SLKDTARGET=${SLKDTARGET:-slackware}
+BUILD=${BUILD:-4}
 NJOBS=${NJOBS:-2}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -55,21 +72,26 @@ DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://dindinx.net/hotbabe/downloads/${SRCARCHIVE}"
 
-if [ "${ARCH}" = "i386" ]; then
-  SLKCFLAGS="-O2 -march=i386 -mtune=i686"
-elif [ "${ARCH}" = "i486" ]; then
-  SLKCFLAGS="-O2 -march=i486 -mtune=i686"
-elif [ "${ARCH}" = "i686" ]; then
-  SLKCFLAGS="-O2 -march=athlon64 -mtune=athlon64 -msse3 -pipe -fomit-frame-pointer"
-elif [ "${ARCH}" = "s390" ]; then
-  SLKCFLAGS="-O2"
-elif [ "${ARCH}" = "x86_64" ]; then
-  SLKCFLAGS="-O2"
-fi
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
 fi
 
 if [ -d ${PKG} ]; then
@@ -80,18 +102,20 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
-sed -i -e "/^PREFIX :=/s|/local||g;
-           /^CFLAGS += /s|-O2 -Wall -g|${SLKCFLAGS}|g;
-           s|share/doc/hot-babe|doc/${NAME}-${VERSION}|g;
-           s|share/man|man|g" \
-           Makefile || exit 1
+sed -i \
+  -e '/^PREFIX :=/s|/local||g' \
+  -e "/^CFLAGS += /s|-O2 -Wall -g|${SLKCFLAGS}|g" \
+  -e '/$(LIBS)/s|$| $(LDFLAGS)|g' \
+  -e "s|share/doc/hot-babe|doc/${NAME}-${VERSION}|g" \
+  -e 's|share/man|man|g' \
+  Makefile || exit 1
 
 make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} || exit 1
@@ -105,9 +129,8 @@ cat > ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
 Name=Hot-babe
 Comment=Displays the system activity a very special way.
 Exec=${NAME}
-Icon=${NAME}.png
+Icon=${NAME}
 Terminal=false
-Encoding=UTF-8
 Type=Application
 Categories=Utility;
 EOF
@@ -134,7 +157,8 @@ find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -142,19 +166,13 @@ if [ -d ${PKG}/usr/man ]; then
       ( cd ${manpagedir}
         for eachpage in $( find . -type l -maxdepth 1) ; do
           ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
-          rm ${eachpage}
+          rm -f ${eachpage}
         done
         gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
       )
     done
-  )
-fi
-
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
   )
 fi
 
@@ -165,19 +183,17 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${NAME}.png.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/${NAME}.png.gz ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
-set +o xtrace			# no longer print commands upon execution
+set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
@@ -185,7 +201,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
-if test $UID = 0; then
+if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then
@@ -200,9 +216,11 @@ fi
 if [ "$1" = "--cleanup" ]; then
   echo "Cleaning..."
   if [ -d ${TMP}/${SRCDIR} ]; then
-    rm -rf ${TMP}/${SRCDIR}
-    echo "${TMP}/${SRCDIR} cleanup completed"
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
   fi
-  rm -rf ${PKG}
-  echo "Cleanup completed"
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
 fi
+exit 0

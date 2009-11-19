@@ -131,6 +131,13 @@ ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch.gz
+# cpuidle: Fix the menu governor to boost IO performance
+ApplyPatch linux-2.6.31-cpuidle-faster-io.patch.gz
+# EC fixes from 2.6.32 (#492699, #525681)
+ApplyPatch acpi-ec-merge-irq-and-poll-modes.patch.gz
+ApplyPatch acpi-ec-use-burst-mode-only-for-msi-notebooks.patch.gz
+ApplyPatch acpi-ec-restart-command-even-if-no-interrupts-from-ec.patch.gz
+
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch.gz
@@ -201,6 +208,9 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 # Make it possible to identify non-hotplug SATA ports
 ApplyPatch linux-2.6-ahci-export-capabilities.patch.gz
 
+# prism54: remove pci modinfo device table
+ApplyPatch prism54-remove-pci-dev-table.patch.gz
+
 #
 # VM related fixes.
 #
@@ -210,9 +220,6 @@ ApplyPatch linux-2.6-crash-driver.patch.gz
 
 # Determine cacheline sizes in a generic manner.
 ApplyPatch linux-2.6-pci-cacheline-sizing.patch.gz
-
-# cpuidle: Fix the menu governor to boost IO performance
-ApplyPatch linux-2.6.31-cpuidle-faster-io.patch.gz
 
 # http://www.lirc.org/
 ApplyPatch lirc-2.6.31.patch.gz
@@ -225,6 +232,7 @@ ApplyPatch hdpvr-ir-enable.patch.gz
 ApplyPatch linux-2.6-ksm.patch.gz
 ApplyPatch linux-2.6-ksm-updates.patch.gz
 ApplyPatch linux-2.6-ksm-fix-munlock.patch.gz
+ApplyPatch linux-2.6-ksm-updates-from-32.patch.gz
 # Optimize KVM for KSM support
 ApplyPatch linux-2.6-ksm-kvm.patch.gz
 
@@ -241,12 +249,10 @@ ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.g
 
 # Nouveau DRM + drm fixes
 ApplyPatch kms-offb-handoff.patch.gz
-ApplyPatch drm-next-ea1495a6.patch.gz
-ApplyPatch drm-radeon-agp-font-fix.patch.gz
-ApplyPatch drm-radeon-fix-ring-rmw-issue.patch.gz
-ApplyPatch drm-r600-lenovo-w500-fix.patch.gz
+ApplyPatch drm-next-44c83571.patch.gz
 ApplyPatch drm-conservative-fallback-modes.patch.gz
-ApplyPatch drm-radeon-fix-agp-resume.patch.gz
+ApplyPatch drm-edid-retry.patch.gz
+ApplyPatch drm-edid-header-fixup.patch.gz
 
 ApplyPatch drm-nouveau.patch.gz
 ApplyPatch drm-i915-resume-force-mode.patch.gz
@@ -258,18 +264,22 @@ ApplyPatch linux-2.6-vga-arb.patch.gz
 ApplyPatch drm-vga-arb.patch.gz
 ApplyPatch drm-radeon-kms-arbiter-return-ignore.patch.gz
 
+# Lower debug level of fbcon handover messages (rh#538526)
+ApplyPatch fbcon-lower-debug.patch.gz
+
 # linux1394 git patches
-#ApplyPatch linux-2.6-firewire-git-update.patch.gz
-#ApplyOptionalPatch linux-2.6-firewire-git-pending.patch.gz
+# apply if non-empty
+ApplyOptionalPatch linux-2.6-firewire-git-update.patch.gz
+ApplyOptionalPatch linux-2.6-firewire-git-pending.patch.gz
 
 # silence the ACPI blacklist code
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch.gz
 
 # V4L/DVB updates/fixes/experimental drivers
-#ApplyPatch linux-2.6-v4l-dvb-fixes.patch.gz
-#ApplyPatch linux-2.6-v4l-dvb-update.patch.gz
-#ApplyPatch linux-2.6-v4l-dvb-experimental.patch.gz
-#ApplyPatch linux-2.6-revert-dvb-net-kabi-change.patch.gz
+ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch.gz
+ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch.gz
+ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch.gz
+
 ApplyPatch v4l-dvb-fix-cx25840-firmware-loading.patch.gz
 
 # Patches headed upstream
@@ -296,5 +306,14 @@ ApplyPatch tg3-03-fix-57780-asic-rev-pcie-link-receiver-errors.patch.gz
 ApplyPatch tg3-04-prevent-tx-bd-corruption.patch.gz
 ApplyPatch tg3-05-assign-flags-to-fixes-in-start_xmit_dma_bug.patch.gz
 ApplyPatch tg3-06-fix-5906-transmit-hangs.patch.gz
+
+# sched fixes cherry-picked from 2.6.32
+ApplyPatch sched-deal-with-low-load-in-wake-affine.patch.gz
+ApplyPatch sched-ensure-child-cant-gain-time-over-its-parent-after-fork.patch.gz
+ApplyPatch sched-remove-shortcut-from-select-task-rq-fair.patch.gz
+# latency defaults from 2.6.32
+ApplyPatch sched-retune-scheduler-latency-defaults.patch.gz
+# fix wakeup latency
+ApplyPatch sched-update-the-clock-of-runqueue-select-task-rq-selected.patch.gz
 
 set +e

@@ -63,10 +63,13 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
-# Set to YES to add /etc/limits file with 400 max processes (shellbomb protection)
+# Set to YES to add /etc/limits file with max processes from SB_LIMITSMAX (shellbomb protection)
 SB_LIMITS=${SB_LIMITS:-YES}
+SB_LIMITSMAX=${SB_LIMITSMAX:-400}
 # Set to YES to enable redhat system user patch (useradd -r)
 SB_RH=${SB_RH:-NO}
+# Set to YES to use with util-linux-ng and coreutils with pam support.
+SB_PAM=${SB_PAM:-NO}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -116,7 +119,12 @@ sed -i -e '/^GROUP=/s|1000|500|g' etc/useradd || exit 1
 if [ "${SB_LIMITS}" = "YES" ] ; then
   echo >> etc/limits || exit 1
   echo '# Limit user process number to prevent shellbomb' >> etc/limits || exit 1
-  echo '* U 400' >> etc/limits || exit 1
+  echo "* U ${SB_LIMITSMAX}" >> etc/limits || exit 1
+fi
+
+if [ "${SB_PAM}" = "YES" ] ;then
+  SB_PAMOPTS="--with-sha-crypt"
+  sed -i -e '/^#ENCRYPT_METHOD/s|^.*$|ENCRYPT_METHOD SHA512|g' etc/login.defs || exit 1
 fi
 
 rm -f po/*.gmo
@@ -135,7 +143,8 @@ CXXFLAGS="${SLKCFLAGS}" \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-shared \
   --disable-desrpc \
-  --without-libpam \
+  --without-libcrack \
+  --without-libpam ${SB_PAMOPTS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
@@ -154,11 +163,15 @@ chmod 0640 ${PKG}/var/log/faillog.new
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+chmod 0750 ${PKG}/usr/sbin/{user,group}*
+
 ( cd ${PKG}/etc || exit 1
   for file in limits login.access login.defs default/useradd ; do
     mv ${file} ${file}.new || exit 1
   done
 ) || exit 1
+
+chmod 0600 ${PKG}/etc/default/useradd*
 
 install -m0755 ${CWD}/adduser ${PKG}/usr/sbin/adduser || exit 1
 zcat ${CWD}/shadowconfig.sh.gz > ${PKG}/usr/sbin/shadowconfig || exit 1
@@ -168,6 +181,23 @@ ln -s useradd.8 ${PKG}/usr/man/man8/adduser.8
 for subdir in ${PKG}/usr/man/{??,??_??,??_??.*}/man* ; do
   test -d ${subdir} && test -e ${subdir}/useradd.8 && echo ".so man8/useradd.8" > ${subdir}/adduser.8
 done
+
+if [ "${SB_PAM}" = "YES" ] ; then
+  for bin in chfn chsh expiry groups login passwd su ;
+  do
+    rm -f ${PKG}/{usr/,}bin/${bin}
+  done
+
+  for conf in login.access limits ;
+  do
+    rm -f ${PKG}/etc/${conf}*
+  done
+
+  for sbin in logoutd nologin chgpasswd ;
+  do
+    rm -f ${PKG}/{usr/,}sbin/${sbin}
+  done
+fi
 
 ( cd man || exit 1
   for file in shadowconfig.8 sulogin.8 ; do
@@ -214,12 +244,28 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
+if [ "${SB_PAM}" = "YES" ] ; then
+  for man1 in chfn chsh expiry groups login passwd su ;
+  do
+    rm -f ${PKG}/usr/man/{*/,}man1/${man1}.*
+  done
+
+  for man5 in limits login.access passwd porttime suauth ;
+  do
+    rm -f ${PKG}/usr/man/{*/,}man5/${man5}.*
+  done
+
+  for man8 in logoutd nologin chgpasswd getspnam ;
+  do
+    rm -f ${PKG}/usr/man/{*/,}man8/${man8}.*
+  done
+fi
+
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
 # Figure out our root directory
 ROOTDIR=\$(pwd)
 unset CHROOT
@@ -250,6 +296,7 @@ EOF
   echo >> ${PKG}/install/doinst.sh
 )
 
+if [ "${SB_PAM}" != "YES" ] ; then
 cat >> ${PKG}/install/doinst.sh <<'EOF'
 # Fix permissions
 ${CHROOT}/bin/chmod 4711 /bin/su
@@ -261,6 +308,7 @@ ${CHROOT} /bin/chmod 4711 /usr/bin/gpasswd
 ${CHROOT} /bin/chmod 4711 /usr/bin/newgrp
 ${CHROOT} /bin/chmod 4711 /usr/bin/passwd
 EOF
+fi
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
@@ -281,13 +329,17 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;
-  for f in chage chfn chsh expiry gpasswd newgrp passwd ;
-  do /bin/chmod 4711 ./usr/bin/\${f} ;done ;
-  /bin/chmod 4711 ./bin/su ; "
+  /bin/chown --recursive root:root .  ; "
+
+if [ "${SB_PAM}" != "YES" ] ; then
+  ROOTCOMMANDS="${ROOTCOMMANDS}
+    for f in chage chfn chsh expiry gpasswd newgrp passwd ;
+    do /bin/chmod 4711 ./usr/bin/\${f} ;done ;
+    /bin/chmod 4711 ./bin/su ; "
+fi
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --linkadd y --chown n --prepend ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

@@ -77,6 +77,9 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to use with shadow and coreutils with pam support.
+SB_PAM=${SB_PAM:-NO}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
@@ -190,6 +193,13 @@ fi
 
 unset LINGUAS
 
+if [ "${SB_PAM}" = "YES" ] ; then
+  SB_PAMOPTS="--with-pam --enable-login-utils"
+  cp ${CWD}/nologin.c . || exit 1
+else
+  SB_PAMOPTS="--without-pam --disable-login-utils"
+fi
+
 CFLAGS="${SLKCFLAGS} -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64" \
 ./configure \
   --prefix=/usr \
@@ -209,7 +219,7 @@ CFLAGS="${SLKCFLAGS} -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BI
   --enable-raw \
   --enable-rename \
   --enable-reset \
-  --disable-login-utils \
+  ${SB_PAMOPTS} \
   --enable-schedutils \
   --enable-wall \
   --enable-write \
@@ -222,6 +232,12 @@ CFLAGS="${SLKCFLAGS} -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BI
 
 make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} || exit 1
+
+if [ "${SB_PAM}" = "YES" ] ; then
+( set -o xtrace
+  g++ ${SLKCFLAGS} ${LDFLAGS} -o ${NAME} nologin.c || exit 1
+) || exit 1
+fi
 
 rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/*.la
 
@@ -344,6 +360,22 @@ chmod 755 ${PKG}/sbin/rdev
   ln -s hwclock.8 clock.8
 ) || exit 1
 
+if [ "${SB_PAM}" = "YES" ] ;then
+  mkdir -p ${PKG}/etc/pam.d ${PKG}/etc/security/console.apps ${PKG}/usr/man/man8
+  # su
+  install -m 755 nologin ${PKG}/sbin/ || exit 1
+  install -m 755 ${CWD}/nologin.8.gz ${PKG}/usr/man/man8/ || exit 1
+
+  for pamd in login remote ; do
+    install -m 644 ${SB_PAMD_DIR}/${pamd}.pamd \
+      ${PKG}/etc/pam.d/${pamd}.new || exit 1
+  done
+  for pamd in chfn chsh ; do
+    install -m 644 ${SB_PAMD_DIR}/chsh-chfn.pamd \
+      ${PKG}/etc/pam.d/${pamd}.new || exit 1
+  done
+fi
+
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
@@ -389,7 +421,6 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
 # Figure out our root directory
 ROOTDIR=\$(pwd)
 unset CHROOT
@@ -415,10 +446,8 @@ config() {
 }
 
 # Keep same perms on rc.serial.new:
-if [ -e etc/rc.d/rc.serial ]; then
-  cp -a etc/rc.d/rc.serial etc/rc.d/rc.serial.new.incoming
-  cat etc/rc.d/rc.serial.new > etc/rc.d/rc.serial.new.incoming
-  mv etc/rc.d/rc.serial.new.incoming etc/rc.d/rc.serial.new
+if [ -r etc/rc.d/rc.serial -a -r etc/rc.d/rc.serial.new ]; then
+  chmod --reference=etc/rc.d/rc.serial etc/rc.d/rc.serial.new
 fi
 
 ## List of conf files to check.  The conf files in your package should end in .new
@@ -439,16 +468,26 @@ ${CHROOT} /bin/chown root:tty /usr/bin/write
 ${CHROOT} /bin/chmod 2755 /usr/bin/write
 EOF
 
+if [ "${SB_PAM}" = "YES" ] ; then
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+${CHROOT} /bin/chmod 4711 /usr/bin/chfn
+${CHROOT} /bin/chmod 4711 /usr/bin/chsh
+EOF
+fi
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/patches
+  mkdir -p ${SBDIR}/{pamd,patches}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/bsdstrings.tar.gz ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${CWD}/bsdstrings.tar.gz  ${CWD}/nologin.{c,8.gz} \
+                 ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/pamd/*.pamd \
+                 ${SBDIR}/pamd/
   install -m0644 ${CWD}/patches/*.gz \
                  ${SBDIR}/patches/
 fi
@@ -461,9 +500,15 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chmod 4755 ./bin/umount ;
   /bin/chown root:tty ./usr/bin/wall ./usr/bin/write ;
   /bin/chmod 2755 ./usr/bin/wall ./usr/bin/write ;"
-  
+
+if [ "${SB_PAM}" = "YES" ] ; then
+  ROOTCOMMANDS="${ROOTCOMMANDS}
+    for f in chfn chsh ;
+    do /bin/chmod 4711 ./usr/bin/\${f} ;done ; "
+fi
+
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --linkadd y --chown n --prepend ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

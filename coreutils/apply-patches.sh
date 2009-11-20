@@ -23,6 +23,12 @@ zcat ${SB_PATCHDIR}/${NAME}-4.5.3-langinfo.patch.gz | patch -p1 -E --backup --ve
 # (sb) lin18nux/lsb compliance
 zcat ${SB_PATCHDIR}/${NAME}-i18n.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/${NAME}-getgrouplist.patch.gz | patch -p1 -E --backup --verbose || exit 1
+if [ "${SB_PAM}" = "YES" ] ; then
+  zcat ${SB_PATCHDIR}/${NAME}-pam.patch.gz | patch -p1 -E --backup --verbose || exit 1
+  zcat ${SB_PATCHDIR}/${NAME}-setsid.patch.gz | patch -p1 -E --backup --verbose || exit 1
+  zcat ${SB_PATCHDIR}/${NAME}-5.2.1-runuser.patch.gz | patch -p1 -E --backup --verbose || exit 1
+  zcat ${SB_PATCHDIR}/${NAME}-split-pam.patch.gz | patch -p1 -E --backup --verbose || exit 1
+fi
+
 zcat ${SB_PATCHDIR}/${NAME}-overflow.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-getfacl-exit-code.patch.gz | patch -p1 -E --backup --verbose || exit 1

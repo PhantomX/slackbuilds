@@ -13,3 +13,8 @@ zcat ${SB_PATCHDIR}/${NAME}-2.1-playlist-scrollbar.patch.gz | patch -p1 -E --bac
 zcat ${SB_PATCHDIR}/audacious_20090702_console.diff.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.1-ladspa-backto201.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.1-musepack.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# merged upstream
+zcat ${SB_PATCHDIR}/${NAME}-2.1-sndstretch-dialog.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# merged upstream: dialog fix
+# not necessary in 2.2-beta2?: crash work-around
+zcat ${SB_PATCHDIR}/${NAME}-2.1-icecast.patch.gz | patch -p1 -E --backup --verbose || exit 1

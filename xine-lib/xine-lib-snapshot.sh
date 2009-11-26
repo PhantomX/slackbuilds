@@ -2,8 +2,8 @@
 
 set -e
 
-module=$(basename $0 -snapshot.sh)
-snaproot="http://hg.atheme.org/audacious/${module}"
+module=$(basename $0 .sh)
+snaproot="http://hg.debian.org/hg/${module}/xine-lib"
 
 tmp=$(mktemp -d)
 
@@ -20,8 +20,8 @@ snap=${snap:-$(date +%Y%m%d)}
 pushd "${tmp}"
   hg clone ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    find . -type d -name .hg -print0 | xargs -0r rm -rf
-    rm -f .hgignore .hgtags
+    find . -type d -name .hig -print0 | xargs -0r rm -rf
+    rm -f .hgignore .hgsigs .hgtags
   popd
-  tar -jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}
+  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

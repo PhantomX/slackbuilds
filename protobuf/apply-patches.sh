@@ -1,4 +1,5 @@
   
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-pkgconfig-autotools.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-2.2.0-fedora-gtest.patch.gz | patch -p2 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-2.2.0-decoder_test_64bit_fix.patch.gz | patch -p1 -E --backup --verbose || exit 1

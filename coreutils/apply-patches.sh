@@ -30,5 +30,6 @@ if [ "${SB_PAM}" = "YES" ] ; then
   zcat ${SB_PATCHDIR}/${NAME}-split-pam.patch.gz | patch -p1 -E --backup --verbose || exit 1
 fi
 
+zcat ${SB_PATCHDIR}/${NAME}-getgrouplist.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-overflow.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-getfacl-exit-code.patch.gz | patch -p1 -E --backup --verbose || exit 1

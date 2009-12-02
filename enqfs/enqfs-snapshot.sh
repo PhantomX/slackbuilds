@@ -18,7 +18,7 @@ pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
 pushd "${tmp}"
-  svn checkout -r {$snap} ${snaproot} ${module}-${snap}
+  svn export -r {$snap} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd

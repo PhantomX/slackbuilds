@@ -13,8 +13,3 @@ zcat ${SB_PATCHDIR}/${NAME}-1.1.16.2-multilib.patch.gz | patch -p1 -E --backup -
 
 # http://bugs.gentoo.org/164425
 zcat ${SB_PATCHDIR}/${NAME}-1.1.15-textrel-fix.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-if [ "${SNAPBUILD}" != "YES" ] ;then
-  ## upstreamable patches
-  zcat ${SB_PATCHDIR}/${NAME}-1.1.16.3-mod_mimetypes_typo.patch.gz | patch -p1 -E --backup --verbose || exit 1
-fi

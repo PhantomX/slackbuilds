@@ -15,7 +15,7 @@ pwd=$(pwd)
 svn=$(date +%Y%m%d)
 
 cd "$tmp"
-svn checkout -r {$svn} https://automanic.svn.sourceforge.net/svnroot/automanic/trunk automanic automanic-$svn
+svn export -r {$svn} https://automanic.svn.sourceforge.net/svnroot/automanic/trunk automanic automanic-$svn
 cd automanic-$svn
 ./version.sh .
 find . -type d -name .svn -print0 | xargs -0r rm -rf

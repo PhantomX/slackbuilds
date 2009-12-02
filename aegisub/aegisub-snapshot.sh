@@ -21,7 +21,7 @@ snap=${snap:-$(date +%Y%m%d)}
 [ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
 
 pushd "${tmp}"
-  svn checkout ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
+  svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
     svnversion | sed "s/\(^@<:@0-9@:>@*\).*/\1/" > svn_revision
     find . -type d -name .svn -print0 | xargs -0r rm -rf

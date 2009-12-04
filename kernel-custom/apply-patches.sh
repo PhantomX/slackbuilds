@@ -40,7 +40,11 @@ ApplyOptionalPatch() {
   if [ ! -f ${SB_PATCHDIR}/${patch} ]; then
     exit 1
   fi
-  local C=$(zcat ${SB_PATCHDIR}/${patch} | wc -l | awk '{print $1}')
+  case "${patch}" in
+  *.bz2) local C=$(bzcat ${SB_PATCHDIR}/${patch} | wc -l | awk '{print $1}') ;;
+  *.gz) local C=$(zcat ${SB_PATCHDIR}/${patch} | wc -l | awk '{print $1}') ;;
+  *) local C=$(wc -l ${SB_PATCHDIR}/${patch} | awk '{print $1}') ;;
+  esac
   if [ "${C}" -gt 9 ]; then
     ApplyPatch ${patch} ${1+"$@"}
   fi
@@ -52,12 +56,14 @@ ApplyOptionalPatch() {
 #ApplyPatch acpi-dsdt-initrd-v0.9c-2.6.28.patch.gz
 #ApplyPatch acpi-dsdt-initrd-v0.9c-fixes.patch.gz
 
+ApplyOptionalPatch git-linus.diff
+
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
 # also gives a list of missing options at the end. Useful for automated
 # builds (as used in the buildsystem).
-ApplyPatch linux-2.6-build-nonintconfig.patch.gz
+ApplyPatch linux-2.6-build-nonintconfig.patch
 
-ApplyPatch linux-2.6-makefile-after_link.patch.gz
+ApplyPatch linux-2.6-makefile-after_link.patch
 
 #
 # misc small stuff to make things compile
@@ -72,37 +78,27 @@ ApplyOptionalPatch git-cpufreq.patch.gz
 ApplyOptionalPatch linux-2.6-hotfixes.patch.gz
 
 # Roland's utrace ptrace replacement.
-ApplyPatch linux-2.6-tracehook.patch.gz
-ApplyPatch linux-2.6-utrace.patch.gz
-
-ApplyPatch sched-introduce-SCHED_RESET_ON_FORK-scheduling-policy-flag.patch.gz
+ApplyPatch linux-2.6-utrace.patch
 
 # vm patches
 
-ApplyPatch disable-stackprotector-all.patch.gz
 # enable sysrq-c on all kernels, not only kexec
 #ApplyPatch linux-2.6-sysrq-c.patch.gz
 
 # Architecture patches
 # x86(-64)
-ApplyPatch via-hwmon-temp-sensor.patch.gz
+ApplyPatch via-hwmon-temp-sensor.patch
 ApplyPatch linux-2.6-dell-laptop-rfkill-fix.patch.gz
 
 #
 # Intel IOMMU
 #
-# Quiesce USB host controllers before setting up the IOMMU
-ApplyPatch linux-2.6-die-closed-source-bios-muppets-die.patch.gz
-# Some performance fixes, unify hardware/software passthrough support, and
-# most importantly: notice when the BIOS points us to a region that returns
-# all 0xFF, and claims that there's an IOMMU there.
-ApplyPatch linux-2.6-intel-iommu-updates.patch.gz
-ApplyPatch linux-2.6-iommu-at-zero.patch.gz
+ApplyPatch linux-2.6-iommu-updates.patch
 
 #
 # Exec shield
 #
-ApplyPatch linux-2.6-execshield.patch.gz
+ApplyPatch linux-2.6-execshield.patch
 
 #
 # bugfixes to drivers and filesystems
@@ -113,39 +109,29 @@ ApplyPatch linux-2.6-execshield.patch.gz
 # xfs
 
 # btrfs
-ApplyPatch linux-2.6-btrfs-upstream.patch.gz
 
 # cifs
 
 # NFSv4
-ApplyPatch linux-2.6-nfsd4-proots.patch.gz
-ApplyPatch linux-2.6-nfs4-ver4opt.patch.gz
+ApplyPatch linux-2.6-nfsd4-proots.patch
 ApplyPatch linux-2.6-nfs4-callback-hidden.patch.gz
 
 # USB
 ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff.gz
 ApplyPatch linux-2.6-qcserial-autosuspend.diff.gz
-ApplyPatch linux-2.6-bluetooth-autosuspend.diff.gz
 ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
 
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch.gz
-# cpuidle: Fix the menu governor to boost IO performance
-ApplyPatch linux-2.6.31-cpuidle-faster-io.patch.gz
-# EC fixes from 2.6.32 (#492699, #525681)
-ApplyPatch acpi-ec-merge-irq-and-poll-modes.patch.gz
-ApplyPatch acpi-ec-use-burst-mode-only-for-msi-notebooks.patch.gz
-ApplyPatch acpi-ec-restart-command-even-if-no-interrupts-from-ec.patch.gz
-
 
 # Various low-impact patches to aid debugging.
-ApplyPatch linux-2.6-debug-sizeof-structs.patch.gz
+ApplyPatch linux-2.6-debug-sizeof-structs.patch
 ApplyPatch linux-2.6-debug-nmi-timeout.patch.gz
 ApplyPatch linux-2.6-debug-taint-vm.patch.gz
 ApplyPatch linux-2.6-debug-spinlock-taint.patch.gz
 ## try to find out what is breaking acpi-cpufreq
-ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch.gz
+ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
 ApplyPatch linux-2.6-debug-always-inline-kzalloc.patch.gz
 
 #
@@ -163,19 +149,18 @@ ApplyPatch linux-2.6-defaults-aspm.patch.gz
 # ALSA
 # squelch hda_beep by default
 ApplyPatch linux-2.6-defaults-alsa-hda-beep-off.patch.gz
-ApplyPatch linux-2.6-alsa-improve-hda-powerdown.patch.gz
 ApplyPatch hda_intel-prealloc-4mb-dmabuffer.patch.gz
-ApplyPatch alsa-tell-user-that-stream-to-be-rewound-is-suspended.patch.gz
 
 # block/bio
 #
-
-# Filesystem patches.
 
 # Networking
 
 # add ich9 lan
 ApplyPatch linux-2.6-e1000-ich9.patch.gz
+
+# ath9k: add fixes suggested by upstream maintainer
+ApplyPatch linux-2.6-ath9k-fixes.patch
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
@@ -190,7 +175,7 @@ ApplyPatch die-floppy-die.patch.gz
 ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch.gz
 
 # Allow to use 480600 baud on 16C950 UARTs
-ApplyPatch linux-2.6-serial-460800.patch.gz
+ApplyPatch linux-2.6-serial-460800.patch
 
 # Silence some useless messages that still get printed with 'quiet'
 ApplyPatch linux-2.6-silence-noise.patch.gz
@@ -205,115 +190,54 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 #ApplyPatch linux-2.6-mac80211-age-scan-results-on-resume.patch.gz
 
 # libata
-# Make it possible to identify non-hotplug SATA ports
-ApplyPatch linux-2.6-ahci-export-capabilities.patch.gz
-
-# prism54: remove pci modinfo device table
-ApplyPatch prism54-remove-pci-dev-table.patch.gz
 
 #
 # VM related fixes.
 #
 
 # /dev/crash driver.
-ApplyPatch linux-2.6-crash-driver.patch.gz
+ApplyPatch linux-2.6-crash-driver.patch
 
 # Determine cacheline sizes in a generic manner.
 ApplyPatch linux-2.6-pci-cacheline-sizing.patch.gz
 
 # http://www.lirc.org/
-ApplyPatch lirc-2.6.31.patch.gz
-# tell usbhid to ignore all imon devices (sent upstream 2009.07.31)
-ApplyPatch hid-ignore-all-recent-imon-devices.patch.gz
+ApplyPatch lirc-2.6.31.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
-ApplyPatch hdpvr-ir-enable.patch.gz
+ApplyPatch hdpvr-ir-enable.patch
 
 # Add kernel KSM support
-ApplyPatch linux-2.6-ksm.patch.gz
-ApplyPatch linux-2.6-ksm-updates.patch.gz
-ApplyPatch linux-2.6-ksm-fix-munlock.patch.gz
-ApplyPatch linux-2.6-ksm-updates-from-32.patch.gz
 # Optimize KVM for KSM support
-ApplyPatch linux-2.6-ksm-kvm.patch.gz
+#ApplyPatch linux-2.6-ksm-kvm.patch
 
 # Assorted Virt Fixes
-#ApplyPatch linux-2.6-xen-stack-protector-fix.patch.gz
-ApplyPatch linux-2.6-virtio_blk-revert-QUEUE_FLAG_VIRT-addition.patch.gz
-ApplyPatch linux-2.6-xen-fix-is_disconnected_device-exists_disconnected_device.patch.gz
-ApplyPatch linux-2.6-xen-improvement-to-wait_for_devices.patch.gz
-ApplyPatch linux-2.6-xen-increase-device-connection-timeout.patch.gz
-ApplyPatch linux-2.6-virtio_blk-add-support-for-cache-flush.patch.gz
 
 # Fix block I/O errors in KVM
-ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
+#ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
 
 # Nouveau DRM + drm fixes
-ApplyPatch kms-offb-handoff.patch.gz
-ApplyPatch drm-next-44c83571.patch.gz
-ApplyPatch drm-conservative-fallback-modes.patch.gz
-ApplyPatch drm-edid-retry.patch.gz
-ApplyPatch drm-edid-header-fixup.patch.gz
-
+ApplyPatch drm-radeon-fixes.patch
+ApplyPatch drm-radeon-dp-support.patch
 ApplyPatch drm-nouveau.patch.gz
-ApplyPatch drm-i915-resume-force-mode.patch.gz
-ApplyOptionalPatch drm-intel-next.patch.gz
-ApplyPatch drm-intel-no-tv-hotplug.patch.gz
-
-# VGA arb + drm
-ApplyPatch linux-2.6-vga-arb.patch.gz
-ApplyPatch drm-vga-arb.patch.gz
-ApplyPatch drm-radeon-kms-arbiter-return-ignore.patch.gz
-
-# Lower debug level of fbcon handover messages (rh#538526)
-ApplyPatch fbcon-lower-debug.patch.gz
+ApplyPatch drm-intel-big-hammer.patch
+ApplyPatch drm-i915-fix-sync-to-vbl-when-vga-is-off.patch
+# Some BIOSes don't clear the whole GTT, and it causes IOMMU faults
+ApplyPatch linux-2.6-intel-agp-clear-gtt.patch
 
 # linux1394 git patches
 # apply if non-empty
-ApplyOptionalPatch linux-2.6-firewire-git-update.patch.gz
-ApplyOptionalPatch linux-2.6-firewire-git-pending.patch.gz
+#ApplyOptionalPatch linux-2.6-firewire-git-update.patch
+#ApplyOptionalPatch linux-2.6-firewire-git-pending.patch.gz
 
 # silence the ACPI blacklist code
-ApplyPatch linux-2.6-silence-acpi-blacklist.patch.gz
+ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 
 # V4L/DVB updates/fixes/experimental drivers
-ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch.gz
-ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch.gz
-ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch.gz
-
-ApplyPatch v4l-dvb-fix-cx25840-firmware-loading.patch.gz
+#ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
+#ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
+#ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
 # Patches headed upstream
-ApplyPatch linux-2.6-rtc-show-hctosys.patch.gz
-ApplyPatch linux-2.6-rfkill-all.patch.gz
-ApplyPatch linux-2.6-selinux-module-load-perms.patch.gz
-
-# make perf counter API available to userspace (#527264)
-ApplyPatch perf-make-perf-counter-h-available-to-userspace.patch.gz
-
-ApplyPatch improve-resource-counter-scalability.patch.gz
-
-# fix perf for sysprof
-ApplyPatch perf-events-fix-swevent-hrtimer-sampling.patch.gz
-ApplyPatch perf-events-dont-generate-events-for-the-idle-task.patch.gz
-
-# Fix oops in padlock
-ApplyPatch crypto-via-padlock-fix-nano-aes.patch.gz
-
-# tg3 fixes (#527209)
-ApplyPatch tg3-01-delay-mdio-bus-init-until-fw-finishes.patch.gz
-ApplyPatch tg3-02-fix-tso-test-against-wrong-flags-var.patch.gz
-ApplyPatch tg3-03-fix-57780-asic-rev-pcie-link-receiver-errors.patch.gz
-ApplyPatch tg3-04-prevent-tx-bd-corruption.patch.gz
-ApplyPatch tg3-05-assign-flags-to-fixes-in-start_xmit_dma_bug.patch.gz
-ApplyPatch tg3-06-fix-5906-transmit-hangs.patch.gz
-
-# sched fixes cherry-picked from 2.6.32
-ApplyPatch sched-deal-with-low-load-in-wake-affine.patch.gz
-ApplyPatch sched-ensure-child-cant-gain-time-over-its-parent-after-fork.patch.gz
-ApplyPatch sched-remove-shortcut-from-select-task-rq-fair.patch.gz
-# latency defaults from 2.6.32
-ApplyPatch sched-retune-scheduler-latency-defaults.patch.gz
-# fix wakeup latency
-ApplyPatch sched-update-the-clock-of-runqueue-select-task-rq-selected.patch.gz
+ApplyPatch linux-2.6-rfkill-all.patch
 
 set +e

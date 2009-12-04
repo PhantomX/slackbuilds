@@ -1,0 +1,106 @@
+From patchwork Mon Nov  9 04:51:22 2009
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Subject: drm/i915: Fix sync to vblank when VGA output is turned off
+Date: Mon, 09 Nov 2009 04:51:22 -0000
+From: Li Peng <peng.li@linux.intel.com>
+X-Patchwork-Id: 58658
+
+In current vblank-wait implementation, if we turn off VGA output,
+drm_wait_vblank will still wait on the disabled pipe until timeout,
+because vblank on the pipe is assumed be enabled. This would cause
+slow system response on some system such as moblin.
+
+This patch resolve the issue by adding a drm helper function
+drm_vblank_off which explicitly clear vblank_enabled[crtc], wake up
+any waiting queue and save last vblank counter before turning off
+crtc. It also slightly change drm_vblank_get to ensure that we will
+will return immediately if trying to wait on a disabled pipe.
+
+Signed-off-by: Li Peng <peng.li@intel.com>
+Reviewed-by: Jesse Barnes <jbarnes@virtuousgeek.org>
+
+---
+drivers/gpu/drm/drm_irq.c            |   34 ++++++++++++++++++++++++++--------
+ drivers/gpu/drm/i915/intel_display.c |    1 +
+ include/drm/drmP.h                   |    1 +
+ 3 files changed, 28 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/gpu/drm/drm_irq.c b/drivers/gpu/drm/drm_irq.c
+index 0a6f0b3..332d743 100644
+--- a/drivers/gpu/drm/drm_irq.c
++++ b/drivers/gpu/drm/drm_irq.c
+@@ -429,15 +429,21 @@ int drm_vblank_get(struct drm_device *dev, int crtc)
+ 
+ 	spin_lock_irqsave(&dev->vbl_lock, irqflags);
+ 	/* Going from 0->1 means we have to enable interrupts again */
+-	if (atomic_add_return(1, &dev->vblank_refcount[crtc]) == 1 &&
+-	    !dev->vblank_enabled[crtc]) {
+-		ret = dev->driver->enable_vblank(dev, crtc);
+-		DRM_DEBUG("enabling vblank on crtc %d, ret: %d\n", crtc, ret);
+-		if (ret)
++	if (atomic_add_return(1, &dev->vblank_refcount[crtc]) == 1) {
++		if (!dev->vblank_enabled[crtc]) {
++			ret = dev->driver->enable_vblank(dev, crtc);
++			DRM_DEBUG("enabling vblank on crtc %d, ret: %d\n", crtc, ret);
++			if (ret)
++				atomic_dec(&dev->vblank_refcount[crtc]);
++			else {
++				dev->vblank_enabled[crtc] = 1;
++				drm_update_vblank_count(dev, crtc);
++			}
++		}
++	} else {
++		if (!dev->vblank_enabled[crtc]) {
+ 			atomic_dec(&dev->vblank_refcount[crtc]);
+-		else {
+-			dev->vblank_enabled[crtc] = 1;
+-			drm_update_vblank_count(dev, crtc);
++			ret = -EINVAL;
+ 		}
+ 	}
+ 	spin_unlock_irqrestore(&dev->vbl_lock, irqflags);
+@@ -464,6 +470,18 @@ void drm_vblank_put(struct drm_device *dev, int crtc)
+ }
+ EXPORT_SYMBOL(drm_vblank_put);
+ 
++void drm_vblank_off(struct drm_device *dev, int crtc)
++{
++	unsigned long irqflags;
++
++	spin_lock_irqsave(&dev->vbl_lock, irqflags);
++	DRM_WAKEUP(&dev->vbl_queue[crtc]);
++	dev->vblank_enabled[crtc] = 0;
++	dev->last_vblank[crtc] = dev->driver->get_vblank_counter(dev, crtc);
++	spin_unlock_irqrestore(&dev->vbl_lock, irqflags);
++}
++EXPORT_SYMBOL(drm_vblank_off);
++
+ /**
+  * drm_vblank_pre_modeset - account for vblanks across mode sets
+  * @dev: DRM device
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 3ba6546..962b72b 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -1848,6 +1848,7 @@ static void i9xx_crtc_dpms(struct drm_crtc *crtc, int mode)
+ 		intel_update_watermarks(dev);
+ 		/* Give the overlay scaler a chance to disable if it's on this pipe */
+ 		//intel_crtc_dpms_video(crtc, FALSE); TODO
++		drm_vblank_off(dev, pipe);
+ 
+ 		if (dev_priv->cfb_plane == plane &&
+ 		    dev_priv->display.disable_fbc)
+diff --git a/include/drm/drmP.h b/include/drm/drmP.h
+index c8e64bb..9d3d684 100644
+--- a/include/drm/drmP.h
++++ b/include/drm/drmP.h
+@@ -1295,6 +1295,7 @@ extern u32 drm_vblank_count(struct drm_device *dev, int crtc);
+ extern void drm_handle_vblank(struct drm_device *dev, int crtc);
+ extern int drm_vblank_get(struct drm_device *dev, int crtc);
+ extern void drm_vblank_put(struct drm_device *dev, int crtc);
++extern void drm_vblank_off(struct drm_device *dev, int crtc);
+ extern void drm_vblank_cleanup(struct drm_device *dev);
+ /* Modesetting support */
+ extern void drm_vblank_pre_modeset(struct drm_device *dev, int crtc);

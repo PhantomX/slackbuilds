@@ -1,0 +1,314 @@
+When using mmu notifiers, we are allowed to remove the page count
+reference tooken by get_user_pages to a specific page that is mapped
+inside the shadow page tables.
+
+This is needed so we can balance the pagecount against mapcount
+checking.
+
+(Right now kvm increase the pagecount and does not increase the
+mapcount when mapping page into shadow page table entry,
+so when comparing pagecount against mapcount, you have no
+reliable result.)
+
+add SPTE_HOST_WRITEABLE flag notify that the host physical page we are
+pointing to from the spte is write protected, and therefore we cant
+change its access to be write unless we run get_user_pages(write = 1).
+
+(this is needed for change_pte support in kvm)
+
+support for change_pte mmu notifiers is needed for kvm if it want ksm to
+directly map pages into its shadow page tables.
+
+Signed-off-by: Izik Eidus <ieidus@redhat.com>
+Signed-off-by: Justin M. Forbes <jforbes@redhat.com>
+---
+--- linux-2.6.30.x86_64/arch/x86/include/asm/kvm_host.h	2009-08-20 10:37:37.784886414 -0500
++++ linux-2.6.30.x86_64.kvm/arch/x86/include/asm/kvm_host.h	2009-08-20 10:39:33.742641558 -0500
+@@ -796,5 +796,6 @@ asmlinkage void kvm_handle_fault_on_rebo
+ int kvm_unmap_hva(struct kvm *kvm, unsigned long hva);
+ int kvm_age_hva(struct kvm *kvm, unsigned long hva);
+ int cpuid_maxphyaddr(struct kvm_vcpu *vcpu);
++void kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
+ 
+ #endif /* _ASM_X86_KVM_HOST_H */
+--- linux-2.6.30.x86_64/arch/x86/kvm/mmu.c	2009-08-20 10:37:37.964887039 -0500
++++ linux-2.6.30.x86_64.kvm/arch/x86/kvm/mmu.c	2009-08-20 10:41:15.231638028 -0500
+@@ -139,6 +139,8 @@ module_param(oos_shadow, bool, 0644);
+ #define ACC_USER_MASK    PT_USER_MASK
+ #define ACC_ALL          (ACC_EXEC_MASK | ACC_WRITE_MASK | ACC_USER_MASK)
+ 
++#define SPTE_HOST_WRITEABLE (1ULL << PT_FIRST_AVAIL_BITS_SHIFT)
++
+ #define SHADOW_PT_INDEX(addr, level) PT64_INDEX(addr, level)
+ 
+ struct kvm_rmap_desc {
+@@ -254,6 +256,11 @@ static pfn_t spte_to_pfn(u64 pte)
+ 	return (pte & PT64_BASE_ADDR_MASK) >> PAGE_SHIFT;
+ }
+ 
++static pte_t ptep_val(pte_t *ptep)
++{
++	return *ptep;
++}
++
+ static gfn_t pse36_gfn_delta(u32 gpte)
+ {
+ 	int shift = 32 - PT32_DIR_PSE36_SHIFT - PAGE_SHIFT;
+@@ -573,9 +580,7 @@ static void rmap_remove(struct kvm *kvm,
+ 	if (*spte & shadow_accessed_mask)
+ 		kvm_set_pfn_accessed(pfn);
+ 	if (is_writeble_pte(*spte))
+-		kvm_release_pfn_dirty(pfn);
+-	else
+-		kvm_release_pfn_clean(pfn);
++		kvm_set_pfn_dirty(pfn);
+ 	rmapp = gfn_to_rmap(kvm, sp->gfns[spte - sp->spt], is_large_pte(*spte));
+ 	if (!*rmapp) {
+ 		printk(KERN_ERR "rmap_remove: %p %llx 0->BUG\n", spte, *spte);
+@@ -684,7 +689,8 @@ static int rmap_write_protect(struct kvm
+ 	return write_protected;
+ }
+ 
+-static int kvm_unmap_rmapp(struct kvm *kvm, unsigned long *rmapp)
++static int kvm_unmap_rmapp(struct kvm *kvm, unsigned long *rmapp,
++			   unsigned long data)
+ {
+ 	u64 *spte;
+ 	int need_tlb_flush = 0;
+@@ -699,8 +705,48 @@ static int kvm_unmap_rmapp(struct kvm *k
+ 	return need_tlb_flush;
+ }
+ 
++static int kvm_set_pte_rmapp(struct kvm *kvm, unsigned long *rmapp,
++			     unsigned long data)
++{
++	int need_flush = 0;
++	u64 *spte, new_spte;
++	pte_t *ptep = (pte_t *)data;
++	pfn_t new_pfn;
++
++	new_pfn = pte_pfn(ptep_val(ptep));
++	spte = rmap_next(kvm, rmapp, NULL);
++	while (spte) {
++		BUG_ON(!is_shadow_present_pte(*spte));
++		rmap_printk("kvm_set_pte_rmapp: spte %p %llx\n", spte, *spte);
++		need_flush = 1;
++		if (pte_write(ptep_val(ptep))) {
++			rmap_remove(kvm, spte);
++			set_shadow_pte(spte, shadow_trap_nonpresent_pte);
++			spte = rmap_next(kvm, rmapp, NULL);
++		} else {
++			new_spte = *spte &~ (PT64_BASE_ADDR_MASK);
++			new_spte |= new_pfn << PAGE_SHIFT;
++
++			if (!pte_write(ptep_val(ptep))) {
++				new_spte &= ~PT_WRITABLE_MASK;
++				new_spte &= ~SPTE_HOST_WRITEABLE;
++				if (is_writeble_pte(*spte))
++					kvm_set_pfn_dirty(spte_to_pfn(*spte));
++			}
++			set_shadow_pte(spte, new_spte);
++			spte = rmap_next(kvm, rmapp, spte);
++		}
++	}
++	if (need_flush)
++		kvm_flush_remote_tlbs(kvm);
++
++	return 0;
++}
++
+ static int kvm_handle_hva(struct kvm *kvm, unsigned long hva,
+-			  int (*handler)(struct kvm *kvm, unsigned long *rmapp))
++			  unsigned long data,
++			  int (*handler)(struct kvm *kvm, unsigned long *rmapp,
++					 unsigned long data))
+ {
+ 	int i;
+ 	int retval = 0;
+@@ -721,11 +767,13 @@ static int kvm_handle_hva(struct kvm *kv
+ 		end = start + (memslot->npages << PAGE_SHIFT);
+ 		if (hva >= start && hva < end) {
+ 			gfn_t gfn_offset = (hva - start) >> PAGE_SHIFT;
+-			retval |= handler(kvm, &memslot->rmap[gfn_offset]);
++			retval |= handler(kvm, &memslot->rmap[gfn_offset],
++					  data);
+ 			retval |= handler(kvm,
+ 					  &memslot->lpage_info[
+ 						  gfn_offset /
+-						  KVM_PAGES_PER_HPAGE].rmap_pde);
++						  KVM_PAGES_PER_HPAGE].rmap_pde,
++						  data);
+ 		}
+ 	}
+ 
+@@ -734,10 +782,16 @@ static int kvm_handle_hva(struct kvm *kv
+ 
+ int kvm_unmap_hva(struct kvm *kvm, unsigned long hva)
+ {
+-	return kvm_handle_hva(kvm, hva, kvm_unmap_rmapp);
++	return kvm_handle_hva(kvm, hva, 0, kvm_unmap_rmapp);
++}
++
++void kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte)
++{
++	kvm_handle_hva(kvm, hva, (unsigned long)&pte, kvm_set_pte_rmapp);
+ }
+ 
+-static int kvm_age_rmapp(struct kvm *kvm, unsigned long *rmapp)
++static int kvm_age_rmapp(struct kvm *kvm, unsigned long *rmapp,
++			 unsigned long data)
+ {
+ 	u64 *spte;
+ 	int young = 0;
+@@ -770,13 +824,13 @@ static void rmap_recycle(struct kvm_vcpu
+ 	gfn = unalias_gfn(vcpu->kvm, gfn);
+ 	rmapp = gfn_to_rmap(vcpu->kvm, gfn, lpage);
+ 
+-	kvm_unmap_rmapp(vcpu->kvm, rmapp);
++	kvm_unmap_rmapp(vcpu->kvm, rmapp, 0);
+ 	kvm_flush_remote_tlbs(vcpu->kvm);
+ }
+ 
+ int kvm_age_hva(struct kvm *kvm, unsigned long hva)
+ {
+-	return kvm_handle_hva(kvm, hva, kvm_age_rmapp);
++	return kvm_handle_hva(kvm, hva, 0, kvm_age_rmapp);
+ }
+ 
+ #ifdef MMU_DEBUG
+@@ -1686,7 +1740,7 @@ static int set_spte(struct kvm_vcpu *vcp
+ 		    unsigned pte_access, int user_fault,
+ 		    int write_fault, int dirty, int largepage,
+ 		    gfn_t gfn, pfn_t pfn, bool speculative,
+-		    bool can_unsync)
++		    bool can_unsync, bool reset_host_protection)
+ {
+ 	u64 spte;
+ 	int ret = 0;
+@@ -1744,6 +1798,8 @@ static int set_spte(struct kvm_vcpu *vcp
+ 				spte &= ~PT_WRITABLE_MASK;
+ 		}
+ 	}
++	if (reset_host_protection)
++		spte |= SPTE_HOST_WRITEABLE;
+ 
+ 	if (pte_access & ACC_WRITE_MASK)
+ 		mark_page_dirty(vcpu->kvm, gfn);
+@@ -1757,7 +1813,8 @@ static void mmu_set_spte(struct kvm_vcpu
+ 			 unsigned pt_access, unsigned pte_access,
+ 			 int user_fault, int write_fault, int dirty,
+ 			 int *ptwrite, int largepage, gfn_t gfn,
+-			 pfn_t pfn, bool speculative)
++			 pfn_t pfn, bool speculative,
++             bool reset_host_protection)
+ {
+ 	int was_rmapped = 0;
+ 	int was_writeble = is_writeble_pte(*shadow_pte);
+@@ -1787,7 +1844,8 @@ static void mmu_set_spte(struct kvm_vcpu
+ 			was_rmapped = 1;
+ 	}
+ 	if (set_spte(vcpu, shadow_pte, pte_access, user_fault, write_fault,
+-		      dirty, largepage, gfn, pfn, speculative, true)) {
++		      dirty, largepage, gfn, pfn, speculative, true,
++              reset_host_protection)) {
+ 		if (write_fault)
+ 			*ptwrite = 1;
+ 		kvm_x86_ops->tlb_flush(vcpu);
+@@ -1804,8 +1862,7 @@ static void mmu_set_spte(struct kvm_vcpu
+ 	page_header_update_slot(vcpu->kvm, shadow_pte, gfn);
+ 	if (!was_rmapped) {
+ 		rmap_count = rmap_add(vcpu, shadow_pte, gfn, largepage);
+-		if (!is_rmap_pte(*shadow_pte))
+-			kvm_release_pfn_clean(pfn);
++		kvm_release_pfn_clean(pfn);
+ 		if (rmap_count > RMAP_RECYCLE_THRESHOLD)
+ 			rmap_recycle(vcpu, gfn, largepage);
+ 	} else {
+@@ -1837,7 +1894,7 @@ static int __direct_map(struct kvm_vcpu 
+ 		    || (largepage && iterator.level == PT_DIRECTORY_LEVEL)) {
+ 			mmu_set_spte(vcpu, iterator.sptep, ACC_ALL, ACC_ALL,
+ 				     0, write, 1, &pt_write,
+-				     largepage, gfn, pfn, false);
++				     largepage, gfn, pfn, false, true);
+ 			++vcpu->stat.pf_fixed;
+ 			break;
+ 		}
+--- linux-2.6.30.x86_64/arch/x86/kvm/paging_tmpl.h	2009-08-20 10:37:37.966889166 -0500
++++ linux-2.6.30.x86_64.kvm/arch/x86/kvm/paging_tmpl.h	2009-08-20 10:39:33.747636180 -0500
+@@ -266,9 +266,13 @@ static void FNAME(update_pte)(struct kvm
+ 	if (mmu_notifier_retry(vcpu, vcpu->arch.update_pte.mmu_seq))
+ 		return;
+ 	kvm_get_pfn(pfn);
++    /*
++     * we call mmu_set_spte() with reset_host_protection = true beacuse that
++     * vcpu->arch.update_pte.pfn was fetched from get_user_pages(write = 1).
++     */ 
+ 	mmu_set_spte(vcpu, spte, page->role.access, pte_access, 0, 0,
+ 		     gpte & PT_DIRTY_MASK, NULL, largepage,
+-		     gpte_to_gfn(gpte), pfn, true);
++		     gpte_to_gfn(gpte), pfn, true, true);
+ }
+ 
+ /*
+@@ -302,7 +306,7 @@ static u64 *FNAME(fetch)(struct kvm_vcpu
+ 				     user_fault, write_fault,
+ 				     gw->ptes[gw->level-1] & PT_DIRTY_MASK,
+ 				     ptwrite, largepage,
+-				     gw->gfn, pfn, false);
++				     gw->gfn, pfn, false, true);
+ 			break;
+ 		}
+ 
+@@ -552,6 +556,7 @@ static void FNAME(prefetch_page)(struct 
+ static int FNAME(sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
+ {
+ 	int i, offset, nr_present;
++        bool reset_host_protection = 1;
+ 
+ 	offset = nr_present = 0;
+ 
+@@ -589,9 +594,13 @@ static int FNAME(sync_page)(struct kvm_v
+ 
+ 		nr_present++;
+ 		pte_access = sp->role.access & FNAME(gpte_access)(vcpu, gpte);
++        if (!(sp->spt[i] & SPTE_HOST_WRITEABLE)) {
++            pte_access &= ~PT_WRITABLE_MASK;
++                         reset_host_protection = 0;
++                } else { reset_host_protection = 1; }
+ 		set_spte(vcpu, &sp->spt[i], pte_access, 0, 0,
+ 			 is_dirty_pte(gpte), 0, gfn,
+-			 spte_to_pfn(sp->spt[i]), true, false);
++			 spte_to_pfn(sp->spt[i]), true, false, reset_host_protection);
+ 	}
+ 
+ 	return !nr_present;
+--- linux-2.6.30.x86_64/virt/kvm/kvm_main.c	2009-08-20 10:37:45.448886340 -0500
++++ linux-2.6.30.x86_64.kvm/virt/kvm/kvm_main.c	2009-08-20 10:39:33.749636212 -0500
+@@ -859,6 +859,19 @@ static void kvm_mmu_notifier_invalidate_
+ 
+ }
+ 
++static void kvm_mmu_notifier_change_pte(struct mmu_notifier *mn,
++					struct mm_struct *mm,
++					unsigned long address,
++					pte_t pte)
++{
++	struct kvm *kvm = mmu_notifier_to_kvm(mn);
++
++	spin_lock(&kvm->mmu_lock);
++	kvm->mmu_notifier_seq++;
++	kvm_set_spte_hva(kvm, address, pte);
++	spin_unlock(&kvm->mmu_lock);
++}
++
+ static void kvm_mmu_notifier_invalidate_range_start(struct mmu_notifier *mn,
+ 						    struct mm_struct *mm,
+ 						    unsigned long start,
+@@ -938,6 +951,7 @@ static const struct mmu_notifier_ops kvm
+ 	.invalidate_range_start	= kvm_mmu_notifier_invalidate_range_start,
+ 	.invalidate_range_end	= kvm_mmu_notifier_invalidate_range_end,
+ 	.clear_flush_young	= kvm_mmu_notifier_clear_flush_young,
++	.change_pte		= kvm_mmu_notifier_change_pte,
+ 	.release		= kvm_mmu_notifier_release,
+ };
+ #endif /* CONFIG_MMU_NOTIFIER && KVM_ARCH_WANT_MMU_NOTIFIER */

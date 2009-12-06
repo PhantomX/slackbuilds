@@ -28,19 +28,37 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
-if [ "${TMP}" = "" ]; then
-  TMP=/tmp
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
 fi
 
 NAME=musepack-tools
 NAME2=mppenc
-PKG=${TMP}/package-${NAME}
+PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-1.16}
 VERSION2=${VERSION2:-1.15v}
-ARCH=${ARCH:-i686}
-BUILD=${BUILD:-2}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  echo "Do not compile on x86_64"
+  exit 1
+  SLKTARGET=${SLKTARGET:-x86_64}
+else
+  SLKTARGET=${SLKTARGET:-i486}
+fi
+BUILD=${BUILD:-3}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -57,27 +75,34 @@ SRCARCHIVE2=${SRCDIR2}.tar.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://files.musepack.net/source/${SRCARCHIVE}"
-DL_URL2="http://files.musepack.net/source/${SRCARCHIVE2}"
+DL_URL="http://files.musepack.net/source"
 
-if [ "${ARCH}" = "i386" ]; then
-  SLKCFLAGS="-O2 -march=i386 -mtune=i686"
-elif [ "${ARCH}" = "i486" ]; then
-  SLKCFLAGS="-O2 -march=i486 -mtune=i686"
-elif [ "${ARCH}" = "i686" ]; then
-  SLKCFLAGS="-O2 -march=athlon64 -mtune=athlon64 -msse3 -pipe -fomit-frame-pointer"
-elif [ "${ARCH}" = "s390" ]; then
-  SLKCFLAGS="-O2"
-elif [ "${ARCH}" = "x86_64" ]; then
-  SLKCFLAGS="-O2"
-fi
+# if source is not present, download in source rootdir if possible
+for file in ${SRCARCHIVE} ${SRCARCHIVE2} ;do
+  test -r ${CWD}/${file} || wget ${DL_OPTS} ${DL_URL}/${file} || exit 1
+done
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
 fi
-if ! test -r ${SRCARCHIVE2}; then
-  test -r ${CWD}/${SRCARCHIVE2} || wget ${DL_OPTS} ${DL_URL2} || exit 1
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
+  [ "${SLKTARGET}" = "x86_64" ] && SLKTARGET=i486
+  export CC="gcc -m32"
+  export CXX="g++ -m32"
+  export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:${PKG_CONFIG_PATH}"
 fi
 
 if [ -d ${PKG} ]; then
@@ -88,16 +113,18 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
-tar -xjvf ${CWD}/${SRCARCHIVE2} || exit 1
+tar -xvf ${CWD}/${SRCARCHIVE2} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
+# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
 ( cd sv7 || exit
-  zcat ${CWD}/${NAME}-1.15v-Makefile.patch.gz | patch -p0 -E --backup --verbose || exit 1
-  zcat ${CWD}/${NAME}-1.15v-gcc4.patch.gz | patch -p1 -E --backup --verbose || exit 1
-  zcat ${CWD}/${NAME}-1.15v-Makefile-esd.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
   sed -i 's/#define USE_IRIX_AUDIO/#undef USE_IRIX_AUDIO/' mpp.h
   sed -i -e 's/^LDADD	   = -lm$/LDADD	   = $(shell esd-config --libs)/' \
@@ -107,10 +134,13 @@ chmod -R u+w,go+r-w,a-s .
 
   # console redirection to /dev/tty makes no sense
   sed -i -e 's/$(LDADD) &> $(LOGFILE)/$(LDADD)/' Makefile || exit 1
+  sed -i -e "s|/usr/lib$|/usr/lib${LIBDIRSUFFIX}|g" Makefile || exit 1
 
-  zcat ${CWD}/${NAME}-1.15v-execstack.patch.gz | patch -p1 -E --backup --verbose || exit 1
+  zcat ${SB_PATCHDIR}/${NAME}-1.15v-execstack.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-  ARCH= make mppenc mppdec replaygain CFLAGS="${SLKCFLAGS} -I${TMP}/${SRCDIR}/sv7"|| exit 1
+  SLKCFLAGS="$(echo ${SLKCFLAGS} | sed -e 's|-O.|-O1|g')"
+
+  ARCH= CC3="${CC}" make mppenc mppdec replaygain CFLAGS="${SLKCFLAGS} -I${TMP}/${SRCDIR}/sv7" || exit 1
   
   mkdir -p ${PKG}/usr/bin
   install -m0755 mppenc mppdec replaygain \
@@ -124,10 +154,15 @@ sed -i -e '/CMAKE_C_FLAGS/d' \
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
-    cmake . -DCMAKE_INSTALL_PREFIX:PATH=/usr \
-|| exit 1
+  cmake . -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSYSCONF_INSTALL_DIR=/etc \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE=ON \
+  || exit 1
 
-make VERBOSE=1 || exit 1
+make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
@@ -146,7 +181,8 @@ find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
-    mv ${PKG}/usr/share/man ${PKG}/usr/man
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
 fi
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -154,19 +190,13 @@ if [ -d ${PKG}/usr/man ]; then
       ( cd ${manpagedir}
         for eachpage in $( find . -type l -maxdepth 1) ; do
           ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
-          rm ${eachpage}
+          rm -f ${eachpage}
         done
         gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
       )
     done
-  )
-fi
-
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
   )
 fi
 
@@ -177,19 +207,19 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
+fi
 
 # Build package:
-set +o xtrace			# no longer print commands upon execution
+set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
@@ -197,7 +227,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
-if test $UID = 0; then
+if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then
@@ -212,9 +242,11 @@ fi
 if [ "$1" = "--cleanup" ]; then
   echo "Cleaning..."
   if [ -d ${TMP}/${SRCDIR} ]; then
-    rm -rf ${TMP}/${SRCDIR}
-    echo "${TMP}/${SRCDIR} cleanup completed"
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
   fi
-  rm -rf ${PKG}
-  echo "Cleanup completed"
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
 fi
+exit 0

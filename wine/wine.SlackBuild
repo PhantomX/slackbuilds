@@ -43,9 +43,9 @@ fi
 NAME=wine
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.1.33}
+VERSION=${VERSION:-1.1.34}
 PPAVER=${PPAVER:-0.32}
-PPAVER2=${PPAVER2:-0.30}
+PPAVER2=${PPAVER2:-0.33}
 PPAVER3=${PPAVER3:-0.6}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -68,6 +68,10 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 # Set to YES to enable pulseaudio support
 SB_PA=${SB_PA:-YES}
+
+# Set to YES to enable maintainer mode support (uses Werror and rebuilt fonts and icons)
+# Needs fontforge, icotool and librsvg
+SB_MM=${SB_MM:-NO}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -108,6 +112,7 @@ if [ "${ARCH}" = "x86_64" ] ;then
 else
   LIBDIRSUFFIX=""
   [ "${SLKTARGET}" = "x86_64" ] && SLKTARGET=i486
+  ARCHOPT=""
   export CC="gcc -m32"
   export CXX="g++ -m32"
   export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:${PKG_CONFIG_PATH}"
@@ -137,7 +142,18 @@ sed -i \
   -e '/LDRPATH_LOCAL=/s|=".*"|=""|g' \
   configure.ac || exit 1
 
+sed -i -e 's|DWORD widGetNumDevs()|DWORD widGetNumDevs(void)|g' \
+  dlls/winepulse.drv/wavein.c || exit 1
+
+SLKCFLAGS=$( echo ${SLKCFLAGS} | sed -e 's/ -._FORTIFY_SOURCE=.//' )
+
+unset SB_PAOPTS
 [ "${SB_PA}" = "YES" ] || SB_PAOPTS="--without-pulse"
+
+unser SB_MMOPTS
+if [ "${SB_MM}" = "YES" ];then
+  SB_MMOPTS="--enable-maintainer-mode"
+fi
 
 autoreconf -ivf || exit 1
 
@@ -153,8 +169,10 @@ CXXFLAGS="${SLKCFLAGS}" \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --x-includes=/usr/include \
   --x-libraries=/usr/lib${LIBDIRSUFFIX} \
-  ${SB_PAOPTS} ${ARCHOPT} \
+  ${SB_PAOPTS} ${ARCHOPT} ${SB_MMOPTS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+
+sed -i -e 's|-Werror||g' dlls/wldap32/Makefile || exit 1
 
 make depend || exit 1
 make TARGETFLAGS="" -j${NJOBS} || exit 1
@@ -170,6 +188,53 @@ echo "/usr/lib${LIBDIRSUFFIX}/wine" > \
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+if [ "${ARCH}" = "x86_64" ] ;then
+  mv ${PKG}/usr/bin/${NAME} ${PKG}/usr/bin/${NAME}64 || exit 1
+else
+  mv ${PKG}/usr/bin/${NAME} ${PKG}/usr/bin/${NAME}32 || exit 1
+fi
+
+cat > ${PKG}/usr/bin/${NAME} <<'EOF'
+#!/bin/sh
+HAVE_32=false
+HAVE_64=false
+
+if [ -x "/usr/bin/wine32" ]; then
+HAVE_32=true
+fi
+
+if [ -x "/usr/bin/wine64" ]; then
+HAVE_64=true
+fi
+
+if [ -f "${1}" ]; then
+  archtype=`file "${1}" | cut -d':' -f2 | cut -d' ' -f2`
+
+  if [ ${archtype} = 'PE32+' ]; then # 64bit
+    if ${HAVE_64}; then
+      exec "/usr/bin/wine64" "${@}";
+    elif [ $(uname -m) = 'x86_64' ]; then
+      echo "Your are trying to run a 64bit application. Please install the 64bit version of wine."
+    else
+      echo "Your are trying to run a 64bit application on a 32bit installation of your system. You need a 64bit version of yout system to run this application."
+    fi
+  else
+    if ${HAVE_32}; then
+      exec "/usr/bin/wine32" "${@}"
+    else
+      echo "Your are trying to run a 32bit application. Please install the 32bit version of wine."
+    fi
+  fi
+else
+  if ${HAVE_64}; then
+    exec "/usr/bin/wine64" "${@}";
+  else
+   exec "/usr/bin/wine32" "${@}";
+  fi
+fi
+EOF
+chmod 0755 ${PKG}/usr/bin/${NAME} || exit 1
 
 # add wine dir to desktop
 mkdir -p ${PKG}/etc/xdg/menus/applications-merged

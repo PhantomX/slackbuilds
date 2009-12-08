@@ -22,8 +22,9 @@ snap=${snap:-$(date +%Y%m%d)}
 
 pushd "${tmp}"
   svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
+  svn co --depth=files --force ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    svnversion | sed "s/\(^@<:@0-9@:>@*\).*/\1/" > svn_revision
+    LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2 > svn_revision
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}

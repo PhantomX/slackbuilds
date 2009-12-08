@@ -18,3 +18,8 @@ zcat ${SB_PATCHDIR}/14_ruby_libs_not_scripts.diff.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/15_temptables_more_indices.diff.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/16_gnome_multimedia_keys.diff.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/18_add_lastfm_recommended_radio.diff.gz | patch -p1 -E --backup --verbose || exit 1
+
+if [ "$(echo ${RUBYVER} | cut -d. -f1)" -ge 1 ] && [ "$(echo ${RUBYVER} | cut -d. -f2)" -ge 9 ] ;then
+  sed -i -e '/ruby_includes=/s|archdir|rubyhdrdir|g' amarok/configure.in.in || exit 1
+  zcat ${SB_PATCHDIR}/${NAME}-1.4.10-ruby1.9.patch.gz | patch -p0 -E --backup --verbose || exit 1
+fi

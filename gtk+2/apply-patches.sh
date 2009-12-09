@@ -27,3 +27,7 @@ zcat ${SB_PATCHDIR}/gtk2-rotate-layout.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/gtk2-landscape-pdf-print.patch.gz | patch -p1 --verbose || exit 1
 # https://bugzilla.gnome.org/show_bug.cgi?id=600992
 zcat ${SB_PATCHDIR}/filesystemref.patch.gz | patch -p1 --verbose || exit 1
+# from upstream
+zcat ${SB_PATCHDIR}/o-minus.patch.gz | patch -p1 --verbose || exit 1
+# from upstream
+zcat ${SB_PATCHDIR}/strftime-format.patch.gz | patch -p1 --verbose || exit 1

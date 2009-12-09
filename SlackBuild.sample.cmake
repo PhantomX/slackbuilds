@@ -110,25 +110,27 @@ chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
+export CFLAGS="${SLKCFLAGS}"
+export CXXFLAGS="${SLKCFLAGS}"
+export FFLAGS="${SLKCFLAGS}"
+
 mkdir -p build
 ( cd build || exit 1
 
-  CFLAGS="${SLKCFLAGS}" \
-  CXXFLAGS="${SLKCFLAGS}" \
-  FFLAGS="${SLKCFLAGS}" \
   cmake .. \
-    -DCMAKE_BUILD_TYPE="${SLKDIST}" \
-    -DCMAKE_INSTALL_PREFIX=/usr \
-    -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
     -DLIB_SUFFIX=${LIBDIRSUFFIX} \
-    -DSYSCONF_INSTALL_DIR=/etc \
+    -DSHARE_INSTALL_PREFIX:PATH=/usr/share \
+    -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS:BOOL=ON \
     -DCMAKE_SKIP_RPATH:BOOL=ON \
-    -DCMAKE_VERBOSE_MAKEFILE=ON \
+    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
     || exit 1
 
   make -j${NJOBS} || make || exit 1
-  make install DESTDIR=${PKG} || exit 1
+  make install/fast DESTDIR=${PKG} || exit 1
 
 ) || exit 1
 

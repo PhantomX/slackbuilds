@@ -24,7 +24,7 @@ pushd "${tmp}"
   pushd ${module}-${snap}
     HG_REV=$(hg id -ib && touch src/hg_revision.h)
     sed -i -e "/^HG_REV/s|:=.*|:= ${HG_REV}|g" Makefile
-    find . -type d -name .git -print0 | xargs -0r rm -rf
+    find . -type d -name .hg -print0 | xargs -0r rm -rf
     rm -f .hgignore
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}

@@ -17,11 +17,13 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-D${snap}"
+
 pushd "${tmp}"
   echo | cvs -d${snaproot} login
-  cvs -z3 -d${snaproot} co -d${module}-${snap} -P Gens-MultiPlatform
+  cvs -z3 -d${snaproot} co ${SNAP_COOPTS} -d${module}-${snap} -P Gens-MultiPlatform
   pushd ${module}-${snap}
     find . -type d -name CVS -print0 | xargs -0r rm -rf
   popd
-  tar jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}
+  tar Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

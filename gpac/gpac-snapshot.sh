@@ -17,9 +17,11 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-D${snap}"
+
 pushd "${tmp}"
   cvs -d:pserver:${snaproot} login
-  cvs -z3 -d:pserver:${snaproot} co -d${module}-${cvs} -P ${module}
+  cvs -z3 -d:pserver:${snaproot} co ${SNAP_COOPTS} -d${module}-${cvs} -P ${module}
   pushd ${module}-${cvs}
     find . -type d -name CVS -print0 | xargs -0r rm -rf
   popd

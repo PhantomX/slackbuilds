@@ -120,6 +120,7 @@ mkdir -p build
   cmake .. \
     -DCMAKE_INSTALL_PREFIX:PATH=/usr \
     -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DINCLUDE_INSTALL_DIR:PATH=/usr/include \
     -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
     -DLIB_SUFFIX=${LIBDIRSUFFIX} \
     -DSHARE_INSTALL_PREFIX:PATH=/usr/share \

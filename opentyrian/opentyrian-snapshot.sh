@@ -22,6 +22,10 @@ snap=${snap:-$(date +%Y%m%d)}
 pushd "${tmp}"
   hg clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
+    if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+      hgdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
+      hg checkout -d "${hgdate}"
+    fi
     HG_REV=$(hg id -ib && touch src/hg_revision.h)
     sed -i -e "/^HG_REV/s|:=.*|:= ${HG_REV}|g" Makefile
     find . -type d -name .hg -print0 | xargs -0r rm -rf

@@ -19,7 +19,6 @@ zcat ${SB_PATCHDIR}/vim-6.1-rh3.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/vim-7.0-rclocation.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/vim-6.4-checkhl.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/vim-7.2-fstabsyntax.patch.gz | patch -p1 --verbose || exit 1
-zcat ${SB_PATCHDIR}/vim-7.1-lib64.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/vim-7.0-warning.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/vim-7.0-syncolor.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/vim-7.0-specedit.patch.gz | patch -p1 --verbose || exit 1

@@ -1,52 +1,22 @@
-diff -up linux-2.6.31.noarch/fs/nfsd/export.c.orig linux-2.6.31.noarch/fs/nfsd/export.c
---- linux-2.6.31.noarch/fs/nfsd/export.c.orig	2009-10-14 14:26:23.000000000 -0400
-+++ linux-2.6.31.noarch/fs/nfsd/export.c	2009-10-14 15:02:44.000000000 -0400
-@@ -109,6 +109,7 @@ static int expkey_parse(struct cache_det
- 	if (mesg[mlen-1] != '\n')
- 		return -EINVAL;
- 	mesg[mlen-1] = 0;
-+	dprintk("expkey_parse: '%s'\n", mesg);
+diff -up linux-2.6.32.i686/fs/nfsd/export.c.save linux-2.6.32.i686/fs/nfsd/export.c
+--- linux-2.6.32.i686/fs/nfsd/export.c.save	2009-12-04 10:24:17.000000000 -0500
++++ linux-2.6.32.i686/fs/nfsd/export.c	2009-12-04 10:40:52.000000000 -0500
+@@ -372,10 +372,12 @@ static struct svc_export *svc_export_loo
+ static int check_export(struct inode *inode, int flags, unsigned char *uuid)
+ {
  
- 	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
- 	err = -ENOMEM;
-@@ -186,6 +187,8 @@ static int expkey_parse(struct cache_det
- 	if (dom)
- 		auth_domain_put(dom);
- 	kfree(buf);
-+	if (err)
-+		dprintk("expkey_parse: err %d\n", err);
- 	return err;
- }
+-	/* We currently export only dirs and regular files.
+-	 * This is what umountd does.
++	/*
++	 * We currently export only dirs, regular files, and (for v4
++	 * pseudoroot) symlinks.
+ 	 */
+ 	if (!S_ISDIR(inode->i_mode) &&
++	    !S_ISLNK(inode->i_mode) &&
+ 	    !S_ISREG(inode->i_mode))
+ 		return -ENOTDIR;
  
-@@ -356,7 +359,10 @@ static void svc_export_request(struct ca
- 		(*bpp)[0] = '\n';
- 		return;
- 	}
-+
- 	qword_add(bpp, blen, pth);
-+	dprintk("svc_export_request: pth %s\n", pth);
-+
- 	(*bpp)[-1] = '\n';
- }
- 
-@@ -510,6 +516,7 @@ static int svc_export_parse(struct cache
- 	if (mesg[mlen-1] != '\n')
- 		return -EINVAL;
- 	mesg[mlen-1] = 0;
-+	dprintk("svc_export_parse: '%s'\n", mesg);
- 
- 	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
- 	if (!buf)
-@@ -629,6 +636,8 @@ out1:
- 	auth_domain_put(dom);
- out:
- 	kfree(buf);
-+	if (err)
-+		dprintk("svc_export_parse: err %d\n", err);
- 	return err;
- }
- 
-@@ -1425,6 +1434,7 @@ static struct flags {
+@@ -1425,6 +1427,7 @@ static struct flags {
  	{ NFSEXP_CROSSMOUNT, {"crossmnt", ""}},
  	{ NFSEXP_NOSUBTREECHECK, {"no_subtree_check", ""}},
  	{ NFSEXP_NOAUTHNLM, {"insecure_locks", ""}},
@@ -54,7 +24,7 @@ diff -up linux-2.6.31.noarch/fs/nfsd/export.c.orig linux-2.6.31.noarch/fs/nfsd/e
  #ifdef MSNFS
  	{ NFSEXP_MSNFS, {"msnfs", ""}},
  #endif
-@@ -1505,7 +1515,7 @@ static int e_show(struct seq_file *m, vo
+@@ -1505,7 +1508,7 @@ static int e_show(struct seq_file *m, vo
  	struct svc_export *exp = container_of(cp, struct svc_export, h);
  
  	if (p == SEQ_START_TOKEN) {
@@ -63,313 +33,194 @@ diff -up linux-2.6.31.noarch/fs/nfsd/export.c.orig linux-2.6.31.noarch/fs/nfsd/e
  		seq_puts(m, "# Path Client(Flags) # IPs\n");
  		return 0;
  	}
-diff -up linux-2.6.31.noarch/fs/nfsd/nfs4xdr.c.orig linux-2.6.31.noarch/fs/nfsd/nfs4xdr.c
---- linux-2.6.31.noarch/fs/nfsd/nfs4xdr.c.orig	2009-10-14 14:26:23.000000000 -0400
-+++ linux-2.6.31.noarch/fs/nfsd/nfs4xdr.c	2009-10-14 15:02:44.000000000 -0400
-@@ -2174,28 +2174,61 @@ static inline int attributes_need_mount(
- 	return 0;
- }
+diff -up linux-2.6.32.i686/fs/nfsd/nfs4xdr.c.save linux-2.6.32.i686/fs/nfsd/nfs4xdr.c
+--- linux-2.6.32.i686/fs/nfsd/nfs4xdr.c.save	2009-12-04 10:24:17.000000000 -0500
++++ linux-2.6.32.i686/fs/nfsd/nfs4xdr.c	2009-12-04 10:26:49.000000000 -0500
+@@ -2204,11 +2204,14 @@ nfsd4_encode_dirent_fattr(struct nfsd4_r
+ 	 * we will not follow the cross mount and will fill the attribtutes
+ 	 * directly from the mountpoint dentry.
+ 	 */
+-	if (d_mountpoint(dentry) && !attributes_need_mount(cd->rd_bmval))
+-		ignore_crossmnt = 1;
+-	else if (d_mountpoint(dentry)) {
++	if (nfsd_mountpoint(dentry, exp)) {
+ 		int err;
  
--static __be32
--nfsd4_encode_dirent_fattr(struct nfsd4_readdir *cd,
--		const char *name, int namlen, __be32 *p, int *buflen)
-+struct dentry *
-+nfsd_check_export(struct nfsd4_readdir *cd, const char *name, int namlen)
- {
- 	struct svc_export *exp = cd->rd_fhp->fh_export;
- 	struct dentry *dentry;
--	__be32 nfserr;
--	int ignore_crossmnt = 0;
-+	int err;
- 
- 	dentry = lookup_one_len(name, cd->rd_fhp->fh_dentry, namlen);
- 	if (IS_ERR(dentry))
--		return nfserrno(PTR_ERR(dentry));
-+		return dentry;
- 	if (!dentry->d_inode) {
--		/*
--		 * nfsd_buffered_readdir drops the i_mutex between
--		 * readdir and calling this callback, leaving a window
--		 * where this directory entry could have gone away.
--		 */
- 		dput(dentry);
--		return nfserr_noent;
-+		return ERR_PTR(-ENOENT);
-+	}
-+	
-+	/*
-+	 * Check to see if this dentry is part 
-+	 * of the psuedo root
-+	 */
-+	if ((exp->ex_flags & NFSEXP_V4ROOT) == 0)
-+		return dentry;
-+
-+	/*
-+	 * Only exported directories are visable
-+	 * on psuedo exports
-+	 */
-+	if (!S_ISDIR(dentry->d_inode->i_mode)) {
-+		dput(dentry);
-+		return ERR_PTR(-ENOENT);
- 	}
- 
-+	/*
-+	 * Make the upcall to see if this directory
-+	 * is exported.
-+	 */
-+	exp_get(exp);
-+	err = nfsd_export_lookup(cd->rd_rqstp, dentry, exp);
-+	if (err) {
-+		exp_put(exp);
-+		dput(dentry);
-+		return ERR_PTR(err);
-+	}
-+	exp_put(exp);
-+
-+	return dentry;
-+}
-+
-+static __be32
-+nfsd4_encode_dirent_fattr(struct nfsd4_readdir *cd,
-+		struct dentry *dentry, __be32 *p, int *buflen)
-+{
-+	struct svc_export *exp = cd->rd_fhp->fh_export;
-+	__be32 nfserr;
-+	int ignore_crossmnt = 0;
-+
- 	exp_get(exp);
- 	/*
- 	 * In the case of a mountpoint, the client may be asking for
-@@ -2256,6 +2289,7 @@ nfsd4_encode_dirent(void *ccdv, const ch
- 	struct readdir_cd *ccd = ccdv;
- 	struct nfsd4_readdir *cd = container_of(ccd, struct nfsd4_readdir, common);
- 	int buflen;
-+	struct dentry *dentry;
- 	__be32 *p = cd->buffer;
- 	__be32 *cookiep;
- 	__be32 nfserr = nfserr_toosmall;
-@@ -2266,19 +2300,40 @@ nfsd4_encode_dirent(void *ccdv, const ch
- 		return 0;
- 	}
- 
-+	/*
-+	 * Do the lookup and make sure the dentry is 
-+	 * visible on the exported directory
-+	 */
-+	dentry = nfsd_check_export(cd, name, namlen);
-+	if (IS_ERR(dentry)) {
-+		if (PTR_ERR(dentry) == -ENOENT) {
-+			cd->common.err = nfs_ok;
-+			return 0;
++		if (!(exp->ex_flags & NFSEXP_V4ROOT)
++				&& !attributes_need_mount(cd->rd_bmval)) {
++			ignore_crossmnt = 1;
++			goto out_encode;
 +		}
-+		cd->common.err = nfserrno(PTR_ERR(dentry));
-+		return -EINVAL;
-+	}
-+ 
- 	if (cd->offset)
- 		xdr_encode_hyper(cd->offset, (u64) offset);
+ 		/*
+ 		 * Why the heck aren't we just using nfsd_lookup??
+ 		 * Different "."/".." handling?  Something else?
+@@ -2224,6 +2227,7 @@ nfsd4_encode_dirent_fattr(struct nfsd4_r
+ 			goto out_put;
  
- 	buflen = cd->buflen - 4 - XDR_QUADLEN(namlen);
--	if (buflen < 0)
-+	if (buflen < 0) {
-+		dput(dentry);
- 		goto fail;
-+	}
- 
- 	*p++ = xdr_one;                             /* mark entry present */
- 	cookiep = p;
- 	p = xdr_encode_hyper(p, NFS_OFFSET_MAX);    /* offset of next entry */
- 	p = xdr_encode_array(p, name, namlen);      /* name length & name */
- 
--	nfserr = nfsd4_encode_dirent_fattr(cd, name, namlen, p, &buflen);
-+	/*
-+	 * Note: the dput() on the dentry is done in 
-+	 * nfsd4_encode_dirent_fattr() since the dentry can
-+	 * change when crossing a mount point.
-+	 */
-+	nfserr = nfsd4_encode_dirent_fattr(cd, dentry, p, &buflen);
- 	switch (nfserr) {
- 	case nfs_ok:
- 		p += buflen;
-diff -up linux-2.6.31.noarch/fs/nfsd/nfsfh.c.orig linux-2.6.31.noarch/fs/nfsd/nfsfh.c
---- linux-2.6.31.noarch/fs/nfsd/nfsfh.c.orig	2009-10-14 14:26:23.000000000 -0400
-+++ linux-2.6.31.noarch/fs/nfsd/nfsfh.c	2009-10-14 15:02:44.000000000 -0400
-@@ -109,6 +109,30 @@ static __be32 nfsd_setuser_and_check_por
+ 	}
++out_encode:
+ 	nfserr = nfsd4_encode_fattr(NULL, exp, dentry, p, buflen, cd->rd_bmval,
+ 					cd->rd_rqstp, ignore_crossmnt);
+ out_put:
+diff -up linux-2.6.32.i686/fs/nfsd/nfsfh.c.save linux-2.6.32.i686/fs/nfsd/nfsfh.c
+--- linux-2.6.32.i686/fs/nfsd/nfsfh.c.save	2009-12-04 10:24:17.000000000 -0500
++++ linux-2.6.32.i686/fs/nfsd/nfsfh.c	2009-12-04 10:38:26.000000000 -0500
+@@ -109,6 +109,36 @@ static __be32 nfsd_setuser_and_check_por
  	return nfserrno(nfsd_setuser(rqstp, exp));
  }
  
 +static inline __be32 check_pseudo_root(struct svc_rqst *rqstp,
 +	struct dentry *dentry, struct svc_export *exp)
 +{
-+	/*
-+	 * Only interested in pseudo roots
-+	 */
 +	if (!(exp->ex_flags & NFSEXP_V4ROOT))
 +		return nfs_ok;
-+
 +	/*
-+	 * Only directories should be on the pseudo root
++	 * v2/v3 clients have no need for the V4ROOT export--they use
++	 * the mount protocl instead; also, further V4ROOT checks may be
++	 * in v4-specific code, in which case v2/v3 clients could bypass
++	 * them.
 +	 */
-+	if (unlikely(!S_ISDIR(dentry->d_inode->i_mode)))
++	if (!nfsd_v4client(rqstp))
 +		return nfserr_stale;
-+
 +	/*
-+	 * Make sure the export is the parent of the dentry
++	 * We're exposing only the directories and symlinks that have to be
++	 * traversed on the way to real exports:
 +	 */
-+	if (unlikely(dentry->d_parent != exp->ex_path.dentry))
++	if (unlikely(!S_ISDIR(dentry->d_inode->i_mode) &&
++		     !S_ISLNK(dentry->d_inode->i_mode)))
 +		return nfserr_stale;
-+
++	/*
++	 * A pseudoroot export gives permission to access only one
++	 * single directory; the kernel has to make another upcall
++	 * before granting access to anything else under it:
++	 */
++	if (unlikely(dentry != exp->ex_path.dentry))
++		return nfserr_stale;
 +	return nfs_ok;
 +}
 +
  /*
   * Use the given filehandle to look up the corresponding export and
   * dentry.  On success, the results are used to set fh_export and
-@@ -315,6 +339,14 @@ fh_verify(struct svc_rqst *rqstp, struct
- 		error = nfsd_setuser_and_check_port(rqstp, exp);
- 		if (error)
+@@ -317,6 +347,13 @@ fh_verify(struct svc_rqst *rqstp, struct
  			goto out;
-+
-+		/*
-+		 * Do some spoof checking if we are on the pseudo root
-+		 */
-+		error = check_pseudo_root(rqstp, dentry, exp);
-+		if (error)
-+			goto out;
-+
  	}
  
++	/*
++	 * Do some spoof checking if we are on the pseudo root
++	 */
++	error = check_pseudo_root(rqstp, dentry, exp);
++	if (error)
++		goto out;
++
  	error = nfsd_mode_check(rqstp, dentry->d_inode->i_mode, type);
-diff -up linux-2.6.31.noarch/fs/nfsd/vfs.c.orig linux-2.6.31.noarch/fs/nfsd/vfs.c
---- linux-2.6.31.noarch/fs/nfsd/vfs.c.orig	2009-10-14 14:26:23.000000000 -0400
-+++ linux-2.6.31.noarch/fs/nfsd/vfs.c	2009-10-14 15:03:37.000000000 -0400
-@@ -141,6 +141,55 @@ out:
+ 	if (error)
+ 		goto out;
+diff -up linux-2.6.32.i686/fs/nfsd/vfs.c.save linux-2.6.32.i686/fs/nfsd/vfs.c
+--- linux-2.6.32.i686/fs/nfsd/vfs.c.save	2009-12-04 10:24:18.000000000 -0500
++++ linux-2.6.32.i686/fs/nfsd/vfs.c	2009-12-04 10:35:04.000000000 -0500
+@@ -89,12 +89,6 @@ struct raparm_hbucket {
+ #define RAPARM_HASH_MASK	(RAPARM_HASH_SIZE-1)
+ static struct raparm_hbucket	raparm_hash[RAPARM_HASH_SIZE];
+ 
+-static inline int
+-nfsd_v4client(struct svc_rqst *rq)
+-{
+-    return rq->rq_prog == NFS_PROGRAM && rq->rq_vers == 4;
+-}
+-
+ /* 
+  * Called from nfsd_lookup and encode_dirent. Check if we have crossed 
+  * a mount point.
+@@ -116,8 +110,16 @@ nfsd_cross_mnt(struct svc_rqst *rqstp, s
+ 
+ 	exp2 = rqst_exp_get_by_name(rqstp, &path);
+ 	if (IS_ERR(exp2)) {
+-		if (PTR_ERR(exp2) != -ENOENT)
+-			err = PTR_ERR(exp2);
++		err = PTR_ERR(exp2);
++		/*
++		 * We normally allow NFS clients to continue
++		 * "underneath" a mountpoint that is not exported.
++		 * The exception is V4ROOT, where no traversal is ever
++		 * allowed without an explicit export of the new
++		 * directory.
++		 */
++		if (err == -ENOENT && !(exp->ex_flags & NFSEXP_V4ROOT))
++			err = 0;
+ 		path_put(&path);
+ 		goto out;
+ 	}
+@@ -141,6 +143,19 @@ out:
  	return err;
  }
  
 +/*
-+ * Lookup the export the dentry is on. To be
-+ * viewable on a pseudo export, the dentry
-+ * has to be an exported directory. 
++ * For nfsd purposes, we treat V4ROOT exports as though there was an
++ * export at *every* directory.
 + */
-+int
-+nfsd_export_lookup(struct svc_rqst *rqstp, struct dentry *dentry,
-+	struct svc_export *exp)
++int nfsd_mountpoint(struct dentry *dentry, struct svc_export *exp)
 +{
-+	struct svc_export *exp2 = NULL;
-+	struct path path;
-+	int err = 0;
-+
-+	if ((exp->ex_flags & NFSEXP_V4ROOT) == 0)
++	if (d_mountpoint(dentry))
++		return 1;
++	if (!(exp->ex_flags & NFSEXP_V4ROOT))
 +		return 0;
-+
-+	/*
-+	 * Make sure the export is the parent of the dentry
-+	 */
-+	if (unlikely(dentry->d_parent != exp->ex_path.dentry))
-+		return -ENOENT;
-+
-+	/*
-+	 * Only directories are seen on psuedo exports
-+	 */
-+	if (!S_ISDIR(dentry->d_inode->i_mode))
-+		return -ENOENT;
-+
-+	/*
-+	 * Make the upcall 
-+	 */
-+	path.mnt = mntget(exp->ex_path.mnt);
-+	path.dentry = dget(dentry);
-+	while (d_mountpoint(path.dentry) && follow_down(&path));
-+
-+	exp2 = rqst_exp_get_by_name(rqstp, &path);
-+	if (IS_ERR(exp2))
-+		err = PTR_ERR(exp2);
-+	else  {
-+		/*
-+		 * The export exist so allow the access
-+		 */
-+		exp_put(exp2);
-+	}
-+
-+	dput(path.dentry);
-+	mntput(path.mnt);
-+	return err;
++	return dentry->d_inode != NULL;
 +}
++
  __be32
  nfsd_lookup_dentry(struct svc_rqst *rqstp, struct svc_fh *fhp,
  		   const char *name, unsigned int len,
-@@ -150,7 +199,7 @@ nfsd_lookup_dentry(struct svc_rqst *rqst
- 	struct dentry		*dparent;
- 	struct dentry		*dentry;
- 	__be32			err;
--	int			host_err;
-+	int			host_err, v4root;
- 
- 	dprintk("nfsd: nfsd_lookup(fh %s, %.*s)\n", SVCFH_fmt(fhp), len,name);
- 
-@@ -162,6 +211,7 @@ nfsd_lookup_dentry(struct svc_rqst *rqst
- 	dparent = fhp->fh_dentry;
- 	exp  = fhp->fh_export;
- 	exp_get(exp);
-+	v4root = (exp->ex_flags & NFSEXP_V4ROOT);
- 
- 	/* Lookup the name, but don't follow links */
- 	if (isdotent(name, len)) {
-@@ -169,7 +219,7 @@ nfsd_lookup_dentry(struct svc_rqst *rqst
- 			dentry = dget(dparent);
- 		else if (dparent != exp->ex_path.dentry)
- 			dentry = dget_parent(dparent);
--		else if (!EX_NOHIDE(exp))
-+		else if (!EX_NOHIDE(exp) && !nfsd_v4client(rqstp))
- 			dentry = dget(dparent); /* .. == . just like at / */
- 		else {
- 			/* checking mountpoint crossing is very different when stepping up */
-@@ -206,9 +256,21 @@ nfsd_lookup_dentry(struct svc_rqst *rqst
- 		if (IS_ERR(dentry))
- 			goto out_nfserr;
+@@ -208,7 +223,7 @@ nfsd_lookup_dentry(struct svc_rqst *rqst
  		/*
-+		 * The export is a pseudo one, make sure the
-+		 * dentry is accessible 
-+		 */
-+		v4root = (dentry->d_inode && v4root);
-+		if (v4root) {
-+			host_err = nfsd_export_lookup(rqstp, dentry, exp);
-+			if (host_err) {
-+				dput(dentry);
-+				goto out_nfserr;
-+			}
-+		}
-+		/*
  		 * check if we have crossed a mount point ...
  		 */
 -		if (d_mountpoint(dentry)) {
-+		if (d_mountpoint(dentry) || v4root) {
++		if (nfsd_mountpoint(dentry, exp)) {
  			if ((host_err = nfsd_cross_mnt(rqstp, &dentry, &exp))) {
  				dput(dentry);
  				goto out_nfserr;
-diff -up linux-2.6.31.noarch/include/linux/nfsd/export.h.orig linux-2.6.31.noarch/include/linux/nfsd/export.h
---- linux-2.6.31.noarch/include/linux/nfsd/export.h.orig	2009-09-09 18:13:59.000000000 -0400
-+++ linux-2.6.31.noarch/include/linux/nfsd/export.h	2009-10-14 15:02:44.000000000 -0400
-@@ -39,7 +39,8 @@
+diff -up linux-2.6.32.i686/include/linux/nfsd/export.h.save linux-2.6.32.i686/include/linux/nfsd/export.h
+--- linux-2.6.32.i686/include/linux/nfsd/export.h.save	2009-12-04 10:24:18.000000000 -0500
++++ linux-2.6.32.i686/include/linux/nfsd/export.h	2009-12-04 10:25:08.000000000 -0500
+@@ -39,7 +39,17 @@
  #define NFSEXP_FSID		0x2000
  #define	NFSEXP_CROSSMOUNT	0x4000
  #define	NFSEXP_NOACL		0x8000	/* reserved for possible ACL related use */
 -#define NFSEXP_ALLFLAGS		0xFE3F
++/*
++ * The NFSEXP_V4ROOT flag causes the kernel to give access only to NFSv4
++ * clients, and only to the single directory that is the root of the
++ * export; further lookup and readdir operations are treated as if every
++ * subdirectory was a mountpoint, and ignored if they are not themselves
++ * exported.  This is used by nfsd and mountd to construct the NFSv4
++ * pseudofilesystem, which provides access only to paths leading to each
++ * exported filesystem.
++ */
 +#define	NFSEXP_V4ROOT		0x10000
 +#define NFSEXP_ALLFLAGS		0x1FE3F
  
  /* The flags that may vary depending on security flavor: */
  #define NFSEXP_SECINFO_FLAGS	(NFSEXP_READONLY | NFSEXP_ROOTSQUASH \
-diff -up linux-2.6.31.noarch/include/linux/nfsd/nfsd.h.orig linux-2.6.31.noarch/include/linux/nfsd/nfsd.h
---- linux-2.6.31.noarch/include/linux/nfsd/nfsd.h.orig	2009-10-14 14:26:23.000000000 -0400
-+++ linux-2.6.31.noarch/include/linux/nfsd/nfsd.h	2009-10-14 15:02:44.000000000 -0400
-@@ -79,6 +79,8 @@ int		nfsd_racache_init(int);
- void		nfsd_racache_shutdown(void);
- int		nfsd_cross_mnt(struct svc_rqst *rqstp, struct dentry **dpp,
- 		                struct svc_export **expp);
-+int		nfsd_export_lookup(struct svc_rqst *rqstp, struct dentry *dpp,
-+		                struct svc_export *exp);
- __be32		nfsd_lookup(struct svc_rqst *, struct svc_fh *,
- 				const char *, unsigned int, struct svc_fh *);
- __be32		 nfsd_lookup_dentry(struct svc_rqst *, struct svc_fh *,
+diff -up linux-2.6.32.i686/include/linux/nfsd/nfsd.h.save linux-2.6.32.i686/include/linux/nfsd/nfsd.h
+--- linux-2.6.32.i686/include/linux/nfsd/nfsd.h.save	2009-12-04 10:24:18.000000000 -0500
++++ linux-2.6.32.i686/include/linux/nfsd/nfsd.h	2009-12-04 10:39:18.000000000 -0500
+@@ -86,6 +86,7 @@ __be32		 nfsd_lookup_dentry(struct svc_r
+ 				struct svc_export **, struct dentry **);
+ __be32		nfsd_setattr(struct svc_rqst *, struct svc_fh *,
+ 				struct iattr *, int, time_t);
++int nfsd_mountpoint(struct dentry *, struct svc_export *);
+ #ifdef CONFIG_NFSD_V4
+ __be32          nfsd4_set_nfs4_acl(struct svc_rqst *, struct svc_fh *,
+                     struct nfs4_acl *);
+@@ -394,6 +395,10 @@ static inline u32 nfsd_suppattrs2(u32 mi
+ 	return minorversion ? NFSD4_1_SUPPORTED_ATTRS_WORD2
+ 			    : NFSD4_SUPPORTED_ATTRS_WORD2;
+ }
++static inline int nfsd_v4client(struct svc_rqst *rq)
++{
++	return rq->rq_prog == NFS_PROGRAM && rq->rq_vers == 4;
++}
+ 
+ /* These will return ERR_INVAL if specified in GETATTR or READDIR. */
+ #define NFSD_WRITEONLY_ATTRS_WORD1							    \

@@ -211,6 +211,7 @@ ApplyPatch hdpvr-ir-enable.patch
 #ApplyPatch linux-2.6-ksm-kvm.patch
 
 # Assorted Virt Fixes
+ApplyPatch linux-2.6-userspace_kvmclock_offset.patch
 
 # Fix block I/O errors in KVM
 #ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
@@ -239,5 +240,7 @@ ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 
 # Patches headed upstream
 ApplyPatch linux-2.6-rfkill-all.patch
+
+ApplyPatch perf-dont-free-perf_mmap_data-until-work-has-been-done.patch
 
 set +e

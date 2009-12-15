@@ -1,0 +1,190 @@
+#!/bin/sh
+# init script for exmap
+#
+# chkconfig: 2345 04 04
+# description: VirtualBox kernel module.
+
+unset INSTALL_DIR
+[ -e /etc/vbox/vbox.cfg ] && . /etc/vbox/vbox.cfg
+[ -e /etc/default/virtualbox ] && . /etc/default/virtualbox
+
+if [ -z "${INSTALL_DIR}" ]; then
+  echo "VirtualBox is not installed properly" && exit 1
+fi
+
+moduledrv="vboxdrv"
+modulenet="vboxnetflt"
+moduleadp="vboxnetadp"
+prog="VirtualBox"
+
+DRVDEVICE=/dev/${moduledrv}
+GROUPNAME=vboxusers
+VBOXMANAGE="${INSTALL_DIR}/VBoxManage"
+
+[ -x "${VBOXMANAGE}" ] || exit 0
+
+RETVAL=0
+
+running() {
+  lsmod | grep -q "$1[^_-]"
+}
+
+probe() {
+  if ! /sbin/modinfo ${moduledrv} ${modulenet} &>/dev/null ; then
+    echo "${moduledrv} and ${modulenet} modules missing, please install them."
+    exit 1
+  fi
+}
+
+start() {
+  probe
+  echo -n "Starting ${prog}: "
+  if [ -c ${DRVDEVICE} ]; then
+    RETVAL=0
+  else
+    # HACK: disable the hardware performance counter framework
+    if [ -e /proc/sys/kernel/perf_counter_paranoid ]; then
+      echo 2 > /proc/sys/kernel/perf_counter_paranoid 
+    fi
+    if [ -e /proc/sys/kernel/perf_event_paranoid ]; then
+      echo 2 > /proc/sys/kernel/perf_event_paranoid 
+    fi
+    /sbin/modprobe ${moduledrv} > /dev/null 2>&1
+    RETVAL=$?
+    sleep .2
+    if [ ${RETVAL} -eq 0 ] ;then
+      /sbin/modprobe ${modulenet} > /dev/null 2>&1
+      RETVAL=$?
+      if [ ${RETVAL} -eq 0 ] ;then
+        /sbin/modprobe ${moduleadp} > /dev/null 2>&1
+        RETVAL=$?
+      fi
+    fi
+  fi
+  if [ ${RETVAL} -eq 0 ] ; then
+    echo -e "\t\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\t\t[FAILED]\r"
+  fi
+  return ${RETVAL}
+}
+
+stop_vms() {
+  if ! [ -c ${DRVDEVICE} ]; then
+    return 0
+  fi
+  wait=0
+  for i in ${SHUTDOWN_USERS}; do
+    if ! ps -C VBoxXPCOMIPCD -o ruser | grep -q "^${i}" ; then
+      return 0
+    fi
+    # don't create the ipcd directory with wrong permissions!
+    if [ -d /tmp/.vbox-${i}-ipc ]; then
+      export VBOX_IPC_SOCKETID="${i}"
+      VMS=$(${VBOXMANAGE} -nologo list runningvms | sed -e 's/^".*"//' 2>/dev/null)
+      if [ -n "${VMS}" ]; then
+        if [ "${SHUTDOWN}" = "poweroff" ]; then
+          echo "VirtualBox: Powering off remaining VMs"
+          for v in ${VMS}; do
+            ${VBOXMANAGE} -nologo controlvm ${v} poweroff
+          done
+        elif [ "${SHUTDOWN}" = "acpibutton" ]; then
+          echo "VirtualBox: Sending ACPI power button event to remaining VMs"
+          for v in ${VMS}; do
+            ${VBOXMANAGE} -nologo controlvm ${v} acpipowerbutton
+            wait=30
+          done
+        elif [ "${SHUTDOWN}" = "savestate" ]; then
+          echo "VirtualBox: Saving state of remaining VMs"
+          for v in ${VMS}; do
+            ${VBOXMANAGE} -nologo controlvm ${v} savestate
+          done
+        fi
+      fi
+    fi
+  done
+  # wait for some seconds when doing ACPI shutdown
+  if [ "${wait}" -ne 0 ]; then
+    echo "VirtualBox: Waiting for ${wait} seconds for VM shutdown"
+    sleep ${wait}
+  fi
+}
+
+stop() {
+  echo -n "Stopping ${prog}: "
+  if running ${moduleadp}; then
+    /sbin/modprobe -r ${moduleadp}
+    RETVAL=$?
+  fi
+  if [ ${RETVAL} -eq 0 ] ;then
+    if running ${moduledrv}; then
+      if running ${modulenet}; then
+        /sbin/modprobe -r ${modulenet} 2>/dev/null
+        RETVAL=$?
+      fi
+      if [ ${RETVAL} -eq 0 ] ;then
+        /sbin/modprobe -r ${moduledrv} 2>/dev/null
+        if [ -c ${DRVDEVICE} ]; then
+          /sbin/modprobe -r ${moduledrv} 2>/dev/null
+          RETVAL=$?
+        else
+          RETVAL=0
+        fi
+      fi
+    fi
+  fi
+  if [ ${RETVAL} -eq 0 ] ; then
+    echo -e "\t\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\t\t[FAILED]\r"
+  fi
+  return ${RETVAL}
+}
+
+status() {
+  if running ${moduledrv} ; then
+    if running ${moduleflt}; then
+      if running ${moduleadp}; then
+        echo "VirtualBox kernel modules (${moduledrv}, ${modulenet} and ${moduleadp}) are loaded."
+      else
+        echo "VirtualBox kernel modules (${moduledrv} and ${modulenet}) are loaded."
+      fi
+    else
+      echo "VirtualBox ${moduledrv} kernel module is loaded."
+    fi
+    for i in ${SHUTDOWN_USERS}; do
+      # don't create the ipcd directory with wrong permissions!
+      if [ -d /tmp/.vbox-${i}-ipc ]; then
+        export VBOX_IPC_SOCKETID="${i}"
+        VMS=$(${VBOXMANAGE} -nologo list runningvms | sed -e 's/^".*".*{\(.*\)}/\1/' 2>/dev/null)
+        if [ -n "${VMS}" ]; then
+          echo "The following VMs are currently running:"
+          for v in ${VMS}; do
+            echo "  ${v}"
+          done
+        fi
+      fi
+    done
+  else
+    echo "VirtualBox kernel module is not loaded."
+  fi
+}
+
+case "$1" in
+  start|stop_vms|status)
+    $1
+    ;;
+  stop)
+    stop_vms
+    sleep 1
+    stop
+    ;;
+  restart|force-reload)
+    stop
+    start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|stop_vms|restart|force-reload|status}"
+    exit 1
+    ;;
+esac

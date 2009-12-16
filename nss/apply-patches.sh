@@ -5,6 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/nss-no-rpath.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/nss-nolocalsql.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/nss-enable-pem.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/nss-pem509705.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/newargs.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/sysinit.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/533125-ammend.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/nss-sysinit.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/nsssysinit.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/nss-538226.patch.gz | patch -p0 -E --backup --verbose || exit 1

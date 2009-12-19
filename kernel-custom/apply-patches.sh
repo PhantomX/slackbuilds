@@ -78,7 +78,9 @@ ApplyOptionalPatch git-cpufreq.patch.gz
 ApplyOptionalPatch linux-2.6-hotfixes.patch.gz
 
 # Roland's utrace ptrace replacement.
+ApplyPatch linux-2.6-tracehook.patch
 ApplyPatch linux-2.6-utrace.patch
+ApplyPatch linux-2.6-utrace-ptrace.patch
 
 # vm patches
 
@@ -93,7 +95,6 @@ ApplyPatch linux-2.6-dell-laptop-rfkill-fix.patch.gz
 #
 # Intel IOMMU
 #
-ApplyPatch linux-2.6-iommu-updates.patch
 
 #
 # Exec shield
@@ -117,9 +118,13 @@ ApplyPatch linux-2.6-nfsd4-proots.patch
 ApplyPatch linux-2.6-nfs4-callback-hidden.patch.gz
 
 # USB
-ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff.gz
-ApplyPatch linux-2.6-qcserial-autosuspend.diff.gz
+ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff
+ApplyPatch linux-2.6-enable-btusb-autosuspend.patch
 ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
+ApplyPatch linux-2.6-fix-btusb-autosuspend.patch
+
+# WMI
+ApplyPatch linux-2.6-autoload-wmi.patch
 
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
@@ -158,9 +163,6 @@ ApplyPatch hda_intel-prealloc-4mb-dmabuffer.patch.gz
 
 # add ich9 lan
 ApplyPatch linux-2.6-e1000-ich9.patch.gz
-
-# ath9k: add fixes suggested by upstream maintainer
-ApplyPatch linux-2.6-ath9k-fixes.patch
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
@@ -221,7 +223,6 @@ ApplyPatch drm-radeon-fixes.patch
 ApplyPatch drm-radeon-dp-support.patch
 ApplyPatch drm-nouveau.patch.gz
 ApplyPatch drm-intel-big-hammer.patch
-ApplyPatch drm-i915-fix-sync-to-vbl-when-vga-is-off.patch
 # Some BIOSes don't clear the whole GTT, and it causes IOMMU faults
 ApplyPatch linux-2.6-intel-agp-clear-gtt.patch
 
@@ -240,7 +241,5 @@ ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 
 # Patches headed upstream
 ApplyPatch linux-2.6-rfkill-all.patch
-
-ApplyPatch perf-dont-free-perf_mmap_data-until-work-has-been-done.patch
 
 set +e

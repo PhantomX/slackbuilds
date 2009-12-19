@@ -1,0 +1,336 @@
+From: Oleg Nesterov <oleg@redhat.com>
+
+[PATCH] signals: check ->group_stop_count after tracehook_get_signal()
+
+Move the call to do_signal_stop() down, after tracehook call.
+This makes ->group_stop_count condition visible to tracers before
+do_signal_stop() will participate in this group-stop.
+
+Currently the patch has no effect, tracehook_get_signal() always
+returns 0.
+
+Signed-off-by: Oleg Nesterov <oleg@redhat.com>
+Signed-off-by: Roland McGrath <roland@redhat.com>
+---
+ arch/powerpc/include/asm/ptrace.h |    2 +
+ arch/powerpc/kernel/traps.c       |    9 ++++++
+ arch/x86/include/asm/ptrace.h     |    2 +
+ arch/x86/kernel/ptrace.c          |   51 ++++++++++++++++++++----------------
+ include/linux/ptrace.h            |   24 +++++++++++------
+ include/linux/sched.h             |    1 +
+ include/linux/tracehook.h         |   15 ++++++++---
+ kernel/ptrace.c                   |    2 +-
+ kernel/signal.c                   |   13 ++++-----
+ 9 files changed, 76 insertions(+), 43 deletions(-)
+
+diff --git a/arch/powerpc/include/asm/ptrace.h b/arch/powerpc/include/asm/ptrace.h
+index 8c34149..cbd759e 100644  
+--- a/arch/powerpc/include/asm/ptrace.h
++++ b/arch/powerpc/include/asm/ptrace.h
+@@ -140,6 +140,8 @@ extern void user_enable_single_step(stru
+ extern void user_enable_block_step(struct task_struct *);
+ extern void user_disable_single_step(struct task_struct *);
+ 
++#define ARCH_HAS_USER_SINGLE_STEP_INFO
++
+ #endif /* __ASSEMBLY__ */
+ 
+ #endif /* __KERNEL__ */
+diff --git a/arch/powerpc/kernel/traps.c b/arch/powerpc/kernel/traps.c
+index 6f0ae1a..83b57ac 100644  
+--- a/arch/powerpc/kernel/traps.c
++++ b/arch/powerpc/kernel/traps.c
+@@ -174,6 +174,15 @@ int die(const char *str, struct pt_regs 
+ 	return 0;
+ }
+ 
++void user_single_step_siginfo(struct task_struct *tsk,
++				struct pt_regs *regs, siginfo_t *info)
++{
++	memset(info, 0, sizeof(*info));
++	info->si_signo = SIGTRAP;
++	info->si_code = TRAP_TRACE;
++	info->si_addr = (void __user *)regs->nip;
++}
++
+ void _exception(int signr, struct pt_regs *regs, int code, unsigned long addr)
+ {
+ 	siginfo_t info;
+diff --git a/arch/x86/include/asm/ptrace.h b/arch/x86/include/asm/ptrace.h
+index 0f0d908..7a88a82 100644  
+--- a/arch/x86/include/asm/ptrace.h
++++ b/arch/x86/include/asm/ptrace.h
+@@ -230,6 +230,8 @@ extern void user_enable_block_step(struc
+ #define arch_has_block_step()	(boot_cpu_data.x86 >= 6)
+ #endif
+ 
++#define ARCH_HAS_USER_SINGLE_STEP_INFO
++
+ struct user_desc;
+ extern int do_get_thread_area(struct task_struct *p, int idx,
+ 			      struct user_desc __user *info);
+diff --git a/arch/x86/kernel/ptrace.c b/arch/x86/kernel/ptrace.c
+index 7b058a2..ea35dee 100644  
+--- a/arch/x86/kernel/ptrace.c
++++ b/arch/x86/kernel/ptrace.c
+@@ -1437,21 +1437,33 @@ const struct user_regset_view *task_user
+ #endif
+ }
+ 
+-void send_sigtrap(struct task_struct *tsk, struct pt_regs *regs,
+-					 int error_code, int si_code)
++static void fill_sigtrap_info(struct task_struct *tsk,
++				struct pt_regs *regs,
++				int error_code, int si_code,
++				struct siginfo *info)
+ {
+-	struct siginfo info;
+-
+ 	tsk->thread.trap_no = 1;
+ 	tsk->thread.error_code = error_code;
+ 
+-	memset(&info, 0, sizeof(info));
+-	info.si_signo = SIGTRAP;
+-	info.si_code = si_code;
++	memset(info, 0, sizeof(*info));
++	info->si_signo = SIGTRAP;
++	info->si_code = si_code;
++	info->si_addr = user_mode_vm(regs) ? (void __user *)regs->ip : NULL;
++}
+ 
+-	/* User-mode ip? */
+-	info.si_addr = user_mode_vm(regs) ? (void __user *) regs->ip : NULL;
++void user_single_step_siginfo(struct task_struct *tsk,
++				struct pt_regs *regs,
++				struct siginfo *info)
++{
++	fill_sigtrap_info(tsk, regs, 0, TRAP_BRKPT, info);
++}
++
++void send_sigtrap(struct task_struct *tsk, struct pt_regs *regs,
++					 int error_code, int si_code)
++{
++	struct siginfo info;
+ 
++	fill_sigtrap_info(tsk, regs, error_code, si_code, &info);
+ 	/* Send us the fake SIGTRAP */
+ 	force_sig_info(SIGTRAP, &info, tsk);
+ }
+@@ -1516,29 +1528,22 @@ asmregparm long syscall_trace_enter(stru
+ 
+ asmregparm void syscall_trace_leave(struct pt_regs *regs)
+ {
++	bool step;
++
+ 	if (unlikely(current->audit_context))
+ 		audit_syscall_exit(AUDITSC_RESULT(regs->ax), regs->ax);
+ 
+ 	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
+ 		trace_sys_exit(regs, regs->ax);
+ 
+-	if (test_thread_flag(TIF_SYSCALL_TRACE))
+-		tracehook_report_syscall_exit(regs, 0);
+-
+ 	/*
+ 	 * If TIF_SYSCALL_EMU is set, we only get here because of
+ 	 * TIF_SINGLESTEP (i.e. this is PTRACE_SYSEMU_SINGLESTEP).
+ 	 * We already reported this syscall instruction in
+-	 * syscall_trace_enter(), so don't do any more now.
+-	 */
+-	if (unlikely(test_thread_flag(TIF_SYSCALL_EMU)))
+-		return;
+-
+-	/*
+-	 * If we are single-stepping, synthesize a trap to follow the
+-	 * system call instruction.
++	 * syscall_trace_enter().
+ 	 */
+-	if (test_thread_flag(TIF_SINGLESTEP) &&
+-	    tracehook_consider_fatal_signal(current, SIGTRAP))
+-		send_sigtrap(current, regs, 0, TRAP_BRKPT);
++	step = unlikely(test_thread_flag(TIF_SINGLESTEP)) &&
++			!test_thread_flag(TIF_SYSCALL_EMU);
++	if (step || test_thread_flag(TIF_SYSCALL_TRACE))
++		tracehook_report_syscall_exit(regs, step);
+ }
+diff --git a/include/linux/ptrace.h b/include/linux/ptrace.h
+index 7456d7d..4802e2a 100644  
+--- a/include/linux/ptrace.h
++++ b/include/linux/ptrace.h
+@@ -85,6 +85,7 @@ extern int ptrace_traceme(void);
+ extern int ptrace_readdata(struct task_struct *tsk, unsigned long src, char __user *dst, int len);
+ extern int ptrace_writedata(struct task_struct *tsk, char __user *src, unsigned long dst, int len);
+ extern int ptrace_attach(struct task_struct *tsk);
++extern bool __ptrace_detach(struct task_struct *tracer, struct task_struct *tracee);
+ extern int ptrace_detach(struct task_struct *, unsigned int);
+ extern void ptrace_disable(struct task_struct *);
+ extern int ptrace_check_attach(struct task_struct *task, int kill);
+@@ -105,12 +106,7 @@ static inline int ptrace_reparented(stru
+ {
+ 	return child->real_parent != child->parent;
+ }
+-static inline void ptrace_link(struct task_struct *child,
+-			       struct task_struct *new_parent)
+-{
+-	if (unlikely(child->ptrace))
+-		__ptrace_link(child, new_parent);
+-}
++
+ static inline void ptrace_unlink(struct task_struct *child)
+ {
+ 	if (unlikely(child->ptrace))
+@@ -169,9 +165,9 @@ static inline void ptrace_init_task(stru
+ 	INIT_LIST_HEAD(&child->ptraced);
+ 	child->parent = child->real_parent;
+ 	child->ptrace = 0;
+-	if (unlikely(ptrace)) {
++	if (unlikely(ptrace) && (current->ptrace & PT_PTRACED)) {
+ 		child->ptrace = current->ptrace;
+-		ptrace_link(child, current->parent);
++		__ptrace_link(child, current->parent);
+ 	}
+ }
+ 
+@@ -278,6 +274,18 @@ static inline void user_enable_block_ste
+ }
+ #endif	/* arch_has_block_step */
+ 
++#ifdef ARCH_HAS_USER_SINGLE_STEP_INFO
++extern void user_single_step_siginfo(struct task_struct *tsk,
++				struct pt_regs *regs, siginfo_t *info);
++#else
++static inline void user_single_step_siginfo(struct task_struct *tsk,
++				struct pt_regs *regs, siginfo_t *info)
++{
++	memset(info, 0, sizeof(*info));
++	info->si_signo = SIGTRAP;
++}
++#endif
++
+ #ifndef arch_ptrace_stop_needed
+ /**
+  * arch_ptrace_stop_needed - Decide whether arch_ptrace_stop() should be called
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 75e6e60..6c8928b 100644  
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -2060,6 +2060,7 @@ extern int kill_pgrp(struct pid *pid, in
+ extern int kill_pid(struct pid *pid, int sig, int priv);
+ extern int kill_proc_info(int, struct siginfo *, pid_t);
+ extern int do_notify_parent(struct task_struct *, int);
++extern void do_notify_parent_cldstop(struct task_struct *, int);
+ extern void __wake_up_parent(struct task_struct *p, struct task_struct *parent);
+ extern void force_sig(int, struct task_struct *);
+ extern void force_sig_specific(int, struct task_struct *);
+diff --git a/include/linux/tracehook.h b/include/linux/tracehook.h
+index 1eb44a9..c78b2f4 100644  
+--- a/include/linux/tracehook.h
++++ b/include/linux/tracehook.h
+@@ -134,6 +134,13 @@ static inline __must_check int tracehook
+  */
+ static inline void tracehook_report_syscall_exit(struct pt_regs *regs, int step)
+ {
++	if (step && (task_ptrace(current) & PT_PTRACED)) {
++		siginfo_t info;
++		user_single_step_siginfo(current, regs, &info);
++		force_sig_info(SIGTRAP, &info, current);
++		return;
++	}
++
+ 	ptrace_report_syscall(regs);
+ }
+ 
+@@ -149,7 +156,7 @@ static inline int tracehook_unsafe_exec(
+ {
+ 	int unsafe = 0;
+ 	int ptrace = task_ptrace(task);
+-	if (ptrace & PT_PTRACED) {
++	if (ptrace) {
+ 		if (ptrace & PT_PTRACE_CAP)
+ 			unsafe |= LSM_UNSAFE_PTRACE_CAP;
+ 		else
+@@ -171,7 +178,7 @@ static inline int tracehook_unsafe_exec(
+  */
+ static inline struct task_struct *tracehook_tracer_task(struct task_struct *tsk)
+ {
+-	if (task_ptrace(tsk) & PT_PTRACED)
++	if (task_ptrace(tsk))
+ 		return rcu_dereference(tsk->parent);
+ 	return NULL;
+ }
+@@ -379,7 +386,7 @@ static inline void tracehook_signal_hand
+ 					    const struct k_sigaction *ka,
+ 					    struct pt_regs *regs, int stepping)
+ {
+-	if (stepping)
++	if (stepping && (task_ptrace(current) & PT_PTRACED))
+ 		ptrace_notify(SIGTRAP);
+ }
+ 
+@@ -485,7 +492,7 @@ static inline int tracehook_get_signal(s
+  */
+ static inline int tracehook_notify_jctl(int notify, int why)
+ {
+-	return notify ?: (current->ptrace & PT_PTRACED) ? why : 0;
++	return notify ?: task_ptrace(current) ? why : 0;
+ }
+ 
+ /**
+diff --git a/kernel/ptrace.c b/kernel/ptrace.c
+index 23bd09c..b7c1d32 100644  
+--- a/kernel/ptrace.c
++++ b/kernel/ptrace.c
+@@ -271,7 +271,7 @@ static int ignoring_children(struct sigh
+  * reap it now, in that case we must also wake up sub-threads sleeping in
+  * do_wait().
+  */
+-static bool __ptrace_detach(struct task_struct *tracer, struct task_struct *p)
++bool __ptrace_detach(struct task_struct *tracer, struct task_struct *p)
+ {
+ 	__ptrace_unlink(p);
+ 
+diff --git a/kernel/signal.c b/kernel/signal.c
+index 6705320..9908335 100644  
+--- a/kernel/signal.c
++++ b/kernel/signal.c
+@@ -1461,7 +1461,7 @@ int do_notify_parent(struct task_struct 
+ 	return ret;
+ }
+ 
+-static void do_notify_parent_cldstop(struct task_struct *tsk, int why)
++void do_notify_parent_cldstop(struct task_struct *tsk, int why)
+ {
+ 	struct siginfo info;
+ 	unsigned long flags;
+@@ -1731,7 +1731,7 @@ static int do_signal_stop(int signr)
+ static int ptrace_signal(int signr, siginfo_t *info,
+ 			 struct pt_regs *regs, void *cookie)
+ {
+-	if (!task_ptrace(current))
++	if (!(task_ptrace(current) & PT_PTRACED))
+ 		return signr;
+ 
+ 	ptrace_signal_deliver(regs, cookie);
+@@ -1807,11 +1807,6 @@ relock:
+ 
+ 	for (;;) {
+ 		struct k_sigaction *ka;
+-
+-		if (unlikely(signal->group_stop_count > 0) &&
+-		    do_signal_stop(0))
+-			goto relock;
+-
+ 		/*
+ 		 * Tracing can induce an artifical signal and choose sigaction.
+ 		 * The return value in @signr determines the default action,
+@@ -1823,6 +1818,10 @@ relock:
+ 		if (unlikely(signr != 0))
+ 			ka = return_ka;
+ 		else {
++			if (unlikely(signal->group_stop_count > 0) &&
++			    do_signal_stop(0))
++				goto relock;
++
+ 			signr = dequeue_signal(current, &current->blocked,
+ 					       info);
+ 

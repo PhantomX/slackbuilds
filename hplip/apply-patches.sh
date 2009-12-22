@@ -17,6 +17,3 @@ zcat ${SB_PATCHDIR}/${NAME}-device-reconnected.patch.gz | patch -p1 -E --backup 
 
 # Avoid busy loop in hpcups when backend has exited.
 zcat ${SB_PATCHDIR}/${NAME}-hpcups-sigpipe.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-# Added 'requires proprietary plugin' to appropriate model names.
-zcat ${SB_PATCHDIR}/${NAME}-hpcups-plugin.patch.gz | patch -p1 -E --backup --verbose || exit 1

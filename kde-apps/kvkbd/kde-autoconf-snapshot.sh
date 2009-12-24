@@ -1,0 +1,1 @@
+../../kde-autoconf-snapshot.sh

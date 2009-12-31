@@ -28,7 +28,7 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.9-KDE3.patch.gz | patch -p1 --verbose --backup -
 #fix flock and flock64 redefinition in newer kernels
 zcat ${SB_PATCHDIR}/${NAME}-3.5.9-fix-flock-redefinition.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 # update the KatePart latex.xml syntax definition to the version from Kile 2.0.3
-zcat ${SB_PATCHDIR}/${NAME}-3.5.10-latex-syntax-kile-2.0.3.patchgz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-latex-syntax-kile-2.0.3.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 
 # use /etc/kde in addition to /usr/share/config, borrowed from debian
 zcat ${SB_PATCHDIR}/${NAME}-3.5.5-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
@@ -36,6 +36,31 @@ zcat ${SB_PATCHDIR}/${NAME}-3.5.5-kstandarddirs.patch.gz | patch -p1 --verbose -
 zcat ${SB_PATCHDIR}/kde-3.5-libtool-shlibext.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 
 zcat ${SB_PATCHDIR}/${NAME}-3.5.10-gcc44.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-kio.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-assert.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-dtoa.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-kabc.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/arts-acinclude.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+
+# security fixes
+## security fixes
+# fix CVE-2009-2537 - select length DoS
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-cve-2009-2537-select-length.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+# fix CVE-2009-1725 - crash, possible ACE in numeric character references
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-cve-2009-1725.patch.gz | patch -p0 --verbose --backup --suffix=.orig || exit 1
+# fix CVE-2009-1690 - crash, possible ACE in KHTML (<head> use-after-free)
+zcat ${SB_PATCHDIR}/${NAME}-3.5.4-CVE-2009-1687.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+# fix CVE-2009-1687 - possible ACE in KJS (FIXME: still crashes?)
+zcat ${SB_PATCHDIR}/${NAME}-3.5.4-CVE-2009-1690.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+# fix CVE-2009-1698 - crash, possible ACE in CSS style attribute handling
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-cve-2009-1698.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+# fix CVE-2009-2702 - ssl incorrect verification of SSL certificate with NUL in subjectAltName
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-CVE-2009-2702.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+# fix oCERT-2009-015 - unrestricted XMLHttpRequest access to local URLs
+zcat ${SB_PATCHDIR}/${NAME}-3.5.10-oCERT-2009-015-xmlhttprequest.patch.gz | patch -p0 --verbose --backup --suffix=.orig || exit 1
+# CVE-2009-3736, libltdl may load and execute code from a library in the current directory
+zcat ${SB_PATCHDIR}/libltdl-CVE-2009-3736.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+
 
 # Add "(Slackware)" to khtml user agent (modified from Gentoo patch).
 zcat ${SB_PATCHDIR}/${NAME}-3.5-cattlebrand.patch.gz |sed \

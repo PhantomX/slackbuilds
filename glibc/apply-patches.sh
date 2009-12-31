@@ -24,12 +24,7 @@ zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose || exit
 
  cat ${SB_PATCHDIR}/0030_all_glibc-respect-env-CPPFLAGS.patch | patch -p1 --verbose || exit 1
  cat ${SB_PATCHDIR}/0044_all_glibc-2.10-resolv-nameserver-fallback.patch | patch -p1 --verbose || exit 1
- cat ${SB_PATCHDIR}/0055_all_bug-regex29-add-missing-stdio.h-include.patch | patch -p1 --verbose || exit 1
- cat ${SB_PATCHDIR}/0056_all_glibc-2.11-preadv-pwritev-fallocate-64bit.patch | patch -p1 --verbose || exit 1
- cat ${SB_PATCHDIR}/0058_all_glibc-2.11-memset-fortify-const-warning.patch | patch -p1 --verbose || exit 1
- cat ${SB_PATCHDIR}/0066_all_glibc-2.10-malloc-check-race-crash.patch | patch -p1 --verbose || exit 1
  cat ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cfi.patch | patch -p0 --verbose || exit 1
- cat ${SB_PATCHDIR}/0077_all_i386-glibc-no-fallocate.patch | patch -p1 --verbose || exit 1
  cat ${SB_PATCHDIR}/0085_all_glibc-disable-ldconfig.patch | patch -p0 --verbose || exit 1
  cat ${SB_PATCHDIR}/1010_all_glibc-queue-header-updates.patch | patch -p1 --verbose || exit 1
  cat ${SB_PATCHDIR}/1020_all_glibc-longjmp-chk-hidden-fortify.patch | patch -p1 --verbose || exit 1

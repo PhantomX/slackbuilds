@@ -31,6 +31,10 @@ zcat ${SB_PATCHDIR}/qt-3.3.8-fontrendering-\#214570.patch.gz | patch -p1 -E --ba
 zcat ${SB_PATCHDIR}/qt-3.3.6-fontrendering-ml_IN-209974.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-3.3.6-fontrendering-ml_IN-217657.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/qt-3.3.6-fontrendering-gu-228452.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8-odbc.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8b-sane_defaults.patch.gz | sed \
+  -e "s|@@KDE3_PLUGIN_PATH@@|/usr/lib${LIBDIRSUFFIX}/kde3/plugins|" \
+  | patch -p1 -E --backup --verbose || exit 1
 
 # immodule patches
 bzcat ${SB_PATCHDIR}/qt-x11-immodule-unified-qt3.3.8-20071116.diff.bz2 | patch -p1 -E --backup --verbose || exit 1

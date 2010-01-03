@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = kdelibs-extramimetypes
-VERSION = 5.5
+VERSION = 5.6
 
 DESTDIR =
 PREFIX = /usr
@@ -39,7 +39,8 @@ AUDIOFILES = x-ape.desktop x-bonk.desktop x-gym.desktop x-mac.desktop \
              x-nsf.desktop x-pac.desktop x-psf.desktop x-spc.desktop \
              x-tta.desktop x-wavpack-correction.desktop x-wavpack.desktop
 
-TEXTFILES = md5.desktop sha1.desktop
+TEXTFILES = md5.desktop sha1.desktop sha224.desktop sha256.desktop \
+            sha384.desktop sha512.desktop
 
 VIDEOFILES = x-flv.desktop
 

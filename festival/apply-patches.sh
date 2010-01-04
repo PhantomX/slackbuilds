@@ -13,9 +13,6 @@ zcat ${SB_PATCHDIR}/${NAME}_buildroot.patch.gz | patch -p1 -E --backup --verbose
 # Use shared libraries
 zcat ${SB_PATCHDIR}/${NAME}-1.96-speechtools-shared-build.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-# Build (but don't enable by default) the ESD module
-zcat ${SB_PATCHDIR}/${NAME}-1.96-speechtools-buildesdmodule.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
 # Fix a coding error (see bug #162137). Need to upstream.
 zcat ${SB_PATCHDIR}/${NAME}-1.96-speechtools-rateconvtrivialbug.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
@@ -73,7 +70,7 @@ zcat ${SB_PATCHDIR}/${NAME}-1.96-nitech-sltreferences.patch.gz | patch -p1 -E --
 
 zcat ${SB_PATCHDIR}/gcc43.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-# Work with pulseaudio
-zcat ${SB_PATCHDIR}/${NAME}-use-pacat.patch.gz | patch -p1 -E --backup -z .pa --verbose || exit 1
+# Native pulseaudio support, https://bugzilla.redhat.com/show_bug.cgi?id=471047
+zcat ${SB_PATCHDIR}/${NAME}-speech-tools-pulse.patch.gz | patch -p1 -E --backup -z .pa --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/gcc44.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -45,7 +45,7 @@ PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-5.7}
 # Set to 0 if no rollup patch, else set patch date, eg.: 20081025
-PVER=${PVER:-0}
+PVER=${PVER:-20091107}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -57,7 +57,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-9}
+BUILD=${BUILD:-10}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -83,16 +83,19 @@ PDL_URL="ftp://invisible-island.net/${NAME}/${VERSION}"
 
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || wget ${DL_OPTS} ${DL_URLB} || exit 1
+mkdir -p ${DOWNDIR}
 if [ "${PVER}" -ne 0 ] ; then
-  test -r ${CWD}/${PSRCARCHIVE} || wget ${DL_OPTS} ${PDL_URL}/${PSRCARCHIVE} || exit 1
+  test -r ${DOWNDIR}/${PSRCARCHIVE} || wget -P ${DOWNDIR} ${DL_OPTS} ${PDL_URL}/${PSRCARCHIVE} || exit 1
 fi
 test -r ${CWD}/${PSRCARCHIVES} || \
   links -dump ${PDL_URL} | awk '{print $9}' | \
   grep "${NAME}-${VERSION}-2.......\\.patch.gz" | \
   sed "/${NAME}-${VERSION}-${PVER}/d" > ${CWD}/${PSRCARCHIVES} || exit 1
-mkdir -p ${DOWNDIR}
 for file in $(< ${CWD}/${PSRCARCHIVES}) ;do
-  test -r ${DOWNDIR}/${file} || wget -P ${DOWNDIR} ${DL_OPTS} ${PDL_URL}/${file} || exit 1
+  pver2=$(echo ${file} | cut -d- -f3 | cut -d. -f1)
+  if [ "${pver2}" -gt "${PVER}" ] ;then
+    test -r ${DOWNDIR}/${file} || wget -P ${DOWNDIR} ${DL_OPTS} ${PDL_URL}/${file} || exit 1
+  fi
 done
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -150,6 +153,7 @@ CXXFLAGS="${SLKCFLAGS}" \
   --without-ada \
   --enable-hard-tabs \
   --enable-xmc-glitch \
+  --with-terminfo-dirs=/etc/terminfo:/usr/share/terminfo:/lib/terminfo \
   --build=${SLKTARGET}-${SLKDTARGET}-linux $@
 }
 
@@ -166,6 +170,9 @@ make install DESTDIR=${PKG} || exit 1
 if [ ! -d ${PKG}/usr/include/ncursesw -a ! -L ${PKG}/usr/include/ncursesw ]; then
   ( cd ${PKG}/usr/include ; ln -sf ncurses ncursesw )
 fi
+
+chmod 0644 ${PKG}/usr/lib${LIBDIRSUFFIX}/*.a
+chmod 0755 ${PKG}/usr/lib${LIBDIRSUFFIX}/*.so.*
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -184,23 +191,16 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   mv termcap.h termcap-ncurses.h
 )
 
-# Move the ncurses libraries into /lib, since they're important:
 mkdir -p ${PKG}/lib${LIBDIRSUFFIX}
-( cd ${PKG}/usr/lib${LIBDIRSUFFIX}
-  chmod 0755 *.so
-  chmod 0644 *.a
-  mv libncurses.so.5* ${PKG}/lib${LIBDIRSUFFIX}/ || exit 1
-  mv libncursesw.so.5* ${PKG}/lib${LIBDIRSUFFIX}/ || exit 1
-  rm -f libncurses.so
-  ln -sf /lib${LIBDIRSUFFIX}/libncurses.so.5 libncurses.so || exit 1
-  rm -f libncursesw.so
-  ln -sf /lib${LIBDIRSUFFIX}/libncursesw.so.5 libncursesw.so || exit 1
-  # Olde obsolete names, just in case
-  rm -f libcurses.so
-  ln -sf libncurses.so libcurses.so || exit 1
-  rm -f libcursesw.so
-  ln -sf libncursesw.so libcursesw.so || exit 1
-) || exit 1
+mv ${PKG}/usr/lib${LIBDIRSUFFIX}/libncurses{,w}.so.* \
+  ${PKG}/lib${LIBDIRSUFFIX}/ || exit 1
+
+# Move the ncurses libraries into /lib, since they're important:
+for libname in libncurses libncursesw ;do
+  reldir=$(echo /usr/lib${LIBDIRSUFFIX} | sed 's,/$,,;s,/[^/]\+,../,g')lib${LIBDIRSUFFIX}
+  oldlink=$(readlink ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so)
+  ln -sf ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so || exit 1
+done
 
 # Set TERMINFO to point to the package:
 export TERMINFO=${PKG}/usr/share/terminfo
@@ -215,6 +215,28 @@ for tfile in ${CWD}/xterm.terminfo.gz ${CWD}/screeninfo.src.gz \
   fi
 done
 unset TERMINFO
+
+mkdir -p ${PKG}/{lib,etc}/terminfo 
+
+# move few basic terminfo entries to /lib
+baseterms=
+for termname in \
+  ansi dumb linux vt100 vt100-nav vt102 vt220 vt52
+do
+  for t in $(find ${PKG}/usr/share/terminfo \
+    -samefile ${PKG}/usr/share/terminfo/${termname::1}/${termname})
+  do
+    baseterms="${baseterms} $(basename $t)"
+  done
+done
+for termname in ${baseterms}; do
+  termpath=terminfo/${termname::1}/${termname}
+  mkdir ${PKG}/lib/terminfo/${termname::1} &> /dev/null || :
+  mv ${PKG}/usr/share/${termpath} ${PKG}/lib/${termpath}
+  ln -s $(dirname /usr/share/${termpath} | \
+    sed 's,\(^/\|\)[^/][^/]*,..,g')/lib/${termpath} \
+    ${PKG}/usr/share/${termpath} 
+done
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}/c++

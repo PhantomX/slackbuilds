@@ -42,6 +42,9 @@ ApplyPatch gdb-bz528668-symfile-sepcrc.patch.gz
 ApplyPatch gdb-bz528668-symfile-cleanup.patch.gz
 ApplyPatch gdb-bz528668-symfile-multi.patch.gz
 
+# Fix bp conditionals [bp_location-accel] regression (BZ 538626).
+ApplyPatch gdb-bz538626-bp_location-accel-bp-cond.patch.gz
+
 # Work around out-of-date dejagnu that does not have KFAIL
 ApplyPatch gdb-6.3-rh-dummykfail-20041202.patch.gz
 
@@ -322,5 +325,35 @@ ApplyPatch gdb-simultaneous-step-resume-breakpoint-test.patch.gz
 
 # Fix GNU/Linux core open: Can't read pathname for load map: Input/output error.
 ApplyPatch gdb-core-open-vdso-warning.patch.gz
+
+# Support GNU IFUNCs - indirect functions (BZ 539590).
+ApplyPatch gdb-bz539590-gnu-ifunc.patch.gz
+
+# Fix callback-mode readline-6.0 regression for CTRL-C.
+ApplyPatch gdb-readline-6.0-signal.patch.gz
+
+# Fix syscall restarts for amd64->i386 biarch.
+ApplyPatch gdb-x86_64-i386-syscall-restart.patch.gz
+
+# Fix stepping with OMP parallel Fortran sections (BZ 533176).
+ApplyPatch gdb-bz533176-fortran-omp-step.patch.gz
+
+# Fix backward compatibility with G++ 4.1 namespaces "::".
+ApplyPatch gdb-empty-namespace.patch.gz
+
+# Fix regression on re-setting the single ppc watchpoint slot.
+ApplyPatch gdb-ppc-hw-watchpoint-twice.patch.gz
+
+# Fix regression by python on ia64 due to stale current frame.
+ApplyPatch gdb-follow-child-stale-parent.patch.gz
+
+# testsuite: Fix false MI "unknown output after running" regression.
+ApplyPatch gdb-testsuite-unknown-output.patch.gz
+
+# Fix regression of gdb-7.0.1 not preserving typedef of a field.
+ApplyPatch gdb-bitfield-check_typedef.patch.gz
+
+# Fix related_breakpoint stale ref crash.
+ApplyPatch gdb-stale-related_breakpoint.patch.gz
 
 set +e

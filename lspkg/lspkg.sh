@@ -3,7 +3,7 @@
 # lspkg - Lists packages installed on Slackware
 # version - 1.0
 # Suggested usage: $ lspkg [package] [package1]
-# Modified by Phantom X, based in script from Tdmsilvino
+# Modified by Phantom X, based on script from Tdmsilvino
 # copied from http://tdmsilvino.wordpress.com/2008/05/17/listando-pacotes-no-slackware/
 
 

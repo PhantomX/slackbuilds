@@ -1,9 +1,11 @@
   
 SB_PATCHDIR=${CWD}/patches
 
-for i in $( seq -w ${PATCHLEVEL} ) ; do
-  patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}${SVER//.}-${i} || exit 1
-done
+if [ "${PATCHLEVEL}" -gt 0 ] ;then
+  for i in $( seq -w ${PATCHLEVEL} ) ; do
+    patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}${SVER//.}-${i} || exit 1
+  done
+fi
 
 # Other patches
 zcat ${SB_PATCHDIR}/${NAME}-2.02-security.patch.gz | patch -p1 -E --backup --verbose || exit 1

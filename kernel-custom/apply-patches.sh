@@ -121,10 +121,12 @@ ApplyPatch linux-2.6-nfs4-callback-hidden.patch.gz
 ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff
 ApplyPatch linux-2.6-enable-btusb-autosuspend.patch
 ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
-ApplyPatch linux-2.6-fix-btusb-autosuspend.patch
 
 # WMI
 ApplyPatch linux-2.6-autoload-wmi.patch
+# autoload fixes
+ApplyPatch wmi-check-find_guid-return-value-to-prevent-oops.patch
+ApplyPatch wmi-survive-bios-with-duplicate-guids.patch
 
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
@@ -133,7 +135,7 @@ ApplyPatch linux-2.6-acpi-video-dos.patch.gz
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
 ApplyPatch linux-2.6-debug-nmi-timeout.patch.gz
-ApplyPatch linux-2.6-debug-taint-vm.patch.gz
+ApplyPatch linux-2.6-debug-taint-vm.patch
 ApplyPatch linux-2.6-debug-spinlock-taint.patch.gz
 ## try to find out what is breaking acpi-cpufreq
 ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
@@ -204,7 +206,7 @@ ApplyPatch linux-2.6-crash-driver.patch
 ApplyPatch linux-2.6-pci-cacheline-sizing.patch.gz
 
 # http://www.lirc.org/
-ApplyPatch lirc-2.6.31.patch
+ApplyPatch lirc-2.6.32.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
 ApplyPatch hdpvr-ir-enable.patch
 
@@ -241,5 +243,9 @@ ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 
 # Patches headed upstream
 ApplyPatch linux-2.6-rfkill-all.patch
+
+# Patches for -stable
+ApplyPatch wmi-free-the-allocated-acpi-objects.patch
+ApplyPatch wmi-check-wmi-get-event-data-return-value.patch
 
 set +e

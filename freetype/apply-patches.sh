@@ -25,6 +25,3 @@ fi
 # CVS bug fixes, mostly for embolding
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/freetype-multilib.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-# Fix crash https://bugs.freedesktop.org/show_bug.cgi?id=6841
-zcat ${SB_PATCHDIR}/freetype-2.2.1-memcpy-fix.patch.gz | patch -p1 -E --backup --verbose || exit 1

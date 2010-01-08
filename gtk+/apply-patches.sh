@@ -52,3 +52,5 @@ zcat ${SB_PATCHDIR}/gtk+-1.2.10-ppc64.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/gtk+-1.2.10-no_undefined.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # http://bugzilla.redhat.com/222298
 zcat ${SB_PATCHDIR}/gtk+-1.2.10-multilib.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# Remove redundant shared library dependencies
+zcat ${SB_PATCHDIR}/gtk+-1.2.10-unused-deps.patch.gz | patch -p1 -E --backup --verbose || exit 1

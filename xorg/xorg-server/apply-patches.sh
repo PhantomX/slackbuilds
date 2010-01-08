@@ -37,6 +37,8 @@ zcat ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch.gz | patch -p1 --verbose |
 zcat ${SB_PATCHDIR}/xserver-1.7.1-libcrypto.patch.gz | patch -p1 --verbose || exit 1
 #zcat ${SB_PATCHDIR}/xserver-1.7.1-sigaction.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.7.1-glx14-swrast.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.7.3-cursor-jumps.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.7.3-no-free-on-abort.patch.gz | patch -p1 --verbose || exit 1
 
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.7.3.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1

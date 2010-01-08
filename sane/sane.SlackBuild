@@ -30,7 +30,8 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
-
+# Set YES to remove libtool .la files
+SB_RMLA=${SB_RMLA:-NO}
 # Set to YES to replicate slackbuild and patches
 SB_REP=${SB_REP:-YES}
 
@@ -41,13 +42,10 @@ if [ ! -d ${TMP} ]; then
 fi
 
 NAME=sane
-BNAME=${NAME}-backends
-FNAME=${NAME}-frontends
+PNAME=${NAME}-backends
 PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-1.0.20}
-BVER=${BVER:-1.0.20}
-FVER=${FVER:-1.0.14}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -59,7 +57,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-3}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -67,26 +65,25 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES if using udev-acl
+SB_UACL=${SB_UACL:-NO}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${BNAME}-${BVER}
-FSRCDIR=${FNAME}-${FVER}
+SRCDIR=${PNAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.gz
-FSRCARCHIVE=${FSRCDIR}.tar.gz
-PSRCARCHIVE=${BNAME}-${BVER}-autoreconf.patch.bz2
+PSRCARCHIVE=${PNAME}-${VERSION}-autoreconf.patch.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
-DL_URL="ftp://ftp.sane-project.org/pub/${NAME}/${BNAME}-${BVER}/${SRCARCHIVE}"
-FDL_URL="ftp://ftp.sane-project.org/pub/${NAME}/${FNAME}-${FVER}/${FSRCARCHIVE}"
+DL_URL="ftp://ftp.sane-project.org/pub/${NAME}/${PNAME}-${VERSION}/${SRCARCHIVE}"
 FEDORACVS=fedora-cvs.sh
 FEDORABRANCH=${FEDORABRANCH:-devel}
 
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-test -r ${CWD}/${FSRCARCHIVE} || wget ${DL_OPTS} ${FDL_URL} || exit 1
-test -r ${CWD}/${PSRCARCHIVE} || sh ${CWD}/${FEDORACVS} ${BNAME} ${FEDORABRANCH} ${PSRCARCHIVE} || exit 1
+test -r ${CWD}/${PSRCARCHIVE} || sh ${CWD}/${FEDORACVS} ${PNAME} ${FEDORABRANCH} ${PSRCARCHIVE} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -117,7 +114,6 @@ cd ${TMP}
 rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
-tar -xvf ${CWD}/${FSRCARCHIVE} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
@@ -125,19 +121,14 @@ chmod -R u+w,go+r-w,a-s .
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
-( cd ${FSRCDIR} || exit 1
-  zcat ${SB_PATCHDIR}/${FNAME}-1.0.14-badcode.patch.gz | patch -p1 -E --backup --verbose || exit 1
-  zcat ${SB_PATCHDIR}/${FNAME}-1.0.14-remove-obsolete-cap.patch.gz | patch -p0 -E --backup --verbose || exit 1
-) || exit 1
-
-sed -i -e 's|chgrp $LOCKPATH_GROUP|echo $LOCKPATH_GROUP > |g' configure || exit 1
 
 for i in agfafocus avision coolscan2 umax_pp; do
   iconv -f iso-8859-1 -t utf-8 < "doc/sane-${i}.man" > "doc/sane-${i}.man_"
   mv "doc/sane-${i}.man_" "doc/sane-${i}.man"
 done
 
-SB_CONFIGURE(){
+sed -i -e 's| NAME=\\"%%k\\",||g' tools/sane-desc.c || exit 1
+
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
@@ -148,17 +139,18 @@ CXXFLAGS="${SLKCFLAGS}" \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --with-docdir=/usr/doc/${NAME}-${VERSION} \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux $@
-}
-
-SB_CONFIGURE \
+  --disable-rpath \
   --enable-locking \
   --with-lockdir=/var/lock/sane \
   --with-group=scanner \
-  --with-gphoto2=/usr || exit 1
+  --with-gphoto2=/usr \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
-make install DESTDIR=${PKG} INSTALL_LOCKPATH="" || exit 1
+make install DESTDIR=${PKG} || exit 1
+
+[ "${SB_RMLA}" = "YES" ] && rm -f ${PKG}/usr/lib*/*.la ${PKG}/usr/lib*/sane/*.la
+rm -f ${PKG}/usr/lib*/sane/*.a ${PKG}/usr/lib*/*.a
 
 # Add the default udev rules
 mkdir -p ${PKG}/lib/udev/rules.d
@@ -169,28 +161,12 @@ install -m0644 tools/udev/libsane.rules \
 mkdir -p ${PKG}/usr/share/hal/fdi/policy/10osvendor
 install -m 0644 tools/hal/libsane.fdi \
                 ${PKG}/usr/share/hal/fdi/policy/10osvendor/19-libsane.fdi || exit 1
+install -m 0644 tools/hal/libsane-policy.fdi \
+                ${PKG}/usr/share/hal/fdi/policy/10osvendor/19-libsane-policy.fdi || exit 1
 mkdir -p ${PKG}/usr/libexec
 zcat ${CWD}/hal-usb-scanner-add.gz > \
      ${PKG}/usr/libexec/hal-usb-scanner-add || exit 1
 chmod 0755 ${PKG}/usr/libexec/hal-usb-scanner-add
-
-( cd ${FSRCDIR} || exit 1
-
-  export PATH="../tools":${PATH}
-  
-  LDFLAGS="-L${PKG}/usr/lib${LIBDIRSUFFIX} ${LDFLAGS}" \
-  CPPFLAGS="-I${PKG}/usr/include ${CPPFLAGS}" \
-  LD_LIBRARY_PATH="${PKG}/usr/lib${LIBDIRSUFFIX}" \
-  PKG_CONFIG_PATH="${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig" \
-  SB_CONFIGURE \
-    --with-gnu-ld || exit 1
-
-  make -j${NJOBS} || make || exit 1
-  make install DESTDIR=${PKG} docdir=${DOCDIR} || exit 1
-
-) || exit 1
-
-rm -f ${PKG}/usr/lib*/sane/*.a ${PKG}/usr/lib*/*.a
 
 # Move config files:
 for file in ${PKG}/etc/sane.d/*.conf ; do
@@ -207,7 +183,7 @@ chmod 775 ${PKG}/var/lock/sane
 # List additional backends in /etc/sane.d/dll.conf.
 # I don't think it will hurt anything to do this, even
 # if these backends turn out not to be available:
-zcat ${CWD}/dll.conf.additions.gz >> ${PKG}/etc/sane.d/dll.conf || exit 1
+#zcat ${CWD}/dll.conf.additions.gz >> ${PKG}/etc/sane.d/dll.conf || exit 1
 
 mkdir -p ${PKG}/usr/share/pixmaps
 zcat ${CWD}/${NAME}.png.gz > ${PKG}/usr/share/pixmaps/${NAME}.png || exit 1
@@ -298,7 +274,8 @@ set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
-  /bin/chown root.scanner ./var/lock/sane ;"
+  /bin/chown root.scanner ./var/lock/sane ;
+  /bin/chmod 1777 ./var/lock ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

@@ -8,3 +8,5 @@ zcat ${SB_PATCHDIR}/glib-1.2.10-underquoted.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/glib-1.2.10-no_undefined.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # http://bugzilla.redhat.com/222296
 zcat ${SB_PATCHDIR}/glib-1.2.10-multilib.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# Fix unused direct shared library dependency on libgmodule for libgthread
+zcat ${SB_PATCHDIR}/glib-1.2.10-unused-dep.patch.gz | patch -p1 -E --backup --verbose || exit 1

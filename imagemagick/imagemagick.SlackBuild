@@ -30,7 +30,8 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
-
+# Set YES to remove libtool .la files
+SB_RMLA=${SB_RMLA:-NO}
 # Set to YES to replicate slackbuild and patches
 SB_REP=${SB_REP:-YES}
 
@@ -44,7 +45,7 @@ PNAME=ImageMagick
 NAME=imagemagick
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-6.5.8-4}
+VERSION=${VERSION:-6.5.8-10}
 RVER="$(echo ${VERSION} | cut -d - -f1)"
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -115,7 +116,11 @@ cd ${SRCDIR} || exit 1
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${PNAME}-add_delegate.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+sed -i 's/libltdl.la/libltdl.so/g' configure || exit 1
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -157,13 +162,14 @@ CXXFLAGS="${SLKCFLAGS}" \
 sed -i 's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec=""|g' libtool || exit 1
 sed -i 's|^runpath_var=LD_RUN_PATH|runpath_var=DIE_RPATH_DIE|g' libtool || exit 
 
-make -j${NJOBS} INSTALL="install -p" || exit 1
+make -j${NJOBS} INSTALL="install -p" || make INSTALL="install -p" || exit 1
 make install DESTDIR=${PKG} || exit 1
 
 chmod 755 ${PKG}${PERLVENDORARCH}/auto/Image/Magick/Magick.so
 
 perl -MExtUtils::MakeMaker -e 'MY->fixin(@ARGV)' PerlMagick/demo/*.pl
 
+[ "${SB_RMLA}" = "YES" ] && rm -f ${PKG}/usr/lib*/*.la
 rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/ImageMagick-*/modules*/*/*.a
 
 find ${PKG}/usr/lib${LIBDIRSUFFIX}/perl*/ -type f \( -name perllocal.pod -o -name .packlist \) -exec rm -f {} \;
@@ -175,6 +181,36 @@ rm -rf ${PKG}/usr/bin/libltdl.*
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+unset MARCH
+case "${ARCH}" in
+  i[3-6]86|s390)  MARCH=32
+             ;;
+    x86_64)  MARCH=64
+             ;;
+esac
+
+if [ -n "${MARCH}" ] ;then
+  mv ${PKG}/usr/include/${PNAME}/magick/magick-config.h  \
+    ${PKG}/usr/include/${PNAME}/magick/magick-${MARCH}.h || exit 1
+
+cat > ${PKG}/usr/include/${PNAME}/magick/magick-config.h <<'EOF'
+#ifndef IMAGEMAGICK_MULTILIB
+#define IMAGEMAGICK_MULTILIB
+
+#include <bits/wordsize.h>
+
+#if __WORDSIZE == 32
+# include "magick-config-32.h"
+#elif __WORDSIZE == 64
+# include "magick-config-64.h"
+#else
+# error "unexpected value for __WORDSIZE macro"
+#endif
+
+#endif
+EOF
+fi
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -219,11 +255,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${PNAME}-*.patch.gz ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches
 fi
 
 # Build package:

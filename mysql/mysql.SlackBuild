@@ -30,7 +30,8 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
-
+# Set YES to remove libtool .la files
+SB_RMLA=${SB_RMLA:-NO}
 # Set to YES to replicate slackbuild and patches
 SB_REP=${SB_REP:-YES}
 
@@ -56,7 +57,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -117,13 +118,15 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+SLKCFLAGS="${SLKCFLAGS} -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -fno-strict-aliasing -fwrapv -fPIC"
+
 libtoolize --force || exit 1
 aclocal || exit 1
 automake --add-missing -Wno-portability || exit 1
 autoconf || exit 1
 autoheader || exit 1
 
-CFLAGS="${SLKCFLAGS} -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -fno-strict-aliasing -fwrapv -fPIC" \
+CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS} -felide-constructors -fno-exceptions -fno-rtti" \
 ./configure \
   --prefix=/usr \
@@ -132,6 +135,7 @@ CXXFLAGS="${SLKCFLAGS} -felide-constructors -fno-exceptions -fno-rtti" \
   --localstatedir=/var/lib/mysql \
   --infodir=/usr/info \
   --mandir=/usr/man \
+  --with-embedded-server \
   --with-mysqld-user=mysql \
   --with-unix-socket-path=/var/run/mysql/mysql.sock \
   --localstatedir=/var/lib/mysql \
@@ -146,8 +150,42 @@ CXXFLAGS="${SLKCFLAGS} -felide-constructors -fno-exceptions -fno-rtti" \
   --with-ssl=/usr \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
+( set -o xtrace
+  gcc ${SLKCFLAGS} ${LDFLAGS} -o scriptstub "-DLIBDIR=\"/usr/lib${LIBDIRSUFFIX}/mysql\"" \
+  ${CWD}/scriptstub.c || exit 1
+) || exit 1
+
 make -j${NJOBS} || make || exit 1
+
+# regular build will make libmysqld.a but not libmysqld.so :-(
+mkdir libmysqld/work
+( cd libmysqld/work
+  ar -x ../libmysqld.a
+  ( set -o xtrace
+    gcc ${SLKCFLAGS} ${LDFLAGS} -shared -Wl,-soname,libmysqld.so.0 -o libmysqld.so.0.0.1 \
+    *.o \
+    -lpthread -lcrypt -lnsl -lssl -lcrypto -lz -lrt -lstdc++ -lm -lc || exit 1
+  ) || exit 1
+
+  # this is to check that we built a complete library
+  cat ${CWD}/mysql-embedded-check.c > mysql-embedded-check.c
+  ln -s libmysqld.so.0.0.1 libmysqld.so.0
+  gcc -I../../include ${SLKCFLAGS} mysql-embedded-check.c libmysqld.so.0 || exit 1
+  LD_LIBRARY_PATH=. ldd ./a.out || exit 1
+) || exit 1
+
 make install DESTDIR=${PKG} || exit 1
+
+install -m 0755 libmysqld/work/libmysqld.so.0.0.1 \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.so.0.0.1 || exit 1
+ln -s libmysqld.so.0.0.1 ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.so.0
+ln -s libmysqld.so.0 ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.so
+
+[ "${SB_RMLA}" = "YES" ] && rm -f ${PKG}/usr/lib*/mysql/*.*a ${PKG}/usr/lib*/*/plugin/*.*a
+
+mkdir -p ${PKG}/etc/ld.so.conf.d
+echo "/usr/lib${LIBDIRSUFFIX}/mysql" \
+  > ${PKG}/etc/ld.so.conf.d/50-${NAME}-${ARCH}.conf || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -198,25 +236,12 @@ mkdir -p ${PKG}/etc/rc.d
 # This is intentionally chmod 644.
 zcat ${CWD}/rc.mysqld.gz > ${PKG}/etc/rc.d/rc.mysqld.new || exit 1
 
-# Add some handy library symlinks:
-if [ -r ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient.so.16 ]; then
-  ( cd ${PKG}/usr/lib${LIBDIRSUFFIX}
-    rm -f libmysqlclient.so libmysqlclient.so.16
-    ln -sf mysql/libmysqlclient.so .
-    ln -sf mysql/libmysqlclient.so.16 .
-  )
-else
-  exit 1
-fi
-if [ -r ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient_r.so.16 ]; then
-  ( cd ${PKG}/usr/lib${LIBDIRSUFFIX}
-    rm -f libmysqlclient_r.so libmysqlclient_r.so.16
-    ln -sf mysql/libmysqlclient_r.so .
-    ln -sf mysql/libmysqlclient_r.so.16 .
-  )
-else
-  exit 1
-fi
+rm -f ${PKG}/usr/lib*/libmysqlclient.so*
+for libname in libmysqlclient libmysqlclient_r libmysqld ;do
+  reldir=mysql
+  oldlink=$(readlink ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/${libname}.so)
+  ln -sf ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so || exit 1
+done
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}/Docs
@@ -274,6 +299,14 @@ fi
 if [ -x usr/bin/install-info ] ; then
   \${CHROOT} /usr/bin/install-info --info-dir=/usr/info usr/info/${NAME}.info.gz 2>/dev/null
 fi
+
+# Add ld.so.conf.d directory to /etc/ld.so.conf:
+if fgrep ld.so.conf.d etc/ld.so.conf 1> /dev/null 2> /dev/null ; then
+  true
+else
+  echo 'include /etc/ld.so.conf.d/*.conf' >> etc/ld.so.conf
+fi
+
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -313,7 +346,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/*.h.gz ${CWD}/rc.*.gz \
+                 ${CWD}/apply-patches.sh ${CWD}/*.h.gz ${CWD}/rc.*.gz ${CWD}/*.c \
                  ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild

@@ -9,5 +9,5 @@ zcat ${SB_PATCHDIR}/libtool-config.patch.gz | patch -p1 -E --backup --verbose ||
 rm -rf config.guess config.sub install-sh ltmain.sh libltdl
 zcat ${SB_PATCHDIR}/so-version-bump.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/keep-typedefs.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${PNAME}-2.2.14-fix-export.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${PNAME}-2.2.14-fix-ltdl-link.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/unixODBC-2.2.14-fix-export.patch.gz | patch -p0 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/unixODBC-2.2.14-fix-ltdl-link.patch.gz | patch -p0 -E --backup --verbose || exit 1

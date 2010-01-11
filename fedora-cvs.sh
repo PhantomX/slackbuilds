@@ -77,12 +77,16 @@ pushd "${tmp}"
   export CVSROOT="${fedoraroot}"
   cvs co ${module}/${dist}/
   cd ${module}/${dist}
-  if [ -n "${sarchive}" ] ;then
-    mv sources sources.tmp
-    grep "${sarchive}" sources.tmp > sources
+  if [ -f "${sarchive}" ] ;then
+    mv "${sarchive}" "${pwd}"/
+  else
+    if [ -n "${sarchive}" ] ;then
+      mv sources sources.tmp
+      grep "${sarchive}" sources.tmp > sources
+    fi
+    make sources
+    for source in $(awk '{print $2}' sources) ;do
+      mv "${source}" "${pwd}"/
+    done
   fi
-  make sources
-  for source in $(awk '{print $2}' sources) ;do
-    mv "${source}" "${pwd}"/
-  done
 popd >/dev/null

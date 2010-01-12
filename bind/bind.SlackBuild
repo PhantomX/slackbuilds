@@ -1,0 +1,354 @@
+#!/bin/sh
+#-- bind for Slackware --
+# Build script by Phantom X <megaphantomx@bol.com.br>
+# Suggested usage: $ bind.SlackBuild 2>&1 | tee build.log
+#--
+# Copyright 2008, 2009, 2010 Phantom X, Goiania, Brazil.
+# Copyright 2006 Martijn Dekker, Groningen, Netherlands.
+#
+# Redistribution and use of this script, with or without modification, is
+# permitted provided that the following conditions are met:
+#
+# 1. Redistributions of this script must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR `AS IS'' AND ANY EXPRESS OR IMPLIED
+#  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+#  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+#  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+#  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+#  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+#  http://www.isc.org/products/BIND/
+
+PACKAGER_ID=${PACKAGER_ID:-$USER}
+PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
+
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+# Set YES to remove libtool .la files
+SB_RMLA=${SB_RMLA:-NO}
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
+CWD=$(pwd)
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
+
+NAME=bind
+PKG=${PKG:-${TMP}/package-${NAME}}
+
+VERSION=${VERSION:-9.6.1-P2}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-i686}
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  SLKTARGET=${SLKTARGET:-x86_64}
+else
+  SLKTARGET=${SLKTARGET:-i486}
+fi
+SLKDTARGET=${SLKDTARGET:-slackware}
+BUILD=${BUILD:-1}
+NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
+DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
+SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
+PKGDEST=${PKGDEST:-${CWD}}
+PKGFORMAT=${PKGFORMAT:-txz}
+PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+SRCDIR=${NAME}-${VERSION}
+SRCARCHIVE=${SRCDIR}.tar.gz
+
+DL_TO=${DL_TO:-5}
+DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
+DL_URL="ftp://ftp.isc.org/isc/bind9/${VERSION}/${SRCARCHIVE}"
+
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    s390)        SLKCFLAGS="-O2"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+  esac
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
+fi
+
+if [ -d ${PKG} ]; then
+  # Clean up a previous build
+  rm -rf ${PKG}
+fi
+mkdir -p ${PKG}
+
+cd ${TMP}
+rm -rf ${SRCDIR}
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
+cd ${SRCDIR} || exit 1
+
+chmod -R u+w,go+r-w,a-s .
+
+# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+libtoolize -c -f || exit 1
+aclocal -I m4 --force || exit 1
+autoheader -f || exit 1
+autoconf -f || exit 1
+
+CFLAGS="${SLKCFLAGS}" \
+CXXFLAGS="${SLKCFLAGS}" \
+./configure \
+  --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --sysconfdir=/etc \
+  --localstatedir=/var \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --docdir=/usr/doc/${NAME}-${VERSION} \
+  --enable-ipv6 \
+  --with-pic \
+  --with-libtool \
+  --enable-shared \
+  --disable-static \
+  --enable-threads \
+  --with-openssl=/usr \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+
+make -j${NJOBS} || make || exit 1
+make install DESTDIR=${PKG} || exit 1
+
+# Fix library perms:
+find ${PKG} -name '*.so*' -exec chmod 755 {} ';'
+
+[ "${SB_RMLA}" = "YES" ] && find ${PKG} -name '*.la' -exec rm -f {} ';'
+
+find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
+  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+# Install init script:
+mkdir -p ${PKG}/etc/rc.d
+install -pm0644 ${CWD}/rc.bind ${PKG}/etc/rc.d/rc.bind.new || Exit 1
+chmod 644 ${PKG}/etc/rc.d/rc.bind.new
+
+touch ${PKG}/etc/rndc.key.new || exit 1
+touch ${PKG}/etc/rndc.conf.new || exit 1
+
+# Add /var/run/named directory:
+mkdir -p ${PKG}/var/run/named
+
+mkdir -p ${PKG}/var/named
+
+# Add sample config files for a simple caching nameserver:
+mkdir -p ${PKG}/var/named/caching-example
+SB_CACHEDIR=${CWD}/caching-example
+cat ${SB_CACHEDIR}/named.conf > ${PKG}/etc/named.conf.new || exit 1
+cat ${SB_CACHEDIR}/localhost.zone > ${PKG}/var/named/caching-example/localhost.zone || exit 1
+cat ${SB_CACHEDIR}/named.local > ${PKG}/var/named/caching-example/named.local || exit 1
+cat ${SB_CACHEDIR}/named.root > ${PKG}/var/named/caching-example/named.root || exit 1
+# This name is deprecated, but having it here doesn't hurt in case
+# an old configuration file wants it:
+cat ${SB_CACHEDIR}/named.root > ${PKG}/var/named/caching-example/named.ca || exit 1
+
+# Add a documentation directory:
+mkdir -p ${DOCDIR}
+cp -a \
+  CHANGES COPYRIGHT FAQ* README* doc/arm doc/misc ${CWD}/ChangeLog.SB \
+  ${DOCDIR}/
+rm -f ${DOCDIR}/{Makefile*,*.pdf,*.xml,README.SGML,latex-fixup.pl}
+find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
+find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+
+# Compress and link manpages, if any:
+if [ -d ${PKG}/usr/share/man ]; then
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
+fi
+( cd ${PKG}/usr/man/man3 || exit 1
+  for man in lwres_addr_parse lwres_getaddrsbyname lwres_getnamebyaddr lwres_string_parse
+  do
+    rm -f ${man}.3
+    ln -sf lwres_resutil.3 ${man}.3
+  done
+  for man in lwres_buffer_*.3 ;do
+    rm -f ${man}
+    ln -sf lwres_buffer.3 ${man}
+  done
+  for man in lwres_conf_*.3 ;do
+    rm -f ${man}
+    ln -sf lwres_config.3 ${man}
+  done
+  for man in lwres_endhostent lwres_endhostent_r ; do
+    rm -f ${man}.3
+    ln -sf lwres_gethostent.3 ${man}.3
+  done
+  rm -f lwres_freeaddrinfo.3
+  ln -sf lwres_getaddrinfo.3 lwres_freeaddrinfo.3
+  rm -f lwres_freehostent.3
+  ln -sf lwres_getipnode.3 lwres_freehostent.3
+  for man in lwres_context_*.3 ;do
+    rm -f ${man}
+    ln -sf lwres_context.3 ${man}
+  done
+  for man in lwres_getipnodeby*.3 ;do
+    rm -f ${man}
+    ln -sf lwres_getipnode.3 ${man}
+  done
+  for man in lwres_gnba*_*.3 ;do
+    rm -f ${man}
+    ln -sf lwres_gnba.3 ${man}
+  done
+  for man in lwres_gethostbyaddr lwres_gethostbyaddr_r lwres_gethostbyname lwres_gethostbyname2 \
+    lwres_gethostbyname_r lwres_gethostent_r
+  do
+    rm -f ${man}.3
+    ln -sf lwres_gethostent.3 ${man}.3
+  done
+  rm -f lwres_herror.3
+  ln -sf lwres_hstrerror.3 lwres_herror.3
+  for man in llwres_lwpacket_*.3 ;do
+    rm -f ${man}
+    ln -sf lwres_packet.3 ${man}
+  done
+  for man in lwres_noop*_*.3; do
+    rm -f ${man}
+    ln -sf lwres_noop.3 ${man}
+  done
+  rm -f lwres_net_ntop.3
+  ln -sf lwres_inetntop.3 lwres_net_ntop.3
+  for man in lwres_sethostent lwres_sethostent_r ;do
+    rm -f ${man}.3
+    ln -sf lwres_gethostent.3 ${man}.3
+  done
+)
+if [ -d ${PKG}/usr/man ]; then
+  ( cd ${PKG}/usr/man
+    for manpagedir in $(find . -type d -name "man*") ; do
+      ( cd ${manpagedir}
+        for eachpage in $( find . -type l -maxdepth 1) ; do
+          ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
+          rm -f ${eachpage}
+        done
+        gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
+      )
+    done
+  )
+fi
+
+mkdir -p ${PKG}/install
+cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
+cat ${CWD}/slack-required > ${PKG}/install/slack-required
+
+cat > ${PKG}/install/doinst.sh <<EOF
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+# Generate /etc/rndc.key if there's none there,
+# and there also no /etc/rndc.conf (the other
+# way to set this up).
+if [ ! -r etc/rndc.key -a ! -r /etc/rndc.conf ]; then
+  chroot . /sbin/ldconfig
+  chroot . /usr/sbin/rndc-confgen -r /dev/urandom -a 2> /dev/null
+fi
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+# Keep same perms on rc.${NAME}.new:
+if [ -r etc/rc.d/rc.${NAME} -a -r etc/rc.d/rc.${NAME}.new ]; then
+  chmod --reference=etc/rc.d/rc.${NAME} etc/rc.d/rc.${NAME}.new
+fi
+
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+       ${PKG}/install/slack-desc
+
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/{caching-example,patches}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${CWD}/rc.* ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/caching-example/* \
+                 ${SBDIR}/caching-example/
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
+fi
+
+# Build package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDS="${ROOTCOMMANDS}
+  /sbin/makepkg --linkadd y --chown n --prepend ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDS}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDS} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDS}"
+fi
+
+# Clean up the extra stuff:
+if [ "$1" = "--cleanup" ]; then
+  echo "Cleaning..."
+  if [ -d ${TMP}/${SRCDIR} ]; then
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
+  fi
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
+fi
+exit 0

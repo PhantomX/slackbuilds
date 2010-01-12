@@ -17,3 +17,5 @@ zcat ${SB_PATCHDIR}/${NAME}-device-reconnected.patch.gz | patch -p1 -E --backup 
 
 # Avoid busy loop in hpcups when backend has exited.
 zcat ${SB_PATCHDIR}/${NAME}-hpcups-sigpipe.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/hplip-bad-low-ink-warning.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -3,6 +3,7 @@ SB_PATCHDIR=${CWD}/patches
 
 zcat ${SB_PATCHDIR}/${NAME}-2.7.6-desktop.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-2.6.0-boolean.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/svn-backports.diff.gz | patch -p1 -E --backup --verbose || exit 1
 
 # abiword-plugins
 #zcat ${SB_PATCHDIR}/${NAME}-plugins-2.6.0-boolean.patch.gz | patch -p1 -E --backup --verbose || exit 1

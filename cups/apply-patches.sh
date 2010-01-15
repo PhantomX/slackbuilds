@@ -38,4 +38,7 @@ zcat ${SB_PATCHDIR}/cups-str3436.patch.gz | patch -p1 -E --backup --verbose || e
 zcat ${SB_PATCHDIR}/cups-str3425.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/cups-str3428.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/cups-str3431.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/cups-delete-active-printer.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/cups-gnutls-gcrypt-threads.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/cups-str3458.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/cups-0755.patch.gz | patch -p1 -E --backup --verbose || exit 1
+

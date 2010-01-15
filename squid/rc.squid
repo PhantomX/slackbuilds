@@ -1,0 +1,178 @@
+#!/bin/bash
+# squid    This shell script takes care of starting and stopping
+#          Squid Internet Object Cache
+#
+# chkconfig: - 90 25
+# pidfile: /var/run/squid.pid
+# config: /etc/squid/squid.conf
+# Short-Description: starting and stopping Squid Internet Object Cache
+# Description: - Internet Object Cache. Internet object caching is \
+#   a way to store requested Internet objects (i.e., data available \
+#   via the HTTP, FTP, and gopher protocols) on a system closer to the \
+#   requesting site than to the source. Web browsers can then use the \
+#   local Squid cache as a proxy HTTP server, reducing access time as \
+#   well as bandwidth consumption.
+
+PATH=/usr/bin:/sbin:/bin:/usr/sbin
+export PATH
+
+[ -e /etc/default/squid ] && . /etc/default/squid
+
+# don't raise an error if the config file is incomplete
+# set defaults instead:
+SQUID_OPTS=${SQUID_OPTS:-""}
+SQUID_PIDFILE_TIMEOUT=${SQUID_PIDFILE_TIMEOUT:-20}
+SQUID_SHUTDOWN_TIMEOUT=${SQUID_SHUTDOWN_TIMEOUT:-100}
+SQUID_CONF=${SQUID_CONF:-"/etc/squid/squid.conf"}
+
+# determine the name of the squid binary
+[ -x /usr/sbin/squid ] && exec="/usr/sbin/squid" && SQUID=squid
+[ -z "${SQUID}" ] && exit 0
+
+if [ "$1" == "status" ]; then
+  [ -z "${SQUID}" ] && exit 4
+else 
+  [ -z "${SQUID}" ] && exit 1
+fi
+
+prog="${SQUID}"
+lockfile=/var/lock/subsys/${prog}
+pidfile=/var/run/${prog}.pid
+logfile=/var/log/squid/${prog}.out
+
+# determine which one is the cache_swap directory
+CACHE_SWAP=$(sed -e 's/#.*//g' /etc/squid/squid.conf | \
+  grep cache_dir |  awk '{ print $3 }')
+[ -z "${CACHE_SWAP}" ] && CACHE_SWAP=/var/spool/squid
+
+RETVAL=0
+
+PID=$(/sbin/pidof -o %PPID ${exec})
+
+probe() {
+  # check if the squid conf file is present
+  [ -f ${SQUID_CONF} ] || exit 6
+}
+
+start() {
+  probe
+
+  parse=$(${exec} -k parse -f ${SQUID_CONF} 2>&1)
+  RETVAL=$?
+  if [ ${RETVAL} -ne 0 ]; then
+    echo -n "Starting ${prog}: "
+  fi
+
+  if [ ${RETVAL} -eq 0 ]; then
+    unset parse
+    for adir in ${CACHE_SWAP}; do
+      if [ ! -d ${adir}/00 ]; then
+        echo -n "init_cache_dir ${adir}... "
+        ${exec} -z -F -f ${SQUID_CONF} >> ${logfile} 2>&1
+      fi
+    done
+    echo -n "Starting ${prog}: "
+    if [ -z "${PID}" ] ;then 
+      ${exec} ${SQUID_OPTS} -f ${SQUID_CONF} >> ${logfile} 2>&1
+      RETVAL=$?
+    else
+      RETVAL=1
+    fi
+    if [ ${RETVAL} -eq 0 ]; then
+      timeout=0;
+      while : ; do
+        [ ! -f ${pidfile} ] || break
+        if [ ${timeout} -ge ${SQUID_PIDFILE_TIMEOUT} ]; then
+          RETVAL=1
+          break
+        fi
+        sleep 1 && echo -n "."
+        timeout=$((timeout+1))
+      done
+    fi
+  fi
+  if [ ${RETVAL} -eq 0 ] && touch ${lockfile} ; then
+    echo
+    echo -n "Starting ${prog}: "
+    echo -e "\t\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\t\t[FAILED]\r"
+    if [ -n "${parse}" ] ;then
+      echo "${parse}"
+    fi
+  fi
+  return ${RETVAL}
+}
+
+stop() {
+  echo -n "Stopping ${prog}: "
+  if [ -n "${PID}" ] ;then
+    ${exec} -k check -f ${SQUID_CONF} >> ${logfile} 2>&1
+    RETVAL=$?
+  else
+    RETVAL=1
+  fi
+  if [ ${RETVAL} -eq 0 ] ; then
+    ${exec} -k shutdown -f ${SQUID_CONF} &
+    rm -f ${lockfile}
+    timeout=0
+    while : ; do
+      [ -f ${pidfile} ] || break
+      if [ ${timeout} -ge ${SQUID_SHUTDOWN_TIMEOUT} ]; then
+        echo
+        return 1
+      fi
+      sleep 2 && echo -n "."
+      timeout=$((timeout+2))
+    done
+    echo
+    echo -n "Stopping ${prog}: "
+    echo -e "\t\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\t\t[FAILED]\r"
+  fi
+  return ${RETVAL}
+}
+
+reload() {
+  ${exec} ${SQUID_OPTS} -k reconfigure -f ${SQUID_CONF}
+}
+
+restart() {
+  stop
+  unset PID
+  start
+}
+
+condrestart() {
+  [ -e ${lockfile} ] && restart || :
+}
+
+rhstatus() {
+  if [ -f ${lockfile} ]; then
+    echo "${prog} is running in pid ${PID}."
+  else
+    echo "${prog} is not running."
+  fi && ${SQUID} -k check
+}
+
+case "$1" in
+  start|stop|reload|restart)
+    $1
+    ;;
+  condrestart)
+    condrestart
+    ;;
+  status)
+    rhstatus
+    ;;
+  probe)
+    probe
+    exit 0
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|status|reload|restart|condrestart|probe}"
+    exit 1
+    ;;
+esac
+

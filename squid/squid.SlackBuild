@@ -43,9 +43,10 @@ fi
 NAME=squid
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-3.0.19}
+VERSION=${VERSION:-3.1.0.15}
 SVER=$( echo ${VERSION} | cut -d . -f1-2 )
-RVER="${SVER}.STABLE$( echo ${VERSION} | cut -d . -f3)"
+PVER=${PVER:-"9816 9818 9822 9826 9827"}
+[ "${PVER}" = "" ] && PVER=0
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -70,18 +71,28 @@ SB_INTDNS=${SB_INTDNS:-NO}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
+DOWNDIR=${CWD}/patches/updates
+
 grep --quiet '^squid:' /etc/group && SB_HGROUP=1
 grep --quiet '^squid:' /etc/passwd && SB_HUSER=1
 
-SRCDIR=${NAME}-${RVER}
+SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://www.squid-cache.org/Squid/Versions/v3/${SVER}/${SRCARCHIVE}"
-
+PDL_URL="http://www.squid-cache.org/Squid/Versions/v3/${SVER}/changesets"
+http://www.squid-cache.org/Versions/v3/3.1/changesets/
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${PATCHLEVEL}" != "0" ] ;then
+  mkdir -p ${DOWNDIR}
+  for i in ${PVER} ; do
+    file=${NAME}-${SVER}-${i}.patch
+    test -r ${DOWNDIR}/${file} || wget -P ${DOWNDIR} ${DL_OPTS} ${PDL_URL}/${file} || exit 1
+  done
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -122,11 +133,20 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+iconv -f ISO88591 -t UTF8 ChangeLog -o ChangeLog.tmp
+mv -f ChangeLog.tmp ChangeLog
+
+sed -i -e "/SSLLIBDIR=/s|with_openssl/lib\"|with_openssl/lib${LIBDIRSUFFIX}\"|g" \
+  configure.in || exit 1
+
 [ "${SB_INTDNS}" = "YES" ] || SB_INTDNSOPTS="--disable-internal-dns"
 
-export CFLAGS="-fPIC $(echo ${SLKCFLAGS} | sed -e 's/-O./-Os/') -g -pipe -fsigned-char -fno-strict-aliasing -D_FORTIFY_SOURCE=2"
-export LDFLAGS="-pie"
-export CXXFLAGS="-fPIE ${SLKCFLAGS} -D_FORTIFY_SOURCE=2 -fno-strict-aliasing"
+export CFLAGS="-fPIC $(echo ${SLKCFLAGS} | sed -e 's/-O./-Os/') -g -pipe -fsigned-char -D_FORTIFY_SOURCE=2"
+export LDFLAGS="-pie ${LDFLAGS}"
+export CXXFLAGS="-fPIE ${SLKCFLAGS} -D_FORTIFY_SOURCE=2"
+
+sed -i -e '/^acversions=/s|2.63|2.65 2.63|g' bootstrap.sh || exit 1
+sh ./bootstrap.sh || exit 1
 
 ./configure \
   --prefix=/usr \
@@ -134,29 +154,32 @@ export CXXFLAGS="-fPIE ${SLKCFLAGS} -D_FORTIFY_SOURCE=2 -fno-strict-aliasing"
   --bindir=/usr/sbin \
   --libexecdir=/usr/lib${LIBDIRSUFFIX}/squid \
   --localstatedir=/var \
-  --datadir=/usr/share \
+  --datadir=/usr/share/squid \
   --sysconfdir=/etc/squid \
+  --with-logdir='$(localstatedir)/log/squid' \
+  --with-pidfile='$(localstatedir)/run/squid.pid' \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --disable-dependency-tracking \
   --enable-arp-acl \
+  --enable-follow-x-forwarded-for \
   --enable-auth="basic,digest,ntlm,negotiate" \
-  --enable-basic-auth-helpers="LDAP,MSNT,NCSA,SMB,YP,getpwnam,multi-domain-NTLM,SASL" \
+  --enable-basic-auth-helpers="LDAP,MSNT,NCSA,SMB,YP,getpwnam,multi-domain-NTLM,SASL,DB,POP3,squid_radius_auth" \
+  --enable-ntlm-auth-helpers="smb_lm,no_check,fakeauth" \
+  --enable-digest-auth-helpers="password,ldap,eDirectory" \
+  --enable-external-acl-helpers="ip_user,ldap_group,unix_group,wbinfo_group" \
   --enable-cache-digests \
   --enable-cachemgr-hostname=localhost \
   --enable-delay-pools \
-  --enable-digest-auth-helpers="password" \
   --enable-epoll \
-  --enable-external-acl-helpers="ip_user,ldap_group,unix_group,wbinfo_group" \
   --enable-icap-client \
   --enable-ident-lookups ${LFOPTS} \
   --enable-linux-netfilter \
-  --enable-ntlm-auth-helpers="SMB,fakeauth" \
   --enable-referer-log \
   --enable-removal-policies="heap,lru" \
   --enable-snmp \
   --enable-ssl \
-  --enable-storeio="aufs,diskd,null,ufs" \
+  --enable-storeio="aufs,diskd,ufs" \
   --enable-useragent-log \
   --enable-wccpv2 \
   --with-aio \
@@ -168,30 +191,21 @@ export CXXFLAGS="-fPIE ${SLKCFLAGS} -D_FORTIFY_SOURCE=2 -fno-strict-aliasing"
   --with-pthreads ${SB_INTDNSOPTS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
-make -j${NJOBS} || make || exit 1
+make -j${NJOBS} DEFAULT_SWAP_DIR='$(localstatedir)/spool/squid' || make DEFAULT_SWAP_DIR='$(localstatedir)/spool/squid' || exit 1
 
-mkdir faq
-( cd faq
-  zcat ${CWD}/FAQ.sgml.gz > FAQ.sgml || exit 1
-  sgml2html FAQ.sgml || exit 1
-) || exit 1
-
-make install DESTDIR=${PKG} sysconfdir=/etc/squid || exit 1
-
-ln -s ../../usr/share/squid/errors/English ${PKG}/etc/squid/errors || exit 1
-ln -s ../../usr/share/squid/icons ${PKG}/etc/squid/icons || exit 1
+make install DESTDIR=${PKG} || exit 1
 
 mkdir -p ${PKG}/etc/logrotate.d
 zcat ${CWD}/${NAME}.logrotate.gz >\
      ${PKG}/etc/logrotate.d/squid.new || exit 1
 
 mkdir -p ${PKG}/etc/httpd/extra/
-cat > ${PKG}/etc/httpd/extra/${NAME}.conf.new <<'EOF'
+cat > ${PKG}/etc/httpd/extra/${NAME}.conf.new <<EOF
 #
 # This is /etc/httpd/extra/squid.conf
 #
 
-ScriptAlias /Squid/cgi-bin/cachemgr.cgi /usr/lib/squid/cachemgr.cgi
+ScriptAlias /Squid/cgi-bin/cachemgr.cgi /usr/lib${LIBDIRSUFFIX}/squid/cachemgr.cgi
 
 # Only allow access from localhost by default
 <Location /Squid/cgi-bin/cachemgr.cgi>
@@ -202,15 +216,24 @@ ScriptAlias /Squid/cgi-bin/cachemgr.cgi /usr/lib/squid/cachemgr.cgi
 </Location>
 EOF
 
-mkdir -p ${PKG}/var/log/squid
-mkdir -p ${PKG}/var/spool/squid  
+mkdir -p ${PKG}/var/log/squid ${PKG}/var/spool/squid
+chmod 0750 ${PKG}/var/log/squid ${PKG}/var/spool/squid
 
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.${NAME}.gz > ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
+install -m0755 ${CWD}/rc.${NAME} ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
 mkdir -p ${PKG}/etc/default
-zcat ${CWD}/${NAME}opts.conf.gz > ${PKG}/etc/default/${NAME}.new || exit 1
+cat > ${PKG}/etc/default/${NAME}.new <<'EOF'|| exit 1
+# default squid options
+SQUID_OPTS=""
+
+# Time to wait for Squid to shut down when asked. Should not be necessary
+# most of the time.
+SQUID_SHUTDOWN_TIMEOUT=100
+
+# default squid conf file
+SQUID_CONF="/etc/squid/squid.conf"
+EOF
 
 mkdir -p ${PKG}/var/log/setup
 zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
@@ -223,8 +246,13 @@ rm -f ${PKG}/squid.httpd.tmp
 
 rmdir ${PKG}/etc/squid/squid
 
+rm -f ${PKG}/etc/squid/squid.conf.documented
+
+chmod 640 ${PKG}/etc/squid/squid.conf
+chmod 644 ${PKG}/etc/squid/cachemgr.conf
+
 ( cd ${PKG}/etc/squid
-  for f in squid.conf cachemgr.conf msntauth.conf mime.conf mib.txt ;do
+  for f in squid.conf errorpage.css cachemgr.conf msntauth.conf mime.conf ;do
     mv ${f} ${f}.new || exit 1
   done
 ) || exit 1
@@ -232,10 +260,14 @@ rmdir ${PKG}/etc/squid/squid
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+# Move the MIB definition to the proper place (and name)
+mkdir -p ${PKG}/usr/share/snmp/mibs
+mv ${PKG}/usr/share/squid/mib.txt ${PKG}/usr/share/snmp/mibs/SQUID-MIB.txt || exit 1
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  faq/* README ChangeLog QUICKSTART doc/* ${CWD}/ChangeLog.SB \
+  README ChangeLog QUICKSTART src/squid.conf.documented ${CWD}/ChangeLog.SB \
   contrib/{url-normalizer.pl,rredir.*,user-agents.pl} \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
@@ -343,18 +375,13 @@ EOF
 
 cat >> ${PKG}/install/doinst.sh <<'EOF'
 # Fix permissions
-${CHROOT} /bin/chown root.squid /etc/squid/squid.conf*
-${CHROOT} /bin/chmod 0640 /etc/squid/squid.conf*
-${CHROOT} /bin/chown root.squid /etc/squid/cachemgr.conf*
-${CHROOT} /bin/chmod 0644 /etc/squid/cachemgr.conf*
+${CHROOT} /bin/chown root.squid /etc/squid/squid.conf
+${CHROOT} /bin/chown root.squid /etc/squid/cachemgr.conf
 
 ${CHROOT} /bin/chown squid.squid /var/log/squid
 ${CHROOT} /bin/chmod 0750 /var/log/squid
 ${CHROOT} /bin/chown squid.squid /var/spool/squid
 ${CHROOT} /bin/chmod 0750 /var/spool/squid
-
-${CHROOT} /bin/chown root.squid /usr/lib/squid/ncsa_auth
-${CHROOT} /bin/chmod 4750 /usr/lib/squid/ncsa_auth
 
 for i in /var/log/squid /var/spool/squid ; do
   if [ -d ${i} ] ; then
@@ -363,96 +390,7 @@ for i in /var/log/squid /var/spool/squid ; do
     done
   fi
 done
-
-case "$LANG" in
-  bg*)
-     DIR=Bulgarian
-     ;;
-  ca*)
-     DIR=Catalan
-     ;;
-  cs*)
-     DIR=Czech
-     ;;
-  da*)
-     DIR=Danish
-     ;;
-  nl*)
-     DIR=Dutch
-     ;;
-  en*)
-     DIR=English
-     ;;
-  ea*)
-     DIR=Estonian
-     ;;
-  fi*)
-     DIR=Finnish
-     ;;
-  fr*)
-     DIR=French
-     ;;
-  de*)
-     DIR=German
-     ;;
-  he*)
-     DIR=Hebrew
-     ;;
-  hu*)
-     DIR=Hungarian
-     ;;
-  it*)
-     DIR=Italian
-     ;;
-  ja*)
-     DIR=Japanese
-     ;;
-  kr*)
-     DIR=Korean
-     ;;
-  pl*)
-     DIR=Polish
-     ;;
-  pt*)
-     DIR=Portuguese
-     ;;
-  ro*)
-     DIR=Romanian
-     ;;
-  ru*)
-     DIR=Russian-koi8-r
-     ;;
-  sr*)
-     DIR=Serbian
-     ;;
-  sk*)
-     DIR=Slovak
-     ;;
-  es*)
-     DIR=Spanish
-     ;;
-  sv*)
-     DIR=Swedish
-     ;;
-  zh_TW*)
-     DIR=Traditional_Chinese
-     ;;
-  zh_CN*)
-     DIR=Simplify_Chinese
-     ;;
-  tr*)
-     DIR=Turkish
-     ;;
-  greek)
-     DIR=Greek
-     ;;
-  *)
-     DIR=English
-     ;;
- esac
- ln -snf ../../usr/share/squid/errors/${DIR} /etc/squid/errors
 EOF
-sed -i -e "s|usr/lib/|usr/lib${LIBDIRSUFFIX}/|g" ${PKG}/install/doinst.sh || exit 1
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
@@ -461,8 +399,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/${NAME}opts.conf.gz \
-                 ${CWD}/{rc.,setup.onlyonce.rc}*.gz ${CWD}/FAQ.sgml.gz \
+                 ${CWD}/apply-patches.sh ${CWD}/rc.* ${CWD}/setup.*.rc*.gz \
                  ${CWD}/${NAME}.logrotate.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
@@ -475,14 +412,8 @@ set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
-  /bin/chmod 0640 ./etc/squid/squid.conf* ;
-  /bin/chmod 0644 ./etc/squid/cachemgr.conf* ;
   [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.squid ./etc/squid/{cachemgr,squid}.conf* ;
-  /bin/chmod 0750 ./var/log/squid ;
-  /bin/chmod 0750 ./var/spool/squid ; 
-  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown squid.squid ./var/{log,spool}/squid ;
-  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.squid ./usr/lib${LIBDIRSUFFIX}/squid/ncsa_auth ;
-  [ \"${SB_HGROUP}\" = 1 ] && /bin/chmod 4750 ./usr/lib${LIBDIRSUFFIX}/squid/ncsa_auth ; "
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown squid.squid ./var/{log,spool}/squid ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

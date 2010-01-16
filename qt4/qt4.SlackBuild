@@ -52,7 +52,7 @@ if [ "${SB_NATIVE}" = "YES" ] ;then
 else
   ARCH=${ARCH:-i686}
 fi
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -96,7 +96,7 @@ PDL_URL="http://cloud.github.com/downloads/PhantomX/slackbuilds/${PSRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${PDL_URL} || exit 1
+test -r ${CWD}/${PSRCARCHIVE} || wget ${DL_OPTS} ${PDL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe "
@@ -171,17 +171,28 @@ fi
 
 sed -i \
   -e "s|-O2|${SLKCFLAGS}|g" \
-  -e "s|g++.conf|g++-multilib.conf|g" mkspecs/${platform}/qmake.conf
+  -e "s|g++.conf|g++-multilib.conf|g" \
+  -e '/^QMAKE_LIBDIR_X11/d' \
+  -e '/^QMAKE_LIBDIR_OPENGL/d' \
+  mkspecs/linux-g++{,-32,-64}/qmake.conf || exit 1
 sed -e "s|^QMAKE_CFLAGS_RELEASE|#QMAKE_CFLAGS_RELEASE|g" \
  mkspecs/common/g++.conf > mkspecs/common/g++-multilib.conf
 
+# 
 if [ "${_qt4_libdir}" == "/usr/lib${LIBDIRSUFFIX}" ] ;then
-  sed -i -e "s|^QMAKE_LIBDIR_QT.*=.*|QMAKE_LIBDIR_QT       =|" \
+  sed -i \
+    -e "s|^QMAKE_LIBDIR_QT.*=.*|QMAKE_LIBDIR_QT       =|" \
+    -e "s,QMAKE_LIBDIR_X11.*,QMAKE_LIBDIR_X11\t=," \
+    -e "s,QMAKE_INCDIR_X11.*,QMAKE_INCDIR_X11\t=," \
+    -e "s,QMAKE_INCDIR_OPENGL.*,QMAKE_INCDIR_OPENGL\t=," \
+    -e "s,QMAKE_LIBDIR_OPENGL.*,QMAKE_LIBDIR_OPENGL\t=," \
     mkspecs/common/linux.conf
 fi
 
+unset SLKLDFLAGS
 if [ "${LDFLAGS}" ] ;then
-  sed -i -e "/^QMAKE_LFLAGS_RELEASE/s|$| ${LDFLAGS}|g" \
+  SLKLDFLAGS="${LDFLAGS}"
+  sed -i -e "/^QMAKE_LFLAGS_RELEASE/s|$| ${SLKLDFLAGS}|g" \
             mkspecs/*/qmake*.conf mkspecs/common/g++-multilib.conf || exit 1
 fi
 unset LDFLAGS
@@ -285,7 +296,8 @@ ssl_libs="$(pkg-config --libs openssl)"
 for dep in \
   -laudio -ldbus-1 -lfreetype -lfontconfig ${glib2_libs} \
   -ljpeg -lm -lmng -lpng ${ssl_libs} -lsqlite3 -lz \
-  -L/usr/X11R6/lib -L${SB_SROOT}/lib ; do
+  -L/usr/X11R6/lib${LIBDIRSUFFIX} -L/usr/lib${LIBDIRSUFFIX} \
+  -L${SB_SROOT}/lib ; do
   sed -i -e "s|${dep} ||g" ${PKG}/${_qt4_libdir}/lib*.la ||:
   sed -i -e "s|${dep} ||g" ${PKG}/${_qt4_libdir}/pkgconfig/*.pc
   sed -i -e "s|${dep} ||g" ${PKG}/${_qt4_libdir}/*.prl
@@ -300,6 +312,9 @@ done
 
 # nuke dandling reference(s) to ${PKG}
 sed -i -e "/^QMAKE_PRL_BUILD_DIR/d" ${PKG}/${_qt4_libdir}/*.prl
+
+# nuke QMAKE_PRL_LIBS, seems similar to static linking and .la files (#520323)
+sed -i -e "s|^QMAKE_PRL_LIBS|#QMAKE_PRL_LIBS|" ${PKG}/${_qt4_libdir}/*.prl
 
 if [ "${_qt4_docdir}" != "${_qt4_prefix}/doc" ] ;then
   # -doc make symbolic link to _qt4_docdir
@@ -336,10 +351,14 @@ fi
 # _debug lib symlinks
 ( cd ${PKG}/${_qt4_libdir}
   for lib in libQt*.so ; do
-    ln -s ${lib} $(basename ${lib} .so)_debug.so
+    libbase=$(basename ${lib} .so | sed -e 's/^lib//')
+    #ln -s ${lib} $(basename ${lib} .so)_debug.so
+    echo "INPUT(-l${libbase})" > lib${libbase}_debug.so 
   done
   for lib in libQt*.a ; do
-    ln -s ${lib} $(basename ${lib} .a)_debug.a
+    libbase=$(basename ${lib} .a | sed -e 's/^lib//')
+    #ln -s ${lib} $(basename ${lib} .a)_debug.a
+    echo "INPUT(-l${libbase})" > lib${libbase}_debug.a
   done
 ) || exit 1
 
@@ -349,21 +368,26 @@ rm -f ${PKG}/${_qt4_libdir}/lib*.la
 # Put this back as shipped:
 sed -i -e "s|${SLKCFLAGS}|-O2|g" \
           ${PKG}/${_qt4_datadir}/mkspecs/*/qmake.conf || exit 1
+if [ "${SLKLDFLAGS}" ;then
+  sed -i -e "/^QMAKE_LFLAGS_RELEASE/s| ${SLKLDFLAGS}||g" \
+    ${PKG}/${_qt4_datadir}/mkspecs/*/qmake*.conf \
+    ${PKG}/${_qt4_datadir}/mkspecs/common/g++-multilib.conf || exit 1
+fi
 
-unset QARCH
+unset MARCH
 # multilib: qconfig.h
 case "${ARCH}" in
-  i[3-6]86)  QARCH=i386
+  i[3-6]86)  MARCH=i386
              ;;
-    s390)    QARCH=s390
+    s390)    MARCH=s390
              ;;
-    x86_64)  QARCH=x86_64
+    x86_64)  MARCH=x86_64
              ;;
 esac
 
 if [ -n "${MARCH}" ] ;then
   mv ${PKG}/${_qt4_headerdir}/Qt/qconfig.h \
-    ${PKG}/${_qt4_headerdir}/QtCore/qconfig-${QARCH}.h || exit 1
+    ${PKG}/${_qt4_headerdir}/QtCore/qconfig-${MARCH}.h || exit 1
   mkdir -p ${PKG}/${_qt4_headerdir}/QtCore
   zcat ${CWD}/qconfig-multilib.h.gz > \
     ${PKG}/${_qt4_headerdir}/QtCore/qconfig-multilib.h || exit 1
@@ -402,6 +426,7 @@ EOF
 fi
 
 mkdir -p ${PKG}/${_qt4_plugindir}/styles
+mkdir -p ${PKG}/${_qt4_plugindir}/gui_platform
 
 if [ "${SB_PHONON}" == "YES" ] && [ "${SB_PHONON_INTERNAL}" == "YES" ] ;then
   mkdir -p ${PKG}/${_qt4_plugindir}/phonon_backend

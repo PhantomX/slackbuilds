@@ -8,3 +8,6 @@ zcat ${SB_PATCHDIR}/${PNAME}-0.6.5-smalljpg.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/${PNAME}-0.6.5-gcc4.3.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${PNAME}-0.6.5-mikmod32.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${PNAME}-0.6.5-alsa.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/ClanLib-0.6.5-extra-keys.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/ClanLib-0.6.5-xev-keycodes.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/ClanLib-0.6.5-iterator-abuse.patch.gz | patch -p1 -E --backup --verbose || exit 1

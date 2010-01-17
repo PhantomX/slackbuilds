@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -40,8 +43,8 @@ fi
 NAME=elektra
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.6.10}
-if [ "${SB_NATIVE}" = "NO" ] ;then
+VERSION=${VERSION:-0.7.0}
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
@@ -67,9 +70,11 @@ SRCARCHIVE=${SRCDIR}.tar.gz
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://dl.sf.net/sourceforge/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://prdownloads.sourceforge.net/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://download.sf.net/${NAME}/${SRCARCHIVE}"
+SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
+DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -83,10 +88,11 @@ else
                  ;;
   esac
 fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
 fi
 
 if [ -d ${PKG} ]; then
@@ -97,23 +103,19 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-0.6.10-nostart.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-0.6.10-open.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${CWD}/${NAME}-0.7.0-rename.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-CFLAGS="${SLKCFLAGS}" \
-CXXFLAGS="${SLKCFLAGS}" \
+CFLAGS="${SLKCFLAGS} -D_GNU_SOURCE" \
+CXXFLAGS="${SLKCFLAGS} -D_GNU_SOURCE" \
 ./configure \
   --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
   --localstatedir=/var \
   --infodir=/usr/info \
@@ -122,27 +124,32 @@ CXXFLAGS="${SLKCFLAGS}" \
   --program-prefix=${NAME}- \
   --disable-static \
   --disable-rpath \
-  --with-ulibdir=/usr/lib \
-  --with-docbook=/usr/share/xml/docbook \
+  --with-ulibdir=/usr/lib${LIBDIRSUFFIX} \
+  --with-docbook=/usr/share/sgml/docbook/xsl-stylesheets \
+  --with-kdbschemadir=/usr/share/sgml/${NAME}-${VERSION} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+
+sed -i.rpath 's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec=""|g' libtool
+sed -i.rpath 's|^runpath_var=LD_RUN_PATH|runpath_var=DIE_RPATH_DIE|g' libtool
 
 make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} INSTALL='install -p' || exit 1
 
+find ${PKG}/usr/lib* -type f -a -name '*.la' -exec rm -f {} ';'
+
 # Remove statically linked kdb - lib
-rm -f ${PKG}/usr/bin/elektra-kdb_static
-rm -f ${PKG}/usr/lib/libelektra.a
+rm -f ${PKG}/usr/bin/*_static
+rm -f ${PKG}/usr/lib*/*.a
 
 # file in profile.d is sourced, remove shebang and execute bits,
-# while keeping timestamps
-touch -r ${PKG}/etc/profile.d/elektra-elektraenv.sh __elektra-elektraenv_timestamp
 sed -i -e 's;#!/bin/sh;;' ${PKG}/etc/profile.d/elektra-elektraenv.sh
 chmod a-x ${PKG}/etc/profile.d/elektra-elektraenv.sh
-touch -r __elektra-elektraenv_timestamp ${PKG}/etc/profile.d/elektra-elektraenv.sh
+mv ${PKG}/etc/profile.d/elektra-elektraenv.sh \
+  ${PKG}/etc/profile.d/elektra-elektraenv.sh.new || exit 1
 
 # Fix symlink should be relative - Be aware of SONAME changes!
-ln -fs ../libelektratools.so.1 \
-       ${PKG}/usr/lib/elektra/libelektratools.so || exit 1
+ln -fs ../libelektratools.so.2 \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/elektra/libelektratools.so || exit 1
 
 ## man fixes (from program prefix)
 mv ${PKG}/usr/man/man5/elektra-elektra.5 \
@@ -152,22 +159,7 @@ mv ${PKG}/usr/man/man7/elektra-elektra.7 \
 
 rm -rf ${PKG}/etc/init.d
 
-# for the socket and the pidfile
-mkdir -p ${PKG}/var/run/elektra-kdbd
-
-rm -f ${PKG}/usr/lib/*.la
-rm -f ${PKG}/usr/lib/*/*.la
-
-# Startup scripts.
-mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.${NAME}-kdbd.gz > \
-     ${PKG}/etc/rc.d/rc.${NAME}-kdbd || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}-kdbd
-
-mkdir -p ${PKG}/var/log/setup
-zcat ${CWD}/setup.onlyonce.rc${NAME}-kdbd.gz > \
-     ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}-kdbd || exit 1
-chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}-kdbd
+mkdir -p ${PKG}/etc/kdb
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -206,14 +198,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -230,25 +214,47 @@ fi
 # Create basic key structure for apps
 if [ -x usr/bin/elektra-kdb ]
 then
-  \${CHROOT} /usr/bin/elektra-kdb set -t dir system/sw
-  \${CHROOT} /usr/bin/elektra-kdb set system/sw/kdb/schemapath usr/share/sgml/elektra-0.1.1/elektra.xsd
+  \${CHROOT} /usr/bin/elektra-kdb set -t dir system/sw > /dev/null 2>&1
+  \${CHROOT} /usr/bin/elektra-kdb set set system/sw/kdb/schemapath "/usr/share/sgml/elektra-${VERSION}/elektra.xsd" > /dev/null 2>&1 || :
 fi
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+# Keep same perms
+if [ -r etc/profile.d/elektra-elektraenv.sh -a -r etc/profile.d/elektra-elektraenv.sh.new ]; then
+  chmod --reference=etc/profile.d/elektra-elektraenv.sh etc/profile.d/elektra-elektraenv.sh.new
+fi
+
+## List of conf files to check.  The conf files in your package should end in .new
 EOF
+
+( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${NAME}-*.patch.gz ${CWD}/rc.*.gz ${CWD}/setup.*.gz \
-               ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/${NAME}-*.patch.gz ${CWD}/rc.*.gz ${CWD}/setup.*.g \
+                 ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
@@ -257,7 +263,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

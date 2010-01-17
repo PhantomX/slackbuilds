@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -40,8 +43,8 @@ fi
 NAME=oyranos
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.1.7}
-if [ "${SB_NATIVE}" = "NO" ] ;then
+VERSION=${VERSION:-0.1.9}
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
@@ -69,6 +72,9 @@ DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://kwizart.fedorapeople.org/SOURCES/${SRCARCHIVE}"
 
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
 else
@@ -81,10 +87,11 @@ else
                  ;;
   esac
 fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
 fi
 
 if [ -d ${PKG} ]; then
@@ -95,11 +102,7 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
@@ -116,8 +119,9 @@ CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
-  --localstatedir=/var/lib \
+  --localstatedir=/var \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
@@ -125,7 +129,7 @@ CXXFLAGS="${SLKCFLAGS}" \
   --syscolordir=/usr/share/color \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
-make || exit 1
+make -j${NJOBS} || make || exit 1
 
 # Prevent icc profiles with commercial license to be installed
 rm -rf standard_profiles
@@ -144,10 +148,8 @@ touch -r ChangeLog ${PKG}/usr/include/${NAME}/oyranos_version.h
 # Multilib tweaks
 touch -r ChangeLog ${PKG}/usr/bin/${NAME}-config
 
-# Move oyranos-config.1 to oyranos-config.3
-mv ${PKG}/usr/man/man1/oyranos-config.1 \
-   ${PKG}/usr/man/man3/oyranos-config.3 || exit 1
-touch -r ChangeLog ${PKG}/usr/man/man3/oyranos-config.3
+mkdir -p ${PKG}/usr/share/color/settings
+install -pm 0644 settings/*.policy.xml ${PKG}/usr/share/color/settings
 
 mkdir -p ${PKG}/usr/share/color/icc
 
@@ -189,14 +191,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -213,37 +207,30 @@ fi
 # Install the info files for this package
 if [ -x usr/bin/elektra-kdb ]
 then
-  if [ "$(usr/bin/elektra-kdb ls system/sw/oyranos 2>/dev/zero | wc -l)" -eq 0 ]
+  if [ "\$(\${CHROOT} /usr/bin/elektra-kdb ls system/sw/oyranos 2>/dev/zero | wc -l)" -eq 0 ]
   then
     if [ -x usr/bin/oyranos-policy ]
     then
-      \${CHROOT} /usr/bin/oyranos-policy usr/share/color/settings/office.policy.xml 2>/dev/null
+      \${CHROOT} /usr/bin/oyranos-policy /usr/share/color/settings/office.policy.xml 2>/dev/null
     fi
   fi
 fi
 EOF
 
-( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  echo >> ${PKG}/install/doinst.sh
-)
-
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}/patches
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/apply-patches.sh ${CWD}/README-*.gz ${CWD}/oyranos-repack.sh \
-               ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-install -m0644 ${CWD}/patches/*.gz \
-               ${SBDIR}/patches/
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${CWD}/README-*.gz ${CWD}/oyranos-repack.sh \
+                 ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
@@ -252,7 +239,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

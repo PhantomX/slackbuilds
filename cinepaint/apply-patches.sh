@@ -9,6 +9,10 @@ zcat ${SB_PATCHDIR}/${NAME}-0.22-0-libdir.patch.gz | patch -p1 -E --backup --ver
 zcat ${SB_PATCHDIR}/${NAME}-0.22-md5_rm_RSA.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.22-multilib.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.22-gcc43_cine.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/cinepaint-0.22-1-underquoted.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/cinepaint-0.22-gcc44.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/cinepaint-0.22-oyranos19.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
 ( cd ${SRCDIR2} || exit 1
-  zcat ${SB_PATCHDIR}/icc_examin-0.44-gcc43.patch.gz | patch -p1 -E --backup --verbose || exit 1
+  zcat ${SB_PATCHDIR}/icc_examin-0.46-default.patch.gz | patch -p1 -E --backup --verbose || exit 1
 ) || exit 1

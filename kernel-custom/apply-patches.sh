@@ -110,6 +110,7 @@ ApplyPatch linux-2.6-execshield.patch
 # xfs
 
 # btrfs
+ApplyPatch linux-2.6-btrfs-fix-acl.patch
 
 # cifs
 
@@ -220,13 +221,21 @@ ApplyPatch linux-2.6-userspace_kvmclock_offset.patch
 # Fix block I/O errors in KVM
 #ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
 
+ApplyPatch linux-2.6-x86-64-fbdev-primary.patch
+ApplyPatch kms-offb-handoff.patch
 # Nouveau DRM + drm fixes
-ApplyPatch drm-radeon-fixes.patch
-ApplyPatch drm-radeon-dp-support.patch
-ApplyPatch drm-nouveau.patch.gz
-ApplyPatch drm-intel-big-hammer.patch
-# Some BIOSes don't clear the whole GTT, and it causes IOMMU faults
-ApplyPatch linux-2.6-intel-agp-clear-gtt.patch
+ApplyPatch drm-upgrayedd.patch
+ApplyPatch drm-fixes.patch
+#ApplyPatch drm-intel-big-hammer.patch
+ApplyOptionalPatch drm-intel-next.patch
+ApplyPatch drm-intel-no-tv-hotplug-interrupts-dammit.patch
+ApplyPatch drm-nouveau-g80-ctxprog.patch
+ApplyPatch drm-nouveau-shared-fb.patch
+ApplyPatch drm-nouveau-tvout-disable.patch
+ApplyPatch drm-nouveau-safetile-getparam.patch
+ApplyPatch drm-nouveau-nvac-noaccel.patch
+ApplyPatch drm-nouveau-kconfig.patch
+ApplyPatch drm-nouveau-update.patch
 
 # linux1394 git patches
 # apply if non-empty

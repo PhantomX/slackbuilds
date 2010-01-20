@@ -57,8 +57,6 @@ zcat ${SB_PATCHDIR}/qt-x11-opensource-src-4.5.3-system_ca_certificates.patch.gz 
 
 
 ## upstreamable bits
-# http://bugzilla.redhat.com/485677
-zcat ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.6.0-beta1-qdoc3.patch.gz | patch -p1 -E --verbose
 #zcat ${SB_PATCHDIR}/qt-4.5-sparc64.patch.gz | patch -p1 -E --verbose
 # fix invalid inline assembly in qatomic_{i386,x86_64}.h (de)ref implementations
 # should fix the reference counting in qt_toX11Pixmap and thus the Kolourpaint

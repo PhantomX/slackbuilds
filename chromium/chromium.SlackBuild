@@ -63,6 +63,9 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to use system ffmpeg libs
+SB_FFMPEG=${SB_FFMPEG:-YES}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
@@ -97,7 +100,7 @@ else
   ARCHOPTS='-Dtarget_arch=ia32'
 fi
 
-if [ ! -f /usr/lib${LIBDIRSUFFIX}/libavcodec.so ] ;then
+if ! $(pkg-config libavcodec libavformat libavutil --exists) ;then
   echo 'Install ffmpeg with shared libs before!'
   exit 1
 fi
@@ -144,9 +147,15 @@ EOF
 
 export HOME="${SB_SROOT}"
 
-unset GCCOPTS
+unset GCCOPTS SB_FFMPEGOPTS
 if [ "$(gcc --version | head -n1 | awk '{print $3}' | cut -d. --output-delimiter="" -f1-2)" = "44" ] ;then
   GCCOPTS='-Dno_strict_aliasing=1 -Dgcc_version=44'
+fi
+
+if [ "${SB_FFMPEG}" = "YES" ] ;then
+  SB_FFMPEGOPTS='-Duse_system_ffmpeg=1'
+else
+  SB_FFMPEGOPTS='ffmpeg_branding=Chrome'
 fi
 
 build/gyp_chromium -f make build/all.gyp --depth=. \
@@ -160,7 +169,7 @@ build/gyp_chromium -f make build/all.gyp --depth=. \
   -Duse_system_libpng=1 \
   -Duse_system_libxml=1 \
   -Duse_system_libxslt=1 \
-  -Duse_system_ffmpeg=1 \
+  ${SB_FFMPEGOPTS} \
   ${ARCHOPTS} ${GCCOPTS} || exit 1
 
 make -j${NJOBS} -r V=1 chrome chrome_sandbox \
@@ -171,6 +180,16 @@ mkdir -p ${PKG}/${CHROMIUM_HOME}
 
 install -m0755 out/Release/chrome ${PKG}/${CHROMIUM_HOME}/${NAME} || exit 1
 install -m0755 out/Release/chrome_sandbox ${PKG}/${CHROMIUM_HOME}/${NAME}-sandbox || exit 1
+
+if [ "${SB_FFMPEG}" = "YES" ] ;then
+  # Make a stub library
+  ( set -o xtrace
+    touch libffmpegsumo.cpp
+    g++ -shared ${SLKCFLAGS} ${LDFLAGS} libffmpegsumo.cpp -o out/Release/libffmpegsumo.so \
+      $(pkg-config libavcodec libavformat libavutil --libs) || exit 1
+  ) || exit 1
+fi
+install -m0644 out/Release/libffmpegsumo.so ${PKG}/${CHROMIUM_HOME}/ || exit 1
 
 mkdir -p  ${PKG}/usr/bin
 install -pm0755 ${CWD}/${NAME}.sh ${PKG}/usr/bin/${NAME} || exit 1
@@ -186,15 +205,6 @@ mkdir -p ${PKG}/usr/man/man1
 install -pm0644 out/Release/chrome.1 ${PKG}/usr/man/man1/${NAME}.1 || exit 1
 # chrome.1 is for chromium --help
 ln -s chromium.1 ${PKG}/usr/man/man1/chrome.1
-
-# Chromium looks for these in its folder
-# See media_posix.cc and base_paths_linux.cc/
-ln -s ../$(basename /usr/lib${LIBDIRSUFFIX}/libavcodec.so.*.*.*) \
-  ${PKG}/${CHROMIUM_HOME}/libavcodec.so.52
-ln -s ../$(basename /usr/lib${LIBDIRSUFFIX}/libavformat.so.*.*.*) \
-  ${PKG}/${CHROMIUM_HOME}/libavformat.so.52
-ln -s ../$(basename /usr/lib${LIBDIRSUFFIX}/libavutil.so.*.*.*) \
-  ${PKG}/${CHROMIUM_HOME}/libavutil.so.50 
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null

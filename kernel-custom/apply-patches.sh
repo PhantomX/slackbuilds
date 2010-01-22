@@ -191,8 +191,8 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 
 # Changes to upstream defaults.
 
-# back-port scan result aging patches
-#ApplyPatch linux-2.6-mac80211-age-scan-results-on-resume.patch.gz
+# Report meaningful values for MCS rates through wireless extensions
+ApplyPatch linux-2.6-wireless_-report-reasonable-bitrate-for-MCS-rates-through-wext.patch
 
 # libata
 

@@ -45,3 +45,7 @@ if [ "${SPNAME}" = "xfce4-session" ]; then
   # http://patches.ubuntu.com/x/xfce4-session/extracted/01_correct_shadows.patch
   zcat ${SB_PATCHDIR}/xfce4-session-4.6.1-correct-shadows.patch.gz | patch -p1 --verbose || exit 1
 fi
+
+if [ "${SPNAME}" = "xfce4-settings" ]; then
+  zcat ${SB_PATCHDIR}/xfce4-settings-4.6.4-libxklavier50.patch.gz | patch -p0 --verbose || exit 1
+fi

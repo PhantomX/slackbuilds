@@ -9,18 +9,11 @@ fi
 
 zcat ${SB_PATCHDIR}/file-5.00-devdrv.patch.gz | patch -p1 -E --verbose || exit 1
 zcat ${SB_PATCHDIR}/file-5.00-mdmp.patch.gz | patch -p1 -E --v.gz | patch -p1 -E --verbose || exit 1erbose || exit 1
-zcat ${SB_PATCHDIR}/file-5.03-fonts-postscript.patch.gz | patch -p1 -E --verbose || exit 1
-zcat ${SB_PATCHDIR}/file-5.03-xfsdump.patch.gz | patch -p1 -E --verbose || exit 1
-zcat ${SB_PATCHDIR}/file-5.03-ifany.patch.gz | patch -p1 -E --verbose || exit 1
-zcat ${SB_PATCHDIR}/file-5.03-multilib.patch.gz | patch -p1 -E --verbose || exit 1
-zcat ${SB_PATCHDIR}/file-5.03-ppcswap.patch.gz | patch -p1 -E --verbose || exit 1
-zcat ${SB_PATCHDIR}/file-5.03-add-python-3.patch.gz | patch -p1 -E --verbose || exit 1
-zcat ${SB_PATCHDIR}/file-5.03-djvu.patch.gz | patch -p1 -E --verbose || exit 1
 zcat ${SB_PATCHDIR}/file-5.03-delta.patch.gz | patch -p1 -E --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/file-4.21-oracle.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/file-4.24-ooffice.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/file-5.04-ooffice.patch.gz | patch -p1 -E --backup -z .oo --verbose || exit 1
 zcat ${SB_PATCHDIR}/file-4.24-dump.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/file-4.24-berkeleydb.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/file-4.20-xen.patch.gz | patch -p1 -E --backup --verbose || exit 1

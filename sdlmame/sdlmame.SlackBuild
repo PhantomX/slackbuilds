@@ -42,10 +42,14 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
+PNAME=mame
 NAME=sdlmame
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.136}
+VERSION=${VERSION:-0.136.u1}
+SVER="$( echo ${VERSION} | cut -d . -f1-2 )"
+PATCHLEVEL="$( echo ${VERSION} | cut -d . -f3 | sed -e 's/^.//' )"
+[ "${PATCHLEVEL}" = "" ] && PATCHLEVEL=0
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -77,22 +81,35 @@ SB_GCONF=${SB_GCONF:-NO}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}${VERSION//.}
-SRCARCHIVE=${SRCDIR}.zip
+DOWNDIR=${CWD}/patches/updates
+
+SRCDIR=${PNAME}-${VERSION}
+SRCARCHIVE=${PNAME}${SVER//.}s.zip
+PSRCARCHIVE=${VERSION//.}_diff.zip
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://rbelmont.mameworld.info/${SRCARCHIVE}"
+DL_URL="http://mamedev.org/downloader.php?&file=${SRCARCHIVE}"
+PDL_URL="http://mamedev.org/updates"
 
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || wget --user-agent='Mozilla/5.0' ${DL_OPTS} ${DL_URL} || exit 1
+mkdir -p ${DOWNDIR}
+if [ "${PATCHLEVEL}" -gt 0 ] ;then
+  for i in $( seq -w ${PATCHLEVEL} ) ; do
+    file=${SVER//.}u${i}_diff.zip
+    test -r ${DOWNDIR}/${file} || wget --user-agent='Mozilla/5.0' -P ${DOWNDIR} ${DL_OPTS} ${PDL_URL}/${file} || exit 1
+  done
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O3 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
   RARCH="-march=native"
 else
+  RARCH=""
   case "${ARCH}" in
     i[3-6]86)    SLKCFLAGS="-O3 -march=${ARCH} -mtune=i686"
+                 RARCH="${ARCH}"
                  ;;
     s390)        SLKCFLAGS="-O3"
                  ;;
@@ -107,6 +124,7 @@ if [ "${ARCH}" = "x86_64" ] ;then
   export PTR64=1
 else
   LIBDIRSUFFIX=""
+  PTR64=""
 fi
 
 if [ -d ${PKG} ]; then
@@ -117,24 +135,29 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-unzip ${CWD}/${SRCARCHIVE} || exit 1
+unzip ${CWD}/${SRCARCHIVE} -d ${SRCDIR} || exit 1
 cd ${SRCDIR} || exit 1
+unzip mame.zip || exit 1
+rm -f mame.zip
+if [ "${PATCHLEVEL}" -gt 0 ] ;then
+  for i in $( seq -w ${PATCHLEVEL} ) ; do
+    file=${SVER//.}u${i}_diff.zip
+    unzip ${DOWNDIR}/${file} || exit 1
+  done
+fi
 
 chmod -R u+w,go+r-w,a-s .
 
-# Create the required set of empty directories in "dirs" to be included as doc
-# (we don't want 'obj' which is currently empty but used during the build)
-touch obj/foo
-for file in *; do
-  if rmdir ${file} 2>/dev/null; then
-    mkdir -p dirs/${file}
-  fi
-done
+find . -type f \
+  '(' -name 'makefile' -o -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.txt' -o -name '*.mak' -o -name '*.diff' ')' \
+  | xargs sed -e 's/\r//' -i
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-if [ "${SB_GCONF}" != "YES" ] ;then
-  zcat ${CWD}/${NAME}-0.126-nogconf.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
 fi
+
+sed -i -e "/^CCOMFLAGS =/s|$| ${SLKCFLAGS}|g" makefile || exit 1
 
 if [ "${LDFLAGS}" ] ;then
   sed -i -e "/^LDFLAGS =/s|$| ${LDFLAGS}|g" makefile || exit 1
@@ -148,14 +171,17 @@ sed -i -e "s|-L/usr/X11/lib -L/usr/X11R6/lib -L/usr/openwin/lib|-L/usr/lib${LIBD
 unset VERBOSE
 [ "${SB_VERBOSE}" = "YES" ] && export VERBOSE=1
 
-make -j${NJOBS} PREFIX="sdl" \
+make -j${NJOBS} all \
+  PREFIX="sdl" SUFFIX="" SUFFIX64="" \
   BUILD_EXPAT=0 BUILD_ZLIB=0 \
   ARCHOPTS="${RARCH}" OPT_FLAGS="${SLKCFLAGS}" || exit 1
 
 mkdir -p ${PKG}/usr/bin
 install -m 0755 sdlmame ${PKG}/usr/bin/sdlmame || exit 1
-for f in testkeys romcmp chdman jedutil ldverify regrep srcclean src2html ;do
-  install -m 0755 ${f} ${PKG}/usr/bin/${f}-sdlmame || exit 1
+for f in \
+  testkeys chdman jedutil ldresample ldverify regrep romcmp split src2html srcclean unidasm
+do
+  install -m 0755 ${f} ${PKG}/usr/bin/${f}-${NAME} || exit 1
 done
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
@@ -164,7 +190,7 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  docs/*.txt *.txt dirs/ ${CWD}/ChangeLog.SB \
+  docs/*.txt *.txt ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
@@ -199,11 +225,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+                ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

@@ -44,8 +44,8 @@ fi
 NAME=qemu
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.10.5}
-KVMVER=${KVMVER:-85}
+VERSION=${VERSION:-0.12.2}
+KVMVER=${KVMVER:-0.12.2}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -68,7 +68,7 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-KSRCDIR=kvm-${KVMVER}
+KSRCDIR=${NAME}-kvm-${KVMVER}
 SRCARCHIVE=${SRCDIR}.tar.gz
 KSRCARCHIVE=${KSRCDIR}.tar.gz
 
@@ -79,13 +79,9 @@ DL_URL="${NGNU_MIRROR}/${NAME}/${SRCARCHIVE}"
 SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
 KDL_URL="${SF_MIRROR}/kvm/${KSRCARCHIVE}"
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
-fi
-if ! test -r ${KSRCARCHIVE}; then
-  test -r ${CWD}/${KSRCARCHIVE} || wget ${DL_OPTS} ${KDL_URL} || exit 1
-fi
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+test -r ${CWD}/${KSRCARCHIVE} || wget ${DL_OPTS} ${KDL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -99,6 +95,12 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -108,17 +110,9 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
-if $(file -L ${CWD}/${KSRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${KSRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${KSRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${KSRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${KSRCARCHIVE} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
@@ -127,16 +121,28 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+SB_AUDIO="oss,pa,alsa,sdl,esd"
+
 unset CFLAGS
+unset SLKLDFLAGS SLKLDFLAGSB
+if [ "${LDFLAGS}" ] ;then
+  SLKLDFLAGS="${LDFLAGS}"
+  SLKLDFLAGSB="VL_LDFLAGS=${LDFLAGS}"
+fi
+unset LDFLAGS
 
 ./configure \
   --prefix=/usr \
   --interp-prefix=/usr/qemu-%MM \
-  --audio-drv-list=oss,alsa,sdl,esd \
+  --audio-drv-list=${SB_AUDIO} \
   --enable-system \
-  --enable-linux-user || exit 1
+  --enable-linux-user \
+  --disable-strip \
+  --extra-ldflags="${SLKLDFLAGS}" \
+  --extra-cflags="${SLKCFLAGS}" \
+  --disable-xen || exit 1
 
-make -j${NJOBS} V=1 || exit 1
+make -j${NJOBS} V=1 ${SLKLDFLAGSB} || exit 1
 
 make prefix="${PKG}/usr" \
      bindir="${PKG}/usr/bin" \
@@ -147,35 +153,33 @@ make prefix="${PKG}/usr" \
 
 ( cd ${KSRCDIR} || exit 1
   # build kvm
-  echo "${NAME}-${VERSION}" > $(pwd)/kernel/.kernelrelease
   ./configure \
     --prefix=/usr \
-    --with-patched-kernel \
-    --audio-drv-list=oss,alsa,sdl,esd \
+    --audio-drv-list=${SB_AUDIO} \
     --target-list=x86_64-softmmu \
-    --kerneldir=$(pwd)/kernel || exit 1
+    --disable-strip \
+    --extra-ldflags="${SLKLDFLAGS}" \
+    --extra-cflags="${SLKCFLAGS}" \
+    --disable-xen || exit 1
 
-  make -j${NJOBS} V=1 || exit 1
+  make -j${NJOBS} V=1 ${SLKLDFLAGSB} || exit 1
 
-  install -m 0755 user/kvmtrace ${PKG}/usr/bin/ || exit 1
-  install -m 0755 user/kvmtrace_format ${PKG}/usr/bin/ || exit 1
-  install -m 0755 kvm_stat ${PKG}/usr/bin/ || exit 1
-  install -p -m 0755 qemu/x86_64-softmmu/qemu-system-x86_64 \
+  ( cd kvm/user || exit 1
+    ./configure --prefix=/usr --kerneldir=$(pwd)/../kernel/
+    make kvmtrace || exit 1
+  ) || exit 1
+
+  install -m 0755 kvm/user/kvmtrace ${PKG}/usr/bin/ || exit 1
+  install -m 0755 kvm/user/kvmtrace_format ${PKG}/usr/bin/ || exit 1
+  install -m 0755 kvm/kvm_stat ${PKG}/usr/bin/ || exit 1
+  install -p -m644 pc-bios/vapic.bin \
+    ${PKG}/usr/share/qemu/ || exit 1
+  install -p -m 0755 x86_64-softmmu/qemu-system-x86_64 \
       ${PKG}/usr/bin/qemu-kvm || exit 1
 
   mkdir -p ${PKG}/lib/udev/rules.d
-  install -p -m644 scripts/65-kvm.rules ${PKG}/lib/udev/rules.d/ || exit 1
+  install -p -m644 kvm/scripts/65-kvm.rules ${PKG}/lib/udev/rules.d/ || exit 1
 
-  # install kvm bios files
-  mkdir -p ${PKG}/usr/share/qemu
-  install -p -m644 qemu/pc-bios/bios.bin \
-    ${PKG}/usr/share/qemu/bios-kvm.bin || exit 1
-  install -p -m644 qemu/pc-bios/vgabios.bin \
-    ${PKG}/usr/share/qemu/vgabios-kvm.bin || exit 1
-  install -p -m644 qemu/pc-bios/vgabios-cirrus.bin \
-    ${PKG}/usr/share/qemu/vgabios-cirrus-kvm.bin || exit 1
-  install -p -m644 extboot/extboot.bin \
-    ${PKG}/usr/share/qemu/extboot-kvm.bin || exit 1
 ) || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \

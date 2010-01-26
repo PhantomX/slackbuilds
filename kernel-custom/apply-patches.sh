@@ -71,7 +71,7 @@ ApplyPatch linux-2.6-makefile-after_link.patch
 ApplyOptionalPatch linux-2.6-compile-fixes.patch.gz
 
 # revert patches from upstream that conflict or that we get via other means
-ApplyOptionalPatch linux-2.6-upstream-reverts.patch.gz -R
+ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
 ApplyOptionalPatch git-cpufreq.patch.gz
 

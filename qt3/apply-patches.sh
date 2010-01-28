@@ -65,3 +65,7 @@ zcat ${SB_PATCHDIR}/qt-ulibc.patch.gz | patch -p1 -E --backup --verbose || exit 
 
 # eycandy patch(es)
 zcat ${SB_PATCHDIR}/qt-3.3.8-eyecandy.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+if [ "${SB_PNG14}" = "YES" ] ;then
+  zcat ${SB_PATCHDIR}/qt3-png14.patch.gz | patch -p0 -E --backup --verbose || exit 1
+fi

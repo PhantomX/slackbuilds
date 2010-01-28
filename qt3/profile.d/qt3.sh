@@ -24,11 +24,6 @@ else
     fi
   done
 fi
-if [ ! "${CPLUS_INCLUDE_PATH}" = "" ]; then
-  CPLUS_INCLUDE_PATH=${QTDIR}/include:${CPLUS_INCLUDE_PATH}
-else
-  CPLUS_INCLUDE_PATH=${QTDIR}/include
-fi
 export PATH="$PATH:${QTDIR}/bin"
 export QTDIR QTINC QTLIB
 export CPLUS_INCLUDE_PATH

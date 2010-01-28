@@ -31,3 +31,8 @@ zcat ${SB_PATCHDIR}/filesystemref.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/o-minus.patch.gz | patch -p1 --verbose || exit 1
 # from upstream
 zcat ${SB_PATCHDIR}/strftime-format.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/0001-Avoid-drawing-implicit-paints-to-destroyed-windows.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/0001-Track-direct-window-cairo-access-and-avoid-tricks-wh.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/0002-Move-common-gdkwindow.c-code-into-function-gdk_windo.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/0003-Drop-outstanding-cairo-surfaces-when-window-is-made-.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/0004-When-native-window-requests-button-presses-request-o.patch.gz | patch -p1 --verbose || exit 1

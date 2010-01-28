@@ -7,3 +7,4 @@ zcat ${SB_PATCHDIR}/${NAME}-0.2.8.4-deps.patch.gz | patch -p1 -E --backup --verb
 zcat ${SB_PATCHDIR}/${NAME}-0.2.8.4-multiarchdevel.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.2.8.4-intoverflow.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.2.8.4-reducesymbols.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/libwmf-libpng14.patch.gz | patch -p1 -E --backup --verbose || exit 1

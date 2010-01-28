@@ -9,3 +9,6 @@ zcat ${SB_PATCHDIR}/${NAME}-0.5.0-xmargs-include.patch.gz | patch -p0 -E --backu
 zcat ${SB_PATCHDIR}/${NAME}-0.5.0-helpers-text-includes.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.5.0-helpers-log-include.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-amd64_gcc441.diff.gz | patch -p0 -E --backup --verbose || exit 1
+if pkg-config --exists libpng14 ;then
+  zcat ${SB_PATCHDIR}/xmoto-libpng-1.4.patch.gz | patch -p1 -E --backup --verbose || exit 1
+fi

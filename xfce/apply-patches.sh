@@ -7,6 +7,11 @@ if [ "${SPNAME}" = "exo" ]; then
   zcat ${SB_PATCHDIR}/exo-0.3.105-default-mount-options.patch.gz | patch -p1 --verbose || exit 1
 fi
 
+if [ "${SPNAME}" = "Thunar" ]; then
+  zcat ${SB_PATCHDIR}/thunar-libpng-1.4.patch.gz | patch -p1 --verbose || exit 1
+  zcat ${SB_PATCHDIR}/thunar-vfs-fix-umask.patch.gz | patch -p0 --verbose || exit 1
+fi
+
 if [ "${SPNAME}" = "xfdesktop" ]; then
   echo
   if [ "${SB_SLKART}" = "YES" ] ;then

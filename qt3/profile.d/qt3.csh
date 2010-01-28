@@ -27,9 +27,4 @@ if ( ! $?QTDIR ) then
     endif
 endif
 set path = ( $path $QTDIR/bin )
-if ( $?CPLUS_INCLUDE_PATH ) then
-    setenv CPLUS_INCLUDE_PATH $QTDIR/include:$CPLUS_INCLUDE_PATH
-else
-    setenv CPLUS_INCLUDE_PATH $QTDIR/include
-endif
 unset LIBDIRSUFFIX

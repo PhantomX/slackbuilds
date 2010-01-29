@@ -249,6 +249,7 @@ ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 #ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
 #ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 #ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
+ApplyPatch linux-2.6-v4l-dvb-rebase-gspca-to-latest.patch
 
 # Patches headed upstream
 ApplyPatch linux-2.6-rfkill-all.patch

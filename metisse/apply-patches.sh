@@ -8,3 +8,6 @@ zcat ${SB_PATCHDIR}/${NAME}-defaults.patch.gz | patch -p1 -E --backup --verbose 
 zcat ${SB_PATCHDIR}/${NAME}-0.4.0-rc4-textdomain.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-0.4.1-format-security.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
+if pkg-config --exists libpng14 ;then
+  zcat ${SB_PATCHDIR}/metisse-0.4.1-png14.patch.gz | patch -p0 -E --backup --verbose || exit 1
+fi

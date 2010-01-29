@@ -29,3 +29,7 @@ zcat ${SB_PATCHDIR}/15-Hover.patch.gz | patch -p0 -E --backup --verbose || exit 
 zcat ${SB_PATCHDIR}/16-FirstItemUnderPointer.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/17-TextOffset.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/18-ThinGeometryProxy.patch.gz | patch -p0 -E --backup --verbose || exit 1
+
+if pkg-config --exists libpng14 ;then
+  zcat ${SB_PATCHDIR}/fvwm-2.5.28-png14.patch.gz | patch -p0 -E --backup --verbose || exit 1
+fi

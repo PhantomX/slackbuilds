@@ -35,3 +35,5 @@ zcat ${SB_PATCHDIR}/${PNAME}-0.92.0-alt-newpo.patch.gz | patch -p1 -E --backup -
 zcat ${SB_PATCHDIR}/${PNAME}-wakeup-dnotify.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${PNAME}-wakeup-delayedAction.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${PNAME}-wakeup-timer.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/WindowMaker-0.92.0-png14.patch.gz | patch -p0 -E --backup --verbose || exit 1

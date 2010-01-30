@@ -1,0 +1,177 @@
+#!/bin/sh
+#
+# ddclient      This shell script takes care of starting and stopping deluged.
+
+[ "$(id -u)" -eq 0 ] || exit 1
+
+[ -f /etc/default/deluged ] || exit 0
+
+exec="/usr/bin/deluged"
+exec2="/usr/bin/deluge"
+prog=$(basename ${exec})
+prog2=$(basename ${exec2})
+homedir="/srv/deluged"
+pidfile=/var/run/${prog}
+lockfile=/var/lock/subsys/${prog}
+lockfile2=/var/lock/subsys/${prog2}
+
+[ -x "${exec}" ] || exit 0
+
+[ -e /etc/default/${prog} ] && . /etc/default/${prog}
+DELUGED_USER=${DELUGED_USER:-deluge:deluge}
+DELUGED_PORT=${DELUGED_PORT:-58846}
+DELUGEUI_START=${DELUGEUI_START:-NO}
+
+RETVAL=0
+
+[[ -f ${pidfile} ]] && PID=$(cat ${pidfile})
+
+checkconfig() {
+  if [[ "${DELUGED_USER}" == "" ]] ; then
+    echo "Please edit /etc/default/deluged"
+    echo "You have to specify a user to run deluged as, as we will not run it as root!"
+    echo "Modify DELUGED_USER to your needs (you can also add a group, after a colon)"
+    return 1
+  fi
+  if ! $(getent passwd | cut -d ':' -f 1 | grep $( echo "${DELUGED_USER}" | cut -d ':' -f 1 ) -sq) ; then
+    echo "Please edit /etc/default/deluged"
+    echo "Your user has to exist!"
+    return 1
+  fi
+  DELUGED_OUSER=$(echo ${DELUGED_USER} | cut -d ':' -f 1)
+  if [[ "${DELUGED_OUSER}" == "root" ]] ; then
+    echo "Please edit /etc/default/deluged"
+    echo "Do not use root as user!"
+    return 1
+  fi
+  if ! $(echo "${DELUGED_USER}" | grep ':' -sq) ; then
+    return 0
+  else
+    if ! $(cut -d ':' -f 1 /etc/group | grep $( echo "${DELUGED_USER}" | cut -d ':' -f 2 ) -sq) ; then
+     echo "Please edit /etc/default/deluged"
+     echo "Your group has to exist too!"
+     return 1
+    fi
+  fi
+  DELUGED_USER_HOME=$(getent passwd | grep ^$( echo "${DELUGED_USER}" | cut -d ':' -f 1 ): | cut -d ':' -f 6)
+  return 0
+}
+
+checkconfig || exit 1
+
+if [ -f ${pidfile} ] && ! pgrep -U ${DELUGED_OUSER} 'deluged|!rc.deluged' &>/dev/null ;then
+  rm -f ${pidfile}
+fi
+
+start() {
+  echo -n "Starting ${prog}: "
+  if [[ "${DELUGED_OUSER}" == "deluge" ]] && [[ -d "${homedir}" ]];then
+    chown -R deluge.deluge "${homedir}"
+  fi
+  if [ -z "${PID}" ] ;then 
+    su - "${DELUGED_OUSER}" -c "${exec} -p ${DELUGED_PORT}" &>/dev/null
+    RETVAL=$?
+    if [ ${RETVAL} -eq 0 ] ;then
+      echo $(pgrep -U ${DELUGED_OUSER} 'deluged|!rc.deluged' ) > ${pidfile}
+    fi
+  else
+    RETVAL=1
+  fi
+  if [ ${RETVAL} -eq 0 ] && touch ${lockfile} ; then
+    echo -e "\t\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\t\t[FAILED]\r"
+  fi
+
+  if [ ${RETVAL} -eq 0 ] && [[ "${DELUGEUI_START}" == "YES" ]] ;then
+    if [[ "$0" == "restart" ]] ; then
+      sleep 1
+    fi
+    echo -n "Starting ${prog2}: "
+    if [ -f "${pidfile}" ] ;then 
+      su - "${DELUGED_OUSER}" -c "${exec2} ${DELUGEUI_OPTS}" &>/dev/null &
+      RETVAL=$?
+    else
+      RETVAL=1
+    fi
+    if [ ${RETVAL} -eq 0 ] && touch ${lockfile2} ; then
+      echo -e "\t\t\t\t\t\t[  OK  ]\r"
+    else
+      echo -e "\t\t\t\t\t\t[FAILED]\r"
+    fi
+  fi
+  return ${RETVAL}
+}
+
+stop() {
+  if [[ "${DELUGEUI_START}" == "YES" ]] ; then
+    echo -n "Stopping ${prog2}: "
+    if [ -n "${PID}" ] ;then
+      killall deluge &>/dev/null
+    fi
+    if rm -f ${lockfile2} ; then
+      echo -e "\t\t\t\t\t\t[  OK  ]\r"
+    else
+      echo -e "\t\t\t\t\t\t[FAILED]\r"
+      return 1
+    fi
+    if [[ "$0" == "restart" ]] ; then
+      sleep 1
+    fi
+  fi
+
+  if [ ${RETVAL} -eq 0 ] ; then
+    echo -n "Stopping ${prog}: "
+    if [ -n "${PID}" ] ;then
+      kill ${PID} &>/dev/null
+      RETVAL=$?
+    else
+      RETVAL=1
+    fi
+    if [ ${RETVAL} -eq 0 ] && rm -f ${lockfile} ; then
+      rm -f ${pidfile}
+      echo -e "\t\t\t\t\t\t[  OK  ]\r"
+    else
+      echo -e "\t\t\t\t\t\t[FAILED]\r"
+    fi
+  fi
+  return ${RETVAL}
+}
+
+restart() {
+  stop
+  sleep 1
+  unset PID
+  start
+}
+
+# See how we were called.
+case "$1" in
+  start|stop)
+    $1
+    ;;
+  force-reload|restart|reload)
+    restart
+    ;;
+  status|fdrstatus)
+    if [ -f ${lockfile} ]; then
+      echo "${prog} is running in pid ${PID}."
+    else
+      echo "${prog} is not running."
+    fi
+    if [[ "${DELUGEUI_START}" == "YES" ]] ; then
+      if [ -f ${lockfile2} ]; then
+        echo "${prog} is running in pid ${PID2}."
+      else
+        echo "${prog} is not running."
+      fi
+    fi
+    ;;
+  condrestart)
+    if  [ ! -f ${lockfile} ]; then restart ;fi
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|status|restart|condrestart|reload|force-reload}"
+    exit 2
+    ;;
+esac

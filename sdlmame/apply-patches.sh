@@ -8,5 +8,5 @@ if [ "${PATCHLEVEL}" -gt 0 ] ;then
 fi
 
 if [ "${SB_GCONF}" != "YES" ] ;then
-  zcat ${SB_PATCHDIR}/sdlmame-0.136u1-nogconf.patch.gz | patch -p0 -E --backup -z .nogconf --verbose || exit 1
+  zcat ${SB_PATCHDIR}/sdlmame-0.136u2-nogconf.patch.gz | patch -p0 -E --backup -z .nogconf --verbose || exit 1
 fi

@@ -1,7 +1,7 @@
 
 SB_PATCHDIR=${CWD}/patches
 
-if [ "${PATCHLEVEL}" != "0" ] ;then
+if [ "${PVER}" != "0" ] ;then
   for i in ${PVER} ; do
     patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}-${SVER}-${i}.patch || exit 1
   done

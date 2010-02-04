@@ -21,10 +21,10 @@ snap2=${snap/quodlibet-/}
 pushd "${tmp}"
   hg clone -r ${snap} ${snaproot} ${module}-${snap2}
   pushd ${module}-${snap2}
-    if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
-      hgdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
-      hg checkout -d "${hgdate}"
-    fi
+    #if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+      #hgdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
+      #hg checkout -d "${hgdate}"
+    #fi
   # get rid of some plugins that we don't have dependencies for
   rm -f plugins/songsmenu/brainz.py
   rm -f plugins/events/lastfmsubmit.py

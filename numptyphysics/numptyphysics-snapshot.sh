@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="https://garage.maemo.org/svn/${module}/trunk"
+snaproot="https://vcs.maemo.org/svn/${module}/trunk"
 
 tmp=$(mktemp -d)
 

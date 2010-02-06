@@ -9,6 +9,7 @@ zcat ${SB_PATCHDIR}/x11.startwithblackscreen.diff.gz | patch -p1 --verbose || ex
 zcat ${SB_PATCHDIR}/xserver-1.5.0-bg-none-root.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.4.99-pic-libxf86config.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/xserver-1.7.4-z-now.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.5.0-projector-fb-size.patch.gz | patch -p1 --verbose || exit 1
 
 # This really could be done prettier.
@@ -37,8 +38,16 @@ zcat ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch.gz | patch -p1 --verbose |
 zcat ${SB_PATCHDIR}/xserver-1.7.1-libcrypto.patch.gz | patch -p1 --verbose || exit 1
 #zcat ${SB_PATCHDIR}/xserver-1.7.1-sigaction.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.7.1-glx14-swrast.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/xserver-1.7.3-exa-master.patch.gz | patch -p1 --verbose || exit 1
+
 zcat ${SB_PATCHDIR}/xserver-1.7.3-cursor-jumps.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.7.3-no-free-on-abort.patch.gz | patch -p1 --verbose || exit 1
+
+# 540584
+zcat ${SB_PATCHDIR}/xserver-1.7.4-reset-sli-pointers.patch.gz | patch -p1 --verbose || exit 1
+# 543647
+zcat ${SB_PATCHDIR}/xserver-1.7.4-owner-events.patch.gz | patch -p1 --verbose || exit 1
 
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.7.3.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1

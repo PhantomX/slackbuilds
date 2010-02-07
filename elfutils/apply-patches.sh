@@ -13,3 +13,5 @@ if [ "${SB_COMPAT}" = "YES" ] ;then
 else
   sed -i.scanf-m -e 's/%m/%a/' src/addr2line.c tests/line2addr.c || exit 1
 fi
+
+zcat ${SB_PATCHDIR}/elfutils-0.144-sloppy-include.patch.gz | patch -p1 -E --backup --verbose || exit 1

@@ -1,5 +1,63 @@
 #!/bin/bash
+# *** DO NOT MODIFY THIS FILE ***
+#
+# /etc/mail/spamassassin/channel.d/*.conf
+#     Place files here to add custom channels.
+#
 
+# Proceed with sa-update if spam daemon is running or forced in /etc/sysconfig/sa-update
+unset SAUPDATE
+[ -f /etc/default/sa-update ] && . /etc/default/sa-update
+for daemon in spamd amavisd; do
+    /sbin/pidof $daemon >& /dev/null
+    [ $? -eq 0 ] && SAUPDATE=yes
+done
+[ -f /var/run/mimedefang.pid ] && SAUPDATE=yes
+
+# Skip sa-update if daemon not detected
+[ -z "$SAUPDATE" ] && exit 0
+
+# sa-update must create keyring
+if [ ! -d /etc/mail/spamassassin/sa-update-keys ]; then
+    sa-update
+fi
+
+# Initialize Channels and Keys
+CHANNELLIST=""
+KEYLIST=""
+# Process each channel defined in /etc/mail/spamassassin/channel.d/
+for file in /etc/mail/spamassassin/channel.d/*.conf; do
+    [ ! -f "$file" ] && continue
+    # Validate config file
+    PREFIXES="CHANNELURL KEYID BEGIN"
+    for prefix in $PREFIXES; do
+        if ! grep -q "$prefix" $file; then
+            echo "ERROR: $file missing $prefix"
+            exit 255
+        fi
+    done
+    . "$file"
+    echo "CHANNELURL=$CHANNELURL"
+    echo "KEYID=$KEYID"
+    CHANNELLIST="$CHANNELLIST $CHANNELURL"
+    KEYLIST="$KEYLIST $KEYID"
+    sa-update --import "$file"
+done
+
+# Sleep random amount of time before proceeding to avoid overwhelming the servers
 sleep $(expr $RANDOM % 7200)
-# Only restart spamd if sa-update returns 0, meaning it updated the rules
-/usr/bin/sa-update && /etc/init.d/spamassassin condrestart > /dev/null
+
+unset arglist
+# Run sa-update on each channel, restart spam daemon if success
+for channel in $CHANNELLIST; do
+    arglist="$arglist --channel $channel"
+done
+for keyid in $KEYLIST; do
+    arglist="$arglist --gpgkey $keyid"
+done
+/usr/bin/sa-update $arglist
+if [ $? -eq 0 ]; then
+    /etc/rc.d/spamassassin condrestart > /dev/null
+    [ -f /etc/rc.d/amavisd ] && /etc/rc.d/amavisd condrestart > /dev/null
+    [ -f /var/run/mimedefang.pid ] && /etc/rc.d/mimedefang reload > /dev/null
+fi

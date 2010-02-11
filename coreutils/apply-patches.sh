@@ -10,7 +10,11 @@ else
   zcat ${SB_PATCHDIR}/${NAME}.uname.diff.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 fi
 
-# Our patches
+# From upstream
+#"who" doesn't determine user's message status correctly - #454261
+zcat ${SB_PATCHDIR}/coreutils-8.4-who-msgstatus.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# Fedora patches
 zcat ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-6.10-manpages.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-7.4-sttytcsadrain.patch.gz | patch -p1 -E --backup --verbose || exit 1

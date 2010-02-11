@@ -95,6 +95,7 @@ ApplyPatch linux-2.6-dell-laptop-rfkill-fix.patch.gz
 #
 # Intel IOMMU
 #
+ApplyPatch linux-2.6-cantiga-iommu-gfx.patch
 
 #
 # Exec shield
@@ -215,9 +216,6 @@ ApplyPatch hdpvr-ir-enable.patch
 # Optimize KVM for KSM support
 #ApplyPatch linux-2.6-ksm-kvm.patch
 
-# Assorted Virt Fixes
-ApplyPatch linux-2.6-userspace_kvmclock_offset.patch
-
 # Fix block I/O errors in KVM
 #ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
 
@@ -257,5 +255,12 @@ ApplyPatch linux-2.6-rfkill-all.patch
 # Patches for -stable
 ApplyPatch wmi-free-the-allocated-acpi-objects.patch
 ApplyPatch wmi-check-wmi-get-event-data-return-value.patch
+
+ApplyPatch fix-conntrack-bug-with-namespaces.patch
+ApplyPatch prevent-runtime-conntrack-changes.patch
+
+ApplyPatch fix-crash-with-sys_move_pages.patch
+ApplyPatch fix-ima-null-ptr-deref.patch
+ApplyPatch futex-handle-user-space-corruption-gracefully.patch
 
 set +e

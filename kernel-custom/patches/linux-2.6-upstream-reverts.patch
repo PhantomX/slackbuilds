@@ -1,3 +1,521 @@
+From b01f2c3a4a37d09a47ad73ccbb46d554d21cfeb0 Mon Sep 17 00:00:00 2001
+From: Jesse Barnes <jbarnes@virtuousgeek.org>
+Date: Fri, 11 Dec 2009 11:07:17 -0800
+Subject: drm/i915: only enable hotplug for detected outputs
+
+From: Jesse Barnes <jbarnes@virtuousgeek.org>
+
+commit b01f2c3a4a37d09a47ad73ccbb46d554d21cfeb0 upstream.
+
+This patch changes around our hotplug enable code a bit to only enable
+it for ports we actually detect and initialize.  This prevents problems
+with stuck or spurious interrupts on outputs that aren't actually wired
+up, and is generally more correct.
+
+Fixes FDO bug #23183.
+
+Signed-off-by: Jesse Barnes <jbarnes@virtuousgeek.org>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/i915_dma.c      |    4 ++--
+ drivers/gpu/drm/i915/i915_irq.c      |   30 +++++++++++++++++++-----------
+ drivers/gpu/drm/i915/i915_reg.h      |    8 --------
+ drivers/gpu/drm/i915/intel_crt.c     |    2 ++
+ drivers/gpu/drm/i915/intel_display.c |   26 ++++++++++++++++++++------
+ drivers/gpu/drm/i915/intel_dp.c      |    6 ++++++
+ drivers/gpu/drm/i915/intel_hdmi.c    |    5 +++++
+ drivers/gpu/drm/i915/intel_sdvo.c    |    3 +++
+ drivers/gpu/drm/i915/intel_tv.c      |    2 ++
+ 9 files changed, 59 insertions(+), 27 deletions(-)
+
+--- a/drivers/gpu/drm/i915/i915_dma.c
++++ b/drivers/gpu/drm/i915/i915_dma.c
+@@ -1252,6 +1252,8 @@ static int i915_load_modeset_init(struct
+ 	if (ret)
+ 		goto destroy_ringbuffer;
+ 
++	intel_modeset_init(dev);
++
+ 	ret = drm_irq_install(dev);
+ 	if (ret)
+ 		goto destroy_ringbuffer;
+@@ -1266,8 +1268,6 @@ static int i915_load_modeset_init(struct
+ 
+ 	I915_WRITE(INSTPM, (1 << 5) | (1 << 21));
+ 
+-	intel_modeset_init(dev);
+-
+ 	drm_helper_initial_config(dev);
+ 
+ 	return 0;
+--- a/drivers/gpu/drm/i915/i915_irq.c
++++ b/drivers/gpu/drm/i915/i915_irq.c
+@@ -1044,6 +1044,10 @@ void i915_driver_irq_preinstall(struct d
+ 	(void) I915_READ(IER);
+ }
+ 
++/*
++ * Must be called after intel_modeset_init or hotplug interrupts won't be
++ * enabled correctly.
++ */
+ int i915_driver_irq_postinstall(struct drm_device *dev)
+ {
+ 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
+@@ -1066,19 +1070,23 @@ int i915_driver_irq_postinstall(struct d
+ 	if (I915_HAS_HOTPLUG(dev)) {
+ 		u32 hotplug_en = I915_READ(PORT_HOTPLUG_EN);
+ 
+-		/* Leave other bits alone */
+-		hotplug_en |= HOTPLUG_EN_MASK;
++		/* Note HDMI and DP share bits */
++		if (dev_priv->hotplug_supported_mask & HDMIB_HOTPLUG_INT_STATUS)
++			hotplug_en |= HDMIB_HOTPLUG_INT_EN;
++		if (dev_priv->hotplug_supported_mask & HDMIC_HOTPLUG_INT_STATUS)
++			hotplug_en |= HDMIC_HOTPLUG_INT_EN;
++		if (dev_priv->hotplug_supported_mask & HDMID_HOTPLUG_INT_STATUS)
++			hotplug_en |= HDMID_HOTPLUG_INT_EN;
++		if (dev_priv->hotplug_supported_mask & SDVOC_HOTPLUG_INT_STATUS)
++			hotplug_en |= SDVOC_HOTPLUG_INT_EN;
++		if (dev_priv->hotplug_supported_mask & SDVOB_HOTPLUG_INT_STATUS)
++			hotplug_en |= SDVOB_HOTPLUG_INT_EN;
++		if (dev_priv->hotplug_supported_mask & CRT_HOTPLUG_INT_STATUS)
++			hotplug_en |= CRT_HOTPLUG_INT_EN;
++		/* Ignore TV since it's buggy */
++
+ 		I915_WRITE(PORT_HOTPLUG_EN, hotplug_en);
+ 
+-		dev_priv->hotplug_supported_mask = CRT_HOTPLUG_INT_STATUS |
+-			TV_HOTPLUG_INT_STATUS | SDVOC_HOTPLUG_INT_STATUS |
+-			SDVOB_HOTPLUG_INT_STATUS;
+-		if (IS_G4X(dev)) {
+-			dev_priv->hotplug_supported_mask |=
+-				HDMIB_HOTPLUG_INT_STATUS |
+-				HDMIC_HOTPLUG_INT_STATUS |
+-				HDMID_HOTPLUG_INT_STATUS;
+-		}
+ 		/* Enable in IER... */
+ 		enable_mask |= I915_DISPLAY_PORT_INTERRUPT;
+ 		/* and unmask in IMR */
+--- a/drivers/gpu/drm/i915/i915_reg.h
++++ b/drivers/gpu/drm/i915/i915_reg.h
+@@ -863,14 +863,6 @@
+ #define CRT_HOTPLUG_DETECT_VOLTAGE_475MV	(1 << 2)
+ #define CRT_HOTPLUG_MASK			(0x3fc) /* Bits 9-2 */
+ #define CRT_FORCE_HOTPLUG_MASK			0xfffffe1f
+-#define HOTPLUG_EN_MASK (HDMIB_HOTPLUG_INT_EN | \
+-			 HDMIC_HOTPLUG_INT_EN |	  \
+-			 HDMID_HOTPLUG_INT_EN |	  \
+-			 SDVOB_HOTPLUG_INT_EN |	  \
+-			 SDVOC_HOTPLUG_INT_EN |	  \
+-			 TV_HOTPLUG_INT_EN |	  \
+-			 CRT_HOTPLUG_INT_EN)
+-
+ 
+ #define PORT_HOTPLUG_STAT	0x61114
+ #define   HDMIB_HOTPLUG_INT_STATUS		(1 << 29)
+--- a/drivers/gpu/drm/i915/intel_crt.c
++++ b/drivers/gpu/drm/i915/intel_crt.c
+@@ -576,4 +576,6 @@ void intel_crt_init(struct drm_device *d
+ 	drm_connector_helper_add(connector, &intel_crt_connector_helper_funcs);
+ 
+ 	drm_sysfs_connector_add(connector);
++
++	dev_priv->hotplug_supported_mask |= CRT_HOTPLUG_INT_STATUS;
+ }
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -4068,29 +4068,43 @@ static void intel_setup_outputs(struct d
+ 		bool found = false;
+ 
+ 		if (I915_READ(SDVOB) & SDVO_DETECTED) {
++			DRM_DEBUG_KMS("probing SDVOB\n");
+ 			found = intel_sdvo_init(dev, SDVOB);
+-			if (!found && SUPPORTS_INTEGRATED_HDMI(dev))
++			if (!found && SUPPORTS_INTEGRATED_HDMI(dev)) {
++				DRM_DEBUG_KMS("probing HDMI on SDVOB\n");
+ 				intel_hdmi_init(dev, SDVOB);
++			}
+ 
+-			if (!found && SUPPORTS_INTEGRATED_DP(dev))
++			if (!found && SUPPORTS_INTEGRATED_DP(dev)) {
++				DRM_DEBUG_KMS("probing DP_B\n");
+ 				intel_dp_init(dev, DP_B);
++			}
+ 		}
+ 
+ 		/* Before G4X SDVOC doesn't have its own detect register */
+ 
+-		if (I915_READ(SDVOB) & SDVO_DETECTED)
++		if (I915_READ(SDVOB) & SDVO_DETECTED) {
++			DRM_DEBUG_KMS("probing SDVOC\n");
+ 			found = intel_sdvo_init(dev, SDVOC);
++		}
+ 
+ 		if (!found && (I915_READ(SDVOC) & SDVO_DETECTED)) {
+ 
+-			if (SUPPORTS_INTEGRATED_HDMI(dev))
++			if (SUPPORTS_INTEGRATED_HDMI(dev)) {
++				DRM_DEBUG_KMS("probing HDMI on SDVOC\n");
+ 				intel_hdmi_init(dev, SDVOC);
+-			if (SUPPORTS_INTEGRATED_DP(dev))
++			}
++			if (SUPPORTS_INTEGRATED_DP(dev)) {
++				DRM_DEBUG_KMS("probing DP_C\n");
+ 				intel_dp_init(dev, DP_C);
++			}
+ 		}
+ 
+-		if (SUPPORTS_INTEGRATED_DP(dev) && (I915_READ(DP_D) & DP_DETECTED))
++		if (SUPPORTS_INTEGRATED_DP(dev) &&
++		    (I915_READ(DP_D) & DP_DETECTED)) {
++			DRM_DEBUG_KMS("probing DP_D\n");
+ 			intel_dp_init(dev, DP_D);
++		}
+ 	} else if (IS_I8XX(dev))
+ 		intel_dvo_init(dev);
+ 
+--- a/drivers/gpu/drm/i915/intel_dp.c
++++ b/drivers/gpu/drm/i915/intel_dp.c
+@@ -1290,14 +1290,20 @@ intel_dp_init(struct drm_device *dev, in
+ 			break;
+ 		case DP_B:
+ 		case PCH_DP_B:
++			dev_priv->hotplug_supported_mask |=
++				HDMIB_HOTPLUG_INT_STATUS;
+ 			name = "DPDDC-B";
+ 			break;
+ 		case DP_C:
+ 		case PCH_DP_C:
++			dev_priv->hotplug_supported_mask |=
++				HDMIC_HOTPLUG_INT_STATUS;
+ 			name = "DPDDC-C";
+ 			break;
+ 		case DP_D:
+ 		case PCH_DP_D:
++			dev_priv->hotplug_supported_mask |=
++				HDMID_HOTPLUG_INT_STATUS;
+ 			name = "DPDDC-D";
+ 			break;
+ 	}
+--- a/drivers/gpu/drm/i915/intel_hdmi.c
++++ b/drivers/gpu/drm/i915/intel_hdmi.c
+@@ -254,21 +254,26 @@ void intel_hdmi_init(struct drm_device *
+ 	if (sdvox_reg == SDVOB) {
+ 		intel_output->clone_mask = (1 << INTEL_HDMIB_CLONE_BIT);
+ 		intel_output->ddc_bus = intel_i2c_create(dev, GPIOE, "HDMIB");
++		dev_priv->hotplug_supported_mask |= HDMIB_HOTPLUG_INT_STATUS;
+ 	} else if (sdvox_reg == SDVOC) {
+ 		intel_output->clone_mask = (1 << INTEL_HDMIC_CLONE_BIT);
+ 		intel_output->ddc_bus = intel_i2c_create(dev, GPIOD, "HDMIC");
++		dev_priv->hotplug_supported_mask |= HDMIC_HOTPLUG_INT_STATUS;
+ 	} else if (sdvox_reg == HDMIB) {
+ 		intel_output->clone_mask = (1 << INTEL_HDMID_CLONE_BIT);
+ 		intel_output->ddc_bus = intel_i2c_create(dev, PCH_GPIOE,
+ 								"HDMIB");
++		dev_priv->hotplug_supported_mask |= HDMIB_HOTPLUG_INT_STATUS;
+ 	} else if (sdvox_reg == HDMIC) {
+ 		intel_output->clone_mask = (1 << INTEL_HDMIE_CLONE_BIT);
+ 		intel_output->ddc_bus = intel_i2c_create(dev, PCH_GPIOD,
+ 								"HDMIC");
++		dev_priv->hotplug_supported_mask |= HDMIC_HOTPLUG_INT_STATUS;
+ 	} else if (sdvox_reg == HDMID) {
+ 		intel_output->clone_mask = (1 << INTEL_HDMIF_CLONE_BIT);
+ 		intel_output->ddc_bus = intel_i2c_create(dev, PCH_GPIOF,
+ 								"HDMID");
++		dev_priv->hotplug_supported_mask |= HDMID_HOTPLUG_INT_STATUS;
+ 	}
+ 	if (!intel_output->ddc_bus)
+ 		goto err_connector;
+--- a/drivers/gpu/drm/i915/intel_sdvo.c
++++ b/drivers/gpu/drm/i915/intel_sdvo.c
+@@ -2743,6 +2743,7 @@ static void intel_sdvo_create_enhance_pr
+ 
+ bool intel_sdvo_init(struct drm_device *dev, int output_device)
+ {
++	struct drm_i915_private *dev_priv = dev->dev_private;
+ 	struct drm_connector *connector;
+ 	struct intel_output *intel_output;
+ 	struct intel_sdvo_priv *sdvo_priv;
+@@ -2789,10 +2790,12 @@ bool intel_sdvo_init(struct drm_device *
+ 		intel_output->ddc_bus = intel_i2c_create(dev, GPIOE, "SDVOB DDC BUS");
+ 		sdvo_priv->analog_ddc_bus = intel_i2c_create(dev, GPIOA,
+ 						"SDVOB/VGA DDC BUS");
++		dev_priv->hotplug_supported_mask |= SDVOB_HOTPLUG_INT_STATUS;
+ 	} else {
+ 		intel_output->ddc_bus = intel_i2c_create(dev, GPIOE, "SDVOC DDC BUS");
+ 		sdvo_priv->analog_ddc_bus = intel_i2c_create(dev, GPIOA,
+ 						"SDVOC/VGA DDC BUS");
++		dev_priv->hotplug_supported_mask |= SDVOC_HOTPLUG_INT_STATUS;
+ 	}
+ 
+ 	if (intel_output->ddc_bus == NULL)
+--- a/drivers/gpu/drm/i915/intel_tv.c
++++ b/drivers/gpu/drm/i915/intel_tv.c
+@@ -1801,6 +1801,8 @@ intel_tv_init(struct drm_device *dev)
+ 	drm_connector_attach_property(connector,
+ 				   dev->mode_config.tv_bottom_margin_property,
+ 				   tv_priv->margin[TV_MARGIN_BOTTOM]);
++
++	dev_priv->hotplug_supported_mask |= TV_HOTPLUG_INT_STATUS;
+ out:
+ 	drm_sysfs_connector_add(connector);
+ }
+From c566ec49159b806db95a90fd8f37448376cd0ad2 Mon Sep 17 00:00:00 2001
+From: Zhenyu Wang <zhenyuw@linux.intel.com>
+Date: Thu, 17 Dec 2009 16:12:56 +0800
+Subject: drm/i915: Reload hangcheck timer too for Ironlake
+
+From: Zhenyu Wang <zhenyuw@linux.intel.com>
+
+commit c566ec49159b806db95a90fd8f37448376cd0ad2 upstream.
+
+Make sure hangcheck timer won't beat us unexpectedly on Ironlake.
+
+Signed-off-by: Zhenyu Wang <zhenyuw@linux.intel.com>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/i915_irq.c |    2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/gpu/drm/i915/i915_irq.c
++++ b/drivers/gpu/drm/i915/i915_irq.c
+@@ -282,6 +282,8 @@ irqreturn_t igdng_irq_handler(struct drm
+ 		dev_priv->mm.irq_gem_seqno = seqno;
+ 		trace_i915_gem_request_complete(dev, seqno);
+ 		DRM_WAKEUP(&dev_priv->irq_queue);
++		dev_priv->hangcheck_count = 0;
++		mod_timer(&dev_priv->hangcheck_timer, jiffies + DRM_I915_HANGCHECK_PERIOD);
+ 	}
+ 
+ 	I915_WRITE(GTIIR, gt_iir);
+From 4bdadb9785696439c6e2b3efe34aa76df1149c83 Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Wed, 27 Jan 2010 13:36:32 +0000
+Subject: drm/i915: Selectively enable self-reclaim
+
+From: Chris Wilson <chris@chris-wilson.co.uk>
+
+commit 4bdadb9785696439c6e2b3efe34aa76df1149c83 upstream.
+
+Having missed the ENOMEM return via i915_gem_fault(), there are probably
+other paths that I also missed. By not enabling NORETRY by default these
+paths can run the shrinker and take memory from the system (but not from
+our own inactive lists because our shrinker can not run whilst we hold
+the struct mutex) and this may allow the system to survive a little longer
+whilst our drivers consume all available memory.
+
+References:
+  OOM killer unexpectedly called with kernel 2.6.32
+  http://bugzilla.kernel.org/show_bug.cgi?id=14933
+
+v2: Pass gfp into page mapping.
+v3: Use new read_cache_page_gfp() instead of open-coding.
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
+Cc: Hugh Dickins <hugh.dickins@tiscali.co.uk>
+Cc: Jesse Barnes <jbarnes@virtuousgeek.org>
+Cc: Eric Anholt <eric@anholt.net>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/drm_gem.c           |   13 --------
+ drivers/gpu/drm/i915/i915_debugfs.c |    2 -
+ drivers/gpu/drm/i915/i915_drv.h     |    2 -
+ drivers/gpu/drm/i915/i915_gem.c     |   54 +++++++++++-------------------------
+ 4 files changed, 19 insertions(+), 52 deletions(-)
+
+--- a/drivers/gpu/drm/drm_gem.c
++++ b/drivers/gpu/drm/drm_gem.c
+@@ -142,19 +142,6 @@ drm_gem_object_alloc(struct drm_device *
+ 	if (IS_ERR(obj->filp))
+ 		goto free;
+ 
+-	/* Basically we want to disable the OOM killer and handle ENOMEM
+-	 * ourselves by sacrificing pages from cached buffers.
+-	 * XXX shmem_file_[gs]et_gfp_mask()
+-	 */
+-	mapping_set_gfp_mask(obj->filp->f_path.dentry->d_inode->i_mapping,
+-			     GFP_HIGHUSER |
+-			     __GFP_COLD |
+-			     __GFP_FS |
+-			     __GFP_RECLAIMABLE |
+-			     __GFP_NORETRY |
+-			     __GFP_NOWARN |
+-			     __GFP_NOMEMALLOC);
+-
+ 	kref_init(&obj->refcount);
+ 	kref_init(&obj->handlecount);
+ 	obj->size = size;
+--- a/drivers/gpu/drm/i915/i915_debugfs.c
++++ b/drivers/gpu/drm/i915/i915_debugfs.c
+@@ -288,7 +288,7 @@ static int i915_batchbuffer_info(struct 
+ 	list_for_each_entry(obj_priv, &dev_priv->mm.active_list, list) {
+ 		obj = obj_priv->obj;
+ 		if (obj->read_domains & I915_GEM_DOMAIN_COMMAND) {
+-		    ret = i915_gem_object_get_pages(obj);
++		    ret = i915_gem_object_get_pages(obj, 0);
+ 		    if (ret) {
+ 			    DRM_ERROR("Failed to get pages: %d\n", ret);
+ 			    spin_unlock(&dev_priv->mm.active_list_lock);
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -822,7 +822,7 @@ int i915_gem_attach_phys_object(struct d
+ void i915_gem_detach_phys_object(struct drm_device *dev,
+ 				 struct drm_gem_object *obj);
+ void i915_gem_free_all_phys_object(struct drm_device *dev);
+-int i915_gem_object_get_pages(struct drm_gem_object *obj);
++int i915_gem_object_get_pages(struct drm_gem_object *obj, gfp_t gfpmask);
+ void i915_gem_object_put_pages(struct drm_gem_object *obj);
+ void i915_gem_release(struct drm_device * dev, struct drm_file *file_priv);
+ 
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -277,7 +277,7 @@ i915_gem_shmem_pread_fast(struct drm_dev
+ 
+ 	mutex_lock(&dev->struct_mutex);
+ 
+-	ret = i915_gem_object_get_pages(obj);
++	ret = i915_gem_object_get_pages(obj, 0);
+ 	if (ret != 0)
+ 		goto fail_unlock;
+ 
+@@ -321,40 +321,24 @@ fail_unlock:
+ 	return ret;
+ }
+ 
+-static inline gfp_t
+-i915_gem_object_get_page_gfp_mask (struct drm_gem_object *obj)
+-{
+-	return mapping_gfp_mask(obj->filp->f_path.dentry->d_inode->i_mapping);
+-}
+-
+-static inline void
+-i915_gem_object_set_page_gfp_mask (struct drm_gem_object *obj, gfp_t gfp)
+-{
+-	mapping_set_gfp_mask(obj->filp->f_path.dentry->d_inode->i_mapping, gfp);
+-}
+-
+ static int
+ i915_gem_object_get_pages_or_evict(struct drm_gem_object *obj)
+ {
+ 	int ret;
+ 
+-	ret = i915_gem_object_get_pages(obj);
++	ret = i915_gem_object_get_pages(obj, __GFP_NORETRY | __GFP_NOWARN);
+ 
+ 	/* If we've insufficient memory to map in the pages, attempt
+ 	 * to make some space by throwing out some old buffers.
+ 	 */
+ 	if (ret == -ENOMEM) {
+ 		struct drm_device *dev = obj->dev;
+-		gfp_t gfp;
+ 
+ 		ret = i915_gem_evict_something(dev, obj->size);
+ 		if (ret)
+ 			return ret;
+ 
+-		gfp = i915_gem_object_get_page_gfp_mask(obj);
+-		i915_gem_object_set_page_gfp_mask(obj, gfp & ~__GFP_NORETRY);
+-		ret = i915_gem_object_get_pages(obj);
+-		i915_gem_object_set_page_gfp_mask (obj, gfp);
++		ret = i915_gem_object_get_pages(obj, 0);
+ 	}
+ 
+ 	return ret;
+@@ -790,7 +774,7 @@ i915_gem_shmem_pwrite_fast(struct drm_de
+ 
+ 	mutex_lock(&dev->struct_mutex);
+ 
+-	ret = i915_gem_object_get_pages(obj);
++	ret = i915_gem_object_get_pages(obj, 0);
+ 	if (ret != 0)
+ 		goto fail_unlock;
+ 
+@@ -2219,7 +2203,8 @@ i915_gem_evict_something(struct drm_devi
+ }
+ 
+ int
+-i915_gem_object_get_pages(struct drm_gem_object *obj)
++i915_gem_object_get_pages(struct drm_gem_object *obj,
++			  gfp_t gfpmask)
+ {
+ 	struct drm_i915_gem_object *obj_priv = obj->driver_private;
+ 	int page_count, i;
+@@ -2245,7 +2230,10 @@ i915_gem_object_get_pages(struct drm_gem
+ 	inode = obj->filp->f_path.dentry->d_inode;
+ 	mapping = inode->i_mapping;
+ 	for (i = 0; i < page_count; i++) {
+-		page = read_mapping_page(mapping, i, NULL);
++		page = read_cache_page_gfp(mapping, i,
++					   mapping_gfp_mask (mapping) |
++					   __GFP_COLD |
++					   gfpmask);
+ 		if (IS_ERR(page)) {
+ 			ret = PTR_ERR(page);
+ 			i915_gem_object_put_pages(obj);
+@@ -2568,7 +2556,7 @@ i915_gem_object_bind_to_gtt(struct drm_g
+ 	drm_i915_private_t *dev_priv = dev->dev_private;
+ 	struct drm_i915_gem_object *obj_priv = obj->driver_private;
+ 	struct drm_mm_node *free_space;
+-	bool retry_alloc = false;
++	gfp_t gfpmask =  __GFP_NORETRY | __GFP_NOWARN;
+ 	int ret;
+ 
+ 	if (obj_priv->madv != I915_MADV_WILLNEED) {
+@@ -2612,15 +2600,7 @@ i915_gem_object_bind_to_gtt(struct drm_g
+ 	DRM_INFO("Binding object of size %zd at 0x%08x\n",
+ 		 obj->size, obj_priv->gtt_offset);
+ #endif
+-	if (retry_alloc) {
+-		i915_gem_object_set_page_gfp_mask (obj,
+-						   i915_gem_object_get_page_gfp_mask (obj) & ~__GFP_NORETRY);
+-	}
+-	ret = i915_gem_object_get_pages(obj);
+-	if (retry_alloc) {
+-		i915_gem_object_set_page_gfp_mask (obj,
+-						   i915_gem_object_get_page_gfp_mask (obj) | __GFP_NORETRY);
+-	}
++	ret = i915_gem_object_get_pages(obj, gfpmask);
+ 	if (ret) {
+ 		drm_mm_put_block(obj_priv->gtt_space);
+ 		obj_priv->gtt_space = NULL;
+@@ -2630,9 +2610,9 @@ i915_gem_object_bind_to_gtt(struct drm_g
+ 			ret = i915_gem_evict_something(dev, obj->size);
+ 			if (ret) {
+ 				/* now try to shrink everyone else */
+-				if (! retry_alloc) {
+-				    retry_alloc = true;
+-				    goto search_free;
++				if (gfpmask) {
++					gfpmask = 0;
++					goto search_free;
+ 				}
+ 
+ 				return ret;
+@@ -4695,7 +4675,7 @@ void i915_gem_detach_phys_object(struct 
+ 	if (!obj_priv->phys_obj)
+ 		return;
+ 
+-	ret = i915_gem_object_get_pages(obj);
++	ret = i915_gem_object_get_pages(obj, 0);
+ 	if (ret)
+ 		goto out;
+ 
+@@ -4753,7 +4733,7 @@ i915_gem_attach_phys_object(struct drm_d
+ 	obj_priv->phys_obj = dev_priv->mm.phys_objs[id - 1];
+ 	obj_priv->phys_obj->cur_obj = obj;
+ 
+-	ret = i915_gem_object_get_pages(obj);
++	ret = i915_gem_object_get_pages(obj, 0);
+ 	if (ret) {
+ 		DRM_ERROR("failed to get page list\n");
+ 		goto out;
 From c7c85101afd0cb8ce497456d12ee1cad4aad152f Mon Sep 17 00:00:00 2001
 From: Zou Nan hai <Nanhai.zou@intel.com>
 Date: Fri, 15 Jan 2010 10:29:06 +0800

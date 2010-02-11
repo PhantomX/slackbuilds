@@ -1,0 +1,49 @@
+From b4e238cbe7f719c10b90e49dffbc0f7f0f6863d5 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Tue, 2 Feb 2010 11:40:27 +0100
+Subject: [PATCH] futex: Handle user space corruption gracefully
+
+If the owner of a PI futex dies we fix up the pi_state and set
+pi_state->owner to NULL. When a malicious or just sloppy programmed
+user space application sets the futex value to 0 e.g. by calling
+pthread_mutex_init(), then the futex can be acquired again. A new
+waiter manages to enqueue itself on the pi_state w/o damage, but on
+unlock the kernel dereferences pi_state->owner and oopses.
+
+Prevent this by checking pi_state->owner in the unlock path. If
+pi_state->owner is not current we know that user space manipulated the
+futex value. Ignore the mess and return -EINVAL.
+
+This catches the above case and also the case where a task hijacks the
+futex by setting the tid value and then tries to unlock it.
+
+Reported-by: Jermome Marchand <jmarchan@redhat.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Acked-by: Darren Hart <dvhltc@us.ibm.com>
+Acked-by: Peter Zijlstra <a.p.zijlstra@chello.nl>
+Cc: <stable@kernel.org>
+---
+ kernel/futex.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/kernel/futex.c b/kernel/futex.c
+index 3b74909..eb84b95 100644
+--- a/kernel/futex.c
++++ b/kernel/futex.c
+@@ -758,6 +758,13 @@ static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_q *this)
+ 	if (!pi_state)
+ 		return -EINVAL;
+ 
++	/*
++	 * If current does not own the pi_state then the futex is
++	 * inconsistent and user space fiddled with the futex value.
++	 */
++	if (pi_state->owner != current)
++		return -EINVAL;
++
+ 	spin_lock(&pi_state->pi_mutex.wait_lock);
+ 	new_owner = rt_mutex_next_owner(&pi_state->pi_mutex);
+ 
+-- 
+1.6.6
+

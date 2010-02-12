@@ -60,7 +60,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-4}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -110,18 +110,35 @@ else
   LIBDIRSUFFIX=""
 fi
 
+# Set the config option variables if they are not already set:
+[ -r ../KDE.options ] && source ../KDE.options
+[ -r /etc/profile.d/kde4.sh ] && source /etc/profile.d/kde4.sh
+
+_kde4_prefix=${_kde4_prefix:-/usr}
+_kde4_sysconfdir=${_kde4_sysconfdir:-/etc/kde}
+_kde4_libdir=${_kde4_libdir:-/usr/lib${LIBDIRSUFFIX}}
+_kde4_libexecdir=${_kde4_libexecdir:-/usr/libexec/kde4}
+_kde4_datadir=${_kde4_datadir:-/usr/share}
+_kde4_sharedir=${_kde4_sharedir:-/usr/share}
+_kde4_iconsdir=${_kde4_iconsdir:-${_kde4_sharedir}/icons}
+_kde4_configdir=${_kde4_configdir:-${_kde4_sharedir}/config}
+_kde4_appsdir=${_kde4_appsdir:-${_kde4_sharedir}/kde4/apps}
+_kde4_docdir=${_kde4_docdir:-${_kde4_prefix}/doc}
+_kde4_bindir=${_kde4_bindir=:-${_kde4_prefix}/bin}
+_kde4_sbindir=${_kde4_sbindir:-${_kde4_prefix}/sbin}
+_kde4_includedir=${_kde4_includedir:-${_kde4_prefix}/include/kde4}
+_kde4_buildtype=${_kde4_buildtype:-release}
+_kde4_macros_api=${_kde4_macros_api:-2}
+
 if [ -d ${PKGF} ]; then
   # Clean up a previous build
   rm -rf ${PKGF}
 fi
 mkdir -p ${PKG} ${KPKG} ${MPPKG}
 
-if [ -f /etc/profile.d/qt3.sh ] ;then
-  unset QTDIR QTINC QTLIB
-  source /etc/profile.d/qt3.sh
-else
-  export QTDIR=/opt/kde3/lib${LIBDIRSUFFIX}/qt3
-fi
+unset QTDIR QTINC QTLIB
+export QTDIR=$(qmake-qt4 -query QT_INSTALL_PREFIX)
+PATH="$(qmake-qt4 -query QT_INSTALL_BINS):${PATH}" ; export PATH
 
 cd ${TMP}
 rm -rf ${SRCDIR}
@@ -144,18 +161,28 @@ sed -i \
   -e 's|libkdeui.la|libkdeui.so|g' \
   macros/kde*.m4 || exit 1
 
+sed -i -e 's!\$(KDE4_LIBS)!!g' gui/Makefile.in || exit 1
 sed -i -e '/pluginsdir/s|$(prefix)/lib|$(libdir)|g' lib{base,media}/Makefile.* || exit 1
 
 unset SB_KDEOPTS SB_KDEOPTS2
 if [ "${SB_KDE}" = "YES" ] ;then
-  SB_KDEOPTS=",kde3"
-  SB_KDEOPTS2="--with-kde3-prefix=$(kde-config --expandvars --prefix)"
+  SB_KDEOPTS=",kde4"
+  SB_KDEOPTS2="--with-kde4-prefix=$(kde4-config --expandvars --prefix) \
+    --with-kde4-lib=${_kde4_libdir}/kde4/devel \
+    --with-kde4-incl=${_kde4_includedir}"
 fi
 
 sed -i -e 's!kapp.h!kapplication.h!g' configure
 sed -i -e 's!libkdeui.la!libkdeui.so!g' configure.ac
 
+# and don't build the loader part of libltdl either
+sed -i -e 's/\$(LT_DLLOADERS)//g' libltdl/Makefile.in
+# delete bundled libltdl stuff to make sure it's not used
+rm -f libltdl/*.[ch] libltdl/*/*.[ch]
+
 sh ./autogen.sh || exit 1
+
+sed -i -e 's/test x"\${enable_ltdl_convenience-no}" != xno/false/g' configure
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -181,11 +208,22 @@ CXXFLAGS="${SLKCFLAGS}" \
   ${SB_KDEOPTS2} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
-make -j${NJOBS} || make || exit 1
-make install install-plugin DESTDIR=${PKG} INSTALL='install -p' || exit 1
+if [ "${SB_KDE}" = "YES" ] ;then
+  make -j${NJOBS} KDE4_LIBS="-L${_kde4_libdir}/kde4/devel -lkparts -lkdeui -lkdecore" \
+    || KDE4_LIBS="-L${_kde4_libdir}/kde4/devel -lkparts -lkdeui -lkdecore" make || exit 1
+else
+  make -j${NJOBS} || make || exit 1
+fi
+make install install-plugin DESTDIR=${PKG} \
+  INSTALL='install -p' \
+  KDE4_PLUGINDIR=${_kde4_libdir}/kde4 \
+  KDE4_SERVICESDIR=${_kde4_datadir}/kde4/services \
+  KDE4_CONFIGDIR=${_kde4_configdir} \
+  KDE4_APPSDATADIR=${_kde4_appsdir}/klash || exit 1
 
 rm -f ${PKG}/usr/lib*/*.la
 rm -f ${PKG}/usr/lib*/${NAME}/*.la
+rm -f  ${PKG}${_kde4_libdir}/kde4/libklashpart.la
 
 mv ${PKG}/etc/${NAME}rc ${PKG}/etc/${NAME}rc.new || exit 1
 
@@ -196,9 +234,6 @@ rm -f ${PKG}/usr/include/ltdl.h
 
 mkdir -p ${PKG}/usr/info
 cp doc/C/gnash_*.info ${PKG}/usr/info/ || exit 1
-
-chmod a-x ${PKG}/usr/share/services/klash_part.desktop \
- ${PKG}/usr/share/apps/klash/pluginsinfo
 
 rmdir ${PKG}/usr/include
 
@@ -237,11 +272,18 @@ install -pm0644 ./gui/images/GnashG.png \
       ${PKG}/usr/share/icons/hicolor/32x32/apps/${NAME}.png || exit 1
 
 if [ "${SB_KDE}" = "YES" ] ;then
-  mkdir -p ${KPKG}/usr/{bin,share}
-  mv ${PKG}/usr/bin/kde3-gnash \
-     ${KPKG}/usr/bin/ || exit 1
-  mv ${PKG}/usr/share/{apps,services} \
-     ${KPKG}/usr/share/ || exit 1
+  mkdir -p ${KPKG}/${_kde4_bindir}
+  mv ${PKG}/${_kde4_bindir}/kde4-gnash \
+     ${KPKG}/${_kde4_bindir}/ || exit 1
+  mkdir -p ${KPKG}/${_kde4_libdir}
+  mv ${PKG}/${_kde4_libdir}/kde4 \
+    ${KPKG}/${_kde4_libdir}/ || exit 1
+  mkdir -p ${KPKG}/${_kde4_appsdir}
+  mv ${PKG}/${_kde4_appsdir}/klash \
+     ${KPKG}/${_kde4_appsdir}/ || exit 1
+  mkdir -p ${KPKG}/${_kde4_datadir}/kde4/services
+  mv ${PKG}/${_kde4_datadir}/kde4/services \
+     ${KPKG}/${_kde4_datadir}/kde4/ || exit 1
 
   mkdir -p ${KPKG}/install
   cat ${CWD}/slack-desc.klash > ${KPKG}/install/slack-desc
@@ -249,9 +291,13 @@ if [ "${SB_KDE}" = "YES" ] ;then
   -e "s|_VERSION_|${VERSION}|g "> ${KPKG}/install/slack-required
 
 else
-  rm -rf ${PKG}/usr/bin/kde3-gnash 
-  rm -rf ${PKG}/usr/share/{apps,services}
+  rm -rf ${PKG}/${_kde4_bindir}/kde4-gnash
+  rm -rf ${PKG}/${_kde4_libdir}/kde4
+  rm -rf ${PKG}/${_kde4_appsdir}/klash
+  rm -rf ${PKG}/${_kde4_datadir}/kde4/services
 fi
+rmdir -p ${PKG}/${_kde4_bindir} ${PKG}/${_kde4_libdir}
+rmdir -p ${PKG}/${_kde4_appsdir} ${PKG}/${_kde4_datadir}/kde4
 
 # Mozilla plugin
 if [ "${SB_MOZPLUG}" = "YES" ] ;then

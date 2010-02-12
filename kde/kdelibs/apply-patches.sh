@@ -27,10 +27,6 @@ zcat ${SB_PATCHDIR}/kdelibs-4.2.85-libexecdir.patch.gz | patch -p1 --verbose --b
 zcat ${SB_PATCHDIR}/kdelibs-4.1.72-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
-# use -fno-var-tracking-assignments on khtml/svg bits, use in a pinch on f12+
-# workaound for low-mem systems (ppc64), tracking here (for now),
-# https://bugzilla.redhat.com/show_bug.cgi?id=539697
-#zcat ${SB_PATCHDIR}/kdelibs-4.3.3-khtml_svg_no_var_tracking_assignments.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 
 # die rpath die, since we're using standard paths, we can avoid
 # this extra hassle (even though cmake is *supposed* to not add standard

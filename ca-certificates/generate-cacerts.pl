@@ -1,4 +1,7 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
+
+use diagnostics;
+use Fcntl;
 
 # Copyright (C) 2007, 2008 Red Hat, Inc.
 #
@@ -27,7 +30,7 @@ $in_cert_block = 0;
 $write_current_cert = 1;
 foreach $cert (@certs)
 {
-    if ($cert =~ /Issuer: /)
+    if ($cert =~ /Subject: /)
     {
         $_ = $cert;
         if ($cert =~ /personal-freemail/)
@@ -82,7 +85,7 @@ foreach $cert (@certs)
         }
         # Version 1 of Class 3 Public Primary Certification Authority
         # - G2 is added.  Version 3 is excluded.  See below.
-        elsif ($cert =~ /Class 3 Public Primary Certification Authority - G2/)
+        elsif ($cert =~ /Class 3 Public Primary Certification Authority - G2.*1998/)
         {
             $cert_alias = "verisignclass3g2ca";
         }
@@ -94,7 +97,7 @@ foreach $cert (@certs)
         elsif ($cert =~
                /RSA Data Security.*Secure Server Certification Authority/)
         {
-            $cert_alias = "verisignserverca";
+            $cert_alias = "rsaserverca";
         }
         elsif ($cert =~ /GTE CyberTrust Global Root/)
         {
@@ -116,7 +119,7 @@ foreach $cert (@certs)
         {
             $cert_alias = "entrust2048ca";
         }
-        elsif ($cert =~ /www.entrust.net\/CPS /)
+        elsif ($cert =~ /www.entrust.net\/CPS incorp /)
         {
             $cert_alias = "entrustsslca";
         }
@@ -224,10 +227,6 @@ foreach $cert (@certs)
         {
             $cert_alias = "extra-elektronikkas2005";
         }
-        elsif ($cert =~ /Elektronik/)
-        {
-            $cert_alias = "extra-elektronik2005";
-        }
         # Mozilla does not provide these certificates:
         #   baltimorecodesigningca
         #   gtecybertrust5ca
@@ -237,13 +236,13 @@ foreach $cert (@certs)
         else
         {
             # Generate an alias using the OU and CN attributes of the
-            # Issuer field if both are present, otherwise use only the
-            # CN attribute.  The Issuer field must have either the OU
+            # Subject field if both are present, otherwise use only the
+            # CN attribute.  The Subject field must have either the OU
             # or the CN attribute.
             $_ = $cert;
             if ($cert =~ /OU=/)
             {
-                s/Issuer:.*?OU=//;
+                s/Subject:.*?OU=//;
                 # Remove other occurrences of OU=.
                 s/OU=.*CN=//;
                 # Remove CN= if there were not other occurrences of OU=.
@@ -254,7 +253,7 @@ foreach $cert (@certs)
             }
             elsif ($cert =~ /CN=/)
             {
-                s/Issuer:.*CN=//;
+                s/Subject:.*CN=//;
                 s/\/emailAddress.*//;
                 s/Certificate Authority/ca/g;
                 s/Certification Authority/ca/g;
@@ -263,6 +262,7 @@ foreach $cert (@certs)
             tr/A-Z/a-z/;
             $cert_alias = "extra-$_";
         }
+        print "$cert => alias $cert_alias\n";
     }
     # When it attempts to parse:
     #
@@ -297,8 +297,10 @@ foreach $cert (@certs)
         if ($write_current_cert == 1)
         {
             $pem_file_count++;
-            open(PEM, ">$cert_alias.pem");
+            sysopen(PEM, "$cert_alias.pem", O_WRONLY|O_CREAT|O_EXCL)
+                || die("could not write file");
             print PEM $cert;
+            print "written $cert_alias.pem\n";
         }
     }
     elsif ($cert eq "-----END CERTIFICATE-----\n")
@@ -324,7 +326,7 @@ foreach $cert (@certs)
 @pem_files = <*.pem>;
 if (@pem_files != $pem_file_count)
 {
-    print "$pem_file_count";
+    print "$pem_file_count != ".@pem_files."\n";
     die "Number of .pem files produced does not match".
         " number of certs read from $file.";
 }

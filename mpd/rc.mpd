@@ -1,0 +1,148 @@
+#!/bin/sh
+#
+# processname: mpd
+# description: The Music Player Daemon
+
+exec="/usr/bin/mpd"
+prog=$(basename ${exec})
+progn="The Music Player Daemon"
+pidfile="/var/run/${prog}"
+lockfile="/var/lock/subsys/${prog}"
+conffile="/etc/mpd.conf"
+
+[ -x ${exec} ] || exit 1
+
+[ -e /etc/default/${prog} ] && . /etc/default/${prog}
+MPD_USER=${MPD_USER:-mpd:mpd}
+
+[ -f ${conffile} ] || exit 1
+
+RETVAL=0
+
+checkconfig() {
+  if [[ "${MPD_USER}" == "" ]] ; then
+    MPD_USER="mpd"
+  fi
+  if ! $(getent passwd | cut -d ':' -f 1 | grep $( echo "${MPD_USER}" | cut -d ':' -f 1 ) -sq) ; then
+    echo "Please edit /etc/default/mpd"
+    echo "Your user has to exist!"
+    return 1
+  fi
+  MPD_OUSER=$(echo ${MPD_USER} | cut -d ':' -f 1)
+  if [[ "${MPD_OUSER}" == "root" ]] ; then
+    echo "Please edit /etc/default/mpd"
+    echo "Do not use root as user!"
+    return 1
+  fi
+  if ! $(echo "${MPD_USER}" | grep ':' -sq) ; then
+    return 0
+  else
+    if ! $(cut -d ':' -f 1 /etc/group | grep $( echo "${MPD_USER}" | cut -d ':' -f 2 ) -sq) ; then
+     echo "Please edit /etc/default/mpd"
+     echo "Your group has to exist too!"
+     return 1
+    fi
+  fi
+  MPD_USER_HOME=$(getent passwd | grep ^$( echo "${MPD_USER}" | cut -d ':' -f 1 ): | cut -d ':' -f 6)
+  if [[ "${MPD_OUSER}" != "mpd" ]] ; then
+    MPD_USER_CONFIG="${MPD_USER_HOME}/.mpd"
+    conffile="${MPD_USER_HOME}/.mpdconf"
+    if [[ ! -e "${conffile}" ]] ; then
+      sed \
+        -e 's|/var/lib/mpd|~/.mpd|g' \
+        -e "s|^user.*\"mpd\"|user \"${MPD_OUSER}\"|g" \
+        -e 's|^#pid_file|pid_file|g' \
+        /etc/mpd.conf > "${conffile}" || return 1
+      chown "${MPD_USER}" "${conffile}"
+      mkdir -p "${MPD_USER_CONFIG}"
+      chown "${MPD_USER}" "${MPD_USER_CONFIG}"
+      for file in mpdstate mpd.db mpd.error mpd.log ;do
+        touch "${MPD_USER_CONFIG}/${file}" || return 1
+        chown "${MPD_USER}" "${MPD_USER_CONFIG}/${file}" || return 1
+      done
+      for dir in music playlists ;do
+        mkdir -p "${MPD_USER_CONFIG}/${dir}" || return 1
+        chown "${MPD_USER}" "${MPD_USER_CONFIG}/${dir}" || return 1
+      done
+    fi
+  fi
+  return 0
+}
+
+checkconfig || exit 1
+
+if [[ "${MPD_OUSER}" != "mpd" ]] ; then
+  [[ -f ${pidfile} ]] && PID=$(cat ${pidfile})
+  if [[ -f "${pidfile}" ]] && ! pgrep -U "${MPD_OUSER}" 'mpd|!rc.mpd' &>/dev/null ;then
+    rm -f "${pidfile}"
+  fi
+else
+  PID=$(/sbin/pidof -o %PPID ${exec})
+fi
+
+start() {
+  echo -n "Starting ${progn}: "
+  if [ -z "${PID}" ] ;then 
+    ${exec} "${conffile}" 2>&1 | logger -i
+    if [[ "${MPD_USER}" != "mpd" ]] && [ ${RETVAL} -eq 0 ] ;then
+      echo $(pgrep -U "${MPD_OUSER}" 'mpd|!rc.mpd' ) > "${pidfile}"
+    fi
+    RETVAL=$?
+  else
+    RETVAL=1
+  fi
+  if [ ${RETVAL} -eq 0 ] && touch ${lockfile} ; then
+    echo -e "\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t[FAILED]\r"
+  fi
+}
+  
+stop() {
+  echo -n "Stopping ${progn}: "
+  if [ -n "${PID}" ] ;then
+    kill ${PID} &>/dev/null
+    RETVAL=$?
+  else
+    RETVAL=1
+  fi
+  if [ ${RETVAL} -eq 0 ] && rm -f ${lockfile} ; then
+    rm -f ${pidfile}
+    echo -e "\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t[FAILED]\r"
+  fi
+}
+
+restart() {
+  stop
+  unset PID
+  start
+}
+
+createdb(){
+  ${exec} "${conffile}" --create-db
+}
+
+case "$1" in
+  start|stop|createdb)
+    $1
+  ;;
+  restart|reload)
+    restart
+    ;;
+  status)
+    if [ -f ${lockfile} ]; then
+      echo "${prog} is running in pid ${PID}."
+    else
+      echo "${prog} is not running."
+    fi
+    ;;
+  condrestart)
+    if  [ ! -f ${lockfile} ]; then restart ;fi
+    ;;
+  *)
+    echo "Usage: $0 {condrestart|start|stop|restart|reload|status|createdb}"
+    exit 1
+    ;;
+esac

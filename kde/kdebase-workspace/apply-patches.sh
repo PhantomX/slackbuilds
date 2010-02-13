@@ -4,7 +4,9 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-startkde.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-plasma-konsole.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.3.75-show_systemsettings.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-4.3.85-ck-shutdown.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.2.85-ck-shutdown.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# For ck 0.4.1
+#zcat ${SB_PATCHDIR}/${NAME}-4.3.85-ck-shutdown.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # 441062: packagekit tools do not show icons correctly on KDE
 zcat ${SB_PATCHDIR}/${NAME}-4.0.3-krdb.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.2.85-klipper-url.patch.gz | patch -p1 -E --backup --verbose || exit 1
@@ -32,3 +34,9 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup -
 # FIXME: Not upstreamed yet --Ben (4.3.80)
 #Patch51: http://bazaar.launchpad.net/~kubuntu-members/kdebase-workspace/ubuntu/annotate/head%3A/debian/patches/kubuntu_101_brightness_fn_keys_and_osd.diff
 zcat ${SB_PATCHDIR}/${NAME}-4.3.80-brightness-keys.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+# 4.4 patches
+# kde#200184, Plasma Memory Leak and High CPU usage
+zcat ${SB_PATCHDIR}/kdebase-workspace-kde\#200184.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# kscreenlocker
+zcat ${SB_PATCHDIR}/kdebase-workspace-4.4.0-kde217882.patch.gz | patch -p4 -E --backup --verbose || exit 1

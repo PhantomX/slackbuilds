@@ -16,8 +16,13 @@ zcat ${SB_PATCHDIR}/${NAME}-system-jasper.patch.gz | patch -p1 --verbose || exit
 # Fix pksmraw output (bug #308211).
 zcat ${SB_PATCHDIR}/${NAME}-pksmraw.patch.gz | patch -p1 --verbose || exit 1
 
-zcat ${SB_PATCHDIR}/${NAME}-jbig2dec-nullderef.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-gs-executable.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/ghostscript-cups-filters.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/ghostscript-CVE-2009-4270.patch.gz | patch -p1 --verbose || exit 1
+zcat ${SB_PATCHDIR}/ghostscript-pdftoraster-exit.patch.gz | patch -p1 --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/fix-build-of-executables.patch.gz | patch -p1 --verbose || exit 1
 
 if [ "${SB_PNG14}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/ghostscript-libpng14.patch.gz | patch -p1 -E --backup --verbose || exit 1

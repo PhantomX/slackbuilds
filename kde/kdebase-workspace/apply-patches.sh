@@ -4,9 +4,10 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-startkde.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-plasma-konsole.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.3.75-show_systemsettings.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-4.2.85-ck-shutdown.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# For ck 0.3.1
+#zcat ${SB_PATCHDIR}/${NAME}-4.2.85-ck-shutdown.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # For ck 0.4.1
-#zcat ${SB_PATCHDIR}/${NAME}-4.3.85-ck-shutdown.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.3.95-ck-shutdown.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # 441062: packagekit tools do not show icons correctly on KDE
 zcat ${SB_PATCHDIR}/${NAME}-4.0.3-krdb.patch.gz | patch -p0 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.2.85-klipper-url.patch.gz | patch -p1 -E --backup --verbose || exit 1
@@ -21,7 +22,7 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.98-battery-plasmoid-showremainingtime.patch.gz |
 # allow adding a "Leave..." button which brings up the complete shutdown dialog
 # to the classic menu (as in KDE <= 4.2.x); the default is still the upstream
 # default Leave submenu
-zcat ${SB_PATCHDIR}/${NAME}-4.3.75-classicmenu-logout.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-4.4.0-classicmenu-logout.patch.gz | patch -p1 -E --backup --verbose || exit 1
 #zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kdm_plymouth.patch.gz | patch -p1 -E --backup --verbose || exit 1
 zcat ${SB_PATCHDIR}/${NAME}-4.3.80-xsession_errors_O_APPEND.patch.gz | patch -p1 -E --backup --verbose || exit 1
 # support the widgetStyle4 hack in the Qt KDE platform plugin

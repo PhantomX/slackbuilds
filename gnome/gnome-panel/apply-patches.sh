@@ -22,3 +22,20 @@ zcat ${SB_PATCHDIR}/clock-wakeups.patch.gz | patch -p1 -E --backup --verbose || 
 
 # http://bugzilla.gnome.org/show_bug.cgi?id=579092
 zcat ${SB_PATCHDIR}/clock-network.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+zcat ${SB_PATCHDIR}/clock-home.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/bookmarks-submenu.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# from upstream
+zcat ${SB_PATCHDIR}/panel-randr-crashes.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# http://bugzilla.gnome.org/show_bug.cgi?id=343436
+zcat ${SB_PATCHDIR}/panel-padding.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# https://bugzilla.gnome.org/show_bug.cgi?id=583115
+zcat ${SB_PATCHDIR}/icon-order.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# https://bugzilla.gnome.org/show_bug.cgi?id=583273
+zcat ${SB_PATCHDIR}/icon-padding.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# https://bugzilla.gnome.org/show_bug.cgi?id=341441
+zcat ${SB_PATCHDIR}/resolution-change.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# https://bugzilla.redhat.com/show_bug.cgi?id=537798
+zcat ${SB_PATCHDIR}/fix-clock-crash.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# https://bugzilla.gnome.org/show_bug.cgi?id=604678
+zcat ${SB_PATCHDIR}/polkit-error.patch.gz | patch -p1 -E --backup --verbose || exit 1

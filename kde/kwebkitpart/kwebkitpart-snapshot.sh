@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="svn://anonsvn.kde.org/home/kde/trunk/playground/libs/${module}"
+snaproot="svn://anonsvn.kde.org/home/kde/trunk/extragear/base/${module}"
 
 tmp=$(mktemp -d)
 

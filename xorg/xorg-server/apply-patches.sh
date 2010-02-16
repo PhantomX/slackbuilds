@@ -36,7 +36,6 @@ zcat ${SB_PATCHDIR}/xserver-1.7.0-glx-versioning.patch.gz | patch -p1 --verbose 
 zcat ${SB_PATCHDIR}/xserver-1.7.1-multilib.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.7.1-libcrypto.patch.gz | patch -p1 --verbose || exit 1
-#zcat ${SB_PATCHDIR}/xserver-1.7.1-sigaction.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.7.1-glx14-swrast.patch.gz | patch -p1 --verbose || exit 1
 
 zcat ${SB_PATCHDIR}/xserver-1.7.3-exa-master.patch.gz | patch -p1 --verbose || exit 1
@@ -44,10 +43,12 @@ zcat ${SB_PATCHDIR}/xserver-1.7.3-exa-master.patch.gz | patch -p1 --verbose || e
 zcat ${SB_PATCHDIR}/xserver-1.7.3-cursor-jumps.patch.gz | patch -p1 --verbose || exit 1
 zcat ${SB_PATCHDIR}/xserver-1.7.3-no-free-on-abort.patch.gz | patch -p1 --verbose || exit 1
 
-# 540584
-zcat ${SB_PATCHDIR}/xserver-1.7.4-reset-sli-pointers.patch.gz | patch -p1 --verbose || exit 1
 # 543647
 zcat ${SB_PATCHDIR}/xserver-1.7.4-owner-events.patch.gz | patch -p1 --verbose || exit 1
+# 558613
+zcat ${SB_PATCHDIR}/xserver-1.7.4-qxl-autoconfig.patch.gz | patch -p1 --verbose || exit 1
+# 516918
+zcat ${SB_PATCHDIR}/xserver-1.7.4-dpms-timeouts.patch.gz | patch -p1 --verbose || exit 1
 
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.7.3.902-zap-warning.patch.gz | patch -p1 --verbose || exit 1

@@ -9,9 +9,13 @@ zcat ${SB_PATCHDIR}/${NAME}-2.18.0-fix-find.patch.gz | patch -p1 -E --backup --v
 # do the nullapplet dance for battstat
 zcat ${SB_PATCHDIR}/${NAME}-null-battstat.patch.gz | patch -p1 -E --backup --verbose || exit 1
 
-if [ "${SB_MIXER}" != "YES" ] ;then
+if [ "${SB_GST}" != "YES" -a "${SB_GSTDEF}" != "YES" ] ;then
   # and keep the mixer hidden away from the add to panel dialog
   zcat ${SB_PATCHDIR}/gnome-applets-no-mixer-icon.patch.gz | patch -p1 -E --backup --verbose || exit 1
+fi
+
+if [ "${SB_GSTP}" = "YES" ] ;then
+  zcat ${SB_PATCHDIR}/gnome-applets-2.28.0-gstmixer-with-parallel.patch.gz | patch -p0 -E --backup --verbose || exit 1
 fi
 
 # do the nullapplet dance for stickynotes

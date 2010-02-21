@@ -1,6 +1,6 @@
 # fluxbox-chinfo-menu Makefile
 
-# Copyright (C) 2008 Phantom X, Goiania, Brazil.
+# Copyright (C) 2010 Phantom X, Goiania, Brazil.
 # This Makefile.in is free software; the author
 # gives unlimited permission to copy and/or distribute it,
 # with or without modifications, as long as this notice is preserved.

@@ -65,13 +65,11 @@ zcat ${SB_PATCHDIR}/qt-x11-opensource-src-4.5.0-fix-qatomic-inline-asm.patch.gz 
 # fix invalid assumptions about mysql_config --libs
 # http://bugzilla.redhat.com/440673
 zcat ${SB_PATCHDIR}/qt-x11-opensource-src-4.5.1-mysql_config.patch.gz | patch -p1 -E --verbose
+ApplyPatch qt-cups-1.patch.gz
 
 # security patches
 
-# kde-qt git patches
-## older, but actually applies, version of patches 208, 209, 213 (double check)
-#zcat ${SB_PATCHDIR}/0274-shm-native-image-fix.patch.gz | patch -p1 -E --verbose
-
+# kde-qt patches
 ( SB_PATCHDIR=patches
   # Ignore list, e.g: ="0003 0010"
   export IGNORE=""

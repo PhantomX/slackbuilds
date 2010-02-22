@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = konqinfohelper
-VERSION = 1.0
+VERSION = 1.0.1
 
 DESTDIR =
 PREFIX = /usr
@@ -24,9 +24,9 @@ SYSCONFDIR = /etc
 LOCALEDIR = $(KDEPREFIX)/share/locale
 DOCDIR = $(PREFIX)/share/doc/$(PACKAGE)-$(VERSION)
 
-SRVFILES = gifinfo.desktop jpginfo.desktop m4ainfo.desktop mkvinfo.desktop \
-           mp3info.desktop mpginfo.desktop ogginfo.desktop pdfinfo.desktop \
-           pnginfo.desktop wavinfo.desktop
+SRVFILES = aviinfo.desktop gifinfo.desktop jpginfo.desktop m4ainfo.desktop \
+           mkvinfo.desktop mp3info.desktop mpginfo.desktop ogginfo.desktop \
+           pdfinfo.desktop pnginfo.desktop torrentinfo.desktop wavinfo.desktop
 BINFILES = konqinfohelper
 
 DOCS = README ChangeLog COPYING

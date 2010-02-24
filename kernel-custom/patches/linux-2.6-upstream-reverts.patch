@@ -1,608 +1,995 @@
-From b01f2c3a4a37d09a47ad73ccbb46d554d21cfeb0 Mon Sep 17 00:00:00 2001
+From 01d4503968f471f876fb44335800d2cf8dc5a2ce Mon Sep 17 00:00:00 2001
+From: Dave Airlie <airlied@redhat.com>
+Date: Sun, 31 Jan 2010 07:07:14 +1000
+Subject: drm/radeon/kms: use udelay for short delays
+
+From: Dave Airlie <airlied@redhat.com>
+
+commit 01d4503968f471f876fb44335800d2cf8dc5a2ce upstream.
+
+For usec delays use udelay instead of scheduling, this should
+allow reclocking to happen faster. This also was the cause
+of reported 33s delays at bootup on certain systems.
+
+fixes: freedesktop.org bug 25506
+
+Signed-off-by: Dave Airlie <airlied@redhat.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/radeon/atom.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/gpu/drm/radeon/atom.c
++++ b/drivers/gpu/drm/radeon/atom.c
+@@ -607,7 +607,7 @@ static void atom_op_delay(atom_exec_cont
+ 	uint8_t count = U8((*ptr)++);
+ 	SDEBUG("   count: %d\n", count);
+ 	if (arg == ATOM_UNIT_MICROSEC)
+-		schedule_timeout_uninterruptible(usecs_to_jiffies(count));
++		udelay(count);
+ 	else
+ 		schedule_timeout_uninterruptible(msecs_to_jiffies(count));
+ }
+From b9241ea31fae4887104e5d1b3b18f4009c25a0c4 Mon Sep 17 00:00:00 2001
+From: Zhenyu Wang <zhenyuw@linux.intel.com>
+Date: Wed, 25 Nov 2009 13:09:39 +0800
+Subject: drm/i915: Don't wait interruptible for possible plane buffer flush
+
+From: Zhenyu Wang <zhenyuw@linux.intel.com>
+
+commit b9241ea31fae4887104e5d1b3b18f4009c25a0c4 upstream.
+
+When we setup buffer for display plane, we'll check any pending
+required GPU flush and possible make interruptible wait for flush
+complete. But that wait would be most possibly to fail in case of
+signals received for X process, which will then fail modeset process
+and put display engine in unconsistent state. The result could be
+blank screen or CPU hang, and DDX driver would always turn on outputs
+DPMS after whatever modeset fails or not.
+
+So this one creates new helper for setup display plane buffer, and
+when needing flush using uninterruptible wait for that.
+
+This one should fix bug like https://bugs.freedesktop.org/show_bug.cgi?id=24009.
+Also fixing mode switch stress test on Ironlake.
+
+Signed-off-by: Zhenyu Wang <zhenyuw@linux.intel.com>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/i915_drv.h      |    1 
+ drivers/gpu/drm/i915/i915_gem.c      |   51 +++++++++++++++++++++++++++++++++++
+ drivers/gpu/drm/i915/intel_display.c |    2 -
+ 3 files changed, 53 insertions(+), 1 deletion(-)
+
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -829,6 +829,7 @@ int i915_lp_ring_sync(struct drm_device
+ int i915_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
+ int i915_gem_object_set_to_gtt_domain(struct drm_gem_object *obj,
+ 				      int write);
++int i915_gem_object_set_to_display_plane(struct drm_gem_object *obj);
+ int i915_gem_attach_phys_object(struct drm_device *dev,
+ 				struct drm_gem_object *obj, int id);
+ void i915_gem_detach_phys_object(struct drm_device *dev,
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -2825,6 +2825,57 @@ i915_gem_object_set_to_gtt_domain(struct
+ 	return 0;
+ }
+ 
++/*
++ * Prepare buffer for display plane. Use uninterruptible for possible flush
++ * wait, as in modesetting process we're not supposed to be interrupted.
++ */
++int
++i915_gem_object_set_to_display_plane(struct drm_gem_object *obj)
++{
++	struct drm_device *dev = obj->dev;
++	struct drm_i915_gem_object *obj_priv = obj->driver_private;
++	uint32_t old_write_domain, old_read_domains;
++	int ret;
++
++	/* Not valid to be called on unbound objects. */
++	if (obj_priv->gtt_space == NULL)
++		return -EINVAL;
++
++	i915_gem_object_flush_gpu_write_domain(obj);
++
++	/* Wait on any GPU rendering and flushing to occur. */
++	if (obj_priv->active) {
++#if WATCH_BUF
++		DRM_INFO("%s: object %p wait for seqno %08x\n",
++			  __func__, obj, obj_priv->last_rendering_seqno);
++#endif
++		ret = i915_do_wait_request(dev, obj_priv->last_rendering_seqno, 0);
++		if (ret != 0)
++			return ret;
++	}
++
++	old_write_domain = obj->write_domain;
++	old_read_domains = obj->read_domains;
++
++	obj->read_domains &= I915_GEM_DOMAIN_GTT;
++
++	i915_gem_object_flush_cpu_write_domain(obj);
++
++	/* It should now be out of any other write domains, and we can update
++	 * the domain values for our changes.
++	 */
++	BUG_ON((obj->write_domain & ~I915_GEM_DOMAIN_GTT) != 0);
++	obj->read_domains |= I915_GEM_DOMAIN_GTT;
++	obj->write_domain = I915_GEM_DOMAIN_GTT;
++	obj_priv->dirty = 1;
++
++	trace_i915_gem_object_change_domain(obj,
++					    old_read_domains,
++					    old_write_domain);
++
++	return 0;
++}
++
+ /**
+  * Moves a single object to the CPU read, and possibly write domain.
+  *
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -1253,7 +1253,7 @@ intel_pipe_set_base(struct drm_crtc *crt
+ 		return ret;
+ 	}
+ 
+-	ret = i915_gem_object_set_to_gtt_domain(obj, 1);
++	ret = i915_gem_object_set_to_display_plane(obj);
+ 	if (ret != 0) {
+ 		i915_gem_object_unpin(obj);
+ 		mutex_unlock(&dev->struct_mutex);
+From 48764bf43f746113fc77877d7e80f2df23ca4cbb Mon Sep 17 00:00:00 2001
+From: Daniel Vetter <daniel.vetter@ffwll.ch>
+Date: Tue, 15 Sep 2009 22:57:32 +0200
+Subject: drm/i915: add i915_lp_ring_sync helper
+
+From: Daniel Vetter <daniel.vetter@ffwll.ch>
+
+commit 48764bf43f746113fc77877d7e80f2df23ca4cbb upstream.
+
+This just waits until the hw passed the current ring position with
+cmd execution. This slightly changes the existing i915_wait_request
+function to make uninterruptible waiting possible - no point in
+returning to userspace while mucking around with the overlay, that
+piece of hw is just too fragile.
+
+Also replace a magic 0 with the symbolic constant (and kill the then
+superflous comment) while I was looking at the code.
+
+Signed-off-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/i915_drv.h |    1 
+ drivers/gpu/drm/i915/i915_gem.c |   49 +++++++++++++++++++++++++++++++---------
+ include/drm/drm_os_linux.h      |    2 -
+ 3 files changed, 41 insertions(+), 11 deletions(-)
+
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -825,6 +825,7 @@ void i915_gem_cleanup_ringbuffer(struct
+ int i915_gem_do_init(struct drm_device *dev, unsigned long start,
+ 		     unsigned long end);
+ int i915_gem_idle(struct drm_device *dev);
++int i915_lp_ring_sync(struct drm_device *dev);
+ int i915_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
+ int i915_gem_object_set_to_gtt_domain(struct drm_gem_object *obj,
+ 				      int write);
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -1809,12 +1809,8 @@ i915_gem_retire_work_handler(struct work
+ 	mutex_unlock(&dev->struct_mutex);
+ }
+ 
+-/**
+- * Waits for a sequence number to be signaled, and cleans up the
+- * request and object lists appropriately for that event.
+- */
+ static int
+-i915_wait_request(struct drm_device *dev, uint32_t seqno)
++i915_do_wait_request(struct drm_device *dev, uint32_t seqno, int interruptible)
+ {
+ 	drm_i915_private_t *dev_priv = dev->dev_private;
+ 	u32 ier;
+@@ -1841,10 +1837,15 @@ i915_wait_request(struct drm_device *dev
+ 
+ 		dev_priv->mm.waiting_gem_seqno = seqno;
+ 		i915_user_irq_get(dev);
+-		ret = wait_event_interruptible(dev_priv->irq_queue,
+-					       i915_seqno_passed(i915_get_gem_seqno(dev),
+-								 seqno) ||
+-					       atomic_read(&dev_priv->mm.wedged));
++		if (interruptible)
++			ret = wait_event_interruptible(dev_priv->irq_queue,
++				i915_seqno_passed(i915_get_gem_seqno(dev), seqno) ||
++				atomic_read(&dev_priv->mm.wedged));
++		else
++			wait_event(dev_priv->irq_queue,
++				i915_seqno_passed(i915_get_gem_seqno(dev), seqno) ||
++				atomic_read(&dev_priv->mm.wedged));
++
+ 		i915_user_irq_put(dev);
+ 		dev_priv->mm.waiting_gem_seqno = 0;
+ 
+@@ -1868,6 +1869,34 @@ i915_wait_request(struct drm_device *dev
+ 	return ret;
+ }
+ 
++/**
++ * Waits for a sequence number to be signaled, and cleans up the
++ * request and object lists appropriately for that event.
++ */
++static int
++i915_wait_request(struct drm_device *dev, uint32_t seqno)
++{
++	return i915_do_wait_request(dev, seqno, 1);
++}
++
++/**
++ * Waits for the ring to finish up to the latest request. Usefull for waiting
++ * for flip events, e.g for the overlay support. */
++int i915_lp_ring_sync(struct drm_device *dev)
++{
++	uint32_t seqno;
++	int ret;
++
++	seqno = i915_add_request(dev, NULL, 0);
++
++	if (seqno == 0)
++		return -ENOMEM;
++
++	ret = i915_do_wait_request(dev, seqno, 0);
++	BUG_ON(ret == -ERESTARTSYS);
++	return ret;
++}
++
+ static void
+ i915_gem_flush(struct drm_device *dev,
+ 	       uint32_t invalidate_domains,
+@@ -1936,7 +1965,7 @@ i915_gem_flush(struct drm_device *dev,
+ #endif
+ 		BEGIN_LP_RING(2);
+ 		OUT_RING(cmd);
+-		OUT_RING(0); /* noop */
++		OUT_RING(MI_NOOP);
+ 		ADVANCE_LP_RING();
+ 	}
+ }
+--- a/include/drm/drm_os_linux.h
++++ b/include/drm/drm_os_linux.h
+@@ -123,5 +123,5 @@ do {								\
+ 	remove_wait_queue(&(queue), &entry);			\
+ } while (0)
+ 
+-#define DRM_WAKEUP( queue ) wake_up_interruptible( queue )
++#define DRM_WAKEUP( queue ) wake_up( queue )
+ #define DRM_INIT_WAITQUEUE( queue ) init_waitqueue_head( queue )
+From 823f68fd646da6a39a9c0d3eb4c60d69dab5aa13 Mon Sep 17 00:00:00 2001
+From: Zhenyu Wang <zhenyuw@linux.intel.com>
+Date: Mon, 28 Dec 2009 13:23:36 +0800
+Subject: drm/i915: remove full registers dump debug
+
+From: Zhenyu Wang <zhenyuw@linux.intel.com>
+
+commit 823f68fd646da6a39a9c0d3eb4c60d69dab5aa13 upstream.
+
+This one reverts 9e3a6d155ed0a7636b926a798dd7221ea107b274.
+As reported by http://bugzilla.kernel.org/show_bug.cgi?id=14485,
+this dump will cause hang problem on some machine. If something
+really needs this kind of full registers dump, that could be done
+within intel-gpu-tools.
+
+Cc: Ben Gamari <bgamari.foss@gmail.com>
+Signed-off-by: Zhenyu Wang <zhenyuw@linux.intel.com>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+
+---
+ drivers/gpu/drm/i915/i915_debugfs.c |   30 ------------------------------
+ 1 file changed, 30 deletions(-)
+
+--- a/drivers/gpu/drm/i915/i915_debugfs.c
++++ b/drivers/gpu/drm/i915/i915_debugfs.c
+@@ -384,37 +384,7 @@ out:
+ 	return 0;
+ }
+ 
+-static int i915_registers_info(struct seq_file *m, void *data) {
+-	struct drm_info_node *node = (struct drm_info_node *) m->private;
+-	struct drm_device *dev = node->minor->dev;
+-	drm_i915_private_t *dev_priv = dev->dev_private;
+-	uint32_t reg;
+-
+-#define DUMP_RANGE(start, end) \
+-	for (reg=start; reg < end; reg += 4) \
+-	seq_printf(m, "%08x\t%08x\n", reg, I915_READ(reg));
+-
+-	DUMP_RANGE(0x00000, 0x00fff);   /* VGA registers */
+-	DUMP_RANGE(0x02000, 0x02fff);   /* instruction, memory, interrupt control registers */
+-	DUMP_RANGE(0x03000, 0x031ff);   /* FENCE and PPGTT control registers */
+-	DUMP_RANGE(0x03200, 0x03fff);   /* frame buffer compression registers */
+-	DUMP_RANGE(0x05000, 0x05fff);   /* I/O control registers */
+-	DUMP_RANGE(0x06000, 0x06fff);   /* clock control registers */
+-	DUMP_RANGE(0x07000, 0x07fff);   /* 3D internal debug registers */
+-	DUMP_RANGE(0x07400, 0x088ff);   /* GPE debug registers */
+-	DUMP_RANGE(0x0a000, 0x0afff);   /* display palette registers */
+-	DUMP_RANGE(0x10000, 0x13fff);   /* MMIO MCHBAR */
+-	DUMP_RANGE(0x30000, 0x3ffff);   /* overlay registers */
+-	DUMP_RANGE(0x60000, 0x6ffff);   /* display engine pipeline registers */
+-	DUMP_RANGE(0x70000, 0x72fff);   /* display and cursor registers */
+-	DUMP_RANGE(0x73000, 0x73fff);   /* performance counters */
+-
+-	return 0;
+-}
+-
+-
+ static struct drm_info_list i915_debugfs_list[] = {
+-	{"i915_regs", i915_registers_info, 0},
+ 	{"i915_gem_active", i915_gem_object_list_info, 0, (void *) ACTIVE_LIST},
+ 	{"i915_gem_flushing", i915_gem_object_list_info, 0, (void *) FLUSHING_LIST},
+ 	{"i915_gem_inactive", i915_gem_object_list_info, 0, (void *) INACTIVE_LIST},
+From 99fcb766a3a50466fe31d743260a3400c1aee855 Mon Sep 17 00:00:00 2001
+From: Daniel Vetter <daniel.vetter@ffwll.ch>
+Date: Sun, 7 Feb 2010 16:20:18 +0100
+Subject: drm/i915: Update write_domains on active list after flush.
+
+From: Daniel Vetter <daniel.vetter@ffwll.ch>
+
+commit 99fcb766a3a50466fe31d743260a3400c1aee855 upstream.
+
+Before changing the status of a buffer with a pending write we will await
+upon a new flush for that buffer. So we can take advantage of any flushes
+posted whilst the buffer is active and pending processing by the GPU, by
+clearing its write_domain and updating its last_rendering_seqno -- thus
+saving a potential flush in deep queues and improves flushing behaviour
+upon eviction for both GTT space and fences.
+
+In order to reduce the time spent searching the active list for matching
+write_domains, we move those to a separate list whose elements are
+the buffers belong to the active/flushing list with pending writes.
+
+Orignal patch by Chris Wilson <chris@chris-wilson.co.uk>, forward-ported
+by me.
+
+In addition to better performance, this also fixes a real bug. Before
+this changes, i915_gem_evict_everything didn't work as advertised. When
+the gpu was actually busy and processing request, the flush and subsequent
+wait would not move active and dirty buffers to the inactive list, but
+just to the flushing list. Which triggered the BUG_ON at the end of this
+function. With the more tight dirty buffer tracking, all currently busy and
+dirty buffers get moved to the inactive list by one i915_gem_flush operation.
+
+I've left the BUG_ON I've used to prove this in there.
+
+References:
+  Bug 25911 - 2.10.0 causes kernel oops and system hangs
+  http://bugs.freedesktop.org/show_bug.cgi?id=25911
+
+  Bug 26101 - [i915] xf86-video-intel 2.10.0 (and git) triggers kernel oops
+              within seconds after login
+  http://bugs.freedesktop.org/show_bug.cgi?id=26101
+
+Signed-off-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Tested-by: Adam Lantos <hege@playma.org>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/i915_drv.h |   11 +++++++++++
+ drivers/gpu/drm/i915/i915_gem.c |   23 +++++++++++++++++++----
+ 2 files changed, 30 insertions(+), 4 deletions(-)
+
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -467,6 +467,15 @@ typedef struct drm_i915_private {
+ 		struct list_head flushing_list;
+ 
+ 		/**
++		 * List of objects currently pending a GPU write flush.
++		 *
++		 * All elements on this list will belong to either the
++		 * active_list or flushing_list, last_rendering_seqno can
++		 * be used to differentiate between the two elements.
++		 */
++		struct list_head gpu_write_list;
++
++		/**
+ 		 * LRU list of objects which are not in the ringbuffer and
+ 		 * are ready to unbind, but are still in the GTT.
+ 		 *
+@@ -558,6 +567,8 @@ struct drm_i915_gem_object {
+ 
+ 	/** This object's place on the active/flushing/inactive lists */
+ 	struct list_head list;
++	/** This object's place on GPU write list */
++	struct list_head gpu_write_list;
+ 
+ 	/** This object's place on the fenced object LRU */
+ 	struct list_head fence_list;
+--- a/drivers/gpu/drm/i915/i915_gem.c
++++ b/drivers/gpu/drm/i915/i915_gem.c
+@@ -1552,6 +1552,8 @@ i915_gem_object_move_to_inactive(struct
+ 	else
+ 		list_move_tail(&obj_priv->list, &dev_priv->mm.inactive_list);
+ 
++	BUG_ON(!list_empty(&obj_priv->gpu_write_list));
++
+ 	obj_priv->last_rendering_seqno = 0;
+ 	if (obj_priv->active) {
+ 		obj_priv->active = 0;
+@@ -1622,7 +1624,8 @@ i915_add_request(struct drm_device *dev,
+ 		struct drm_i915_gem_object *obj_priv, *next;
+ 
+ 		list_for_each_entry_safe(obj_priv, next,
+-					 &dev_priv->mm.flushing_list, list) {
++					 &dev_priv->mm.gpu_write_list,
++					 gpu_write_list) {
+ 			struct drm_gem_object *obj = obj_priv->obj;
+ 
+ 			if ((obj->write_domain & flush_domains) ==
+@@ -1630,6 +1633,7 @@ i915_add_request(struct drm_device *dev,
+ 				uint32_t old_write_domain = obj->write_domain;
+ 
+ 				obj->write_domain = 0;
++				list_del_init(&obj_priv->gpu_write_list);
+ 				i915_gem_object_move_to_active(obj, seqno);
+ 
+ 				trace_i915_gem_object_change_domain(obj,
+@@ -2073,8 +2077,8 @@ static int
+ i915_gem_evict_everything(struct drm_device *dev)
+ {
+ 	drm_i915_private_t *dev_priv = dev->dev_private;
+-	uint32_t seqno;
+ 	int ret;
++	uint32_t seqno;
+ 	bool lists_empty;
+ 
+ 	spin_lock(&dev_priv->mm.active_list_lock);
+@@ -2096,6 +2100,8 @@ i915_gem_evict_everything(struct drm_dev
+ 	if (ret)
+ 		return ret;
+ 
++	BUG_ON(!list_empty(&dev_priv->mm.flushing_list));
++
+ 	ret = i915_gem_evict_from_inactive_list(dev);
+ 	if (ret)
+ 		return ret;
+@@ -2690,7 +2696,7 @@ i915_gem_object_flush_gpu_write_domain(s
+ 	old_write_domain = obj->write_domain;
+ 	i915_gem_flush(dev, 0, obj->write_domain);
+ 	seqno = i915_add_request(dev, NULL, obj->write_domain);
+-	obj->write_domain = 0;
++	BUG_ON(obj->write_domain);
+ 	i915_gem_object_move_to_active(obj, seqno);
+ 
+ 	trace_i915_gem_object_change_domain(obj,
+@@ -3710,16 +3716,23 @@ i915_gem_execbuffer(struct drm_device *d
+ 		i915_gem_flush(dev,
+ 			       dev->invalidate_domains,
+ 			       dev->flush_domains);
+-		if (dev->flush_domains)
++		if (dev->flush_domains & I915_GEM_GPU_DOMAINS)
+ 			(void)i915_add_request(dev, file_priv,
+ 					       dev->flush_domains);
+ 	}
+ 
+ 	for (i = 0; i < args->buffer_count; i++) {
+ 		struct drm_gem_object *obj = object_list[i];
++		struct drm_i915_gem_object *obj_priv = obj->driver_private;
+ 		uint32_t old_write_domain = obj->write_domain;
+ 
+ 		obj->write_domain = obj->pending_write_domain;
++		if (obj->write_domain)
++			list_move_tail(&obj_priv->gpu_write_list,
++				       &dev_priv->mm.gpu_write_list);
++		else
++			list_del_init(&obj_priv->gpu_write_list);
++
+ 		trace_i915_gem_object_change_domain(obj,
+ 						    obj->read_domains,
+ 						    old_write_domain);
+@@ -4112,6 +4125,7 @@ int i915_gem_init_object(struct drm_gem_
+ 	obj_priv->obj = obj;
+ 	obj_priv->fence_reg = I915_FENCE_REG_NONE;
+ 	INIT_LIST_HEAD(&obj_priv->list);
++	INIT_LIST_HEAD(&obj_priv->gpu_write_list);
+ 	INIT_LIST_HEAD(&obj_priv->fence_list);
+ 	obj_priv->madv = I915_MADV_WILLNEED;
+ 
+@@ -4563,6 +4577,7 @@ i915_gem_load(struct drm_device *dev)
+ 	spin_lock_init(&dev_priv->mm.active_list_lock);
+ 	INIT_LIST_HEAD(&dev_priv->mm.active_list);
+ 	INIT_LIST_HEAD(&dev_priv->mm.flushing_list);
++	INIT_LIST_HEAD(&dev_priv->mm.gpu_write_list);
+ 	INIT_LIST_HEAD(&dev_priv->mm.inactive_list);
+ 	INIT_LIST_HEAD(&dev_priv->mm.request_list);
+ 	INIT_LIST_HEAD(&dev_priv->mm.fence_list);
+From fd2e8ea597222b8f38ae8948776a61ea7958232e Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Tue, 9 Feb 2010 14:14:36 +0000
+Subject: drm/i915: Increase fb alignment to 64k
+
+From: Chris Wilson <chris@chris-wilson.co.uk>
+
+commit fd2e8ea597222b8f38ae8948776a61ea7958232e upstream.
+
+An untiled framebuffer must be aligned to 64k. This is normally handled
+by intel_pin_and_fence_fb_obj(), but the intelfb_create() likes to be
+different and do the pinning itself. However, it aligns the buffer
+object incorrectly for pre-i965 chipsets causing a PGTBL_ERR when it is
+installed onto the output.
+
+Fixes:
+  KMS error message while initializing modesetting -
+  render error detected: EIR: 0x10 [i915]
+  http://bugs.freedesktop.org/show_bug.cgi?id=22936
+
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/intel_fb.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/gpu/drm/i915/intel_fb.c
++++ b/drivers/gpu/drm/i915/intel_fb.c
+@@ -148,7 +148,7 @@ static int intelfb_create(struct drm_dev
+ 
+ 	mutex_lock(&dev->struct_mutex);
+ 
+-	ret = i915_gem_object_pin(fbo, PAGE_SIZE);
++	ret = i915_gem_object_pin(fbo, 64*1024);
+ 	if (ret) {
+ 		DRM_ERROR("failed to pin fb: %d\n", ret);
+ 		goto out_unref;
+From ee25df2bc379728c45d81e04cf87984db1425edf Mon Sep 17 00:00:00 2001
 From: Jesse Barnes <jbarnes@virtuousgeek.org>
-Date: Fri, 11 Dec 2009 11:07:17 -0800
-Subject: drm/i915: only enable hotplug for detected outputs
+Date: Sat, 6 Feb 2010 10:41:53 -0800
+Subject: drm/i915: handle FBC and self-refresh better
 
 From: Jesse Barnes <jbarnes@virtuousgeek.org>
 
-commit b01f2c3a4a37d09a47ad73ccbb46d554d21cfeb0 upstream.
+commit ee25df2bc379728c45d81e04cf87984db1425edf upstream.
 
-This patch changes around our hotplug enable code a bit to only enable
-it for ports we actually detect and initialize.  This prevents problems
-with stuck or spurious interrupts on outputs that aren't actually wired
-up, and is generally more correct.
+On 945, we need to avoid entering self-refresh if the compressor is
+busy, or we may cause display FIFO underruns leading to ugly flicker.
 
-Fixes FDO bug #23183.
+Fixes fdo bug #24314, kernel bug #15043.
+
+Tested-by: Alexander Lam <lambchop468@gmail.com>
+Signed-off-by: Jesse Barnes <jbarnes@virtuousgeek.org>
+Tested-by: Julien Cristau <jcristau@debian.org> (fd.o #25371)
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/i915_reg.h      |    1 +
+ drivers/gpu/drm/i915/intel_display.c |    2 ++
+ 2 files changed, 3 insertions(+)
+
+--- a/drivers/gpu/drm/i915/i915_reg.h
++++ b/drivers/gpu/drm/i915/i915_reg.h
+@@ -329,6 +329,7 @@
+ #define   FBC_CTL_PERIODIC	(1<<30)
+ #define   FBC_CTL_INTERVAL_SHIFT (16)
+ #define   FBC_CTL_UNCOMPRESSIBLE (1<<14)
++#define   FBC_C3_IDLE		(1<<13)
+ #define   FBC_CTL_STRIDE_SHIFT	(5)
+ #define   FBC_CTL_FENCENO	(1<<0)
+ #define FBC_COMMAND		0x0320c
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -988,6 +988,8 @@ static void i8xx_enable_fbc(struct drm_c
+ 
+ 	/* enable it... */
+ 	fbc_ctl = FBC_CTL_EN | FBC_CTL_PERIODIC;
++	if (IS_I945GM(dev))
++		fbc_ctl |= FBC_C3_IDLE; /* 945 needs special SR handling */
+ 	fbc_ctl |= (dev_priv->cfb_pitch & 0xff) << FBC_CTL_STRIDE_SHIFT;
+ 	fbc_ctl |= (interval & 0x2fff) << FBC_CTL_INTERVAL_SHIFT;
+ 	if (obj_priv->tiling_mode != I915_TILING_NONE)
+From a3cb5195f6db58dbebd8a31b877ddce082c9b63d Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Fri, 11 Dec 2009 09:26:10 +0800
+Subject: drm/i915: Add MALATA PC-81005 to ACPI LID quirk list
+
+From: Zhao Yakui <yakui.zhao@intel.com>
+
+commit a3cb5195f6db58dbebd8a31b877ddce082c9b63d upstream.
+
+The MALATA PC-81005 laptop always reports that the LID status is closed and we
+can't use it reliabily for LVDS detection. So add this box into the quirk list.
+
+https://bugs.freedesktop.org/show_bug.cgi?id=25523
+
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+Review-by: Jesse Barnes <jbarnes@virtuousgeek.org>
+Tested-by: Hector <hector1987@gmail.com>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/intel_lvds.c |    7 +++++++
+ 1 file changed, 7 insertions(+)
+
+--- a/drivers/gpu/drm/i915/intel_lvds.c
++++ b/drivers/gpu/drm/i915/intel_lvds.c
+@@ -622,6 +622,13 @@ static const struct dmi_system_id bad_li
+ 			DMI_MATCH(DMI_PRODUCT_NAME, "Aspire one"),
+ 		},
+ 	},
++	{
++		.ident = "PC-81005",
++		.matches = {
++			DMI_MATCH(DMI_SYS_VENDOR, "MALATA"),
++			DMI_MATCH(DMI_PRODUCT_NAME, "PC-81005"),
++		},
++	},
+ 	{ }
+ };
+ 
+From f034b12dbb5749b11e9390e15e93ffa87ece8038 Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Thu, 21 Jan 2010 15:20:18 +0800
+Subject: drm/i915: Fix the incorrect DMI string for Samsung SX20S laptop
+
+From: Zhao Yakui <yakui.zhao@intel.com>
+
+commit f034b12dbb5749b11e9390e15e93ffa87ece8038 upstream.
+
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+Reported-by: Philipp Kohlbecher <xt28@gmx.de>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/intel_lvds.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/gpu/drm/i915/intel_lvds.c
++++ b/drivers/gpu/drm/i915/intel_lvds.c
+@@ -611,7 +611,7 @@ static const struct dmi_system_id bad_li
+ 	{
+ 		.ident = "Samsung SX20S",
+ 		.matches = {
+-			DMI_MATCH(DMI_SYS_VENDOR, "Phoenix Technologies LTD"),
++			DMI_MATCH(DMI_SYS_VENDOR, "Samsung Electronics"),
+ 			DMI_MATCH(DMI_BOARD_NAME, "SX20S"),
+ 		},
+ 	},
+From 40f33a92100f4d9b6e85ad642100cfe42d7ff57d Mon Sep 17 00:00:00 2001
+From: Zhao Yakui <yakui.zhao@intel.com>
+Date: Wed, 6 Jan 2010 13:30:36 +0800
+Subject: drm/i915: Add HP nx9020/SamsungSX20S to ACPI LID quirk list
+
+From: Zhao Yakui <yakui.zhao@intel.com>
+
+commit 40f33a92100f4d9b6e85ad642100cfe42d7ff57d upstream.
+
+The HP comaq nx9020/Samsung SX20S laptop always report that the LID status is
+closed and we can't use it reliabily for LVDS detection. So add the two boxes
+into the quirk list.
+
+http://bugzilla.kernel.org/show_bug.cgi?id=14957
+http://bugzilla.kernel.org/show_bug.cgi?id=14554
+
+Signed-off-by: Zhao Yakui <yakui.zhao@intel.com>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/intel_lvds.c |   14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+--- a/drivers/gpu/drm/i915/intel_lvds.c
++++ b/drivers/gpu/drm/i915/intel_lvds.c
+@@ -602,6 +602,20 @@ static void intel_lvds_mode_set(struct d
+ /* Some lid devices report incorrect lid status, assume they're connected */
+ static const struct dmi_system_id bad_lid_status[] = {
+ 	{
++		.ident = "Compaq nx9020",
++		.matches = {
++			DMI_MATCH(DMI_SYS_VENDOR, "Hewlett-Packard"),
++			DMI_MATCH(DMI_BOARD_NAME, "3084"),
++		},
++	},
++	{
++		.ident = "Samsung SX20S",
++		.matches = {
++			DMI_MATCH(DMI_SYS_VENDOR, "Phoenix Technologies LTD"),
++			DMI_MATCH(DMI_BOARD_NAME, "SX20S"),
++		},
++	},
++	{
+ 		.ident = "Aspire One",
+ 		.matches = {
+ 			DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+From f0217c42c9ab3d772e543f635ce628b9478f70b6 Mon Sep 17 00:00:00 2001
+From: Eric Anholt <eric@anholt.net>
+Date: Tue, 1 Dec 2009 11:56:30 -0800
+Subject: drm/i915: Fix DDC on some systems by clearing BIOS GMBUS setup.
+
+From: Eric Anholt <eric@anholt.net>
+
+commit f0217c42c9ab3d772e543f635ce628b9478f70b6 upstream.
+
+This is a sync of a fix I made in the old UMS code.  If the BIOS uses
+the GMBUS and doesn't clear that setup, then our bit-banging I2C can
+fail, leading to monitors not being detected.
+
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Cc: maximilian attems <max@stro.at>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/i915_reg.h     |   14 ++++++++++++++
+ drivers/gpu/drm/i915/i915_suspend.c |    5 ++++-
+ drivers/gpu/drm/i915/intel_drv.h    |    2 ++
+ drivers/gpu/drm/i915/intel_i2c.c    |   19 +++++++++++++++++++
+ 4 files changed, 39 insertions(+), 1 deletion(-)
+
+--- a/drivers/gpu/drm/i915/i915_reg.h
++++ b/drivers/gpu/drm/i915/i915_reg.h
+@@ -405,6 +405,13 @@
+ # define GPIO_DATA_VAL_IN		(1 << 12)
+ # define GPIO_DATA_PULLUP_DISABLE	(1 << 13)
+ 
++#define GMBUS0			0x5100
++#define GMBUS1			0x5104
++#define GMBUS2			0x5108
++#define GMBUS3			0x510c
++#define GMBUS4			0x5110
++#define GMBUS5			0x5120
++
+ /*
+  * Clock control & power management
+  */
+@@ -2153,6 +2160,13 @@
+ #define PCH_GPIOE               0xc5020
+ #define PCH_GPIOF               0xc5024
+ 
++#define PCH_GMBUS0		0xc5100
++#define PCH_GMBUS1		0xc5104
++#define PCH_GMBUS2		0xc5108
++#define PCH_GMBUS3		0xc510c
++#define PCH_GMBUS4		0xc5110
++#define PCH_GMBUS5		0xc5120
++
+ #define PCH_DPLL_A              0xc6014
+ #define PCH_DPLL_B              0xc6018
+ 
+--- a/drivers/gpu/drm/i915/i915_suspend.c
++++ b/drivers/gpu/drm/i915/i915_suspend.c
+@@ -27,7 +27,7 @@
+ #include "drmP.h"
+ #include "drm.h"
+ #include "i915_drm.h"
+-#include "i915_drv.h"
++#include "intel_drv.h"
+ 
+ static bool i915_pipe_enabled(struct drm_device *dev, enum pipe pipe)
+ {
+@@ -846,6 +846,9 @@ int i915_restore_state(struct drm_device
+ 	for (i = 0; i < 3; i++)
+ 		I915_WRITE(SWF30 + (i << 2), dev_priv->saveSWF2[i]);
+ 
++	/* I2C state */
++	intel_i2c_reset_gmbus(dev);
++
+ 	return 0;
+ }
+ 
+--- a/drivers/gpu/drm/i915/intel_drv.h
++++ b/drivers/gpu/drm/i915/intel_drv.h
+@@ -134,6 +134,8 @@ void intel_i2c_destroy(struct i2c_adapte
+ int intel_ddc_get_modes(struct intel_output *intel_output);
+ extern bool intel_ddc_probe(struct intel_output *intel_output);
+ void intel_i2c_quirk_set(struct drm_device *dev, bool enable);
++void intel_i2c_reset_gmbus(struct drm_device *dev);
++
+ extern void intel_crt_init(struct drm_device *dev);
+ extern void intel_hdmi_init(struct drm_device *dev, int sdvox_reg);
+ extern bool intel_sdvo_init(struct drm_device *dev, int output_device);
+--- a/drivers/gpu/drm/i915/intel_i2c.c
++++ b/drivers/gpu/drm/i915/intel_i2c.c
+@@ -118,6 +118,23 @@ static void set_data(void *data, int sta
+ 	udelay(I2C_RISEFALL_TIME); /* wait for the line to change state */
+ }
+ 
++/* Clears the GMBUS setup.  Our driver doesn't make use of the GMBUS I2C
++ * engine, but if the BIOS leaves it enabled, then that can break our use
++ * of the bit-banging I2C interfaces.  This is notably the case with the
++ * Mac Mini in EFI mode.
++ */
++void
++intel_i2c_reset_gmbus(struct drm_device *dev)
++{
++	struct drm_i915_private *dev_priv = dev->dev_private;
++
++	if (IS_IGDNG(dev)) {
++		I915_WRITE(PCH_GMBUS0, 0);
++	} else {
++		I915_WRITE(GMBUS0, 0);
++	}
++}
++
+ /**
+  * intel_i2c_create - instantiate an Intel i2c bus using the specified GPIO reg
+  * @dev: DRM device
+@@ -168,6 +185,8 @@ struct i2c_adapter *intel_i2c_create(str
+ 	if(i2c_bit_add_bus(&chan->adapter))
+ 		goto out_free;
+ 
++	intel_i2c_reset_gmbus(dev);
++
+ 	/* JJJ:  raise SCL and SDA? */
+ 	intel_i2c_quirk_set(dev, true);
+ 	set_data(chan, 1);
+From 33c5fd121eabbccc9103daf6cda36941eb3c349f Mon Sep 17 00:00:00 2001
+From: David John <davidjon@xenontk.org>
+Date: Wed, 27 Jan 2010 15:19:08 +0530
+Subject: drm/i915: Disable SR when more than one pipe is enabled
+
+From: David John <davidjon@xenontk.org>
+
+commit 33c5fd121eabbccc9103daf6cda36941eb3c349f upstream.
+
+Self Refresh should be disabled on dual plane configs.  Otherwise, as
+the SR watermark is not calculated for such configs, switching to non
+VGA mode causes FIFO underrun and display flicker.
+
+This fixes Korg Bug #14897.
+
+Signed-off-by: David John <davidjon@xenontk.org>
+Signed-off-by: Jesse Barnes <jbarnes@virtuousgeek.org>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/intel_display.c |   12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -2538,6 +2538,10 @@ static void g4x_update_wm(struct drm_dev
+ 		sr_entries = roundup(sr_entries / cacheline_size, 1);
+ 		DRM_DEBUG("self-refresh entries: %d\n", sr_entries);
+ 		I915_WRITE(FW_BLC_SELF, FW_BLC_SELF_EN);
++	} else {
++		/* Turn off self refresh if both pipes are enabled */
++		I915_WRITE(FW_BLC_SELF, I915_READ(FW_BLC_SELF)
++					& ~FW_BLC_SELF_EN);
+ 	}
+ 
+ 	DRM_DEBUG("Setting FIFO watermarks - A: %d, B: %d, SR %d\n",
+@@ -2581,6 +2585,10 @@ static void i965_update_wm(struct drm_de
+ 			srwm = 1;
+ 		srwm &= 0x3f;
+ 		I915_WRITE(FW_BLC_SELF, FW_BLC_SELF_EN);
++	} else {
++		/* Turn off self refresh if both pipes are enabled */
++		I915_WRITE(FW_BLC_SELF, I915_READ(FW_BLC_SELF)
++					& ~FW_BLC_SELF_EN);
+ 	}
+ 
+ 	DRM_DEBUG_KMS("Setting FIFO watermarks - A: 8, B: 8, C: 8, SR %d\n",
+@@ -2649,6 +2657,10 @@ static void i9xx_update_wm(struct drm_de
+ 		if (srwm < 0)
+ 			srwm = 1;
+ 		I915_WRITE(FW_BLC_SELF, FW_BLC_SELF_EN | (srwm & 0x3f));
++	} else {
++		/* Turn off self refresh if both pipes are enabled */
++		I915_WRITE(FW_BLC_SELF, I915_READ(FW_BLC_SELF)
++					& ~FW_BLC_SELF_EN);
+ 	}
+ 
+ 	DRM_DEBUG("Setting FIFO watermarks - A: %d, B: %d, C: %d, SR %d\n",
+From 1dc7546d1a73664e5d117715b214bea9cae5951c Mon Sep 17 00:00:00 2001
+From: Jesse Barnes <jbarnes@jbarnes-x200.(none)>
+Date: Mon, 19 Oct 2009 10:08:17 +0900
+Subject: drm/i915: enable self-refresh on 965
+
+From: Jesse Barnes <jbarnes@jbarnes-x200.(none)>
+
+commit 1dc7546d1a73664e5d117715b214bea9cae5951c upstream.
+
+Need to calculate the SR watermark and enable it.
 
 Signed-off-by: Jesse Barnes <jbarnes@virtuousgeek.org>
 Signed-off-by: Eric Anholt <eric@anholt.net>
 Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
 
 ---
- drivers/gpu/drm/i915/i915_dma.c      |    4 ++--
- drivers/gpu/drm/i915/i915_irq.c      |   30 +++++++++++++++++++-----------
- drivers/gpu/drm/i915/i915_reg.h      |    8 --------
- drivers/gpu/drm/i915/intel_crt.c     |    2 ++
- drivers/gpu/drm/i915/intel_display.c |   26 ++++++++++++++++++++------
- drivers/gpu/drm/i915/intel_dp.c      |    6 ++++++
- drivers/gpu/drm/i915/intel_hdmi.c    |    5 +++++
- drivers/gpu/drm/i915/intel_sdvo.c    |    3 +++
- drivers/gpu/drm/i915/intel_tv.c      |    2 ++
- 9 files changed, 59 insertions(+), 27 deletions(-)
+ drivers/gpu/drm/i915/intel_display.c |   32 ++++++++++++++++++++++++++++----
+ 1 file changed, 28 insertions(+), 4 deletions(-)
 
---- a/drivers/gpu/drm/i915/i915_dma.c
-+++ b/drivers/gpu/drm/i915/i915_dma.c
-@@ -1252,6 +1252,8 @@ static int i915_load_modeset_init(struct
- 	if (ret)
- 		goto destroy_ringbuffer;
- 
-+	intel_modeset_init(dev);
-+
- 	ret = drm_irq_install(dev);
- 	if (ret)
- 		goto destroy_ringbuffer;
-@@ -1266,8 +1268,6 @@ static int i915_load_modeset_init(struct
- 
- 	I915_WRITE(INSTPM, (1 << 5) | (1 << 21));
- 
--	intel_modeset_init(dev);
--
- 	drm_helper_initial_config(dev);
- 
- 	return 0;
---- a/drivers/gpu/drm/i915/i915_irq.c
-+++ b/drivers/gpu/drm/i915/i915_irq.c
-@@ -1044,6 +1044,10 @@ void i915_driver_irq_preinstall(struct d
- 	(void) I915_READ(IER);
- }
- 
-+/*
-+ * Must be called after intel_modeset_init or hotplug interrupts won't be
-+ * enabled correctly.
-+ */
- int i915_driver_irq_postinstall(struct drm_device *dev)
- {
- 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
-@@ -1066,19 +1070,23 @@ int i915_driver_irq_postinstall(struct d
- 	if (I915_HAS_HOTPLUG(dev)) {
- 		u32 hotplug_en = I915_READ(PORT_HOTPLUG_EN);
- 
--		/* Leave other bits alone */
--		hotplug_en |= HOTPLUG_EN_MASK;
-+		/* Note HDMI and DP share bits */
-+		if (dev_priv->hotplug_supported_mask & HDMIB_HOTPLUG_INT_STATUS)
-+			hotplug_en |= HDMIB_HOTPLUG_INT_EN;
-+		if (dev_priv->hotplug_supported_mask & HDMIC_HOTPLUG_INT_STATUS)
-+			hotplug_en |= HDMIC_HOTPLUG_INT_EN;
-+		if (dev_priv->hotplug_supported_mask & HDMID_HOTPLUG_INT_STATUS)
-+			hotplug_en |= HDMID_HOTPLUG_INT_EN;
-+		if (dev_priv->hotplug_supported_mask & SDVOC_HOTPLUG_INT_STATUS)
-+			hotplug_en |= SDVOC_HOTPLUG_INT_EN;
-+		if (dev_priv->hotplug_supported_mask & SDVOB_HOTPLUG_INT_STATUS)
-+			hotplug_en |= SDVOB_HOTPLUG_INT_EN;
-+		if (dev_priv->hotplug_supported_mask & CRT_HOTPLUG_INT_STATUS)
-+			hotplug_en |= CRT_HOTPLUG_INT_EN;
-+		/* Ignore TV since it's buggy */
-+
- 		I915_WRITE(PORT_HOTPLUG_EN, hotplug_en);
- 
--		dev_priv->hotplug_supported_mask = CRT_HOTPLUG_INT_STATUS |
--			TV_HOTPLUG_INT_STATUS | SDVOC_HOTPLUG_INT_STATUS |
--			SDVOB_HOTPLUG_INT_STATUS;
--		if (IS_G4X(dev)) {
--			dev_priv->hotplug_supported_mask |=
--				HDMIB_HOTPLUG_INT_STATUS |
--				HDMIC_HOTPLUG_INT_STATUS |
--				HDMID_HOTPLUG_INT_STATUS;
--		}
- 		/* Enable in IER... */
- 		enable_mask |= I915_DISPLAY_PORT_INTERRUPT;
- 		/* and unmask in IMR */
---- a/drivers/gpu/drm/i915/i915_reg.h
-+++ b/drivers/gpu/drm/i915/i915_reg.h
-@@ -863,14 +863,6 @@
- #define CRT_HOTPLUG_DETECT_VOLTAGE_475MV	(1 << 2)
- #define CRT_HOTPLUG_MASK			(0x3fc) /* Bits 9-2 */
- #define CRT_FORCE_HOTPLUG_MASK			0xfffffe1f
--#define HOTPLUG_EN_MASK (HDMIB_HOTPLUG_INT_EN | \
--			 HDMIC_HOTPLUG_INT_EN |	  \
--			 HDMID_HOTPLUG_INT_EN |	  \
--			 SDVOB_HOTPLUG_INT_EN |	  \
--			 SDVOC_HOTPLUG_INT_EN |	  \
--			 TV_HOTPLUG_INT_EN |	  \
--			 CRT_HOTPLUG_INT_EN)
--
- 
- #define PORT_HOTPLUG_STAT	0x61114
- #define   HDMIB_HOTPLUG_INT_STATUS		(1 << 29)
---- a/drivers/gpu/drm/i915/intel_crt.c
-+++ b/drivers/gpu/drm/i915/intel_crt.c
-@@ -576,4 +576,6 @@ void intel_crt_init(struct drm_device *d
- 	drm_connector_helper_add(connector, &intel_crt_connector_helper_funcs);
- 
- 	drm_sysfs_connector_add(connector);
-+
-+	dev_priv->hotplug_supported_mask |= CRT_HOTPLUG_INT_STATUS;
- }
 --- a/drivers/gpu/drm/i915/intel_display.c
 +++ b/drivers/gpu/drm/i915/intel_display.c
-@@ -4068,29 +4068,43 @@ static void intel_setup_outputs(struct d
- 		bool found = false;
+@@ -2556,15 +2556,39 @@ static void g4x_update_wm(struct drm_dev
+ 		   (cursor_sr << DSPFW_CURSOR_SR_SHIFT));
+ }
  
- 		if (I915_READ(SDVOB) & SDVO_DETECTED) {
-+			DRM_DEBUG_KMS("probing SDVOB\n");
- 			found = intel_sdvo_init(dev, SDVOB);
--			if (!found && SUPPORTS_INTEGRATED_HDMI(dev))
-+			if (!found && SUPPORTS_INTEGRATED_HDMI(dev)) {
-+				DRM_DEBUG_KMS("probing HDMI on SDVOB\n");
- 				intel_hdmi_init(dev, SDVOB);
-+			}
- 
--			if (!found && SUPPORTS_INTEGRATED_DP(dev))
-+			if (!found && SUPPORTS_INTEGRATED_DP(dev)) {
-+				DRM_DEBUG_KMS("probing DP_B\n");
- 				intel_dp_init(dev, DP_B);
-+			}
- 		}
- 
- 		/* Before G4X SDVOC doesn't have its own detect register */
- 
--		if (I915_READ(SDVOB) & SDVO_DETECTED)
-+		if (I915_READ(SDVOB) & SDVO_DETECTED) {
-+			DRM_DEBUG_KMS("probing SDVOC\n");
- 			found = intel_sdvo_init(dev, SDVOC);
-+		}
- 
- 		if (!found && (I915_READ(SDVOC) & SDVO_DETECTED)) {
- 
--			if (SUPPORTS_INTEGRATED_HDMI(dev))
-+			if (SUPPORTS_INTEGRATED_HDMI(dev)) {
-+				DRM_DEBUG_KMS("probing HDMI on SDVOC\n");
- 				intel_hdmi_init(dev, SDVOC);
--			if (SUPPORTS_INTEGRATED_DP(dev))
-+			}
-+			if (SUPPORTS_INTEGRATED_DP(dev)) {
-+				DRM_DEBUG_KMS("probing DP_C\n");
- 				intel_dp_init(dev, DP_C);
-+			}
- 		}
- 
--		if (SUPPORTS_INTEGRATED_DP(dev) && (I915_READ(DP_D) & DP_DETECTED))
-+		if (SUPPORTS_INTEGRATED_DP(dev) &&
-+		    (I915_READ(DP_D) & DP_DETECTED)) {
-+			DRM_DEBUG_KMS("probing DP_D\n");
- 			intel_dp_init(dev, DP_D);
-+		}
- 	} else if (IS_I8XX(dev))
- 		intel_dvo_init(dev);
- 
---- a/drivers/gpu/drm/i915/intel_dp.c
-+++ b/drivers/gpu/drm/i915/intel_dp.c
-@@ -1290,14 +1290,20 @@ intel_dp_init(struct drm_device *dev, in
- 			break;
- 		case DP_B:
- 		case PCH_DP_B:
-+			dev_priv->hotplug_supported_mask |=
-+				HDMIB_HOTPLUG_INT_STATUS;
- 			name = "DPDDC-B";
- 			break;
- 		case DP_C:
- 		case PCH_DP_C:
-+			dev_priv->hotplug_supported_mask |=
-+				HDMIC_HOTPLUG_INT_STATUS;
- 			name = "DPDDC-C";
- 			break;
- 		case DP_D:
- 		case PCH_DP_D:
-+			dev_priv->hotplug_supported_mask |=
-+				HDMID_HOTPLUG_INT_STATUS;
- 			name = "DPDDC-D";
- 			break;
- 	}
---- a/drivers/gpu/drm/i915/intel_hdmi.c
-+++ b/drivers/gpu/drm/i915/intel_hdmi.c
-@@ -254,21 +254,26 @@ void intel_hdmi_init(struct drm_device *
- 	if (sdvox_reg == SDVOB) {
- 		intel_output->clone_mask = (1 << INTEL_HDMIB_CLONE_BIT);
- 		intel_output->ddc_bus = intel_i2c_create(dev, GPIOE, "HDMIB");
-+		dev_priv->hotplug_supported_mask |= HDMIB_HOTPLUG_INT_STATUS;
- 	} else if (sdvox_reg == SDVOC) {
- 		intel_output->clone_mask = (1 << INTEL_HDMIC_CLONE_BIT);
- 		intel_output->ddc_bus = intel_i2c_create(dev, GPIOD, "HDMIC");
-+		dev_priv->hotplug_supported_mask |= HDMIC_HOTPLUG_INT_STATUS;
- 	} else if (sdvox_reg == HDMIB) {
- 		intel_output->clone_mask = (1 << INTEL_HDMID_CLONE_BIT);
- 		intel_output->ddc_bus = intel_i2c_create(dev, PCH_GPIOE,
- 								"HDMIB");
-+		dev_priv->hotplug_supported_mask |= HDMIB_HOTPLUG_INT_STATUS;
- 	} else if (sdvox_reg == HDMIC) {
- 		intel_output->clone_mask = (1 << INTEL_HDMIE_CLONE_BIT);
- 		intel_output->ddc_bus = intel_i2c_create(dev, PCH_GPIOD,
- 								"HDMIC");
-+		dev_priv->hotplug_supported_mask |= HDMIC_HOTPLUG_INT_STATUS;
- 	} else if (sdvox_reg == HDMID) {
- 		intel_output->clone_mask = (1 << INTEL_HDMIF_CLONE_BIT);
- 		intel_output->ddc_bus = intel_i2c_create(dev, PCH_GPIOF,
- 								"HDMID");
-+		dev_priv->hotplug_supported_mask |= HDMID_HOTPLUG_INT_STATUS;
- 	}
- 	if (!intel_output->ddc_bus)
- 		goto err_connector;
---- a/drivers/gpu/drm/i915/intel_sdvo.c
-+++ b/drivers/gpu/drm/i915/intel_sdvo.c
-@@ -2743,6 +2743,7 @@ static void intel_sdvo_create_enhance_pr
- 
- bool intel_sdvo_init(struct drm_device *dev, int output_device)
+-static void i965_update_wm(struct drm_device *dev, int unused, int unused2,
+-			   int unused3, int unused4)
++static void i965_update_wm(struct drm_device *dev, int planea_clock,
++			   int planeb_clock, int sr_hdisplay, int pixel_size)
  {
-+	struct drm_i915_private *dev_priv = dev->dev_private;
- 	struct drm_connector *connector;
- 	struct intel_output *intel_output;
- 	struct intel_sdvo_priv *sdvo_priv;
-@@ -2789,10 +2790,12 @@ bool intel_sdvo_init(struct drm_device *
- 		intel_output->ddc_bus = intel_i2c_create(dev, GPIOE, "SDVOB DDC BUS");
- 		sdvo_priv->analog_ddc_bus = intel_i2c_create(dev, GPIOA,
- 						"SDVOB/VGA DDC BUS");
-+		dev_priv->hotplug_supported_mask |= SDVOB_HOTPLUG_INT_STATUS;
- 	} else {
- 		intel_output->ddc_bus = intel_i2c_create(dev, GPIOE, "SDVOC DDC BUS");
- 		sdvo_priv->analog_ddc_bus = intel_i2c_create(dev, GPIOA,
- 						"SDVOC/VGA DDC BUS");
-+		dev_priv->hotplug_supported_mask |= SDVOC_HOTPLUG_INT_STATUS;
- 	}
+ 	struct drm_i915_private *dev_priv = dev->dev_private;
++	unsigned long line_time_us;
++	int sr_clock, sr_entries, srwm = 1;
  
- 	if (intel_output->ddc_bus == NULL)
---- a/drivers/gpu/drm/i915/intel_tv.c
-+++ b/drivers/gpu/drm/i915/intel_tv.c
-@@ -1801,6 +1801,8 @@ intel_tv_init(struct drm_device *dev)
- 	drm_connector_attach_property(connector,
- 				   dev->mode_config.tv_bottom_margin_property,
- 				   tv_priv->margin[TV_MARGIN_BOTTOM]);
+-	DRM_DEBUG("Setting FIFO watermarks - A: 8, B: 8, C: 8, SR 8\n");
++	/* Calc sr entries for one plane configs */
++	if (sr_hdisplay && (!planea_clock || !planeb_clock)) {
++		/* self-refresh has much higher latency */
++		const static int sr_latency_ns = 12000;
 +
-+	dev_priv->hotplug_supported_mask |= TV_HOTPLUG_INT_STATUS;
- out:
- 	drm_sysfs_connector_add(connector);
- }
-From c566ec49159b806db95a90fd8f37448376cd0ad2 Mon Sep 17 00:00:00 2001
-From: Zhenyu Wang <zhenyuw@linux.intel.com>
-Date: Thu, 17 Dec 2009 16:12:56 +0800
-Subject: drm/i915: Reload hangcheck timer too for Ironlake
-
-From: Zhenyu Wang <zhenyuw@linux.intel.com>
-
-commit c566ec49159b806db95a90fd8f37448376cd0ad2 upstream.
-
-Make sure hangcheck timer won't beat us unexpectedly on Ironlake.
-
-Signed-off-by: Zhenyu Wang <zhenyuw@linux.intel.com>
-Signed-off-by: Eric Anholt <eric@anholt.net>
-Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
-
----
- drivers/gpu/drm/i915/i915_irq.c |    2 ++
- 1 file changed, 2 insertions(+)
-
---- a/drivers/gpu/drm/i915/i915_irq.c
-+++ b/drivers/gpu/drm/i915/i915_irq.c
-@@ -282,6 +282,8 @@ irqreturn_t igdng_irq_handler(struct drm
- 		dev_priv->mm.irq_gem_seqno = seqno;
- 		trace_i915_gem_request_complete(dev, seqno);
- 		DRM_WAKEUP(&dev_priv->irq_queue);
-+		dev_priv->hangcheck_count = 0;
-+		mod_timer(&dev_priv->hangcheck_timer, jiffies + DRM_I915_HANGCHECK_PERIOD);
- 	}
- 
- 	I915_WRITE(GTIIR, gt_iir);
-From 4bdadb9785696439c6e2b3efe34aa76df1149c83 Mon Sep 17 00:00:00 2001
-From: Chris Wilson <chris@chris-wilson.co.uk>
-Date: Wed, 27 Jan 2010 13:36:32 +0000
-Subject: drm/i915: Selectively enable self-reclaim
-
-From: Chris Wilson <chris@chris-wilson.co.uk>
-
-commit 4bdadb9785696439c6e2b3efe34aa76df1149c83 upstream.
-
-Having missed the ENOMEM return via i915_gem_fault(), there are probably
-other paths that I also missed. By not enabling NORETRY by default these
-paths can run the shrinker and take memory from the system (but not from
-our own inactive lists because our shrinker can not run whilst we hold
-the struct mutex) and this may allow the system to survive a little longer
-whilst our drivers consume all available memory.
-
-References:
-  OOM killer unexpectedly called with kernel 2.6.32
-  http://bugzilla.kernel.org/show_bug.cgi?id=14933
-
-v2: Pass gfp into page mapping.
-v3: Use new read_cache_page_gfp() instead of open-coding.
-
-Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
-Cc: KOSAKI Motohiro <kosaki.motohiro@jp.fujitsu.com>
-Cc: Hugh Dickins <hugh.dickins@tiscali.co.uk>
-Cc: Jesse Barnes <jbarnes@virtuousgeek.org>
-Cc: Eric Anholt <eric@anholt.net>
-Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
-Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
-
----
- drivers/gpu/drm/drm_gem.c           |   13 --------
- drivers/gpu/drm/i915/i915_debugfs.c |    2 -
- drivers/gpu/drm/i915/i915_drv.h     |    2 -
- drivers/gpu/drm/i915/i915_gem.c     |   54 +++++++++++-------------------------
- 4 files changed, 19 insertions(+), 52 deletions(-)
-
---- a/drivers/gpu/drm/drm_gem.c
-+++ b/drivers/gpu/drm/drm_gem.c
-@@ -142,19 +142,6 @@ drm_gem_object_alloc(struct drm_device *
- 	if (IS_ERR(obj->filp))
- 		goto free;
- 
--	/* Basically we want to disable the OOM killer and handle ENOMEM
--	 * ourselves by sacrificing pages from cached buffers.
--	 * XXX shmem_file_[gs]et_gfp_mask()
--	 */
--	mapping_set_gfp_mask(obj->filp->f_path.dentry->d_inode->i_mapping,
--			     GFP_HIGHUSER |
--			     __GFP_COLD |
--			     __GFP_FS |
--			     __GFP_RECLAIMABLE |
--			     __GFP_NORETRY |
--			     __GFP_NOWARN |
--			     __GFP_NOMEMALLOC);
--
- 	kref_init(&obj->refcount);
- 	kref_init(&obj->handlecount);
- 	obj->size = size;
---- a/drivers/gpu/drm/i915/i915_debugfs.c
-+++ b/drivers/gpu/drm/i915/i915_debugfs.c
-@@ -288,7 +288,7 @@ static int i915_batchbuffer_info(struct 
- 	list_for_each_entry(obj_priv, &dev_priv->mm.active_list, list) {
- 		obj = obj_priv->obj;
- 		if (obj->read_domains & I915_GEM_DOMAIN_COMMAND) {
--		    ret = i915_gem_object_get_pages(obj);
-+		    ret = i915_gem_object_get_pages(obj, 0);
- 		    if (ret) {
- 			    DRM_ERROR("Failed to get pages: %d\n", ret);
- 			    spin_unlock(&dev_priv->mm.active_list_lock);
---- a/drivers/gpu/drm/i915/i915_drv.h
-+++ b/drivers/gpu/drm/i915/i915_drv.h
-@@ -822,7 +822,7 @@ int i915_gem_attach_phys_object(struct d
- void i915_gem_detach_phys_object(struct drm_device *dev,
- 				 struct drm_gem_object *obj);
- void i915_gem_free_all_phys_object(struct drm_device *dev);
--int i915_gem_object_get_pages(struct drm_gem_object *obj);
-+int i915_gem_object_get_pages(struct drm_gem_object *obj, gfp_t gfpmask);
- void i915_gem_object_put_pages(struct drm_gem_object *obj);
- void i915_gem_release(struct drm_device * dev, struct drm_file *file_priv);
- 
---- a/drivers/gpu/drm/i915/i915_gem.c
-+++ b/drivers/gpu/drm/i915/i915_gem.c
-@@ -277,7 +277,7 @@ i915_gem_shmem_pread_fast(struct drm_dev
- 
- 	mutex_lock(&dev->struct_mutex);
- 
--	ret = i915_gem_object_get_pages(obj);
-+	ret = i915_gem_object_get_pages(obj, 0);
- 	if (ret != 0)
- 		goto fail_unlock;
- 
-@@ -321,40 +321,24 @@ fail_unlock:
- 	return ret;
- }
- 
--static inline gfp_t
--i915_gem_object_get_page_gfp_mask (struct drm_gem_object *obj)
--{
--	return mapping_gfp_mask(obj->filp->f_path.dentry->d_inode->i_mapping);
--}
--
--static inline void
--i915_gem_object_set_page_gfp_mask (struct drm_gem_object *obj, gfp_t gfp)
--{
--	mapping_set_gfp_mask(obj->filp->f_path.dentry->d_inode->i_mapping, gfp);
--}
--
- static int
- i915_gem_object_get_pages_or_evict(struct drm_gem_object *obj)
- {
- 	int ret;
- 
--	ret = i915_gem_object_get_pages(obj);
-+	ret = i915_gem_object_get_pages(obj, __GFP_NORETRY | __GFP_NOWARN);
- 
- 	/* If we've insufficient memory to map in the pages, attempt
- 	 * to make some space by throwing out some old buffers.
- 	 */
- 	if (ret == -ENOMEM) {
- 		struct drm_device *dev = obj->dev;
--		gfp_t gfp;
- 
- 		ret = i915_gem_evict_something(dev, obj->size);
- 		if (ret)
- 			return ret;
- 
--		gfp = i915_gem_object_get_page_gfp_mask(obj);
--		i915_gem_object_set_page_gfp_mask(obj, gfp & ~__GFP_NORETRY);
--		ret = i915_gem_object_get_pages(obj);
--		i915_gem_object_set_page_gfp_mask (obj, gfp);
-+		ret = i915_gem_object_get_pages(obj, 0);
- 	}
- 
- 	return ret;
-@@ -790,7 +774,7 @@ i915_gem_shmem_pwrite_fast(struct drm_de
- 
- 	mutex_lock(&dev->struct_mutex);
- 
--	ret = i915_gem_object_get_pages(obj);
-+	ret = i915_gem_object_get_pages(obj, 0);
- 	if (ret != 0)
- 		goto fail_unlock;
- 
-@@ -2219,7 +2203,8 @@ i915_gem_evict_something(struct drm_devi
- }
- 
- int
--i915_gem_object_get_pages(struct drm_gem_object *obj)
-+i915_gem_object_get_pages(struct drm_gem_object *obj,
-+			  gfp_t gfpmask)
- {
- 	struct drm_i915_gem_object *obj_priv = obj->driver_private;
- 	int page_count, i;
-@@ -2245,7 +2230,10 @@ i915_gem_object_get_pages(struct drm_gem
- 	inode = obj->filp->f_path.dentry->d_inode;
- 	mapping = inode->i_mapping;
- 	for (i = 0; i < page_count; i++) {
--		page = read_mapping_page(mapping, i, NULL);
-+		page = read_cache_page_gfp(mapping, i,
-+					   mapping_gfp_mask (mapping) |
-+					   __GFP_COLD |
-+					   gfpmask);
- 		if (IS_ERR(page)) {
- 			ret = PTR_ERR(page);
- 			i915_gem_object_put_pages(obj);
-@@ -2568,7 +2556,7 @@ i915_gem_object_bind_to_gtt(struct drm_g
- 	drm_i915_private_t *dev_priv = dev->dev_private;
- 	struct drm_i915_gem_object *obj_priv = obj->driver_private;
- 	struct drm_mm_node *free_space;
--	bool retry_alloc = false;
-+	gfp_t gfpmask =  __GFP_NORETRY | __GFP_NOWARN;
- 	int ret;
- 
- 	if (obj_priv->madv != I915_MADV_WILLNEED) {
-@@ -2612,15 +2600,7 @@ i915_gem_object_bind_to_gtt(struct drm_g
- 	DRM_INFO("Binding object of size %zd at 0x%08x\n",
- 		 obj->size, obj_priv->gtt_offset);
- #endif
--	if (retry_alloc) {
--		i915_gem_object_set_page_gfp_mask (obj,
--						   i915_gem_object_get_page_gfp_mask (obj) & ~__GFP_NORETRY);
--	}
--	ret = i915_gem_object_get_pages(obj);
--	if (retry_alloc) {
--		i915_gem_object_set_page_gfp_mask (obj,
--						   i915_gem_object_get_page_gfp_mask (obj) | __GFP_NORETRY);
--	}
-+	ret = i915_gem_object_get_pages(obj, gfpmask);
- 	if (ret) {
- 		drm_mm_put_block(obj_priv->gtt_space);
- 		obj_priv->gtt_space = NULL;
-@@ -2630,9 +2610,9 @@ i915_gem_object_bind_to_gtt(struct drm_g
- 			ret = i915_gem_evict_something(dev, obj->size);
- 			if (ret) {
- 				/* now try to shrink everyone else */
--				if (! retry_alloc) {
--				    retry_alloc = true;
--				    goto search_free;
-+				if (gfpmask) {
-+					gfpmask = 0;
-+					goto search_free;
- 				}
- 
- 				return ret;
-@@ -4695,7 +4675,7 @@ void i915_gem_detach_phys_object(struct 
- 	if (!obj_priv->phys_obj)
- 		return;
- 
--	ret = i915_gem_object_get_pages(obj);
-+	ret = i915_gem_object_get_pages(obj, 0);
- 	if (ret)
- 		goto out;
- 
-@@ -4753,7 +4733,7 @@ i915_gem_attach_phys_object(struct drm_d
- 	obj_priv->phys_obj = dev_priv->mm.phys_objs[id - 1];
- 	obj_priv->phys_obj->cur_obj = obj;
- 
--	ret = i915_gem_object_get_pages(obj);
-+	ret = i915_gem_object_get_pages(obj, 0);
- 	if (ret) {
- 		DRM_ERROR("failed to get page list\n");
- 		goto out;
-From c7c85101afd0cb8ce497456d12ee1cad4aad152f Mon Sep 17 00:00:00 2001
-From: Zou Nan hai <Nanhai.zou@intel.com>
-Date: Fri, 15 Jan 2010 10:29:06 +0800
-Subject: drm/i915: remove loop in Ironlake interrupt handler
-
-From: Zou Nan hai <Nanhai.zou@intel.com>
-
-commit c7c85101afd0cb8ce497456d12ee1cad4aad152f upstream.
-
-[[ revert in fedora, conflicts with drm update ]]
-
-On Ironlake, there is an interrupt master control bit. With the bit
-disabled before clearing IIR, we do not need to handle extra interrupt
-in a loop. This patch removes the loop in Ironlake interrupt handler.
-It fixed irq lost issue on some Ironlake platforms.
-
-Signed-off-by: Zou Nan hai <Nanhai.zou@intel.com>
-Signed-off-by: Zhenyu Wang <zhenyuw@linux.intel.com>
-Signed-off-by: Eric Anholt <eric@anholt.net>
-Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
-
-
----
- drivers/gpu/drm/i915/i915_irq.c |   43 ++++++++++++++++------------------------
- 1 file changed, 18 insertions(+), 25 deletions(-)
-
---- a/drivers/gpu/drm/i915/i915_irq.c
-+++ b/drivers/gpu/drm/i915/i915_irq.c
-@@ -255,7 +255,6 @@ irqreturn_t igdng_irq_handler(struct drm
- 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
- 	int ret = IRQ_NONE;
- 	u32 de_iir, gt_iir, de_ier;
--	u32 new_de_iir, new_gt_iir;
- 	struct drm_i915_master_private *master_priv;
- 
- 	/* disable master interrupt before clearing iir  */
-@@ -266,35 +265,29 @@ irqreturn_t igdng_irq_handler(struct drm
- 	de_iir = I915_READ(DEIIR);
- 	gt_iir = I915_READ(GTIIR);
- 
--	for (;;) {
--		if (de_iir == 0 && gt_iir == 0)
--			break;
--
--		ret = IRQ_HANDLED;
--
--		I915_WRITE(DEIIR, de_iir);
--		new_de_iir = I915_READ(DEIIR);
--		I915_WRITE(GTIIR, gt_iir);
--		new_gt_iir = I915_READ(GTIIR);
-+	if (de_iir == 0 && gt_iir == 0)
-+		goto done;
- 
--		if (dev->primary->master) {
--			master_priv = dev->primary->master->driver_priv;
--			if (master_priv->sarea_priv)
--				master_priv->sarea_priv->last_dispatch =
--					READ_BREADCRUMB(dev_priv);
--		}
-+	ret = IRQ_HANDLED;
- 
--		if (gt_iir & GT_USER_INTERRUPT) {
--			u32 seqno = i915_get_gem_seqno(dev);
--			dev_priv->mm.irq_gem_seqno = seqno;
--			trace_i915_gem_request_complete(dev, seqno);
--			DRM_WAKEUP(&dev_priv->irq_queue);
--		}
-+	if (dev->primary->master) {
-+		master_priv = dev->primary->master->driver_priv;
-+		if (master_priv->sarea_priv)
-+			master_priv->sarea_priv->last_dispatch =
-+				READ_BREADCRUMB(dev_priv);
++		sr_clock = planea_clock ? planea_clock : planeb_clock;
++		line_time_us = ((sr_hdisplay * 1000) / sr_clock);
++
++		/* Use ns/us then divide to preserve precision */
++		sr_entries = (((sr_latency_ns / line_time_us) + 1) *
++			      pixel_size * sr_hdisplay) / 1000;
++		sr_entries = roundup(sr_entries / I915_FIFO_LINE_SIZE, 1);
++		DRM_DEBUG("self-refresh entries: %d\n", sr_entries);
++		srwm = I945_FIFO_SIZE - sr_entries;
++		if (srwm < 0)
++			srwm = 1;
++		srwm &= 0x3f;
++		I915_WRITE(FW_BLC_SELF, FW_BLC_SELF_EN);
 +	}
- 
--		de_iir = new_de_iir;
--		gt_iir = new_gt_iir;
-+	if (gt_iir & GT_USER_INTERRUPT) {
-+		u32 seqno = i915_get_gem_seqno(dev);
-+		dev_priv->mm.irq_gem_seqno = seqno;
-+		trace_i915_gem_request_complete(dev, seqno);
-+		DRM_WAKEUP(&dev_priv->irq_queue);
- 	}
- 
-+	I915_WRITE(GTIIR, gt_iir);
-+	I915_WRITE(DEIIR, de_iir);
 +
-+done:
- 	I915_WRITE(DEIER, de_ier);
- 	(void)I915_READ(DEIER);
++	DRM_DEBUG_KMS("Setting FIFO watermarks - A: 8, B: 8, C: 8, SR %d\n",
++		      srwm);
  
+ 	/* 965 has limitations... */
+-	I915_WRITE(DSPFW1, (8 << 16) | (8 << 8) | (8 << 0));
++	I915_WRITE(DSPFW1, (srwm << DSPFW_SR_SHIFT) | (8 << 16) | (8 << 8) |
++		   (8 << 0));
+ 	I915_WRITE(DSPFW2, (8 << 8) | (8 << 0));
+ }
+ 
+From eceb784cec4dc0fcc2993d9ee4a7c0d111ada80a Mon Sep 17 00:00:00 2001
+From: Zhenyu Wang <zhenyuw@linux.intel.com>
+Date: Mon, 25 Jan 2010 10:35:16 +0800
+Subject: drm/i915: disable hotplug detect before Ironlake CRT detect
+
+From: Zhenyu Wang <zhenyuw@linux.intel.com>
+
+commit eceb784cec4dc0fcc2993d9ee4a7c0d111ada80a upstream.
+
+This tries to fix CRT detect loop hang seen on some Ironlake form
+factor, to clear up hotplug detect state before taking CRT detect
+to make sure next hotplug detect cycle is consistent.
+
+Signed-off-by: Zhenyu Wang <zhenyuw@linux.intel.com>
+Signed-off-by: Eric Anholt <eric@anholt.net>
+Signed-off-by: Greg Kroah-Hartman <gregkh@suse.de>
+
+---
+ drivers/gpu/drm/i915/intel_crt.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/drivers/gpu/drm/i915/intel_crt.c
++++ b/drivers/gpu/drm/i915/intel_crt.c
+@@ -185,6 +185,9 @@ static bool intel_igdng_crt_detect_hotpl
+ 	adpa = I915_READ(PCH_ADPA);
+ 
+ 	adpa &= ~ADPA_CRT_HOTPLUG_MASK;
++	/* disable HPD first */
++	I915_WRITE(PCH_ADPA, adpa);
++	(void)I915_READ(PCH_ADPA);
+ 
+ 	adpa |= (ADPA_CRT_HOTPLUG_PERIOD_128 |
+ 			ADPA_CRT_HOTPLUG_WARMUP_10MS |

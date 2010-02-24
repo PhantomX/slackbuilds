@@ -190,6 +190,9 @@ ApplyPatch linux-2.6.30-hush-rom-warning.patch.gz
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 
+# don't autoload viafb
+ApplyPatch viafb-neuter-device-table.patch
+
 # Changes to upstream defaults.
 
 # Report meaningful values for MCS rates through wireless extensions
@@ -223,15 +226,11 @@ ApplyPatch linux-2.6-x86-64-fbdev-primary.patch
 ApplyPatch kms-offb-handoff.patch
 # Nouveau DRM + drm fixes
 ApplyPatch drm-upgrayedd.patch
-ApplyPatch drm-fixes.patch
 #ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-intel-no-tv-hotplug-interrupts-dammit.patch
 ApplyPatch drm-nouveau-g80-ctxprog.patch
-ApplyPatch drm-nouveau-shared-fb.patch
 ApplyPatch drm-nouveau-tvout-disable.patch
 ApplyPatch drm-nouveau-safetile-getparam.patch
-ApplyPatch drm-nouveau-nvac-noaccel.patch
 ApplyPatch drm-nouveau-kconfig.patch
 ApplyPatch drm-nouveau-update.patch
 
@@ -252,15 +251,14 @@ ApplyPatch linux-2.6-v4l-dvb-rebase-gspca-to-latest.patch
 # Patches headed upstream
 ApplyPatch linux-2.6-rfkill-all.patch
 
+ApplyPatch add-appleir-usb-driver.patch
+
 # Patches for -stable
-ApplyPatch wmi-free-the-allocated-acpi-objects.patch
-ApplyPatch wmi-check-wmi-get-event-data-return-value.patch
 
-ApplyPatch fix-conntrack-bug-with-namespaces.patch
-ApplyPatch prevent-runtime-conntrack-changes.patch
-
-ApplyPatch fix-crash-with-sys_move_pages.patch
 ApplyPatch fix-ima-null-ptr-deref.patch
-ApplyPatch futex-handle-user-space-corruption-gracefully.patch
+
+ApplyPatch fix-abrtd.patch
+ApplyPatch coredump-uid-pipe-check.patch
+ApplyPatch vgaarb-fix-userspace-ptr-deref.patch
 
 set +e

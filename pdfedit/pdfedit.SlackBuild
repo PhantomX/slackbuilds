@@ -31,6 +31,9 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
 
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
 if [ ! -d ${TMP} ]; then
@@ -40,8 +43,8 @@ fi
 NAME=pdfedit
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.4.1}
-if [ "${SB_NATIVE}" = "NO" ] ;then
+VERSION=${VERSION:-0.4.3}
+if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
   ARCH=${ARCH:-i686}
@@ -70,9 +73,11 @@ SRCARCHIVE=${SRCDIR}.tar.bz2
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-#DL_URL="http://dl.sf.net/sourceforge/${NAME}/${SRCARCHIVE}"
-DL_URL="http://prdownloads.sourceforge.net/${NAME}/${SRCARCHIVE}"
-#DL_URL="http://download.sf.net/${NAME}/${SRCARCHIVE}"
+SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
+DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -86,10 +91,11 @@ else
                  ;;
   esac
 fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
 fi
 
 if [ -d ${PKG} ]; then
@@ -98,47 +104,53 @@ if [ -d ${PKG} ]; then
 fi
 mkdir -p ${PKG}
 
+if [ -f /etc/profile.d/qt3.sh ] ;then
+  unset QTDIR QTINC QTLIB
+  source /etc/profile.d/qt3.sh
+else
+  export QTDIR=/opt/kde3/lib${LIBDIRSUFFIX}/qt3
+fi
+
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-fix-includes.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
-if [ "${SB_QT4}" = "YES" ] ;then
-  if [ -d /usr/lib/qt4 ]; then
-    export QTDIR=/usr/lib/qt4
-  fi
-  SB_QT4OPTS="--disable-qt3"
-else
-  if [ -d /usr/lib/qt ]; then
-    export QTDIR=/usr/lib/qt
-  fi
-  SB_QT4OPTS="--enable-qt3"
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
 fi
+
+# fix paths to be relative to rpm build root
+sed -i 's/\(.path\s\+= \)/\1$(QMAKE_DESTDIR)\//' src/gui/pdfedit.pro
 
 export QMAKESPEC=linux-g++
 
-OPTIM="${SLKCFLAGS}" \
+autoconf || exit 1
+
+( set -e
+
+unset ARCH
+
+CFLAGS="${SLKCFLAGS}" \
+CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
   --localstatedir=/var/lib \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
-  --enable-gui ${SB_QT4OPTS} \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+  --enable-gui \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux
 
-make -j${NJOBS} || make || exit 1
-make install INSTALL_ROOT=${PKG} || exit 1
+make -j${NJOBS} || make
+make install QMAKE_DESTDIR=${PKG}
+
+) || exit 1
 
 # rebase user docs from ./gui/... and ./gui/menuAndToolbarsFun...
 # to ./ for images
@@ -152,7 +164,6 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 mkdir -p ${PKG}/usr/share/applications
 cat > ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
 [Desktop Entry]
-Encoding=UTF-8
 Name=PDFedit
 GenericName=PDF Editor
 Comment=Edit .pdf files
@@ -165,7 +176,14 @@ EOF
 
 mkdir -p ${PKG}/usr/share/icons/hicolor/scalable/apps
 install -p -m 0644 src/gui/icon/${NAME}_icon.svg \
-                   ${PKG}/usr/share/icons/hicolor/scalable/apps/${NAME}.svg
+  ${PKG}/usr/share/icons/hicolor/scalable/apps/${NAME}.svg || exit 1
+
+for res in 16 32 48 64 ;do
+  dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
+  mkdir -p ${dir}
+  install -pm 0644 src/gui/icon/pdfedit_icon_${res}.png \
+    ${dir}/${NAME}.png || exit 1
+done
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -200,14 +218,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-      rm -f dir
-      gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -215,16 +225,16 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
-# Replicate slackbuild and patches
-mkdir -p ${SBDIR}
-install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-               ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
-install -m0755 ${CWD}/${NAME}.SlackBuild \
-               ${SBDIR}/${NAME}.SlackBuild
-sed -i "/^VERSION=/s/:-.*}/:-$VERSION}/
-        /^BUILD=/s/:-.*}/:-$BUILD}/
-        /^  ARCH=/s/:-.*}/:-$ARCH}/
-        " ${SBDIR}/${NAME}.SlackBuild
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+                 ${CWD}/apply-patches.sh ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+                 ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches
+fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution

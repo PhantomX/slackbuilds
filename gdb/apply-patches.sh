@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -e
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
@@ -356,4 +356,4 @@ ApplyPatch gdb-bitfield-check_typedef.patch.gz
 # Fix related_breakpoint stale ref crash.
 ApplyPatch gdb-stale-related_breakpoint.patch.gz
 
-set +e
+set +e +o pipefail

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -e
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
@@ -261,4 +261,4 @@ ApplyPatch fix-abrtd.patch
 ApplyPatch coredump-uid-pipe-check.patch
 ApplyPatch vgaarb-fix-userspace-ptr-deref.patch
 
-set +e
+set +e +o pipefail

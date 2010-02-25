@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -e
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
@@ -79,4 +79,4 @@ ApplyPatch qt-cups-1.patch.gz
   done
 )
 
-set +e
+set +e +o pipefail

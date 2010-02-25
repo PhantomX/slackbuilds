@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -e
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
@@ -80,4 +80,4 @@ zcat ${SB_PATCHDIR}/${NAME}-source-CVE-2007-0650.patch.gz | patch -p0 -E --backu
 # 1000-: Japanese pTeX
 zcat ${SB_PATCHDIR}/${NAME}-2007-fmtutil-ptex.patch.gz | patch -p1 -E --backup --verbose
 
-set +e
+set +e +o pipefail

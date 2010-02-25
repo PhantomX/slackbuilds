@@ -1,6 +1,6 @@
   #!/bin/sh
 
-set -e
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
@@ -73,4 +73,4 @@ ApplyPatch perl-update-Module-Build.patch
 #... also update version number of Compress::Zlib
 ApplyPatch perl-update-Parse-CPAN-Meta.patch
 
-set +e
+set +e +o pipefail

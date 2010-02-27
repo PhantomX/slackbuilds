@@ -43,7 +43,7 @@ fi
 NAME=dansguardian
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.8.0.6}
+VERSION=${VERSION:-2.10.1.1}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -65,13 +65,19 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
+grep --quiet '^dansguardian:' /etc/group && SB_HGROUP=1
+grep --quiet '^dansguardian:' /etc/passwd && SB_HUSER=1
+
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.source.tar.gz
+SRCARCHIVE=${SRCDIR}.tar.gz
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://dansguardian.org/downloads/2/Stable/${SRCARCHIVE}"
 #DL_URL="http://usmirror.dansguardian.org/downloads/2/Stable/${SRCARCHIVE}"
+
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -85,10 +91,11 @@ else
                  ;;
   esac
 fi
-
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
 fi
 
 if [ -d ${PKG} ]; then
@@ -99,53 +106,133 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
-sed -i -e '/chow/d' autoconf/linux.in || exit 1
-
+CFLAGS="${SLKCFLAGS}" \
+CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
-  --prefix="" \
-  --installprefix=${PKG} \
-  --sysvdir=/etc/rc.d/ \
-  --runas_usr=squid \
-  --runas_grp=squid || exit 1
+  --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --sysconfdir=/etc \
+  --localstatedir=/var \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --docdir=/usr/doc/${NAME}-${VERSION} \
+  --enable-clamav \
+  --enable-clamd \
+  --enable-icap \
+  --enable-kavd \
+  --enable-commandline \
+  --enable-trickledm \
+  --enable-ntlm \
+  --enable-email \
+  --with-proxyuser=dansguardian \
+  --with-proxygroup=dansguardian \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+
+make -j${NJOBS} || make || exit 1
+make install DESTDIR=${PKG} || exit 1
+
+mkdir -p ${PKG}/var/log/${NAME}
+
+rm -rf ${PKG}/usr/share/${NAME}/scripts
+chmod 755 ${PKG}/usr/share/${NAME}/${NAME}.pl
 
 mkdir -p ${PKG}/etc/logrotate.d
+cat > ${PKG}/etc/logrotate.d/${NAME} <<'EOF'
+/var/log/dansguardian/access.log {
+  rotate 4
+  weekly
+  sharedscripts
+  postrotate
+    /bin/kill -HUP `cat /var/run/dansguardian.pid 2>/dev/null` 2> /dev/null || true
+  endscript
+}
+EOF
 
-make -j${NJOBS} OPTIMISE="${SLKCFLAGS}" || exit 1
-make install || exit 1
+mkdir -p ${PKG}/etc/httpd/extra
+cat > ${PKG}/etc/httpd/extra/${NAME}.conf.new <<'EOF'
+ScriptAlias /dansguardian /usr/share/dansguardian/dansguardian.pl
 
-rm -rf ${PKG}/etc/rc.d*
-
-sed -i -e "/^\/etc\/rc.d/s|${NAME}|rc.${NAME}|g" \
-           ${PKG}/etc/${NAME}/logrotation || exit 1
+<Location /usr/share/dansguardian>
+	order deny,allow
+	deny from all
+	allow from 127.0.0.1
+</Location>
+EOF
 
 ( cd ${PKG}/etc/${NAME} || exit 1
-  for conf in [b,c,d,e,f,g,w]* pics ; do
+  for conf in [b,c,d,e,f,g,w]*.conf ; do
     mv ${conf} ${conf}.new || exit 1
   done
-  find phraselists/ -type f -exec mv {} {}.new ';'
+  find authplugins/ contentscanners/ downloadmanagers/ lists/ -type f -exec mv {} {}.new ';'
 ) || exit 1
 
 # Startup scripts.
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.${NAME}.gz > \
-     ${PKG}/etc/rc.d/rc.${NAME} || exit 1
+install -pm0755 ${CWD}/rc.${NAME} \
+  ${PKG}/etc/rc.d/rc.${NAME} || exit 1
 chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}
 
 mkdir -p ${PKG}/var/log/setup
 zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
     ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}
+
+cat > ${PKG}/etc/rc.d/rc.${NAME}-clamd <<'EOF'
+#!/bin/bash
+#
+# description: The clamd server running for dansguardian
+
+CLAMD_SERVICE=dansguardian
+. /usr/share/clamav/clamd-wrapper
+EOF
+chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}-clamd.new
+
+# for clamav integration
+mkdir -p ${PKG}/var/run/${NAME}
+chmod 0700 ${PKG}/var/run/${NAME}
+touch ${PKG}/var/run/${NAME}/clamd.sock
+ln -s clamd ${PKG}/usr/bin/clamd.${NAME}
+
+mkdir -p ${PKG}/etc/clamd.d
+cat > ${PKG}/etc/clamd.d/${NAME}.conf.new  <<'EOF'
+# Use system logger.
+LogSyslog yes
+
+# Specify the type of syslog messages - please refer to 'man syslog'
+# for facility names.
+LogFacility LOG_DAEMON
+
+# This option allows you to save a process identifier of the listening
+# daemon (main thread).
+PidFile /var/run/dansguardian/clamd.pid
+
+# Remove stale socket after unclean shutdown.
+# Default: disabled
+FixStaleSocket yes
+
+# Run as a selected user (clamd must be started by root).
+User dansguardian
+
+# Path to a local socket file the daemon will listen on.
+LocalSocket /var/run/dansguardian/clamd.sock
+EOF
+
+mkdir -p ${PKG}/etc/default
+cat > ${PKG}/etc/default/clamd.${NAME} <<EOF
+CLAMD_CONFIGFILE=/etc/clamd.d/dansguardian.conf
+CLAMD_SOCKET=/var/run/dansguardian/clamd.sock
+CLAMD_OPTIONS=
+EOF
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -179,19 +266,28 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-    rm -f dir
-    gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<'EOF'
+function free_user_id {
+  # Find a free user-ID >= 100 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
 # Figure out our root directory
 ROOTDIR=$(pwd)
 unset CHROOT
@@ -200,21 +296,41 @@ if test "${ROOTDIR}" != "/"; then
   ROOTDIR="${ROOTDIR}/"
 fi
 
-GROUP_ID=23
 # Set up group.
-if ! grep --quiet '^squid:' etc/group ;then
+if ! grep --quiet '^dansguardian:' etc/group ;then
   ${CHROOT} /usr/sbin/groupadd \
-            -g ${GROUP_ID} \
-            squid 2> /dev/null
+            -g $(free_group_id) \
+            dansguardian 2> /dev/null
 fi
-# Set up user.
-if ! grep --quiet '^squid:' etc/passwd ;then
-  ${CHROOT} /usr/sbin/useradd \
-            -u ${GROUP_ID} \
-            -g squid \
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^dansguardian:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/usr/share/dansguardian:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  if test "${OLD_USER}" = "dansguardian"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+            -d '/usr/share/dansguardian' \
+            -u $(free_user_id) \
             -s /bin/false \
-            -d '/var/spool/squid' \
-            squid 2> /dev/null
+            -g dansguardian \
+            ${OLD_USER} 2> /dev/null
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+            -c 'DansGuardian web content filter' \
+            -u $(free_user_id) \
+            -g dansguardian \
+            -s /bin/false \
+            -d '/usr/share/dansguardian' \
+            dansguardian 2> /dev/null
 fi
 
 EOF
@@ -239,28 +355,31 @@ EOF
   find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
   echo '# Fix permissions' >> ${PKG}/install/doinst.sh
-  echo '${CHROOT} /bin/chown -R squid.squid var/log/dansguardian' >> ${PKG}/install/doinst.sh
+  echo '${CHROOT} /bin/chown dansguardian.dansguardian /var/log/dansguardian' >> ${PKG}/install/doinst.sh
+  echo '${CHROOT} /bin/chown dansguardian.dansguardian /var/run/dansguardian' >> ${PKG}/install/doinst.sh
 )
-
-chown -R squid:squid /home/phantomx/slackbuilds/dansguardian/aaa/var/log/dansguardian/
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/rc.${NAME}.gz ${CWD}/setup.*.rc${NAME}.gz ${SBDIR}/
+                  ${CWD}/apply-patches.sh ${CWD}/rc.${NAME} ${CWD}/setup.*.rc${NAME}.gz \
+                  ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.gz \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown dansguardian.dansguardian ./var/{log,run}/dansguardian ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

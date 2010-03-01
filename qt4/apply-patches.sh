@@ -65,7 +65,12 @@ zcat ${SB_PATCHDIR}/qt-x11-opensource-src-4.5.0-fix-qatomic-inline-asm.patch.gz 
 # fix invalid assumptions about mysql_config --libs
 # http://bugzilla.redhat.com/440673
 zcat ${SB_PATCHDIR}/qt-x11-opensource-src-4.5.1-mysql_config.patch.gz | patch -p1 -E --verbose
-ApplyPatch qt-cups-1.patch.gz
+# http://bugs.kde.org/show_bug.cgi?id=180051#c22
+zcat ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.6.2-cups.patch.gz
+
+zcat ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.6.0-fix-str-fmt.patch.gz | patch -p0 -E --verbose
+zcat ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz | patch -p1 -E --verbose
+zcat ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.6.1-use_ft_glyph_embolden_to_fake_bold.patch.gz | patch -p1 -E --verbose
 
 # security patches
 

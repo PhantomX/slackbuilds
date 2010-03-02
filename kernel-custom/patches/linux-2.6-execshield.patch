@@ -1,5 +1,36 @@
+From f19502d20f5c1e59244fa361496371f320dff55e Mon Sep 17 00:00:00 2001
+From: Kyle McMartin <kyle@ihatethathostname.lab.bos.redhat.com>
+Date: Mon, 18 Jan 2010 14:39:29 -0500
+Subject: execshield
+
+---
+ arch/x86/include/asm/desc.h           |   25 +++++++
+ arch/x86/include/asm/mmu.h            |    7 ++
+ arch/x86/include/asm/paravirt.h       |    6 ++
+ arch/x86/include/asm/paravirt_types.h |    3 +
+ arch/x86/include/asm/processor.h      |    3 +
+ arch/x86/kernel/cpu/common.c          |   14 ++++
+ arch/x86/kernel/paravirt.c            |    3 +
+ arch/x86/kernel/process_32.c          |   48 ++++++++++++
+ arch/x86/kernel/traps.c               |  129 ++++++++++++++++++++++++++++++---
+ arch/x86/mm/mmap.c                    |    5 +-
+ arch/x86/mm/setup_nx.c                |    6 ++
+ arch/x86/mm/tlb.c                     |    7 ++
+ arch/x86/vdso/vdso32-setup.c          |    2 +-
+ arch/x86/xen/enlighten.c              |   21 ++++++
+ fs/binfmt_elf.c                       |   21 +++++-
+ include/linux/mm.h                    |    8 ++-
+ include/linux/mm_types.h              |    3 +
+ include/linux/resource.h              |    5 +-
+ include/linux/sched.h                 |    7 ++
+ kernel/sysctl.c                       |   28 +++++++
+ mm/mmap.c                             |  121 +++++++++++++++++++++++++++++--
+ mm/mprotect.c                         |   10 +++-
+ mm/mremap.c                           |    4 +-
+ 23 files changed, 459 insertions(+), 27 deletions(-)
+
 diff --git a/arch/x86/include/asm/desc.h b/arch/x86/include/asm/desc.h
-index e8de2f6..538c2b6 100644
+index 617bd56..526248d 100644
 --- a/arch/x86/include/asm/desc.h
 +++ b/arch/x86/include/asm/desc.h
 @@ -5,6 +5,7 @@
@@ -71,7 +102,7 @@ index 80a1dee..8314c66 100644
  
  #ifdef CONFIG_SMP
 diff --git a/arch/x86/include/asm/paravirt.h b/arch/x86/include/asm/paravirt.h
-index 8aebcc4..cbbd2b0 100644
+index dd59a85..9ba7d12 100644
 --- a/arch/x86/include/asm/paravirt.h
 +++ b/arch/x86/include/asm/paravirt.h
 @@ -289,6 +289,12 @@ static inline void set_ldt(const void *addr, unsigned entries)
@@ -88,7 +119,7 @@ index 8aebcc4..cbbd2b0 100644
  {
  	PVOP_VCALL1(pv_cpu_ops.store_gdt, dtr);
 diff --git a/arch/x86/include/asm/paravirt_types.h b/arch/x86/include/asm/paravirt_types.h
-index dd0f5b3..c2727ef 100644
+index b1e70d5..0071abd 100644
 --- a/arch/x86/include/asm/paravirt_types.h
 +++ b/arch/x86/include/asm/paravirt_types.h
 @@ -118,6 +118,9 @@ struct pv_cpu_ops {
@@ -102,10 +133,10 @@ index dd0f5b3..c2727ef 100644
  	void (*load_tls)(struct thread_struct *t, unsigned int cpu);
  #ifdef CONFIG_X86_64
 diff --git a/arch/x86/include/asm/processor.h b/arch/x86/include/asm/processor.h
-index c3429e8..62cc460 100644
+index fc801ba..8d2df5c 100644
 --- a/arch/x86/include/asm/processor.h
 +++ b/arch/x86/include/asm/processor.h
-@@ -161,6 +161,9 @@ static inline int hlt_works(int cpu)
+@@ -162,6 +162,9 @@ static inline int hlt_works(int cpu)
  
  #define cache_line_size()	(boot_cpu_data.x86_cache_alignment)
  
@@ -116,10 +147,10 @@ index c3429e8..62cc460 100644
  
  extern struct pt_regs *idle_regs(struct pt_regs *);
 diff --git a/arch/x86/kernel/cpu/common.c b/arch/x86/kernel/cpu/common.c
-index cc25c2b..6ce4863 100644
+index 4868e4a..6c8d2ca 100644
 --- a/arch/x86/kernel/cpu/common.c
 +++ b/arch/x86/kernel/cpu/common.c
-@@ -798,6 +798,20 @@ static void __cpuinit identify_cpu(struct cpuinfo_x86 *c)
+@@ -802,6 +802,20 @@ static void __cpuinit identify_cpu(struct cpuinfo_x86 *c)
  	/* Filter out anything that depends on CPUID levels we don't have */
  	filter_cpuid_features(c, true);
  
@@ -155,10 +186,10 @@ index 1b1739d..c2dda16 100644
  	.load_idt = native_load_idt,
  	.store_gdt = native_store_gdt,
 diff --git a/arch/x86/kernel/process_32.c b/arch/x86/kernel/process_32.c
-index 4cf7956..b2407dc 100644
+index 37ad1e0..9524afe 100644
 --- a/arch/x86/kernel/process_32.c
 +++ b/arch/x86/kernel/process_32.c
-@@ -296,7 +296,10 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
+@@ -257,7 +257,10 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
  void
  start_thread(struct pt_regs *regs, unsigned long new_ip, unsigned long new_sp)
  {
@@ -169,7 +200,7 @@ index 4cf7956..b2407dc 100644
  	regs->fs		= 0;
  	set_fs(USER_DS);
  	regs->ds		= __USER_DS;
-@@ -305,6 +308,11 @@ start_thread(struct pt_regs *regs, unsigned long new_ip, unsigned long new_sp)
+@@ -266,6 +269,11 @@ start_thread(struct pt_regs *regs, unsigned long new_ip, unsigned long new_sp)
  	regs->cs		= __USER_CS;
  	regs->ip		= new_ip;
  	regs->sp		= new_sp;
@@ -181,7 +212,7 @@ index 4cf7956..b2407dc 100644
  	/*
  	 * Free the old FP and other extended state
  	 */
-@@ -364,6 +372,9 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
+@@ -325,6 +333,9 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
  	if (preload_fpu)
  		prefetch(next->xstate);
  
@@ -191,7 +222,7 @@ index 4cf7956..b2407dc 100644
  	/*
  	 * Reload esp0.
  	 */
-@@ -497,3 +508,40 @@ unsigned long get_wchan(struct task_struct *p)
+@@ -418,3 +429,40 @@ unsigned long get_wchan(struct task_struct *p)
  	return 0;
  }
  
@@ -233,7 +264,7 @@ index 4cf7956..b2407dc 100644
 +	set_user_cs(&mm->context.user_cs, 0);
 +}
 diff --git a/arch/x86/kernel/traps.c b/arch/x86/kernel/traps.c
-index 7e37dce..92ae538 100644
+index 3339917..9b03688 100644
 --- a/arch/x86/kernel/traps.c
 +++ b/arch/x86/kernel/traps.c
 @@ -115,6 +115,76 @@ die_if_kernel(const char *str, struct pt_regs *regs, long err)
@@ -343,7 +374,7 @@ index 7e37dce..92ae538 100644
  	tsk->thread.error_code = error_code;
  	tsk->thread.trap_no = 13;
  
-@@ -881,19 +974,37 @@ do_device_not_available(struct pt_regs *regs, long error_code)
+@@ -860,19 +953,37 @@ do_device_not_available(struct pt_regs *regs, long error_code)
  }
  
  #ifdef CONFIG_X86_32
@@ -390,23 +421,6 @@ index 7e37dce..92ae538 100644
  }
  #endif
  
-diff --git a/arch/x86/mm/init.c b/arch/x86/mm/init.c
-index 73ffd55..0cf2a7b 100644
---- a/arch/x86/mm/init.c
-+++ b/arch/x86/mm/init.c
-@@ -149,6 +149,12 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
- 	set_nx();
- 	if (nx_enabled)
- 		printk(KERN_INFO "NX (Execute Disable) protection: active\n");
-+#ifdef CONFIG_X86_32
-+	else
-+	if (exec_shield)
-+		printk(KERN_INFO "Using x86 segment limits to approximate "
-+			"NX protection\n");
-+#endif
- 
- 	/* Enable PSE if available */
- 	if (cpu_has_pse)
 diff --git a/arch/x86/mm/mmap.c b/arch/x86/mm/mmap.c
 index c8191de..7d84d01 100644
 --- a/arch/x86/mm/mmap.c
@@ -430,7 +444,7 @@ index c8191de..7d84d01 100644
  	}
  }
 diff --git a/arch/x86/mm/setup_nx.c b/arch/x86/mm/setup_nx.c
-index 513d8ed..c614a90 100644
+index a3250aa..e0d9cce 100644
 --- a/arch/x86/mm/setup_nx.c
 +++ b/arch/x86/mm/setup_nx.c
 @@ -1,3 +1,4 @@
@@ -438,18 +452,27 @@ index 513d8ed..c614a90 100644
  #include <linux/spinlock.h>
  #include <linux/errno.h>
  #include <linux/init.h>
-@@ -27,6 +28,9 @@ static int __init noexec_setup(char *str)
+@@ -23,6 +24,7 @@ static int __init noexec_setup(char *str)
+ 		disable_nx = 0;
  	} else if (!strncmp(str, "off", 3)) {
  		disable_nx = 1;
- 		__supported_pte_mask &= ~_PAGE_NX;
-+#ifdef CONFIG_X86_32
 +		exec_shield = 0;
-+#endif
  	}
+ 	x86_configure_nx();
  	return 0;
- }
+@@ -40,6 +42,10 @@ void __cpuinit x86_configure_nx(void)
+ void __init x86_report_nx(void)
+ {
+ 	if (!cpu_has_nx) {
++		if (exec_shield)
++			printk(KERN_INFO "Using x86 segment limits to approximate NX protection\n");
++		else
++
+ 		printk(KERN_NOTICE "Notice: NX (Execute Disable) protection "
+ 		       "missing in CPU or disabled in BIOS!\n");
+ 	} else {
 diff --git a/arch/x86/mm/tlb.c b/arch/x86/mm/tlb.c
-index 36fe08e..3806a45 100644
+index 65b58e4..cf1ea57 100644
 --- a/arch/x86/mm/tlb.c
 +++ b/arch/x86/mm/tlb.c
 @@ -6,6 +6,7 @@
@@ -459,8 +482,8 @@ index 36fe08e..3806a45 100644
 +#include <asm/desc.h>
  #include <asm/tlbflush.h>
  #include <asm/mmu_context.h>
- #include <asm/apic.h>
-@@ -130,6 +131,12 @@ void smp_invalidate_interrupt(struct pt_regs *regs)
+ #include <asm/cache.h>
+@@ -131,6 +132,12 @@ void smp_invalidate_interrupt(struct pt_regs *regs)
  	union smp_flush_state *f;
  
  	cpu = smp_processor_id();
@@ -474,7 +497,7 @@ index 36fe08e..3806a45 100644
  	 * orig_rax contains the negated interrupt vector.
  	 * Use that to determine where the sender put the data.
 diff --git a/arch/x86/vdso/vdso32-setup.c b/arch/x86/vdso/vdso32-setup.c
-index 58bc00f..1fdafb5 100644
+index 02b442e..957bb67 100644
 --- a/arch/x86/vdso/vdso32-setup.c
 +++ b/arch/x86/vdso/vdso32-setup.c
 @@ -331,7 +331,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
@@ -487,10 +510,10 @@ index 58bc00f..1fdafb5 100644
  			ret = addr;
  			goto up_fail;
 diff --git a/arch/x86/xen/enlighten.c b/arch/x86/xen/enlighten.c
-index 3439616..31e5c6f 100644
+index 36daccb..4ad374a 100644
 --- a/arch/x86/xen/enlighten.c
 +++ b/arch/x86/xen/enlighten.c
-@@ -323,6 +323,24 @@ static void xen_set_ldt(const void *addr, unsigned entries)
+@@ -333,6 +333,24 @@ static void xen_set_ldt(const void *addr, unsigned entries)
  	xen_mc_issue(PARAVIRT_LAZY_CPU);
  }
  
@@ -515,7 +538,7 @@ index 3439616..31e5c6f 100644
  static void xen_load_gdt(const struct desc_ptr *dtr)
  {
  	unsigned long va = dtr->address;
-@@ -949,6 +967,9 @@ static const struct pv_cpu_ops xen_cpu_ops __initdata = {
+@@ -959,6 +977,9 @@ static const struct pv_cpu_ops xen_cpu_ops __initdata = {
  
  	.load_tr_desc = paravirt_nop,
  	.set_ldt = xen_set_ldt,
@@ -526,7 +549,7 @@ index 3439616..31e5c6f 100644
  	.load_idt = xen_load_idt,
  	.load_tls = xen_load_tls,
 diff --git a/fs/binfmt_elf.c b/fs/binfmt_elf.c
-index b9b3bb5..1e55926 100644
+index edd90c4..33f2f2d 100644
 --- a/fs/binfmt_elf.c
 +++ b/fs/binfmt_elf.c
 @@ -73,7 +73,7 @@ static struct linux_binfmt elf_format = {
@@ -559,7 +582,7 @@ index b9b3bb5..1e55926 100644
 +	 * Turn off the CS limit completely if exec-shield disabled or
 +	 * NX active:
 +	 */
-+	if (!exec_shield || executable_stack != EXSTACK_DISABLE_X || nx_enabled)
++	if (!exec_shield || executable_stack != EXSTACK_DISABLE_X || (__supported_pte_mask & _PAGE_NX))
 +		arch_add_exec_range(current->mm, -1);
 +#endif
 +
@@ -586,10 +609,10 @@ index b9b3bb5..1e55926 100644
  			 * load_elf_interp() returns relocation
  			 * adjustment
 diff --git a/include/linux/mm.h b/include/linux/mm.h
-index 24c3956..88f944d 100644
+index 60c467b..8eb1643 100644
 --- a/include/linux/mm.h
 +++ b/include/linux/mm.h
-@@ -1129,7 +1129,13 @@ extern int install_special_mapping(struct mm_struct *mm,
+@@ -1148,7 +1148,13 @@ extern int install_special_mapping(struct mm_struct *mm,
  				   unsigned long addr, unsigned long len,
  				   unsigned long flags, struct page **pages);
  
@@ -605,10 +628,10 @@ index 24c3956..88f944d 100644
  extern unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
  	unsigned long len, unsigned long prot,
 diff --git a/include/linux/mm_types.h b/include/linux/mm_types.h
-index 84a524a..a81e0db 100644
+index 36f9627..bd4fe42 100644
 --- a/include/linux/mm_types.h
 +++ b/include/linux/mm_types.h
-@@ -206,6 +206,9 @@ struct mm_struct {
+@@ -209,6 +209,9 @@ struct mm_struct {
  	unsigned long (*get_unmapped_area) (struct file *filp,
  				unsigned long addr, unsigned long len,
  				unsigned long pgoff, unsigned long flags);
@@ -616,13 +639,13 @@ index 84a524a..a81e0db 100644
 +				unsigned long addr, unsigned long len,
 +				unsigned long pgoff, unsigned long flags);
  	void (*unmap_area) (struct mm_struct *mm, unsigned long addr);
+ #endif
  	unsigned long mmap_base;		/* base of mmap area */
- 	unsigned long task_size;		/* size of task vm space */
 diff --git a/include/linux/resource.h b/include/linux/resource.h
-index 40fc7e6..68c2549 100644
+index f1e914e..d2aef9a 100644
 --- a/include/linux/resource.h
 +++ b/include/linux/resource.h
-@@ -55,8 +55,11 @@ struct rlimit {
+@@ -53,8 +53,11 @@ struct rlimit {
  /*
   * Limit the stack by to some sane default: root can always
   * increase this limit if needed..  8MB seems reasonable.
@@ -636,7 +659,7 @@ index 40fc7e6..68c2549 100644
  /*
   * GPG2 wants 64kB of mlocked memory, to make sure pass phrases
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 75e6e60..0bce489 100644
+index 6f7bba9..ffbcf8c 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
 @@ -102,6 +102,9 @@ struct fs_struct;
@@ -649,7 +672,7 @@ index 75e6e60..0bce489 100644
  /*
   * List of flags we want to share for kernel threads,
   * if only because they are not used by them anyway.
-@@ -378,6 +381,10 @@ extern int sysctl_max_map_count;
+@@ -382,6 +385,10 @@ extern void arch_pick_mmap_layout(struct mm_struct *mm);
  extern unsigned long
  arch_get_unmapped_area(struct file *, unsigned long, unsigned long,
  		       unsigned long, unsigned long);
@@ -661,10 +684,10 @@ index 75e6e60..0bce489 100644
  arch_get_unmapped_area_topdown(struct file *filp, unsigned long addr,
  			  unsigned long len, unsigned long pgoff,
 diff --git a/kernel/sysctl.c b/kernel/sysctl.c
-index 0d949c5..12ca319 100644
+index 8a68b24..2c605b1 100644
 --- a/kernel/sysctl.c
 +++ b/kernel/sysctl.c
-@@ -88,6 +88,26 @@ extern int sysctl_nr_open_min, sysctl_nr_open_max;
+@@ -87,6 +87,26 @@ extern int sysctl_nr_open_min, sysctl_nr_open_max;
  #ifndef CONFIG_MMU
  extern int sysctl_nr_trim_pages;
  #endif
@@ -691,26 +714,26 @@ index 0d949c5..12ca319 100644
  #ifdef CONFIG_RCU_TORTURE_TEST
  extern int rcutorture_runnable;
  #endif /* #ifdef CONFIG_RCU_TORTURE_TEST */
-@@ -408,6 +428,14 @@ static struct ctl_table kern_table[] = {
- 		.proc_handler	= &proc_dointvec,
+@@ -410,6 +430,14 @@ static struct ctl_table kern_table[] = {
+ 		.mode		= 0644,
+ 		.proc_handler	= proc_dointvec,
  	},
- 	{
-+		.ctl_name	= CTL_UNNUMBERED,
++	{
 +		.procname	= "exec-shield",
 +		.data		= &exec_shield,
 +		.maxlen		= sizeof(int),
 +		.mode		= 0644,
 +		.proc_handler	= &proc_dointvec,
 +	},
-+	{
- 		.ctl_name	= KERN_CORE_USES_PID,
- 		.procname	= "core_uses_pid",
- 		.data		= &core_uses_pid,
++
+ #ifdef CONFIG_PROC_SYSCTL
+ 	{
+ 		.procname	= "tainted",
 diff --git a/mm/mmap.c b/mm/mmap.c
-index 73f5e4b..814b95f 100644
+index ee22989..5bc99f8 100644
 --- a/mm/mmap.c
 +++ b/mm/mmap.c
-@@ -29,6 +29,7 @@
+@@ -28,6 +28,7 @@
  #include <linux/rmap.h>
  #include <linux/mmu_notifier.h>
  #include <linux/perf_event.h>
@@ -718,7 +741,7 @@ index 73f5e4b..814b95f 100644
  
  #include <asm/uaccess.h>
  #include <asm/cacheflush.h>
-@@ -45,6 +46,18 @@
+@@ -44,6 +45,18 @@
  #define arch_rebalance_pgtables(addr, len)		(addr)
  #endif
  
@@ -737,7 +760,7 @@ index 73f5e4b..814b95f 100644
  static void unmap_region(struct mm_struct *mm,
  		struct vm_area_struct *vma, struct vm_area_struct *prev,
  		unsigned long start, unsigned long end);
-@@ -389,6 +402,8 @@ static inline void
+@@ -388,6 +401,8 @@ static inline void
  __vma_link_list(struct mm_struct *mm, struct vm_area_struct *vma,
  		struct vm_area_struct *prev, struct rb_node *rb_parent)
  {
@@ -746,7 +769,7 @@ index 73f5e4b..814b95f 100644
  	if (prev) {
  		vma->vm_next = prev->vm_next;
  		prev->vm_next = vma;
-@@ -491,6 +506,8 @@ __vma_unlink(struct mm_struct *mm, struct vm_area_struct *vma,
+@@ -490,6 +505,8 @@ __vma_unlink(struct mm_struct *mm, struct vm_area_struct *vma,
  	rb_erase(&vma->vm_rb, &mm->mm_rb);
  	if (mm->mmap_cache == vma)
  		mm->mmap_cache = prev;
@@ -755,7 +778,7 @@ index 73f5e4b..814b95f 100644
  }
  
  /*
-@@ -798,6 +815,8 @@ struct vm_area_struct *vma_merge(struct mm_struct *mm,
+@@ -797,6 +814,8 @@ struct vm_area_struct *vma_merge(struct mm_struct *mm,
  		} else					/* cases 2, 5, 7 */
  			vma_adjust(prev, prev->vm_start,
  				end, prev->vm_pgoff, NULL);
@@ -764,7 +787,7 @@ index 73f5e4b..814b95f 100644
  		return prev;
  	}
  
-@@ -970,7 +989,8 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
+@@ -947,7 +966,8 @@ unsigned long do_mmap_pgoff(struct file *file, unsigned long addr,
  	/* Obtain the address to map to. we verify (or select) it and ensure
  	 * that it represents a valid section of the address space.
  	 */
@@ -774,7 +797,7 @@ index 73f5e4b..814b95f 100644
  	if (addr & ~PAGE_MASK)
  		return addr;
  
-@@ -1453,21 +1473,25 @@ void arch_unmap_area_topdown(struct mm_struct *mm, unsigned long addr)
+@@ -1479,8 +1499,8 @@ void arch_unmap_area_topdown(struct mm_struct *mm, unsigned long addr)
  }
  
  unsigned long
@@ -785,12 +808,7 @@ index 73f5e4b..814b95f 100644
  {
  	unsigned long (*get_area)(struct file *, unsigned long,
  				  unsigned long, unsigned long, unsigned long);
- 
- 	unsigned long error = arch_mmap_check(addr, len, flags);
- 	if (error)
- 		return error;
- 
- 	/* Careful about overflows.. */
+@@ -1493,7 +1513,11 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
  	if (len > TASK_SIZE)
  		return -ENOMEM;
  
@@ -803,7 +821,7 @@ index 73f5e4b..814b95f 100644
  	if (file && file->f_op && file->f_op->get_unmapped_area)
  		get_area = file->f_op->get_unmapped_area;
  	addr = get_area(file, addr, len, pgoff, flags);
-@@ -1473,8 +1497,76 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
+@@ -1507,8 +1531,76 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
  
  	return arch_rebalance_pgtables(addr, len);
  }
@@ -881,7 +899,7 @@ index 73f5e4b..814b95f 100644
  
  /* Look up the first VMA which satisfies  addr < vm_end,  NULL if none. */
  struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
-@@ -1549,6 +1641,14 @@ out:
+@@ -1583,6 +1675,14 @@ out:
  	return prev ? prev->vm_next : vma;
  }
  
@@ -896,7 +914,7 @@ index 73f5e4b..814b95f 100644
  /*
   * Verify that the stack growth is acceptable and
   * update accounting. This is shared with both the
-@@ -1565,7 +1665,7 @@ static int acct_stack_growth(struct vm_area_struct *vma, unsigned long size, uns
+@@ -1599,7 +1699,7 @@ static int acct_stack_growth(struct vm_area_struct *vma, unsigned long size, uns
  		return -ENOMEM;
  
  	/* Stack limit test */
@@ -905,7 +923,7 @@ index 73f5e4b..814b95f 100644
  		return -ENOMEM;
  
  	/* mlock limit tests */
-@@ -1875,10 +1975,14 @@ int split_vma(struct mm_struct * mm, struct vm_area_struct * vma,
+@@ -1906,10 +2006,14 @@ static int __split_vma(struct mm_struct * mm, struct vm_area_struct * vma,
  	if (new->vm_ops && new->vm_ops->open)
  		new->vm_ops->open(new);
  
@@ -922,7 +940,7 @@ index 73f5e4b..814b95f 100644
  		vma_adjust(vma, vma->vm_start, addr, vma->vm_pgoff, new);
  
  	return 0;
-@@ -2128,6 +2232,7 @@ void exit_mmap(struct mm_struct *mm)
+@@ -2176,6 +2280,7 @@ void exit_mmap(struct mm_struct *mm)
  
  	free_pgtables(tlb, vma, FIRST_USER_ADDRESS, 0);
  	tlb_finish_mmu(tlb, 0, end);
@@ -969,19 +987,22 @@ index 8bc969d..3c9b4fc 100644
  	if (is_vm_hugetlb_page(vma))
  		hugetlb_change_protection(vma, start, end, vma->vm_page_prot);
 diff --git a/mm/mremap.c b/mm/mremap.c
-index 97bff25..17a9fd7 100644
+index 8451908..d5de807 100644
 --- a/mm/mremap.c
 +++ b/mm/mremap.c
-@@ -414,10 +414,10 @@ unsigned long do_mremap(unsigned long addr,
-		if (vma->vm_flags & VM_MAYSHARE)
-			map_flags |= MAP_SHARED;
-
+@@ -485,10 +485,10 @@ unsigned long do_mremap(unsigned long addr,
+ 		if (vma->vm_flags & VM_MAYSHARE)
+ 			map_flags |= MAP_SHARED;
+ 
 -		new_addr = get_unmapped_area(vma->vm_file, 0, new_len,
 +		new_addr = get_unmapped_area_prot(vma->vm_file, 0, new_len,
  					vma->vm_pgoff +
  					((addr - vma->vm_start) >> PAGE_SHIFT),
 -					map_flags);
 +					map_flags, vma->vm_flags & VM_EXEC);
-		if (new_addr & ~PAGE_MASK) {
-			ret = new_addr;
-			goto out;
+ 		if (new_addr & ~PAGE_MASK) {
+ 			ret = new_addr;
+ 			goto out;
+-- 
+1.6.5.2
+

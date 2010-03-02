@@ -1,0 +1,404 @@
+diff -up linux-2.6.32.noarch/fs/exec.c.orig linux-2.6.32.noarch/fs/exec.c
+--- linux-2.6.32.noarch/fs/exec.c.orig	2010-02-05 06:57:45.000000000 -0500
++++ linux-2.6.32.noarch/fs/exec.c	2010-02-05 06:57:31.000000000 -0500
+@@ -1762,6 +1762,50 @@ static void wait_for_dump_helpers(struct
+ }
+ 
+ 
++/*
++ * uhm_pipe_setup
++ * helper function to customize the process used
++ * to collect the core in userspace.  Specifically
++ * it sets up a pipe and installs it as fd 0 (stdin)
++ * for the process.  Returns 0 on success, or
++ * PTR_ERR on failure.
++ * Note that it also sets the core limit to 1.  This
++ * is a special value that we use to trap recursive
++ * core dumps
++ */
++static int umh_pipe_setup(struct subprocess_info *info)
++{
++	struct file *rp, *wp;
++	struct fdtable *fdt;
++	struct coredump_params *cp = (struct coredump_params *)info->data;
++	struct files_struct *cf = current->files;
++
++	wp = create_write_pipe(0);
++	if (IS_ERR(wp))
++		return PTR_ERR(wp);
++
++	rp = create_read_pipe(wp, 0);
++	if (IS_ERR(rp)) {
++		free_write_pipe(wp);
++		return PTR_ERR(rp);
++	}
++
++	cp->file = wp;
++
++	sys_close(0);
++	fd_install(0, rp);
++	spin_lock(&cf->file_lock);
++	fdt = files_fdtable(cf);
++	FD_SET(0, fdt->open_fds);
++	FD_CLR(0, fdt->close_on_exec);
++	spin_unlock(&cf->file_lock);
++
++	/* and disallow core files too */
++	current->signal->rlim[RLIMIT_CORE] = (struct rlimit){1, 1};
++
++	return 0;
++}
++
+ void do_coredump(long signr, int exit_code, struct pt_regs *regs)
+ {
+ 	struct core_state core_state;
+@@ -1842,15 +1886,15 @@ void do_coredump(long signr, int exit_co
+ 		goto fail_unlock;
+ 
+  	if (ispipe) {
+-		if (cprm.limit == 0) {
++		if (cprm.limit == 1) {
+ 			/*
+ 			 * Normally core limits are irrelevant to pipes, since
+ 			 * we're not writing to the file system, but we use
+-			 * cprm.limit of 0 here as a speacial value. Any
+-			 * non-zero limit gets set to RLIM_INFINITY below, but
++			 * cprm.limit of 1 here as a speacial value. Any
++			 * non-1 limit gets set to RLIM_INFINITY below, but
+ 			 * a limit of 0 skips the dump.  This is a consistent
+ 			 * way to catch recursive crashes.  We can still crash
+-			 * if the core_pattern binary sets RLIM_CORE =  !0
++			 * if the core_pattern binary sets RLIM_CORE =  !1
+ 			 * but it runs as root, and can do lots of stupid things
+ 			 * Note that we use task_tgid_vnr here to grab the pid
+ 			 * of the process group leader.  That way we get the
+@@ -1858,7 +1902,7 @@ void do_coredump(long signr, int exit_co
+ 			 * core_pattern process dies.
+ 			 */
+ 			printk(KERN_WARNING
+-				"Process %d(%s) has RLIMIT_CORE set to 0\n",
++				"Process %d(%s) has RLIMIT_CORE set to 1\n",
+ 				task_tgid_vnr(current), current->comm);
+ 			printk(KERN_WARNING "Aborting core\n");
+ 			goto fail_unlock;
+@@ -1882,8 +1926,13 @@ void do_coredump(long signr, int exit_co
+ 		cprm.limit = RLIM_INFINITY;
+ 
+ 		/* SIGPIPE can happen, but it's just never processed */
+-		if (call_usermodehelper_pipe(helper_argv[0], helper_argv, NULL,
+-				&cprm.file)) {
++		cprm.file = NULL;
++		if (call_usermodehelper_fns(helper_argv[0], helper_argv, NULL,
++					    UMH_WAIT_EXEC, umh_pipe_setup,
++					    NULL, &cprm)) {
++			if (cprm.file)
++				filp_close(cprm.file, NULL);
++
+  			printk(KERN_INFO "Core dump to %s pipe failed\n",
+ 			       corename);
+ 			goto fail_dropcount;
+diff -up linux-2.6.32.noarch/include/linux/kmod.h.orig linux-2.6.32.noarch/include/linux/kmod.h
+--- linux-2.6.32.noarch/include/linux/kmod.h.orig	2010-02-05 06:57:45.000000000 -0500
++++ linux-2.6.32.noarch/include/linux/kmod.h	2010-02-05 06:57:31.000000000 -0500
+@@ -23,6 +23,7 @@
+ #include <linux/stddef.h>
+ #include <linux/errno.h>
+ #include <linux/compiler.h>
++#include <linux/workqueue.h>
+ 
+ #define KMOD_PATH_LEN 256
+ 
+@@ -44,7 +45,26 @@ static inline int request_module_nowait(
+ 
+ struct key;
+ struct file;
+-struct subprocess_info;
++
++enum umh_wait {
++	UMH_NO_WAIT = -1,	/* don't wait at all */
++	UMH_WAIT_EXEC = 0,	/* wait for the exec, but not the process */
++	UMH_WAIT_PROC = 1,	/* wait for the process to complete */
++};
++
++struct subprocess_info {
++	struct work_struct work;
++	struct completion *complete;
++	struct cred *cred;
++	char *path;
++	char **argv;
++	char **envp;
++	enum umh_wait wait;
++	int retval;
++	int (*init)(struct subprocess_info *info);
++	void (*cleanup)(struct subprocess_info *info);
++	void *data;
++};
+ 
+ /* Allocate a subprocess_info structure */
+ struct subprocess_info *call_usermodehelper_setup(char *path, char **argv,
+@@ -55,14 +75,10 @@ void call_usermodehelper_setkeys(struct 
+ 				 struct key *session_keyring);
+ int call_usermodehelper_stdinpipe(struct subprocess_info *sub_info,
+ 				  struct file **filp);
+-void call_usermodehelper_setcleanup(struct subprocess_info *info,
+-				    void (*cleanup)(char **argv, char **envp));
+-
+-enum umh_wait {
+-	UMH_NO_WAIT = -1,	/* don't wait at all */
+-	UMH_WAIT_EXEC = 0,	/* wait for the exec, but not the process */
+-	UMH_WAIT_PROC = 1,	/* wait for the process to complete */
+-};
++void call_usermodehelper_setfns(struct subprocess_info *info,
++		    int (*init)(struct subprocess_info *info),
++		    void (*cleanup)(struct subprocess_info *info),
++		    void *data);
+ 
+ /* Actually execute the sub-process */
+ int call_usermodehelper_exec(struct subprocess_info *info, enum umh_wait wait);
+@@ -72,7 +88,10 @@ int call_usermodehelper_exec(struct subp
+ void call_usermodehelper_freeinfo(struct subprocess_info *info);
+ 
+ static inline int
+-call_usermodehelper(char *path, char **argv, char **envp, enum umh_wait wait)
++call_usermodehelper_fns(char *path, char **argv, char **envp,
++			enum umh_wait wait,
++			int (*init)(struct subprocess_info *info),
++			void (*cleanup)(struct subprocess_info *), void *data)
+ {
+ 	struct subprocess_info *info;
+ 	gfp_t gfp_mask = (wait == UMH_NO_WAIT) ? GFP_ATOMIC : GFP_KERNEL;
+@@ -80,10 +99,18 @@ call_usermodehelper(char *path, char **a
+ 	info = call_usermodehelper_setup(path, argv, envp, gfp_mask);
+ 	if (info == NULL)
+ 		return -ENOMEM;
++	call_usermodehelper_setfns(info, init, cleanup, data);
+ 	return call_usermodehelper_exec(info, wait);
+ }
+ 
+ static inline int
++call_usermodehelper(char *path, char **argv, char **envp, enum umh_wait wait)
++{
++	return call_usermodehelper_fns(path, argv, envp,
++				       wait, NULL, NULL, NULL);
++}
++
++static inline int
+ call_usermodehelper_keys(char *path, char **argv, char **envp,
+ 			 struct key *session_keyring, enum umh_wait wait)
+ {
+@@ -100,10 +127,6 @@ call_usermodehelper_keys(char *path, cha
+ 
+ extern void usermodehelper_init(void);
+ 
+-struct file;
+-extern int call_usermodehelper_pipe(char *path, char *argv[], char *envp[],
+-				    struct file **filp);
+-
+ extern int usermodehelper_disable(void);
+ extern void usermodehelper_enable(void);
+ 
+diff -up linux-2.6.32.noarch/kernel/kmod.c.orig linux-2.6.32.noarch/kernel/kmod.c
+--- linux-2.6.32.noarch/kernel/kmod.c.orig	2010-02-05 06:57:45.000000000 -0500
++++ linux-2.6.32.noarch/kernel/kmod.c	2010-02-05 06:57:31.000000000 -0500
+@@ -124,19 +124,6 @@ int __request_module(bool wait, const ch
+ EXPORT_SYMBOL(__request_module);
+ #endif /* CONFIG_MODULES */
+ 
+-struct subprocess_info {
+-	struct work_struct work;
+-	struct completion *complete;
+-	struct cred *cred;
+-	char *path;
+-	char **argv;
+-	char **envp;
+-	enum umh_wait wait;
+-	int retval;
+-	struct file *stdin;
+-	void (*cleanup)(char **argv, char **envp);
+-};
+-
+ /*
+  * This is the task which runs the usermode application
+  */
+@@ -158,26 +145,15 @@ static int ____call_usermodehelper(void 
+ 	commit_creds(sub_info->cred);
+ 	sub_info->cred = NULL;
+ 
+-	/* Install input pipe when needed */
+-	if (sub_info->stdin) {
+-		struct files_struct *f = current->files;
+-		struct fdtable *fdt;
+-		/* no races because files should be private here */
+-		sys_close(0);
+-		fd_install(0, sub_info->stdin);
+-		spin_lock(&f->file_lock);
+-		fdt = files_fdtable(f);
+-		FD_SET(0, fdt->open_fds);
+-		FD_CLR(0, fdt->close_on_exec);
+-		spin_unlock(&f->file_lock);
+-
+-		/* and disallow core files too */
+-		current->signal->rlim[RLIMIT_CORE] = (struct rlimit){0, 0};
+-	}
+-
+ 	/* We can run anywhere, unlike our parent keventd(). */
+ 	set_cpus_allowed_ptr(current, cpu_all_mask);
+ 
++	if (sub_info->init) {
++		retval = sub_info->init(sub_info);
++		if (retval)
++			goto fail;
++	}
++
+ 	/*
+ 	 * Our parent is keventd, which runs with elevated scheduling priority.
+ 	 * Avoid propagating that into the userspace child.
+@@ -187,6 +163,7 @@ static int ____call_usermodehelper(void 
+ 	retval = kernel_execve(sub_info->path, sub_info->argv, sub_info->envp);
+ 
+ 	/* Exec failed? */
++fail:
+ 	sub_info->retval = retval;
+ 	do_exit(0);
+ }
+@@ -194,7 +171,7 @@ static int ____call_usermodehelper(void 
+ void call_usermodehelper_freeinfo(struct subprocess_info *info)
+ {
+ 	if (info->cleanup)
+-		(*info->cleanup)(info->argv, info->envp);
++		(*info->cleanup)(info);
+ 	if (info->cred)
+ 		put_cred(info->cred);
+ 	kfree(info);
+@@ -406,50 +383,31 @@ void call_usermodehelper_setkeys(struct 
+ EXPORT_SYMBOL(call_usermodehelper_setkeys);
+ 
+ /**
+- * call_usermodehelper_setcleanup - set a cleanup function
++ * call_usermodehelper_setfns - set a cleanup/init function
+  * @info: a subprocess_info returned by call_usermodehelper_setup
+  * @cleanup: a cleanup function
++ * @init: an init function
++ * @data: arbitrary context sensitive data
+  *
+- * The cleanup function is just befor ethe subprocess_info is about to
++ * The init function is used to customize the helper process prior to
++ * exec.  A non-zero return code causes the process to error out, exit,
++ * and return the failure to the calling process
++ *
++ * The cleanup function is just before ethe subprocess_info is about to
+  * be freed.  This can be used for freeing the argv and envp.  The
+  * Function must be runnable in either a process context or the
+  * context in which call_usermodehelper_exec is called.
+  */
+-void call_usermodehelper_setcleanup(struct subprocess_info *info,
+-				    void (*cleanup)(char **argv, char **envp))
++void call_usermodehelper_setfns(struct subprocess_info *info,
++		    int (*init)(struct subprocess_info *info),
++		    void (*cleanup)(struct subprocess_info *info),
++		    void *data)
+ {
+ 	info->cleanup = cleanup;
++	info->init = init;
++	info->data = data;
+ }
+-EXPORT_SYMBOL(call_usermodehelper_setcleanup);
+-
+-/**
+- * call_usermodehelper_stdinpipe - set up a pipe to be used for stdin
+- * @sub_info: a subprocess_info returned by call_usermodehelper_setup
+- * @filp: set to the write-end of a pipe
+- *
+- * This constructs a pipe, and sets the read end to be the stdin of the
+- * subprocess, and returns the write-end in *@filp.
+- */
+-int call_usermodehelper_stdinpipe(struct subprocess_info *sub_info,
+-				  struct file **filp)
+-{
+-	struct file *f;
+-
+-	f = create_write_pipe(0);
+-	if (IS_ERR(f))
+-		return PTR_ERR(f);
+-	*filp = f;
+-
+-	f = create_read_pipe(f, 0);
+-	if (IS_ERR(f)) {
+-		free_write_pipe(*filp);
+-		return PTR_ERR(f);
+-	}
+-	sub_info->stdin = f;
+-
+-	return 0;
+-}
+-EXPORT_SYMBOL(call_usermodehelper_stdinpipe);
++EXPORT_SYMBOL(call_usermodehelper_setfns);
+ 
+ /**
+  * call_usermodehelper_exec - start a usermode application
+@@ -498,41 +456,6 @@ unlock:
+ }
+ EXPORT_SYMBOL(call_usermodehelper_exec);
+ 
+-/**
+- * call_usermodehelper_pipe - call a usermode helper process with a pipe stdin
+- * @path: path to usermode executable
+- * @argv: arg vector for process
+- * @envp: environment for process
+- * @filp: set to the write-end of a pipe
+- *
+- * This is a simple wrapper which executes a usermode-helper function
+- * with a pipe as stdin.  It is implemented entirely in terms of
+- * lower-level call_usermodehelper_* functions.
+- */
+-int call_usermodehelper_pipe(char *path, char **argv, char **envp,
+-			     struct file **filp)
+-{
+-	struct subprocess_info *sub_info;
+-	int ret;
+-
+-	sub_info = call_usermodehelper_setup(path, argv, envp, GFP_KERNEL);
+-	if (sub_info == NULL)
+-		return -ENOMEM;
+-
+-	ret = call_usermodehelper_stdinpipe(sub_info, filp);
+-	if (ret < 0) {
+-		call_usermodehelper_freeinfo(sub_info);
+-		return ret;
+-	}
+-
+-	ret = call_usermodehelper_exec(sub_info, UMH_WAIT_EXEC);
+-	if (ret < 0)	/* Failed to execute helper, close pipe */
+-		filp_close(*filp, NULL);
+-
+-	return ret;
+-}
+-EXPORT_SYMBOL(call_usermodehelper_pipe);
+-
+ void __init usermodehelper_init(void)
+ {
+ 	khelper_wq = create_singlethread_workqueue("khelper");
+diff -up linux-2.6.32.noarch/kernel/sys.c.orig linux-2.6.32.noarch/kernel/sys.c
+--- linux-2.6.32.noarch/kernel/sys.c.orig	2010-02-05 06:57:45.000000000 -0500
++++ linux-2.6.32.noarch/kernel/sys.c	2010-02-05 06:48:30.000000000 -0500
+@@ -1599,9 +1599,9 @@ SYSCALL_DEFINE3(getcpu, unsigned __user 
+ 
+ char poweroff_cmd[POWEROFF_CMD_PATH_LEN] = "/sbin/poweroff";
+ 
+-static void argv_cleanup(char **argv, char **envp)
++static void argv_cleanup(struct subprocess_info *info)
+ {
+-	argv_free(argv);
++	argv_free(info->argv);
+ }
+ 
+ /**
+@@ -1635,7 +1635,7 @@ int orderly_poweroff(bool force)
+ 		goto out;
+ 	}
+ 
+-	call_usermodehelper_setcleanup(info, argv_cleanup);
++	call_usermodehelper_setfns(info, NULL, argv_cleanup, NULL);
+ 
+ 	ret = call_usermodehelper_exec(info, UMH_NO_WAIT);
+ 

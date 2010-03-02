@@ -89,13 +89,11 @@ ApplyPatch linux-2.6-utrace-ptrace.patch
 
 # Architecture patches
 # x86(-64)
-ApplyPatch via-hwmon-temp-sensor.patch
-ApplyPatch linux-2.6-dell-laptop-rfkill-fix.patch.gz
+ApplyPatch linux-2.6-dell-laptop-rfkill-fix.patch
 
 #
 # Intel IOMMU
 #
-ApplyPatch linux-2.6-cantiga-iommu-gfx.patch
 
 #
 # Exec shield
@@ -111,12 +109,10 @@ ApplyPatch linux-2.6-execshield.patch
 # xfs
 
 # btrfs
-ApplyPatch linux-2.6-btrfs-fix-acl.patch
 
 # cifs
 
 # NFSv4
-ApplyPatch linux-2.6-nfsd4-proots.patch
 ApplyPatch linux-2.6-nfs4-callback-hidden.patch.gz
 
 # USB
@@ -125,10 +121,6 @@ ApplyPatch linux-2.6-enable-btusb-autosuspend.patch
 ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
 
 # WMI
-ApplyPatch linux-2.6-autoload-wmi.patch
-# autoload fixes
-ApplyPatch wmi-check-find_guid-return-value-to-prevent-oops.patch
-ApplyPatch wmi-survive-bios-with-duplicate-guids.patch
 
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
@@ -136,7 +128,7 @@ ApplyPatch linux-2.6-acpi-video-dos.patch.gz
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
-ApplyPatch linux-2.6-debug-nmi-timeout.patch.gz
+ApplyPatch linux-2.6-debug-nmi-timeout.patch
 ApplyPatch linux-2.6-debug-taint-vm.patch
 ApplyPatch linux-2.6-debug-spinlock-taint.patch.gz
 ## try to find out what is breaking acpi-cpufreq
@@ -156,17 +148,12 @@ ApplyPatch linux-2.6-defaults-aspm.patch.gz
 #
 
 # ALSA
-# squelch hda_beep by default
-ApplyPatch linux-2.6-defaults-alsa-hda-beep-off.patch.gz
 ApplyPatch hda_intel-prealloc-4mb-dmabuffer.patch.gz
 
 # block/bio
 #
 
 # Networking
-
-# add ich9 lan
-ApplyPatch linux-2.6-e1000-ich9.patch.gz
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
@@ -185,18 +172,12 @@ ApplyPatch linux-2.6-serial-460800.patch
 
 # Silence some useless messages that still get printed with 'quiet'
 ApplyPatch linux-2.6-silence-noise.patch.gz
-ApplyPatch linux-2.6.30-hush-rom-warning.patch.gz
+ApplyPatch linux-2.6.30-hush-rom-warning.patch
 
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 
-# don't autoload viafb
-ApplyPatch viafb-neuter-device-table.patch
-
 # Changes to upstream defaults.
-
-# Report meaningful values for MCS rates through wireless extensions
-ApplyPatch linux-2.6-wireless_-report-reasonable-bitrate-for-MCS-rates-through-wext.patch
 
 # libata
 
@@ -207,11 +188,8 @@ ApplyPatch linux-2.6-wireless_-report-reasonable-bitrate-for-MCS-rates-through-w
 # /dev/crash driver.
 ApplyPatch linux-2.6-crash-driver.patch
 
-# Determine cacheline sizes in a generic manner.
-ApplyPatch linux-2.6-pci-cacheline-sizing.patch.gz
-
 # http://www.lirc.org/
-ApplyPatch lirc-2.6.32.patch
+ApplyPatch lirc-2.6.33.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
 ApplyPatch hdpvr-ir-enable.patch
 
@@ -219,20 +197,25 @@ ApplyPatch hdpvr-ir-enable.patch
 # Optimize KVM for KSM support
 #ApplyPatch linux-2.6-ksm-kvm.patch
 
+# Assorted Virt Fixes
+#ApplyPatch linux-2.6-userspace_kvmclock_offset.patch
+ApplyPatch vhost_net-rollup.patch
+ApplyPatch virt_console-rollup.patch
+
 # Fix block I/O errors in KVM
 #ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
 
+# fix x86-64 fbdev primary GPU selection
 ApplyPatch linux-2.6-x86-64-fbdev-primary.patch
-ApplyPatch kms-offb-handoff.patch
+
 # Nouveau DRM + drm fixes
-ApplyPatch drm-upgrayedd.patch
-#ApplyPatch drm-intel-big-hammer.patch
+# squash nouveau firmware into a single commit until it gets into linux-firmware
+ApplyPatch drm_nouveau_ucode.patch
+ApplyPatch drm-nouveau-abi16.patch
+ApplyPatch drm-nouveau-updates.patch
+# pm broken on my thinkpad t60p - airlied
+ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-nouveau-g80-ctxprog.patch
-ApplyPatch drm-nouveau-tvout-disable.patch
-ApplyPatch drm-nouveau-safetile-getparam.patch
-ApplyPatch drm-nouveau-kconfig.patch
-ApplyPatch drm-nouveau-update.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -243,9 +226,10 @@ ApplyPatch drm-nouveau-update.patch
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 
 # V4L/DVB updates/fixes/experimental drivers
-#ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
-#ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
-#ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
+ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
+ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
+ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
+
 ApplyPatch linux-2.6-v4l-dvb-rebase-gspca-to-latest.patch
 
 # Patches headed upstream
@@ -253,12 +237,15 @@ ApplyPatch linux-2.6-rfkill-all.patch
 
 ApplyPatch add-appleir-usb-driver.patch
 
+ApplyPatch neuter_intel_microcode_load.patch
+
 # Patches for -stable
 
-ApplyPatch fix-ima-null-ptr-deref.patch
-
-ApplyPatch fix-abrtd.patch
+# Refactor UserModeHelper code & satisfy abrt recursion check request
+ApplyPatch linux-2.6-umh-refactor.patch
 ApplyPatch coredump-uid-pipe-check.patch
-ApplyPatch vgaarb-fix-userspace-ptr-deref.patch
+
+# fix memory scribble
+ApplyPatch x86-pci-prevent-mmconfig-memory-corruption.patch
 
 set +e +o pipefail

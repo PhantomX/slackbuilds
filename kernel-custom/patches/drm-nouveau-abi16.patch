@@ -1,0 +1,1353 @@
+From d550220dd73ffbd2ad4871dbd5b5f328c4e2227f Mon Sep 17 00:00:00 2001
+From: Ben Skeggs <bskeggs@redhat.com>
+Date: Thu, 11 Feb 2010 16:37:26 +1000
+Subject: [PATCH 3/4] drm-nouveau-abi16
+
+drm/nv50: switch to indirect push buffer controls
+
+PFIFO on G80 and up has a new mode where the main ring buffer is simply a
+ring of pointers to indirect buffers containing the actual command/data
+packets.  In order to be able to implement index buffers in the 3D driver
+we need to be able to submit data-only push buffers right after the cmd
+packet header, which is only possible using the new command submission
+method.
+
+This commit doesn't make it possible to implement index buffers yet, some
+userspace interface changes will be required, but it does allow for
+testing/debugging of the hardware-side support in the meantime.
+
+Signed-off-by: Ben Skeggs <bskeggs@redhat.com>
+
+drm/nouveau: remove PUSHBUF_CAL macro
+
+Signed-off-by: Ben Skeggs <bskeggs@redhat.com>
+
+drm/nv50: make pushbuf dma object cover entire vm
+
+This allows us to submit push buffers from any memtype to the hardware.
+We'll need this ability for VRAM index buffers at some point.
+
+Signed-off-by: Ben Skeggs <bskeggs@redhat.com>
+
+drm/nouveau: new gem pushbuf interface, bump to 0.0.16
+
+This commit breaks the userspace interface, and requires a new libdrm for
+nouveau to operate again.
+
+The multiple GEM_PUSHBUF ioctls that were present in 0.0.15 for
+compatibility purposes are now gone, and replaced with the new ioctl which
+allows for multiple push buffers to be submitted (necessary for hw index
+buffers in the nv50 3d driver) and relocations to be applied on any buffer.
+
+A number of other ioctls (CARD_INIT, GEM_PIN, GEM_UNPIN) that were needed
+for userspace modesetting have also been removed.
+
+Signed-off-by: Ben Skeggs <bskeggs@redhat.com>
+
+drm/nouveau: bump MAX_PUSH to 512
+
+Signed-off-by: Ben Skeggs <bskeggs@redhat.com>
+
+drm/nouveau: Unmap pushbuf BOs when we're done with them.
+
+If you're especially unlucky BOs would move around and their kmaps
+would end up pointing to something else in GART, then ioctl_pushbuf()
+would use the kmaps again corrupting textures or other pushbufs (the
+most noticeable symptom was a PFIFO_DMA_PUSHER from time to time).
+
+Signed-off-by: Francisco Jerez <currojerez@riseup.net>
+Signed-off-by: Ben Skeggs <bskeggs@redhat.com>
+
+drm/nouveau: Don't reuse the same variable in a nested loop.
+
+Signed-off-by: Francisco Jerez <currojerez@riseup.net>
+Signed-off-by: Ben Skeggs <bskeggs@redhat.com>
+
+drm/nouveau: fix missing spin_unlock in failure path
+
+Found by sparse.
+
+Signed-off-by: Luca Barbieri <luca@luca-barbieri.com>
+Signed-off-by: Francisco Jerez <currojerez@riseup.net>
+
+drm/nouveau: only kunmap buffers we mapped during validation
+
+Fixes suspend/resume regression introduced by 1723b75407...66b4b71229c2c.
+
+Signed-off-by: Ben Skeggs <bskeggs@redhat.com>
+---
+ drivers/gpu/drm/nouveau/nouveau_channel.c |   26 +-
+ drivers/gpu/drm/nouveau/nouveau_debugfs.c |   11 +
+ drivers/gpu/drm/nouveau/nouveau_dma.c     |  108 +++++++-
+ drivers/gpu/drm/nouveau/nouveau_dma.h     |   21 +-
+ drivers/gpu/drm/nouveau/nouveau_drv.h     |   26 +-
+ drivers/gpu/drm/nouveau/nouveau_gem.c     |  490 ++++++++++-------------------
+ drivers/gpu/drm/nouveau/nouveau_state.c   |    7 -
+ drivers/gpu/drm/nouveau/nv50_fifo.c       |    8 +-
+ include/drm/nouveau_drm.h                 |   86 ++----
+ 9 files changed, 365 insertions(+), 418 deletions(-)
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_channel.c b/drivers/gpu/drm/nouveau/nouveau_channel.c
+index 2281f99..adac0f8 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_channel.c
++++ b/drivers/gpu/drm/nouveau/nouveau_channel.c
+@@ -35,22 +35,27 @@ nouveau_channel_pushbuf_ctxdma_init(struct nouveau_channel *chan)
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
+ 	struct nouveau_bo *pb = chan->pushbuf_bo;
+ 	struct nouveau_gpuobj *pushbuf = NULL;
+-	uint32_t start = pb->bo.mem.mm_node->start << PAGE_SHIFT;
+ 	int ret;
+ 
++	if (dev_priv->card_type >= NV_50) {
++		ret = nouveau_gpuobj_dma_new(chan, NV_CLASS_DMA_IN_MEMORY, 0,
++					     dev_priv->vm_end, NV_DMA_ACCESS_RO,
++					     NV_DMA_TARGET_AGP, &pushbuf);
++		chan->pushbuf_base = pb->bo.offset;
++	} else
+ 	if (pb->bo.mem.mem_type == TTM_PL_TT) {
+ 		ret = nouveau_gpuobj_gart_dma_new(chan, 0,
+ 						  dev_priv->gart_info.aper_size,
+ 						  NV_DMA_ACCESS_RO, &pushbuf,
+ 						  NULL);
+-		chan->pushbuf_base = start;
++		chan->pushbuf_base = pb->bo.mem.mm_node->start << PAGE_SHIFT;
+ 	} else
+ 	if (dev_priv->card_type != NV_04) {
+ 		ret = nouveau_gpuobj_dma_new(chan, NV_CLASS_DMA_IN_MEMORY, 0,
+ 					     dev_priv->fb_available_size,
+ 					     NV_DMA_ACCESS_RO,
+ 					     NV_DMA_TARGET_VIDMEM, &pushbuf);
+-		chan->pushbuf_base = start;
++		chan->pushbuf_base = pb->bo.mem.mm_node->start << PAGE_SHIFT;
+ 	} else {
+ 		/* NV04 cmdbuf hack, from original ddx.. not sure of it's
+ 		 * exact reason for existing :)  PCI access to cmdbuf in
+@@ -61,7 +66,7 @@ nouveau_channel_pushbuf_ctxdma_init(struct nouveau_channel *chan)
+ 					     dev_priv->fb_available_size,
+ 					     NV_DMA_ACCESS_RO,
+ 					     NV_DMA_TARGET_PCI, &pushbuf);
+-		chan->pushbuf_base = start;
++		chan->pushbuf_base = pb->bo.mem.mm_node->start << PAGE_SHIFT;
+ 	}
+ 
+ 	ret = nouveau_gpuobj_ref_add(dev, chan, 0, pushbuf, &chan->pushbuf);
+@@ -369,6 +374,14 @@ nouveau_ioctl_fifo_alloc(struct drm_device *dev, void *data,
+ 		return ret;
+ 	init->channel  = chan->id;
+ 
++	if (chan->dma.ib_max)
++		init->pushbuf_domains = NOUVEAU_GEM_DOMAIN_VRAM |
++					NOUVEAU_GEM_DOMAIN_GART;
++	else if (chan->pushbuf_bo->bo.mem.mem_type == TTM_PL_VRAM)
++		init->pushbuf_domains = NOUVEAU_GEM_DOMAIN_VRAM;
++	else
++		init->pushbuf_domains = NOUVEAU_GEM_DOMAIN_GART;
++
+ 	init->subchan[0].handle = NvM2MF;
+ 	if (dev_priv->card_type < NV_50)
+ 		init->subchan[0].grclass = 0x0039;
+@@ -408,7 +421,6 @@ nouveau_ioctl_fifo_free(struct drm_device *dev, void *data,
+  ***********************************/
+ 
+ struct drm_ioctl_desc nouveau_ioctls[] = {
+-	DRM_IOCTL_DEF(DRM_NOUVEAU_CARD_INIT, nouveau_ioctl_card_init, DRM_AUTH),
+ 	DRM_IOCTL_DEF(DRM_NOUVEAU_GETPARAM, nouveau_ioctl_getparam, DRM_AUTH),
+ 	DRM_IOCTL_DEF(DRM_NOUVEAU_SETPARAM, nouveau_ioctl_setparam, DRM_AUTH|DRM_MASTER|DRM_ROOT_ONLY),
+ 	DRM_IOCTL_DEF(DRM_NOUVEAU_CHANNEL_ALLOC, nouveau_ioctl_fifo_alloc, DRM_AUTH),
+@@ -418,13 +430,9 @@ struct drm_ioctl_desc nouveau_ioctls[] = {
+ 	DRM_IOCTL_DEF(DRM_NOUVEAU_GPUOBJ_FREE, nouveau_ioctl_gpuobj_free, DRM_AUTH),
+ 	DRM_IOCTL_DEF(DRM_NOUVEAU_GEM_NEW, nouveau_gem_ioctl_new, DRM_AUTH),
+ 	DRM_IOCTL_DEF(DRM_NOUVEAU_GEM_PUSHBUF, nouveau_gem_ioctl_pushbuf, DRM_AUTH),
+-	DRM_IOCTL_DEF(DRM_NOUVEAU_GEM_PUSHBUF_CALL, nouveau_gem_ioctl_pushbuf_call, DRM_AUTH),
+-	DRM_IOCTL_DEF(DRM_NOUVEAU_GEM_PIN, nouveau_gem_ioctl_pin, DRM_AUTH),
+-	DRM_IOCTL_DEF(DRM_NOUVEAU_GEM_UNPIN, nouveau_gem_ioctl_unpin, DRM_AUTH),
+ 	DRM_IOCTL_DEF(DRM_NOUVEAU_GEM_CPU_PREP, nouveau_gem_ioctl_cpu_prep, DRM_AUTH),
+ 	DRM_IOCTL_DEF(DRM_NOUVEAU_GEM_CPU_FINI, nouveau_gem_ioctl_cpu_fini, DRM_AUTH),
+ 	DRM_IOCTL_DEF(DRM_NOUVEAU_GEM_INFO, nouveau_gem_ioctl_info, DRM_AUTH),
+-	DRM_IOCTL_DEF(DRM_NOUVEAU_GEM_PUSHBUF_CALL2, nouveau_gem_ioctl_pushbuf_call2, DRM_AUTH),
+ };
+ 
+ int nouveau_max_ioctl = DRM_ARRAY_SIZE(nouveau_ioctls);
+diff --git a/drivers/gpu/drm/nouveau/nouveau_debugfs.c b/drivers/gpu/drm/nouveau/nouveau_debugfs.c
+index d79db36..89e36ee 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_debugfs.c
++++ b/drivers/gpu/drm/nouveau/nouveau_debugfs.c
+@@ -47,12 +47,23 @@ nouveau_debugfs_channel_info(struct seq_file *m, void *data)
+ 	seq_printf(m, "           cur: 0x%08x\n", chan->dma.cur << 2);
+ 	seq_printf(m, "           put: 0x%08x\n", chan->dma.put << 2);
+ 	seq_printf(m, "          free: 0x%08x\n", chan->dma.free << 2);
++	if (chan->dma.ib_max) {
++		seq_printf(m, "        ib max: 0x%08x\n", chan->dma.ib_max);
++		seq_printf(m, "        ib put: 0x%08x\n", chan->dma.ib_put);
++		seq_printf(m, "       ib free: 0x%08x\n", chan->dma.ib_free);
++	}
+ 
+ 	seq_printf(m, "gpu fifo state:\n");
+ 	seq_printf(m, "           get: 0x%08x\n",
+ 					nvchan_rd32(chan, chan->user_get));
+ 	seq_printf(m, "           put: 0x%08x\n",
+ 					nvchan_rd32(chan, chan->user_put));
++	if (chan->dma.ib_max) {
++		seq_printf(m, "        ib get: 0x%08x\n",
++			   nvchan_rd32(chan, 0x88));
++		seq_printf(m, "        ib put: 0x%08x\n",
++			   nvchan_rd32(chan, 0x8c));
++	}
+ 
+ 	seq_printf(m, "last fence    : %d\n", chan->fence.sequence);
+ 	seq_printf(m, "last signalled: %d\n", chan->fence.sequence_ack);
+diff --git a/drivers/gpu/drm/nouveau/nouveau_dma.c b/drivers/gpu/drm/nouveau/nouveau_dma.c
+index 50d9e67..c8482a1 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_dma.c
++++ b/drivers/gpu/drm/nouveau/nouveau_dma.c
+@@ -32,7 +32,22 @@
+ void
+ nouveau_dma_pre_init(struct nouveau_channel *chan)
+ {
+-	chan->dma.max  = (chan->pushbuf_bo->bo.mem.size >> 2) - 2;
++	struct drm_nouveau_private *dev_priv = chan->dev->dev_private;
++	struct nouveau_bo *pushbuf = chan->pushbuf_bo;
++
++	if (dev_priv->card_type == NV_50) {
++		const int ib_size = pushbuf->bo.mem.size / 2;
++
++		chan->dma.ib_base = (pushbuf->bo.mem.size - ib_size) >> 2;
++		chan->dma.ib_max = (ib_size / 8) - 1;
++		chan->dma.ib_put = 0;
++		chan->dma.ib_free = chan->dma.ib_max - chan->dma.ib_put;
++
++		chan->dma.max = (pushbuf->bo.mem.size - ib_size) >> 2;
++	} else {
++		chan->dma.max  = (pushbuf->bo.mem.size >> 2) - 2;
++	}
++
+ 	chan->dma.put  = 0;
+ 	chan->dma.cur  = chan->dma.put;
+ 	chan->dma.free = chan->dma.max - chan->dma.cur;
+@@ -162,12 +177,101 @@ READ_GET(struct nouveau_channel *chan, uint32_t *prev_get, uint32_t *timeout)
+ 	return (val - chan->pushbuf_base) >> 2;
+ }
+ 
++void
++nv50_dma_push(struct nouveau_channel *chan, struct nouveau_bo *bo,
++	      int delta, int length)
++{
++	struct nouveau_bo *pb = chan->pushbuf_bo;
++	uint64_t offset = bo->bo.offset + delta;
++	int ip = (chan->dma.ib_put * 2) + chan->dma.ib_base;
++
++	BUG_ON(chan->dma.ib_free < 1);
++	nouveau_bo_wr32(pb, ip++, lower_32_bits(offset));
++	nouveau_bo_wr32(pb, ip++, upper_32_bits(offset) | length << 8);
++
++	chan->dma.ib_put = (chan->dma.ib_put + 1) & chan->dma.ib_max;
++	nvchan_wr32(chan, 0x8c, chan->dma.ib_put);
++	chan->dma.ib_free--;
++}
++
++static int
++nv50_dma_push_wait(struct nouveau_channel *chan, int count)
++{
++	uint32_t cnt = 0, prev_get = 0;
++
++	while (chan->dma.ib_free < count) {
++		uint32_t get = nvchan_rd32(chan, 0x88);
++		if (get != prev_get) {
++			prev_get = get;
++			cnt = 0;
++		}
++
++		if ((++cnt & 0xff) == 0) {
++			DRM_UDELAY(1);
++			if (cnt > 100000)
++				return -EBUSY;
++		}
++
++		chan->dma.ib_free = get - chan->dma.ib_put;
++		if (chan->dma.ib_free <= 0)
++			chan->dma.ib_free += chan->dma.ib_max + 1;
++	}
++
++	return 0;
++}
++
++static int
++nv50_dma_wait(struct nouveau_channel *chan, int slots, int count)
++{
++	uint32_t cnt = 0, prev_get = 0;
++	int ret;
++
++	ret = nv50_dma_push_wait(chan, slots + 1);
++	if (unlikely(ret))
++		return ret;
++
++	while (chan->dma.free < count) {
++		int get = READ_GET(chan, &prev_get, &cnt);
++		if (unlikely(get < 0)) {
++			if (get == -EINVAL)
++				continue;
++
++			return get;
++		}
++
++		if (get <= chan->dma.cur) {
++			chan->dma.free = chan->dma.max - chan->dma.cur;
++			if (chan->dma.free >= count)
++				break;
++
++			FIRE_RING(chan);
++			do {
++				get = READ_GET(chan, &prev_get, &cnt);
++				if (unlikely(get < 0)) {
++					if (get == -EINVAL)
++						continue;
++					return get;
++				}
++			} while (get == 0);
++			chan->dma.cur = 0;
++			chan->dma.put = 0;
++		}
++
++		chan->dma.free = get - chan->dma.cur - 1;
++	}
++
++	return 0;
++}
++
+ int
+-nouveau_dma_wait(struct nouveau_channel *chan, int size)
++nouveau_dma_wait(struct nouveau_channel *chan, int slots, int size)
+ {
+ 	uint32_t prev_get = 0, cnt = 0;
+ 	int get;
+ 
++	if (chan->dma.ib_max)
++		return nv50_dma_wait(chan, slots, size);
++
+ 	while (chan->dma.free < size) {
+ 		get = READ_GET(chan, &prev_get, &cnt);
+ 		if (unlikely(get == -EBUSY))
+diff --git a/drivers/gpu/drm/nouveau/nouveau_dma.h b/drivers/gpu/drm/nouveau/nouveau_dma.h
+index dabfd65..8b05c15 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_dma.h
++++ b/drivers/gpu/drm/nouveau/nouveau_dma.h
+@@ -31,6 +31,9 @@
+ #define NOUVEAU_DMA_DEBUG 0
+ #endif
+ 
++void nv50_dma_push(struct nouveau_channel *, struct nouveau_bo *,
++		   int delta, int length);
++
+ /*
+  * There's a hw race condition where you can't jump to your PUT offset,
+  * to avoid this we jump to offset + SKIPS and fill the difference with
+@@ -96,13 +99,11 @@ enum {
+ static __must_check inline int
+ RING_SPACE(struct nouveau_channel *chan, int size)
+ {
+-	if (chan->dma.free < size) {
+-		int ret;
++	int ret;
+ 
+-		ret = nouveau_dma_wait(chan, size);
+-		if (ret)
+-			return ret;
+-	}
++	ret = nouveau_dma_wait(chan, 1, size);
++	if (ret)
++		return ret;
+ 
+ 	chan->dma.free -= size;
+ 	return 0;
+@@ -146,7 +147,13 @@ FIRE_RING(struct nouveau_channel *chan)
+ 		return;
+ 	chan->accel_done = true;
+ 
+-	WRITE_PUT(chan->dma.cur);
++	if (chan->dma.ib_max) {
++		nv50_dma_push(chan, chan->pushbuf_bo, chan->dma.put << 2,
++			      (chan->dma.cur - chan->dma.put) << 2);
++	} else {
++		WRITE_PUT(chan->dma.cur);
++	}
++
+ 	chan->dma.put = chan->dma.cur;
+ }
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drv.h b/drivers/gpu/drm/nouveau/nouveau_drv.h
+index 1c15ef3..5be0cca 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drv.h
++++ b/drivers/gpu/drm/nouveau/nouveau_drv.h
+@@ -34,7 +34,7 @@
+ 
+ #define DRIVER_MAJOR		0
+ #define DRIVER_MINOR		0
+-#define DRIVER_PATCHLEVEL	15
++#define DRIVER_PATCHLEVEL	16
+ 
+ #define NOUVEAU_FAMILY   0x0000FFFF
+ #define NOUVEAU_FLAGS    0xFFFF0000
+@@ -83,6 +83,7 @@ struct nouveau_bo {
+ 	struct drm_file *reserved_by;
+ 	struct list_head entry;
+ 	int pbbo_index;
++	bool validate_mapped;
+ 
+ 	struct nouveau_channel *channel;
+ 
+@@ -239,6 +240,11 @@ struct nouveau_channel {
+ 		int cur;
+ 		int put;
+ 		/* access via pushbuf_bo */
++
++		int ib_base;
++		int ib_max;
++		int ib_free;
++		int ib_put;
+ 	} dma;
+ 
+ 	uint32_t sw_subchannel[8];
+@@ -696,12 +702,6 @@ extern bool nouveau_wait_until(struct drm_device *, uint64_t timeout,
+ 			       uint32_t reg, uint32_t mask, uint32_t val);
+ extern bool nouveau_wait_for_idle(struct drm_device *);
+ extern int  nouveau_card_init(struct drm_device *);
+-extern int  nouveau_ioctl_card_init(struct drm_device *, void *data,
+-				    struct drm_file *);
+-extern int  nouveau_ioctl_suspend(struct drm_device *, void *data,
+-				  struct drm_file *);
+-extern int  nouveau_ioctl_resume(struct drm_device *, void *data,
+-				 struct drm_file *);
+ 
+ /* nouveau_mem.c */
+ extern int  nouveau_mem_init_heap(struct mem_block **, uint64_t start,
+@@ -845,7 +845,7 @@ nouveau_debugfs_channel_fini(struct nouveau_channel *chan)
+ /* nouveau_dma.c */
+ extern void nouveau_dma_pre_init(struct nouveau_channel *);
+ extern int  nouveau_dma_init(struct nouveau_channel *);
+-extern int  nouveau_dma_wait(struct nouveau_channel *, int size);
++extern int  nouveau_dma_wait(struct nouveau_channel *, int slots, int size);
+ 
+ /* nouveau_acpi.c */
+ #ifdef CONFIG_ACPI
+@@ -1152,16 +1152,6 @@ extern int nouveau_gem_ioctl_new(struct drm_device *, void *,
+ 				 struct drm_file *);
+ extern int nouveau_gem_ioctl_pushbuf(struct drm_device *, void *,
+ 				     struct drm_file *);
+-extern int nouveau_gem_ioctl_pushbuf_call(struct drm_device *, void *,
+-					  struct drm_file *);
+-extern int nouveau_gem_ioctl_pushbuf_call2(struct drm_device *, void *,
+-					   struct drm_file *);
+-extern int nouveau_gem_ioctl_pin(struct drm_device *, void *,
+-				 struct drm_file *);
+-extern int nouveau_gem_ioctl_unpin(struct drm_device *, void *,
+-				   struct drm_file *);
+-extern int nouveau_gem_ioctl_tile(struct drm_device *, void *,
+-				  struct drm_file *);
+ extern int nouveau_gem_ioctl_cpu_prep(struct drm_device *, void *,
+ 				      struct drm_file *);
+ extern int nouveau_gem_ioctl_cpu_fini(struct drm_device *, void *,
+diff --git a/drivers/gpu/drm/nouveau/nouveau_gem.c b/drivers/gpu/drm/nouveau/nouveau_gem.c
+index 70cc308..8265fed 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_gem.c
++++ b/drivers/gpu/drm/nouveau/nouveau_gem.c
+@@ -243,6 +243,11 @@ validate_fini_list(struct list_head *list, struct nouveau_fence *fence)
+ 			nouveau_fence_unref((void *)&prev_fence);
+ 		}
+ 
++		if (unlikely(nvbo->validate_mapped)) {
++			ttm_bo_kunmap(&nvbo->kmap);
++			nvbo->validate_mapped = false;
++		}
++
+ 		list_del(&nvbo->entry);
+ 		nvbo->reserved_by = NULL;
+ 		ttm_bo_unreserve(&nvbo->bo);
+@@ -302,11 +307,14 @@ retry:
+ 			if (ret == -EAGAIN)
+ 				ret = ttm_bo_wait_unreserved(&nvbo->bo, false);
+ 			drm_gem_object_unreference(gem);
+-			if (ret)
++			if (ret) {
++				NV_ERROR(dev, "fail reserve\n");
+ 				return ret;
++			}
+ 			goto retry;
+ 		}
+ 
++		b->user_priv = (uint64_t)(unsigned long)nvbo;
+ 		nvbo->reserved_by = file_priv;
+ 		nvbo->pbbo_index = i;
+ 		if ((b->valid_domains & NOUVEAU_GEM_DOMAIN_VRAM) &&
+@@ -336,8 +344,10 @@ retry:
+ 			}
+ 
+ 			ret = ttm_bo_wait_cpu(&nvbo->bo, false);
+-			if (ret)
++			if (ret) {
++				NV_ERROR(dev, "fail wait_cpu\n");
+ 				return ret;
++			}
+ 			goto retry;
+ 		}
+ 	}
+@@ -351,6 +361,7 @@ validate_list(struct nouveau_channel *chan, struct list_head *list,
+ {
+ 	struct drm_nouveau_gem_pushbuf_bo __user *upbbo =
+ 				(void __force __user *)(uintptr_t)user_pbbo_ptr;
++	struct drm_device *dev = chan->dev;
+ 	struct nouveau_bo *nvbo;
+ 	int ret, relocs = 0;
+ 
+@@ -362,39 +373,46 @@ validate_list(struct nouveau_channel *chan, struct list_head *list,
+ 			spin_lock(&nvbo->bo.lock);
+ 			ret = ttm_bo_wait(&nvbo->bo, false, false, false);
+ 			spin_unlock(&nvbo->bo.lock);
+-			if (unlikely(ret))
++			if (unlikely(ret)) {
++				NV_ERROR(dev, "fail wait other chan\n");
+ 				return ret;
++			}
+ 		}
+ 
+ 		ret = nouveau_gem_set_domain(nvbo->gem, b->read_domains,
+ 					     b->write_domains,
+ 					     b->valid_domains);
+-		if (unlikely(ret))
++		if (unlikely(ret)) {
++			NV_ERROR(dev, "fail set_domain\n");
+ 			return ret;
++		}
+ 
+ 		nvbo->channel = chan;
+ 		ret = ttm_bo_validate(&nvbo->bo, &nvbo->placement,
+ 				      false, false);
+ 		nvbo->channel = NULL;
+-		if (unlikely(ret))
++		if (unlikely(ret)) {
++			NV_ERROR(dev, "fail ttm_validate\n");
+ 			return ret;
++		}
+ 
+-		if (nvbo->bo.offset == b->presumed_offset &&
++		if (nvbo->bo.offset == b->presumed.offset &&
+ 		    ((nvbo->bo.mem.mem_type == TTM_PL_VRAM &&
+-		      b->presumed_domain & NOUVEAU_GEM_DOMAIN_VRAM) ||
++		      b->presumed.domain & NOUVEAU_GEM_DOMAIN_VRAM) ||
+ 		     (nvbo->bo.mem.mem_type == TTM_PL_TT &&
+-		      b->presumed_domain & NOUVEAU_GEM_DOMAIN_GART)))
++		      b->presumed.domain & NOUVEAU_GEM_DOMAIN_GART)))
+ 			continue;
+ 
+ 		if (nvbo->bo.mem.mem_type == TTM_PL_TT)
+-			b->presumed_domain = NOUVEAU_GEM_DOMAIN_GART;
++			b->presumed.domain = NOUVEAU_GEM_DOMAIN_GART;
+ 		else
+-			b->presumed_domain = NOUVEAU_GEM_DOMAIN_VRAM;
+-		b->presumed_offset = nvbo->bo.offset;
+-		b->presumed_ok = 0;
++			b->presumed.domain = NOUVEAU_GEM_DOMAIN_VRAM;
++		b->presumed.offset = nvbo->bo.offset;
++		b->presumed.valid = 0;
+ 		relocs++;
+ 
+-		if (DRM_COPY_TO_USER(&upbbo[nvbo->pbbo_index], b, sizeof(*b)))
++		if (DRM_COPY_TO_USER(&upbbo[nvbo->pbbo_index].presumed,
++				     &b->presumed, sizeof(b->presumed)))
+ 			return -EFAULT;
+ 	}
+ 
+@@ -408,6 +426,7 @@ nouveau_gem_pushbuf_validate(struct nouveau_channel *chan,
+ 			     uint64_t user_buffers, int nr_buffers,
+ 			     struct validate_op *op, int *apply_relocs)
+ {
++	struct drm_device *dev = chan->dev;
+ 	int ret, relocs = 0;
+ 
+ 	INIT_LIST_HEAD(&op->vram_list);
+@@ -418,11 +437,14 @@ nouveau_gem_pushbuf_validate(struct nouveau_channel *chan,
+ 		return 0;
+ 
+ 	ret = validate_init(chan, file_priv, pbbo, nr_buffers, op);
+-	if (unlikely(ret))
++	if (unlikely(ret)) {
++		NV_ERROR(dev, "validate_init\n");
+ 		return ret;
++	}
+ 
+ 	ret = validate_list(chan, &op->vram_list, pbbo, user_buffers);
+ 	if (unlikely(ret < 0)) {
++		NV_ERROR(dev, "validate vram_list\n");
+ 		validate_fini(op, NULL);
+ 		return ret;
+ 	}
+@@ -430,6 +452,7 @@ nouveau_gem_pushbuf_validate(struct nouveau_channel *chan,
+ 
+ 	ret = validate_list(chan, &op->gart_list, pbbo, user_buffers);
+ 	if (unlikely(ret < 0)) {
++		NV_ERROR(dev, "validate gart_list\n");
+ 		validate_fini(op, NULL);
+ 		return ret;
+ 	}
+@@ -437,6 +460,7 @@ nouveau_gem_pushbuf_validate(struct nouveau_channel *chan,
+ 
+ 	ret = validate_list(chan, &op->both_list, pbbo, user_buffers);
+ 	if (unlikely(ret < 0)) {
++		NV_ERROR(dev, "validate both_list\n");
+ 		validate_fini(op, NULL);
+ 		return ret;
+ 	}
+@@ -465,59 +489,82 @@ u_memcpya(uint64_t user, unsigned nmemb, unsigned size)
+ }
+ 
+ static int
+-nouveau_gem_pushbuf_reloc_apply(struct nouveau_channel *chan, int nr_bo,
+-				struct drm_nouveau_gem_pushbuf_bo *bo,
+-				unsigned nr_relocs, uint64_t ptr_relocs,
+-				unsigned nr_dwords, unsigned first_dword,
+-				uint32_t *pushbuf, bool is_iomem)
++nouveau_gem_pushbuf_reloc_apply(struct drm_device *dev,
++				struct drm_nouveau_gem_pushbuf *req,
++				struct drm_nouveau_gem_pushbuf_bo *bo)
+ {
+ 	struct drm_nouveau_gem_pushbuf_reloc *reloc = NULL;
+-	struct drm_device *dev = chan->dev;
+ 	int ret = 0;
+ 	unsigned i;
+ 
+-	reloc = u_memcpya(ptr_relocs, nr_relocs, sizeof(*reloc));
++	reloc = u_memcpya(req->relocs, req->nr_relocs, sizeof(*reloc));
+ 	if (IS_ERR(reloc))
+ 		return PTR_ERR(reloc);
+ 
+-	for (i = 0; i < nr_relocs; i++) {
++	for (i = 0; i < req->nr_relocs; i++) {
+ 		struct drm_nouveau_gem_pushbuf_reloc *r = &reloc[i];
+ 		struct drm_nouveau_gem_pushbuf_bo *b;
++		struct nouveau_bo *nvbo;
+ 		uint32_t data;
+ 
+-		if (r->bo_index >= nr_bo || r->reloc_index < first_dword ||
+-		    r->reloc_index >= first_dword + nr_dwords) {
+-			NV_ERROR(dev, "Bad relocation %d\n", i);
+-			NV_ERROR(dev, "  bo: %d max %d\n", r->bo_index, nr_bo);
+-			NV_ERROR(dev, "  id: %d max %d\n", r->reloc_index, nr_dwords);
++		if (unlikely(r->bo_index > req->nr_buffers)) {
++			NV_ERROR(dev, "reloc bo index invalid\n");
+ 			ret = -EINVAL;
+ 			break;
+ 		}
+ 
+ 		b = &bo[r->bo_index];
+-		if (b->presumed_ok)
++		if (b->presumed.valid)
+ 			continue;
+ 
++		if (unlikely(r->reloc_bo_index > req->nr_buffers)) {
++			NV_ERROR(dev, "reloc container bo index invalid\n");
++			ret = -EINVAL;
++			break;
++		}
++		nvbo = (void *)(unsigned long)bo[r->reloc_bo_index].user_priv;
++
++		if (unlikely(r->reloc_bo_offset + 4 >
++			     nvbo->bo.mem.num_pages << PAGE_SHIFT)) {
++			NV_ERROR(dev, "reloc outside of bo\n");
++			ret = -EINVAL;
++			break;
++		}
++
++		if (!nvbo->kmap.virtual) {
++			ret = ttm_bo_kmap(&nvbo->bo, 0, nvbo->bo.mem.num_pages,
++					  &nvbo->kmap);
++			if (ret) {
++				NV_ERROR(dev, "failed kmap for reloc\n");
++				break;
++			}
++			nvbo->validate_mapped = true;
++		}
++
+ 		if (r->flags & NOUVEAU_GEM_RELOC_LOW)
+-			data = b->presumed_offset + r->data;
++			data = b->presumed.offset + r->data;
+ 		else
+ 		if (r->flags & NOUVEAU_GEM_RELOC_HIGH)
+-			data = (b->presumed_offset + r->data) >> 32;
++			data = (b->presumed.offset + r->data) >> 32;
+ 		else
+ 			data = r->data;
+ 
+ 		if (r->flags & NOUVEAU_GEM_RELOC_OR) {
+-			if (b->presumed_domain == NOUVEAU_GEM_DOMAIN_GART)
++			if (b->presumed.domain == NOUVEAU_GEM_DOMAIN_GART)
+ 				data |= r->tor;
+ 			else
+ 				data |= r->vor;
+ 		}
+ 
+-		if (is_iomem)
+-			iowrite32_native(data, (void __force __iomem *)
+-						&pushbuf[r->reloc_index]);
+-		else
+-			pushbuf[r->reloc_index] = data;
++		spin_lock(&nvbo->bo.lock);
++		ret = ttm_bo_wait(&nvbo->bo, false, false, false);
++		spin_unlock(&nvbo->bo.lock);
++		if (ret) {
++			NV_ERROR(dev, "reloc wait_idle failed: %d\n", ret);
++			break;
++		}
++
++		nouveau_bo_wr32(nvbo, r->reloc_bo_offset >> 2, data);
+ 	}
+ 
+ 	kfree(reloc);
+@@ -528,127 +575,50 @@ int
+ nouveau_gem_ioctl_pushbuf(struct drm_device *dev, void *data,
+ 			  struct drm_file *file_priv)
+ {
++	struct drm_nouveau_private *dev_priv = dev->dev_private;
+ 	struct drm_nouveau_gem_pushbuf *req = data;
+-	struct drm_nouveau_gem_pushbuf_bo *bo = NULL;
++	struct drm_nouveau_gem_pushbuf_push *push;
++	struct drm_nouveau_gem_pushbuf_bo *bo;
+ 	struct nouveau_channel *chan;
+ 	struct validate_op op;
+-	struct nouveau_fence* fence = 0;
+-	uint32_t *pushbuf = NULL;
+-	int ret = 0, do_reloc = 0, i;
++	struct nouveau_fence *fence = 0;
++	int i, j, ret = 0, do_reloc = 0;
+ 
+ 	NOUVEAU_CHECK_INITIALISED_WITH_RETURN;
+ 	NOUVEAU_GET_USER_CHANNEL_WITH_RETURN(req->channel, file_priv, chan);
+ 
+-	if (req->nr_dwords >= chan->dma.max ||
+-	    req->nr_buffers > NOUVEAU_GEM_MAX_BUFFERS ||
+-	    req->nr_relocs > NOUVEAU_GEM_MAX_RELOCS) {
+-		NV_ERROR(dev, "Pushbuf config exceeds limits:\n");
+-		NV_ERROR(dev, "  dwords : %d max %d\n", req->nr_dwords,
+-			 chan->dma.max - 1);
+-		NV_ERROR(dev, "  buffers: %d max %d\n", req->nr_buffers,
+-			 NOUVEAU_GEM_MAX_BUFFERS);
+-		NV_ERROR(dev, "  relocs : %d max %d\n", req->nr_relocs,
+-			 NOUVEAU_GEM_MAX_RELOCS);
+-		return -EINVAL;
+-	}
+-
+-	pushbuf = u_memcpya(req->dwords, req->nr_dwords, sizeof(uint32_t));
+-	if (IS_ERR(pushbuf))
+-		return PTR_ERR(pushbuf);
+-
+-	bo = u_memcpya(req->buffers, req->nr_buffers, sizeof(*bo));
+-	if (IS_ERR(bo)) {
+-		kfree(pushbuf);
+-		return PTR_ERR(bo);
+-	}
+-
+-	mutex_lock(&dev->struct_mutex);
+-
+-	/* Validate buffer list */
+-	ret = nouveau_gem_pushbuf_validate(chan, file_priv, bo, req->buffers,
+-					   req->nr_buffers, &op, &do_reloc);
+-	if (ret)
+-		goto out;
+-
+-	/* Apply any relocations that are required */
+-	if (do_reloc) {
+-		ret = nouveau_gem_pushbuf_reloc_apply(chan, req->nr_buffers,
+-						      bo, req->nr_relocs,
+-						      req->relocs,
+-						      req->nr_dwords, 0,
+-						      pushbuf, false);
+-		if (ret)
+-			goto out;
+-	}
+-
+-	/* Emit push buffer to the hw
+-	 */
+-	ret = RING_SPACE(chan, req->nr_dwords);
+-	if (ret)
+-		goto out;
+-
+-	OUT_RINGp(chan, pushbuf, req->nr_dwords);
++	req->vram_available = dev_priv->fb_aper_free;
++	req->gart_available = dev_priv->gart_info.aper_free;
++	if (unlikely(req->nr_push == 0))
++		goto out_next;
+ 
+-	ret = nouveau_fence_new(chan, &fence, true);
+-	if (ret) {
+-		NV_ERROR(dev, "error fencing pushbuf: %d\n", ret);
+-		WIND_RING(chan);
+-		goto out;
++	if (unlikely(req->nr_push > NOUVEAU_GEM_MAX_PUSH)) {
++		NV_ERROR(dev, "pushbuf push count exceeds limit: %d max %d\n",
++			 req->nr_push, NOUVEAU_GEM_MAX_PUSH);
++		return -EINVAL;
+ 	}
+ 
+-	if (nouveau_gem_pushbuf_sync(chan)) {
+-		ret = nouveau_fence_wait(fence, NULL, false, false);
+-		if (ret) {
+-			for (i = 0; i < req->nr_dwords; i++)
+-				NV_ERROR(dev, "0x%08x\n", pushbuf[i]);
+-			NV_ERROR(dev, "^^ above push buffer is fail :(\n");
+-		}
++	if (unlikely(req->nr_buffers > NOUVEAU_GEM_MAX_BUFFERS)) {
++		NV_ERROR(dev, "pushbuf bo count exceeds limit: %d max %d\n",
++			 req->nr_buffers, NOUVEAU_GEM_MAX_BUFFERS);
++		return -EINVAL;
+ 	}
+ 
+-out:
+-	validate_fini(&op, fence);
+-	nouveau_fence_unref((void**)&fence);
+-	mutex_unlock(&dev->struct_mutex);
+-	kfree(pushbuf);
+-	kfree(bo);
+-	return ret;
+-}
+-
+-#define PUSHBUF_CAL (dev_priv->card_type >= NV_20)
+-
+-int
+-nouveau_gem_ioctl_pushbuf_call(struct drm_device *dev, void *data,
+-			       struct drm_file *file_priv)
+-{
+-	struct drm_nouveau_private *dev_priv = dev->dev_private;
+-	struct drm_nouveau_gem_pushbuf_call *req = data;
+-	struct drm_nouveau_gem_pushbuf_bo *bo = NULL;
+-	struct nouveau_channel *chan;
+-	struct drm_gem_object *gem;
+-	struct nouveau_bo *pbbo;
+-	struct validate_op op;
+-	struct nouveau_fence* fence = 0;
+-	int i, ret = 0, do_reloc = 0;
+-
+-	NOUVEAU_CHECK_INITIALISED_WITH_RETURN;
+-	NOUVEAU_GET_USER_CHANNEL_WITH_RETURN(req->channel, file_priv, chan);
+-
+-	if (unlikely(req->handle == 0))
+-		goto out_next;
+-
+-	if (req->nr_buffers > NOUVEAU_GEM_MAX_BUFFERS ||
+-	    req->nr_relocs > NOUVEAU_GEM_MAX_RELOCS) {
+-		NV_ERROR(dev, "Pushbuf config exceeds limits:\n");
+-		NV_ERROR(dev, "  buffers: %d max %d\n", req->nr_buffers,
+-			 NOUVEAU_GEM_MAX_BUFFERS);
+-		NV_ERROR(dev, "  relocs : %d max %d\n", req->nr_relocs,
+-			 NOUVEAU_GEM_MAX_RELOCS);
++	if (unlikely(req->nr_relocs > NOUVEAU_GEM_MAX_RELOCS)) {
++		NV_ERROR(dev, "pushbuf reloc count exceeds limit: %d max %d\n",
++			 req->nr_relocs, NOUVEAU_GEM_MAX_RELOCS);
+ 		return -EINVAL;
+ 	}
+ 
++	push = u_memcpya(req->push, req->nr_push, sizeof(*push));
++	if (IS_ERR(push))
++		return PTR_ERR(push);
++
+ 	bo = u_memcpya(req->buffers, req->nr_buffers, sizeof(*bo));
+-	if (IS_ERR(bo))
++	if (IS_ERR(bo)) {
++		kfree(push);
+ 		return PTR_ERR(bo);
++	}
+ 
+ 	mutex_lock(&dev->struct_mutex);
+ 
+@@ -660,122 +630,84 @@ nouveau_gem_ioctl_pushbuf_call(struct drm_device *dev, void *data,
+ 		goto out;
+ 	}
+ 
+-	/* Validate DMA push buffer */
+-	gem = drm_gem_object_lookup(dev, file_priv, req->handle);
+-	if (!gem) {
+-		NV_ERROR(dev, "Unknown pb handle 0x%08x\n", req->handle);
+-		ret = -EINVAL;
+-		goto out;
+-	}
+-	pbbo = nouveau_gem_object(gem);
+-
+-	if ((req->offset & 3) || req->nr_dwords < 2 ||
+-	    (unsigned long)req->offset > (unsigned long)pbbo->bo.mem.size ||
+-	    (unsigned long)req->nr_dwords >
+-	     ((unsigned long)(pbbo->bo.mem.size - req->offset ) >> 2)) {
+-		NV_ERROR(dev, "pb call misaligned or out of bounds: "
+-			      "%d + %d * 4 > %ld\n",
+-			 req->offset, req->nr_dwords, pbbo->bo.mem.size);
+-		ret = -EINVAL;
+-		drm_gem_object_unreference(gem);
+-		goto out;
+-	}
+-
+-	ret = ttm_bo_reserve(&pbbo->bo, false, false, true,
+-			     chan->fence.sequence);
+-	if (ret) {
+-		NV_ERROR(dev, "resv pb: %d\n", ret);
+-		drm_gem_object_unreference(gem);
+-		goto out;
+-	}
+-
+-	nouveau_bo_placement_set(pbbo, 1 << chan->pushbuf_bo->bo.mem.mem_type);
+-	ret = ttm_bo_validate(&pbbo->bo, &pbbo->placement, false, false);
+-	if (ret) {
+-		NV_ERROR(dev, "validate pb: %d\n", ret);
+-		ttm_bo_unreserve(&pbbo->bo);
+-		drm_gem_object_unreference(gem);
+-		goto out;
+-	}
+-
+-	list_add_tail(&pbbo->entry, &op.both_list);
+-
+-	/* If presumed return address doesn't match, we need to map the
+-	 * push buffer and fix it..
+-	 */
+-	if (!PUSHBUF_CAL) {
+-		uint32_t retaddy;
+-
+-		if (chan->dma.free < 4 + NOUVEAU_DMA_SKIPS) {
+-			ret = nouveau_dma_wait(chan, 4 + NOUVEAU_DMA_SKIPS);
+-			if (ret) {
+-				NV_ERROR(dev, "jmp_space: %d\n", ret);
+-				goto out;
+-			}
+-		}
+-
+-		retaddy  = chan->pushbuf_base + ((chan->dma.cur + 2) << 2);
+-		retaddy |= 0x20000000;
+-		if (retaddy != req->suffix0) {
+-			req->suffix0 = retaddy;
+-			do_reloc = 1;
+-		}
+-	}
+-
+ 	/* Apply any relocations that are required */
+ 	if (do_reloc) {
+-		void *pbvirt;
+-		bool is_iomem;
+-		ret = ttm_bo_kmap(&pbbo->bo, 0, pbbo->bo.mem.num_pages,
+-				  &pbbo->kmap);
++		ret = nouveau_gem_pushbuf_reloc_apply(dev, req, bo);
+ 		if (ret) {
+-			NV_ERROR(dev, "kmap pb: %d\n", ret);
++			NV_ERROR(dev, "reloc apply: %d\n", ret);
+ 			goto out;
+ 		}
++	}
+ 
+-		pbvirt = ttm_kmap_obj_virtual(&pbbo->kmap, &is_iomem);
+-		ret = nouveau_gem_pushbuf_reloc_apply(chan, req->nr_buffers, bo,
+-						      req->nr_relocs,
+-						      req->relocs,
+-						      req->nr_dwords,
+-						      req->offset / 4,
+-						      pbvirt, is_iomem);
+-
+-		if (!PUSHBUF_CAL) {
+-			nouveau_bo_wr32(pbbo,
+-					req->offset / 4 + req->nr_dwords - 2,
+-					req->suffix0);
+-		}
+-
+-		ttm_bo_kunmap(&pbbo->kmap);
++	if (chan->dma.ib_max) {
++		ret = nouveau_dma_wait(chan, req->nr_push + 1, 6);
+ 		if (ret) {
+-			NV_ERROR(dev, "reloc apply: %d\n", ret);
++			NV_INFO(dev, "nv50cal_space: %d\n", ret);
+ 			goto out;
+ 		}
+-	}
+ 
+-	if (PUSHBUF_CAL) {
+-		ret = RING_SPACE(chan, 2);
++		for (i = 0; i < req->nr_push; i++) {
++			struct nouveau_bo *nvbo = (void *)(unsigned long)
++				bo[push[i].bo_index].user_priv;
++
++			nv50_dma_push(chan, nvbo, push[i].offset,
++				      push[i].length);
++		}
++	} else
++	if (dev_priv->card_type >= NV_20) {
++		ret = RING_SPACE(chan, req->nr_push * 2);
+ 		if (ret) {
+ 			NV_ERROR(dev, "cal_space: %d\n", ret);
+ 			goto out;
+ 		}
+-		OUT_RING(chan, ((pbbo->bo.mem.mm_node->start << PAGE_SHIFT) +
+-				  req->offset) | 2);
+-		OUT_RING(chan, 0);
++
++		for (i = 0; i < req->nr_push; i++) {
++			struct nouveau_bo *nvbo = (void *)(unsigned long)
++				bo[push[i].bo_index].user_priv;
++			struct drm_mm_node *mem = nvbo->bo.mem.mm_node;
++
++			OUT_RING(chan, ((mem->start << PAGE_SHIFT) +
++					push[i].offset) | 2);
++			OUT_RING(chan, 0);
++		}
+ 	} else {
+-		ret = RING_SPACE(chan, 2 + NOUVEAU_DMA_SKIPS);
++		ret = RING_SPACE(chan, req->nr_push * (2 + NOUVEAU_DMA_SKIPS));
+ 		if (ret) {
+ 			NV_ERROR(dev, "jmp_space: %d\n", ret);
+ 			goto out;
+ 		}
+-		OUT_RING(chan, ((pbbo->bo.mem.mm_node->start << PAGE_SHIFT) +
+-				  req->offset) | 0x20000000);
+-		OUT_RING(chan, 0);
+ 
+-		/* Space the jumps apart with NOPs. */
+-		for (i = 0; i < NOUVEAU_DMA_SKIPS; i++)
++		for (i = 0; i < req->nr_push; i++) {
++			struct nouveau_bo *nvbo = (void *)(unsigned long)
++				bo[push[i].bo_index].user_priv;
++			struct drm_mm_node *mem = nvbo->bo.mem.mm_node;
++			uint32_t cmd;
++
++			cmd = chan->pushbuf_base + ((chan->dma.cur + 2) << 2);
++			cmd |= 0x20000000;
++			if (unlikely(cmd != req->suffix0)) {
++				if (!nvbo->kmap.virtual) {
++					ret = ttm_bo_kmap(&nvbo->bo, 0,
++							  nvbo->bo.mem.
++							  num_pages,
++							  &nvbo->kmap);
++					if (ret) {
++						WIND_RING(chan);
++						goto out;
++					}
++					nvbo->validate_mapped = true;
++				}
++
++				nouveau_bo_wr32(nvbo, (push[i].offset +
++						push[i].length - 8) / 4, cmd);
++			}
++
++			OUT_RING(chan, ((mem->start << PAGE_SHIFT) +
++					push[i].offset) | 0x20000000);
+ 			OUT_RING(chan, 0);
++			for (j = 0; j < NOUVEAU_DMA_SKIPS; j++)
++				OUT_RING(chan, 0);
++		}
+ 	}
+ 
+ 	ret = nouveau_fence_new(chan, &fence, true);
+@@ -790,9 +722,14 @@ out:
+ 	nouveau_fence_unref((void**)&fence);
+ 	mutex_unlock(&dev->struct_mutex);
+ 	kfree(bo);
++	kfree(push);
+ 
+ out_next:
+-	if (PUSHBUF_CAL) {
++	if (chan->dma.ib_max) {
++		req->suffix0 = 0x00000000;
++		req->suffix1 = 0x00000000;
++	} else
++	if (dev_priv->card_type >= NV_20) {
+ 		req->suffix0 = 0x00020000;
+ 		req->suffix1 = 0x00000000;
+ 	} else {
+@@ -804,19 +741,6 @@ out_next:
+ 	return ret;
+ }
+ 
+-int
+-nouveau_gem_ioctl_pushbuf_call2(struct drm_device *dev, void *data,
+-				struct drm_file *file_priv)
+-{
+-	struct drm_nouveau_private *dev_priv = dev->dev_private;
+-	struct drm_nouveau_gem_pushbuf_call *req = data;
+-
+-	req->vram_available = dev_priv->fb_aper_free;
+-	req->gart_available = dev_priv->gart_info.aper_free;
+-
+-	return nouveau_gem_ioctl_pushbuf_call(dev, data, file_priv);
+-}
+-
+ static inline uint32_t
+ domain_to_ttm(struct nouveau_bo *nvbo, uint32_t domain)
+ {
+@@ -831,74 +755,6 @@ domain_to_ttm(struct nouveau_bo *nvbo, uint32_t domain)
+ }
+ 
+ int
+-nouveau_gem_ioctl_pin(struct drm_device *dev, void *data,
+-		      struct drm_file *file_priv)
+-{
+-	struct drm_nouveau_gem_pin *req = data;
+-	struct drm_gem_object *gem;
+-	struct nouveau_bo *nvbo;
+-	int ret = 0;
+-
+-	NOUVEAU_CHECK_INITIALISED_WITH_RETURN;
+-
+-	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
+-		NV_ERROR(dev, "pin only allowed without kernel modesetting\n");
+-		return -EINVAL;
+-	}
+-
+-	if (!DRM_SUSER(DRM_CURPROC))
+-		return -EPERM;
+-
+-	gem = drm_gem_object_lookup(dev, file_priv, req->handle);
+-	if (!gem)
+-		return -EINVAL;
+-	nvbo = nouveau_gem_object(gem);
+-
+-	ret = nouveau_bo_pin(nvbo, domain_to_ttm(nvbo, req->domain));
+-	if (ret)
+-		goto out;
+-
+-	req->offset = nvbo->bo.offset;
+-	if (nvbo->bo.mem.mem_type == TTM_PL_TT)
+-		req->domain = NOUVEAU_GEM_DOMAIN_GART;
+-	else
+-		req->domain = NOUVEAU_GEM_DOMAIN_VRAM;
+-
+-out:
+-	mutex_lock(&dev->struct_mutex);
+-	drm_gem_object_unreference(gem);
+-	mutex_unlock(&dev->struct_mutex);
+-
+-	return ret;
+-}
+-
+-int
+-nouveau_gem_ioctl_unpin(struct drm_device *dev, void *data,
+-			struct drm_file *file_priv)
+-{
+-	struct drm_nouveau_gem_pin *req = data;
+-	struct drm_gem_object *gem;
+-	int ret;
+-
+-	NOUVEAU_CHECK_INITIALISED_WITH_RETURN;
+-
+-	if (drm_core_check_feature(dev, DRIVER_MODESET))
+-		return -EINVAL;
+-
+-	gem = drm_gem_object_lookup(dev, file_priv, req->handle);
+-	if (!gem)
+-		return -EINVAL;
+-
+-	ret = nouveau_bo_unpin(nouveau_gem_object(gem));
+-
+-	mutex_lock(&dev->struct_mutex);
+-	drm_gem_object_unreference(gem);
+-	mutex_unlock(&dev->struct_mutex);
+-
+-	return ret;
+-}
+-
+-int
+ nouveau_gem_ioctl_cpu_prep(struct drm_device *dev, void *data,
+ 			   struct drm_file *file_priv)
+ {
+diff --git a/drivers/gpu/drm/nouveau/nouveau_state.c b/drivers/gpu/drm/nouveau/nouveau_state.c
+index a4851af..a8d77c8 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_state.c
++++ b/drivers/gpu/drm/nouveau/nouveau_state.c
+@@ -776,13 +776,6 @@ int nouveau_unload(struct drm_device *dev)
+ 	return 0;
+ }
+ 
+-int
+-nouveau_ioctl_card_init(struct drm_device *dev, void *data,
+-			struct drm_file *file_priv)
+-{
+-	return nouveau_card_init(dev);
+-}
+-
+ int nouveau_ioctl_getparam(struct drm_device *dev, void *data,
+ 						struct drm_file *file_priv)
+ {
+diff --git a/drivers/gpu/drm/nouveau/nv50_fifo.c b/drivers/gpu/drm/nouveau/nv50_fifo.c
+index 204a79f..df5335a 100644
+--- a/drivers/gpu/drm/nouveau/nv50_fifo.c
++++ b/drivers/gpu/drm/nouveau/nv50_fifo.c
+@@ -280,17 +280,17 @@ nv50_fifo_create_context(struct nouveau_channel *chan)
+ 
+ 	dev_priv->engine.instmem.prepare_access(dev, true);
+ 
+-	nv_wo32(dev, ramfc, 0x08/4, chan->pushbuf_base);
+-	nv_wo32(dev, ramfc, 0x10/4, chan->pushbuf_base);
+ 	nv_wo32(dev, ramfc, 0x48/4, chan->pushbuf->instance >> 4);
+ 	nv_wo32(dev, ramfc, 0x80/4, (0xc << 24) | (chan->ramht->instance >> 4));
+-	nv_wo32(dev, ramfc, 0x3c/4, 0x00086078);
+ 	nv_wo32(dev, ramfc, 0x44/4, 0x2101ffff);
+ 	nv_wo32(dev, ramfc, 0x60/4, 0x7fffffff);
+ 	nv_wo32(dev, ramfc, 0x40/4, 0x00000000);
+ 	nv_wo32(dev, ramfc, 0x7c/4, 0x30000001);
+ 	nv_wo32(dev, ramfc, 0x78/4, 0x00000000);
+-	nv_wo32(dev, ramfc, 0x4c/4, 0xffffffff);
++	nv_wo32(dev, ramfc, 0x3c/4, 0x403f6078);
++	nv_wo32(dev, ramfc, 0x50/4, chan->pushbuf_base +
++				    chan->dma.ib_base * 4);
++	nv_wo32(dev, ramfc, 0x54/4, drm_order(chan->dma.ib_max + 1) << 16);
+ 
+ 	if (!IS_G80) {
+ 		nv_wo32(dev, chan->ramin->gpuobj, 0, chan->id);
+diff --git a/include/drm/nouveau_drm.h b/include/drm/nouveau_drm.h
+index f745948..a6a9f4a 100644
+--- a/include/drm/nouveau_drm.h
++++ b/include/drm/nouveau_drm.h
+@@ -25,13 +25,14 @@
+ #ifndef __NOUVEAU_DRM_H__
+ #define __NOUVEAU_DRM_H__
+ 
+-#define NOUVEAU_DRM_HEADER_PATCHLEVEL 15
++#define NOUVEAU_DRM_HEADER_PATCHLEVEL 16
+ 
+ struct drm_nouveau_channel_alloc {
+ 	uint32_t     fb_ctxdma_handle;
+ 	uint32_t     tt_ctxdma_handle;
+ 
+ 	int          channel;
++	uint32_t     pushbuf_domains;
+ 
+ 	/* Notifier memory */
+ 	uint32_t     notifier_handle;
+@@ -109,68 +110,58 @@ struct drm_nouveau_gem_new {
+ 	uint32_t align;
+ };
+ 
++#define NOUVEAU_GEM_MAX_BUFFERS 1024
++struct drm_nouveau_gem_pushbuf_bo_presumed {
++	uint32_t valid;
++	uint32_t domain;
++	uint64_t offset;
++};
++
+ struct drm_nouveau_gem_pushbuf_bo {
+ 	uint64_t user_priv;
+ 	uint32_t handle;
+ 	uint32_t read_domains;
+ 	uint32_t write_domains;
+ 	uint32_t valid_domains;
+-	uint32_t presumed_ok;
+-	uint32_t presumed_domain;
+-	uint64_t presumed_offset;
++	struct drm_nouveau_gem_pushbuf_bo_presumed presumed;
+ };
+ 
+ #define NOUVEAU_GEM_RELOC_LOW  (1 << 0)
+ #define NOUVEAU_GEM_RELOC_HIGH (1 << 1)
+ #define NOUVEAU_GEM_RELOC_OR   (1 << 2)
++#define NOUVEAU_GEM_MAX_RELOCS 1024
+ struct drm_nouveau_gem_pushbuf_reloc {
++	uint32_t reloc_bo_index;
++	uint32_t reloc_bo_offset;
+ 	uint32_t bo_index;
+-	uint32_t reloc_index;
+ 	uint32_t flags;
+ 	uint32_t data;
+ 	uint32_t vor;
+ 	uint32_t tor;
+ };
+ 
+-#define NOUVEAU_GEM_MAX_BUFFERS 1024
+-#define NOUVEAU_GEM_MAX_RELOCS 1024
++#define NOUVEAU_GEM_MAX_PUSH 512
++struct drm_nouveau_gem_pushbuf_push {
++	uint32_t bo_index;
++	uint32_t pad;
++	uint64_t offset;
++	uint64_t length;
++};
+ 
+ struct drm_nouveau_gem_pushbuf {
+ 	uint32_t channel;
+-	uint32_t nr_dwords;
+ 	uint32_t nr_buffers;
+-	uint32_t nr_relocs;
+-	uint64_t dwords;
+ 	uint64_t buffers;
+-	uint64_t relocs;
+-};
+-
+-struct drm_nouveau_gem_pushbuf_call {
+-	uint32_t channel;
+-	uint32_t handle;
+-	uint32_t offset;
+-	uint32_t nr_buffers;
+ 	uint32_t nr_relocs;
+-	uint32_t nr_dwords;
+-	uint64_t buffers;
++	uint32_t nr_push;
+ 	uint64_t relocs;
++	uint64_t push;
+ 	uint32_t suffix0;
+ 	uint32_t suffix1;
+-	/* below only accessed for CALL2 */
+ 	uint64_t vram_available;
+ 	uint64_t gart_available;
+ };
+ 
+-struct drm_nouveau_gem_pin {
+-	uint32_t handle;
+-	uint32_t domain;
+-	uint64_t offset;
+-};
+-
+-struct drm_nouveau_gem_unpin {
+-	uint32_t handle;
+-};
+-
+ #define NOUVEAU_GEM_CPU_PREP_NOWAIT                                  0x00000001
+ #define NOUVEAU_GEM_CPU_PREP_NOBLOCK                                 0x00000002
+ #define NOUVEAU_GEM_CPU_PREP_WRITE                                   0x00000004
+@@ -183,14 +174,6 @@ struct drm_nouveau_gem_cpu_fini {
+ 	uint32_t handle;
+ };
+ 
+-struct drm_nouveau_gem_tile {
+-	uint32_t handle;
+-	uint32_t offset;
+-	uint32_t size;
+-	uint32_t tile_mode;
+-	uint32_t tile_flags;
+-};
+-
+ enum nouveau_bus_type {
+ 	NV_AGP     = 0,
+ 	NV_PCI     = 1,
+@@ -200,22 +183,17 @@ enum nouveau_bus_type {
+ struct drm_nouveau_sarea {
+ };
+ 
+-#define DRM_NOUVEAU_CARD_INIT          0x00
+-#define DRM_NOUVEAU_GETPARAM           0x01
+-#define DRM_NOUVEAU_SETPARAM           0x02
+-#define DRM_NOUVEAU_CHANNEL_ALLOC      0x03
+-#define DRM_NOUVEAU_CHANNEL_FREE       0x04
+-#define DRM_NOUVEAU_GROBJ_ALLOC        0x05
+-#define DRM_NOUVEAU_NOTIFIEROBJ_ALLOC  0x06
+-#define DRM_NOUVEAU_GPUOBJ_FREE        0x07
++#define DRM_NOUVEAU_GETPARAM           0x00
++#define DRM_NOUVEAU_SETPARAM           0x01
++#define DRM_NOUVEAU_CHANNEL_ALLOC      0x02
++#define DRM_NOUVEAU_CHANNEL_FREE       0x03
++#define DRM_NOUVEAU_GROBJ_ALLOC        0x04
++#define DRM_NOUVEAU_NOTIFIEROBJ_ALLOC  0x05
++#define DRM_NOUVEAU_GPUOBJ_FREE        0x06
+ #define DRM_NOUVEAU_GEM_NEW            0x40
+ #define DRM_NOUVEAU_GEM_PUSHBUF        0x41
+-#define DRM_NOUVEAU_GEM_PUSHBUF_CALL   0x42
+-#define DRM_NOUVEAU_GEM_PIN            0x43 /* !KMS only */
+-#define DRM_NOUVEAU_GEM_UNPIN          0x44 /* !KMS only */
+-#define DRM_NOUVEAU_GEM_CPU_PREP       0x45
+-#define DRM_NOUVEAU_GEM_CPU_FINI       0x46
+-#define DRM_NOUVEAU_GEM_INFO           0x47
+-#define DRM_NOUVEAU_GEM_PUSHBUF_CALL2  0x48
++#define DRM_NOUVEAU_GEM_CPU_PREP       0x42
++#define DRM_NOUVEAU_GEM_CPU_FINI       0x43
++#define DRM_NOUVEAU_GEM_INFO           0x44
+ 
+ #endif /* __NOUVEAU_DRM_H__ */
+-- 
+1.7.0
+

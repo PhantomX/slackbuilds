@@ -35,10 +35,6 @@ zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup
 zcat ${SB_PATCHDIR}/kdelibs-4.3.98-no_rpath.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 
 # 4.4 upstream
-zcat ${SB_PATCHDIR}/kdelibs-4.4.0-khtml_scrolling.patch.gz | patch -p4 --verbose --backup --suffix=.orig || exit 1
-zcat ${SB_PATCHDIR}/kdelibs-4.4.0-nepomuk_memleak.patch.gz | patch -p4 --verbose --backup --suffix=.orig || exit 1
-zcat ${SB_PATCHDIR}/kdelibs-4.4.0-krunner-crash-kde\#227118.patch.gz | patch -p0 --verbose --backup --suffix=.orig || exit 1
-zcat ${SB_PATCHDIR}/kdelibs-4.4.0-plasma-crash-kde\#226823.patch.gz | patch -p0 --verbose --backup --suffix=.orig || exit 1
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex

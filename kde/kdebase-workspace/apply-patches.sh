@@ -32,7 +32,9 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.98-platformplugin-widgetstyle4.patch.gz | patch 
 # fix the Games menu in the classic menu mixing up Name and Description
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-classicmenu-games.patch.gz | patch -p1 -E --backup --verbose
 
-zcat ${SB_PATCHDIR}/${NAME}-testing-fix-kwin-crash.patch.gz | patch -p0 -E --backup --verbose
+# Mandriva
+zcat ${SB_PATCHDIR}/${NAME}-4.1.1-save_color_scheme_name.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-4.1.2-notify_color_changes.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-lowdiskspace.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-fix-lock-out.patch.gz | patch -p0 -E --backup --verbose
 
@@ -45,9 +47,5 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup -
 zcat ${SB_PATCHDIR}/${NAME}-4.3.95-brightness_keys.patch.gz | patch -p1 -E --backup --verbose
 
 # 4.4 patches
-# kde#200184, Plasma Memory Leak and High CPU usage
-zcat ${SB_PATCHDIR}/kdebase-workspace-kde\#200184.patch.gz | patch -p1 -E --backup --verbose
-# kscreenlocker
-zcat ${SB_PATCHDIR}/kdebase-workspace-4.4.0-kde217882.patch.gz | patch -p4 -E --backup --verbose
 
 set +e +o pipefail

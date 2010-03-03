@@ -10,8 +10,17 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.1-manpath.patch.gz | patch -p1 -E --backup --ver
 # add OnlyShowIn=KDE  to Desktop/Home.desktop (like trash.desktop)
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-home_onlyshowin_kde.patch.gz | patch -p1 -E --backup --verbose
 
+# Mandriva
+zcat ${SB_PATCHDIR}/${NAME}-nepomuk-strigi-smartfile.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.2-knotify-fix-cpu-charge.patch.gz | patch -p1 -E --backup --verbose
+# Trunk  patches
+zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079784-add-kupnp-support.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079789-fix-kdebug.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079790-fix-libs.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079845-disable-kioslave.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079847-remove-upnp.cmake.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079848-fix-build.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079849-activate-shared-lib.patch.gz | patch -p1 -E --backup --verbose
 
 ## 4.4 Upstream patches
 zcat ${SB_PATCHDIR}/kdebase-runtime-4.4.0-virtuosoconverter.patch.gz | patch -p1 -E --backup --verbose

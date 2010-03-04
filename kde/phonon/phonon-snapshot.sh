@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="svn://anonsvn.kde.org/home/kde/trunk/kdesupport/${module}"
+snaproot="git://gitorious.org/${module}/${module}.git"
 
 tmp=$(mktemp -d)
 
@@ -17,12 +17,17 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
-[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+[ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
 
 pushd "${tmp}"
-  svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
+  git clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    find . -type d -name .svn -print0 | xargs -0r rm -rf
+    if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+      gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
+      git checkout $(git rev-list -n 1 --before="${gitdate}" master)
+    fi
+    find . -type d -name .git -print0 | xargs -0r rm -rf
+    rm -f .gitignore config.git-hash
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

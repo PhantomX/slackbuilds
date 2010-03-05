@@ -26,7 +26,7 @@ zcat ${SB_PATCHDIR}/kdelibs-4.2.85-libexecdir.patch.gz | patch -p1 --verbose --b
 # kstandarddirs changes: search /etc/kde, find /usr/libexec/kde4
 zcat ${SB_PATCHDIR}/kdelibs-4.1.72-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
-zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+#zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
 
 # die rpath die, since we're using standard paths, we can avoid
 # this extra hassle (even though cmake is *supposed* to not add standard

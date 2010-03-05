@@ -26,8 +26,6 @@ pushd "${tmp}"
       gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
       git checkout $(git rev-list -n 1 --before="${gitdate}" master)
     fi
-    find . -type d -name .git -print0 | xargs -0r rm -rf
-    rm -f .gitignore config.git-hash
+    git archive --format=tar --prefix=${module}-${snap}/ master | xz -9 > "${pwd}"/${module}-${snap}.tar.xz
   popd
-  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

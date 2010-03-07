@@ -38,6 +38,7 @@ zcat ${SB_PATCHDIR}/${NAME}-2.2-tmp-vuln.patch.gz | patch -p1 -E --backup --verb
 zcat ${SB_PATCHDIR}/${NAME}-2.2-streambrowser-url-add.patch.gz | patch -p1 -E --backup --verbose
 #
 zcat ${SB_PATCHDIR}/${NAME}-2.2-scrobbler.patch.gz | patch -p1 -E --backup --verbose
+# submitted upstream with add.patch for 2.3: AUDPLUG-170
 zcat ${SB_PATCHDIR}/${NAME}-2.2-status.patch.gz | patch -p1 -E --backup --verbose
 
 set +e +o pipefail

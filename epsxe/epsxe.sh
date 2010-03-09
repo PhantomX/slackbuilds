@@ -1,35 +1,79 @@
 #!/bin/sh
-if ! test -d LIBDIR/psx-plugins ; then
-	echo 'Install psx-plugins package first!'
-	exit 1
+
+PSEMUDIR=GAMES_LIBDIR/psemu
+EPSXEDIR=GAMES_PREFIX_OPT/epsxe
+
+mkdir -p ~/.epsxe
+cd ~/.epsxe
+cleanlinks
+mkdir -p memcards bios cfg cheats snap sstates patches plugins
+
+shopt -s nullglob
+
+for f in $(find "${EPSXEDIR}" -maxdepth 1 -type f -printf '%f ') ; do
+	[[ -e "${f}" ]] && continue
+	ln -s "${EPSXEDIR}/${f}" "${f}" >& /dev/null
+done
+
+if [[ -d "${PSEMUDIR}" ]] ; then
+  if [[ -d "${PSEMUDIR}/plugins" ]] ; then
+    for plugin in $(find "${PSEMUDIR}/plugins"  -maxdepth 1 -type f -printf '%f ') ; do
+      if [[ ! -e "plugins/${plugin}" ]] ; then
+        echo "Loading new plugin: ${plugin}"
+        ln -s "${PSEMUDIR}/plugins/${plugin}" "plugins/${plugin}"
+      fi
+    done
+  fi
+
+  if [[ -d "${PSEMUDIR}/cfg" ]] ; then
+    for configlib in $(find "${PSEMUDIR}/cfg"  -maxdepth 1 -iname '*.cfg' -prune -o -type f -printf '%f '); do 
+      if [[ ! -e "cfg/${configlib}" ]] ; then
+        echo "Loading config utility: ${configlib}"
+        ln -s "${PSEMUDIR}/cfg/${configlib}" "cfg/${configlib}"
+      fi
+    done
+
+    for configlib in $(find "${PSEMUDIR}/plugins"  -maxdepth 1 -name 'cfg*' -type f -printf '%f '); do 
+      if [[ ! -e "cfg/${configlib}" ]] ; then
+        echo "Loading config utility: ${configlib}"
+        ln -s "${PSEMUDIR}/plugins/${configlib}" "cfg/${configlib}"
+      fi
+    done
+
+    for config in $(find "${PSEMUDIR}/cfg"  -maxdepth 1 -iname '*.cfg' -type f -printf '%f '); do 
+      if [[ ! -e "cfg/${config}" ]] ; then
+        echo "Loading default config: ${config}"
+        cp "${PSEMUDIR}/cfg/${config}" "cfg/${config}"
+      fi
+    done
+  fi
+
+  if [[ -d "${PSEMUDIR}/cheats" ]] ; then
+    for cheat in $(find "${PSEMUDIR}/cheats"  -maxdepth 1 -type f -printf '%f '); do 
+      if [[ ! -e "cheats/${cheat}" ]] ; then 
+        ln -s "${PSEMUDIR}/cheats/${cheat}" "cheats/${cheat}"
+      fi
+    done
+  fi
+
+  if [[ -d "${PSEMUDIR}/bios" ]] ; then
+    for bios in $(find "${PSEMUDIR}/bios"  -maxdepth 1 -type f -printf '%f '); do
+      if [[ ! -e "bios/${bios}" ]] ; then
+        ln -s "${PSEMUDIR}/bios/${bios}" "bios/${bios}"
+      fi
+    done
+  fi
 fi
 
-test -d ${HOME}/.epsxe || mkdir ${HOME}/.epsxe
-test -e ${HOME}/.epsxe/epsxe || ln -sf BINDIR/epsxe.bin ${HOME}/.epsxe/epsxe
-test -f ${HOME}/.epsxe/keycodes.lst || ln -sf SHAREDIR/epsxe/keycodes.lst ${HOME}/.epsxe/keycodes.lst
-test -e ${HOME}/.epsxe/bios || ln -sf SHAREDIR/epsxe/bios ${HOME}/.epsxe/bios
-test -e ${HOME}/.epsxe/plugins || ln -sf LIBDIR/psx-plugins/plugin ${HOME}/.epsxe/plugins
-if ! test -d ${HOME}/.epsxe/cfg ; then
-	mkdir ${HOME}/.epsxe/cfg
+# check for bios
+if [[ -z "$(cd bios && ls)" ]] ; then
+	# if the bios directory is empty, then ... well ...
+	echo
+	echo "*** Put your BIOS file into ~/.epsxe/bios/"
+	echo "    or ePSXe may not work!"
+	echo
 fi
-for i in LIBDIR/psx-plugins/cfg/* ; do
-	test -e ${HOME}/.epsxe/cfg/${i##*/} || ln -s $i ${HOME}/.epsxe/cfg
-done
-if ! test -d ${HOME}/.epsxe/cheats ; then
-	mkdir ${HOME}/.epsxe/cheats
-fi
-for i in SHAREDIR/epsxe/cheats/* ; do
-	test -e ${HOME}/.epsxe/cheats/${i##*/} || ln -s $i ${HOME}/.epsxe/cheats
-done
-if ! test -d ${HOME}/.epsxe/patches ; then
-	mkdir ${HOME}/.epsxe/patches
-fi
-for i in SHAREDIR/epsxe/patches/* ; do
-	test -e ${HOME}/.epsxe/patches/${i##*/} || ln -s $i ${HOME}/.epsxe/cheats
-done
-test -d ${HOME}/.epsxe/memcards || mkdir ${HOME}/.epsxe/memcards
-test -d ${HOME}/.epsxe/sstates || mkdir ${HOME}/.epsxe/sstates
-test -d ${HOME}/.epsxe/snap || mkdir ${HOME}/.epsxe/snap
 
-cd ${HOME}/.epsxe
-exec ./epsxe
+# execute program (with args)
+export LD_PRELOAD="libpthread.so.0:${LD_PRELOAD}" # fix for Bug #26121
+exec ./epsxe "$@"

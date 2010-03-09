@@ -1,18 +1,18 @@
-Pete's MesaGL PSX plugin for Linux
-----------------------------------
+P.E.Op.S./Pete's MesaGL PSX plugin for Linux
+--------------------------------------------
 
 Installation: 
 -------------
 
-Copy the file "libgpuPeteMesaGL.so.x.x.x" into the emu's /Plugin directory
-The files "spuPeteMesaGL.cfg" and "cfgPeteMesaGL" should be copied together
+Copy the file "libgpuPeopsMesaGL.so.x.x.x" into the emu's /Plugin directory
+The files "gpuPeopsMesaGL.cfg" and "cfgPeopsMesaGL" should be copied together
 into another directory (see next section, "cfg" sub dir recommended).
  
 Configuration:
 --------------
 
-There's a text file called "gpuPeteMesaGL.cfg" and an executable called
-"cfgPeteMesaGL". Copy both of them together into
+There's a text file called "gpuPeopsMesaGL.cfg" and an executable called
+"cfgPeopsMesaGL". Copy both of them together into
 
 a) a main emu sub-directory called "cfg" or
 b) directly into the main emu directory or
@@ -21,13 +21,13 @@ c) your home directory
 If the main emu has a gui to select the plugins, there will be propably
 a "Configure" button for the plugin. Use it... a window with all
 possible options will appear. The options are stored into the
-"gpuPeteMesaGL.cfg" text file.
+"gpuPeopsMesaGL.cfg" text file.
 
 So, if there is no gui, you can use a simple text editor to change the
 options.
 The options are somewhat explained in the cfg-file (see the comments),
-a full readme will follow soon... basically all the options of my
-Windows OpenGL plugin are included, so you can check the Windows
+a full readme will follow soon (or not so soon)... basically all the options 
+of my Windows OpenGL plugin are included, so you can check the Windows
 readme for more infos :)
 
 
@@ -102,12 +102,11 @@ Check out the linux ports of PCSX and, of course, ePSXe... and...
 have fun :)
 
 Pete Bernert
-BlackDove@addcom.de
 
-Ah, yes, forgotten: No, my plugin is not open source yet, sorry. You can
-do whatever you want with the PsxGpuCheck app, though. If someone is
-able to do a cool benchmark, hey, mail me :)
-You can get the full PsxGpuCheck sources (Kdevelop 1.2 project) from my
-homepage.
+-------------------------------------------------------
+License:
+
+Finally... the plugin is now Open Source under GPL. You can get the full sources
+from my web site (www.pbernert.com), or from the P.E.Op.S. sourceforge site.
 
 

@@ -37,17 +37,19 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
+SNAPBUILD=${SNAPBUILD:-YES}
+
 NAME=pyjama
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.1.23}
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+else
+  VERSION=${VERSION:-0.3.0.1}
+fi
 SVER=$(echo ${VERSION} | cut -d . -f1-2)
 ARCH=noarch
-if [ "${ARCH}" = "x86_64" ] ;then
-  SLKTARGET=${SLKTARGET:-x86_64}
-else
-  SLKTARGET=${SLKTARGET:-i486}
-fi
+SLKTARGET=${SLKTARGET:-i486}
 SLKDTARGET=${SLKDTARGET:-slackware}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
@@ -59,15 +61,25 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}-${VERSION}_all
-SRCARCHIVE=${SRCDIR}.tar.gz
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  SRCDIR=${NAME}-${VERSION}
+  SRCARCHIVE=${SRCDIR}.tar.xz
+else
+  SRCDIR=${NAME}-${VERSION}_all
+  SRCARCHIVE=${SRCDIR}.tar.gz
+fi
 
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://launchpad.net/${NAME}/trunk/${SVER}/+download/${SRCARCHIVE}"
+DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
+# if source is not present, download in source rootdir if possible
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+else
   test -r ${CWD}/${SRCARCHIVE} || wget ${DL_OPTS} ${DL_URL} || exit 1
 fi
 
@@ -79,46 +91,56 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
+find src/ -type d -print0 | xargs -0 chmod 0755
+find src/ -type f -print0 | xargs -0 chmod 0644
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
+find . -type f -name '*.pyc' -exec rm -f {} ';'
+find . -type f -name '*~' -exec rm -f {} ';'
+
+#rm -rf src/plugins/mozplug
+
 sed -i -e '/^GenericName/d' src/${NAME}.desktop || exit 1
 
-mkdir -p ${PKG}/usr/lib/${NAME}/{images,locale}
-install -m0644 src/*.py src/about.glade ${PKG}/usr/lib/${NAME}/ || exit 1
-cp -R src/locale/* ${PKG}/usr/lib/${NAME}/locale/ || exit 1
-install -m0644 images/* ${PKG}/usr/lib/${NAME}/images/ || exit 1
+sed -i \
+  -e "s|/usr/share/apps/|/usr/share/|g" \
+  src/${NAME}.{py,cfg} src/modules/constants.py src/themes/README || exit 1
+
+mkdir -p ${PKG}/usr/share/${NAME}
+cp -pR src/* ${PKG}/usr/share/${NAME}/ || exit 1
+
+find ${PKG}/usr/share/${NAME} -name '*.py' \
+  -exec sed -i '1{/^#!/d}' {} \;
 
 mkdir -p ${PKG}/usr/bin
-mv ${PKG}/usr/lib/${NAME}/${NAME}.py ${PKG}/usr/bin/${NAME} || exit 1
-chmod 0755 ${PKG}/usr/bin/${NAME}
+sed -i "1c#! /usr/bin/python" src/${NAME}.py || exit 1
+rm -f ${PKG}/usr/share/${NAME}/${NAME}.py
+install -pm0755 src/${NAME}.py ${PKG}/usr/share/${NAME}/
+ln -s ../share/${NAME}/${NAME}.py ${PKG}/usr/bin/${NAME}
 
 mkdir -p ${PKG}/usr/share/applications
-desktop-file-install --vendor="" \
+desktop-file-install --vendor="" --delete-original \
   --dir ${PKG}/usr/share/applications \
   --remove-key="Encoding" \
   --add-category="GTK" \
-  src/${NAME}.desktop || exit 1
+   ${PKG}/usr/share/${NAME}/${NAME}.desktop || exit 1
 
 for res in 16 32 48 64 72 ;do
   dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
   mkdir -p ${dir}
-  convert images/${NAME}.png -depth 8 -filter Lanczos \
+  convert src/images/${NAME}.png -depth 8 -filter Lanczos \
           -resize ${res}x${res} ${dir}/${NAME}.png || exit 1
 done
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  README ${CWD}/ChangeLog.SB \
+  changelog COPYING README ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
@@ -155,7 +177,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${SBDIR}/
+                 ${CWD}/${SNAPUPDATE} ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
 fi

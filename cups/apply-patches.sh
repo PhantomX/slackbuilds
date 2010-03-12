@@ -47,5 +47,6 @@ zcat ${SB_PATCHDIR}/cups-0755.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/cups-str3460.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/cups-EAI_AGAIN.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/cups-str3505.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/cups-CVE-2010-0302.patch.gz | patch -p1 -E --backup --verbose
 
 set +e +o pipefail

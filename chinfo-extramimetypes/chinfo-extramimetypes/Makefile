@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = chinfo-extramimetypes
-VERSION = 6.0
+VERSION = 6.1
 
 DESTDIR =
 PREFIX = /usr
@@ -27,7 +27,7 @@ SYSCONFDIR = /etc
 LOCALEDIR = $(KDEPREFIX)/share/locale
 DOCDIR = $(PREFIX)/share/doc/$(PACKAGE)-$(VERSION)
 
-SMIFILES = chinfo-extramimetypes.xml
+SMIFILES = chinfo-extramimetypes-hash.xml chinfo-extramimetypes-cdimage.xml
 
 HIDDENFILES = geany-desktop.desktop geany-hash.desktop geany-xgettext.desktop \
               gimp-ico.desktop gimp-xcf.desktop kwrite-desktop.desktop \

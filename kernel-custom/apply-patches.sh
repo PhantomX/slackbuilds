@@ -201,6 +201,7 @@ ApplyPatch hdpvr-ir-enable.patch
 #ApplyPatch linux-2.6-userspace_kvmclock_offset.patch
 ApplyPatch vhost_net-rollup.patch
 ApplyPatch virt_console-rollup.patch
+ApplyPatch virt_console-fix-race.patch
 
 # Fix block I/O errors in KVM
 #ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
@@ -210,7 +211,6 @@ ApplyPatch linux-2.6-x86-64-fbdev-primary.patch
 
 # Nouveau DRM + drm fixes
 # squash nouveau firmware into a single commit until it gets into linux-firmware
-ApplyPatch drm_nouveau_ucode.patch
 ApplyPatch drm-nouveau-abi16.patch
 ApplyPatch drm-nouveau-updates.patch
 # pm broken on my thinkpad t60p - airlied
@@ -244,8 +244,5 @@ ApplyPatch neuter_intel_microcode_load.patch
 # Refactor UserModeHelper code & satisfy abrt recursion check request
 ApplyPatch linux-2.6-umh-refactor.patch
 ApplyPatch coredump-uid-pipe-check.patch
-
-# fix memory scribble
-ApplyPatch x86-pci-prevent-mmconfig-memory-corruption.patch
 
 set +e +o pipefail

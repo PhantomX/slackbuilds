@@ -35,8 +35,15 @@ zcat ${SB_PATCHDIR}/ghostscript-pdftoraster-exit.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/ghostscript-ldflags.patch.gz | patch -p1 --verbose
 # Fixed pdf2dsc.ps.
 zcat ${SB_PATCHDIR}/ghostscript-pdf2dsc.patch.gz | patch -p1 --verbose
-# Actually revert the upstream gdevcups changes.
-zcat ${SB_PATCHDIR}/ghostscript-gdevcups-y-axis.patch.gz | patch -p1 --verbose
+# Reallocate memory in gdevcups when color depth changes.
+zcat ${SB_PATCHDIR}/ghostscript-cups-realloc-color-depth.patch.gz | patch -p1 --verbose
+# Don't segfault closing tiffg3 device if opening failed
+zcat ${SB_PATCHDIR}/ghostscript-tif-fail-close.patch.gz | patch -p1 --verbose
+# Restore the TIFF default strip size of 0
+zcat ${SB_PATCHDIR}/ghostscript-tiff-default-strip-size.patch.gz | patch -p1 --verbose
+# Backported some more TIFF fixes.
+zcat ${SB_PATCHDIR}/ghostscript-tiff-fixes.patch.gz | patch -p1 --verbose
+
 # libpng 1.4
 zcat ${SB_PATCHDIR}/ghostscript-libpng14.patch.gz | patch -p1 -E --backup --verbose
 

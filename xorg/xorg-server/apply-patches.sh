@@ -49,6 +49,9 @@ zcat ${SB_PATCHDIR}/xserver-1.7.4-qxl-autoconfig.patch.gz | patch -p1 --verbose
 # 516918
 zcat ${SB_PATCHDIR}/xserver-1.7.4-dpms-timeouts.patch.gz | patch -p1 --verbose
 
+# 543647
+zcat ${SB_PATCHDIR}/xserver-1.7.4-owner-events.patch.gz | patch -p1 --verbose
+
 zcat ${SB_PATCHDIR}/xserver-1.7.5-exa-mixed.patch.gz | patch -p1 --verbose
 
 if [ "${SB_ZW}" = "YES" ] ;then

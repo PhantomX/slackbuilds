@@ -34,7 +34,4 @@ zcat ${SB_PATCHDIR}/o-minus.patch.gz | patch -p1 --verbose
 # from upstream
 zcat ${SB_PATCHDIR}/strftime-format.patch.gz | patch -p1 --verbose
 
-# https://bugzilla.gnome.org/show_bug.cgi?id=612505
-zcat ${SB_PATCHDIR}/entry-layout-update.patch.gz | patch -p1 --verbose
-
 set +e +o pipefail

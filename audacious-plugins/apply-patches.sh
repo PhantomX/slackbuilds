@@ -41,4 +41,10 @@ zcat ${SB_PATCHDIR}/${NAME}-2.2-scrobbler.patch.gz | patch -p1 -E --backup --ver
 # submitted upstream with add.patch for 2.3: AUDPLUG-170
 zcat ${SB_PATCHDIR}/${NAME}-2.2-status.patch.gz | patch -p1 -E --backup --verbose
 
+zcat ${SB_PATCHDIR}/${NAME}-2.2-no-adplugdb.patch.gz | patch -p1 -E --backup --verbose
+# is this even possible? bz 573075
+zcat ${SB_PATCHDIR}/${NAME}-2.2-playlist-font-safety.patch.gz | patch -p1 -E --backup --verbose
+# div-by-zero with almost empty MIDI file, bz 573851
+zcat ${SB_PATCHDIR}/${NAME}-2.2-amidi.patch.gz | patch -p1 -E --backup --verbose
+
 set +e +o pipefail

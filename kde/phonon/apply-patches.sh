@@ -19,4 +19,8 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.80-pulse-devicemove-rejig.patch.gz | patch -p1 -
 # https://bugs.kde.org/213710
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-subtitles-files-phonon-xine.patch.gz | patch -p1 -E --backup -z subtitles --verbose
 
+## Upstream patches
+# https://bugs.kde.org/show_bug.cgi?id=228324#c23
+zcat ${SB_PATCHDIR}/${NAME}-4.4.0-eventloop.patch.gz | patch -p1 -E --backup --verbose
+
 set +e +o pipefail

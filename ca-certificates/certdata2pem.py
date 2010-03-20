@@ -91,6 +91,7 @@ if os.path.exists('blacklist.txt'):
 
 # Build up trust database.
 trust = dict()
+trustmap = dict()
 for obj in objects:
     if obj['CKA_CLASS'] != 'CKO_NETSCAPE_TRUST':
         continue
@@ -104,10 +105,12 @@ for obj in objects:
         print '!'*74
         print "UNTRUSTED BUT NOT BLACKLISTED CERTIFICATE FOUND: %s" % obj['CKA_LABEL']
         print '!'*74
+        sys.exit(1)
     else:
         print "Ignoring certificate %s.  SAUTH=%s, EPROT=%s" % \
               (obj['CKA_LABEL'], obj['CKA_TRUST_SERVER_AUTH'],
                obj['CKA_TRUST_EMAIL_PROTECTION'])
+    trustmap[obj['CKA_LABEL']] = obj
 
 def label_to_filename(label):
     label = label.replace('/', '_')\
@@ -117,12 +120,49 @@ def label_to_filename(label):
         .replace(',', '_') + '.crt'
     return re.sub(r'\\x[0-9a-fA-F]{2}', lambda m:chr(int(m.group(0)[2:], 16)), label)
 
+trust_types = {
+  "CKA_TRUST_DIGITAL_SIGNATURE": "digital-signature",
+  "CKA_TRUST_NON_REPUDIATION": "non-repudiation",
+  "CKA_TRUST_KEY_ENCIPHERMENT": "key-encipherment",
+  "CKA_TRUST_DATA_ENCIPHERMENT": "data-encipherment",
+  "CKA_TRUST_KEY_AGREEMENT": "key-agreement",
+  "CKA_TRUST_KEY_CERT_SIGN": "cert-sign",
+  "CKA_TRUST_CRL_SIGN": "crl-sign",
+  "CKA_TRUST_SERVER_AUTH": "server-auth",
+  "CKA_TRUST_CLIENT_AUTH": "client-auth",
+  "CKA_TRUST_CODE_SIGNING": "code-signing",
+  "CKA_TRUST_EMAIL_PROTECTION": "email-protection",
+  "CKA_TRUST_IPSEC_END_SYSTEM": "ipsec-end-system",
+  "CKA_TRUST_IPSEC_TUNNEL": "ipsec-tunnel",
+  "CKA_TRUST_IPSEC_USER": "ipsec-user",
+  "CKA_TRUST_TIME_STAMPING": "time-stamping",
+  "CKA_TRUST_STEP_UP_APPROVED": "step-up-approved",
+}
+
+openssl_trust = {
+  "CKA_TRUST_SERVER_AUTH": "serverAuth",
+  "CKA_TRUST_CLIENT_AUTH": "clientAuth",
+  "CKA_TRUST_CODE_SIGNING": "codeSigning",
+  "CKA_TRUST_EMAIL_PROTECTION": "emailProtection",
+}
+
 for obj in objects:
     if obj['CKA_CLASS'] == 'CKO_CERTIFICATE':
-        if not obj['CKA_LABEL'] in trust or not trust[obj['CKA_LABEL']]:
-            continue
+        #if not obj['CKA_LABEL'] in trust or not trust[obj['CKA_LABEL']]:
+        #    continue
         fname = label_to_filename(obj['CKA_LABEL'][1:-1])
         f = open(fname, 'w')
+        trustbits = []
+        openssl_trustflags = []
+        tobj = trustmap[obj['CKA_LABEL']]
+        for t in trust_types.keys():
+            if tobj.has_key(t) and tobj[t] == 'CKT_NETSCAPE_TRUSTED_DELEGATOR':
+                trustbits.append(t)
+                if t in openssl_trust:
+                    openssl_trustflags.append(openssl_trust[t])
+        f.write("# trust=" + " ".join(trustbits) + "\n")
+        if openssl_trustflags:
+            f.write("# openssl-trust=" + " ".join(openssl_trustflags) + "\n")
         f.write("-----BEGIN CERTIFICATE-----\n")
         f.write("\n".join(textwrap.wrap(base64.b64encode(obj['CKA_VALUE']), 64)))
         f.write("\n-----END CERTIFICATE-----\n")

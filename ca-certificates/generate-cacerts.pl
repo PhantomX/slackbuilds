@@ -30,7 +30,11 @@ $in_cert_block = 0;
 $write_current_cert = 1;
 foreach $cert (@certs)
 {
-    if ($cert =~ /Subject: /)
+    if ($cert =~ "Certificate:\n")
+    {
+        print "New certificate...\n";
+    }        
+    elsif ($cert =~ /Subject: /)
     {
         $_ = $cert;
         if ($cert =~ /personal-freemail/)
@@ -264,28 +268,11 @@ foreach $cert (@certs)
         }
         print "$cert => alias $cert_alias\n";
     }
-    # When it attempts to parse:
-    #
-    # Class 3 Public Primary Certification Authority - G2, Version 3
-    #
-    # keytool says:
-    #
-    # #2: ObjectId: 1.3.6.1.5.5.7.1.1 Criticality=false
-    # Unparseable AuthorityInfoAccess extension due to
-    # java.io.IOException: Invalid encoding of URI
-    #
-    # If we do not exclude this file
-    # openjdk/jdk/test/lib/security/cacerts/VerifyCACerts.java fails
-    # on this cert, printing:
-    #
-    # Couldn't verify: java.security.SignatureException: Signature
-    # does not match.
-    #
-    elsif ($cert =~
-           /A6:0F:34:C8:62:6C:81:F6:8B:F7:7D:A9:F6:67:58:8A:90:3F:7D:36/)
+    elsif ($cert =~ "Signature Algorithm: ecdsa")
     {
+        # Ignore ECC certs since keytool rejects them
         $write_current_cert = 0;
-        $pem_file_count--;
+        print " => ignoring ECC certificate\n";
     }
     elsif ($cert eq "-----BEGIN CERTIFICATE-----\n")
     {
@@ -300,7 +287,7 @@ foreach $cert (@certs)
             sysopen(PEM, "$cert_alias.pem", O_WRONLY|O_CREAT|O_EXCL)
                 || die("could not write file");
             print PEM $cert;
-            print "written $cert_alias.pem\n";
+            print " => written $cert_alias.pem\n";
         }
     }
     elsif ($cert eq "-----END CERTIFICATE-----\n")
@@ -335,11 +322,14 @@ if (@pem_files != $pem_file_count)
 $certs_written_count = 0;
 foreach $pem_file (@pem_files)
 {
-    system "/bin/echo yes | $ARGV[0] -import".
-        " -alias `basename $pem_file .pem`".
-        " -keystore cacerts -storepass 'changeit' -file $pem_file";
-    unlink($pem_file);
-    $certs_written_count++;
+    print "+ Adding $pem_file...\n";
+    if (system("/bin/echo yes | $ARGV[0] -import".
+               " -alias `basename $pem_file .pem`".
+               " -keystore cacerts -storepass 'changeit' -file $pem_file") == 0) {
+        $certs_written_count++;
+    } else {
+        print "FAILED\n";
+    }
 }
 
 # Check that the correct number of certs were added to the keystore.

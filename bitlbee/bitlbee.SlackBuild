@@ -43,7 +43,7 @@ fi
 NAME=bitlbee
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.2.3}
+VERSION=${VERSION:-1.2.5}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -91,6 +91,12 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -106,13 +112,17 @@ cd ${SRCDIR} || exit 1
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-1.2.2-libresolv.patch.gz | patch -p1 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
 sed -i \
     -e 's|\$\(BINDIR\)|\$(sbindir)|g' \
     -e 's|\$\(DATADIR\)|\$(datadir)/bitlbee|g' \
     -e 's|\$\(ETCDIR\)|\$(sysconfdir)/bitlbee|g' \
     -e 's|\$\(MANDIR\)|\$(mandir)|g' \
+    -e 's|\$\(INCLUDEDIR\)|\$(includedir)/bitlbee|g' \
+    -e 's|\$\(PCDIR\)|\$(libdir)/pkgconfig|g' \
     Makefile */Makefile */*/Makefile || exit 1
 
 CFLAGS="${SLKCFLAGS}" \
@@ -123,6 +133,8 @@ CFLAGS="${SLKCFLAGS}" \
   --mandir=/usr/man \
   --datadir=/usr/share/${NAME} \
   --config=/var/lib/${NAME} \
+  --pcdir=/usr/lib${LIBDIRSUFFIX}/pkgconfig \
+  --plugindir=/usr/lib${LIBDIRSUFFIX}/${NAME} \
   --ssl=gnutls \
   --strip=0 \
   --plugins=1 || exit 1
@@ -130,10 +142,25 @@ CFLAGS="${SLKCFLAGS}" \
 make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} || exit 1
 make install-etc DESTDIR=${PKG} || exit 1
+make install-dev DESTDIR=${PKG} || exit 1
 make install-doc DESTDIR=${PKG} || exit 1
 
-install -p -m0755 utils/{centericq2bitlbee.sh,convert_gnomeicu.txt,create_nicksfile.pl} \
-                  ${PKG}/usr/share/${NAME}/ || exit 1
+unset MARCH
+case "${ARCH}" in
+  i[3-6]86)  MARCH=i386
+             ;;
+    s390)    MARCH=s390
+             ;;
+    x86_64)  MARCH=x86_64
+             ;;
+esac
+
+if [ -n "${MARCH}" ] ;then
+  mv ${PKG}/usr/include/${NAME}/config.h \
+    ${PKG}/usr/include/${NAME}/config-${MARCH}.h || exit 1
+  zcat ${CWD}/${NAME}-wrapper.h.gz \
+    > ${PKG}/usr/include/${NAME}/config.h || exit 1
+fi
 
 mkdir -p ${PKG}/var/lib/${NAME}
 chmod 0700 ${PKG}/var/lib/${NAME}
@@ -141,19 +168,18 @@ chmod 0700 ${PKG}/var/lib/${NAME}
 mv ${PKG}/etc/${NAME}/${NAME}.conf \
    ${PKG}/etc/${NAME}/${NAME}.conf.new || exit 1
 mkdir -p ${PKG}/etc/default
-zcat ${CWD}/${NAME}opts.conf.gz >\
-     ${PKG}/etc/default/${NAME}.new || exit 1
+zcat ${CWD}/${NAME}opts.conf.gz \
+  > ${PKG}/etc/default/${NAME}.new || exit 1
 
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.${NAME}.gz > \
-     ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
+install -m0755 ${CWD}/rc.${NAME} \
+  ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
-zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
-     ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
-zcat ${CWD}/setup.onlyonce.${NAME}.gz > \
-     ${PKG}/var/log/setup/setup.onlyonce.${NAME} || exit 1
+zcat ${CWD}/setup.onlyonce.rc${NAME}.gz \
+  > ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
+zcat ${CWD}/setup.onlyonce.${NAME}.gz \
+  > ${PKG}/var/log/setup/setup.onlyonce.${NAME} || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.*${NAME} || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
@@ -163,7 +189,7 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 mkdir -p ${DOCDIR}
 cp -a \
   COPYING doc/{AUTHORS,CHANGES,CREDITS,FAQ,README} ${CWD}/ChangeLog.SB \
-  doc/user-guide/{*.xml,user-guide.txt} ${DOCDIR}/
+  doc/user-guide/{*.xml,user-guide.txt} doc/example_plugin.c ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
@@ -297,12 +323,15 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}opts.conf.gz ${CWD}/{rc.,setup.onlyonce.rc}*.gz \
-                 ${CWD}/${NAME}.xinetd.gz ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${CWD}/${NAME}opts.conf.gz ${CWD}/rc.${NAME} \
+                 ${CWD}/setup.onlyonce.rc}*.gz ${CWD}/${NAME}.xinetd.gz ${CWD}/*-wrapper.h.gz \
+                 ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

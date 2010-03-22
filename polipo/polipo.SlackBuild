@@ -43,7 +43,7 @@ fi
 NAME=polipo
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.0.4}
+VERSION=${VERSION:-1.0.4.1}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -63,6 +63,9 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+grep --quiet '^polipo:' /etc/group && SB_HGROUP=1
+grep --quiet '^polipo:' /etc/passwd && SB_HUSER=1
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
@@ -71,12 +74,10 @@ SRCARCHIVE=${SRCDIR}.tar.gz
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://www.pps.jussieu.fr/~jch/software/files/${NAME}/${SRCARCHIVE}"
+DL_URL="http://freehaven.net/~chrisd/${NAME}/${SRCARCHIVE}"
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
-fi
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -90,6 +91,12 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -99,11 +106,7 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
@@ -121,24 +124,37 @@ make -j${NJOBS} "CDEBUGFLAGS=${SLKCFLAGS}" all || exit 1
 make install "TARGET=${PKG}" || exit 1
 
 mkdir -p ${PKG}/etc/${NAME}
-zcat ${CWD}/${NAME}-config.gz > ${PKG}/etc/${NAME}/config.new || exit 1
+install -pm0644 ${CWD}/${NAME}.config ${PKG}/etc/${NAME}/config.new || exit 1
+install -pm0644 ${CWD}/${NAME}.forbidden ${PKG}/etc/${NAME}/forbidden.new || exit 1
 
 # Startup scripts.
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.${NAME}.gz > \
-     ${PKG}/etc/rc.d/rc.${NAME} || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}
+install -pm0755 ${CWD}/rc.${NAME} \
+  ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
-zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
-    ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
+zcat ${CWD}/setup.onlyonce.rc${NAME}.gz \
+  > ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}
 
 mkdir -p ${PKG}/var/cache/${NAME}
 chmod 750 ${PKG}/var/cache/${NAME}
 
-mkdir -p ${PKG}/etc/cron.daily
-zcat ${CWD}/${NAME}.crond.gz > ${PKG}/etc/cron.daily/${NAME} || exit 1
+mkdir -p ${PKG}/var/run/${NAME}
+chmod 750 ${PKG}/var/cache/${NAME}
+
+mkdir -p ${PKG}/etc/logrotate.d
+cat >> ${PKG}/etc/logrotate.d/${NAME}.new <<EOF
+/var/log/polipo {
+    create 0640 polipo polipo
+    missingok
+    notifempty
+    delaycompress
+    postrotate
+  test -x /etc/rc.d/rc.polipo && /etc/rc.d/rc.polipo reload 2>/dev/null >/dev/null || : 
+    endscript
+}
+EOF
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -268,6 +284,12 @@ config() {
   fi
   # Otherwise, we leave the .new copy for the admin to consider...
 }
+
+# Keep same perms on rc.${NAME}.new:
+if [ -r etc/rc.d/rc.${NAME} -a -r etc/rc.d/rc.${NAME}.new ]; then
+  chmod --reference=etc/rc.d/rc.${NAME} etc/rc.d/rc.${NAME}.new
+fi
+
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
@@ -280,6 +302,7 @@ cat >> ${PKG}/install/doinst.sh <<'EOF'
 # Fix permissions
 ${CHROOT} /bin/chmod 0750 /var/cache/polipo
 ${CHROOT} /bin/chown polipo.polipo /var/cache/polipo
+${CHROOT} /bin/chown polipo.polipo /var/run/polipo
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -289,8 +312,8 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-config.gz ${CWD}/${NAME}.crond.gz \
-                 ${CWD}/rc.${NAME}.gz ${CWD}/setup.*.rc${NAME}.gz ${SBDIR}/
+                 ${CWD}/${NAME}.{config,forbidden} ${CWD}/rc.${NAME} \
+                 ${CWD}/setup.*.rc${NAME}.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
 fi
@@ -299,7 +322,8 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown polipo.polipo ./var/cache/polipo ./var/run/polipo; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

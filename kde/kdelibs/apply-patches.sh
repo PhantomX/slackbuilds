@@ -33,8 +33,12 @@ zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup
 # paths (like /usr/lib64) already! With this, we can drop
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
 zcat ${SB_PATCHDIR}/kdelibs-4.3.98-no_rpath.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+# bug:568389 (crash in kpixmapcache)
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-kpixmapcache.patch
 
 # 4.4 upstream
+# https://bugs.kde.org/show_bug.cgi?id=227089
+patch -p4 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-kdebug.patch 
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex

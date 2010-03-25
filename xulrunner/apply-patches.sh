@@ -18,7 +18,6 @@ zcat ${SB_PATCHDIR}/mozilla-192-pkgconfig.patch.gz | patch -p1 -E --backup --ver
 
 # Upstream patches
 zcat ${SB_PATCHDIR}/mozilla-ps-pdf-simplify-operators.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/mozilla-462919.patch.gz | patch -p1 -E --backup --verbose
 
 # From Arch
 zcat ${SB_PATCHDIR}/fix-mozilla-launcher.patch.gz | patch -p0 -E --backup --verbose

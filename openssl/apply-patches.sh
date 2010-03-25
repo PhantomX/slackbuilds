@@ -7,9 +7,6 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/openssl.soname.diff.gz | patch -p1 --backup --verbose --suffix=.orig
 zcat ${SB_PATCHDIR}/openssl.optsx86.diff.gz | patch -p1 --backup --verbose --suffix=.orig
 
-# Revert a change that broke decrypting some files encrypted with previous versions
-zcat ${SB_PATCHDIR}/openssl-0.9.8m.evp_locl.h.diff.gz | patch -p1 --backup --verbose --suffix=.orig
-
 # Build changes
 #zcat ${SB_PATCHDIR}/openssl-0.9.8j-redhat.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/openssl-0.9.8a-defaults.patch.gz | patch -p1 -E --backup --verbose

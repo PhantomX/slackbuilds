@@ -43,7 +43,7 @@ fi
 NAME=physfs
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.0.2}
+VERSION=${VERSION:-2.0.1}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -109,39 +109,59 @@ cd ${SRCDIR} || exit 1
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
-autoconf || exit 1
+export CFLAGS="${SLKCFLAGS} -fno-strict-aliasing"
+export CXXFLAGS="${SLKCFLAGS} -fno-strict-aliasing"
+export FFLAGS="${SLKCFLAGS}"
 
-CFLAGS="${SLKCFLAGS}" \
-CXXFLAGS="${SLKCFLAGS}" \
-./configure \
-  --prefix=/usr \
-  --libdir=/usr/lib${LIBDIRSUFFIX} \
-  --sysconfdir=/etc \
-  --localstatedir=/var/lib \
-  --infodir=/usr/info \
-  --mandir=/usr/man \
-  --docdir=/usr/doc/${NAME}-${VERSION} \
-  --disable-testprog \
-  --disable-internal-zlib \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+mkdir -p build
+( cd build || exit $?
 
-make -j${NJOBS} || make || exit 1
-doxygen || exit 1
-make install DESTDIR=${PKG} || exit 1
+  cmake .. \
+    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DINCLUDE_INSTALL_DIR:PATH=/usr/include \
+    -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSHARE_INSTALL_PREFIX:PATH=/usr/share \
+    -DMAN_INSTALL_DIR:PATH=/usr/man \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS:BOOL=ON \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+    -DPHYSFS_BUILD_STATIC:BOOL=OFF \
+    -DPHYSFS_INTERNAL_ZLIB:BOOL=OFF \
+    -DPHYSFS_BUILD_TEST:BOOL=OFF \
+    -DPHYSFS_BUILD_WX_TEST:BOOL=OFF \
+    || exit $?
 
-rm -f ${PKG}/usr/lib*/*.la
+  make -j${NJOBS} || make || exit $?
+  make install/fast DESTDIR=${PKG} || exit $?
+
+) || exit $?
+
+doxygen || exit $?
+
+( cd docs/man/man3 || exit 1
+  for man in _*.3 ;do
+    if [ -f ${man#_} ] ;then
+      rm -f ${man}
+    else
+      mv ${man} ${man#_} || exit 
+    fi
+  done
+  for man in \
+    author Deinit description extension Free Init major Malloc minor opaque patch Realloc url \
+    ;do
+    mv ${man}.3 physfs-${man}.3 || exit 
+  done
+)
+
 mkdir -p ${PKG}/usr/man/man3
-install -m0644 docs/man/man3/* ${PKG}/usr/man/man3/ || exit 1
-
-# Handle man page conflicts (bz #183705)
-mv ${PKG}/usr/man/man3/author.3 ${PKG}/usr/man/man3/physfs-author.3 || exit 1
-mv ${PKG}/usr/man/man3/description.3 ${PKG}/usr/man/man3/physfs-description.3 || exit 1
-mv ${PKG}/usr/man/man3/extension.3 ${PKG}/usr/man/man3/physfs-extension.3 || exit 1
-mv ${PKG}/usr/man/man3/major.3 ${PKG}/usr/man/man3/physfs-major.3 || exit 1
-mv ${PKG}/usr/man/man3/minor.3 ${PKG}/usr/man/man3/physfs-minor.3 || exit 1
-mv ${PKG}/usr/man/man3/patch.3 ${PKG}/usr/man/man3/physfs-patch.3 || exit 1
-mv ${PKG}/usr/man/man3/url.3 ${PKG}/usr/man/man3/physfs-url.3 || exit 1
+install -m0644 docs/man/man3/*.3 ${PKG}/usr/man/man3/ || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -149,7 +169,7 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  CHANGELOG CREDITS LICENSE TODO docs/html/ docs/latex/ ${CWD}/ChangeLog.SB \
+  CHANGELOG.txt CREDITS.txt LICENSE.txt TODO.txt docs/html/ docs/latex/ ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
@@ -184,11 +204,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

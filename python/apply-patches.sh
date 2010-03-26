@@ -16,9 +16,11 @@ fi
 for patches in 05_all_verbose_building_of_extensions.patch 06_all_dbm_automagic.patch \
   07_all_internal_expat.patch 08_all_non-zero_exit_status_on_failure.patch \
   09_all_use_external_libffi.patch 10_all_freebsd_linking.patch 21_all_distutils_c++.patch \
-  22_all_turkish_locale.patch \
+  22_all_turkish_locale.patch 23_all_allow___unicode___overriding_in_unicode_subclasses.patch \
+  24_all_thread_creation.patch 25_all_unicodedata.normalize.patch \
+  26_all_sys.executable_with_invalid_program_name.patch \
   ;do
-  patch -p0 --backup --verbose -i ${PVER}/${patches}
+  patch -p0 --backup --verbose -i ${PDIR}/${patches}
 done
 
 # From Fedora

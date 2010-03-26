@@ -116,7 +116,7 @@ export CXXFLAGS="${SLKCFLAGS}"
 export FFLAGS="${SLKCFLAGS}"
 
 mkdir -p build
-( cd build || exit 1
+( cd build || exit $?
 
   cmake .. \
     -DCMAKE_INSTALL_PREFIX:PATH=/usr \
@@ -130,12 +130,12 @@ mkdir -p build
     -DBUILD_SHARED_LIBS:BOOL=ON \
     -DCMAKE_SKIP_RPATH:BOOL=ON \
     -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
-    || exit 1
+    || exit $?
 
-  make -j${NJOBS} || make || exit 1
-  make install/fast DESTDIR=${PKG} || exit 1
+  make -j${NJOBS} || make || exit $?
+  make install/fast DESTDIR=${PKG} || exit $?
 
-) || exit 1
+) || exit $?
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null

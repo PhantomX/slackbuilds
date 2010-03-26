@@ -116,10 +116,10 @@ chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
-ruby extconf.rb || exit 1
+ruby extconf.rb || exit $?
 
-make -j${NJOBS} optflags="${SLKCFLAGS}" || make optflags="${SLKCFLAGS}" || exit 1
-make install DESTDIR=${PKG} || exit 1
+make -j${NJOBS} optflags="${SLKCFLAGS}" || make optflags="${SLKCFLAGS}" || exit $?
+make install DESTDIR=${PKG} || exit $?
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null

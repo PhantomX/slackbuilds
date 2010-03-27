@@ -14,24 +14,16 @@ zcat ${SB_PATCHDIR}/gtk.etc.host.location.diff.gz | patch -p1 --verbose
 
 zcat ${SB_PATCHDIR}/system-python.patch.gz | patch -p1 --verbose
 # https://bugzilla.gnome.org/show_bug.cgi?id=583273
-zcat ${SB_PATCHDIR}/icon-padding.patch.gz | patch -p1 --verbose
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/icon-padding.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=599617
-zcat ${SB_PATCHDIR}/fresh-tooltips.patch.gz | patch -p1 --verbose
-# from upstream
-zcat ${SB_PATCHDIR}/allow-set-hint.patch.gz | patch -p1 --verbose
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/fresh-tooltips.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=599618
-zcat ${SB_PATCHDIR}/tooltip-positioning.patch.gz | patch -p1 --verbose
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/tooltip-positioning.patch
 # http://bugzilla.redhat.com/show_bug.cgi?id=529364
 zcat ${SB_PATCHDIR}/gtk2-remove-connecting-reason.patch.gz | patch -p1 --verbose
 # https://bugzilla.gnome.org/show_bug.cgi?id=592582
-zcat ${SB_PATCHDIR}/gtk2-preview.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/gtk2-rotate-layout.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/gtk2-landscape-pdf-print.patch.gz | patch -p1 --verbose
-# https://bugzilla.gnome.org/show_bug.cgi?id=600992
-zcat ${SB_PATCHDIR}/filesystemref.patch.gz | patch -p1 --verbose
-# from upstream
-zcat ${SB_PATCHDIR}/o-minus.patch.gz | patch -p1 --verbose
-# from upstream
-zcat ${SB_PATCHDIR}/strftime-format.patch.gz | patch -p1 --verbose
+#zcat ${SB_PATCHDIR}/gtk2-landscape-pdf-print.patch.gz | patch -p1 --verbose
+# https://bugzilla.gnome.org/show_bug.cgi?id=611313
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/window-dragging.patch
 
 set +e +o pipefail

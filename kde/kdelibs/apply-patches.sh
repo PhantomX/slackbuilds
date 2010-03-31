@@ -1,45 +1,44 @@
 # The set of patches from hell :)
 
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
 # make -devel packages parallel-installable
-zcat ${SB_PATCHDIR}/kdelibs-4.3.85-parallel_devel.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/kdelibs-4.3.85-parallel_devel.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # fix kde#149705
-zcat ${SB_PATCHDIR}/kdelibs-4.2.85-kde149705.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/kdelibs-4.2.85-kde149705.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # Hunspell support for K3Spell
 # http://fedoraproject.org/wiki/Releases/FeatureDictionary
 # http://bugs.kde.org/show_bug.cgi?id=154561
-zcat ${SB_PATCHDIR}/kdelibs-4.0.0-k3spell-hunspell.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
-# install all .css files and Doxyfile.global in kdelibs-common to build
-# kdepimlibs-apidocs against
-zcat ${SB_PATCHDIR}/kdelibs-4.3.90-install-all-css.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/kdelibs-4.0.0-k3spell-hunspell.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 
 # Add "(Slackware)" to khtml user agent
 zcat ${SB_PATCHDIR}/kdelibs-4.0.2-branding-slk.patch.gz |sed \
-  -e "s|_KDELIBS_SLK_DIST|${KDELIBS_SLK_DIST}|g" | patch -p1 -E --backup --verbose || exit 1
+  -e "s|_KDELIBS_SLK_DIST|${KDELIBS_SLK_DIST}|g" | patch -p1 -E --backup --verbose
 
 # workaround for policykit
-zcat ${SB_PATCHDIR}/kdelibs-4.3.80-policykit-workaround.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
-#zcat ${SB_PATCHDIR}/kdelibs-4.1.0-xdg-menu.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
-# patch KStandardDirs to use %{_libexecdir}/kde4 instead of %{_libdir}/kde4/libexec
-zcat ${SB_PATCHDIR}/kdelibs-4.2.85-libexecdir.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/kdelibs-4.3.80-policykit-workaround.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+#zcat ${SB_PATCHDIR}/kdelibs-4.1.0-xdg-menu.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+# patch KStandardDirs to use /usr/libexec/kde4 instead of /usr/lib${LIBDIRSUFFIX}/kde4/libexec
+zcat ${SB_PATCHDIR}/kdelibs-4.2.85-libexecdir.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # kstandarddirs changes: search /etc/kde, find /usr/libexec/kde4
-zcat ${SB_PATCHDIR}/kdelibs-4.1.72-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
-zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
-#zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/kdelibs-4.1.72-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+#zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+
+patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-4.4.1-add-confirmation-window.patch
 
 # die rpath die, since we're using standard paths, we can avoid
 # this extra hassle (even though cmake is *supposed* to not add standard
 # paths (like /usr/lib64) already! With this, we can drop
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
-zcat ${SB_PATCHDIR}/kdelibs-4.3.98-no_rpath.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
-# bug:568389 (crash in kpixmapcache)
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-kpixmapcache.patch
+zcat ${SB_PATCHDIR}/kdelibs-4.3.98-no_rpath.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 
 # 4.4 upstream
-# https://bugs.kde.org/show_bug.cgi?id=227089
-patch -p4 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-kdebug.patch 
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex
-zcat ${SB_PATCHDIR}/kdelibs-4.3.1-CVE-2009-2702.patch.gz | patch -p1 --verbose --backup --suffix=.orig || exit 1
+zcat ${SB_PATCHDIR}/kdelibs-4.3.1-CVE-2009-2702.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+
+set +e +o pipefail

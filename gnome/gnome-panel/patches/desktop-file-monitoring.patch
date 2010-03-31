@@ -1,0 +1,280 @@
+diff -up gnome-panel-2.29.5.1/gnome-panel/launcher.c.desktop-file-monitoring gnome-panel-2.29.5.1/gnome-panel/launcher.c
+--- gnome-panel-2.29.5.1/gnome-panel/launcher.c.desktop-file-monitoring	2010-01-13 22:26:27.000000000 -0500
++++ gnome-panel-2.29.5.1/gnome-panel/launcher.c	2010-01-17 18:06:14.640537280 -0500
+@@ -237,6 +237,8 @@ static void
+ destroy_launcher (GtkWidget *widget,
+ 		  Launcher  *launcher)
+ {
++	if (launcher->monitor) 
++		g_object_unref (launcher->monitor);
+ 	launcher_properties_destroy (launcher);
+ 	launcher_widget_destroy_open_dialogs (launcher);
+ }
+@@ -410,6 +412,37 @@ drag_data_get_cb (GtkWidget        *widg
+ 
+ }
+ 
++static void setup_button (Launcher *launcher);
++
++static void
++desktop_file_changed (GFileMonitor      *monitor,
++                      GFile             *file,
++                      GFile             *other_file,
++                      GFileMonitorEvent  event_type,
++		      gpointer                  user_data)
++{
++	Launcher *launcher = user_data;
++	GKeyFile *key_file;
++
++	if (event_type == G_FILE_MONITOR_EVENT_CHANGED ||
++	    event_type == G_FILE_MONITOR_EVENT_CREATED) {
++		gchar *path;
++
++		path = g_file_get_path (file);
++
++		key_file = g_key_file_new ();
++		if (g_key_file_load_from_file (key_file, path,
++					       G_KEY_FILE_KEEP_COMMENTS|G_KEY_FILE_KEEP_TRANSLATIONS,
++					       NULL)) {
++			g_key_file_free (launcher->key_file);
++			launcher->key_file = key_file;
++			setup_button (launcher);        
++		}
++
++		g_free (path);
++	}
++}
++
+ static Launcher *
+ create_launcher (const char *location)
+ {
+@@ -482,6 +515,21 @@ create_launcher (const char *location)
+ 	launcher->key_file = key_file;
+ 	launcher->prop_dialog = NULL;
+ 	launcher->destroy_handler = 0;
++	launcher->monitor = NULL;
++
++	/* Watch for changes to the desktop file. Since we don't want 
++	 * to do this for every launcher, we only do it if the desktop 
++	 * file contains a X-Panel-Monitor entry.
++	 */
++	if (g_key_file_get_boolean (key_file, "Desktop Entry", "X-Panel-Monitor", NULL)) {
++		GFile *file;
++
++		file = g_file_new_for_path (new_location);
++		launcher->monitor = g_file_monitor_file (file, 0, NULL, NULL);
++		g_signal_connect (launcher->monitor, "changed",
++				  G_CALLBACK (desktop_file_changed), launcher);
++		g_object_unref (file);
++	}
+ 
+ 	/* Icon will be setup later */
+ 	launcher->button = button_widget_new (NULL /* icon */,
+@@ -612,6 +660,15 @@ static void
+ launcher_changed (PanelDItemEditor *dialog,
+ 		  Launcher         *launcher)
+ {
++	/* If the user manually changes launcher properties,
++	 * we stop monitoring the desktop file to not overwrite
++	 * user changes.
++	 */
++	if (launcher->monitor) {
++		g_object_unref (launcher->monitor);
++		launcher->monitor = NULL;
++	}
++
+ 	/* Setup the button look */
+ 	setup_button (launcher);
+ }
+@@ -681,6 +738,42 @@ launcher_save_uri (PanelDItemEditor *dia
+ 	return NULL;
+ }
+ 
++static const char *
++desktop_file_to_monitor (PanelDItemEditor *editor)
++{
++	const char *entry;
++	GKeyFile *key_file;
++
++	/* When the user selects a desktop file in the ditem editor,
++	 * start monitoring the desktop file for changes.
++	 */
++	entry = panel_ditem_editor_get_orig_desktop_file (editor);
++	if (entry) {
++		key_file = g_key_file_new ();
++		if (!g_key_file_load_from_file (key_file, entry, 0, NULL) ||
++		    !panel_key_file_get_boolean (key_file, "X-Panel-Monitor", FALSE)) 
++			entry = NULL;
++		g_key_file_free (key_file);
++	}
++
++	return entry;
++}
++
++static void
++start_monitoring (Launcher *launcher)
++{
++	GFile *file;
++
++	file = g_file_new_for_path (launcher->location);
++	if (launcher->monitor)
++		g_object_unref (launcher->monitor);
++	launcher->monitor = g_file_monitor_file (file, 0, NULL, NULL);
++	g_signal_connect (launcher->monitor, "changed",
++			  G_CALLBACK (desktop_file_changed),
++			  launcher);
++	g_object_unref (file);
++}
++ 
+ static void
+ launcher_saved (GtkWidget *dialog,
+ 		Launcher  *launcher)
+@@ -688,11 +781,15 @@ launcher_saved (GtkWidget *dialog,
+ 	const char  *uri;
+ 	GConfClient *client;
+ 	const char  *key;
++	const char *path;
+ 
+ 	uri = panel_ditem_editor_get_uri (PANEL_DITEM_EDITOR (dialog));
+ 	if (panel_launcher_get_filename (uri) != NULL)
+ 		uri = panel_launcher_get_filename (uri);
+ 
++	if ((path = desktop_file_to_monitor (PANEL_DITEM_EDITOR (dialog))) != NULL)
++		uri = path;
++
+ 	if (uri && launcher->location && strcmp (uri, launcher->location)) {
+ 		client = panel_gconf_get_client ();
+ 
+@@ -705,6 +802,9 @@ launcher_saved (GtkWidget *dialog,
+ 		if (launcher->location)
+ 			g_free (launcher->location);
+ 		launcher->location = g_strdup (uri);
++
++		if (path)
++			start_monitoring (launcher);
+ 	}
+ }
+ 
+@@ -871,6 +971,7 @@ launcher_new_saved (GtkWidget *dialog,
+ 	PanelWidget *panel;
+ 	int          pos;
+ 	const char  *uri;
++	const char  *path;
+ 
+ 	pos = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (dialog), "pos"));
+ 	panel = g_object_get_data (G_OBJECT (dialog), "panel");
+@@ -878,6 +979,10 @@ launcher_new_saved (GtkWidget *dialog,
+ 	uri = panel_ditem_editor_get_uri (PANEL_DITEM_EDITOR (dialog));
+ 	if (panel_launcher_get_filename (uri) != NULL)
+ 		uri = panel_launcher_get_filename (uri);
++
++	if ((path = desktop_file_to_monitor (PANEL_DITEM_EDITOR (dialog))) != NULL)
++		uri = path;
++
+ 	panel_launcher_create (panel->toplevel, pos, uri);
+ }
+ 
+diff -up gnome-panel-2.29.5.1/gnome-panel/launcher.h.desktop-file-monitoring gnome-panel-2.29.5.1/gnome-panel/launcher.h
+--- gnome-panel-2.29.5.1/gnome-panel/launcher.h.desktop-file-monitoring	2009-04-19 13:45:09.000000000 -0400
++++ gnome-panel-2.29.5.1/gnome-panel/launcher.h	2010-01-17 18:06:14.638537025 -0500
+@@ -27,6 +27,8 @@ typedef struct {
+ 	GSList 		  *error_dialogs;
+ 
+ 	gulong             destroy_handler;
++
++	GFileMonitor      *monitor; 
+ } Launcher;
+ 
+ void panel_launcher_create           (PanelToplevel *toplevel,
+@@ -56,7 +58,6 @@ void            launcher_load_from_gconf
+ 						 gint         position,
+ 						 const char  *id);
+ 
+-void            panel_launcher_delete           (Launcher *launcher);
+ 
+ void		ask_about_launcher		(const char *file,
+ 						 PanelWidget *panel,
+diff -up gnome-panel-2.29.5.1/gnome-panel/panel-ditem-editor.c.desktop-file-monitoring gnome-panel-2.29.5.1/gnome-panel/panel-ditem-editor.c
+--- gnome-panel-2.29.5.1/gnome-panel/panel-ditem-editor.c.desktop-file-monitoring	2010-01-17 18:06:14.635278719 -0500
++++ gnome-panel-2.29.5.1/gnome-panel/panel-ditem-editor.c	2010-01-17 18:11:39.921279627 -0500
+@@ -81,6 +81,8 @@ struct _PanelDItemEditorPrivate
+ 	GtkWidget *close_button;
+ 	GtkWidget *cancel_button;
+ 	GtkWidget *ok_button;
++
++	char *orig_desktop_file;
+ };
+ 
+ /* Time in seconds after which we save the file on the disk */
+@@ -366,6 +368,10 @@ panel_ditem_editor_destroy (GtkObject *o
+ 		g_free (dialog->priv->uri);
+ 	dialog->priv->uri = NULL;
+ 
++	if (dialog->priv->orig_desktop_file != NULL)
++		g_free (dialog->priv->orig_desktop_file);
++	dialog->priv->orig_desktop_file = NULL;
++
+ 	GTK_OBJECT_CLASS (panel_ditem_editor_parent_class)->destroy (object);
+ }
+ 
+@@ -833,6 +839,13 @@ panel_ditem_editor_changed (PanelDItemEd
+ 							   TRUE);
+ 	}
+ 
++	/* When the user changes any fields, unset the orig_desktop_file
++	 * field since the editor contents are not entirely from a desktop
++	 * file anymore.
++	 */ 
++	g_free (dialog->priv->orig_desktop_file);
++	dialog->priv->orig_desktop_file = NULL;
++
+ 	dialog->priv->dirty = TRUE;
+ 	g_signal_emit (G_OBJECT (dialog), ditem_edit_signals[CHANGED], 0);
+ }
+@@ -992,6 +1005,13 @@ update_editor_from_desktop_file (PanelDI
+                 */ 
+                setup_icon_chooser (dialog, icon);
+ 
++               /* We set the orig_desktop_file field to let the
++                * launcher know that the editor contents are coming
++                * directly from a desktop file.
++                */ 
++               g_free (dialog->priv->orig_desktop_file);
++               dialog->priv->orig_desktop_file = g_strdup (uri);
++
+                g_free (name);
+                g_free (comment);
+                g_free (icon);
+@@ -1066,6 +1086,7 @@ update_chooser_for_type (PanelDItemEdito
+ 		g_assert_not_reached ();
+ 	}
+ 
++
+ 	chooser = dialog->priv->command_browse_filechooser;
+ 
+ 	gtk_window_set_title (GTK_WINDOW (chooser),
+@@ -1849,3 +1870,12 @@ panel_ditem_register_save_uri_func (Pane
+ 	dialog->priv->save_uri = save_uri;
+ 	dialog->priv->save_uri_data = data;
+ }
++
++G_CONST_RETURN char *
++panel_ditem_editor_get_orig_desktop_file (PanelDItemEditor *dialog)
++{
++	g_return_val_if_fail (PANEL_IS_DITEM_EDITOR (dialog), NULL);
++
++	return dialog->priv->orig_desktop_file;
++}
++
+diff -up gnome-panel-2.29.5.1/gnome-panel/panel-ditem-editor.h.desktop-file-monitoring gnome-panel-2.29.5.1/gnome-panel/panel-ditem-editor.h
+--- gnome-panel-2.29.5.1/gnome-panel/panel-ditem-editor.h.desktop-file-monitoring	2009-04-19 13:45:09.000000000 -0400
++++ gnome-panel-2.29.5.1/gnome-panel/panel-ditem-editor.h	2010-01-17 18:06:14.638537025 -0500
+@@ -101,6 +101,8 @@ void panel_ditem_editor_set_uri (PanelDI
+ 				 const char       *uri);
+ 
+ G_CONST_RETURN char *panel_ditem_editor_get_uri (PanelDItemEditor *dialog);
++G_CONST_RETURN char *panel_ditem_editor_get_orig_desktop_file (PanelDItemEditor *dialog);
++
+ 
+ void panel_ditem_register_save_uri_func (PanelDItemEditor  *dialog,
+ 					 PanelDitemSaveUri  save_uri,

@@ -13,9 +13,7 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.3-home_onlyshowin_kde.patch.gz | patch -p1 -E --
 # Mandriva
 zcat ${SB_PATCHDIR}/${NAME}-nepomuk-strigi-smartfile.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.2-knotify-fix-cpu-charge.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-nepomuk-filewatch-inotify.diff.gz | patch -p1 -E --backup --verbose
-
-zcat ${SB_PATCHDIR}/${NAME}-4.4.1-b1101677-strigi-fix-indexing.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nepomuk-sync-with-trunk.patch
 
 # Trunk  patches
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079784-add-kupnp-support.patch.gz | patch -p1 -E --backup --verbose

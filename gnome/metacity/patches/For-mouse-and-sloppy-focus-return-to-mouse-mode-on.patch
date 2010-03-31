@@ -1,0 +1,394 @@
+From e8a6af29a1f57024067a12567e2bd906e6bad5a4 Mon Sep 17 00:00:00 2001
+From: Owen W. Taylor <otaylor@fishsoup.net>
+Date: Tue, 20 Oct 2009 15:13:45 -0400
+Subject: [PATCH] For mouse and sloppy focus, return to "mouse mode" on motion
+
+For mouse and sloppy focus, there are various cases where the focus
+window can be moved away from the focus window. Mostly these relate
+to "display->mouse_mode = FALSE", which we enter when the user
+starts keynav'ing, but it can also occur if a window is focus-denied
+mapped and mapped under the pointer.
+
+Prior to this patch, there was no fast way for the user to start
+interacting with the window - if they just clicked on the window,
+the click would be passed through, and could disturb the windows
+contents, so the user had to either mouse out and then mouse back
+in, or go up and click on the titlebar.
+
+With this patch, when we get into this state, we add a timeout
+and poll for pointer motion with XQueryPointer. If the user then
+moves the pointer (more than a single pixel to handle jitter),
+we focus the window under the pointer and return to mouse mode.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=599097
+---
+ src/core/display-private.h |   11 ++
+ src/core/display.c         |  239 +++++++++++++++++++++++++++++++++++--------
+ src/core/keybindings.c     |   10 +-
+ 3 files changed, 210 insertions(+), 50 deletions(-)
+
+diff --git a/src/core/display-private.h b/src/core/display-private.h
+index 19287f3..b14d7d7 100644
+--- a/src/core/display-private.h
++++ b/src/core/display-private.h
+@@ -150,6 +150,14 @@ struct _MetaDisplay
+   guint       autoraise_timeout_id;
+   MetaWindow* autoraise_window;
+ 
++  /* When we ignore an enter due to !display->mouse_mode, a timeout
++   * to check if the mouse is moved, in which case we should focus
++   * the pointer window and return to mouse mode */
++  guint       focus_on_motion_timeout_id;
++  Window      focus_on_motion_start_root_window;
++  int         focus_on_motion_start_x;
++  int         focus_on_motion_start_y;
++
+   /* Alt+click button grabs */
+   unsigned int window_grab_modifiers;
+   
+@@ -497,4 +505,7 @@ void meta_display_queue_autoraise_callback  (MetaDisplay *display,
+                                              MetaWindow  *window);
+ void meta_display_remove_autoraise_callback (MetaDisplay *display);
+ 
++void meta_display_disable_mouse_mode        (MetaDisplay *display);
++void meta_display_enable_mouse_mode         (MetaDisplay *display);
++
+ #endif
+diff --git a/src/core/display.c b/src/core/display.c
+index 55c374a..78139bd 100644
+--- a/src/core/display.c
++++ b/src/core/display.c
+@@ -165,6 +165,9 @@ static void    sanity_check_timestamps   (MetaDisplay *display,
+ 
+ MetaGroup*     get_focussed_group (MetaDisplay *display);
+ 
++static void start_focus_on_motion (MetaDisplay *display);
++static void stop_focus_on_motion  (MetaDisplay *display);
++
+ /**
+  * Destructor for MetaPingData structs. Will destroy the
+  * event source for the struct as well.
+@@ -876,6 +879,7 @@ meta_display_close (MetaDisplay *display,
+   meta_prefs_remove_listener (prefs_changed_callback, display);
+   
+   meta_display_remove_autoraise_callback (display);
++  stop_focus_on_motion (display);
+ 
+   if (display->grab_old_window_stacking)
+     g_list_free (display->grab_old_window_stacking);
+@@ -1816,67 +1820,86 @@ event_callback (XEvent   *event,
+       if (window && !serial_is_ignored (display, event->xany.serial) &&
+                event->xcrossing.mode != NotifyGrab && 
+                event->xcrossing.mode != NotifyUngrab &&
+-               event->xcrossing.detail != NotifyInferior &&
+-               meta_display_focus_sentinel_clear (display))
++               event->xcrossing.detail != NotifyInferior)
+         {
+           switch (meta_prefs_get_focus_mode ())
+             {
+             case META_FOCUS_MODE_SLOPPY:
+             case META_FOCUS_MODE_MOUSE:
+-              display->mouse_mode = TRUE;
+-              if (window->type != META_WINDOW_DOCK &&
+-                  window->type != META_WINDOW_DESKTOP)
++              if (!meta_display_focus_sentinel_clear (display))
+                 {
+-                  meta_topic (META_DEBUG_FOCUS,
+-                              "Focusing %s due to enter notify with serial %lu "
+-                              "at time %lu, and setting display->mouse_mode to "
+-                              "TRUE.\n",
+-                              window->desc, 
+-                              event->xany.serial,
+-                              event->xcrossing.time);
+-
+-                  meta_window_focus (window, event->xcrossing.time);
+-
+-                  /* stop ignoring stuff */
+-                  reset_ignores (display);
+-                  
+-                  if (meta_prefs_get_auto_raise ()) 
++                  /* There was an enter event that we want to ignore because
++                   * we're in "keynav mode" or because we are mapping
++                   * a focus-denied window; the next time the mouse is moved
++                   * we want to focus the window so the user doesn't have
++                   * to click (possibly messing up window contents) or
++                   * enter/leave to get focus to the window.
++                   *
++                   * (This check will also trigger for visual bell flashes
++                   * but it doesn't really do any harm to check for motion
++                   * in that case, since the next motion will just result in
++                   * the current window being focused.)
++                   */
++                  start_focus_on_motion (display);
++                }
++              else
++                {
++                  meta_display_enable_mouse_mode (display);
++                  if (window->type != META_WINDOW_DOCK &&
++                      window->type != META_WINDOW_DESKTOP)
+                     {
+-                      meta_display_queue_autoraise_callback (display, window);
++                      meta_topic (META_DEBUG_FOCUS,
++                                  "Focusing %s due to enter notify with serial %lu "
++                                  "at time %lu, and setting display->mouse_mode to "
++                                  "TRUE.\n",
++                                  window->desc, 
++                                  event->xany.serial,
++                                  event->xcrossing.time);
++
++                      meta_window_focus (window, event->xcrossing.time);
++
++                      /* stop ignoring stuff */
++                      reset_ignores (display);
++
++                      if (meta_prefs_get_auto_raise ()) 
++                        {
++                          meta_display_queue_autoraise_callback (display, window);
++                        }
++                      else
++                        {
++                          meta_topic (META_DEBUG_FOCUS,
++                                      "Auto raise is disabled\n");		      
++                        }
+                     }
+-                  else
++                  /* In mouse focus mode, we defocus when the mouse *enters*
++                   * the DESKTOP window, instead of defocusing on LeaveNotify.
++                   * This is because having the mouse enter override-redirect
++                   * child windows unfortunately causes LeaveNotify events that
++                   * we can't distinguish from the mouse actually leaving the
++                   * toplevel window as we expect.  But, since we filter out
++                   * EnterNotify events on override-redirect windows, this
++                   * alternative mechanism works great.
++                   */
++                  if (window->type == META_WINDOW_DESKTOP &&
++                      meta_prefs_get_focus_mode() == META_FOCUS_MODE_MOUSE &&
++                      display->expected_focus_window != NULL)
+                     {
+                       meta_topic (META_DEBUG_FOCUS,
+-                                  "Auto raise is disabled\n");		      
++                                  "Unsetting focus from %s due to mouse entering "
++                                  "the DESKTOP window\n",
++                                  display->expected_focus_window->desc);
++                      meta_display_focus_the_no_focus_window (display, 
++                                                              window->screen,
++                                                              event->xcrossing.time);
+                     }
+                 }
+-              /* In mouse focus mode, we defocus when the mouse *enters*
+-               * the DESKTOP window, instead of defocusing on LeaveNotify.
+-               * This is because having the mouse enter override-redirect
+-               * child windows unfortunately causes LeaveNotify events that
+-               * we can't distinguish from the mouse actually leaving the
+-               * toplevel window as we expect.  But, since we filter out
+-               * EnterNotify events on override-redirect windows, this
+-               * alternative mechanism works great.
+-               */
+-              if (window->type == META_WINDOW_DESKTOP &&
+-                  meta_prefs_get_focus_mode() == META_FOCUS_MODE_MOUSE &&
+-                  display->expected_focus_window != NULL)
+-                {
+-                  meta_topic (META_DEBUG_FOCUS,
+-                              "Unsetting focus from %s due to mouse entering "
+-                              "the DESKTOP window\n",
+-                              display->expected_focus_window->desc);
+-                  meta_display_focus_the_no_focus_window (display, 
+-                                                          window->screen,
+-                                                          event->xcrossing.time);
+-                }
+               break;
+             case META_FOCUS_MODE_CLICK:
+               break;
+             }
+-          
+-          if (window->type == META_WINDOW_DOCK)
++
++          if (window->type == META_WINDOW_DOCK &&
++              meta_display_focus_sentinel_clear (display))
+             meta_window_raise (window);
+         }
+       break;
+@@ -5140,6 +5163,132 @@ meta_display_remove_autoraise_callback (MetaDisplay *display)
+     }
+ }
+ 
++#define FOCUS_ON_MOTION_CHECK_INTERVAL 200 /* 0.2 seconds */
++#define FOCUS_ON_MOTION_THRESHOLD 2        /* Must move 2 pixels */
++
++static gboolean
++check_focus_on_motion (gpointer data)
++{
++  MetaDisplay *display = data;
++  Window root, child;
++  int root_x, root_y;
++  int window_x, window_y;
++  guint mask;
++
++  XQueryPointer (display->xdisplay,
++                 DefaultRootWindow (display->xdisplay),
++                 &root, &child,
++                 &root_x, &root_y,
++                 &window_x, &window_y,
++                 &mask);
++
++  if (root != display->focus_on_motion_start_root_window ||
++      MAX (ABS (root_x - display->focus_on_motion_start_x),
++           ABS (root_y - display->focus_on_motion_start_y)) >= FOCUS_ON_MOTION_THRESHOLD)
++    {
++      MetaScreen *screen;
++
++      meta_topic (META_DEBUG_FOCUS,
++                  "Returning to mouse mode on mouse motion\n");
++
++      meta_display_enable_mouse_mode (display);
++
++      screen = meta_display_screen_for_root (display, root);
++      if (screen != NULL)
++        {
++          MetaWindow *window = meta_screen_get_mouse_window (screen, NULL);
++          guint32 timestamp = meta_display_get_current_time_roundtrip (display);
++
++          if (window &&
++              window->type != META_WINDOW_DOCK &&
++              window->type != META_WINDOW_DESKTOP)
++            {
++              meta_topic (META_DEBUG_FOCUS,
++                          "Focusing mouse window %s\n", window->desc);
++
++              meta_window_focus (window, timestamp);
++
++              if (display->autoraise_window != window &&
++                  meta_prefs_get_auto_raise ())
++                {
++                  meta_display_queue_autoraise_callback (display, window);
++                }
++            }
++          else if (meta_prefs_get_focus_mode () == META_FOCUS_MODE_MOUSE)
++            {
++              meta_topic (META_DEBUG_FOCUS,
++                          "Setting focus to no_focus_windowm, since no mouse window.\n");
++              meta_display_focus_the_no_focus_window (display, screen, timestamp);
++            }
++
++          /* for META_FOCUS_MODE_SLOPPY, if the pointer isn't over a window, we just
++           * leave the last window focused */
++        }
++    }
++
++  return TRUE;
++}
++
++static void
++start_focus_on_motion (MetaDisplay *display)
++{
++  if (!display->focus_on_motion_timeout_id)
++    {
++      Window child;
++      guint mask;
++      int window_x, window_y;
++
++      XQueryPointer (display->xdisplay,
++                     DefaultRootWindow (display->xdisplay),
++                     &display->focus_on_motion_start_root_window,
++                     &child,
++                     &display->focus_on_motion_start_x,
++                     &display->focus_on_motion_start_y,
++                     &window_x, &window_y,
++                     &mask);
++
++      display->focus_on_motion_timeout_id =
++        g_timeout_add (FOCUS_ON_MOTION_CHECK_INTERVAL,
++                       check_focus_on_motion,
++                       display);
++    }
++}
++
++static void
++stop_focus_on_motion (MetaDisplay *display)
++{
++  if (display->focus_on_motion_timeout_id)
++    {
++      g_source_remove (display->focus_on_motion_timeout_id);
++      display->focus_on_motion_timeout_id = 0;
++    }
++}
++
++void
++meta_display_disable_mouse_mode (MetaDisplay *display)
++{
++  display->mouse_mode = FALSE;
++
++  /* mouse_mode disabled means that we are now allowing the
++   * mouse window to be different from the focus window;
++   * that discrepancy might not come until we ignore some
++   * enter event, but in a case like tabbing away from the
++   * mouse window, it occurs immediately, so we need to
++   * start checking for motion events to see if we should
++   * focus the mouse window and return to mouse mode.
++   */
++  if (meta_prefs_get_focus_mode () != META_FOCUS_MODE_CLICK)
++    start_focus_on_motion (display);
++}
++
++void
++meta_display_enable_mouse_mode (MetaDisplay *display)
++{
++  display->mouse_mode = TRUE;
++
++  stop_focus_on_motion (display);
++}
++
+ #ifdef HAVE_COMPOSITE_EXTENSIONS
+ void
+ meta_display_get_compositor_version (MetaDisplay *display,
+diff --git a/src/core/keybindings.c b/src/core/keybindings.c
+index 63596bb..7d9130f 100644
+--- a/src/core/keybindings.c
++++ b/src/core/keybindings.c
+@@ -2027,7 +2027,7 @@ process_tab_grab (MetaDisplay *display,
+           meta_topic (META_DEBUG_FOCUS, "Activating %s due to tab popup "
+                       "selection and turning mouse_mode off\n",
+                       target_window->desc);
+-          display->mouse_mode = FALSE;
++          meta_display_disable_mouse_mode (display);
+           meta_window_activate (target_window, event->xkey.time);
+ 
+           meta_topic (META_DEBUG_KEYBINDINGS,
+@@ -2763,7 +2763,7 @@ handle_panel (MetaDisplay    *display,
+   meta_topic (META_DEBUG_KEYBINDINGS,
+               "Sending panel message with timestamp %lu, and turning mouse_mode "
+               "off due to keybinding press\n", event->xkey.time);
+-  display->mouse_mode = FALSE;
++  meta_display_disable_mouse_mode (display);
+ 
+   meta_error_trap_push (display);
+ 
+@@ -2886,7 +2886,7 @@ do_choose_window (MetaDisplay    *display,
+                       "Activating %s and turning off mouse_mode due to "
+                       "switch/cycle windows with no modifiers\n",
+                       initial_selection->desc);
+-          display->mouse_mode = FALSE;
++          meta_display_disable_mouse_mode (display);
+           meta_window_activate (initial_selection, event->xkey.time);
+         }
+       else if (meta_display_begin_grab_op (display,
+@@ -2915,7 +2915,7 @@ do_choose_window (MetaDisplay    *display,
+                           "modifier was released prior to grab\n",
+                           initial_selection->desc);
+               meta_display_end_grab_op (display, event->xkey.time);
+-              display->mouse_mode = FALSE;
++              meta_display_disable_mouse_mode (display);
+               meta_window_activate (initial_selection, event->xkey.time);
+             }
+           else
+@@ -3156,7 +3156,7 @@ handle_move_to_workspace  (MetaDisplay    *display,
+           meta_topic (META_DEBUG_FOCUS,
+                       "Resetting mouse_mode to FALSE due to "
+                       "handle_move_to_workspace() call with flip set.\n");
+-          workspace->screen->display->mouse_mode = FALSE;
++          meta_display_disable_mouse_mode (display);
+           meta_workspace_activate_with_focus (workspace,
+                                               window,
+                                               event->xkey.time);
+-- 
+1.6.5.rc2

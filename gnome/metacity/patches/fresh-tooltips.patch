@@ -1,0 +1,306 @@
+diff -up metacity-2.28.0/src/ui/fixedtip.c.fresh-tooltips metacity-2.28.0/src/ui/fixedtip.c
+--- metacity-2.28.0/src/ui/fixedtip.c.fresh-tooltips	2009-12-17 18:06:26.000000000 -0500
++++ metacity-2.28.0/src/ui/fixedtip.c	2009-12-17 18:08:23.000000000 -0500
+@@ -50,33 +50,237 @@ static int screen_right_edge = 0;
+  */
+ static int screen_bottom_edge = 0;
+ 
++static void
++draw_round_rect (cairo_t *cr,
++                 gdouble  aspect,
++                 gdouble  x,
++                 gdouble  y,
++                 gdouble  corner_radius,
++                 gdouble  width,
++                 gdouble  height)
++{
++  gdouble radius = corner_radius / aspect;
++
++  cairo_move_to (cr, x + radius, y);
++
++  /* top-right, left of the corner */
++  cairo_line_to (cr, x + width - radius, y);
++
++  /* top-right, below the corner */
++  cairo_arc (cr,
++             x + width - radius, y + radius, radius,
++             -90.0f * G_PI / 180.0f, 0.0f * G_PI / 180.0f);
++
++  /* bottom-right, above the corner */
++  cairo_line_to (cr, x + width, y + height - radius);
++
++  /* bottom-right, left of the corner */
++  cairo_arc (cr,
++             x + width - radius, y + height - radius, radius,
++             0.0f * G_PI / 180.0f, 90.0f * G_PI / 180.0f);
++
++  /* bottom-left, right of the corner */
++  cairo_line_to (cr, x + radius, y + height);
++
++  /* bottom-left, above the corner */
++  cairo_arc (cr,
++             x + radius, y + height - radius, radius,
++             90.0f * G_PI / 180.0f, 180.0f * G_PI / 180.0f);
++
++  /* top-left, below the corner */
++  cairo_line_to (cr, x, y + radius);
++
++  /* top-left, right of the corner */
++  cairo_arc (cr,
++             x + radius, y + radius, radius,
++             180.0f * G_PI / 180.0f, 270.0f * G_PI / 180.0f);
++
++  cairo_close_path (cr);
++}
++
++static void
++fill_background (GtkWidget  *widget,
++                 cairo_t    *cr)
++{
++  GdkColor color;
++  gdouble  r, g, b;
++  gint     radius;
++  gdouble  background_alpha;
++
++  if (gdk_screen_is_composited (gtk_widget_get_screen (widget)))
++    background_alpha = 0.90;
++  else
++    background_alpha = 1.0;
++
++  radius = MIN (widget->style->xthickness, widget->style->ythickness);
++  radius = MAX (radius, 1);
++
++  cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
++  cairo_paint (cr);
++  cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
++
++  draw_round_rect (cr,
++                   1.0, 0.5, 0.5, radius,
++                   widget->allocation.width - 1,
++                   widget->allocation.height - 1);
++
++  color = widget->style->bg [GTK_STATE_NORMAL];
++  r = (float)color.red / 65535.0;
++  g = (float)color.green / 65535.0;
++  b = (float)color.blue / 65535.0;
++  cairo_set_source_rgba (cr, r, g, b, background_alpha);
++  cairo_fill_preserve (cr);
++
++  color = widget->style->bg [GTK_STATE_SELECTED];
++  r = (float) color.red / 65535.0;
++  g = (float) color.green / 65535.0;
++  b = (float) color.blue / 65535.0;
++
++  cairo_set_source_rgba (cr, r, g, b, background_alpha);
++  cairo_set_line_width (cr, 1.0);
++  cairo_stroke (cr);
++}
++
++static void
++update_shape (GtkWidget *window)
++{
++  GdkBitmap *mask;
++  cairo_t *cr;
++  gint width, height;
++  gint radius;
++  gboolean new_style;
++
++  gtk_widget_style_get (window, "new-tooltip-style", &new_style, NULL);
++
++  if (!new_style)
++    {
++      gtk_widget_shape_combine_mask (window, NULL, 0, 0);
++      return;
++    }
++
++  gtk_window_get_size (GTK_WINDOW (window), &width, &height);
++
++  if (gdk_screen_is_composited (gtk_widget_get_screen (window)))
++    {
++      gtk_widget_shape_combine_mask (window, NULL, 0, 0);
++      return;
++    }
++
++  radius = MIN (window->style->xthickness, window->style->ythickness);
++  radius = MAX (radius, 1);
++
++  mask = (GdkBitmap *) gdk_pixmap_new (NULL, width, height, 1);
++  cr = gdk_cairo_create (mask);
++  if (cairo_status (cr) == CAIRO_STATUS_SUCCESS)
++    {
++      cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
++      cairo_paint (cr);
++
++      cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
++      cairo_set_source_rgb (cr, 1.0, 1.0, 1.0);
++      draw_round_rect (cr, 1.0, 0, 0, radius + 1, width, height);
++      cairo_fill (cr);
++
++      gtk_widget_shape_combine_mask (window, mask, 0, 0);
++    }
++  cairo_destroy (cr);
++
++  g_object_unref (mask);
++}
++
++
+ static gint
+-expose_handler (GtkTooltips *tooltips)
++expose_handler (GtkWidget *window)
+ {
+-  gtk_paint_flat_box (tip->style, tip->window,
+-                      GTK_STATE_NORMAL, GTK_SHADOW_OUT, 
+-                      NULL, tip, "tooltip",
+-                      0, 0, -1, -1);
++  cairo_t         *context;
++  cairo_surface_t *surface;
++  cairo_t         *cr;
++  gboolean new_style;
++
++  gtk_widget_style_get (window, "new-tooltip-style", &new_style, NULL);
++
++  if (new_style)
++    {
++      context = gdk_cairo_create (window->window);
++
++      cairo_set_operator (context, CAIRO_OPERATOR_SOURCE);
++      surface = cairo_surface_create_similar (cairo_get_target (context),
++                                              CAIRO_CONTENT_COLOR_ALPHA,
++                                              window->allocation.width,
++                                              window->allocation.height);
++      cr = cairo_create (surface);
++
++      fill_background (window, cr);
++
++      cairo_destroy (cr);
++      cairo_set_source_surface (context, surface, 0, 0);
++      cairo_paint (context);
++      cairo_surface_destroy (surface);
++      cairo_destroy (context);
++
++      update_shape (window);
++    }
++  else
++    {
++      gtk_paint_flat_box (window->style,
++                          window->window,
++                          GTK_STATE_NORMAL,
++                          GTK_SHADOW_OUT,
++                          NULL,
++                          window,
++                          "tooltip",
++                          0, 0,
++                          window->allocation.width,
++                          window->allocation.height);
++    }
+ 
+   return FALSE;
+ }
+ 
++#if 0
++static void
++on_composited_changed (GtkWidget *window)
++{
++  update_shape (window);
++}
++
++static void
++on_realized (GtkWidget *window)
++{
++  update_shape (window);
++}
++#endif
++
++static void
++on_style_set (GtkWidget *widget, GtkStyle *prev)
++{
++  GtkWidget *alignment;
++
++  alignment = gtk_bin_get_child (GTK_BIN (widget));
++  gtk_alignment_set_padding (GTK_ALIGNMENT (alignment),
++                             widget->style->ythickness,
++                             widget->style->ythickness,
++                             widget->style->xthickness,
++                             widget->style->xthickness);
++  gtk_widget_queue_draw (widget);
++}
++
+ void
+ meta_fixed_tip_show (Display *xdisplay, int screen_number,
+                      int root_x, int root_y,
+                      const char *markup_text)
+ {
+   int w, h;
+-  
++  GtkWidget *alignment;
++
+   if (tip == NULL)
+-    {      
++    {
+       tip = gtk_window_new (GTK_WINDOW_POPUP);
+-      gtk_window_set_type_hint (GTK_WINDOW(tip), GDK_WINDOW_TYPE_HINT_TOOLTIP);
+-
+       {
+         GdkScreen *gdk_screen;
+ 	GdkRectangle monitor;
+ 	gint mon_num;
++        GdkColormap *rgba;
+ 
+         gdk_screen = gdk_display_get_screen (gdk_display_get_default (),
+                                              screen_number);
+@@ -86,25 +290,47 @@ meta_fixed_tip_show (Display *xdisplay, 
+ 	gdk_screen_get_monitor_geometry (gdk_screen, mon_num, &monitor);
+ 	screen_right_edge = monitor.x + monitor.width;
+ 	screen_bottom_edge = monitor.y + monitor.height;
++
++        rgba = gdk_screen_get_rgba_colormap (gdk_screen);
++        if (rgba)
++          gtk_widget_set_colormap (tip, rgba);
++
++#if 0
++        g_signal_connect (tip, "composited-changed",
++                          G_CALLBACK (on_composited_changed), NULL);
++        g_signal_connect (tip, "realize",
++                          G_CALLBACK (on_realized), NULL);
++#endif
+       }
+-      
++
+       gtk_widget_set_app_paintable (tip, TRUE);
+       gtk_window_set_resizable (GTK_WINDOW (tip), FALSE);
+-      gtk_widget_set_name (tip, "gtk-tooltips");
+-      gtk_container_set_border_width (GTK_CONTAINER (tip), 4);
++      gtk_widget_set_name (tip, "gtk-tooltip");
++      gtk_widget_realize (tip);
+ 
+-      g_signal_connect_swapped (tip, "expose_event",
+-				 G_CALLBACK (expose_handler), NULL);
++      g_signal_connect (tip, "expose_event",
++		        G_CALLBACK (expose_handler), NULL);
++
++      alignment = gtk_alignment_new (0.5, 0.5, 1.0, 1.0);
++      gtk_alignment_set_padding (GTK_ALIGNMENT (alignment),
++                                 tip->style->ythickness,
++                                 tip->style->ythickness,
++                                 tip->style->xthickness,
++                                 tip->style->xthickness);
++      gtk_widget_show (alignment);
++      gtk_container_add (GTK_CONTAINER (tip), alignment);
+ 
+       label = gtk_label_new (NULL);
+       gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
+-      gtk_misc_set_alignment (GTK_MISC (label), 0.5, 0.5);
+       gtk_widget_show (label);
+-      
+-      gtk_container_add (GTK_CONTAINER (tip), label);
++
++      gtk_container_add (GTK_CONTAINER (alignment), label);
+ 
+       g_signal_connect (tip, "destroy",
+ 			G_CALLBACK (gtk_widget_destroyed), &tip);
++
++      g_signal_connect (tip, "style-set",
++                        G_CALLBACK (on_style_set), NULL);
+     }
+ 
+   gtk_label_set_markup (GTK_LABEL (label), markup_text);

@@ -1,0 +1,1088 @@
+Index: apps/kdepasswd/kcm/webcam.cpp
+===================================================================
+--- apps/kdepasswd/kcm/webcam.cpp	(révision 0)
++++ apps/kdepasswd/kcm/webcam.cpp	(révision 0)
+@@ -0,0 +1,121 @@
++#include <klocale.h>
++#include <kmessagebox.h>
++
++#include "webcam.h"
++
++WebCam::WebCam(int interval, QObject *parent) : QObject(parent)
++{
++    intervalTime = interval;
++    stopped = true;
++
++    timer = new QTimer(this);
++    connect(timer, SIGNAL(timeout()), this, SLOT(sendNewFrame()));
++}
++
++WebCam::~WebCam()
++{
++    if(!isStopped()){
++        stop();
++    }
++}
++
++void WebCam::setDevice(const int id)
++{
++    camId = id;
++}
++
++void WebCam::setInterval(const int interval)
++{
++    intervalTime = interval;
++
++    if (!isStopped()) {
++        timer->stop();
++        timer->start(interval);
++    }
++}
++
++bool WebCam::isStopped() const
++{
++    return stopped;
++}
++
++// QImage WebCam::getPreview()
++// {
++//     IplImage *frame = cvQueryFrame(cam);
++//
++//     return prepareFrame(frame);
++// }
++
++QMap<int, QString> WebCam::getCamList() const
++{
++    QMap<int, QString> camList;
++    QList<Solid::Device> devices = Solid::Device::listFromType(Solid::DeviceInterface::Video,
++                                                                QString());
++    foreach (const Solid::Device &dev, devices) {
++        QStringList protocols = dev.as<Solid::Video>()->supportedProtocols();
++
++        if (protocols.contains("video4linux")) {
++            QStringList drivers = dev.as<Solid::Video>()->supportedDrivers("video4linux");
++
++            if (drivers.contains("video4linux")) {
++                QString path = dev.as <Solid::Video>()->driverHandle("video4linux").toString();
++
++                bool ok;
++                int devNumber = path.mid(10).toInt(&ok, 10);
++                if (ok){
++                    camList.insert(devNumber,  dev.product());
++                }
++            }
++        }
++    }
++
++    return camList;
++}
++
++void WebCam::stop()
++{
++    if (!isStopped()) {
++        timer->stop();
++
++        if (cam) {
++            cvReleaseCapture(&cam);
++        }
++        stopped = true;
++    }
++}
++
++void WebCam::start()
++{
++    if (isStopped()) {
++        cam = cvCreateCameraCapture(camId);
++
++        if (cam) {
++            timer->start(intervalTime);
++            stopped = false;
++        } else {
++            KMessageBox::sorry(0, i18n("Error while initializing the camera"));
++        }
++    }
++}
++
++QImage WebCam::prepareFrame(IplImage *frame)
++{
++    cvCvtColor(frame, frame, CV_BGR2RGB);
++    cvFlip(frame, frame, 1);
++
++    QImage image((uchar *)frame->imageData,
++                  frame->width,
++                  frame->height,
++                  QImage::Format_RGB888);
++
++//     preview = image;
++    return image;
++}
++
++void WebCam::sendNewFrame()
++{
++    IplImage *frame = cvQueryFrame(cam);
++
++    emit newFrame(prepareFrame(frame));
++}
++#include "webcam.moc"
+
+Modification de propriétés sur apps/kdepasswd/kcm/webcam.cpp
+___________________________________________________________________
+Ajouté : svn:eol-style
+   + native
+
+Index: apps/kdepasswd/kcm/chfacedlg.cpp
+===================================================================
+--- apps/kdepasswd/kcm/chfacedlg.cpp	(révision 1104288)
++++ apps/kdepasswd/kcm/chfacedlg.cpp	(copie de travail)
+@@ -1,172 +1,161 @@
+-/**
+- *  Copyright 2003 Braden MacDonald <bradenm_k@shaw.ca>                   
+- *  Copyright 2003 Ravikiran Rajagopal <ravi@ee.eng.ohio-state.edu>       
+- *
+- *  This program is free software; you can redistribute it and/or modify
+- *  it under the terms of the GNU General Public License as published by
+- *  the Free Software Foundation; either version 2 of the License, or
+- *  (at your option) any later version.
+- *
+- *  This program is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *  GNU General Public License for more details.
+- *
+- *  You should have received a copy of the GNU General Public License
+- *  along with this program; if not, write to the Free Software
+- *
+- *
+- *  Please see the README
+- *
+- */
+-
+-/**
+- * @file UserInfo's Dialog for changing your face.
+- * @author Braden MacDonald
+- */
+-
+-#include "chfacedlg.h"
+-
+-#include <QtGui/QLayout>
+-#include <QtGui/QLabel>
+-#include <QtGui/QPixmap>
+-#include <QtGui/QImage>
+-#include <QtGui/QPushButton>
+ #include <QtCore/QDir>
++#include <QtCore/QFile>
+ #include <QtGui/QCheckBox>
+ 
++#include <kmessagebox.h>
++#include <konq_operations.h>
++#include <kurl.h>
+ #include <klocale.h>
+ #include <kfiledialog.h>
+ #include <kimagefilepreview.h>
+ #include <kimageio.h>
+-#include <kmessagebox.h>
+-#include <konq_operations.h>
+-#include <kurl.h>
+ 
+-#include "settings.h" // KConfigXT
++#include "chfacedlg.h"
++#include "settings.h"
++#include "webcamui.h"
++#include "webcam.h"
+ 
++ChFaceDlg::ChFaceDlg(const QString &picsDir, QWidget *parent) : KDialog(parent, Qt::Dialog)
++{
++    setupUi(mainWidget());
+ 
++    dir = picsDir;
+ 
+-/**
+- * TODO: It would be nice if the widget were in a .ui
+- */
+-ChFaceDlg::ChFaceDlg(const QString& picsdir, QWidget *parent)
+-  : KDialog( parent )
+-{
+-  setCaption( i18n("Change your Face") );
+-  setButtons( Ok|Cancel );
+-  setDefaultButton( Ok );
+-  showButtonSeparator( true );
++    connect(lwImages, SIGNAL(clicked(const QModelIndex &)), this, SLOT(activateButtons()));
+ 
+-  QWidget *faceDlg = new QWidget;
+-  ui.setupUi(faceDlg);
++    connect(lwImages, SIGNAL(doubleClicked(const QModelIndex &)), this, SLOT(accept()));
++    connect(pbFromFile, SIGNAL(clicked()), this, SLOT(slotGetImageFromFile()));
++    connect(pbDelete, SIGNAL(clicked()), this, SLOT(slotDelImage()));
++    connect(pbFromCam, SIGNAL(clicked()), this, SLOT(slotShowCamDlg()));
++    connect(this, SIGNAL(okClicked()), this, SLOT(accept()));
+ 
+-  setMainWidget(faceDlg);
++    WebCam numCam(50, this);
++    QMap<int, QString> devices = numCam.getCamList();
+ 
+-  connect( ui.m_FacesWidget, SIGNAL( currentItemChanged( QListWidgetItem *, QListWidgetItem * ) ), SLOT( slotFaceWidgetSelectionChanged( QListWidgetItem * ) ) );
++    scanImages();
++    resize(420, 500);
++    enableButtonOk(false);
++    pbDelete->setEnabled(false);
++    pbFromCam->setEnabled(!devices.isEmpty());
++}
+ 
+-  connect( ui.m_FacesWidget, SIGNAL( doubleClicked( const QModelIndex & ) ), SLOT(accept()) );
+-  connect( this, SIGNAL(okClicked()), this, SLOT(accept()));
++void ChFaceDlg::scanImages()
++{
++    if (lwImages->count()) {
++        lwImages->clear();
++    }
+ 
+-  connect( ui.browseBtn, SIGNAL( clicked() ), SLOT( slotGetCustomImage() ) );
++    QDir imageDir(dir);
+ 
+-#if 0
+-  QPushButton *acquireBtn = new QPushButton( i18n("&Acquire Image..."), page );
+-  acquireBtn->setEnabled( false );
+-  morePics->addWidget( acquireBtn );
+-#endif
++    if (!dir.isEmpty() && imageDir.exists()) {
++            const QStringList imgList = imageDir.entryList(QDir::Files);
++            for (QStringList::const_iterator i = imgList.constBegin(); i != imgList.constEnd(); ++i) {
++                new QListWidgetItem(QIcon(dir + *i), (*i).section('.', 0, 0), lwImages);
++            }
++    }
+ 
+-  // Filling the icon view
+-  QDir facesDir( picsdir );
+-  if ( facesDir.exists() )
+-  {
+-    const QStringList picslist = facesDir.entryList( QDir::Files );
+-    for ( QStringList::const_iterator it = picslist.constBegin(); it != picslist.constEnd(); ++it )
+-      new QListWidgetItem( QIcon( picsdir + *it ), (*it).section('.',0,0), ui.m_FacesWidget );
+-  }
+-  facesDir.setPath( KCFGUserAccount::userFaceDir() );
+-  if ( facesDir.exists() )
+-  {
+-    const QStringList picslist = facesDir.entryList( QDir::Files );
+-    for ( QStringList::const_iterator it = picslist.constBegin(); it != picslist.constEnd(); ++it )
+-      new QListWidgetItem( QIcon( KCFGUserAccount::userFaceDir() + *it ),
+-                           '/'+(*it) == KCFGUserAccount::customFaceFile() ? 
+-                           i18n("(Custom)") : (*it).section('.',0,0),
+-                           ui.m_FacesWidget );
+-  }
++    imageDir.setPath(KCFGUserAccount::userFaceDir());
+ 
++    if (imageDir.exists()) {
++        const QStringList imgList = imageDir.entryList(QDir::Files);
+ 
+-  enableButtonOk( false );
+-  //connect( this, SIGNAL( okClicked() ), SLOT( slotSaveCustomImage() ) );
++        for (QStringList::const_iterator i = imgList.constBegin(); i != imgList.constEnd(); ++i) {
+ 
+-  resize( 420, 400 );
++                new QListWidgetItem(QIcon(KCFGUserAccount::userFaceDir() + *i),
++                                    '/' + (*i) == KCFGUserAccount::customFaceFile() ?
++                                    i18n("(Custom)") : (*i).section('.' ,0 ,0 ), lwImages );
++        }
++    }
+ }
+ 
+-void ChFaceDlg::addCustomPixmap( const QString &imPath, bool saveCopy )
++QPixmap ChFaceDlg::getFaceImage() const
+ {
+-  QImage pix( imPath );
+-  // TODO: save pix to TMPDIR/userinfo-tmp,
+-  // then scale and copy *that* to ~/.faces
++    if(lwImages->currentItem()){
++        return lwImages->currentItem()->icon().pixmap(64);
++    }
++    return QPixmap();
++}
+ 
+-  if (pix.isNull())
+-  {
+-    KMessageBox::sorry( this, i18n("There was an error loading the image.") );
+-    return;
+-  }
+-  if ( (pix.width() > KCFGUserAccount::faceSize())
+-	|| (pix.height() > KCFGUserAccount::faceSize()) )
+-    pix = pix.scaled( KCFGUserAccount::faceSize(), KCFGUserAccount::faceSize(), Qt::KeepAspectRatio );// Should be no bigger than certain size.
++void ChFaceDlg::activateButtons()
++{
++    enableButtonOk(true);
++    pbDelete->setEnabled(true);
++}
+ 
+-  if ( saveCopy )
+-  {
+-    // If we should save a copy:
+-    QDir userfaces( KCFGUserAccount::userFaceDir() );
+-    if ( !userfaces.exists( ) )
+-      userfaces.mkdir( userfaces.absolutePath() );
++void ChFaceDlg::slotGetImageFromFile()
++{
++// I think that this feature is not necesary now, because I add a delete button
++// Up to date all image are stored.
++//     QCheckBox *chkSaveImg = new QCheckBox(i18n("&Save copy in custom faces folder for future use"), 0);
+ 
+-    pix.save( userfaces.absolutePath() + "/.userinfo-tmp" , "PNG" );
+-    KonqOperations::copy( this, KonqOperations::COPY, KUrl::List( KUrl( userfaces.absolutePath() + "/.userinfo-tmp" ) ), KUrl( userfaces.absolutePath() + '/' + QFileInfo(imPath).fileName().section('.',0,0) ) );
+-#if 0
+-  if ( !pix.save( userfaces.absolutePath() + '/' + imPath , "PNG" ) )
+-    KMessageBox::sorry(this, i18n("There was an error saving the image:\n%1", userfaces.absolutePath() ) );
+-#endif
+-  }
++    KFileDialog openDlg(QDir::homePath(),
++                        KImageIO::pattern(KImageIO::Reading), this);
+ 
+-  QListWidgetItem* newface = new QListWidgetItem( QIcon(QPixmap::fromImage(pix)), QFileInfo(imPath).fileName().section('.',0,0), ui.m_FacesWidget );
+-  ui.m_FacesWidget->scrollToItem( newface );
+-  ui.m_FacesWidget->setCurrentItem( newface );
++    openDlg.setOperationMode(KFileDialog::Opening);
++    openDlg.setCaption(i18n("Choose Image"));
++    openDlg.setMode(KFile::File | KFile::LocalOnly);
++
++    KImageFilePreview *imgPreview = new KImageFilePreview(&openDlg);
++    openDlg.setPreviewWidget(imgPreview);
++    if (openDlg.exec() == QDialog::Accepted){
++
++        QImage pix(openDlg.selectedFile());
++        if (pix.isNull()) {
++            KMessageBox::sorry(this, i18n("There was an error loading the image."));
++            return;
++        } else {
++            addCustomPixmap(pix, QFileInfo(openDlg.selectedFile()).fileName().section('.', 0, 0));
++        }
++    }
+ }
+ 
+-void ChFaceDlg::slotGetCustomImage(  )
++void ChFaceDlg::slotDelImage()
+ {
+-  QCheckBox* checkWidget = new QCheckBox( i18n("&Save copy in custom faces folder for future use"), 0 );
++    QString path = KCFGUserAccount::userFaceDir() + lwImages->currentItem()->text();
+ 
+-  KFileDialog dlg( QDir::homePath(), KImageIO::pattern( KImageIO::Reading ),
+-                  this, checkWidget);
++    if (QFile::exists(path)) {
+ 
+-  dlg.setOperationMode( KFileDialog::Opening );
+-  dlg.setCaption( i18n("Choose Image") );
+-  dlg.setMode( KFile::File | KFile::LocalOnly );
++        int rsp = KMessageBox::warningYesNo(this, i18n("Do you really want to delete this image?"),
++                                            i18n("Delete image"));
++        if (rsp == KMessageBox::Yes) {
++            KonqOperations::del(this, KonqOperations::TRASH, KUrl(path));
+ 
+-  KImageFilePreview *ip = new KImageFilePreview( &dlg );
+-  dlg.setPreviewWidget( ip );
+-  if (dlg.exec() == QDialog::Accepted)
+-      addCustomPixmap( dlg.selectedFile(), checkWidget->isChecked() );
++            delete lwImages->takeItem(lwImages->currentRow());
++        }
++    } else {
++        KMessageBox::sorry(this,
++                           i18n("You don't have appropriate permissions to delete this image"));
++    }
+ }
+ 
+-#if 0
+-void ChFaceDlg::slotSaveCustomImage()
++void ChFaceDlg::slotShowCamDlg()
+ {
+-  if ( m_FacesWidget->currentItem()->key() ==  USER_CUSTOM_KEY)
+-  {
+-    QDir userfaces( QDir::homePath() + USER_FACES_DIR );
+-    if ( !userfaces.exists( ) )
+-      userfaces.mkdir( userfaces.absolutePath() );
+-
+-    if ( !m_FacesWidget->currentItem()->pixmap()->save( userfaces.absolutePath() + USER_CUSTOM_FILE , "PNG" ) )
+-      KMessageBox::sorry(this, i18n("There was an error saving the image:\n%1", userfaces.absolutePath() ) );
+-  }
++    WebCamUi *wui = new WebCamUi(this);
++    if (wui->exec() == QDialog::Accepted && wui->isPhotoTaken()) {
++        addCustomPixmap(wui->getImage(), wui->getImgName());
++    }
++    delete wui;
+ }
+-#endif
+ 
++void ChFaceDlg::addCustomPixmap(QImage pix, QString name)
++{
++    if ((pix.width() > KCFGUserAccount::faceSize()) || (pix.height() > KCFGUserAccount::faceSize())) {
++        // Should be no bigger than certain size.
++        pix = pix.scaled(KCFGUserAccount::faceSize(),
++                         KCFGUserAccount::faceSize(),
++                         Qt::KeepAspectRatio);
++    }
++
++    QDir userFaces(KCFGUserAccount::userFaceDir());
++    if (!userFaces.exists()) {
++        userFaces.mkdir(userFaces.absolutePath());
++    }
++
++    pix.save(userFaces.absolutePath() + "/" + name , "PNG");
++
++    QListWidgetItem *newFace = new QListWidgetItem(QIcon(QPixmap::fromImage(pix)),
++                                                   name, lwImages);
++    lwImages->scrollToItem(newFace);
++    lwImages->setCurrentItem(newFace);
++}
+ #include "chfacedlg.moc"
+Index: apps/kdepasswd/kcm/webcamui.h
+===================================================================
+--- apps/kdepasswd/kcm/webcamui.h	(révision 0)
++++ apps/kdepasswd/kcm/webcamui.h	(révision 0)
+@@ -0,0 +1,34 @@
++#ifndef WEBCAMUI_H
++#define WEBCAMUI_H
++
++#include <kdialog.h>
++
++#include "webcam.h"
++#include "ui_webcamui.h"
++
++class WebCamUi : public KDialog, private Ui::WebCamUi
++{
++    Q_OBJECT;
++
++public:
++    explicit WebCamUi(QWidget *parent = 0);
++
++    bool isPhotoTaken() const;
++    QImage getImage();
++    QString getImgName() const;
++
++private:
++    void setCboCamera();
++
++private Q_SLOTS:
++    void switchCamera(int index);
++    void showImage(QImage image);
++    void saveImage();
++
++private:
++    QString fname;
++    QImage pix;
++    bool photo;
++    WebCam *cam;
++};
++#endif
+
+Modification de propriétés sur apps/kdepasswd/kcm/webcamui.h
+___________________________________________________________________
+Ajouté : svn:eol-style
+   + native
+
+Index: apps/kdepasswd/kcm/webcam.h
+===================================================================
+--- apps/kdepasswd/kcm/webcam.h	(révision 0)
++++ apps/kdepasswd/kcm/webcam.h	(révision 0)
+@@ -0,0 +1,48 @@
++#ifndef WEBCAM_H
++#define WEBCAM_H
++
++#include <QtCore/QObject>
++#include <QtGui/QImage>
++#include <QtCore/QTimer>
++#include <QtCore/QMap>
++
++#include <solid/device.h>
++#include <solid/video.h>
++
++#include <cv.h>
++#include <highgui.h>
++
++class WebCam : public QObject
++{
++    Q_OBJECT
++
++public:
++    explicit WebCam(int interval = 50, QObject *parent = 0);
++    ~WebCam();
++
++    void setDevice(const int id);
++    void setInterval(const int interval);
++    bool isStopped() const;
++//     QImage getPreview();
++    QMap<int, QString> getCamList() const;
++
++
++Q_SIGNALS:
++    void newFrame(QImage img);
++
++public Q_SLOTS:
++    void stop();
++    void start();
++    void sendNewFrame();
++
++private:
++    QImage prepareFrame(IplImage *frame);
++
++    QTimer *timer;
++    CvCapture *cam;
++    int intervalTime;
++    int camId;
++    bool stopped;
++
++};
++#endif
+
+Modification de propriétés sur apps/kdepasswd/kcm/webcam.h
+___________________________________________________________________
+Ajouté : svn:eol-style
+   + native
+
+Index: apps/kdepasswd/kcm/chfacedlg.h
+===================================================================
+--- apps/kdepasswd/kcm/chfacedlg.h	(révision 1104288)
++++ apps/kdepasswd/kcm/chfacedlg.h	(copie de travail)
+@@ -1,71 +1,33 @@
+-/**
+- *  Copyright 2003 Braden MacDonald <bradenm_k@shaw.ca>
+- *  Copyright 2003 Ravikiran Rajagopal <ravi@ee.eng.ohio-state.edu>
+- *
+- *  This program is free software; you can redistribute it and/or modify
+- *  it under the terms of the GNU General Public License as published by
+- *  the Free Software Foundation; either version 2 of the License, or
+- *  (at your option) any later version.
+- *
+- *  This program is distributed in the hope that it will be useful,
+- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- *  GNU General Public License for more details.
+- *
+- *  You should have received a copy of the GNU General Public License
+- *  along with this program; if not, write to the Free Software
+- *
+- *
+- *  Please see the README
+- *
+- */
+-
+-/**
+- * @file UserInfo-chface: Dialog for choosing a new face for your user.
+- * @author Braden MacDonald
+- */
+-
+ #ifndef CHFACEDLG_H
+ #define CHFACEDLG_H
+ 
+-#include <QtCore/QObject>
+ #include <QtGui/QPixmap>
++#include <QtCore/QSize>
+ 
+-#include <KDialog>
++#include <kdialog.h>
+ 
+ #include "ui_faceDlg.h"
+ 
+-enum FacePerm { adminOnly = 1, adminFirst = 2, userFirst = 3, userOnly = 4};
+-
+-class ChFaceDlg : public KDialog
++class ChFaceDlg : public KDialog, private Ui::faceDlg
+ {
+-  Q_OBJECT
++    Q_OBJECT;
++
+ public:
++    explicit ChFaceDlg(const QString &picsDir, QWidget *parent = 0);
++    QPixmap getFaceImage() const;
+ 
+-
+-  explicit ChFaceDlg(const QString& picsdirs, 
+-                     QWidget *parent=0);
+-
+-
+-  QPixmap getFaceImage() const
+-  {
+-    if(ui.m_FacesWidget->currentItem())
+-      return ui.m_FacesWidget->currentItem()->icon().pixmap(64);
+-    else
+-      return QPixmap();
+-  }
+-
+ private Q_SLOTS:
+-  void slotFaceWidgetSelectionChanged( QListWidgetItem *item )
+-  	{ enableButton( Ok, !item->icon().isNull() ); }
++    void activateButtons();
++    void slotGetImageFromFile();
++    void slotDelImage();
++    void slotShowCamDlg();
+ 
+-  void slotGetCustomImage();
+-  //void slotSaveCustomImage();
+-
+ private:
+-  void addCustomPixmap( const QString &imPath, bool saveCopy );
++    void addCustomPixmap(QImage pix, QString name);
++    void scanImages();
+ 
+-  Ui::faceDlg ui;
+-};
++    QSize getSize();
++    QString dir;
+ 
+-#endif // CHFACEDLG_H
++};
++#endif
+Index: apps/kdepasswd/kcm/kcm_useraccount.desktop
+===================================================================
+--- apps/kdepasswd/kcm/kcm_useraccount.desktop	(révision 1104288)
++++ apps/kdepasswd/kcm/kcm_useraccount.desktop	(copie de travail)
+@@ -1,3 +1,4 @@
++#!/usr/bin/env xdg-open
+ [Desktop Entry]
+ Icon=preferences-desktop-user-account
+ Categories=QT;KDE;X-KDE-settings-security;
+Index: apps/kdepasswd/kcm/faceDlg.ui
+===================================================================
+--- apps/kdepasswd/kcm/faceDlg.ui	(révision 1104288)
++++ apps/kdepasswd/kcm/faceDlg.ui	(copie de travail)
+@@ -1,74 +1,142 @@
+-<ui version="4.0" >
++<?xml version="1.0" encoding="UTF-8"?>
++<ui version="4.0">
+  <class>faceDlg</class>
+- <widget class="QWidget" name="faceDlg" >
+-  <property name="geometry" >
++ <widget class="QWidget" name="faceDlg">
++  <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+-    <width>400</width>
+-    <height>306</height>
++    <width>455</width>
++    <height>528</height>
+    </rect>
+   </property>
+-  <property name="minimumSize" >
+-   <size>
+-    <width>400</width>
+-    <height>199</height>
+-   </size>
++  <property name="windowTitle">
++   <string>Select a new image</string>
+   </property>
+-  <layout class="QGridLayout" >
+-   <item row="0" column="0" >
+-    <layout class="QVBoxLayout" >
++  <layout class="QGridLayout" name="gridLayout_2">
++   <item row="0" column="0">
++    <layout class="QHBoxLayout" name="horizontalLayout_3">
+      <item>
+-      <widget class="QLabel" name="header" >
+-       <property name="text" >
+-        <string>Select a new face:</string>
++      <widget class="QLabel" name="LbTitle">
++       <property name="text">
++        <string>Select a new image:</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+-      <widget class="QListWidget" name="m_FacesWidget" >
+-       <property name="iconSize" >
++      <spacer name="horizontalSpacer_3">
++       <property name="orientation">
++        <enum>Qt::Horizontal</enum>
++       </property>
++       <property name="sizeHint" stdset="0">
+         <size>
+-         <width>64</width>
+-         <height>64</height>
++         <width>40</width>
++         <height>20</height>
+         </size>
+        </property>
+-       <property name="resizeMode" >
+-        <enum>QListView::Adjust</enum>
++      </spacer>
++     </item>
++    </layout>
++   </item>
++   <item row="1" column="0">
++    <widget class="KListWidget" name="lwImages">
++     <property name="showDropIndicator" stdset="0">
++      <bool>true</bool>
++     </property>
++     <property name="dragDropMode">
++      <enum>QAbstractItemView::DragDrop</enum>
++     </property>
++     <property name="iconSize">
++      <size>
++       <width>64</width>
++       <height>64</height>
++      </size>
++     </property>
++     <property name="movement">
++      <enum>QListView::Free</enum>
++     </property>
++     <property name="flow">
++      <enum>QListView::LeftToRight</enum>
++     </property>
++     <property name="isWrapping" stdset="0">
++      <bool>true</bool>
++     </property>
++     <property name="resizeMode">
++      <enum>QListView::Adjust</enum>
++     </property>
++     <property name="viewMode">
++      <enum>QListView::IconMode</enum>
++     </property>
++    </widget>
++   </item>
++   <item row="2" column="0">
++    <layout class="QHBoxLayout" name="horizontalLayout">
++     <item>
++      <spacer name="horizontalSpacer">
++       <property name="orientation">
++        <enum>Qt::Horizontal</enum>
+        </property>
+-       <property name="viewMode" >
+-        <enum>QListView::IconMode</enum>
++       <property name="sizeHint" stdset="0">
++        <size>
++         <width>40</width>
++         <height>20</height>
++        </size>
+        </property>
+-      </widget>
++      </spacer>
+      </item>
+      <item>
+-      <layout class="QHBoxLayout" >
+-       <item>
+-        <widget class="QPushButton" name="browseBtn" >
+-         <property name="text" >
+-          <string>Custom Image...</string>
+-         </property>
+-        </widget>
+-       </item>
+-       <item>
+-        <spacer>
+-         <property name="orientation" >
+-          <enum>Qt::Horizontal</enum>
+-         </property>
+-         <property name="sizeHint" >
+-          <size>
+-           <width>40</width>
+-           <height>20</height>
+-          </size>
+-         </property>
+-        </spacer>
+-       </item>
+-      </layout>
++      <widget class="KPushButton" name="pbDelete">
++       <property name="text">
++        <string>&amp;Delete</string>
++       </property>
++      </widget>
+      </item>
+     </layout>
+    </item>
++   <item row="3" column="0">
++    <widget class="QGroupBox" name="groupBox">
++     <property name="title">
++      <string>Add new image</string>
++     </property>
++     <layout class="QGridLayout" name="gridLayout">
++      <item row="0" column="0">
++       <widget class="KPushButton" name="pbFromFile">
++        <property name="text">
++         <string>From File</string>
++        </property>
++       </widget>
++      </item>
++      <item row="0" column="1">
++       <widget class="KPushButton" name="pbFromCam">
++        <property name="text">
++         <string>From cam</string>
++        </property>
++       </widget>
++      </item>
++     </layout>
++    </widget>
++   </item>
++   <item row="4" column="0">
++    <widget class="Line" name="line">
++     <property name="orientation">
++      <enum>Qt::Horizontal</enum>
++     </property>
++    </widget>
++   </item>
+   </layout>
+  </widget>
++ <customwidgets>
++  <customwidget>
++   <class>KListWidget</class>
++   <extends>QListWidget</extends>
++   <header>klistwidget.h</header>
++  </customwidget>
++  <customwidget>
++   <class>KPushButton</class>
++   <extends>QPushButton</extends>
++   <header>kpushbutton.h</header>
++  </customwidget>
++ </customwidgets>
+  <resources/>
+  <connections/>
+ </ui>
+Index: apps/kdepasswd/kcm/main.cpp
+===================================================================
+--- apps/kdepasswd/kcm/main.cpp	(révision 1104288)
++++ apps/kdepasswd/kcm/main.cpp	(copie de travail)
+@@ -40,15 +40,15 @@
+ #include <kstandarddirs.h>
+ #include <kaboutdata.h>
+ #include <kmessagebox.h>
+-#include <QProcess>
++#include <QtCore/QProcess>
+ #include <kio/netaccess.h>
+ #include <kurl.h>
+ 
+ #include "settings.h"
+ #include "pass.h"
+ #include "chfnprocess.h"
+-#include <KPluginFactory>
+-#include <KPluginLoader>
++#include <kpluginfactory.h>
++#include <kpluginloader.h>
+ 
+ K_PLUGIN_FACTORY(Factory,
+         registerPlugin<KCMUserAccount>();
+Index: apps/kdepasswd/kcm/webcamui.ui
+===================================================================
+--- apps/kdepasswd/kcm/webcamui.ui	(révision 0)
++++ apps/kdepasswd/kcm/webcamui.ui	(révision 0)
+@@ -0,0 +1,82 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<ui version="4.0">
++ <class>WebCamUi</class>
++ <widget class="QWidget" name="WebCamUi">
++  <property name="geometry">
++   <rect>
++    <x>0</x>
++    <y>0</y>
++    <width>539</width>
++    <height>546</height>
++   </rect>
++  </property>
++  <property name="windowTitle">
++   <string>Take a Photo</string>
++  </property>
++  <layout class="QVBoxLayout" name="verticalLayout_2">
++   <item>
++    <layout class="QVBoxLayout" name="verticalLayout">
++     <item>
++      <layout class="QHBoxLayout" name="horizontalLayout">
++       <item>
++        <widget class="QLabel" name="label">
++         <property name="text">
++          <string>Select Device:</string>
++         </property>
++        </widget>
++       </item>
++       <item>
++        <widget class="KComboBox" name="cboDevice"/>
++       </item>
++       <item>
++        <spacer name="horizontalSpacer_2">
++         <property name="orientation">
++          <enum>Qt::Horizontal</enum>
++         </property>
++         <property name="sizeHint" stdset="0">
++          <size>
++           <width>40</width>
++           <height>20</height>
++          </size>
++         </property>
++        </spacer>
++       </item>
++      </layout>
++     </item>
++    </layout>
++   </item>
++   <item>
++    <widget class="QLabel" name="lbVideo">
++     <property name="minimumSize">
++      <size>
++       <width>503</width>
++       <height>420</height>
++      </size>
++     </property>
++     <property name="frameShape">
++      <enum>QFrame::StyledPanel</enum>
++     </property>
++     <property name="text">
++      <string/>
++     </property>
++    </widget>
++   </item>
++   <item>
++    <widget class="Line" name="line_2">
++     <property name="orientation">
++      <enum>Qt::Horizontal</enum>
++     </property>
++    </widget>
++   </item>
++  </layout>
++ </widget>
++ <customwidgets>
++  <customwidget>
++   <class>KComboBox</class>
++   <extends>QComboBox</extends>
++   <header>kcombobox.h</header>
++  </customwidget>
++ </customwidgets>
++ <resources/>
++ <connections/>
++</ui>
+Index: apps/kdepasswd/kcm/main.h
+===================================================================
+--- apps/kdepasswd/kcm/main.h	(révision 1104288)
++++ apps/kdepasswd/kcm/main.h	(copie de travail)
+@@ -31,6 +31,8 @@
+ class QObject;
+ class KUrl;
+ 
++enum FacePerm { adminOnly = 1, adminFirst = 2, userFirst = 3, userOnly = 4};
++
+ class MainWidget : public QWidget, public Ui::MainWidget
+ {
+ public:
+@@ -52,10 +54,10 @@
+ 	~KCMUserAccount();
+ 
+ 	/**
+-	 * The user data is loaded from  chfn(/etc/password) and then 
++	 * The user data is loaded from  chfn(/etc/password) and then
+ 	 * written back as well as to KDE's own(KEmailSettings).
+-	 * The user won't notice this(assuming they change the KDE settings via 
+-	 * this KCM) and will make KDE play nice with enviroments which uses 
++	 * The user won't notice this(assuming they change the KDE settings via
++	 * this KCM) and will make KDE play nice with enviroments which uses
+ 	 * /etc/password.
+ 	 */
+ 	void load();
+Index: apps/kdepasswd/kcm/CMakeLists.txt
+===================================================================
+--- apps/kdepasswd/kcm/CMakeLists.txt	(révision 1104288)
++++ apps/kdepasswd/kcm/CMakeLists.txt	(copie de travail)
+@@ -1,3 +1,7 @@
++find_package(KDE4 REQUIRED)
++find_package(OpenCV REQUIRED)
++
++include_directories(${CMAKE_CURRENT_BINARY_DIR} ${OPENCV_INCLUDE_DIR} ${QT_INCLUDES} ${KDE4_INCLUDES})
+ add_subdirectory(pics)
+ 
+ set(kcm_useraccount_PART_SRCS
+@@ -3,15 +7,18 @@
+     chfnprocess.cpp
+     main.cpp
+-    chfacedlg.cpp)
++    chfacedlg.cpp
++    webcam.cpp
++    webcamui.cpp)
+ 
+ kde4_add_ui_files(kcm_useraccount_PART_SRCS
+     main_widget.ui
+-    faceDlg.ui)
++    faceDlg.ui
++    webcamui.ui)
+ 
+ kde4_add_kcfg_files(kcm_useraccount_PART_SRCS settings.kcfgc pass.kcfgc)
+ 
+ kde4_add_plugin(kcm_useraccount ${kcm_useraccount_PART_SRCS})
+ 
+-target_link_libraries(kcm_useraccount konq ${KDE4_KIO_LIBS} ${KDE4_KDESU_LIBS})
++target_link_libraries(kcm_useraccount konq ${KDE4_KDEUI_LIBS} ${KDE4_SOLID_LIBS} ${KDE4_KIO_LIBS} ${KDE4_KDESU_LIBS} ${OpenCV_LIBS})
+ 
+ install(TARGETS kcm_useraccount DESTINATION ${PLUGIN_INSTALL_DIR})
+Index: apps/kdepasswd/kcm/webcamui.cpp
+===================================================================
+--- apps/kdepasswd/kcm/webcamui.cpp	(révision 0)
++++ apps/kdepasswd/kcm/webcamui.cpp	(révision 0)
+@@ -0,0 +1,77 @@
++#include <QtGui/QInputDialog>
++#include <kmessagebox.h>
++
++#include "settings.h"
++#include "webcamui.h"
++
++WebCamUi::WebCamUi(QWidget *parent) : KDialog(parent, Qt::Dialog)
++{
++    photo = false;
++    setupUi(mainWidget());
++    cam = new WebCam(50, this);
++
++    setCboCamera();
++    connect(cboDevice, SIGNAL(activated(int)), this, SLOT(switchCamera(int)));
++    connect(cam, SIGNAL(newFrame(QImage)), this, SLOT(showImage(QImage)));
++    connect(this, SIGNAL(okClicked()), this, SLOT(saveImage()));
++
++    switchCamera(cboDevice->currentIndex());
++}
++
++bool WebCamUi::isPhotoTaken() const
++{
++    return photo;
++}
++
++void WebCamUi::setCboCamera()
++{
++    QMap<int, QString> devices = cam->getCamList();
++    QMap<int, QString>::const_iterator i;
++
++    for (i = devices.constBegin(); i != devices.constEnd(); ++i) {
++        cboDevice->addItem(i.value(), i.key());
++    }
++}
++
++void WebCamUi::switchCamera(int index)
++{
++    if (!cam->isStopped()) {
++        cam->stop();
++    }
++    cam->setDevice(cboDevice->itemData(index).toInt());
++    cam->start();
++}
++
++void WebCamUi::showImage(QImage image)
++{
++    QSize size(lbVideo->width(), lbVideo->height());
++
++    lbVideo->setPixmap(QPixmap::fromImage(image.scaled(size, Qt::IgnoreAspectRatio)));
++}
++
++QImage WebCamUi::getImage()
++{
++    return pix;
++}
++
++QString WebCamUi::getImgName() const
++{
++    return fname;
++}
++
++void WebCamUi::saveImage()
++{
++
++    cam->stop();
++    fname = QInputDialog::getText(this, i18n("New Image"),
++                                  i18n("Image name:"),
++                                  QLineEdit::Normal,
++                                  QString(), &photo);
++
++    if (photo && !fname.isEmpty()) {
++        pix = lbVideo->pixmap()->toImage();
++    }
++}
++
++
++#include "webcamui.moc"
+
+Modification de propriétés sur apps/kdepasswd/kcm/webcamui.cpp
+___________________________________________________________________
+Ajouté : svn:eol-style
+   + native

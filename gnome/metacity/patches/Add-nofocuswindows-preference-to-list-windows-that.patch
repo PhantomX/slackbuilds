@@ -1,0 +1,862 @@
+From 88c66808ec5f2bfba425fc6d6f0b9ac43ed44696 Mon Sep 17 00:00:00 2001
+From: Owen W. Taylor <otaylor@fishsoup.net>
+Date: Wed, 21 Oct 2009 18:07:12 -0400
+Subject: [PATCH] Add no_focus_windows preference to list windows that shouldn't be focused
+
+Notification windows from legacy software that don't set _NET_WM_USER_TIME
+can be a huge annoyance for users, since they will pop up and steal focus.
+
+Add:
+
+ /apps/metacity/general/no_focus_windows
+
+which is a list of expressions identifying new windows that shouldn't ever
+be focused. For example:
+
+ (and (eq class 'Mylegacyapp') (glob name 'New mail*'))
+
+https://bugzilla.gnome.org/show_bug.cgi?id=599248
+---
+ src/Makefile.am            |    2 +
+ src/core/prefs.c           |   43 ++++
+ src/core/window-matcher.c  |  582 ++++++++++++++++++++++++++++++++++++++++++++
+ src/core/window-matcher.h  |   46 ++++
+ src/core/window.c          |    9 +-
+ src/include/prefs.h        |    6 +-
+ src/metacity.schemas.in.in |   28 ++
+ 7 files changed, 714 insertions(+), 2 deletions(-)
+ create mode 100644 src/core/window-matcher.c
+ create mode 100644 src/core/window-matcher.h
+
+diff --git a/src/Makefile.am b/src/Makefile.am
+index bd3420f..3baf422 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -65,6 +65,8 @@ metacity_SOURCES= 				\
+ 	core/stack.h				\
+ 	core/util.c				\
+ 	include/util.h				\
++	core/window-matcher.c			\
++	core/window-matcher.h			\
+ 	core/window-props.c			\
+ 	core/window-props.h			\
+ 	core/window.c				\
+diff --git a/src/core/prefs.c b/src/core/prefs.c
+index 6e41b3c..e03c816 100644
+--- a/src/core/prefs.c
++++ b/src/core/prefs.c
+@@ -25,6 +25,7 @@
+ 
+ #include <config.h>
+ #include "prefs.h"
++#include "window-matcher.h"
+ #include "ui.h"
+ #include "util.h"
+ #ifdef HAVE_GCONF
+@@ -76,6 +77,7 @@ static PangoFontDescription *titlebar_font = NULL;
+ static MetaVirtualModifier mouse_button_mods = Mod1Mask;
+ static MetaFocusMode focus_mode = META_FOCUS_MODE_CLICK;
+ static MetaFocusNewWindows focus_new_windows = META_FOCUS_NEW_WINDOWS_SMART;
++static GSList *no_focus_windows = NULL;
+ static gboolean raise_on_click = TRUE;
+ static char* current_theme = NULL;
+ static int num_workspaces = 4;
+@@ -147,6 +149,7 @@ static void maybe_give_disable_workarounds_warning (void);
+ 
+ static void titlebar_handler (MetaPreference, const gchar*, gboolean*);
+ static void theme_name_handler (MetaPreference, const gchar*, gboolean*);
++static void no_focus_windows_handler (MetaPreference, const gchar*, gboolean*);
+ static void mouse_button_mods_handler (MetaPreference, const gchar*, gboolean*);
+ static void button_layout_handler (MetaPreference, const gchar*, gboolean*);
+ 
+@@ -425,6 +428,11 @@ static MetaStringPreference preferences_string[] =
+       theme_name_handler,
+       NULL,
+     },
++    { "/apps/metacity/general/no_focus_windows",
++      META_PREF_NO_FOCUS_WINDOWS,
++      no_focus_windows_handler,
++      NULL
++    },
+     { KEY_TITLEBAR_FONT,
+       META_PREF_TITLEBAR_FONT,
+       titlebar_handler,
+@@ -1344,6 +1352,30 @@ theme_name_handler (MetaPreference pref,
+ }
+ 
+ static void
++no_focus_windows_handler (MetaPreference pref,
++                          const gchar *string_value,
++                          gboolean *inform_listeners)
++{
++  if (no_focus_windows)
++    {
++      meta_window_matcher_list_free (no_focus_windows);
++      no_focus_windows = NULL;
++    }
++
++  if (string_value)
++    {
++      GError *error = NULL;
++      no_focus_windows = meta_window_matcher_list_from_string (string_value, &error);
++      if (error != NULL)
++        {
++          meta_warning ("Error parsing no_focus_windows='%s': %s\n",
++                        string_value, error->message);
++          g_error_free (error);
++        }
++    }
++}
++
++static void
+ mouse_button_mods_handler (MetaPreference pref,
+                            const gchar *string_value,
+                            gboolean *inform_listeners)
+@@ -1755,6 +1787,9 @@ meta_preference_to_string (MetaPreference pref)
+ 
+     case META_PREF_FORCE_FULLSCREEN:
+       return "FORCE_FULLSCREEN";
++
++    case META_PREF_NO_FOCUS_WINDOWS:
++      return "NO_FOCUS_WINDOWS";
+     }
+ 
+   return "(unknown)";
+@@ -2633,6 +2668,14 @@ meta_prefs_get_action_right_click_titlebar (void)
+ }
+ 
+ gboolean
++meta_prefs_window_is_no_focus (const char *window_name,
++                               const char *window_class)
++{
++  return meta_window_matcher_list_matches (no_focus_windows,
++                                           window_name, window_class);
++}
++
++gboolean
+ meta_prefs_get_auto_raise (void)
+ {
+   return auto_raise;
+diff --git a/src/core/window-matcher.c b/src/core/window-matcher.c
+new file mode 100644
+index 0000000..e2fd293
+--- /dev/null
++++ b/src/core/window-matcher.c
+@@ -0,0 +1,582 @@
++/* -*- mode: C; c-file-style: "gnu"; indent-tabs-mode: nil; -*- */
++
++/* Tiny language for matching against windows */
++
++/*
++ * Copyright (C) 2009 Red Hat, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
++ * 02111-1307, USA.
++ */
++
++#include <glib.h>
++#include <string.h>
++
++#include "window-matcher.h"
++
++typedef struct _MetaWindowMatcher MetaWindowMatcher;
++
++typedef enum {
++  MATCHER_OPERAND_CLASS,
++  MATCHER_OPERAND_NAME
++} MatcherOperand;
++
++typedef enum {
++  MATCHER_TOKEN_AND = G_TOKEN_LAST + 1,
++  MATCHER_TOKEN_OR,
++  MATCHER_TOKEN_NOT,
++  MATCHER_TOKEN_EQ,
++  MATCHER_TOKEN_GLOB,
++  MATCHER_TOKEN_NAME,
++  MATCHER_TOKEN_CLASS
++} MatcherToken;
++
++struct _MetaWindowMatcher {
++  enum {
++    MATCHER_AND,
++    MATCHER_OR,
++    MATCHER_NOT,
++    MATCHER_EQ,
++    MATCHER_GLOB
++  } type;
++
++  union {
++    struct {
++      MetaWindowMatcher *a;
++      MetaWindowMatcher *b;
++    } and;
++    struct {
++      MetaWindowMatcher *a;
++      MetaWindowMatcher *b;
++    } or;
++    struct {
++      MetaWindowMatcher *a;
++    } not;
++    struct {
++      MatcherOperand operand;
++      char *str;
++    } eq;
++    struct {
++      MatcherOperand operand;
++      char *str;
++      GPatternSpec *pattern;
++    } glob;
++  } u;
++};
++
++static void
++meta_window_matcher_free (MetaWindowMatcher *matcher)
++{
++  switch (matcher->type)
++    {
++    case MATCHER_AND:
++      meta_window_matcher_free (matcher->u.and.a);
++      meta_window_matcher_free (matcher->u.and.b);
++      break;
++    case MATCHER_OR:
++      meta_window_matcher_free (matcher->u.or.a);
++      meta_window_matcher_free (matcher->u.or.b);
++      break;
++    case MATCHER_NOT:
++      meta_window_matcher_free (matcher->u.or.a);
++      break;
++    case MATCHER_EQ:
++      g_free (matcher->u.eq.str);
++      break;
++    case MATCHER_GLOB:
++      g_free (matcher->u.glob.str);
++      g_pattern_spec_free (matcher->u.glob.pattern);
++      break;
++    }
++
++  g_slice_free (MetaWindowMatcher, matcher);
++}
++
++void
++meta_window_matcher_list_free (GSList *list)
++{
++  g_slist_foreach (list, (GFunc)meta_window_matcher_free, NULL);
++  g_slist_free (list);
++}
++
++static gboolean
++meta_window_matcher_matches (MetaWindowMatcher *matcher,
++                             const char        *window_name,
++                             const char        *window_class)
++{
++  switch (matcher->type)
++    {
++    case MATCHER_AND:
++      return (meta_window_matcher_matches (matcher->u.and.a, window_name, window_class) &&
++              meta_window_matcher_matches (matcher->u.and.b, window_name, window_class));
++    case MATCHER_OR:
++      return (meta_window_matcher_matches (matcher->u.or.a, window_name, window_class) ||
++              meta_window_matcher_matches(matcher->u.or.b, window_name, window_class));
++    case MATCHER_NOT:
++      return !meta_window_matcher_matches (matcher->u.not.a, window_name, window_class);
++    case MATCHER_EQ:
++      if (matcher->u.eq.operand == MATCHER_OPERAND_NAME)
++        return window_name && strcmp (matcher->u.eq.str, window_name) == 0;
++      else
++        return window_class && strcmp (matcher->u.eq.str, window_class) == 0;
++    case MATCHER_GLOB:
++      if (matcher->u.glob.operand == MATCHER_OPERAND_NAME)
++        return window_name && g_pattern_match_string (matcher->u.glob.pattern, window_name);
++      else
++        return window_class && g_pattern_match_string (matcher->u.glob.pattern, window_class);
++    }
++
++  g_assert_not_reached();
++  return FALSE;
++}
++
++gboolean
++meta_window_matcher_list_matches (GSList     *list,
++                                  const char *window_name,
++                                  const char *window_class)
++{
++  GSList *l;
++
++  for (l = list; l; l = l->next)
++    {
++      if (meta_window_matcher_matches (l->data, window_name, window_class))
++        return TRUE;
++    }
++
++  return FALSE;
++}
++
++static const GScannerConfig scanner_config =
++{
++  " \t\r\n"             /* cset_skip_characters */,
++  (
++   G_CSET_a_2_z
++   "_"
++   G_CSET_A_2_Z
++   )                    /* cset_identifier_first */,
++  (
++   G_CSET_a_2_z
++   "_"
++   G_CSET_A_2_Z
++   G_CSET_DIGITS
++   G_CSET_LATINS
++   G_CSET_LATINC
++   )                    /* cset_identifier_nth */,
++  NULL                  /* cpair_comment_single */,
++  TRUE                  /* case_sensitive */,
++  TRUE                  /* skip_comment_multi */,
++  FALSE                 /* skip_comment_single */,
++  TRUE                  /* scan_comment_multi */,
++  TRUE                  /* scan_identifier */,
++  TRUE                  /* scan_identifier_1char */,
++  FALSE                 /* scan_identifier_NULL */,
++  TRUE                  /* scan_symbols */,
++  FALSE                 /* scan_binary */,
++  TRUE                  /* scan_octal */,
++  TRUE                  /* scan_float */,
++  TRUE                  /* scan_hex */,
++  FALSE                 /* scan_hex_dollar */,
++  TRUE                  /* scan_string_sq */,
++  TRUE                  /* scan_string_dq */,
++  TRUE                  /* numbers_2_int */,
++  FALSE                 /* int_2_float */,
++  FALSE                 /* identifier_2_string */,
++  TRUE                  /* char_2_token */,
++  TRUE                  /* symbol_2_token */,
++  FALSE                 /* scope_0_fallback */,
++  FALSE                 /* store_int64 */,
++};
++
++static void
++set_error (GScanner   *scanner,
++           GError    **error,
++           const char *message)
++{
++  g_set_error (error, 0, 0,
++               "Parse error at %d:%d: %s",
++               g_scanner_cur_line (scanner),
++               g_scanner_cur_position (scanner),
++               message);
++}
++
++static MetaWindowMatcher *
++meta_window_matcher_new_and (MetaWindowMatcher *a,
++                             MetaWindowMatcher *b)
++{
++  MetaWindowMatcher *matcher = g_slice_new0 (MetaWindowMatcher);
++
++  matcher->type = MATCHER_AND;
++  matcher->u.and.a = a;
++  matcher->u.and.b = b;
++
++  return matcher;
++}
++
++static MetaWindowMatcher *
++meta_window_matcher_new_or (MetaWindowMatcher *a,
++                            MetaWindowMatcher *b)
++{
++  MetaWindowMatcher *matcher = g_slice_new0 (MetaWindowMatcher);
++
++  matcher->type = MATCHER_OR;
++  matcher->u.or.a = a;
++  matcher->u.or.b = b;
++
++  return matcher;
++}
++
++static MetaWindowMatcher *
++meta_window_matcher_new_not (MetaWindowMatcher *a)
++{
++  MetaWindowMatcher *matcher = g_slice_new0 (MetaWindowMatcher);
++
++  matcher->type = MATCHER_NOT;
++  matcher->u.not.a = a;
++
++  return matcher;
++}
++
++static MetaWindowMatcher *
++meta_window_matcher_new_eq (MatcherOperand operand,
++                            const char    *str)
++{
++  MetaWindowMatcher *matcher = g_slice_new0 (MetaWindowMatcher);
++
++  matcher->type = MATCHER_EQ;
++  matcher->u.eq.operand = operand;
++  matcher->u.eq.str = g_strdup (str);
++
++  return matcher;
++}
++
++static MetaWindowMatcher *
++meta_window_matcher_new_glob (MatcherOperand operand,
++                              const char    *str)
++{
++  MetaWindowMatcher *matcher = g_slice_new0 (MetaWindowMatcher);
++
++  matcher->type = MATCHER_GLOB;
++  matcher->u.glob.operand = operand;
++  matcher->u.glob.str = g_strdup (str);
++  matcher->u.glob.pattern = g_pattern_spec_new (str);
++
++  return matcher;
++}
++
++static MetaWindowMatcher *
++meta_window_matcher_from_scanner (GScanner *scanner,
++                                  GError  **error)
++{
++  MetaWindowMatcher *matcher = NULL;
++  GTokenType token;
++  GTokenValue value;
++
++  token = g_scanner_get_next_token (scanner);
++  if (token != G_TOKEN_LEFT_PAREN)
++    {
++      set_error (scanner, error, "expected '('");
++      return NULL;
++    }
++
++  token = g_scanner_get_next_token (scanner);
++  switch (token)
++    {
++    case MATCHER_TOKEN_AND:
++    case MATCHER_TOKEN_OR:
++    case MATCHER_TOKEN_NOT:
++      {
++        MetaWindowMatcher *a, *b;
++
++        a = meta_window_matcher_from_scanner (scanner, error);
++        if (!a)
++          return NULL;
++
++        if (token != MATCHER_TOKEN_NOT)
++          {
++            b = meta_window_matcher_from_scanner (scanner, error);
++            if (!b)
++              {
++                meta_window_matcher_free (a);
++                return NULL;
++              }
++          }
++
++        switch (token)
++          {
++          case MATCHER_TOKEN_AND:
++            matcher = meta_window_matcher_new_and (a, b);
++            break;
++          case MATCHER_TOKEN_OR:
++            matcher = meta_window_matcher_new_or (a, b);
++            break;
++          case MATCHER_TOKEN_NOT:
++            matcher = meta_window_matcher_new_not (a);
++            break;
++          default:
++            g_assert_not_reached();
++            break;
++          }
++      }
++      break;
++    case MATCHER_TOKEN_EQ:
++    case MATCHER_TOKEN_GLOB:
++      {
++        MatcherOperand operand;
++
++        switch (g_scanner_get_next_token (scanner))
++          {
++          case MATCHER_TOKEN_NAME:
++            operand = MATCHER_OPERAND_NAME;
++            break;
++          case MATCHER_TOKEN_CLASS:
++            operand = MATCHER_OPERAND_CLASS;
++            break;
++          default:
++            set_error (scanner, error, "expected name/class");
++            return NULL;
++          }
++
++        if (g_scanner_get_next_token (scanner) != G_TOKEN_STRING)
++          {
++            set_error (scanner, error, "expected string");
++            return NULL;
++          }
++
++        value = g_scanner_cur_value (scanner);
++
++        switch (token)
++          {
++          case MATCHER_TOKEN_EQ:
++            matcher = meta_window_matcher_new_eq (operand, value.v_string);
++            break;
++          case MATCHER_TOKEN_GLOB:
++            matcher = meta_window_matcher_new_glob (operand, value.v_string);
++            break;
++          default:
++            g_assert_not_reached();
++          }
++      }
++      break;
++    default:
++      set_error (scanner, error, "expected and/or/not/eq/glob");
++      return NULL;
++    }
++
++  if (g_scanner_get_next_token (scanner) != G_TOKEN_RIGHT_PAREN)
++    {
++      set_error (scanner, error, "expected ')'");
++      return NULL;
++    }
++
++  return matcher;
++}
++
++GSList *
++meta_window_matcher_list_from_string (const char *str,
++                                      GError    **error)
++{
++  GScanner *scanner = g_scanner_new (&scanner_config);
++  GSList *result = NULL;
++
++  g_scanner_scope_add_symbol (scanner, 0, "and", GINT_TO_POINTER (MATCHER_TOKEN_AND));
++  g_scanner_scope_add_symbol (scanner, 0, "or", GINT_TO_POINTER (MATCHER_TOKEN_OR));
++  g_scanner_scope_add_symbol (scanner, 0, "not", GINT_TO_POINTER (MATCHER_TOKEN_NOT));
++  g_scanner_scope_add_symbol (scanner, 0, "eq", GINT_TO_POINTER (MATCHER_TOKEN_EQ));
++  g_scanner_scope_add_symbol (scanner, 0, "glob", GINT_TO_POINTER (MATCHER_TOKEN_GLOB));
++  g_scanner_scope_add_symbol (scanner, 0, "name", GINT_TO_POINTER (MATCHER_TOKEN_NAME));
++  g_scanner_scope_add_symbol (scanner, 0, "class", GINT_TO_POINTER (MATCHER_TOKEN_CLASS));
++
++  g_scanner_input_text (scanner, str, strlen (str));
++
++  while (g_scanner_peek_next_token (scanner) != G_TOKEN_EOF)
++    {
++      MetaWindowMatcher *matcher = meta_window_matcher_from_scanner (scanner, error);
++      if (!matcher)
++        {
++          meta_window_matcher_list_free (result);
++          return NULL;
++        }
++
++      result = g_slist_prepend (result, matcher);
++    }
++
++  g_scanner_destroy (scanner);
++
++  return g_slist_reverse (result);
++}
++
++#ifdef BUILD_MATCHER_TESTS
++
++static void
++append_operand_to_string (GString       *string,
++                          MatcherOperand operand)
++{
++  if (operand == MATCHER_OPERAND_NAME)
++    g_string_append (string, "name");
++  else
++    g_string_append (string, "class");
++}
++
++static void
++append_string_to_string (GString            *str,
++                         const char         *to_append)
++{
++  const char *p;
++
++  g_string_append_c (str, '"');
++  for (p = to_append; *p; p++)
++    {
++      if (*p == '"')
++        g_string_append (str, "\\\"");
++      else
++        g_string_append_c (str, *p);
++    }
++  g_string_append_c (str, '"');
++}
++
++static void
++append_matcher_to_string (GString           *str,
++                          MetaWindowMatcher *matcher)
++{
++  switch (matcher->type)
++    {
++    case MATCHER_AND:
++      g_string_append (str, "(and ");
++      append_matcher_to_string (str, matcher->u.and.a);
++      g_string_append_c (str, ' ');
++      append_matcher_to_string (str, matcher->u.and.b);
++      break;
++    case MATCHER_OR:
++      g_string_append (str, "(or ");
++      append_matcher_to_string (str, matcher->u.or.a);
++      g_string_append_c (str, ' ');
++      append_matcher_to_string (str, matcher->u.or.b);
++      break;
++    case MATCHER_NOT:
++      g_string_append (str, "(not ");
++      append_matcher_to_string (str, matcher->u.not.a);
++      break;
++    case MATCHER_EQ:
++      g_string_append (str, "(eq ");
++      append_operand_to_string (str, matcher->u.eq.operand);
++      g_string_append_c (str, ' ');
++      append_string_to_string (str, matcher->u.eq.str);
++      break;
++    case MATCHER_GLOB:
++      g_string_append (str, "(glob ");
++      append_operand_to_string (str, matcher->u.glob.operand);
++      g_string_append_c (str, ' ');
++      append_string_to_string (str, matcher->u.glob.str);
++      break;
++    }
++
++  g_string_append_c (str, ')');
++}
++
++static char *
++meta_window_matcher_list_to_string (GSList *list)
++{
++  GSList *l;
++  GString *str = g_string_new (NULL);
++
++  for (l = list; l; l = l->next)
++    {
++      if (str->len > 0)
++        g_string_append_c (str, ' ');
++
++      append_matcher_to_string (str, l->data);
++    }
++
++  return g_string_free (str, FALSE);
++}
++
++static void
++test_roundtrip (const char *str)
++{
++  GError *error = NULL;
++  GSList *list = meta_window_matcher_list_from_string (str, &error);
++  char *result;
++
++  if (error != NULL)
++    g_error ("Failed to parse '%s': %s\n", str, error->message);
++
++  result = meta_window_matcher_list_to_string (list);
++  if (strcmp (result, str) != 0)
++    g_error ("Round-trip conversion of '%s' gave '%s'\n", str, result);
++
++  g_free (result);
++  meta_window_matcher_list_free (list);
++}
++
++static void
++test_matches (const char *str,
++              const char *window_name,
++              const char *window_class,
++              gboolean    expected)
++{
++  GError *error = NULL;
++  GSList *list = meta_window_matcher_list_from_string (str, &error);
++  gboolean matches;
++
++  if (error != NULL)
++    g_error ("Failed to parse '%s': %s\n", str, error->message);
++
++  matches = meta_window_matcher_list_matches (list, window_name, window_class))
++  if (matches != expected)
++    {
++      g_error ("Tested '%s' against name=%s, class=%s, expected %s, got %s\n",
++               str, window_name, window_class,
++               expected ? "true" : "false",
++               matches ? "true" : "false");
++    }
++
++
++  meta_window_matcher_list_free (list);
++}
++
++int main (int argc, char **argv)
++{
++  test_roundtrip ("(eq name \"foo\")");
++  test_roundtrip ("(eq name \"fo\\\"o\")");
++  test_roundtrip ("(glob class \"*bar?baz\")");
++  test_roundtrip ("(and (eq name \"foo\") (glob class \"*bar?baz\"))");
++  test_roundtrip ("(or (eq name \"foo\") (glob class \"*bar?baz\"))");
++  test_roundtrip ("(not (eq name \"foo\"))");
++
++  test_roundtrip ("(eq name \"foo\") (glob class \"*bar?baz\")");
++
++  test_matches ("(eq name 'foo')", "foo", NULL, TRUE);
++  test_matches ("(eq name 'foo')", "foob", NULL, FALSE);
++  test_matches ("(eq name 'foo')", NULL, NULL, FALSE);
++  test_matches ("(eq class 'bar')", "foo", "bar", TRUE);
++  test_matches ("(eq class 'bar')", NULL, NULL, FALSE);
++
++  test_matches ("(glob name 'foo*')", "foooo", NULL, TRUE);
++  test_matches ("(glob name 'foo*')", NULL, NULL, FALSE);
++  test_matches ("(glob class 'b*r')", "foooo", "baaaar", TRUE);
++  test_matches ("(glob class 'b*r')", NULL, NULL, FALSE);
++
++  test_matches ("(and (eq name 'foo') (eq class 'bar'))", "foo", "bar", TRUE);
++  test_matches ("(and (eq name 'foo') (eq class 'bar'))", "foo", "baz", FALSE);
++  test_matches ("(and (eq name 'foo') (not (eq class 'bar')))", "foo", "bar", FALSE);
++  test_matches ("(and (eq name 'foo') (not (eq class 'bar')))", "foo", "baz", TRUE);
++
++  test_matches ("(or (eq name 'foo') (eq class 'bar'))", "foo", "baz", TRUE);
++  test_matches ("(or (eq name 'foo') (eq class 'bar'))", "fof", "baz", FALSE);
++
++  return 0;
++}
++
++#endif /* BUILD_MATCHER_TESTS */
+diff --git a/src/core/window-matcher.h b/src/core/window-matcher.h
+new file mode 100644
+index 0000000..7fc7826
+--- /dev/null
++++ b/src/core/window-matcher.h
+@@ -0,0 +1,46 @@
++/* -*- mode: C; c-file-style: "gnu"; indent-tabs-mode: nil; -*- */
++
++/* Tiny language for matching against windows
++ *
++ * Expression Syntax:
++ *
++ *  (and <expr> <expr>)
++ *  (or <expr> <expr>)
++ *  (not <expr>)
++ *  (eq [name|class] "<value>")
++ *  (glob [name|class] "<glob>")
++ *
++ * A "matcher list" is a whitespace-separated list of expressions that are
++ * implicitly or'ed together. Globs are shell style patterns with
++ * matching 0 or more characters and ? matching one character.
++ */
++
++/*
++ * Copyright (C) 2009 Red Hat, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of the
++ * License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
++ * 02111-1307, USA.
++ */
++
++#ifndef META_WINDOW_MATCHER_H
++#define META_WINDOW_MATCHER_H
++
++GSList * meta_window_matcher_list_from_string (const char         *str,
++					       GError            **error);
++void     meta_window_matcher_list_free        (GSList             *list);
++gboolean meta_window_matcher_list_matches     (GSList             *list,
++					       const char         *window_name,
++					       const char         *window_class);
++#endif /* META_WINDOW_MATCHER_H */
+diff --git a/src/core/window.c b/src/core/window.c
+index 8d029a2..10da47a 100644
+--- a/src/core/window.c
++++ b/src/core/window.c
+@@ -1965,7 +1965,14 @@ window_state_on_map (MetaWindow *window,
+ {
+   gboolean intervening_events;
+ 
+-  intervening_events = intervening_user_event_occurred (window);
++  /* A 'no focus' window is a window that has been configured in GConf
++   * to never take focus on map; typically it will be a notification
++   * window from a legacy app that doesn't support _NET_WM_USER_TIME.
++   */
++  if (meta_prefs_window_is_no_focus (window->title, window->res_class))
++    intervening_events = TRUE;
++  else
++    intervening_events = intervening_user_event_occurred (window);
+ 
+   *takes_focus = !intervening_events;
+   *places_on_top = *takes_focus;
+diff --git a/src/include/prefs.h b/src/include/prefs.h
+index a4193ff..6698dfe 100644
+--- a/src/include/prefs.h
++++ b/src/include/prefs.h
+@@ -60,7 +60,8 @@ typedef enum
+   META_PREF_CURSOR_SIZE,
+   META_PREF_COMPOSITING_MANAGER,
+   META_PREF_RESIZE_WITH_RIGHT_BUTTON,
+-  META_PREF_FORCE_FULLSCREEN
++  META_PREF_FORCE_FULLSCREEN,
++  META_PREF_NO_FOCUS_WINDOWS
+ } MetaPreference;
+ 
+ typedef void (* MetaPrefsChangedFunc) (MetaPreference pref,
+@@ -106,6 +107,9 @@ MetaActionTitlebar          meta_prefs_get_action_double_click_titlebar (void);
+ MetaActionTitlebar          meta_prefs_get_action_middle_click_titlebar (void);
+ MetaActionTitlebar          meta_prefs_get_action_right_click_titlebar (void);
+ 
++gboolean                    meta_prefs_window_is_no_focus (const char *window_name,
++                                                           const char *window_class);
++
+ void meta_prefs_set_num_workspaces (int n_workspaces);
+ 
+ const char* meta_prefs_get_workspace_name    (int         i);
+diff --git a/src/metacity.schemas.in.in b/src/metacity.schemas.in.in
+index a9dd397..34cd7d6 100644
+--- a/src/metacity.schemas.in.in
++++ b/src/metacity.schemas.in.in
+@@ -100,6 +100,34 @@
+     </schema>
+ 
+     <schema>
++      <key>/schemas/apps/metacity/general/no_focus_windows</key>
++      <applyto>/apps/metacity/general/no_focus_windows</applyto>
++      <owner>metacity</owner>
++      <type>string</type>
++      <default></default>
++      <locale name="C">
++         <short>New windows that shouldn't get focus</short>
++         <long>
++            This option provides a way to specify new windows that shouldn't get
++	    focus. Normally an application specifies whether or not it gets focus
++	    by setting the _NET_WM_USER_TIME property, but legacy applications
++	    may not set this, which can cause unwanted focus stealing.
++
++	    The contents of this property is a space-separated list of expressions
++	    to match against windows. If any of the expressions match a window
++	    then the window will not get focus. The syntax of expressions is:
++
++	    (eq [name|class] "&lt;value&gt;"): window name (title) or the class from
++	    WM_CLASS matches &lt;value&gt; exactly.
++	    (glob [name|class] "&lt;glob&gt;"): window name (title) or the class from
++	    WM_CLASS matches the shell-style glob pattern &lt;glob&gt;.
++	    (and &lt;expr&gt; &lt;expr&gt;) (or &lt;expr&gt; &lt;expr&gt;) (not &lt;expr): Boolean combinations
++	    of expressions.
++         </long>
++      </locale>
++    </schema>
++
++    <schema>
+       <key>/schemas/apps/metacity/general/raise_on_click</key>
+       <applyto>/apps/metacity/general/raise_on_click</applyto>
+       <owner>metacity</owner>

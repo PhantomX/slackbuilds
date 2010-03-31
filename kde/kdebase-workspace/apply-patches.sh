@@ -35,8 +35,8 @@ zcat ${SB_PATCHDIR}/${NAME}-4.4.0-classicmenu-games.patch.gz | patch -p1 -E --ba
 # Mandriva
 zcat ${SB_PATCHDIR}/${NAME}-4.1.1-save_color_scheme_name.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.1.2-notify_color_changes.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-4.4.1-t1100542-make-UnInhibit-not-enable-a-disabled-screensaver.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-lowdiskspace.patch.gz | patch -p0 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-battery-always-show-percent-left.patch
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-fix-lock-out.patch.gz | patch -p0 -E --backup --verbose
 
 # upstream patches:
@@ -48,8 +48,5 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup -
 zcat ${SB_PATCHDIR}/${NAME}-4.3.95-brightness_keys.patch.gz | patch -p1 -E --backup --verbose
 
 # 4.4 patches
-# fix KSysGuard and the KRunner System Activity dialog not refreshing
-# https://bugs.kde.org/show_bug.cgi?id=230187
-zcat ${SB_PATCHDIR}/${NAME}-4.4.1-ksysguard-kde\#230187.patch.gz | patch -p0 -E --backup --verbose
 
 set +e +o pipefail

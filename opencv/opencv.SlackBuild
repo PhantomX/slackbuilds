@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -118,46 +118,50 @@ cd ${SRCDIR} || exit 1
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-2.0.0-data-automake.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-2.0.0-apps-automake.patch.gz | patch -p1 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
-unset SB_FFMPEGOPTS SB_GSTOPTS SB_XINEOPTS
 if [ "${SB_FFMPEG}" = "YES" -a "${SB_GST}" = "YES" ] ;then
   SB_FFMPEG=NO
   SB_GST=YES
 fi
-[ "${SB_FFMPEG}" = "YES" ] || SB_FFMPEGOPTS='--without-ffmpeg'
-[ "${SB_GST}" = "YES" ] && SB_GSTOPTS='--with-gstreamer'
-[ "${SB_XINE}" = "YES" ] && SB_XINEOPTS='--with-xine'
+[ "${SB_FFMPEG}" = "YES" ] || SB_FFMPEG=OFF
+[ "${SB_GST}" = "YES" ] || SB_GST=OFF
+[ "${SB_XINE}" = "YES" ] || SB_XINE=OFF
 
-autoreconf -ivf || exit 1
+export CFLAGS="${SLKCFLAGS}"
+export CXXFLAGS="${SLKCFLAGS}"
+export FFLAGS="${SLKCFLAGS}"
 
-export SWIG_PYTHON_LIBS=/usr/lib${LIBDIRSUFFIX}
+mkdir -p build
+( cd build || exit $?
 
-CFLAGS="${SLKCFLAGS}" \
-CXXFLAGS="${SLKCFLAGS}" \
-./configure \
-  --prefix=/usr \
-  --libdir=/usr/lib${LIBDIRSUFFIX} \
-  --sysconfdir=/etc \
-  --localstatedir=/var/lib \
-  --infodir=/usr/info \
-  --mandir=/usr/man \
-  --docdir=/usr/doc/${NAME}-${VERSION} \
-  --disable-static \
-  --disable-optimization \
-  --enable-apps \
-  --with-unicap \
-  --with-1394libs \
-  --without-quicktime \
-  ${SB_FFMPEGOPTS} ${SB_GSTOPTS} ${SB_XINEOPTS} \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+  cmake .. \
+    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DINCLUDE_INSTALL_DIR:PATH=/usr/include \
+    -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSHARE_INSTALL_PREFIX:PATH=/usr/share \
+    -DMAN_INSTALL_DIR:PATH=/usr/man \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS:BOOL=ON \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+    -DUSE_O3:BOOL=OFF \
+    -DBUILD_SWIG_PYTHON_SUPPORT=1 \
+    -DINSTALL_C_EXAMPLES=1 \
+    -DINSTALL_PYTHON_EXAMPLES=1 \
+    -DWITH_FFMPEG=${SB_FFMPEG} \
+    -DWITH_GSTREAMER=${SB_GST} \
+    -DWITH_XINE=${SB_XINE} \
+    || exit $?
 
-sed -i 's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec=""|g' libtool
-sed -i 's|^runpath_var=LD_RUN_PATH|runpath_var=DIE_RPATH_DIE|g' libtool
+  make -j${NJOBS} || make || exit $?
+  make install DESTDIR=${PKG} INSTALL="install -p" CPPROG="cp -p" || exit $?
 
-make -j${NJOBS} || make || exit 1
-make install DESTDIR=${PKG} INSTALL="install -p" CPPROG="cp -p" || exit 1
+) || exit $?
 
 find ${PKG} -name '*.la' -exec rm -f {} ';'
 
@@ -169,12 +173,18 @@ rm -f \
 
 cat > ${PKG}/usr/share/${NAME}/samples/c/GNUmakefile << 'EOF'
 CFLAGS := `pkg-config --cflags opencv` $(CFLAGS)
+CXXFLAGS := `pkg-config --cflags opencv` $(CXXFLAGS)
 LDFLAGS := `pkg-config --libs opencv` $(LDFLAGS)
 
-all: $(patsubst %.c,%,$(wildcard *.c))
+PROGRAMS := $(patsubst %.c,%,$(wildcard *.c)) $(patsubst %.cpp,%,$(wildcard *.cpp))
+
+.PHONY: all clean
+all: $(PROGRAMS)
+clean:
+	rm -f $(PROGRAMS)
 EOF
 
-install -m644 cvconfig.h ${PKG}/usr/include/${NAME}/cvconfig.h || exit 1
+install -m644 build/cvconfig.h ${PKG}/usr/include/${NAME}/cvconfig.h || exit 1
 
 rm -rf ${PKG}/usr/share/${NAME}/{samples/octave/,ChangeLog,THANKS}
 
@@ -221,11 +231,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

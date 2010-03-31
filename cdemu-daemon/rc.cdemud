@@ -1,0 +1,157 @@
+#!/bin/sh
+#
+# cdemu-daemon: CDEmu userspace daemon
+#
+# chkconfig:    345 92 02 
+# description:  This is CDEmu userspace daemon that controls CDEmu block devices \
+#               and services device requests that are passed from kernel space
+#
+# processname:  cdemud
+# pidfile:      /var/run/cdemud.pid
+# config:       /etc/sysconfig/cdemu-daemon
+#
+
+[ -f /etc/default/cdemu-daemon ] || exit 0
+
+# so we can rearrange this easily
+processname=/usr/sbin/cdemud
+servicename=cdemu-daemon
+lockfile=/var/lock/subsys/${servicename}
+
+# Sanity checks.
+if [ ! -x ${processname} ]; then
+  echo "Daemon binary ${processname} not found!"
+  exit 1
+fi
+# Source config
+[ -e /etc/default/cdemu-daemon ] && /etc/default/cdemu-daemon
+MODULE=${MODULE:-vhba}
+DEVICES=${DEVICES:-1}
+CTL_DEVICE=${CTL_DEVICE:-/dev/vhba_ctl}
+AUDIO_BACKEND=${AUDIO_BACKEND:-null}
+
+RETVAL=0
+
+PID=$(/sbin/pidof -o %PPID ${processname})
+
+start() {
+  echo -n "Starting CDEmu daemon: "
+  if [ -n "${PID}" ] ;then
+    echo -e "\t\t\t\t\t\t[FAILED]\r"
+    return ${RETVAL}
+  fi
+
+  # Load module
+  if [ -n "${MODULE}" ]; then
+    #echo -n $"Inserting kernel module ($MODULE): "
+    /sbin/modprobe ${MODULE} >/dev/null 2>&1
+    RETVAL=$?
+    if [ ${RETVAL} -ne 0 ]; then
+      echo -e "\t\t\t\t\t\t[FAILED]\r"
+      return ${RETVAL}
+    fi
+  fi
+    
+  # Wait until control device is created...
+  if [ -n "${CTL_DEVICE}" ]; then
+    #echo -n $"Waiting for ${CTL_DEVICE} to be created: "
+    until [ -c "${CTL_DEVICE}" ]; do
+      echo -n ""
+    done
+  fi
+  
+  RETVAL=$?
+  if [ ${RETVAL} -ne 0 ]; then
+    echo -e "\t\t\t\t\t\t[FAILED]\r"
+    return ${RETVAL}
+  fi
+  
+  # Daemon arguments
+  DAEMON_ARGS="--daemonize"
+  
+  if [ -n "${DEVICES}" ]; then
+    DAEMON_ARGS="${DAEMON_ARGS} --num-devices=${DEVICES}"
+  fi
+  if [ -n "${CTL_DEVICE}" ]; then
+    DAEMON_ARGS="${DAEMON_ARGS} --ctl-device=${CTL_DEVICE}"
+  fi
+  if [ -n "${AUDIO_BACKEND}" ]; then
+    DAEMON_ARGS="${DAEMON_ARGS} --audio-driver=${AUDIO_BACKEND}"
+  fi
+  
+  # Start daemon
+  #echo -n $"    Starting daemon: "
+  ${processname} ${DAEMON_ARGS} >/dev/null 2>&1
+  RETVAL=$?
+  if [ ${RETVAL} -eq 0 ] && touch ${lockfile} ; then
+    echo -e "\t\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\t\t[FAILED]\r"
+  fi
+  return ${RETVAL}
+}
+
+stop() {
+  echo -n "Stopping CDEmu daemon: "
+  if [ -n "${PID}" ] ;then
+    # Kill daemon with 'cdemud -k'
+    #echo -n $"    Killing daemon: "
+    ${processname} -k >/dev/null 2>&1
+    RETVAL=$?
+    if [ ${RETVAL} -ne 0 ]; then
+      echo -e "\t\t\t\t\t\t[FAILED]\r"
+      return ${RETVAL}
+    fi
+  fi
+
+  # Unload module
+  if [ -n "${MODULE}" ]; then
+    #echo -n $"    Removing kernel module ($MODULE): "
+    /sbin/modprobe -r ${MODULE} >/dev/null 2>&1
+    RETVAL=$?
+    if [ ${RETVAL} -eq 0 ] && rm -f ${lockfile}; then
+      echo -e "\t\t\t\t\t\t[  OK  ]\r"
+    else
+      echo -e "\t\t\t\t\t\t[FAILED]\r"
+    fi
+  fi
+  return ${RETVAL}
+}
+
+restart() {
+  stop
+  RETVAL=$?
+  unset PID
+  if [ ${RETVAL} -eq 0 ]; then
+    sleep 3
+    start
+    RETVAL=$?
+  fi
+}
+
+# See how we were called.
+case "$1" in
+  start|restart)
+    $1
+    RETVAL=$?
+    ;;
+  stop)
+    stop
+    RETVAL=$?
+    ;;
+  status)
+    if [ -f ${lockfile} ]; then
+      echo "${processname} is running in pid ${PID}."
+    else
+      echo "${processname} is not running."
+    fi
+    RETVAL=$?
+    ;;
+  condrestart)
+    if [ ! -f ${lockfile} ]; then restart ;fi
+    ;;
+  *)
+    echo $"Usage: $0 {start|stop|status|restart|condrestart}"
+    exit 1
+    ;;
+esac

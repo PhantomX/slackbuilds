@@ -72,7 +72,17 @@ zcat ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.6.0-fix-str-fmt.patch.gz | pa
 zcat ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz | patch -p1 -E --verbose
 zcat ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.6.1-use_ft_glyph_embolden_to_fake_bold.patch.gz | patch -p1 -E --verbose
 
+
 # security patches
+ApplyPatch qt-x11-opensource-src-4.5.3-cve-2010-0046-css-format-mem-corruption.patch
+ApplyPatch qt-x11-opensource-src-4.5.3-cve-2010-0049-freed-line-boxes-ltr-rtl.patch
+ApplyPatch qt-x11-opensource-src-4.5.3-cve-2010-0050-crash-misnested-style-tags.patch
+ApplyPatch qt-x11-opensource-src-4.5.3-cve-2010-0052-destroyed-input-cached.patch
+ApplyPatch qt-everywhere-opensource-src-4.6.2-cve-2010-0051-lax-css-parsing-cross-domain-theft.patch
+ApplyPatch qt-everywhere-opensource-src-4.6.2-cve-2010-0054-image-element-pointer-name-getter.patch
+
+ApplyPatch qt-x11-opensource-src-4.6.2-tablet-wacom-QTBUG-8599.patch
+ApplyPatch qt-everywhere-opensource-src-4.6.2-QTBUG-6932.patch
 
 # kde-qt patches
 ( SB_PATCHDIR=patches

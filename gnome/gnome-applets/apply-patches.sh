@@ -1,22 +1,30 @@
 
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-2.10.1-use-builtin-apm.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-2.15.1.1-dont-require-display.patch.gz | patch -p1 -E --backup --verbose || exit 1
-# http://bugzilla.gnome.org/show_bug.cgi?id=424639
-zcat ${SB_PATCHDIR}/${NAME}-2.18.0-fix-find.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-2.10.1-use-builtin-apm.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-2.15.1.1-dont-require-display.patch.gz | patch -p1 -E --backup --verbose
 
 # do the nullapplet dance for battstat
-zcat ${SB_PATCHDIR}/${NAME}-null-battstat.patch.gz | patch -p1 -E --backup --verbose || exit 1
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-null-battstat.patch
 
 if [ "${SB_GST}" != "YES" -a "${SB_GSTDEF}" != "YES" ] ;then
   # and keep the mixer hidden away from the add to panel dialog
-  zcat ${SB_PATCHDIR}/gnome-applets-no-mixer-icon.patch.gz | patch -p1 -E --backup --verbose || exit 1
+  zcat ${SB_PATCHDIR}/gnome-applets-no-mixer-icon.patch.gz | patch -p1 -E --backup --verbose
 fi
 
 if [ "${SB_GSTP}" = "YES" ] ;then
-  zcat ${SB_PATCHDIR}/gnome-applets-2.28.0-gstmixer-with-parallel.patch.gz | patch -p0 -E --backup --verbose || exit 1
+  zcat ${SB_PATCHDIR}/gnome-applets-2.28.0-gstmixer-with-parallel.patch.gz | patch -p0 -E --backup --verbose
 fi
 
 # do the nullapplet dance for stickynotes
-zcat ${SB_PATCHDIR}/stickynotes-null.patch.gz | patch -p1 -E --backup --verbose || exit 1
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/stickynotes-null.patch
+
+# https://bugzilla.gnome.org/show_bug.cgi?id=599728
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/seriesid-clash.patch
+
+# https://bugzilla.gnome.org/show_bug.cgi?id=609945
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gnome-applets-libs.patch
+
+set +e +o pipefail

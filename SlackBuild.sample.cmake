@@ -143,8 +143,9 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  AUTHORS COPYING ChangeLog LICENSE README NEWS THANKS TODO ${CWD}/ChangeLog.SB \
+  AUTHORS COPYING LICENSE README NEWS THANKS TODO ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r Changelog ] && head -n 1000 Changelog > ${DOCDIR}/Changelog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 

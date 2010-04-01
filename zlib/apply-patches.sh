@@ -3,8 +3,8 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/zlib-1.2.3-autotools.patch.gz | patch -p1 -E --backup -z.auto --verbose
-mkdir m4
-zcat ${SB_PATCHDIR}/minizip-1.2.3-malloc.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup -z.auto --verbose -i ${SB_PATCHDIR}/zlib-1.2.4-autotools.patch
+mkdir contrib/minizip/m4
+cp minigzip.c contrib/minizip
 
 set +e +o pipefail

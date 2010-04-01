@@ -1,0 +1,339 @@
+diff -paur xchat2.orig/src/common/inbound.c xchat2/src/common/inbound.c
+--- xchat2.orig/src/common/inbound.c	2008-07-20 17:31:44.898468115 +0200
++++ xchat2/src/common/inbound.c	2008-07-19 19:57:09.799906780 +0200
+@@ -297,7 +297,10 @@ is_hilight (char *from, char *text, sess
+ 	{
+ 		g_free (text);
+ 		if (sess != current_tab)
++		{
+ 			sess->nick_said = TRUE;
++			lastact_update(sess);
++		}
+ 		fe_set_hilight (sess);
+ 		return 1;
+ 	}
+@@ -344,6 +347,7 @@ inbound_action (session *sess, char *cha
+ 			sess->msg_said = TRUE;
+ 			sess->new_data = FALSE;
+ 		}
++		lastact_update(sess);
+ 	}
+ 
+ 	user = userlist_find (sess, from);
+@@ -395,6 +399,7 @@ inbound_chanmsg (server *serv, session *
+ 	{
+ 		sess->msg_said = TRUE;
+ 		sess->new_data = FALSE;
++		lastact_update(sess);
+ 	}
+ 
+ 	user = userlist_find (sess, from);
+diff -paur xchat2.orig/src/common/xchat.c xchat2/src/common/xchat.c
+--- xchat2.orig/src/common/xchat.c	2008-07-20 17:31:44.900468825 +0200
++++ xchat2/src/common/xchat.c	2008-07-20 17:33:57.089468218 +0200
+@@ -71,6 +71,23 @@ GSList *usermenu_list = 0;
+ GSList *urlhandler_list = 0;
+ GSList *tabmenu_list = 0;
+ 
++/*
++ * This array contains 5 double linked lists, one for each priority in the
++ * "interesting session" queue ("channel" stands for everything but
++ * SESS_DIALOG):
++ *
++ * [0] queries with hilight
++ * [1] queries
++ * [2] channels with hilight
++ * [3] channels with dialogue
++ * [4] channels with other data
++ *
++ * Each time activity happens the corresponding session is put at the
++ * beginning of one of the lists.  The aim is to be able to switch to the
++ * session with the most important/recent activity.
++ */
++GList *sess_list_by_lastact[5] = {NULL, NULL, NULL, NULL, NULL};
++
+ static int in_xchat_exit = FALSE;
+ int xchat_is_quitting = FALSE;
+ /* command-line args */
+@@ -93,6 +110,105 @@ struct xchatprefs prefs;
+ SSL_CTX *ctx = NULL;
+ #endif
+ 
++/*
++ * Update the priority queue of the "interesting sessions"
++ * (sess_list_by_lastact).
++ */
++void
++lastact_update(session *sess)
++{
++	int newidx;
++
++	/* Find the priority (for the order see before) */
++	if (sess->type == SESS_DIALOG)
++	{
++		if (sess->nick_said)
++			newidx = LACT_QUERY_HI;
++		else if (sess->msg_said)
++			newidx = LACT_QUERY;
++		else if (sess->new_data)
++			newidx = LACT_QUERY;
++		else
++			newidx = LACT_NONE;
++	}
++	else
++	{
++		if (sess->nick_said)
++			newidx = LACT_CHAN_HI;
++		else if (sess->msg_said)
++			newidx = LACT_CHAN;
++		else if (sess->new_data)
++			newidx = LACT_CHAN_DATA;
++		else
++			newidx = LACT_NONE;
++	}
++
++	/* Check if this update is a no-op */
++	if (sess->lastact_idx == newidx && 
++			((newidx != LACT_NONE && sess->lastact_elem == sess_list_by_lastact[newidx]) ||
++			 (newidx == LACT_NONE)))
++		return;
++
++	/* Remove from the old position (and, if no new position, return */
++	else if (sess->lastact_idx != LACT_NONE && sess->lastact_elem)
++	{
++		sess_list_by_lastact[sess->lastact_idx] = g_list_remove_link(
++				sess_list_by_lastact[sess->lastact_idx],
++				sess->lastact_elem);
++		if (newidx == LACT_NONE)
++		{
++			sess->lastact_idx = newidx;
++			return;
++		}
++	}
++
++	/* No previous position, allocate new */
++	else if (!sess->lastact_elem)
++		sess->lastact_elem = g_list_prepend(sess->lastact_elem, sess);
++
++	sess->lastact_idx = newidx;
++	sess_list_by_lastact[newidx] = g_list_concat(
++			sess->lastact_elem, sess_list_by_lastact[newidx]);
++}
++
++/*
++ * Extract the first session from the priority queue of sessions with recent
++ * activity. Return NULL if no such session can be found.
++ *
++ * If filter is specified, skip a session if filter(session) returns 0. This
++ * can be used for UI-specific needs, e.g. in fe-gtk we want to filter out
++ * detached sessions.
++ */
++session *
++lastact_getfirst(int (*filter) (session *sess))
++{
++	int i;
++	session *sess = NULL;
++	GList *curitem;
++
++	/* 5 is the number of priority classes LACT_ */
++	for (i = 0; i < 5 && !sess; i++)
++	{
++		curitem = sess_list_by_lastact[i];
++		while (curitem && !sess)
++		{
++			sess = g_list_nth_data(curitem, 0);
++			if (!sess || (filter && !filter(sess)))
++			{
++				sess = NULL;
++				curitem = g_list_next(curitem);
++			}
++		}
++
++		if (sess)
++		{
++			sess_list_by_lastact[i] = g_list_remove_link(sess_list_by_lastact[i], curitem);
++			sess->lastact_idx = LACT_NONE;
++		}
++	}
++	
++	return sess;
++}
+ 
+ int
+ is_session (session * sess)
+@@ -362,6 +478,9 @@ session_new (server *serv, char *from, i
+ 
+ 	sess_list = g_slist_prepend (sess_list, sess);
+ 
++	sess->lastact_elem = NULL;
++	sess->lastact_idx = LACT_NONE;
++
+ 	fe_new_window (sess, focus);
+ 
+ 	return sess;
+@@ -533,6 +652,16 @@ session_free (session *killsess)
+ 			current_sess = sess_list->data;
+ 	}
+ 
++	if (killsess->lastact_elem)
++	{
++		if (killsess->lastact_idx != LACT_NONE)
++			sess_list_by_lastact[killsess->lastact_idx] = g_list_delete_link(
++					sess_list_by_lastact[killsess->lastact_idx],
++					killsess->lastact_elem);
++		else
++			g_list_free_1(killsess->lastact_elem);
++	}
++
+ 	free (killsess);
+ 
+ 	if (!sess_list && !in_xchat_exit)
+diff -paur xchat2.orig/src/common/xchat.h xchat2/src/common/xchat.h
+--- xchat2.orig/src/common/xchat.h	2008-07-20 17:31:44.901467675 +0200
++++ xchat2/src/common/xchat.h	2008-07-20 17:33:28.240467970 +0200
+@@ -320,6 +320,15 @@ struct xchatprefs
+ #define SET_ON 1
+ #define SET_DEFAULT 2 /* use global setting */
+ 
++/* Priorities in the "interesting sessions" priority queue
++ * (see xchat.c:sess_list_by_lastact) */
++#define LACT_NONE		-1		/* no queues */
++#define LACT_QUERY_HI	0		/* query with hilight */
++#define LACT_QUERY		1		/* query with messages */
++#define LACT_CHAN_HI	2		/* channel with hilight */
++#define LACT_CHAN		3		/* channel with messages */
++#define LACT_CHAN_DATA	4		/* channel with other data */
++
+ typedef struct session
+ {
+ 	/* Per-Channel Alerts */
+@@ -369,6 +378,10 @@ typedef struct session
+ 
+ 	int type;					/* SESS_* */
+ 
++	GList *lastact_elem;	/* our GList element in sess_list_by_lastact */
++	int lastact_idx;		/* the sess_list_by_lastact[] index of the list we're in.
++							 * For valid values, see defines of LACT_*. */
++
+ 	int new_data:1;			/* new data avail? (purple tab) */
+ 	int nick_said:1;		/* your nick mentioned? (blue tab) */
+ 	int msg_said:1;			/* new msg available? (red tab) */
+diff -paur xchat2.orig/src/common/xchatc.h xchat2/src/common/xchatc.h
+--- xchat2.orig/src/common/xchatc.h	2008-07-20 17:31:44.901467675 +0200
++++ xchat2/src/common/xchatc.h	2008-07-20 11:43:36.673967630 +0200
+@@ -25,10 +25,13 @@ extern GSList *ignore_list;
+ extern GSList *usermenu_list;
+ extern GSList *urlhandler_list;
+ extern GSList *tabmenu_list;
++extern GList *sess_list_by_lastact[];
+ 
+ session * find_channel (server *serv, char *chan);
+ session * find_dialog (server *serv, char *nick);
+ session * new_ircwindow (server *serv, char *name, int type, int focus);
++void lastact_update (session * sess);
++session * lastact_getfirst (int (*filter) (session *sess));
+ int is_session (session * sess);
+ void session_free (session *killsess);
+ void lag_check (void);
+diff -paur xchat2.orig/src/fe-gtk/fe-gtk.c xchat2/src/fe-gtk/fe-gtk.c
+--- xchat2.orig/src/fe-gtk/fe-gtk.c	2008-07-20 17:31:44.958466232 +0200
++++ xchat2/src/fe-gtk/fe-gtk.c	2008-07-19 19:58:57.431961788 +0200
+@@ -603,6 +603,7 @@ fe_print_text (struct session *sess, cha
+ 		 sess->gui->is_tab && !sess->nick_said && stamp == 0)
+ 	{
+ 		sess->new_data = TRUE;
++		lastact_update(sess);
+ 		if (sess->msg_said)
+ 			fe_set_tab_color (sess, 2);
+ 		else
+diff -paur xchat2.orig/src/fe-gtk/fkeys.c xchat2/src/fe-gtk/fkeys.c
+--- xchat2.orig/src/fe-gtk/fkeys.c	2008-07-20 17:31:44.960465847 +0200
++++ xchat2/src/fe-gtk/fkeys.c	2008-07-20 12:20:50.186930065 +0200
+@@ -158,7 +158,7 @@ static const struct key_action key_actio
+ 	{key_action_handle_command, "Run Command",
+ 	 N_("The \002Run Command\002 action runs the data in Data 1 as if it has been typed into the entry box where you pressed the key sequence. Thus it can contain text (which will be sent to the channel/person), commands or user commands. When run all \002\\n\002 characters in Data 1 are used to deliminate seperate commands so it is possible to run more than one command. If you want a \002\\\002 in the actual text run then enter \002\\\\\002")},
+ 	{key_action_page_switch, "Change Page",
+-	 N_("The \002Change Page\002 command switches between pages in the notebook. Set Data 1 to the page you want to switch to. If Data 2 is set to anything then the switch will be relative to the current position")},
++	 N_("The \002Change Page\002 command switches between pages in the notebook. Set Data 1 to the page you want to switch to. If Data 2 is set to anything then the switch will be relative to the current position. Set Data 1 to auto to switch to the page with the most recent and important activity (queries first, then channels with hilight, channels with dialogue, channels with other data)")},
+ 	{key_action_insert, "Insert in Buffer",
+ 	 N_("The \002Insert in Buffer\002 command will insert the contents of Data 1 into the entry where the key sequence was pressed at the current cursor position")},
+ 	{key_action_scroll_page, "Scroll Page",
+@@ -402,6 +402,7 @@ key_load_defaults ()
+ 		"A\n3\nChange Page\nD1:3\nD2!\n\n"\
+ 		"A\n2\nChange Page\nD1:2\nD2!\n\n"\
+ 		"A\n1\nChange Page\nD1:1\nD2!\n\n"\
++		"A\ngrave\nChange Page\nD1:auto\nD2!\n\n"\
+ 		"C\no\nInsert in Buffer\nD1:\nD2!\n\n"\
+ 		"C\nb\nInsert in Buffer\nD1:\nD2!\n\n"\
+ 		"C\nk\nInsert in Buffer\nD1:\nD2!\n\n"\
+@@ -1196,6 +1197,20 @@ key_action_handle_command (GtkWidget * w
+ 	return 0;
+ }
+ 
++/*
++ * Check if the given session is inside the main window. This predicate
++ * is passed to lastact_pop as a way to filter out detached sessions.
++ * XXX: Consider moving this in a different file?
++ */
++static int
++session_check_is_tab(session *sess)
++{
++	if (!sess || !sess->gui)
++		return FALSE;
++
++	return (sess->gui->is_tab);
++}
++
+ static int
+ key_action_page_switch (GtkWidget * wid, GdkEventKey * evt, char *d1,
+ 								char *d2, struct session *sess)
+@@ -1209,6 +1224,30 @@ key_action_page_switch (GtkWidget * wid,
+ 	if (!len)
+ 		return 1;
+ 
++	if (strcasecmp(d1, "auto") == 0)
++	{
++		/* Auto switch makes no sense in detached sessions */
++		if (!sess->gui->is_tab)
++			return 1;
++
++		/* Obtain a session with recent activity */
++		session *newsess = lastact_getfirst(session_check_is_tab);
++
++		if (newsess)
++		{
++			/*
++			 * Only sessions in the current window should be considered (i.e.
++			 * we don't want to move the focus on a different window). This
++			 * call could, in theory, do this, but we checked before that
++			 * newsess->gui->is_tab and sess->gui->is_tab.
++			 */
++			mg_bring_tofront_sess(newsess);
++			return 0;
++		}
++		else
++			return 1;
++	}
++
+ 	for (i = 0; i < len; i++)
+ 	{
+ 		if (d1[i] < '0' || d1[i] > '9')
+diff -paur xchat2.orig/src/fe-gtk/maingui.c xchat2/src/fe-gtk/maingui.c
+--- xchat2.orig/src/fe-gtk/maingui.c	2008-07-20 17:31:44.964469466 +0200
++++ xchat2/src/fe-gtk/maingui.c	2008-07-19 19:58:58.255909127 +0200
+@@ -359,6 +359,7 @@ fe_set_tab_color (struct session *sess, 
+ 				
+ 			break;
+ 		}
++		lastact_update(sess);
+ 	}
+ }
+ 
+@@ -643,6 +644,7 @@ mg_focus (session *sess)
+ 		sess->nick_said = FALSE;
+ 		sess->msg_said = FALSE;
+ 		sess->new_data = FALSE;
++		lastact_update(sess);
+ 		/* when called via mg_changui_new, is_tab might be true, but
+ 			sess->res->tab is still NULL. */
+ 		if (sess->res->tab)

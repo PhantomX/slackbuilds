@@ -1,0 +1,157 @@
+diff -up dhcp-4.1.1/client/dhclient.8.capability dhcp-4.1.1/client/dhclient.8
+--- dhcp-4.1.1/client/dhclient.8.capability	2010-02-03 11:19:39.854958099 -0500
++++ dhcp-4.1.1/client/dhclient.8	2010-02-03 11:44:57.949895909 -0500
+@@ -105,6 +105,9 @@ relay
+ .B -n
+ ]
+ [
++.B -nc
++]
++[
+ .B -nw
+ ]
+ [
+@@ -381,6 +381,32 @@ Do not configure any interfaces.  Most u
+ option.
+ 
+ .TP
++.BI \-nc
++Do not drop capabilities.
++
++Normally, if
++.B dhclient
++was compiled with libcap-ng support,
++.B dhclient
++drops most capabilities immediately upon startup.  While more secure,
++this greatly restricts the additional actions that hooks in
++.B dhclient-script (8)
++can take.  (For example, any daemons that 
++.B dhclient-script (8)
++starts or restarts will inherit the restricted capabilities as well,
++which may interfere with their correct operation.)  Thus, the
++.BI \-nc
++option can be used to prevent
++.B dhclient
++from dropping capabilities.
++
++The
++.BI \-nc
++option is ignored if
++.B dhclient
++was not compiled with libcap-ng support.
++
++.TP
+ .BI \-nw
+ Become a daemon process immediately (nowait) rather than waiting until an IP
+ address has been acquired.
+diff -up dhcp-4.1.1/client/dhclient.c.capability dhcp-4.1.1/client/dhclient.c
+--- dhcp-4.1.1/client/dhclient.c.capability	2010-02-03 11:19:39.876957973 -0500
++++ dhcp-4.1.1/client/dhclient.c	2010-02-03 11:46:14.665957658 -0500
+@@ -37,6 +37,9 @@
+ #include <sys/time.h>
+ #include <sys/wait.h>
+ #include <limits.h>
++#ifdef HAVE_LIBCAP_NG
++#include <cap-ng.h>
++#endif
+ 
+ /*
+  * Defined in stdio.h when _GNU_SOURCE is set, but we don't want to define
+@@ -89,6 +92,9 @@ int wanted_ia_ta = 0;
+ int wanted_ia_pd = 0;
+ char *mockup_relay = NULL;
+ int bootp_broadcast_always = 0;
++#ifdef HAVE_LIBCAP_NG
++static int keep_capabilities = 0;
++#endif
+ 
+ extern u_int32_t default_requested_options[];
+ 
+@@ -376,6 +382,10 @@ main(int argc, char **argv) {
+ 			}
+ 
+ 			dhclient_request_options = argv[i];
++		} else if (!strcmp(argv[i], "-nc")) {
++#ifdef HAVE_LIBCAP_NG
++			keep_capabilities = 1;
++#endif
+ 		} else if (argv[i][0] == '-') {
+ 		    usage();
+ 		} else if (interfaces_requested < 0) {
+@@ -424,6 +434,19 @@ main(int argc, char **argv) {
+ 		path_dhclient_script = s;
+ 	}
+ 
++#ifdef HAVE_LIBCAP_NG
++	/* Drop capabilities */
++	if (!keep_capabilities) {
++		capng_clear(CAPNG_SELECT_CAPS);
++		capng_update(CAPNG_ADD, CAPNG_EFFECTIVE|CAPNG_PERMITTED,
++				CAP_DAC_OVERRIDE); // Drop this someday
++		capng_updatev(CAPNG_ADD, CAPNG_EFFECTIVE|CAPNG_PERMITTED,
++				CAP_NET_ADMIN, CAP_NET_RAW,
++				CAP_NET_BIND_SERVICE, CAP_SYS_ADMIN, -1);
++		capng_apply(CAPNG_SELECT_CAPS);
++	}
++#endif
++
+ 	/* Set up the initial dhcp option universe. */
+ 	initialize_common_option_spaces();
+ 
+diff -up dhcp-4.1.1/client/Makefile.am.capability dhcp-4.1.1/client/Makefile.am
+--- dhcp-4.1.1/client/Makefile.am.capability	2008-11-18 17:33:22.000000000 -0500
++++ dhcp-4.1.1/client/Makefile.am	2010-02-03 11:19:39.895958083 -0500
+@@ -5,7 +5,7 @@ dhclient_SOURCES = clparse.c dhclient.c 
+ 		   scripts/netbsd scripts/nextstep scripts/openbsd \
+ 		   scripts/solaris scripts/openwrt
+ dhclient_LDADD = ../common/libdhcp.a ../minires/libres.a \
+-		 ../omapip/libomapi.a ../dst/libdst.a
++		 ../omapip/libomapi.a ../dst/libdst.a $(CAPNG_LDADD)
+ man_MANS = dhclient.8 dhclient-script.8 dhclient.conf.5 dhclient.leases.5
+ EXTRA_DIST = $(man_MANS)
+ 
+diff -up dhcp-4.1.1/configure.ac.capability dhcp-4.1.1/configure.ac
+--- dhcp-4.1.1/configure.ac.capability	2010-02-03 11:19:39.806895971 -0500
++++ dhcp-4.1.1/configure.ac	2010-02-03 11:19:39.895958083 -0500
+@@ -419,6 +419,41 @@ AC_TRY_LINK(
+ # Look for optional headers.
+ AC_CHECK_HEADERS(sys/socket.h net/if_dl.h net/if6.h regex.h)
+ 
++# look for capabilities library
++AC_ARG_WITH(libcap-ng,
++    [  --with-libcap-ng=[auto/yes/no]  Add Libcap-ng support [default=auto]],,
++    with_libcap_ng=auto)
++
++# Check for Libcap-ng API
++#
++# libcap-ng detection
++if test x$with_libcap_ng = xno ; then
++    have_libcap_ng=no;
++else
++    # Start by checking for header file
++    AC_CHECK_HEADER(cap-ng.h, capng_headers=yes, capng_headers=no)
++
++    # See if we have libcap-ng library
++    AC_CHECK_LIB(cap-ng, capng_clear,
++                 CAPNG_LDADD=-lcap-ng,)
++
++    # Check results are usable
++    if test x$with_libcap_ng = xyes -a x$CAPNG_LDADD = x ; then
++       AC_MSG_ERROR(libcap-ng support was requested and the library was not found)
++    fi
++    if test x$CAPNG_LDADD != x -a $capng_headers = no ; then
++       AC_MSG_ERROR(libcap-ng libraries found but headers are missing)
++    fi
++fi
++AC_SUBST(CAPNG_LDADD)
++AC_MSG_CHECKING(whether to use libcap-ng)
++if test x$CAPNG_LDADD != x ; then
++    AC_DEFINE(HAVE_LIBCAP_NG,1,[libcap-ng support])
++    AC_MSG_RESULT(yes)
++else
++    AC_MSG_RESULT(no)
++fi
++
+ # find an MD5 library
+ AC_SEARCH_LIBS(MD5_Init, [crypto])
+ AC_SEARCH_LIBS(MD5Init, [crypto])

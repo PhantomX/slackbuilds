@@ -1,0 +1,98 @@
+Date: Thu, 4 Mar 2010 03:23:46 -0500
+From: Amerigo Wang <amwang@redhat.com>
+To: linux-kernel@vger.kernel.org
+Cc: Dave Jones <davej@redhat.com>, cpufreq@vger.kernel.org,
+        Amerigo Wang <amwang@redhat.com>,
+        Johannes Berg <johannes@sipsolutions.net>, akpm@linux-foundation.org,
+        Venkatesh Pallipadi <venkatesh.pallipadi@intel.com>
+Subject: [CPUFREQ] fix a lockdep warning
+
+There is no need to do sysfs_remove_link() or kobject_put() etc.
+when policy_rwsem_write is held, move them after releasing the lock.
+
+This fixes the lockdep warning:
+
+halt/4071 is trying to acquire lock:
+ (s_active){++++.+}, at: [<c0000000001ef868>] .sysfs_addrm_finish+0x58/0xc0
+
+but task is already holding lock:
+ (&per_cpu(cpu_policy_rwsem, cpu)){+.+.+.}, at: [<c0000000004cd6ac>] .lock_policy_rwsem_write+0x84/0xf4
+
+Reported-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+Signed-off-by: WANG Cong <amwang@redhat.com>
+Cc: Johannes Berg <johannes@sipsolutions.net>
+Cc: Venkatesh Pallipadi <venkatesh.pallipadi@intel.com>
+Signed-off-by: Dave Jones <davej@redhat.com>
+
+---
+diff --git a/drivers/cpufreq/cpufreq.c b/drivers/cpufreq/cpufreq.c
+index 67bc2ec..e196084 100644
+--- a/drivers/cpufreq/cpufreq.c
++++ b/drivers/cpufreq/cpufreq.c
+@@ -1113,6 +1113,8 @@ static int __cpufreq_remove_dev(struct sys_device *sys_dev)
+ 	unsigned int cpu = sys_dev->id;
+ 	unsigned long flags;
+ 	struct cpufreq_policy *data;
++	struct kobject *kobj;
++	struct completion *cmp;
+ #ifdef CONFIG_SMP
+ 	struct sys_device *cpu_sys_dev;
+ 	unsigned int j;
+@@ -1141,10 +1143,11 @@ static int __cpufreq_remove_dev(struct sys_device *sys_dev)
+ 		dprintk("removing link\n");
+ 		cpumask_clear_cpu(cpu, data->cpus);
+ 		spin_unlock_irqrestore(&cpufreq_driver_lock, flags);
+-		sysfs_remove_link(&sys_dev->kobj, "cpufreq");
++		kobj = &sys_dev->kobj;
+ 		cpufreq_cpu_put(data);
+ 		cpufreq_debug_enable_ratelimit();
+ 		unlock_policy_rwsem_write(cpu);
++		sysfs_remove_link(kobj, "cpufreq");
+ 		return 0;
+ 	}
+ #endif
+@@ -1181,7 +1184,10 @@ static int __cpufreq_remove_dev(struct sys_device *sys_dev)
+ 				data->governor->name, CPUFREQ_NAME_LEN);
+ #endif
+ 			cpu_sys_dev = get_cpu_sysdev(j);
+-			sysfs_remove_link(&cpu_sys_dev->kobj, "cpufreq");
++			kobj = &cpu_sys_dev->kobj;
++			unlock_policy_rwsem_write(cpu);
++			sysfs_remove_link(kobj, "cpufreq");
++			lock_policy_rwsem_write(cpu);
+ 			cpufreq_cpu_put(data);
+ 		}
+ 	}
+@@ -1192,19 +1198,22 @@ static int __cpufreq_remove_dev(struct sys_device *sys_dev)
+ 	if (cpufreq_driver->target)
+ 		__cpufreq_governor(data, CPUFREQ_GOV_STOP);
+ 
+-	kobject_put(&data->kobj);
++	kobj = &data->kobj;
++	cmp = &data->kobj_unregister;
++	unlock_policy_rwsem_write(cpu);
++	kobject_put(kobj);
+ 
+ 	/* we need to make sure that the underlying kobj is actually
+ 	 * not referenced anymore by anybody before we proceed with
+ 	 * unloading.
+ 	 */
+ 	dprintk("waiting for dropping of refcount\n");
+-	wait_for_completion(&data->kobj_unregister);
++	wait_for_completion(cmp);
+ 	dprintk("wait complete\n");
+ 
++	lock_policy_rwsem_write(cpu);
+ 	if (cpufreq_driver->exit)
+ 		cpufreq_driver->exit(data);
+-
+ 	unlock_policy_rwsem_write(cpu);
+ 
+ 	free_cpumask_var(data->related_cpus);
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe cpufreq" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+

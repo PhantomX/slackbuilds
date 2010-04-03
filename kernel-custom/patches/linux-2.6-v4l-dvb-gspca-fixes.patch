@@ -1,0 +1,3173 @@
+From: German Galkin <galkinga@gmail.com>
+Date: Sun, 7 Mar 2010 09:19:02 +0000 (-0300)
+Subject: V4L/DVB: gspca - sn9c20x: Fix exposure control for HV7131R sensor
+X-Git-Url: http://git.linuxtv.org/v4l-dvb.git?a=commitdiff_plain;h=0c05cee69fbef74a08f4f9804f0a3ca7ba39a3e2
+
+V4L/DVB: gspca - sn9c20x: Fix exposure control for HV7131R sensor
+
+Make the range of exposure values (0-0x1770) distribute evenly through
+HV7131R's exposure control bytes.
+
+Signed-off-by: German Galkin <galkinga@gmail.com>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/sn9c20x.c b/drivers/media/video/gspca/sn9c20x.c
+index 4a1bc08..dce5ef8 100644
+--- a/drivers/media/video/gspca/sn9c20x.c
++++ b/drivers/media/video/gspca/sn9c20x.c
+@@ -1654,9 +1654,9 @@ static int set_exposure(struct gspca_dev *gspca_dev)
+ 	case SENSOR_HV7131R:
+ 		exp[0] |= (4 << 4);
+ 		exp[2] = 0x25;
+-		exp[3] = ((sd->exposure * 0xffffff) / 0xffff) >> 16;
+-		exp[4] = ((sd->exposure * 0xffffff) / 0xffff) >> 8;
+-		exp[5] = ((sd->exposure * 0xffffff) / 0xffff) & 0xff;
++		exp[3] = (sd->exposure >> 5) & 0xff;
++		exp[4] = (sd->exposure << 3) & 0xff;
++		exp[5] = 0;
+ 		break;
+ 	default:
+ 		return 0;
+From 1f6d33db111022345a85d8f441a22a5a46fc8ca2 Mon Sep 17 00:00:00 2001
+From: Brian Johnson <brijohn@gmail.com>
+Date: Tue, 9 Mar 2010 19:53:05 -0500
+Subject: [PATCH] gspca - sn9c20x: use gspca's input device handling
+
+Drop custom code for handling the input button in
+favor of using gspca's input hanlding mechinism.
+---
+ drivers/media/video/gspca/Kconfig   |    6 --
+ drivers/media/video/gspca/sn9c20x.c |  145 ++++++++---------------------------
+ 2 files changed, 33 insertions(+), 118 deletions(-)
+
+diff --git a/drivers/media/video/gspca/Kconfig b/drivers/media/video/gspca/Kconfig
+index e0060c1..5d920e5 100644
+--- a/drivers/media/video/gspca/Kconfig
++++ b/drivers/media/video/gspca/Kconfig
+@@ -172,12 +172,6 @@ config USB_GSPCA_SN9C20X
+ 	 To compile this driver as a module, choose M here: the
+ 	 module will be called gspca_sn9c20x.
+ 
+-config USB_GSPCA_SN9C20X_EVDEV
+-	bool "Enable evdev support"
+-	depends on USB_GSPCA_SN9C20X && INPUT
+-	---help---
+-	  Say Y here in order to enable evdev support for sn9c20x webcam button.
+-
+ config USB_GSPCA_SONIXB
+ 	tristate "SONIX Bayer USB Camera Driver"
+ 	depends on VIDEO_V4L2 && USB_GSPCA
+diff --git a/drivers/media/video/gspca/sn9c20x.c b/drivers/media/video/gspca/sn9c20x.c
+index dce5ef8..d2a4902 100644
+--- a/drivers/media/video/gspca/sn9c20x.c
++++ b/drivers/media/video/gspca/sn9c20x.c
+@@ -18,10 +18,7 @@
+  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+  */
+ 
+-#ifdef CONFIG_USB_GSPCA_SN9C20X_EVDEV
+-#include <linux/kthread.h>
+-#include <linux/freezer.h>
+-#include <linux/usb/input.h>
++#ifdef CONFIG_INPUT
+ #include <linux/input.h>
+ #endif
+ 
+@@ -54,6 +51,9 @@ MODULE_LICENSE("GPL");
+ #define SENSOR_HV7131R	10
+ #define SENSOR_MT9VPRB	20
+ 
++/* camera flags */
++#define HAS_BUTTON	0x1
++
+ /* specific webcam descriptor */
+ struct sd {
+ 	struct gspca_dev gspca_dev;
+@@ -87,11 +87,7 @@ struct sd {
+ 	u8 *jpeg_hdr;
+ 	u8 quality;
+ 
+-#ifdef CONFIG_USB_GSPCA_SN9C20X_EVDEV
+-	struct input_dev *input_dev;
+-	u8 input_gpio;
+-	struct task_struct *input_task;
+-#endif
++	u8 flags;
+ };
+ 
+ struct i2c_reg_u8 {
+@@ -1420,87 +1416,6 @@ static int hv7131r_init_sensor(struct gspca_dev *gspca_dev)
+ 	return 0;
+ }
+ 
+-#ifdef CONFIG_USB_GSPCA_SN9C20X_EVDEV
+-static int input_kthread(void *data)
+-{
+-	struct gspca_dev *gspca_dev = (struct gspca_dev *)data;
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	DECLARE_WAIT_QUEUE_HEAD(wait);
+-	set_freezable();
+-	for (;;) {
+-		if (kthread_should_stop())
+-			break;
+-
+-		if (reg_r(gspca_dev, 0x1005, 1) < 0)
+-			continue;
+-
+-		input_report_key(sd->input_dev,
+-				 KEY_CAMERA,
+-				 gspca_dev->usb_buf[0] & sd->input_gpio);
+-		input_sync(sd->input_dev);
+-
+-		wait_event_freezable_timeout(wait,
+-					     kthread_should_stop(),
+-					     msecs_to_jiffies(100));
+-	}
+-	return 0;
+-}
+-
+-
+-static int sn9c20x_input_init(struct gspca_dev *gspca_dev)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-	if (sd->input_gpio == 0)
+-		return 0;
+-
+-	sd->input_dev = input_allocate_device();
+-	if (!sd->input_dev)
+-		return -ENOMEM;
+-
+-	sd->input_dev->name = "SN9C20X Webcam";
+-
+-	sd->input_dev->phys = kasprintf(GFP_KERNEL, "usb-%s-%s",
+-					 gspca_dev->dev->bus->bus_name,
+-					 gspca_dev->dev->devpath);
+-
+-	if (!sd->input_dev->phys)
+-		return -ENOMEM;
+-
+-	usb_to_input_id(gspca_dev->dev, &sd->input_dev->id);
+-	sd->input_dev->dev.parent = &gspca_dev->dev->dev;
+-
+-	set_bit(EV_KEY, sd->input_dev->evbit);
+-	set_bit(KEY_CAMERA, sd->input_dev->keybit);
+-
+-	if (input_register_device(sd->input_dev))
+-		return -EINVAL;
+-
+-	sd->input_task = kthread_run(input_kthread, gspca_dev, "sn9c20x/%s-%s",
+-				     gspca_dev->dev->bus->bus_name,
+-				     gspca_dev->dev->devpath);
+-
+-	if (IS_ERR(sd->input_task))
+-		return -EINVAL;
+-
+-	return 0;
+-}
+-
+-static void sn9c20x_input_cleanup(struct gspca_dev *gspca_dev)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-	if (sd->input_task != NULL && !IS_ERR(sd->input_task))
+-		kthread_stop(sd->input_task);
+-
+-	if (sd->input_dev != NULL) {
+-		input_unregister_device(sd->input_dev);
+-		kfree(sd->input_dev->phys);
+-		input_free_device(sd->input_dev);
+-		sd->input_dev = NULL;
+-	}
+-}
+-#endif
+-
+ static int set_cmatrix(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+@@ -2004,6 +1919,7 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ 
+ 	sd->sensor = (id->driver_info >> 8) & 0xff;
+ 	sd->i2c_addr = id->driver_info & 0xff;
++	sd->flags = (id->driver_info >> 16) & 0xff;
+ 
+ 	switch (sd->sensor) {
+ 	case SENSOR_MT9M111:
+@@ -2038,11 +1954,6 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ 
+ 	sd->quality = 95;
+ 
+-#ifdef CONFIG_USB_GSPCA_SN9C20X_EVDEV
+-	sd->input_gpio = (id->driver_info >> 16) & 0xff;
+-	if (sn9c20x_input_init(gspca_dev) < 0)
+-		return -ENODEV;
+-#endif
+ 	return 0;
+ }
+ 
+@@ -2342,6 +2253,24 @@ static void sd_dqcallback(struct gspca_dev *gspca_dev)
+ 		do_autoexposure(gspca_dev, avg_lum);
+ }
+ 
++#ifdef CONFIG_INPUT
++static int sd_int_pkt_scan(struct gspca_dev *gspca_dev,
++			u8 *data,		/* interrupt packet */
++			int len)		/* interrupt packet length */
++{
++	struct sd *sd = (struct sd *) gspca_dev;
++	int ret = -EINVAL;
++	if (sd->flags & HAS_BUTTON && len == 1) {
++			input_report_key(gspca_dev->input_dev, KEY_CAMERA, 1);
++			input_sync(gspca_dev->input_dev);
++			input_report_key(gspca_dev->input_dev, KEY_CAMERA, 0);
++			input_sync(gspca_dev->input_dev);
++			ret = 0;
++	}
++	return ret;
++}
++#endif
++
+ static void sd_pkt_scan(struct gspca_dev *gspca_dev,
+ 			u8 *data,			/* isoc packet */
+ 			int len)			/* iso packet length */
+@@ -2408,6 +2337,9 @@ static const struct sd_desc sd_desc = {
+ 	.stopN = sd_stopN,
+ 	.stop0 = sd_stop0,
+ 	.pkt_scan = sd_pkt_scan,
++#ifdef CONFIG_INPUT
++	.int_pkt_scan = sd_int_pkt_scan,
++#endif
+ 	.dq_callback = sd_dqcallback,
+ #ifdef CONFIG_VIDEO_ADV_DEBUG
+ 	.set_register = sd_dbg_s_register,
+@@ -2416,8 +2348,8 @@ static const struct sd_desc sd_desc = {
+ 	.get_chip_ident = sd_chip_ident,
+ };
+ 
+-#define SN9C20X(sensor, i2c_addr, button_mask) \
+-	.driver_info =  (button_mask << 16) \
++#define SN9C20X(sensor, i2c_addr, flags) \
++	.driver_info =  (flags << 16) \
+ 			| (SENSOR_ ## sensor << 8) \
+ 			| (i2c_addr)
+ 
+@@ -2425,7 +2357,7 @@ static const __devinitdata struct usb_device_id device_table[] = {
+ 	{USB_DEVICE(0x0c45, 0x6240), SN9C20X(MT9M001, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6242), SN9C20X(MT9M111, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6248), SN9C20X(OV9655, 0x30, 0)},
+-	{USB_DEVICE(0x0c45, 0x624e), SN9C20X(SOI968, 0x30, 0x10)},
++	{USB_DEVICE(0x0c45, 0x624e), SN9C20X(SOI968, 0x30, HAS_BUTTON)},
+ 	{USB_DEVICE(0x0c45, 0x624f), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6251), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6253), SN9C20X(OV9650, 0x30, 0)},
+@@ -2436,13 +2368,13 @@ static const __devinitdata struct usb_device_id device_table[] = {
+ 	{USB_DEVICE(0x0c45, 0x627f), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6280), SN9C20X(MT9M001, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6282), SN9C20X(MT9M111, 0x5d, 0)},
+-	{USB_DEVICE(0x0c45, 0x6288), SN9C20X(OV9655, 0x30, 0)},
++	{USB_DEVICE(0x0c45, 0x6288), SN9C20X(OV9655, 0x30, HAS_BUTTON)},
+ 	{USB_DEVICE(0x0c45, 0x628e), SN9C20X(SOI968, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x628f), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x62a0), SN9C20X(OV7670, 0x21, 0)},
+ 	{USB_DEVICE(0x0c45, 0x62b0), SN9C20X(MT9VPRB, 0x00, 0)},
+ 	{USB_DEVICE(0x0c45, 0x62b3), SN9C20X(OV9655, 0x30, 0)},
+-	{USB_DEVICE(0x0c45, 0x62bb), SN9C20X(OV7660, 0x21, 0)},
++	{USB_DEVICE(0x0c45, 0x62bb), SN9C20X(OV7660, 0x21, HAS_BUTTON)},
+ 	{USB_DEVICE(0x0c45, 0x62bc), SN9C20X(HV7131R, 0x11, 0)},
+ 	{USB_DEVICE(0x045e, 0x00f4), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x145f, 0x013d), SN9C20X(OV7660, 0x21, 0)},
+@@ -2451,7 +2383,7 @@ static const __devinitdata struct usb_device_id device_table[] = {
+ 	{USB_DEVICE(0xa168, 0x0611), SN9C20X(HV7131R, 0x11, 0)},
+ 	{USB_DEVICE(0xa168, 0x0613), SN9C20X(HV7131R, 0x11, 0)},
+ 	{USB_DEVICE(0xa168, 0x0618), SN9C20X(HV7131R, 0x11, 0)},
+-	{USB_DEVICE(0xa168, 0x0614), SN9C20X(MT9M111, 0x5d, 0)},
++	{USB_DEVICE(0xa168, 0x0614), SN9C20X(MT9M111, 0x5d, HAS_BUTTON)},
+ 	{USB_DEVICE(0xa168, 0x0615), SN9C20X(MT9M111, 0x5d, 0)},
+ 	{USB_DEVICE(0xa168, 0x0617), SN9C20X(MT9M111, 0x5d, 0)},
+ 	{}
+@@ -2466,22 +2398,11 @@ static int sd_probe(struct usb_interface *intf,
+ 				THIS_MODULE);
+ }
+ 
+-static void sd_disconnect(struct usb_interface *intf)
+-{
+-#ifdef CONFIG_USB_GSPCA_SN9C20X_EVDEV
+-	struct gspca_dev *gspca_dev = usb_get_intfdata(intf);
+-
+-	sn9c20x_input_cleanup(gspca_dev);
+-#endif
+-
+-	gspca_disconnect(intf);
+-}
+-
+ static struct usb_driver sd_driver = {
+ 	.name = MODULE_NAME,
+ 	.id_table = device_table,
+ 	.probe = sd_probe,
+-	.disconnect = sd_disconnect,
++	.disconnect = gspca_disconnect,
+ #ifdef CONFIG_PM
+ 	.suspend = gspca_suspend,
+ 	.resume = gspca_resume,
+-- 
+1.6.1
+
+From ed53494aab1eadefa6b6c1413d59805839fb6fcf Mon Sep 17 00:00:00 2001
+From: Brian Johnson <brijohn@gmail.com>
+Date: Tue, 9 Mar 2010 19:53:12 -0500
+Subject: [PATCH] gspca - sn9c20x: Add support for camera LEDs
+
+---
+ drivers/media/video/gspca/sn9c20x.c |   18 +++++++++++++++---
+ 1 files changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/media/video/gspca/sn9c20x.c b/drivers/media/video/gspca/sn9c20x.c
+index d2a4902..0e8a64d 100644
+--- a/drivers/media/video/gspca/sn9c20x.c
++++ b/drivers/media/video/gspca/sn9c20x.c
+@@ -53,6 +53,7 @@ MODULE_LICENSE("GPL");
+ 
+ /* camera flags */
+ #define HAS_BUTTON	0x1
++#define LED_REVERSE	0x2 /* some cameras unset gpio to turn on leds */
+ 
+ /* specific webcam descriptor */
+ struct sd {
+@@ -730,7 +731,8 @@ static u16 bridge_init[][2] = {
+ 	{0x11be, 0xf0},	{0x11bf, 0x00},	{0x118c, 0x1f},
+ 	{0x118d, 0x1f},	{0x118e, 0x1f},	{0x118f, 0x1f},
+ 	{0x1180, 0x01},	{0x1181, 0x00},	{0x1182, 0x01},
+-	{0x1183, 0x00},	{0x1184, 0x50},	{0x1185, 0x80}
++	{0x1183, 0x00},	{0x1184, 0x50},	{0x1185, 0x80},
++	{0x1007, 0x00}
+ };
+ 
+ /* Gain = (bit[3:0] / 16 + 1) * (bit[4] + 1) * (bit[5] + 1) * (bit[6] + 1) */
+@@ -1973,6 +1975,11 @@ static int sd_init(struct gspca_dev *gspca_dev)
+ 		}
+ 	}
+ 
++	if (sd->flags & LED_REVERSE)
++		reg_w1(gspca_dev, 0x1006, 0x00);
++	else
++		reg_w1(gspca_dev, 0x1006, 0x20);
++
+ 	if (reg_w(gspca_dev, 0x10c0, i2c_init, 9) < 0) {
+ 		err("Device initialization failed");
+ 		return -ENODEV;
+@@ -2153,6 +2160,8 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	set_exposure(gspca_dev);
+ 	set_hvflip(gspca_dev);
+ 
++	reg_w1(gspca_dev, 0x1007, 0x20);
++
+ 	reg_r(gspca_dev, 0x1061, 1);
+ 	reg_w1(gspca_dev, 0x1061, gspca_dev->usb_buf[0] | 0x02);
+ 	return 0;
+@@ -2160,6 +2169,8 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 
+ static void sd_stopN(struct gspca_dev *gspca_dev)
+ {
++	reg_w1(gspca_dev, 0x1007, 0x00);
++
+ 	reg_r(gspca_dev, 0x1061, 1);
+ 	reg_w1(gspca_dev, 0x1061, gspca_dev->usb_buf[0] & ~0x02);
+ }
+@@ -2349,7 +2360,7 @@ static const struct sd_desc sd_desc = {
+ };
+ 
+ #define SN9C20X(sensor, i2c_addr, flags) \
+-	.driver_info =  (flags << 16) \
++	.driver_info =  ((flags & 0xff) << 16) \
+ 			| (SENSOR_ ## sensor << 8) \
+ 			| (i2c_addr)
+ 
+@@ -2357,7 +2368,8 @@ static const __devinitdata struct usb_device_id device_table[] = {
+ 	{USB_DEVICE(0x0c45, 0x6240), SN9C20X(MT9M001, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6242), SN9C20X(MT9M111, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6248), SN9C20X(OV9655, 0x30, 0)},
+-	{USB_DEVICE(0x0c45, 0x624e), SN9C20X(SOI968, 0x30, HAS_BUTTON)},
++	{USB_DEVICE(0x0c45, 0x624e), SN9C20X(SOI968, 0x30,
++					     (HAS_BUTTON | LED_REVERSE))},
+ 	{USB_DEVICE(0x0c45, 0x624f), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6251), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6253), SN9C20X(OV9650, 0x30, 0)},
+-- 
+1.6.1
+
+From c1dfdd5443097d4fbd773858a1c38d7b6b7dfcc1 Mon Sep 17 00:00:00 2001
+From: Brian Johnson <brijohn@gmail.com>
+Date: Tue, 9 Mar 2010 19:55:51 -0500
+Subject: [PATCH] gspca - sn9c20x: Add upside down detection
+
+Add support for detecting webcams that are mounted
+upside down in laptops. Currently the only two known
+are two MSI modesl using the 0c45:624f.
+---
+ drivers/media/video/gspca/sn9c20x.c |   50 ++++++++++++++++++++++++++++-------
+ 1 files changed, 40 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/media/video/gspca/sn9c20x.c b/drivers/media/video/gspca/sn9c20x.c
+index 0e8a64d..41c8916 100644
+--- a/drivers/media/video/gspca/sn9c20x.c
++++ b/drivers/media/video/gspca/sn9c20x.c
+@@ -26,6 +26,7 @@
+ #include "jpeg.h"
+ 
+ #include <media/v4l2-chip-ident.h>
++#include <linux/dmi.h>
+ 
+ MODULE_AUTHOR("Brian Johnson <brijohn@gmail.com>, "
+ 		"microdia project <microdia@googlegroups.com>");
+@@ -54,6 +55,7 @@ MODULE_LICENSE("GPL");
+ /* camera flags */
+ #define HAS_BUTTON	0x1
+ #define LED_REVERSE	0x2 /* some cameras unset gpio to turn on leds */
++#define FLIP_DETECT	0x4
+ 
+ /* specific webcam descriptor */
+ struct sd {
+@@ -126,6 +128,25 @@ static int sd_getexposure(struct gspca_dev *gspca_dev, s32 *val);
+ static int sd_setautoexposure(struct gspca_dev *gspca_dev, s32 val);
+ static int sd_getautoexposure(struct gspca_dev *gspca_dev, s32 *val);
+ 
++static const struct dmi_system_id flip_dmi_table[] = {
++	{
++		.ident = "MSI MS-1034",
++		.matches = {
++			DMI_MATCH(DMI_SYS_VENDOR, "MICRO-STAR INT'L CO.,LTD."),
++			DMI_MATCH(DMI_PRODUCT_NAME, "MS-1034"),
++			DMI_MATCH(DMI_PRODUCT_VERSION, "0341")
++		}
++	},
++	{
++		.ident = "MSI MS-1632",
++		.matches = {
++			DMI_MATCH(DMI_BOARD_VENDOR, "MSI"),
++			DMI_MATCH(DMI_BOARD_NAME, "MS-1632")
++		}
++	},
++	{}
++};
++
+ static const struct ctrl sd_ctrls[] = {
+ 	{
+ #define BRIGHTNESS_IDX 0
+@@ -1495,17 +1516,26 @@ static int set_redblue(struct gspca_dev *gspca_dev)
+ 
+ static int set_hvflip(struct gspca_dev *gspca_dev)
+ {
+-	u8 value, tslb;
++	u8 value, tslb, hflip, vflip;
+ 	u16 value2;
+ 	struct sd *sd = (struct sd *) gspca_dev;
++
++	if ((sd->flags & FLIP_DETECT) && dmi_check_system(flip_dmi_table)) {
++		hflip = !sd->hflip;
++		vflip = !sd->vflip;
++	} else {
++		hflip = sd->hflip;
++		vflip = sd->vflip;
++	}
++
+ 	switch (sd->sensor) {
+ 	case SENSOR_OV9650:
+ 		i2c_r1(gspca_dev, 0x1e, &value);
+ 		value &= ~0x30;
+ 		tslb = 0x01;
+-		if (sd->hflip)
++		if (hflip)
+ 			value |= 0x20;
+-		if (sd->vflip) {
++		if (vflip) {
+ 			value |= 0x10;
+ 			tslb = 0x49;
+ 		}
+@@ -1516,9 +1546,9 @@ static int set_hvflip(struct gspca_dev *gspca_dev)
+ 	case SENSOR_MT9V011:
+ 		i2c_r2(gspca_dev, 0x20, &value2);
+ 		value2 &= ~0xc0a0;
+-		if (sd->hflip)
++		if (hflip)
+ 			value2 |= 0x8080;
+-		if (sd->vflip)
++		if (vflip)
+ 			value2 |= 0x4020;
+ 		i2c_w2(gspca_dev, 0x20, value2);
+ 		break;
+@@ -1526,18 +1556,18 @@ static int set_hvflip(struct gspca_dev *gspca_dev)
+ 	case SENSOR_MT9V112:
+ 		i2c_r2(gspca_dev, 0x20, &value2);
+ 		value2 &= ~0x0003;
+-		if (sd->hflip)
++		if (hflip)
+ 			value2 |= 0x0002;
+-		if (sd->vflip)
++		if (vflip)
+ 			value2 |= 0x0001;
+ 		i2c_w2(gspca_dev, 0x20, value2);
+ 		break;
+ 	case SENSOR_HV7131R:
+ 		i2c_r1(gspca_dev, 0x01, &value);
+ 		value &= ~0x03;
+-		if (sd->vflip)
++		if (vflip)
+ 			value |= 0x01;
+-		if (sd->hflip)
++		if (hflip)
+ 			value |= 0x02;
+ 		i2c_w1(gspca_dev, 0x01, value);
+ 		break;
+@@ -2370,7 +2400,7 @@ static const __devinitdata struct usb_device_id device_table[] = {
+ 	{USB_DEVICE(0x0c45, 0x6248), SN9C20X(OV9655, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x624e), SN9C20X(SOI968, 0x30,
+ 					     (HAS_BUTTON | LED_REVERSE))},
+-	{USB_DEVICE(0x0c45, 0x624f), SN9C20X(OV9650, 0x30, 0)},
++	{USB_DEVICE(0x0c45, 0x624f), SN9C20X(OV9650, 0x30, FLIP_DETECT)},
+ 	{USB_DEVICE(0x0c45, 0x6251), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6253), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6260), SN9C20X(OV7670, 0x21, 0)},
+-- 
+1.6.1
+
+From 2e25ca5a85c702d2d49df7f5b1e3ecd61e01bf3e Mon Sep 17 00:00:00 2001
+From: Brian Johnson <brijohn@gmail.com>
+Date: Tue, 9 Mar 2010 19:55:59 -0500
+Subject: [PATCH] gspca - sn9c20x: Add support for cameras using the MT9M112 sensor
+
+Adds the following models:
+	- 0c45:624c
+	- 0c45:628c
+	- 0458:704a
+	- 0458:704c
+---
+ Documentation/video4linux/gspca.txt |    4 +++
+ drivers/media/video/gspca/sn9c20x.c |   44 ++++++++++++++++++++++++++++++++--
+ 2 files changed, 45 insertions(+), 3 deletions(-)
+
+diff --git a/Documentation/video4linux/gspca.txt b/Documentation/video4linux/gspca.txt
+index 181b9e6..3bfab2e 100644
+--- a/Documentation/video4linux/gspca.txt
++++ b/Documentation/video4linux/gspca.txt
+@@ -50,6 +50,8 @@ zc3xx		0458:700f	Genius VideoCam Web V2
+ sonixj		0458:7025	Genius Eye 311Q
+ sn9c20x		0458:7029	Genius Look 320s
+ sonixj		0458:702e	Genius Slim 310 NB
++sn9c20x		0458:704a	Genius Slim 1320
++sn9c20x		0458:704c	Genius i-Look 1321
+ sn9c20x		045e:00f4	LifeCam VX-6000 (SN9C20x + OV9650)
+ sonixj		045e:00f5	MicroSoft VX3000
+ sonixj		045e:00f7	MicroSoft VX1000
+@@ -311,6 +313,7 @@ sonixj		0c45:614a	Frontech E-Ccam (JIL-2225)
+ sn9c20x		0c45:6240	PC Camera (SN9C201 + MT9M001)
+ sn9c20x		0c45:6242	PC Camera (SN9C201 + MT9M111)
+ sn9c20x		0c45:6248	PC Camera (SN9C201 + OV9655)
++sn9c20x		0c45:624c	PC Camera (SN9C201 + MT9M112)
+ sn9c20x		0c45:624e	PC Camera (SN9C201 + SOI968)
+ sn9c20x		0c45:624f	PC Camera (SN9C201 + OV9650)
+ sn9c20x		0c45:6251	PC Camera (SN9C201 + OV9650)
+@@ -323,6 +326,7 @@ sn9c20x		0c45:627f	PC Camera (SN9C201 + OV9650)
+ sn9c20x		0c45:6280	PC Camera (SN9C202 + MT9M001)
+ sn9c20x		0c45:6282	PC Camera (SN9C202 + MT9M111)
+ sn9c20x		0c45:6288	PC Camera (SN9C202 + OV9655)
++sn9c20x		0c45:628c	PC Camera (SN9C201 + MT9M112)
+ sn9c20x		0c45:628e	PC Camera (SN9C202 + SOI968)
+ sn9c20x		0c45:628f	PC Camera (SN9C202 + OV9650)
+ sn9c20x		0c45:62a0	PC Camera (SN9C202 + OV7670)
+diff --git a/drivers/media/video/gspca/sn9c20x.c b/drivers/media/video/gspca/sn9c20x.c
+index 41c8916..8684596 100644
+--- a/drivers/media/video/gspca/sn9c20x.c
++++ b/drivers/media/video/gspca/sn9c20x.c
+@@ -49,7 +49,8 @@ MODULE_LICENSE("GPL");
+ #define SENSOR_MT9V112	7
+ #define SENSOR_MT9M001	8
+ #define SENSOR_MT9M111	9
+-#define SENSOR_HV7131R	10
++#define SENSOR_MT9M112  10
++#define SENSOR_HV7131R	11
+ #define SENSOR_MT9VPRB	20
+ 
+ /* camera flags */
+@@ -730,6 +731,7 @@ static u16 i2c_ident[] = {
+ 	V4L2_IDENT_MT9V112,
+ 	V4L2_IDENT_MT9M001C12ST,
+ 	V4L2_IDENT_MT9M111,
++	V4L2_IDENT_MT9M112,
+ 	V4L2_IDENT_HV7131R,
+ };
+ 
+@@ -1061,6 +1063,13 @@ static struct i2c_reg_u16 mt9m111_init[] = {
+ 	{0xf0, 0x0000},
+ };
+ 
++static struct i2c_reg_u16 mt9m112_init[] = {
++	{0xf0, 0x0000}, {0x0d, 0x0021}, {0x0d, 0x0008},
++	{0xf0, 0x0001}, {0x3a, 0x4300}, {0x9b, 0x4300},
++	{0x06, 0x708e}, {0xf0, 0x0002}, {0x2e, 0x0a1e},
++	{0xf0, 0x0000},
++};
++
+ static struct i2c_reg_u8 hv7131r_init[] = {
+ 	{0x02, 0x08}, {0x02, 0x00}, {0x01, 0x08},
+ 	{0x02, 0x00}, {0x20, 0x00}, {0x21, 0xd0},
+@@ -1387,6 +1396,23 @@ static int mt9v_init_sensor(struct gspca_dev *gspca_dev)
+ 	return -ENODEV;
+ }
+ 
++static int mt9m112_init_sensor(struct gspca_dev *gspca_dev)
++{
++	struct sd *sd = (struct sd *) gspca_dev;
++	int i;
++	for (i = 0; i < ARRAY_SIZE(mt9m112_init); i++) {
++		if (i2c_w2(gspca_dev, mt9m112_init[i].reg,
++				mt9m112_init[i].val) < 0) {
++			err("MT9M112 sensor initialization failed");
++			return -ENODEV;
++		}
++	}
++	gspca_dev->ctrl_dis = (1 << EXPOSURE_IDX) | (1 << AUTOGAIN_IDX) | (1 << GAIN_IDX);
++	sd->hstart = 0;
++	sd->vstart = 2;
++	return 0;
++}
++
+ static int mt9m111_init_sensor(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+@@ -1552,6 +1578,7 @@ static int set_hvflip(struct gspca_dev *gspca_dev)
+ 			value2 |= 0x4020;
+ 		i2c_w2(gspca_dev, 0x20, value2);
+ 		break;
++	case SENSOR_MT9M112:
+ 	case SENSOR_MT9M111:
+ 	case SENSOR_MT9V112:
+ 		i2c_r2(gspca_dev, 0x20, &value2);
+@@ -1877,7 +1904,7 @@ static int sd_dbg_g_register(struct gspca_dev *gspca_dev,
+ 		if (reg->match.addr != sd->i2c_addr)
+ 			return -EINVAL;
+ 		if (sd->sensor >= SENSOR_MT9V011 &&
+-		    sd->sensor <= SENSOR_MT9M111) {
++		    sd->sensor <= SENSOR_MT9M112) {
+ 			if (i2c_r2(gspca_dev, reg->reg, (u16 *)&reg->val) < 0)
+ 				return -EINVAL;
+ 		} else {
+@@ -1906,7 +1933,7 @@ static int sd_dbg_s_register(struct gspca_dev *gspca_dev,
+ 		if (reg->match.addr != sd->i2c_addr)
+ 			return -EINVAL;
+ 		if (sd->sensor >= SENSOR_MT9V011 &&
+-		    sd->sensor <= SENSOR_MT9M111) {
++		    sd->sensor <= SENSOR_MT9M112) {
+ 			if (i2c_w2(gspca_dev, reg->reg, reg->val) < 0)
+ 				return -EINVAL;
+ 		} else {
+@@ -1954,6 +1981,7 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ 	sd->flags = (id->driver_info >> 16) & 0xff;
+ 
+ 	switch (sd->sensor) {
++	case SENSOR_MT9M112:
+ 	case SENSOR_MT9M111:
+ 	case SENSOR_OV9650:
+ 	case SENSOR_SOI968:
+@@ -2050,6 +2078,11 @@ static int sd_init(struct gspca_dev *gspca_dev)
+ 			return -ENODEV;
+ 		info("MT9M111 sensor detected");
+ 		break;
++	case SENSOR_MT9M112:
++		if (mt9m112_init_sensor(gspca_dev) < 0)
++			return -ENODEV;
++		info("MT9M112 sensor detected");
++		break;
+ 	case SENSOR_MT9M001:
+ 		if (mt9m001_init_sensor(gspca_dev) < 0)
+ 			return -ENODEV;
+@@ -2109,6 +2142,7 @@ static void configure_sensor_output(struct gspca_dev *gspca_dev, int mode)
+ 			i2c_w1(gspca_dev, 0x12, (value & 0x7) | 0x40);
+ 		}
+ 		break;
++	case SENSOR_MT9M112:
+ 	case SENSOR_MT9M111:
+ 		if (mode & MODE_SXGA) {
+ 			i2c_w2(gspca_dev, 0xf0, 0x0002);
+@@ -2398,6 +2432,7 @@ static const __devinitdata struct usb_device_id device_table[] = {
+ 	{USB_DEVICE(0x0c45, 0x6240), SN9C20X(MT9M001, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6242), SN9C20X(MT9M111, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6248), SN9C20X(OV9655, 0x30, 0)},
++	{USB_DEVICE(0x0c45, 0x624c), SN9C20X(MT9M112, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x624e), SN9C20X(SOI968, 0x30,
+ 					     (HAS_BUTTON | LED_REVERSE))},
+ 	{USB_DEVICE(0x0c45, 0x624f), SN9C20X(OV9650, 0x30, FLIP_DETECT)},
+@@ -2411,6 +2446,7 @@ static const __devinitdata struct usb_device_id device_table[] = {
+ 	{USB_DEVICE(0x0c45, 0x6280), SN9C20X(MT9M001, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6282), SN9C20X(MT9M111, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x6288), SN9C20X(OV9655, 0x30, HAS_BUTTON)},
++	{USB_DEVICE(0x0c45, 0x628c), SN9C20X(MT9M112, 0x5d, 0)},
+ 	{USB_DEVICE(0x0c45, 0x628e), SN9C20X(SOI968, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x628f), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x0c45, 0x62a0), SN9C20X(OV7670, 0x21, 0)},
+@@ -2421,6 +2457,8 @@ static const __devinitdata struct usb_device_id device_table[] = {
+ 	{USB_DEVICE(0x045e, 0x00f4), SN9C20X(OV9650, 0x30, 0)},
+ 	{USB_DEVICE(0x145f, 0x013d), SN9C20X(OV7660, 0x21, 0)},
+ 	{USB_DEVICE(0x0458, 0x7029), SN9C20X(HV7131R, 0x11, 0)},
++	{USB_DEVICE(0x0458, 0x704a), SN9C20X(MT9M112, 0x5d, 0)},
++	{USB_DEVICE(0x0458, 0x704c), SN9C20X(MT9M112, 0x5d, 0)},
+ 	{USB_DEVICE(0xa168, 0x0610), SN9C20X(HV7131R, 0x11, 0)},
+ 	{USB_DEVICE(0xa168, 0x0611), SN9C20X(HV7131R, 0x11, 0)},
+ 	{USB_DEVICE(0xa168, 0x0613), SN9C20X(HV7131R, 0x11, 0)},
+-- 
+1.6.1
+
+From 9a4ef004b953572b479c643f2314ea352b74d732 Mon Sep 17 00:00:00 2001
+From: Brian Johnson <brijohn@gmail.com>
+Date: Tue, 9 Mar 2010 19:57:55 -0500
+Subject: [PATCH] gspca - sn9c20x: Fix bug with OV9655 code
+
+Fixed buggy init sequence for the OV9655 sensor.
+Tested with a 0c45:6288 and 0c45:62b3.
+---
+ drivers/media/video/gspca/sn9c20x.c |   58 ++++++++++++++--------------------
+ 1 files changed, 24 insertions(+), 34 deletions(-)
+
+diff --git a/drivers/media/video/gspca/sn9c20x.c b/drivers/media/video/gspca/sn9c20x.c
+index 8684596..69a3aa3 100644
+--- a/drivers/media/video/gspca/sn9c20x.c
++++ b/drivers/media/video/gspca/sn9c20x.c
+@@ -934,40 +934,30 @@ static struct i2c_reg_u8 ov9650_init[] = {
+ };
+ 
+ static struct i2c_reg_u8 ov9655_init[] = {
+-	{0x12, 0x80}, {0x12, 0x01}, {0x0d, 0x00}, {0x0e, 0x61},
+-	{0x11, 0x80}, {0x13, 0xba}, {0x14, 0x2e}, {0x16, 0x24},
+-	{0x1e, 0x04}, {0x1e, 0x04}, {0x1e, 0x04}, {0x27, 0x08},
+-	{0x28, 0x08}, {0x29, 0x15}, {0x2c, 0x08}, {0x32, 0xbf},
+-	{0x34, 0x3d}, {0x35, 0x00}, {0x36, 0xf8}, {0x38, 0x12},
+-	{0x39, 0x57}, {0x3a, 0x00}, {0x3b, 0xcc}, {0x3c, 0x0c},
+-	{0x3d, 0x19}, {0x3e, 0x0c}, {0x3f, 0x01}, {0x41, 0x40},
+-	{0x42, 0x80}, {0x45, 0x46}, {0x46, 0x62}, {0x47, 0x2a},
+-	{0x48, 0x3c}, {0x4a, 0xf0}, {0x4b, 0xdc}, {0x4c, 0xdc},
+-	{0x4d, 0xdc}, {0x4e, 0xdc}, {0x69, 0x02}, {0x6c, 0x04},
+-	{0x6f, 0x9e}, {0x70, 0x05}, {0x71, 0x78}, {0x77, 0x02},
+-	{0x8a, 0x23}, {0x8c, 0x0d}, {0x90, 0x7e}, {0x91, 0x7c},
+-	{0x9f, 0x6e}, {0xa0, 0x6e}, {0xa5, 0x68}, {0xa6, 0x60},
+-	{0xa8, 0xc1}, {0xa9, 0xfa}, {0xaa, 0x92}, {0xab, 0x04},
+-	{0xac, 0x80}, {0xad, 0x80}, {0xae, 0x80}, {0xaf, 0x80},
+-	{0xb2, 0xf2}, {0xb3, 0x20}, {0xb5, 0x00}, {0xb6, 0xaf},
+-	{0xbb, 0xae}, {0xbc, 0x44}, {0xbd, 0x44}, {0xbe, 0x3b},
+-	{0xbf, 0x3a}, {0xc0, 0xe2}, {0xc1, 0xc8}, {0xc2, 0x01},
++	{0x12, 0x80}, {0x0e, 0x61}, {0x11, 0x80}, {0x13, 0xba},
++	{0x14, 0x2e}, {0x16, 0x24}, {0x1e, 0x04}, {0x27, 0x08},
++	{0x28, 0x08}, {0x29, 0x15}, {0x2c, 0x08}, {0x34, 0x3d},
++	{0x35, 0x00}, {0x38, 0x12}, {0x0f, 0x42}, {0x39, 0x57},
++	{0x3a, 0x00}, {0x3b, 0xcc}, {0x3c, 0x0c}, {0x3d, 0x19},
++	{0x3e, 0x0c}, {0x3f, 0x01}, {0x41, 0x40}, {0x42, 0x80},
++	{0x45, 0x46}, {0x46, 0x62}, {0x47, 0x2a}, {0x48, 0x3c},
++	{0x4a, 0xf0}, {0x4b, 0xdc}, {0x4c, 0xdc}, {0x4d, 0xdc},
++	{0x4e, 0xdc}, {0x6c, 0x04}, {0x6f, 0x9e}, {0x70, 0x05},
++	{0x71, 0x78}, {0x77, 0x02}, {0x8a, 0x23}, {0x90, 0x7e},
++	{0x91, 0x7c}, {0x9f, 0x6e}, {0xa0, 0x6e}, {0xa5, 0x68},
++	{0xa6, 0x60}, {0xa8, 0xc1}, {0xa9, 0xfa}, {0xaa, 0x92},
++	{0xab, 0x04}, {0xac, 0x80}, {0xad, 0x80}, {0xae, 0x80},
++	{0xaf, 0x80}, {0xb2, 0xf2}, {0xb3, 0x20}, {0xb5, 0x00},
++	{0xb6, 0xaf}, {0xbb, 0xae}, {0xbc, 0x44}, {0xbd, 0x44},
++	{0xbe, 0x3b}, {0xbf, 0x3a}, {0xc1, 0xc8}, {0xc2, 0x01},
+ 	{0xc4, 0x00}, {0xc6, 0x85}, {0xc7, 0x81}, {0xc9, 0xe0},
+-	{0xca, 0xe8}, {0xcc, 0xd8}, {0xcd, 0x93}, {0x12, 0x61},
++	{0xca, 0xe8}, {0xcc, 0xd8}, {0xcd, 0x93}, {0x2d, 0x00},
++	{0x2e, 0x00}, {0x01, 0x80}, {0x02, 0x80}, {0x12, 0x61},
+ 	{0x36, 0xfa}, {0x8c, 0x8d}, {0xc0, 0xaa}, {0x69, 0x0a},
+-	{0x03, 0x12}, {0x17, 0x14}, {0x18, 0x00}, {0x19, 0x01},
+-	{0x1a, 0x3d}, {0x32, 0xbf}, {0x11, 0x80}, {0x2a, 0x10},
+-	{0x2b, 0x0a}, {0x92, 0x00}, {0x93, 0x00}, {0x1e, 0x04},
+-	{0x1e, 0x04}, {0x10, 0x7c}, {0x04, 0x03}, {0xa1, 0x00},
+-	{0x2d, 0x00}, {0x2e, 0x00}, {0x00, 0x00}, {0x01, 0x80},
+-	{0x02, 0x80}, {0x12, 0x61}, {0x36, 0xfa}, {0x8c, 0x8d},
+-	{0xc0, 0xaa}, {0x69, 0x0a}, {0x03, 0x12}, {0x17, 0x14},
+-	{0x18, 0x00}, {0x19, 0x01}, {0x1a, 0x3d}, {0x32, 0xbf},
+-	{0x11, 0x80}, {0x2a, 0x10}, {0x2b, 0x0a}, {0x92, 0x00},
+-	{0x93, 0x00}, {0x04, 0x01}, {0x10, 0x1f}, {0xa1, 0x00},
+-	{0x00, 0x0a}, {0xa1, 0x00}, {0x10, 0x5d}, {0x04, 0x03},
+-	{0x00, 0x01}, {0xa1, 0x00}, {0x10, 0x7c}, {0x04, 0x03},
+-	{0x00, 0x03}, {0x00, 0x0a}, {0x00, 0x10}, {0x00, 0x13},
++	{0x03, 0x09}, {0x17, 0x16}, {0x18, 0x6e}, {0x19, 0x01},
++	{0x1a, 0x3e}, {0x32, 0x09}, {0x2a, 0x10}, {0x2b, 0x0a},
++	{0x92, 0x00}, {0x93, 0x00}, {0xa1, 0x00}, {0x10, 0x7c},
++	{0x04, 0x03}, {0x00, 0x13},
+ };
+ 
+ static struct i2c_reg_u16 mt9v112_init[] = {
+@@ -1267,8 +1257,8 @@ static int ov9655_init_sensor(struct gspca_dev *gspca_dev)
+ 	}
+ 	/* disable hflip and vflip */
+ 	gspca_dev->ctrl_dis = (1 << HFLIP_IDX) | (1 << VFLIP_IDX);
+-	sd->hstart = 0;
+-	sd->vstart = 7;
++	sd->hstart = 1;
++	sd->vstart = 2;
+ 	return 0;
+ }
+ 
+-- 
+1.6.1
+
+From: Max Thrun <bear24rw@gmail.com>
+Date: Sat, 27 Feb 2010 20:20:18 +0000 (-0300)
+Subject: V4L/DVB: gspca- ov534: Remove ambiguous controls
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=c8e6b4f9f77d44edef3ef9ffd25957a204beb444
+
+V4L/DVB: gspca- ov534: Remove ambiguous controls
+
+Remove Blue/Red Channel Target Value, they are meant for Black Level
+Calibration but it is not completely clear how to use them.
+
+Signed-off-by: Max Thrun <bear24rw@gmail.com>
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index 957e05e..2a0e8a3 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -60,8 +60,6 @@ struct sd {
+ 	u8 contrast;
+ 	u8 gain;
+ 	u8 exposure;
+-	u8 redblc;
+-	u8 blueblc;
+ 	u8 hue;
+ 	u8 autogain;
+ 	u8 awb;
+@@ -76,10 +74,6 @@ static int sd_setgain(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getgain(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setexposure(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getexposure(struct gspca_dev *gspca_dev, __s32 *val);
+-static int sd_setredblc(struct gspca_dev *gspca_dev, __s32 val);
+-static int sd_getredblc(struct gspca_dev *gspca_dev, __s32 *val);
+-static int sd_setblueblc(struct gspca_dev *gspca_dev, __s32 val);
+-static int sd_getblueblc(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setautogain(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getautogain(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setsharpness(struct gspca_dev *gspca_dev, __s32 val);
+@@ -156,34 +150,6 @@ static const struct ctrl sd_ctrls[] = {
+     },
+     {							/* 4 */
+ 	{
+-	    .id      = V4L2_CID_RED_BALANCE,
+-	    .type    = V4L2_CTRL_TYPE_INTEGER,
+-	    .name    = "Red Balance",
+-	    .minimum = 0,
+-	    .maximum = 255,
+-	    .step    = 1,
+-#define RED_BALANCE_DEF 128
+-	    .default_value = RED_BALANCE_DEF,
+-	},
+-	.set = sd_setredblc,
+-	.get = sd_getredblc,
+-    },
+-    {							/* 5 */
+-	{
+-	    .id      = V4L2_CID_BLUE_BALANCE,
+-	    .type    = V4L2_CTRL_TYPE_INTEGER,
+-	    .name    = "Blue Balance",
+-	    .minimum = 0,
+-	    .maximum = 255,
+-	    .step    = 1,
+-#define BLUE_BALANCE_DEF 128
+-	    .default_value = BLUE_BALANCE_DEF,
+-	},
+-	.set = sd_setblueblc,
+-	.get = sd_getblueblc,
+-    },
+-    {							/* 6 */
+-	{
+ 		.id      = V4L2_CID_HUE,
+ 		.type    = V4L2_CTRL_TYPE_INTEGER,
+ 		.name    = "Hue",
+@@ -196,7 +162,7 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_sethue,
+ 	.get = sd_gethue,
+     },
+-    {							/* 7 */
++    {							/* 5 */
+ 	{
+ 	    .id      = V4L2_CID_AUTOGAIN,
+ 	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+@@ -210,8 +176,8 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_setautogain,
+ 	.get = sd_getautogain,
+     },
+-#define AWB_IDX 8
+-    {							/* 8 */
++#define AWB_IDX 6
++    {							/* 6 */
+ 	{
+ 		.id      = V4L2_CID_AUTO_WHITE_BALANCE,
+ 		.type    = V4L2_CTRL_TYPE_BOOLEAN,
+@@ -225,7 +191,7 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_setawb,
+ 	.get = sd_getawb,
+     },
+-    {							/* 9 */
++    {							/* 7 */
+ 	{
+ 	    .id      = V4L2_CID_SHARPNESS,
+ 	    .type    = V4L2_CTRL_TYPE_INTEGER,
+@@ -239,7 +205,7 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_setsharpness,
+ 	.get = sd_getsharpness,
+     },
+-    {							/* 10 */
++    {							/* 8 */
+ 	{
+ 	    .id      = V4L2_CID_HFLIP,
+ 	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+@@ -253,7 +219,7 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_sethflip,
+ 	.get = sd_gethflip,
+     },
+-    {							/* 11 */
++    {							/* 9 */
+ 	{
+ 	    .id      = V4L2_CID_VFLIP,
+ 	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+@@ -722,20 +688,6 @@ static void setexposure(struct gspca_dev *gspca_dev)
+ 	sccb_reg_write(gspca_dev, 0x10, val << 1);
+ }
+ 
+-static void setredblc(struct gspca_dev *gspca_dev)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	sccb_reg_write(gspca_dev, 0x43, sd->redblc);
+-}
+-
+-static void setblueblc(struct gspca_dev *gspca_dev)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	sccb_reg_write(gspca_dev, 0x42, sd->blueblc);
+-}
+-
+ static void sethue(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+@@ -825,8 +777,6 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ 	sd->contrast = CONTRAST_DEF;
+ 	sd->gain = GAIN_DEF;
+ 	sd->exposure = EXPO_DEF;
+-	sd->redblc = RED_BALANCE_DEF;
+-	sd->blueblc = BLUE_BALANCE_DEF;
+ 	sd->hue = HUE_DEF;
+ #if AUTOGAIN_DEF != 0
+ 	sd->autogain = AUTOGAIN_DEF;
+@@ -907,8 +857,6 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	setautogain(gspca_dev);
+ 	setawb(gspca_dev);
+ 	setgain(gspca_dev);
+-	setredblc(gspca_dev);
+-	setblueblc(gspca_dev);
+ 	sethue(gspca_dev);
+ 	setexposure(gspca_dev);
+ 	setbrightness(gspca_dev);
+@@ -1092,42 +1040,6 @@ static int sd_getcontrast(struct gspca_dev *gspca_dev, __s32 *val)
+ 	return 0;
+ }
+ 
+-static int sd_setredblc(struct gspca_dev *gspca_dev, __s32 val)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	sd->redblc = val;
+-	if (gspca_dev->streaming)
+-		setredblc(gspca_dev);
+-	return 0;
+-}
+-
+-static int sd_getredblc(struct gspca_dev *gspca_dev, __s32 *val)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	*val = sd->redblc;
+-	return 0;
+-}
+-
+-static int sd_setblueblc(struct gspca_dev *gspca_dev, __s32 val)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	sd->blueblc = val;
+-	if (gspca_dev->streaming)
+-		setblueblc(gspca_dev);
+-	return 0;
+-}
+-
+-static int sd_getblueblc(struct gspca_dev *gspca_dev, __s32 *val)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	*val = sd->blueblc;
+-	return 0;
+-}
+-
+ static int sd_sethue(struct gspca_dev *gspca_dev, __s32 val)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+From: Antonio Ospite <ospite@studenti.unina.it>
+Date: Sat, 27 Feb 2010 20:20:19 +0000 (-0300)
+Subject: V4L/DVB: gspca - ov534: Remove hue control
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=6acd5f4ec11256cc11f8068f17121087765b5c7f
+
+V4L/DVB: gspca - ov534: Remove hue control
+
+Hue control doesn't work and the sensor datasheet is not clear about how
+to set hue properly.
+
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index 2a0e8a3..186827a 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -60,7 +60,6 @@ struct sd {
+ 	u8 contrast;
+ 	u8 gain;
+ 	u8 exposure;
+-	u8 hue;
+ 	u8 autogain;
+ 	u8 awb;
+ 	s8 sharpness;
+@@ -82,8 +81,6 @@ static int sd_sethflip(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_gethflip(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setvflip(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getvflip(struct gspca_dev *gspca_dev, __s32 *val);
+-static int sd_sethue(struct gspca_dev *gspca_dev, __s32 val);
+-static int sd_gethue(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setawb(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getawb(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setbrightness(struct gspca_dev *gspca_dev, __s32 val);
+@@ -150,20 +147,6 @@ static const struct ctrl sd_ctrls[] = {
+     },
+     {							/* 4 */
+ 	{
+-		.id      = V4L2_CID_HUE,
+-		.type    = V4L2_CTRL_TYPE_INTEGER,
+-		.name    = "Hue",
+-		.minimum = 0,
+-		.maximum = 255,
+-		.step    = 1,
+-#define HUE_DEF 143
+-		.default_value = HUE_DEF,
+-	},
+-	.set = sd_sethue,
+-	.get = sd_gethue,
+-    },
+-    {							/* 5 */
+-	{
+ 	    .id      = V4L2_CID_AUTOGAIN,
+ 	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+ 	    .name    = "Autogain",
+@@ -176,8 +159,8 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_setautogain,
+ 	.get = sd_getautogain,
+     },
+-#define AWB_IDX 6
+-    {							/* 6 */
++#define AWB_IDX 5
++    {							/* 5 */
+ 	{
+ 		.id      = V4L2_CID_AUTO_WHITE_BALANCE,
+ 		.type    = V4L2_CTRL_TYPE_BOOLEAN,
+@@ -191,7 +174,7 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_setawb,
+ 	.get = sd_getawb,
+     },
+-    {							/* 7 */
++    {							/* 6 */
+ 	{
+ 	    .id      = V4L2_CID_SHARPNESS,
+ 	    .type    = V4L2_CTRL_TYPE_INTEGER,
+@@ -205,7 +188,7 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_setsharpness,
+ 	.get = sd_getsharpness,
+     },
+-    {							/* 8 */
++    {							/* 7 */
+ 	{
+ 	    .id      = V4L2_CID_HFLIP,
+ 	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+@@ -219,7 +202,7 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_sethflip,
+ 	.get = sd_gethflip,
+     },
+-    {							/* 9 */
++    {							/* 8 */
+ 	{
+ 	    .id      = V4L2_CID_VFLIP,
+ 	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+@@ -688,13 +671,6 @@ static void setexposure(struct gspca_dev *gspca_dev)
+ 	sccb_reg_write(gspca_dev, 0x10, val << 1);
+ }
+ 
+-static void sethue(struct gspca_dev *gspca_dev)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	sccb_reg_write(gspca_dev, 0x01, sd->hue);
+-}
+-
+ static void setautogain(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+@@ -777,7 +753,6 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ 	sd->contrast = CONTRAST_DEF;
+ 	sd->gain = GAIN_DEF;
+ 	sd->exposure = EXPO_DEF;
+-	sd->hue = HUE_DEF;
+ #if AUTOGAIN_DEF != 0
+ 	sd->autogain = AUTOGAIN_DEF;
+ #else
+@@ -857,7 +832,6 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	setautogain(gspca_dev);
+ 	setawb(gspca_dev);
+ 	setgain(gspca_dev);
+-	sethue(gspca_dev);
+ 	setexposure(gspca_dev);
+ 	setbrightness(gspca_dev);
+ 	setcontrast(gspca_dev);
+@@ -1040,24 +1014,6 @@ static int sd_getcontrast(struct gspca_dev *gspca_dev, __s32 *val)
+ 	return 0;
+ }
+ 
+-static int sd_sethue(struct gspca_dev *gspca_dev, __s32 val)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	sd->hue = val;
+-	if (gspca_dev->streaming)
+-		sethue(gspca_dev);
+-	return 0;
+-}
+-
+-static int sd_gethue(struct gspca_dev *gspca_dev, __s32 *val)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	*val = sd->hue;
+-	return 0;
+-}
+-
+ static int sd_setautogain(struct gspca_dev *gspca_dev, __s32 val)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+From: Max Thrun <bear24rw@gmail.com>
+Date: Sat, 27 Feb 2010 20:20:20 +0000 (-0300)
+Subject: V4L/DVB: gspca - ov534: Fix autogain control, enable it by default
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=0de1d89b747863562f1fdf7501b8e1fb5d54b33e
+
+V4L/DVB: gspca - ov534: Fix autogain control, enable it by default
+
+* Use 'agc' instead of 'autogain' in the code so to align the naming
+    as in AEC/AWB.
+  * Tweak brightness and contrast default values.
+  * Fix setting/resetting registers values for AGC.
+  * Set actual gain back when disabling AGC.
+  * Skip setting GAIN register when AGC is enabled.
+  * Enable AGC by default.
+
+Note that as Auto Gain Control is now enabled by default, if you are
+using the driver for visual computing applications you might need to
+disable it explicitly in your software.
+
+Signed-off-by: Max Thrun <bear24rw@gmail.com>
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index 186827a..4058e22 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -60,7 +60,7 @@ struct sd {
+ 	u8 contrast;
+ 	u8 gain;
+ 	u8 exposure;
+-	u8 autogain;
++	u8 agc;
+ 	u8 awb;
+ 	s8 sharpness;
+ 	u8 hflip;
+@@ -73,8 +73,8 @@ static int sd_setgain(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getgain(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setexposure(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getexposure(struct gspca_dev *gspca_dev, __s32 *val);
+-static int sd_setautogain(struct gspca_dev *gspca_dev, __s32 val);
+-static int sd_getautogain(struct gspca_dev *gspca_dev, __s32 *val);
++static int sd_setagc(struct gspca_dev *gspca_dev, __s32 val);
++static int sd_getagc(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setsharpness(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getsharpness(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_sethflip(struct gspca_dev *gspca_dev, __s32 val);
+@@ -97,7 +97,7 @@ static const struct ctrl sd_ctrls[] = {
+ 		.minimum = 0,
+ 		.maximum = 255,
+ 		.step    = 1,
+-#define BRIGHTNESS_DEF 20
++#define BRIGHTNESS_DEF 0
+ 		.default_value = BRIGHTNESS_DEF,
+ 	},
+ 	.set = sd_setbrightness,
+@@ -111,7 +111,7 @@ static const struct ctrl sd_ctrls[] = {
+ 		.minimum = 0,
+ 		.maximum = 255,
+ 		.step    = 1,
+-#define CONTRAST_DEF 37
++#define CONTRAST_DEF 32
+ 		.default_value = CONTRAST_DEF,
+ 	},
+ 	.set = sd_setcontrast,
+@@ -149,15 +149,15 @@ static const struct ctrl sd_ctrls[] = {
+ 	{
+ 	    .id      = V4L2_CID_AUTOGAIN,
+ 	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+-	    .name    = "Autogain",
++	    .name    = "Auto Gain",
+ 	    .minimum = 0,
+ 	    .maximum = 1,
+ 	    .step    = 1,
+-#define AUTOGAIN_DEF 0
+-	    .default_value = AUTOGAIN_DEF,
++#define AGC_DEF 1
++	    .default_value = AGC_DEF,
+ 	},
+-	.set = sd_setautogain,
+-	.get = sd_getautogain,
++	.set = sd_setagc,
++	.get = sd_getagc,
+     },
+ #define AWB_IDX 5
+     {							/* 5 */
+@@ -639,6 +639,9 @@ static void setgain(struct gspca_dev *gspca_dev)
+ 	struct sd *sd = (struct sd *) gspca_dev;
+ 	u8 val;
+ 
++	if (sd->agc)
++		return;
++
+ 	val = sd->gain;
+ 	switch (val & 0x30) {
+ 	case 0x00:
+@@ -671,18 +674,22 @@ static void setexposure(struct gspca_dev *gspca_dev)
+ 	sccb_reg_write(gspca_dev, 0x10, val << 1);
+ }
+ 
+-static void setautogain(struct gspca_dev *gspca_dev)
++static void setagc(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+ 
+-	if (sd->autogain) {
+-		sccb_reg_write(gspca_dev, 0x13, 0xf7); /* AGC,AEC,AWB ON */
++	if (sd->agc) {
++		sccb_reg_write(gspca_dev, 0x13,
++				sccb_reg_read(gspca_dev, 0x13) | 0x04);
+ 		sccb_reg_write(gspca_dev, 0x64,
+ 				sccb_reg_read(gspca_dev, 0x64) | 0x03);
+ 	} else {
+-		sccb_reg_write(gspca_dev, 0x13, 0xf0); /* AGC,AEC,AWB OFF */
++		sccb_reg_write(gspca_dev, 0x13,
++				sccb_reg_read(gspca_dev, 0x13) & ~0x04);
+ 		sccb_reg_write(gspca_dev, 0x64,
+-				sccb_reg_read(gspca_dev, 0x64) & 0xfc);
++				sccb_reg_read(gspca_dev, 0x64) & ~0x03);
++
++		setgain(gspca_dev);
+ 	}
+ }
+ 
+@@ -753,8 +760,8 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ 	sd->contrast = CONTRAST_DEF;
+ 	sd->gain = GAIN_DEF;
+ 	sd->exposure = EXPO_DEF;
+-#if AUTOGAIN_DEF != 0
+-	sd->autogain = AUTOGAIN_DEF;
++#if AGC_DEF != 0
++	sd->agc = AGC_DEF;
+ #else
+ 	gspca_dev->ctrl_inac |= (1 << AWB_IDX);
+ #endif
+@@ -829,7 +836,7 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	}
+ 	set_frame_rate(gspca_dev);
+ 
+-	setautogain(gspca_dev);
++	setagc(gspca_dev);
+ 	setawb(gspca_dev);
+ 	setgain(gspca_dev);
+ 	setexposure(gspca_dev);
+@@ -1014,11 +1021,11 @@ static int sd_getcontrast(struct gspca_dev *gspca_dev, __s32 *val)
+ 	return 0;
+ }
+ 
+-static int sd_setautogain(struct gspca_dev *gspca_dev, __s32 val)
++static int sd_setagc(struct gspca_dev *gspca_dev, __s32 val)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+ 
+-	sd->autogain = val;
++	sd->agc = val;
+ 
+ 	if (gspca_dev->streaming) {
+ 
+@@ -1028,16 +1035,16 @@ static int sd_setautogain(struct gspca_dev *gspca_dev, __s32 val)
+ 			gspca_dev->ctrl_inac &= ~(1 << AWB_IDX);
+ 		else
+ 			gspca_dev->ctrl_inac |= (1 << AWB_IDX);
+-		setautogain(gspca_dev);
++		setagc(gspca_dev);
+ 	}
+ 	return 0;
+ }
+ 
+-static int sd_getautogain(struct gspca_dev *gspca_dev, __s32 *val)
++static int sd_getagc(struct gspca_dev *gspca_dev, __s32 *val)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+ 
+-	*val = sd->autogain;
++	*val = sd->agc;
+ 	return 0;
+ }
+ 
+From: Max Thrun <bear24rw@gmail.com>
+Date: Sat, 27 Feb 2010 20:20:21 +0000 (-0300)
+Subject: V4L/DVB: gspca - ov534: Add Auto Exposure
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=9f886b52dd32c4eac5d5be13f74824856ff32baf
+
+V4L/DVB: gspca - ov534: Add Auto Exposure
+
+This also makes manual exposure actually work: it never worked before
+because AEC was always enabled.
+
+Signed-off-by: Max Thrun <bear24rw@gmail.com>
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index 4058e22..2d89650 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -62,6 +62,7 @@ struct sd {
+ 	u8 exposure;
+ 	u8 agc;
+ 	u8 awb;
++	u8 aec;
+ 	s8 sharpness;
+ 	u8 hflip;
+ 	u8 vflip;
+@@ -83,6 +84,8 @@ static int sd_setvflip(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getvflip(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setawb(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getawb(struct gspca_dev *gspca_dev, __s32 *val);
++static int sd_setaec(struct gspca_dev *gspca_dev, __s32 val);
++static int sd_getaec(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setbrightness(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getbrightness(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setcontrast(struct gspca_dev *gspca_dev, __s32 val);
+@@ -176,6 +179,20 @@ static const struct ctrl sd_ctrls[] = {
+     },
+     {							/* 6 */
+ 	{
++		.id      = V4L2_CID_EXPOSURE_AUTO,
++		.type    = V4L2_CTRL_TYPE_BOOLEAN,
++		.name    = "Auto Exposure",
++		.minimum = 0,
++		.maximum = 1,
++		.step    = 1,
++#define AEC_DEF 1
++		.default_value = AEC_DEF,
++	},
++	.set = sd_setaec,
++	.get = sd_getaec,
++    },
++    {							/* 7 */
++	{
+ 	    .id      = V4L2_CID_SHARPNESS,
+ 	    .type    = V4L2_CTRL_TYPE_INTEGER,
+ 	    .name    = "Sharpness",
+@@ -188,7 +205,7 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_setsharpness,
+ 	.get = sd_getsharpness,
+     },
+-    {							/* 7 */
++    {							/* 8 */
+ 	{
+ 	    .id      = V4L2_CID_HFLIP,
+ 	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+@@ -202,7 +219,7 @@ static const struct ctrl sd_ctrls[] = {
+ 	.set = sd_sethflip,
+ 	.get = sd_gethflip,
+     },
+-    {							/* 8 */
++    {							/* 9 */
+ 	{
+ 	    .id      = V4L2_CID_VFLIP,
+ 	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+@@ -703,6 +720,20 @@ static void setawb(struct gspca_dev *gspca_dev)
+ 		sccb_reg_write(gspca_dev, 0x63, 0xaa);	/* AWB off */
+ }
+ 
++static void setaec(struct gspca_dev *gspca_dev)
++{
++	struct sd *sd = (struct sd *) gspca_dev;
++
++	if (sd->aec)
++		sccb_reg_write(gspca_dev, 0x13,
++				sccb_reg_read(gspca_dev, 0x13) | 0x01);
++	else {
++		sccb_reg_write(gspca_dev, 0x13,
++				sccb_reg_read(gspca_dev, 0x13) & ~0x01);
++		setexposure(gspca_dev);
++	}
++}
++
+ static void setsharpness(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+@@ -768,6 +799,7 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ #if AWB_DEF != 0
+ 	sd->awb = AWB_DEF
+ #endif
++	sd->aec = AEC_DEF;
+ #if SHARPNESS_DEF != 0
+ 	sd->sharpness = SHARPNESS_DEF;
+ #endif
+@@ -838,6 +870,7 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 
+ 	setagc(gspca_dev);
+ 	setawb(gspca_dev);
++	setaec(gspca_dev);
+ 	setgain(gspca_dev);
+ 	setexposure(gspca_dev);
+ 	setbrightness(gspca_dev);
+@@ -1066,6 +1099,24 @@ static int sd_getawb(struct gspca_dev *gspca_dev, __s32 *val)
+ 	return 0;
+ }
+ 
++static int sd_setaec(struct gspca_dev *gspca_dev, __s32 val)
++{
++	struct sd *sd = (struct sd *) gspca_dev;
++
++	sd->aec = val;
++	if (gspca_dev->streaming)
++		setaec(gspca_dev);
++	return 0;
++}
++
++static int sd_getaec(struct gspca_dev *gspca_dev, __s32 *val)
++{
++	struct sd *sd = (struct sd *) gspca_dev;
++
++	*val = sd->aec;
++	return 0;
++}
++
+ static int sd_setsharpness(struct gspca_dev *gspca_dev, __s32 val)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+From: Antonio Ospite <ospite@studenti.unina.it>
+Date: Mon, 1 Mar 2010 11:53:34 +0000 (-0300)
+Subject: V4L/DVB: gspca - ov534: Fix and document setting manual exposure
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=c8b4264e60b378aa73dc59d434c930bc9345c890
+
+V4L/DVB: gspca - ov534: Fix and document setting manual exposure
+
+Document that even if the state is a u8 value, both MSB and LSB are set
+as sd->exposure represents half of the value we are going to set into
+registers.
+
+Skip setting exposure when AEC is enabled.
+
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index 2d89650..4fda098 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -686,6 +686,15 @@ static void setexposure(struct gspca_dev *gspca_dev)
+ 	struct sd *sd = (struct sd *) gspca_dev;
+ 	u8 val;
+ 
++	if (sd->aec)
++		return;
++
++	/* 'val' is one byte and represents half of the exposure value we are
++	 * going to set into registers, a two bytes value:
++	 * 
++	 *    MSB: ((u16) val << 1) >> 8   == val >> 7
++	 *    LSB: ((u16) val << 1) & 0xff == val << 1
++	 */
+ 	val = sd->exposure;
+ 	sccb_reg_write(gspca_dev, 0x08, val >> 7);
+ 	sccb_reg_write(gspca_dev, 0x10, val << 1);
+From: Max Thrun <bear24rw@gmail.com>
+Date: Sat, 27 Feb 2010 20:20:23 +0000 (-0300)
+Subject: V4L/DVB: gspca - ov534: Fix Auto White Balance control
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=6a7410900b54e9af7f9282917a8bcbc9835ffaa1
+
+V4L/DVB: gspca - ov534: Fix Auto White Balance control
+
+Set only the needed bits for AWB, and enable it by default.
+
+Signed-off-by: Max Thrun <bear24rw@gmail.com>
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index 4fda098..3b538d7 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -171,7 +171,7 @@ static const struct ctrl sd_ctrls[] = {
+ 		.minimum = 0,
+ 		.maximum = 1,
+ 		.step    = 1,
+-#define AWB_DEF 0
++#define AWB_DEF 1
+ 		.default_value = AWB_DEF,
+ 	},
+ 	.set = sd_setawb,
+@@ -723,10 +723,17 @@ static void setawb(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+ 
+-	if (sd->awb)
+-		sccb_reg_write(gspca_dev, 0x63, 0xe0);	/* AWB on */
+-	else
+-		sccb_reg_write(gspca_dev, 0x63, 0xaa);	/* AWB off */
++	if (sd->awb) {
++		sccb_reg_write(gspca_dev, 0x13,
++				sccb_reg_read(gspca_dev, 0x13) | 0x02);
++		sccb_reg_write(gspca_dev, 0x63,
++				sccb_reg_read(gspca_dev, 0x63) | 0xc0);
++	} else {
++		sccb_reg_write(gspca_dev, 0x13,
++				sccb_reg_read(gspca_dev, 0x13) & ~0x02);
++		sccb_reg_write(gspca_dev, 0x63,
++				sccb_reg_read(gspca_dev, 0x63) & ~0xc0);
++	}
+ }
+ 
+ static void setaec(struct gspca_dev *gspca_dev)
+@@ -805,9 +812,7 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ #else
+ 	gspca_dev->ctrl_inac |= (1 << AWB_IDX);
+ #endif
+-#if AWB_DEF != 0
+-	sd->awb = AWB_DEF
+-#endif
++	sd->awb = AWB_DEF;
+ 	sd->aec = AEC_DEF;
+ #if SHARPNESS_DEF != 0
+ 	sd->sharpness = SHARPNESS_DEF;
+From: Max Thrun <bear24rw@gmail.com>
+Date: Sat, 27 Feb 2010 20:20:24 +0000 (-0300)
+Subject: V4L/DVB: gspca - ov534: Fixes for sharpness control
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=2bd647c5a4f8236b035f9db620930731ac77c957
+
+V4L/DVB: gspca - ov534: Fixes for sharpness control
+
+* Adjust comments for sharpness control
+  * Set default value unconditionally, for readability
+
+Signed-off-by: Max Thrun <bear24rw@gmail.com>
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index 3b538d7..f2077ea 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -756,8 +756,8 @@ static void setsharpness(struct gspca_dev *gspca_dev)
+ 	u8 val;
+ 
+ 	val = sd->sharpness;
+-	sccb_reg_write(gspca_dev, 0x91, val);	/* vga noise */
+-	sccb_reg_write(gspca_dev, 0x8e, val);	/* qvga noise */
++	sccb_reg_write(gspca_dev, 0x91, val);	/* Auto de-noise threshold */
++	sccb_reg_write(gspca_dev, 0x8e, val);	/* De-noise threshold */
+ }
+ 
+ static void sethflip(struct gspca_dev *gspca_dev)
+@@ -814,9 +814,7 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ #endif
+ 	sd->awb = AWB_DEF;
+ 	sd->aec = AEC_DEF;
+-#if SHARPNESS_DEF != 0
+ 	sd->sharpness = SHARPNESS_DEF;
+-#endif
+ #if HFLIP_DEF != 0
+ 	sd->hflip = HFLIP_DEF;
+ #endif
+From: Max Thrun <bear24rw@gmail.com>
+Date: Sat, 27 Feb 2010 20:20:25 +0000 (-0300)
+Subject: V4L/DVB: gspca - ov534: Fix unsetting hflip and vflip bits
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=9398cf3859a02fcc3a310393857d5cfca61647f3
+
+V4L/DVB: gspca - ov534: Fix unsetting hflip and vflip bits
+
+Also set default values unconditionally, for readability.
+
+Signed-off-by: Max Thrun <bear24rw@gmail.com>
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index f2077ea..8f01201 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -769,7 +769,7 @@ static void sethflip(struct gspca_dev *gspca_dev)
+ 				sccb_reg_read(gspca_dev, 0x0c) | 0x40);
+ 	else
+ 		sccb_reg_write(gspca_dev, 0x0c,
+-				sccb_reg_read(gspca_dev, 0x0c) & 0xbf);
++				sccb_reg_read(gspca_dev, 0x0c) & ~0x40);
+ }
+ 
+ static void setvflip(struct gspca_dev *gspca_dev)
+@@ -781,7 +781,7 @@ static void setvflip(struct gspca_dev *gspca_dev)
+ 				sccb_reg_read(gspca_dev, 0x0c) | 0x80);
+ 	else
+ 		sccb_reg_write(gspca_dev, 0x0c,
+-				sccb_reg_read(gspca_dev, 0x0c) & 0x7f);
++				sccb_reg_read(gspca_dev, 0x0c) & ~0x80);
+ }
+ 
+ /* this function is called at probe time */
+@@ -815,12 +815,8 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ 	sd->awb = AWB_DEF;
+ 	sd->aec = AEC_DEF;
+ 	sd->sharpness = SHARPNESS_DEF;
+-#if HFLIP_DEF != 0
+ 	sd->hflip = HFLIP_DEF;
+-#endif
+-#if VFLIP_DEF != 0
+ 	sd->vflip = VFLIP_DEF;
+-#endif
+ 
+ 	return 0;
+ }
+From: Antonio Ospite <ospite@studenti.unina.it>
+Date: Mon, 1 Mar 2010 11:54:33 +0000 (-0300)
+Subject: V4L/DVB: gspca - ov534: Cosmetics: fix indentation and hex digits
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=521acb59f1fa8d6a2bd37f8262da2b789014ac71
+
+V4L/DVB: gspca - ov534: Cosmetics: fix indentation and hex digits
+
+* Indent with tabs, not with spaces, nor with mixed style.
+  * Less indentation for controls index comments.
+  * Use lowercase hex digits.
+
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index 8f01201..8783844 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -92,147 +92,147 @@ static int sd_setcontrast(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getcontrast(struct gspca_dev *gspca_dev, __s32 *val);
+ 
+ static const struct ctrl sd_ctrls[] = {
+-    {							/* 0 */
+-	{
+-		.id      = V4L2_CID_BRIGHTNESS,
+-		.type    = V4L2_CTRL_TYPE_INTEGER,
+-		.name    = "Brightness",
+-		.minimum = 0,
+-		.maximum = 255,
+-		.step    = 1,
++	{	/* 0 */
++		{
++			.id      = V4L2_CID_BRIGHTNESS,
++			.type    = V4L2_CTRL_TYPE_INTEGER,
++			.name    = "Brightness",
++			.minimum = 0,
++			.maximum = 255,
++			.step    = 1,
+ #define BRIGHTNESS_DEF 0
+-		.default_value = BRIGHTNESS_DEF,
++			.default_value = BRIGHTNESS_DEF,
++		},
++		.set = sd_setbrightness,
++		.get = sd_getbrightness,
+ 	},
+-	.set = sd_setbrightness,
+-	.get = sd_getbrightness,
+-    },
+-    {							/* 1 */
+-	{
+-		.id      = V4L2_CID_CONTRAST,
+-		.type    = V4L2_CTRL_TYPE_INTEGER,
+-		.name    = "Contrast",
+-		.minimum = 0,
+-		.maximum = 255,
+-		.step    = 1,
++	{	/* 1 */
++		{
++			.id      = V4L2_CID_CONTRAST,
++			.type    = V4L2_CTRL_TYPE_INTEGER,
++			.name    = "Contrast",
++			.minimum = 0,
++			.maximum = 255,
++			.step    = 1,
+ #define CONTRAST_DEF 32
+-		.default_value = CONTRAST_DEF,
++			.default_value = CONTRAST_DEF,
++		},
++		.set = sd_setcontrast,
++		.get = sd_getcontrast,
+ 	},
+-	.set = sd_setcontrast,
+-	.get = sd_getcontrast,
+-    },
+-    {							/* 2 */
+-	{
+-	    .id      = V4L2_CID_GAIN,
+-	    .type    = V4L2_CTRL_TYPE_INTEGER,
+-	    .name    = "Main Gain",
+-	    .minimum = 0,
+-	    .maximum = 63,
+-	    .step    = 1,
++	{	/* 2 */
++		{
++			.id      = V4L2_CID_GAIN,
++			.type    = V4L2_CTRL_TYPE_INTEGER,
++			.name    = "Main Gain",
++			.minimum = 0,
++			.maximum = 63,
++			.step    = 1,
+ #define GAIN_DEF 20
+-	    .default_value = GAIN_DEF,
++			.default_value = GAIN_DEF,
++		},
++		.set = sd_setgain,
++		.get = sd_getgain,
+ 	},
+-	.set = sd_setgain,
+-	.get = sd_getgain,
+-    },
+-    {							/* 3 */
+-	{
+-	    .id      = V4L2_CID_EXPOSURE,
+-	    .type    = V4L2_CTRL_TYPE_INTEGER,
+-	    .name    = "Exposure",
+-	    .minimum = 0,
+-	    .maximum = 255,
+-	    .step    = 1,
++	{	/* 3 */
++		{
++			.id      = V4L2_CID_EXPOSURE,
++			.type    = V4L2_CTRL_TYPE_INTEGER,
++			.name    = "Exposure",
++			.minimum = 0,
++			.maximum = 255,
++			.step    = 1,
+ #define EXPO_DEF 120
+-	    .default_value = EXPO_DEF,
++			.default_value = EXPO_DEF,
++		},
++		.set = sd_setexposure,
++		.get = sd_getexposure,
+ 	},
+-	.set = sd_setexposure,
+-	.get = sd_getexposure,
+-    },
+-    {							/* 4 */
+-	{
+-	    .id      = V4L2_CID_AUTOGAIN,
+-	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+-	    .name    = "Auto Gain",
+-	    .minimum = 0,
+-	    .maximum = 1,
+-	    .step    = 1,
++	{	/* 4 */
++		{
++			.id      = V4L2_CID_AUTOGAIN,
++			.type    = V4L2_CTRL_TYPE_BOOLEAN,
++			.name    = "Auto Gain",
++			.minimum = 0,
++			.maximum = 1,
++			.step    = 1,
+ #define AGC_DEF 1
+-	    .default_value = AGC_DEF,
++			.default_value = AGC_DEF,
++		},
++		.set = sd_setagc,
++		.get = sd_getagc,
+ 	},
+-	.set = sd_setagc,
+-	.get = sd_getagc,
+-    },
+ #define AWB_IDX 5
+-    {							/* 5 */
+-	{
+-		.id      = V4L2_CID_AUTO_WHITE_BALANCE,
+-		.type    = V4L2_CTRL_TYPE_BOOLEAN,
+-		.name    = "Auto White Balance",
+-		.minimum = 0,
+-		.maximum = 1,
+-		.step    = 1,
++	{	/* 5 */
++		{
++			.id      = V4L2_CID_AUTO_WHITE_BALANCE,
++			.type    = V4L2_CTRL_TYPE_BOOLEAN,
++			.name    = "Auto White Balance",
++			.minimum = 0,
++			.maximum = 1,
++			.step    = 1,
+ #define AWB_DEF 1
+-		.default_value = AWB_DEF,
++			.default_value = AWB_DEF,
++		},
++		.set = sd_setawb,
++		.get = sd_getawb,
+ 	},
+-	.set = sd_setawb,
+-	.get = sd_getawb,
+-    },
+-    {							/* 6 */
+-	{
+-		.id      = V4L2_CID_EXPOSURE_AUTO,
+-		.type    = V4L2_CTRL_TYPE_BOOLEAN,
+-		.name    = "Auto Exposure",
+-		.minimum = 0,
+-		.maximum = 1,
+-		.step    = 1,
++	{	/* 6 */
++		{
++			.id      = V4L2_CID_EXPOSURE_AUTO,
++			.type    = V4L2_CTRL_TYPE_BOOLEAN,
++			.name    = "Auto Exposure",
++			.minimum = 0,
++			.maximum = 1,
++			.step    = 1,
+ #define AEC_DEF 1
+-		.default_value = AEC_DEF,
++			.default_value = AEC_DEF,
++		},
++		.set = sd_setaec,
++		.get = sd_getaec,
+ 	},
+-	.set = sd_setaec,
+-	.get = sd_getaec,
+-    },
+-    {							/* 7 */
+-	{
+-	    .id      = V4L2_CID_SHARPNESS,
+-	    .type    = V4L2_CTRL_TYPE_INTEGER,
+-	    .name    = "Sharpness",
+-	    .minimum = 0,
+-	    .maximum = 63,
+-	    .step    = 1,
++	{	/* 7 */
++		{
++			.id      = V4L2_CID_SHARPNESS,
++			.type    = V4L2_CTRL_TYPE_INTEGER,
++			.name    = "Sharpness",
++			.minimum = 0,
++			.maximum = 63,
++			.step    = 1,
+ #define SHARPNESS_DEF 0
+-	    .default_value = SHARPNESS_DEF,
++			.default_value = SHARPNESS_DEF,
++		},
++		.set = sd_setsharpness,
++		.get = sd_getsharpness,
+ 	},
+-	.set = sd_setsharpness,
+-	.get = sd_getsharpness,
+-    },
+-    {							/* 8 */
+-	{
+-	    .id      = V4L2_CID_HFLIP,
+-	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+-	    .name    = "HFlip",
+-	    .minimum = 0,
+-	    .maximum = 1,
+-	    .step    = 1,
++	{	/* 8 */
++		{
++			.id      = V4L2_CID_HFLIP,
++			.type    = V4L2_CTRL_TYPE_BOOLEAN,
++			.name    = "HFlip",
++			.minimum = 0,
++			.maximum = 1,
++			.step    = 1,
+ #define HFLIP_DEF 0
+-	    .default_value = HFLIP_DEF,
++			.default_value = HFLIP_DEF,
++		},
++		.set = sd_sethflip,
++		.get = sd_gethflip,
+ 	},
+-	.set = sd_sethflip,
+-	.get = sd_gethflip,
+-    },
+-    {							/* 9 */
+-	{
+-	    .id      = V4L2_CID_VFLIP,
+-	    .type    = V4L2_CTRL_TYPE_BOOLEAN,
+-	    .name    = "VFlip",
+-	    .minimum = 0,
+-	    .maximum = 1,
+-	    .step    = 1,
++	{	/* 9 */
++		{
++			.id      = V4L2_CID_VFLIP,
++			.type    = V4L2_CTRL_TYPE_BOOLEAN,
++			.name    = "VFlip",
++			.minimum = 0,
++			.maximum = 1,
++			.step    = 1,
+ #define VFLIP_DEF 0
+-	    .default_value = VFLIP_DEF,
++			.default_value = VFLIP_DEF,
++		},
++		.set = sd_setvflip,
++		.get = sd_getvflip,
+ 	},
+-	.set = sd_setvflip,
+-	.get = sd_getvflip,
+-    },
+ };
+ 
+ static const struct v4l2_pix_format ov772x_mode[] = {
+@@ -641,14 +641,14 @@ static void setbrightness(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+ 
+-	sccb_reg_write(gspca_dev, 0x9B, sd->brightness);
++	sccb_reg_write(gspca_dev, 0x9b, sd->brightness);
+ }
+ 
+ static void setcontrast(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+ 
+-	sccb_reg_write(gspca_dev, 0x9C, sd->contrast);
++	sccb_reg_write(gspca_dev, 0x9c, sd->contrast);
+ }
+ 
+ static void setgain(struct gspca_dev *gspca_dev)
+From: Mosalam Ebrahimi <m.ebrahimi@ieee.org>
+Date: Mon, 8 Mar 2010 16:52:17 +0000 (-0300)
+Subject: V4L/DVB: gspca - ov534: Add Powerline Frequency control
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=9bc3ac54da6a52969088caca9f6acdf682fa8ace
+
+V4L/DVB: gspca - ov534: Add Powerline Frequency control
+
+Note that setting this options to 50Hz can reduce the framerate, so it is
+still disabled (60Hz) by default.
+
+Signed-off-by: Mosalam Ebrahimi <m.ebrahimi@ieee.org>
+Signed-off-by: Antonio Ospite <ospite@studenti.unina.it>
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/ov534.c b/drivers/media/video/gspca/ov534.c
+index 8783844..29af17e 100644
+--- a/drivers/media/video/gspca/ov534.c
++++ b/drivers/media/video/gspca/ov534.c
+@@ -66,7 +66,7 @@ struct sd {
+ 	s8 sharpness;
+ 	u8 hflip;
+ 	u8 vflip;
+-
++	u8 freqfltr;
+ };
+ 
+ /* V4L2 controls supported by the driver */
+@@ -90,6 +90,10 @@ static int sd_setbrightness(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getbrightness(struct gspca_dev *gspca_dev, __s32 *val);
+ static int sd_setcontrast(struct gspca_dev *gspca_dev, __s32 val);
+ static int sd_getcontrast(struct gspca_dev *gspca_dev, __s32 *val);
++static int sd_setfreqfltr(struct gspca_dev *gspca_dev, __s32 val);
++static int sd_getfreqfltr(struct gspca_dev *gspca_dev, __s32 *val);
++static int sd_querymenu(struct gspca_dev *gspca_dev,
++		struct v4l2_querymenu *menu);
+ 
+ static const struct ctrl sd_ctrls[] = {
+ 	{	/* 0 */
+@@ -233,6 +237,20 @@ static const struct ctrl sd_ctrls[] = {
+ 		.set = sd_setvflip,
+ 		.get = sd_getvflip,
+ 	},
++	{	/* 10 */
++		{
++			.id      = V4L2_CID_POWER_LINE_FREQUENCY,
++			.type    = V4L2_CTRL_TYPE_MENU,
++			.name    = "Light Frequency Filter",
++			.minimum = 0,
++			.maximum = 1,
++			.step    = 1,
++#define FREQFLTR_DEF 0
++			.default_value = FREQFLTR_DEF,
++		},
++		.set = sd_setfreqfltr,
++		.get = sd_getfreqfltr,
++	},
+ };
+ 
+ static const struct v4l2_pix_format ov772x_mode[] = {
+@@ -784,6 +802,17 @@ static void setvflip(struct gspca_dev *gspca_dev)
+ 				sccb_reg_read(gspca_dev, 0x0c) & ~0x80);
+ }
+ 
++static void setfreqfltr(struct gspca_dev *gspca_dev)
++{
++	struct sd *sd = (struct sd *) gspca_dev;
++
++	if (sd->freqfltr == 0)
++		sccb_reg_write(gspca_dev, 0x2b, 0x00);
++	else
++		sccb_reg_write(gspca_dev, 0x2b, 0x9e);
++}
++
++
+ /* this function is called at probe time */
+ static int sd_config(struct gspca_dev *gspca_dev,
+ 		     const struct usb_device_id *id)
+@@ -817,6 +846,7 @@ static int sd_config(struct gspca_dev *gspca_dev,
+ 	sd->sharpness = SHARPNESS_DEF;
+ 	sd->hflip = HFLIP_DEF;
+ 	sd->vflip = VFLIP_DEF;
++	sd->freqfltr = FREQFLTR_DEF;
+ 
+ 	return 0;
+ }
+@@ -886,6 +916,7 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	setsharpness(gspca_dev);
+ 	setvflip(gspca_dev);
+ 	sethflip(gspca_dev);
++	setfreqfltr(gspca_dev);
+ 
+ 	ov534_set_led(gspca_dev, 1);
+ 	ov534_reg_write(gspca_dev, 0xe0, 0x00);
+@@ -1179,6 +1210,43 @@ static int sd_getvflip(struct gspca_dev *gspca_dev, __s32 *val)
+ 	return 0;
+ }
+ 
++static int sd_setfreqfltr(struct gspca_dev *gspca_dev, __s32 val)
++{
++	struct sd *sd = (struct sd *) gspca_dev;
++
++	sd->freqfltr = val;
++	if (gspca_dev->streaming)
++		setfreqfltr(gspca_dev);
++	return 0;
++}
++
++static int sd_getfreqfltr(struct gspca_dev *gspca_dev, __s32 *val)
++{
++	struct sd *sd = (struct sd *) gspca_dev;
++
++	*val = sd->freqfltr;
++	return 0;
++}
++
++static int sd_querymenu(struct gspca_dev *gspca_dev,
++		struct v4l2_querymenu *menu)
++{
++	switch (menu->id) {
++	case V4L2_CID_POWER_LINE_FREQUENCY:
++		switch (menu->index) {
++		case 0:         /* V4L2_CID_POWER_LINE_FREQUENCY_DISABLED */
++			strcpy((char *) menu->name, "Disabled");
++			return 0;
++		case 1:         /* V4L2_CID_POWER_LINE_FREQUENCY_50HZ */
++			strcpy((char *) menu->name, "50 Hz");
++			return 0;
++		}
++		break;
++	}
++
++	return -EINVAL;
++}
++
+ /* get stream parameters (framerate) */
+ static int sd_get_streamparm(struct gspca_dev *gspca_dev,
+ 			     struct v4l2_streamparm *parm)
+@@ -1230,6 +1298,7 @@ static const struct sd_desc sd_desc = {
+ 	.start    = sd_start,
+ 	.stopN    = sd_stopN,
+ 	.pkt_scan = sd_pkt_scan,
++	.querymenu = sd_querymenu,
+ 	.get_streamparm = sd_get_streamparm,
+ 	.set_streamparm = sd_set_streamparm,
+ };
+gspca_spca561: Fix LED on rev12a cameras
+
+From: Hans de Goede <hdegoede@redhat.com>
+
+Fix LED control on rev12a cameras and remove the unneeded
+sd_stop0 callback function.
+
+Priority: normal
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+
+--- a/drivers/media/video/gspca/spca561.c	Sat Feb 20 15:26:07 2010 +0100
++++ b/drivers/media/video/gspca/spca561.c	Sat Feb 27 11:18:14 2010 +0100
+@@ -280,9 +280,9 @@
+ };
+ 
+ static const __u16 spca561_161rev12A_data1[][2] = {
+-	{0x29, 0x8118},		/* white balance - was 21 */
+-	{0x08, 0x8114},		/* white balance - was 01 */
+-	{0x0e, 0x8112},		/* white balance - was 00 */
++	{0x29, 0x8118},		/* Control register (various enable bits) */
++	{0x08, 0x8114},		/* GPIO: Led off */
++	{0x0e, 0x8112},		/* 0x0e stream off 0x3e stream on */
+ 	{0x00, 0x8102},		/* white balance - new */
+ 	{0x92, 0x8804},
+ 	{0x04, 0x8802},		/* windows uses 08 */
+@@ -294,15 +294,11 @@
+ 	{0x07, 0x8601},
+ 	{0x07, 0x8602},
+ 	{0x04, 0x8501},
+-	{0x21, 0x8118},
+ 
+ 	{0x07, 0x8201},		/* windows uses 02 */
+ 	{0x08, 0x8200},
+ 	{0x01, 0x8200},
+ 
+-	{0x00, 0x8114},
+-	{0x01, 0x8114},		/* windows uses 00 */
+-
+ 	{0x90, 0x8604},
+ 	{0x00, 0x8605},
+ 	{0xb0, 0x8603},
+@@ -333,6 +329,9 @@
+ 	{0xf0, 0x8505},
+ 	{0x32, 0x850a},
+ /*	{0x99, 0x8700},		 * - white balance - new (removed) */
++	/* HDG we used to do this in stop0, making the init state and the state
++	   after a start / stop different, so do this here instead. */
++	{0x29, 0x8118},
+ 	{}
+ };
+ 
+@@ -676,6 +675,9 @@
+ 	setwhite(gspca_dev);
+ 	setgain(gspca_dev);
+ 	setexposure(gspca_dev);
++
++	/* Led ON (bit 3 -> 0 */
++	reg_w_val(gspca_dev->dev, 0x8114, 0x00);
+ 	return 0;
+ }
+ static int sd_start_72a(struct gspca_dev *gspca_dev)
+@@ -722,26 +724,14 @@
+ 
+ 	if (sd->chip_revision == Rev012A) {
+ 		reg_w_val(gspca_dev->dev, 0x8112, 0x0e);
++		/* Led Off (bit 3 -> 1 */
++		reg_w_val(gspca_dev->dev, 0x8114, 0x08);
+ 	} else {
+ 		reg_w_val(gspca_dev->dev, 0x8112, 0x20);
+ /*		reg_w_val(gspca_dev->dev, 0x8102, 0x00); ?? */
+ 	}
+ }
+ 
+-/* called on streamoff with alt 0 and on disconnect */
+-static void sd_stop0(struct gspca_dev *gspca_dev)
+-{
+-	struct sd *sd = (struct sd *) gspca_dev;
+-
+-	if (!gspca_dev->present)
+-		return;
+-	if (sd->chip_revision == Rev012A) {
+-		reg_w_val(gspca_dev->dev, 0x8118, 0x29);
+-		reg_w_val(gspca_dev->dev, 0x8114, 0x08);
+-	}
+-/*	reg_w_val(gspca_dev->dev, 0x8114, 0); */
+-}
+-
+ static void do_autogain(struct gspca_dev *gspca_dev)
+ {
+ 	struct sd *sd = (struct sd *) gspca_dev;
+@@ -1059,7 +1049,6 @@
+ 	.init = sd_init_12a,
+ 	.start = sd_start_12a,
+ 	.stopN = sd_stopN,
+-	.stop0 = sd_stop0,
+ 	.pkt_scan = sd_pkt_scan,
+ };
+ static const struct sd_desc sd_desc_72a = {
+@@ -1070,7 +1059,6 @@
+ 	.init = sd_init_72a,
+ 	.start = sd_start_72a,
+ 	.stopN = sd_stopN,
+-	.stop0 = sd_stop0,
+ 	.pkt_scan = sd_pkt_scan,
+ 	.dq_callback = do_autogain,
+ };
+
+gspca_spca561: Add support for camera button
+
+From: Hans de Goede <hdegoede@redhat.com>
+
+gspca_spca561: Add support for camera button
+
+Priority: normal
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+
+--- a/drivers/media/video/gspca/spca561.c	Sat Feb 27 11:18:14 2010 +0100
++++ b/drivers/media/video/gspca/spca561.c	Sun Feb 28 13:41:04 2010 +0100
+@@ -22,6 +22,7 @@
+ 
+ #define MODULE_NAME "spca561"
+ 
++#include <linux/input.h>
+ #include "gspca.h"
+ 
+ MODULE_AUTHOR("Michel Xhaard <mxhaard@users.sourceforge.net>");
+@@ -809,6 +810,23 @@
+ 	switch (*data++) {			/* sequence number */
+ 	case 0:					/* start of frame */
+ 		gspca_frame_add(gspca_dev, LAST_PACKET, NULL, 0);
++
++		/* This should never happen */
++		if (len < 2) {
++			PDEBUG(D_ERR, "Short SOF packet, ignoring");
++			gspca_dev->last_packet_type = DISCARD_PACKET;
++			return;
++		}
++
++#ifdef CONFIG_INPUT
++		if (data[0] & 0x20) {
++			input_report_key(gspca_dev->input_dev, KEY_CAMERA, 1);
++			input_sync(gspca_dev->input_dev);
++			input_report_key(gspca_dev->input_dev, KEY_CAMERA, 0);
++			input_sync(gspca_dev->input_dev);
++		}
++#endif
++
+ 		if (data[1] & 0x10) {
+ 			/* compressed bayer */
+ 			gspca_frame_add(gspca_dev, FIRST_PACKET, data, len);
+@@ -1050,6 +1068,9 @@
+ 	.start = sd_start_12a,
+ 	.stopN = sd_stopN,
+ 	.pkt_scan = sd_pkt_scan,
++#ifdef CONFIG_INPUT
++	.other_input = 1,
++#endif
+ };
+ static const struct sd_desc sd_desc_72a = {
+ 	.name = MODULE_NAME,
+@@ -1061,6 +1082,9 @@
+ 	.stopN = sd_stopN,
+ 	.pkt_scan = sd_pkt_scan,
+ 	.dq_callback = do_autogain,
++#ifdef CONFIG_INPUT
++	.other_input = 1,
++#endif
+ };
+ static const struct sd_desc *sd_desc[2] = {
+ 	&sd_desc_12a,
+
+gspca: make usb id 0461:0815 get handled by the right driver
+
+From: John Ellson <john.ellson@comcast.net>
+
+The 0461:0815 camera is spca561 based not spca508
+
+Priority: high
+
+Signed-off-by: John Ellson <john.ellson@comcast.net>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+
+diff -r 6687077521f7 -r 649d692c7bc1 linux/drivers/media/video/gspca/spca508.c
+--- a/drivers/media/video/gspca/spca508.c	Thu Mar 11 10:12:39 2010 +0100
++++ b/drivers/media/video/gspca/spca508.c	Wed Mar 17 14:22:58 2010 +0100
+@@ -1559,7 +1559,6 @@
+ static const __devinitdata struct usb_device_id device_table[] = {
+ 	{USB_DEVICE(0x0130, 0x0130), .driver_info = HamaUSBSightcam},
+ 	{USB_DEVICE(0x041e, 0x4018), .driver_info = CreativeVista},
+-	{USB_DEVICE(0x0461, 0x0815), .driver_info = MicroInnovationIC200},
+ 	{USB_DEVICE(0x0733, 0x0110), .driver_info = ViewQuestVQ110},
+ 	{USB_DEVICE(0x0af9, 0x0010), .driver_info = HamaUSBSightcam},
+ 	{USB_DEVICE(0x0af9, 0x0011), .driver_info = HamaUSBSightcam2},
+diff -r 6687077521f7 -r 649d692c7bc1 linux/drivers/media/video/gspca/spca561.c
+--- a/drivers/media/video/gspca/spca561.c	Thu Mar 11 10:12:39 2010 +0100
++++ b/drivers/media/video/gspca/spca561.c	Wed Mar 17 14:22:58 2010 +0100
+@@ -1096,6 +1096,7 @@
+ 	{USB_DEVICE(0x041e, 0x401a), .driver_info = Rev072A},
+ 	{USB_DEVICE(0x041e, 0x403b), .driver_info = Rev012A},
+ 	{USB_DEVICE(0x0458, 0x7004), .driver_info = Rev072A},
++	{USB_DEVICE(0x0461, 0x0815), .driver_info = Rev072A},
+ 	{USB_DEVICE(0x046d, 0x0928), .driver_info = Rev012A},
+ 	{USB_DEVICE(0x046d, 0x0929), .driver_info = Rev012A},
+ 	{USB_DEVICE(0x046d, 0x092a), .driver_info = Rev012A},
+From: Jean-François Moine <moinejf@free.fr>
+Date: Thu, 18 Feb 2010 07:12:06 +0000 (-0300)
+Subject: V4L/DVB: gspca - sonixj: Add vertical flip control for sensor hv7131r
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=f344792e0c1dd7e0029b7dd92612ff002646634e
+
+V4L/DVB: gspca - sonixj: Add vertical flip control for sensor hv7131r
+
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/sonixj.c b/drivers/media/video/gspca/sonixj.c
+index 4ece110..fea8075 100644
+--- a/drivers/media/video/gspca/sonixj.c
++++ b/drivers/media/video/gspca/sonixj.c
+@@ -282,7 +282,7 @@ static const struct ctrl sd_ctrls[] = {
+ static __u32 ctrl_dis[] = {
+ 	(1 << INFRARED_IDX) | (1 << VFLIP_IDX) | (1 << FREQ_IDX) |
+ 			(1 << AUTOGAIN_IDX),	/* SENSOR_ADCM1700 0 */
+-	(1 << INFRARED_IDX) | (1 << VFLIP_IDX) | (1 << FREQ_IDX),
++	(1 << INFRARED_IDX) | (1 << FREQ_IDX),
+ 						/* SENSOR_HV7131R 1 */
+ 	(1 << INFRARED_IDX) | (1 << VFLIP_IDX) | (1 << FREQ_IDX),
+ 						/* SENSOR_MI0360 2 */
+@@ -1780,23 +1780,34 @@ static void setautogain(struct gspca_dev *gspca_dev)
+ 		sd->ag_cnt = -1;
+ }
+ 
+-/* ov7630/ov7648 only */
++/* hv7131r/ov7630/ov7648 only */
+ static void setvflip(struct sd *sd)
+ {
+ 	u8 comn;
+ 
+ 	if (sd->gspca_dev.ctrl_dis & (1 << VFLIP_IDX))
+ 		return;
+-	if (sd->sensor == SENSOR_OV7630) {
++	switch (sd->sensor) {
++	case SENSOR_HV7131R:
++		comn = 0x18;			/* clkdiv = 1, ablcen = 1 */
++		if (sd->vflip)
++			comn |= 0x01;
++		i2c_w1(&sd->gspca_dev, 0x01, comn);	/* sctra */
++		break;
++	case SENSOR_OV7630:
+ 		comn = 0x02;
+ 		if (!sd->vflip)
+ 			comn |= 0x80;
+-	} else {
++		i2c_w1(&sd->gspca_dev, 0x75, comn);
++		break;
++	default:
++/*	case SENSOR_OV7648: */
+ 		comn = 0x06;
+ 		if (sd->vflip)
+ 			comn |= 0x80;
++		i2c_w1(&sd->gspca_dev, 0x75, comn);
++		break;
+ 	}
+-	i2c_w1(&sd->gspca_dev, 0x75, comn);
+ }
+ 
+ static void setsharpness(struct sd *sd)
+From: Jean-François Moine <moinejf@free.fr>
+Date: Thu, 18 Feb 2010 17:56:33 +0000 (-0300)
+Subject: V4L/DVB: gspca - sonixj: Set the vertical flip at capture start for all sensors
+X-Git-Url: http://git.linuxtv.org/jfrancois/gspca.git?a=commitdiff_plain;h=648399060d0e1dea17e6450e1cfa7629c5aa704b
+
+V4L/DVB: gspca - sonixj: Set the vertical flip at capture start for all sensors
+
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/sonixj.c b/drivers/media/video/gspca/sonixj.c
+index fea8075..2ccddcd 100644
+--- a/drivers/media/video/gspca/sonixj.c
++++ b/drivers/media/video/gspca/sonixj.c
+@@ -2082,7 +2082,6 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 		reg17 = 0x64;		/* 640 MCKSIZE */
+ 		break;
+ 	case SENSOR_OV7630:
+-		setvflip(sd);
+ 		reg17 = 0xe2;
+ 		reg1 = 0x44;
+ 		break;
+@@ -2154,11 +2153,7 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	reg_w1(gspca_dev, 0x17, reg17);
+ 	reg_w1(gspca_dev, 0x01, reg1);
+ 
+-	switch (sd->sensor) {
+-	case SENSOR_OV7630:
+-		setvflip(sd);
+-		break;
+-	}
++	setvflip(sd);
+ 	setbrightness(gspca_dev);
+ 	setcontrast(gspca_dev);
+ 	setautogain(gspca_dev);
+From: Jean-François Moine <moinejf@free.fr>
+Date: Wed, 17 Mar 2010 18:25:32 +0000 (-0300)
+Subject: V4L/DVB: gspca - sonixj: More static const and better array initialization
+X-Git-Url: http://git.linuxtv.org/v4l-dvb.git?a=commitdiff_plain;h=5bcd8657cca97ad5a9c159659f6ba857e35960b8
+
+V4L/DVB: gspca - sonixj: More static const and better array initialization
+
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/drivers/media/video/gspca/sonixj.c b/drivers/media/video/gspca/sonixj.c
+index 83d5773..eb43f22 100644
+--- a/drivers/media/video/gspca/sonixj.c
++++ b/drivers/media/video/gspca/sonixj.c
+@@ -66,17 +66,19 @@ struct sd {
+ #define BRIDGE_SN9C110 2
+ #define BRIDGE_SN9C120 3
+ 	u8 sensor;			/* Type of image sensor chip */
+-#define SENSOR_ADCM1700 0
+-#define SENSOR_HV7131R 1
+-#define SENSOR_MI0360 2
+-#define SENSOR_MO4000 3
+-#define SENSOR_MT9V111 4
+-#define SENSOR_OM6802 5
+-#define SENSOR_OV7630 6
+-#define SENSOR_OV7648 7
+-#define SENSOR_OV7660 8
+-#define SENSOR_PO1030 9
+-#define SENSOR_SP80708 10
++enum {
++	SENSOR_ADCM1700,
++	SENSOR_HV7131R,
++	SENSOR_MI0360,
++	SENSOR_MO4000,
++	SENSOR_MT9V111,
++	SENSOR_OM6802,
++	SENSOR_OV7630,
++	SENSOR_OV7648,
++	SENSOR_OV7660,
++	SENSOR_PO1030,
++	SENSOR_SP80708,
++} sensors;
+ 	u8 i2c_addr;
+ 
+ 	u8 *jpeg_hdr;
+@@ -280,29 +282,47 @@ static const struct ctrl sd_ctrls[] = {
+ };
+ 
+ /* table of the disabled controls */
+-static __u32 ctrl_dis[] = {
+-	(1 << INFRARED_IDX) | (1 << VFLIP_IDX) | (1 << FREQ_IDX) |
+-			(1 << AUTOGAIN_IDX),	/* SENSOR_ADCM1700 0 */
+-	(1 << INFRARED_IDX) | (1 << FREQ_IDX),
+-						/* SENSOR_HV7131R 1 */
+-	(1 << INFRARED_IDX) | (1 << VFLIP_IDX) | (1 << FREQ_IDX),
+-						/* SENSOR_MI0360 2 */
+-	(1 << INFRARED_IDX) | (1 << VFLIP_IDX) | (1 << FREQ_IDX),
+-						/* SENSOR_MO4000 3 */
+-	(1 << VFLIP_IDX) | (1 << FREQ_IDX),
+-						/* SENSOR_MT9V111 4 */
+-	(1 << INFRARED_IDX) | (1 << VFLIP_IDX) | (1 << FREQ_IDX),
+-						/* SENSOR_OM6802 5 */
+-	(1 << INFRARED_IDX),
+-						/* SENSOR_OV7630 6 */
+-	(1 << INFRARED_IDX),
+-						/* SENSOR_OV7648 7 */
+-	(1 << AUTOGAIN_IDX) | (1 << INFRARED_IDX) | (1 << VFLIP_IDX),
+-						/* SENSOR_OV7660 8 */
+-	(1 << AUTOGAIN_IDX) | (1 << INFRARED_IDX) | (1 << VFLIP_IDX) |
+-			      (1 << FREQ_IDX),	/* SENSOR_PO1030 9 */
+-	(1 << AUTOGAIN_IDX) | (1 << INFRARED_IDX) | (1 << VFLIP_IDX) |
+-			      (1 << FREQ_IDX),	/* SENSOR_SP80708 10 */
++static const __u32 ctrl_dis[] = {
++[SENSOR_ADCM1700] =	(1 << AUTOGAIN_IDX) |
++			(1 << INFRARED_IDX) |
++			(1 << VFLIP_IDX) |
++			(1 << FREQ_IDX),
++
++[SENSOR_HV7131R] =	(1 << INFRARED_IDX) |
++			(1 << FREQ_IDX),
++
++[SENSOR_MI0360] =	(1 << INFRARED_IDX) |
++			(1 << VFLIP_IDX) |
++			(1 << FREQ_IDX),
++
++[SENSOR_MO4000] =	(1 << INFRARED_IDX) |
++			(1 << VFLIP_IDX) |
++			(1 << FREQ_IDX),
++
++[SENSOR_MT9V111] =	(1 << VFLIP_IDX) |
++			(1 << FREQ_IDX),
++
++[SENSOR_OM6802] =	(1 << INFRARED_IDX) |
++			(1 << VFLIP_IDX) |
++			(1 << FREQ_IDX),
++
++[SENSOR_OV7630] =	(1 << INFRARED_IDX),
++
++[SENSOR_OV7648] =	(1 << INFRARED_IDX),
++
++[SENSOR_OV7660] =	(1 << AUTOGAIN_IDX) |
++			(1 << INFRARED_IDX) |
++			(1 << VFLIP_IDX),
++
++[SENSOR_PO1030] =	(1 << AUTOGAIN_IDX) |
++			(1 << INFRARED_IDX) |
++			(1 << VFLIP_IDX) |
++			(1 << FREQ_IDX),
++
++[SENSOR_SP80708] =	(1 << AUTOGAIN_IDX) |
++			(1 << INFRARED_IDX) |
++			(1 << VFLIP_IDX) |
++			(1 << FREQ_IDX),
+ };
+ 
+ static const struct v4l2_pix_format cif_mode[] = {
+@@ -455,17 +475,17 @@ static const u8 sn_sp80708[0x1c] = {
+ 
+ /* sequence specific to the sensors - !! index = SENSOR_xxx */
+ static const u8 *sn_tb[] = {
+-	sn_adcm1700,
+-	sn_hv7131,
+-	sn_mi0360,
+-	sn_mo4000,
+-	sn_mt9v111,
+-	sn_om6802,
+-	sn_ov7630,
+-	sn_ov7648,
+-	sn_ov7660,
+-	sn_po1030,
+-	sn_sp80708
++[SENSOR_ADCM1700] =	sn_adcm1700,
++[SENSOR_HV7131R] =	sn_hv7131,
++[SENSOR_MI0360] =	sn_mi0360,
++[SENSOR_MO4000] =	sn_mo4000,
++[SENSOR_MT9V111] =	sn_mt9v111,
++[SENSOR_OM6802] =	sn_om6802,
++[SENSOR_OV7630] =	sn_ov7630,
++[SENSOR_OV7648] =	sn_ov7648,
++[SENSOR_OV7660] =	sn_ov7660,
++[SENSOR_PO1030] =	sn_po1030,
++[SENSOR_SP80708] =	sn_sp80708
+ };
+ 
+ /* default gamma table */
+@@ -1068,18 +1088,18 @@ static const u8 sp80708_sensor_param1[][8] = {
+ 	{}
+ };
+ 
+-static const u8 (*sensor_init[11])[8] = {
+-	adcm1700_sensor_init,	/* ADCM1700 0 */
+-	hv7131r_sensor_init,	/* HV7131R 1 */
+-	mi0360_sensor_init,	/* MI0360 2 */
+-	mo4000_sensor_init,	/* MO4000 3 */
+-	mt9v111_sensor_init,	/* MT9V111 4 */
+-	om6802_sensor_init,	/* OM6802 5 */
+-	ov7630_sensor_init,	/* OV7630 6 */
+-	ov7648_sensor_init,	/* OV7648 7 */
+-	ov7660_sensor_init,	/* OV7660 8 */
+-	po1030_sensor_init,	/* PO1030 9 */
+-	sp80708_sensor_init,	/* SP80708 10 */
++static const u8 (*sensor_init[])[8] = {
++[SENSOR_ADCM1700] =	adcm1700_sensor_init,
++[SENSOR_HV7131R] =	hv7131r_sensor_init,
++[SENSOR_MI0360] =	mi0360_sensor_init,
++[SENSOR_MO4000] =	mo4000_sensor_init,
++[SENSOR_MT9V111] =	mt9v111_sensor_init,
++[SENSOR_OM6802] =	om6802_sensor_init,
++[SENSOR_OV7630] =	ov7630_sensor_init,
++[SENSOR_OV7648] =	ov7648_sensor_init,
++[SENSOR_OV7660] =	ov7660_sensor_init,
++[SENSOR_PO1030] =	po1030_sensor_init,
++[SENSOR_SP80708] =	sp80708_sensor_init,
+ };
+ 
+ /* read <len> bytes to gspca_dev->usb_buf */
+@@ -1702,7 +1722,7 @@ static void setcolors(struct gspca_dev *gspca_dev)
+ 	struct sd *sd = (struct sd *) gspca_dev;
+ 	int i, v;
+ 	u8 reg8a[12];			/* U & V gains */
+-	static s16 uv[6] = {		/* same as reg84 in signed decimal */
++	static const s16 uv[6] = {	/* same as reg84 in signed decimal */
+ 		-24, -38, 64,		/* UR UG UB */
+ 		 62, -51, -9		/* VR VG VB */
+ 	};
+From: Jean-François Moine <moinejf@free.fr>
+Date: Thu, 18 Mar 2010 08:15:30 +0000 (-0300)
+Subject: V4L/DVB: gspca - sonixj: Add webcam 0c45:6142 with sensors gc0307 and po2030n
+X-Git-Url: http://git.linuxtv.org/v4l-dvb.git?a=commitdiff_plain;h=7ece2ad1a65a3c92c2573ee5c79d45159cbd6183
+
+V4L/DVB: gspca - sonixj: Add webcam 0c45:6142 with sensors gc0307 and po2030n
+
+Signed-off-by: Jean-François Moine <moinejf@free.fr>
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+---
+
+diff --git a/Documentation/video4linux/gspca.txt b/Documentation/video4linux/gspca.txt
+index 181b9e6..9475e1e 100644
+--- a/Documentation/video4linux/gspca.txt
++++ b/Documentation/video4linux/gspca.txt
+@@ -305,6 +305,7 @@ sonixj		0c45:6138	Sn9c120 Mo4000
+ sonixj		0c45:613a	Microdia Sonix PC Camera
+ sonixj		0c45:613b	Surfer SN-206
+ sonixj		0c45:613c	Sonix Pccam168
++sonixj		0c45:6142	Hama PC-Webcam AC-150
+ sonixj		0c45:6143	Sonix Pccam168
+ sonixj		0c45:6148	Digitus DA-70811/ZSMC USB PC Camera ZS211/Microdia
+ sonixj		0c45:614a	Frontech E-Ccam (JIL-2225)
+diff --git a/drivers/media/video/gspca/sonixj.c b/drivers/media/video/gspca/sonixj.c
+index eb43f22..5e727aa 100644
+--- a/drivers/media/video/gspca/sonixj.c
++++ b/drivers/media/video/gspca/sonixj.c
+@@ -68,6 +68,7 @@ struct sd {
+ 	u8 sensor;			/* Type of image sensor chip */
+ enum {
+ 	SENSOR_ADCM1700,
++	SENSOR_GC0307,
+ 	SENSOR_HV7131R,
+ 	SENSOR_MI0360,
+ 	SENSOR_MO4000,
+@@ -77,6 +78,7 @@ enum {
+ 	SENSOR_OV7648,
+ 	SENSOR_OV7660,
+ 	SENSOR_PO1030,
++	SENSOR_PO2030N,
+ 	SENSOR_SP80708,
+ } sensors;
+ 	u8 i2c_addr;
+@@ -288,6 +290,11 @@ static const __u32 ctrl_dis[] = {
+ 			(1 << VFLIP_IDX) |
+ 			(1 << FREQ_IDX),
+ 
++[SENSOR_GC0307] =	(1 << AUTOGAIN_IDX) |
++			(1 << INFRARED_IDX) |
++			(1 << VFLIP_IDX) |
++			(1 << FREQ_IDX),
++
+ [SENSOR_HV7131R] =	(1 << INFRARED_IDX) |
+ 			(1 << FREQ_IDX),
+ 
+@@ -319,6 +326,11 @@ static const __u32 ctrl_dis[] = {
+ 			(1 << VFLIP_IDX) |
+ 			(1 << FREQ_IDX),
+ 
++[SENSOR_PO2030N] =	(1 << AUTOGAIN_IDX) |
++			(1 << INFRARED_IDX) |
++			(1 << VFLIP_IDX) |
++			(1 << FREQ_IDX),
++
+ [SENSOR_SP80708] =	(1 << AUTOGAIN_IDX) |
+ 			(1 << INFRARED_IDX) |
+ 			(1 << VFLIP_IDX) |
+@@ -362,7 +374,17 @@ static const u8 sn_adcm1700[0x1c] = {
+ 	0x06,	0x00,	0x00,	0x00
+ };
+ 
+-/*Data from sn9c102p+hv7131r */
++static const u8 sn_gc0307[0x1c] = {
++/*	reg0	reg1	reg2	reg3	reg4	reg5	reg6	reg7 */
++	0x00,	0x61,	0x62,	0x00,	0x1a,	0x00,	0x00,	0x00,
++/*	reg8	reg9	rega	regb	regc	regd	rege	regf */
++	0x80,	0x21,	0x00,	0x00,	0x00,	0x00,	0x00,	0x00,
++/*	reg10	reg11	reg12	reg13	reg14	reg15	reg16	reg17 */
++	0x03,	0x00,	0x03,	0x01,	0x08,	0x28,	0x1e,	0x02,
++/*	reg18	reg19	reg1a	reg1b */
++	0x06,	0x00,	0x00,	0x00
++};
++
+ static const u8 sn_hv7131[0x1c] = {
+ /*	reg0	reg1	reg2	reg3	reg4	reg5	reg6	reg7 */
+ 	0x00,	0x03,	0x64,	0x00,	0x1a,	0x20,	0x20,	0x20,
+@@ -462,6 +484,17 @@ static const u8 sn_po1030[0x1c] = {
+ 	0x07,	0x00,	0x00,	0x00
+ };
+ 
++static const u8 sn_po2030n[0x1c] = {
++/*	reg0	reg1	reg2	reg3	reg4	reg5	reg6	reg7 */
++	0x00,	0x63,	0x40,	0x00,	0x1a,	0x00,	0x00,	0x00,
++/*	reg8	reg9	rega	regb	regc	regd	rege	regf */
++	0x81,	0x6e,	0x00,	0x00,	0x00,	0x00,	0x00,	0x00,
++/*	reg10	reg11	reg12	reg13	reg14	reg15	reg16	reg17 */
++	0x03,	0x00,	0x00,	0x01,	0x14,	0x28,	0x1e,	0x00,
++/*	reg18	reg19	reg1a	reg1b */
++	0x07,	0x00,	0x00,	0x00
++};
++
+ static const u8 sn_sp80708[0x1c] = {
+ /*	reg0	reg1	reg2	reg3	reg4	reg5	reg6	reg7 */
+ 	0x00,	0x63,	0x60,	0x00,	0x1a,	0x20,	0x20,	0x20,
+@@ -476,6 +509,7 @@ static const u8 sn_sp80708[0x1c] = {
+ /* sequence specific to the sensors - !! index = SENSOR_xxx */
+ static const u8 *sn_tb[] = {
+ [SENSOR_ADCM1700] =	sn_adcm1700,
++[SENSOR_GC0307] =	sn_gc0307,
+ [SENSOR_HV7131R] =	sn_hv7131,
+ [SENSOR_MI0360] =	sn_mi0360,
+ [SENSOR_MO4000] =	sn_mo4000,
+@@ -485,6 +519,7 @@ static const u8 *sn_tb[] = {
+ [SENSOR_OV7648] =	sn_ov7648,
+ [SENSOR_OV7660] =	sn_ov7660,
+ [SENSOR_PO1030] =	sn_po1030,
++[SENSOR_PO2030N] =	sn_po2030n,
+ [SENSOR_SP80708] =	sn_sp80708
+ };
+ 
+@@ -503,8 +538,13 @@ static const u8 gamma_spec_1[17] = {
+ 	0x08, 0x3a, 0x52, 0x65, 0x75, 0x83, 0x91, 0x9d,
+ 	0xa9, 0xb4, 0xbe, 0xc8, 0xd2, 0xdb, 0xe4, 0xed, 0xf5
+ };
+-/* gamma for sensor SP80708 */
++/* gamma for sensor GC0307 */
+ static const u8 gamma_spec_2[17] = {
++	0x14, 0x37, 0x50, 0x6a, 0x7c, 0x8d, 0x9d, 0xab,
++	0xb5, 0xbf, 0xc2, 0xcb, 0xd1, 0xd6, 0xdb, 0xe1, 0xeb
++};
++/* gamma for sensor SP80708 */
++static const u8 gamma_spec_3[17] = {
+ 	0x0a, 0x2d, 0x4e, 0x68, 0x7d, 0x8f, 0x9f, 0xab,
+ 	0xb7, 0xc2, 0xcc, 0xd3, 0xd8, 0xde, 0xe2, 0xe5, 0xe6
+ };
+@@ -552,6 +592,64 @@ static const u8 adcm1700_sensor_param1[][8] = {
+ 	{0xb0, 0x51, 0x32, 0x00, 0xa2, 0x00, 0x00, 0x10},
+ 	{}
+ };
++static const u8 gc0307_sensor_init[][8] = {
++	{0xa0, 0x21, 0x43, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x44, 0xa2, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x01, 0x6a, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x02, 0x70, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x10, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x11, 0x05, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x05, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x06, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x07, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x08, 0x02, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x09, 0x01, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x0a, 0xe8, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x0b, 0x02, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x0c, 0x80, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x0d, 0x22, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x0e, 0x02, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x0f, 0xb2, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x12, 0x70, 0x00, 0x00, 0x00, 0x10},
++	{0xdd, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, /*delay 10ms*/
++	{0xa0, 0x21, 0x13, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x15, 0xb8, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x16, 0x13, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x17, 0x52, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x18, 0x50, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x1e, 0x0d, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x1f, 0x32, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x61, 0x90, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x63, 0x70, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x65, 0x98, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x67, 0x90, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x03, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x04, 0x96, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x45, 0x27, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x47, 0x2c, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x43, 0x47, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x44, 0xd8, 0x00, 0x00, 0x00, 0x10},
++	{}
++};
++static const u8 gc0307_sensor_param1[][8] = {
++	{0xa0, 0x21, 0x68, 0x13, 0x00, 0x00, 0x00, 0x10},
++	{0xd0, 0x21, 0x61, 0x80, 0x00, 0x80, 0x00, 0x10},
++	{0xc0, 0x21, 0x65, 0x80, 0x00, 0x80, 0x00, 0x10},
++	{0xc0, 0x21, 0x63, 0xa0, 0x00, 0xa6, 0x00, 0x10},
++/*param3*/
++	{0xa0, 0x21, 0x01, 0x6e, 0x00, 0x00, 0x00, 0x10},
++	{0xa0, 0x21, 0x02, 0x88, 0x00, 0x00, 0x00, 0x10},
++
++	{0xa0, 0x21, 0x68, 0x22, 0x00, 0x00, 0x00, 0x10},
++	{0xdd, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
++	{0xa0, 0x21, 0x03, 0x07, 0x00, 0x00, 0x00, 0x10},
++	{0xdd, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
++	{0xa0, 0x21, 0x04, 0x91, 0x00, 0x00, 0x00, 0x10},
++	{}
++};
++
+ static const u8 hv7131r_sensor_init[][8] = {
+ 	{0xc1, 0x11, 0x01, 0x08, 0x01, 0x00, 0x00, 0x10},
+ 	{0xb1, 0x11, 0x34, 0x17, 0x7f, 0x00, 0x00, 0x10},
+@@ -1003,6 +1101,82 @@ static const u8 po1030_sensor_param1[][8] = {
+ 	{}
+ };
+ 
++static const u8 po2030n_sensor_init[][8] = {
++	{0xa1, 0x6e, 0x1e, 0x1a, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x1f, 0x99, 0x00, 0x00, 0x00, 0x10},
++	{0xdd, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, /* delay 10ms */
++	{0xa1, 0x6e, 0x1e, 0x0a, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x1f, 0x19, 0x00, 0x00, 0x00, 0x10},
++	{0xdd, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, /* delay 10ms */
++	{0xa1, 0x6e, 0x20, 0x44, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x04, 0x03, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x05, 0x70, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x06, 0x02, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x07, 0x25, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x08, 0x00, 0xd0, 0x00, 0x08, 0x10},
++	{0xd1, 0x6e, 0x0c, 0x03, 0x50, 0x01, 0xe8, 0x10},
++	{0xd1, 0x6e, 0x1d, 0x20, 0x0a, 0x19, 0x44, 0x10},
++	{0xd1, 0x6e, 0x21, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x25, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x29, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x2d, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x31, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x35, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x39, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x3d, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x41, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x45, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x49, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x4d, 0x00, 0x00, 0x00, 0xed, 0x10},
++	{0xd1, 0x6e, 0x51, 0x17, 0x4a, 0x2f, 0xc0, 0x10},
++	{0xd1, 0x6e, 0x55, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x59, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x5d, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x61, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x65, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x69, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x6d, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x71, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x75, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x79, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x7d, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x81, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x85, 0x00, 0x00, 0x00, 0x08, 0x10},
++	{0xd1, 0x6e, 0x89, 0x01, 0xe8, 0x00, 0x01, 0x10},
++	{0xa1, 0x6e, 0x8d, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x21, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x25, 0x00, 0x00, 0x00, 0x01, 0x10},
++	{0xd1, 0x6e, 0x29, 0xe6, 0x00, 0xbd, 0x03, 0x10},
++	{0xd1, 0x6e, 0x2d, 0x41, 0x38, 0x68, 0x40, 0x10},
++	{0xd1, 0x6e, 0x31, 0x2b, 0x00, 0x36, 0x00, 0x10},
++	{0xd1, 0x6e, 0x35, 0x30, 0x30, 0x08, 0x00, 0x10},
++	{0xd1, 0x6e, 0x39, 0x00, 0x00, 0x33, 0x06, 0x10},
++	{0xb1, 0x6e, 0x3d, 0x06, 0x02, 0x00, 0x00, 0x10},
++	{}
++};
++static const u8 po2030n_sensor_param1[][8] = {
++	{0xa1, 0x6e, 0x1a, 0x01, 0x00, 0x00, 0x00, 0x10},
++	{0xdd, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, /* delay 8ms */
++	{0xa1, 0x6e, 0x1b, 0xf4, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x15, 0x04, 0x00, 0x00, 0x00, 0x10},
++	{0xd1, 0x6e, 0x16, 0x50, 0x40, 0x49, 0x40, 0x10},
++/*param2*/
++	{0xa1, 0x6e, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x04, 0x03, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x05, 0x6f, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x06, 0x02, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x07, 0x25, 0x00, 0x00, 0x00, 0x10},
++	{0xa1, 0x6e, 0x15, 0x04, 0x00, 0x00, 0x00, 0x10},
++	{0xc1, 0x6e, 0x16, 0x52, 0x40, 0x48, 0x00, 0x10},
++/*after start*/
++	{0xa1, 0x6e, 0x15, 0x0f, 0x00, 0x00, 0x00, 0x10},
++	{0xdd, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, /* delay 5ms */
++	{0xa1, 0x6e, 0x1a, 0x05, 0x00, 0x00, 0x00, 0x10},
++	{0xdd, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, /* delay 5ms */
++	{0xa1, 0x6e, 0x1b, 0x53, 0x00, 0x00, 0x00, 0x10},
++	{}
++};
++
+ static const u8 sp80708_sensor_init[][8] = {
+ 	{0xa1, 0x18, 0x06, 0xf9, 0x00, 0x00, 0x00, 0x10},
+ 	{0xa1, 0x18, 0x09, 0x1f, 0x00, 0x00, 0x00, 0x10},
+@@ -1090,6 +1264,7 @@ static const u8 sp80708_sensor_param1[][8] = {
+ 
+ static const u8 (*sensor_init[])[8] = {
+ [SENSOR_ADCM1700] =	adcm1700_sensor_init,
++[SENSOR_GC0307] =	gc0307_sensor_init,
+ [SENSOR_HV7131R] =	hv7131r_sensor_init,
+ [SENSOR_MI0360] =	mi0360_sensor_init,
+ [SENSOR_MO4000] =	mo4000_sensor_init,
+@@ -1099,6 +1274,7 @@ static const u8 (*sensor_init[])[8] = {
+ [SENSOR_OV7648] =	ov7648_sensor_init,
+ [SENSOR_OV7660] =	ov7660_sensor_init,
+ [SENSOR_PO1030] =	po1030_sensor_init,
++[SENSOR_PO2030N] =	po2030n_sensor_init,
+ [SENSOR_SP80708] =	sp80708_sensor_init,
+ };
+ 
+@@ -1168,7 +1344,8 @@ static void i2c_w1(struct gspca_dev *gspca_dev, u8 reg, u8 val)
+ 	PDEBUG(D_USBO, "i2c_w2 [%02x] = %02x", reg, val);
+ 	switch (sd->sensor) {
+ 	case SENSOR_ADCM1700:
+-	case SENSOR_OM6802:		/* i2c command = a0 (100 kHz) */
++	case SENSOR_OM6802:
++	case SENSOR_GC0307:		/* i2c command = a0 (100 kHz) */
+ 		gspca_dev->usb_buf[0] = 0x80 | (2 << 4);
+ 		break;
+ 	default:			/* i2c command = a1 (400 kHz) */
+@@ -1215,7 +1392,8 @@ static void i2c_r(struct gspca_dev *gspca_dev, u8 reg, int len)
+ 
+ 	switch (sd->sensor) {
+ 	case SENSOR_ADCM1700:
+-	case SENSOR_OM6802:		/* i2c command = 90 (100 kHz) */
++	case SENSOR_OM6802:
++	case SENSOR_GC0307:		/* i2c command = a0 (100 kHz) */
+ 		mode[0] = 0x80 | 0x10;
+ 		break;
+ 	default:			/* i2c command = 91 (400 kHz) */
+@@ -1354,6 +1532,46 @@ static void ov7648_probe(struct gspca_dev *gspca_dev)
+ 		gspca_dev->usb_buf[3], gspca_dev->usb_buf[4]);
+ }
+ 
++/* 0c45:6142 sensor may be po2030n, gc0305 or gc0307 */
++static void po2030n_probe(struct gspca_dev *gspca_dev)
++{
++	struct sd *sd = (struct sd *) gspca_dev;
++
++	/* check gc0307 */
++	reg_w1(gspca_dev, 0x17, 0x62);
++	reg_w1(gspca_dev, 0x01, 0x08);
++	reg_w1(gspca_dev, 0x02, 0x22);
++	sd->i2c_addr = 0x21;
++	i2c_r(gspca_dev, 0x00, 1);
++
++	reg_w1(gspca_dev, 0x01, 0x29);		/* reset */
++	reg_w1(gspca_dev, 0x17, 0x42);
++
++	if (gspca_dev->usb_buf[4] == 0x99) {	/* gc0307 (?) */
++		PDEBUG(D_PROBE, "Sensor gc0307");
++		sd->sensor = SENSOR_GC0307;
++		return;
++	}
++
++	/* check po2030n */
++	reg_w1(gspca_dev, 0x17, 0x62);
++	reg_w1(gspca_dev, 0x01, 0x0a);
++	sd->i2c_addr = 0x6e;
++	i2c_r(gspca_dev, 0x00, 2);
++
++	reg_w1(gspca_dev, 0x01, 0x29);
++	reg_w1(gspca_dev, 0x17, 0x42);
++
++	if (gspca_dev->usb_buf[3] == 0x20
++	 && gspca_dev->usb_buf[4] == 0x30)
++		PDEBUG(D_PROBE, "Sensor po2030n");
++/*		sd->sensor = SENSOR_PO2030N; */
++	else
++		PDEBUG(D_PROBE, "Unknown sensor ID %02x%02x",
++			gspca_dev->usb_buf[3],
++			gspca_dev->usb_buf[4]);
++}
++
+ static void bridge_init(struct gspca_dev *gspca_dev,
+ 			  const u8 *sn9c1xx)
+ {
+@@ -1374,8 +1592,10 @@ static void bridge_init(struct gspca_dev *gspca_dev,
+ 	reg_w(gspca_dev, 0x08, &sn9c1xx[8], 2);
+ 	reg_w(gspca_dev, 0x17, &sn9c1xx[0x17], 5);
+ 	switch (sd->sensor) {
++	case SENSOR_GC0307:
+ 	case SENSOR_OV7660:
+ 	case SENSOR_PO1030:
++	case SENSOR_PO2030N:
+ 	case SENSOR_SP80708:
+ 		reg9a = reg9a_spec;
+ 		break;
+@@ -1396,6 +1616,14 @@ static void bridge_init(struct gspca_dev *gspca_dev,
+ 		reg_w1(gspca_dev, 0x01, 0x42);
+ 		reg_w1(gspca_dev, 0x01, 0x42);
+ 		break;
++	case SENSOR_GC0307:
++		msleep(50);
++		reg_w1(gspca_dev, 0x01, 0x61);
++		reg_w1(gspca_dev, 0x17, 0x22);
++		reg_w1(gspca_dev, 0x01, 0x60);
++		reg_w1(gspca_dev, 0x01, 0x40);
++		msleep(50);
++		break;
+ 	case SENSOR_MT9V111:
+ 		reg_w1(gspca_dev, 0x01, 0x61);
+ 		reg_w1(gspca_dev, 0x17, 0x61);
+@@ -1438,6 +1666,12 @@ static void bridge_init(struct gspca_dev *gspca_dev,
+ 		reg_w1(gspca_dev, 0x01, 0x60);
+ 		reg_w1(gspca_dev, 0x01, 0x40);
+ 		break;
++	case SENSOR_PO2030N:
++		reg_w1(gspca_dev, 0x01, 0x63);
++		reg_w1(gspca_dev, 0x17, 0x20);
++		reg_w1(gspca_dev, 0x01, 0x62);
++		reg_w1(gspca_dev, 0x01, 0x42);
++		break;
+ 	case SENSOR_OV7660:
+ 		/* fall thru */
+ 	case SENSOR_SP80708:
+@@ -1545,6 +1779,9 @@ static int sd_init(struct gspca_dev *gspca_dev)
+ 		case SENSOR_OV7648:
+ 			ov7648_probe(gspca_dev);
+ 			break;
++		case SENSOR_PO2030N:
++			po2030n_probe(gspca_dev);
++			break;
+ 		}
+ 		regGpio[1] = 0x70;
+ 		reg_w(gspca_dev, 0x01, regGpio, 2);
+@@ -1763,9 +2000,12 @@ static void setgamma(struct gspca_dev *gspca_dev)
+ 	case SENSOR_MT9V111:
+ 		gamma_base = gamma_spec_1;
+ 		break;
+-	case SENSOR_SP80708:
++	case SENSOR_GC0307:
+ 		gamma_base = gamma_spec_2;
+ 		break;
++	case SENSOR_SP80708:
++		gamma_base = gamma_spec_3;
++		break;
+ 	default:
+ 		gamma_base = gamma_def;
+ 		break;
+@@ -1956,9 +2196,15 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	static const u8 CA[] = { 0x28, 0xd8, 0x14, 0xec };
+ 	static const u8 CA_adcm1700[] =
+ 				{ 0x14, 0xec, 0x0a, 0xf6 };
++	static const u8 CA_po2030n[] =
++				{ 0x1e, 0xe2, 0x14, 0xec };
+ 	static const u8 CE[] = { 0x32, 0xdd, 0x2d, 0xdd };	/* MI0360 */
++	static const u8 CE_gc0307[] =
++				{ 0x32, 0xce, 0x2d, 0xd3 };
+ 	static const u8 CE_ov76xx[] =
+ 				{ 0x32, 0xdd, 0x32, 0xdd };
++	static const u8 CE_po2030n[] =
++				{ 0x14, 0xe7, 0x1e, 0xdd };
+ 
+ 	/* create the JPEG header */
+ 	sd->jpeg_hdr = kmalloc(JPEG_HDR_SZ, GFP_KERNEL);
+@@ -2015,6 +2261,9 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	}
+ 	reg_w1(gspca_dev, 0x18, sn9c1xx[0x18]);
+ 	switch (sd->sensor) {
++	case SENSOR_GC0307:
++		reg17 = 0xa2;
++		break;
+ 	case SENSOR_MT9V111:
+ 		reg17 = 0xe0;
+ 		break;
+@@ -2029,6 +2278,7 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 		reg17 = 0xa0;
+ 		break;
+ 	case SENSOR_PO1030:
++	case SENSOR_PO2030N:
+ 		reg17 = 0xa0;
+ 		break;
+ 	default:
+@@ -2053,12 +2303,16 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	case SENSOR_SP80708:
+ 		reg_w1(gspca_dev, 0x9a, 0x05);
+ 		break;
++	case SENSOR_GC0307:
+ 	case SENSOR_MT9V111:
+ 		reg_w1(gspca_dev, 0x9a, 0x07);
+ 		break;
+ 	case SENSOR_OV7648:
+ 		reg_w1(gspca_dev, 0x9a, 0x0a);
+ 		break;
++	case SENSOR_PO2030N:
++		reg_w1(gspca_dev, 0x9a, 0x06);
++		break;
+ 	default:
+ 		reg_w1(gspca_dev, 0x9a, 0x08);
+ 		break;
+@@ -2083,6 +2337,11 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 		reg1 = 0x46;
+ 		reg17 = 0xe2;
+ 		break;
++	case SENSOR_GC0307:
++		init = gc0307_sensor_param1;
++		reg17 = 0xa2;
++		reg1 = 0x44;
++		break;
+ 	case SENSOR_MO4000:
+ 		if (mode) {
+ /*			reg1 = 0x46;	 * 320 clk 48Mhz 60fp/s */
+@@ -2132,6 +2391,11 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 		reg17 = 0xa2;
+ 		reg1 = 0x44;
+ 		break;
++	case SENSOR_PO2030N:
++		init = po2030n_sensor_param1;
++		reg1 = 0x46;
++		reg17 = 0xa2;
++		break;
+ 	default:
+ /*	case SENSOR_SP80708: */
+ 		init = sp80708_sensor_param1;
+@@ -2151,10 +2415,18 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	}
+ 
+ 	reg_w(gspca_dev, 0xc0, C0, 6);
+-	if (sd->sensor == SENSOR_ADCM1700)
++	switch (sd->sensor) {
++	case SENSOR_ADCM1700:
++	case SENSOR_GC0307:
+ 		reg_w(gspca_dev, 0xca, CA_adcm1700, 4);
+-	else
++		break;
++	case SENSOR_PO2030N:
++		reg_w(gspca_dev, 0xca, CA_po2030n, 4);
++		break;
++	default:
+ 		reg_w(gspca_dev, 0xca, CA, 4);
++		break;
++	}
+ 	switch (sd->sensor) {
+ 	case SENSOR_ADCM1700:
+ 	case SENSOR_OV7630:
+@@ -2162,6 +2434,12 @@ static int sd_start(struct gspca_dev *gspca_dev)
+ 	case SENSOR_OV7660:
+ 		reg_w(gspca_dev, 0xce, CE_ov76xx, 4);
+ 		break;
++	case SENSOR_GC0307:
++		reg_w(gspca_dev, 0xce, CE_gc0307, 4);
++		break;
++	case SENSOR_PO2030N:
++		reg_w(gspca_dev, 0xce, CE_po2030n, 4);
++		break;
+ 	default:
+ 		reg_w(gspca_dev, 0xce, CE, 4);
+ 					/* ?? {0x1e, 0xdd, 0x2d, 0xe7} */
+@@ -2199,6 +2477,9 @@ static void sd_stopN(struct gspca_dev *gspca_dev)
+ 
+ 	data = 0x0b;
+ 	switch (sd->sensor) {
++	case SENSOR_GC0307:
++		data = 0x29;
++		break;
+ 	case SENSOR_HV7131R:
+ 		i2c_w8(gspca_dev, stophv7131);
+ 		data = 0x2b;
+@@ -2675,7 +2956,7 @@ static const __devinitdata struct usb_device_id device_table[] = {
+ #endif
+ 	{USB_DEVICE(0x0c45, 0x613c), BS(SN9C120, HV7131R)},
+ 	{USB_DEVICE(0x0c45, 0x613e), BS(SN9C120, OV7630)},
+-/*	{USB_DEVICE(0x0c45, 0x6142), BS(SN9C120, PO2030N)},	 *sn9c120b*/
++	{USB_DEVICE(0x0c45, 0x6142), BS(SN9C120, PO2030N)},	/*sn9c120b*/
+ 	{USB_DEVICE(0x0c45, 0x6143), BS(SN9C120, SP80708)},	/*sn9c120b*/
+ 	{USB_DEVICE(0x0c45, 0x6148), BS(SN9C120, OM6802)},	/*sn9c120b*/
+ 	{USB_DEVICE(0x0c45, 0x614a), BS(SN9C120, ADCM1700)},	/*sn9c120b*/

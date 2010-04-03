@@ -74,6 +74,7 @@ ApplyOptionalPatch linux-2.6-compile-fixes.patch.gz
 ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
 ApplyOptionalPatch git-cpufreq.patch.gz
+ApplyPatch git-bluetooth.patch
 
 ApplyOptionalPatch linux-2.6-hotfixes.patch.gz
 
@@ -109,11 +110,15 @@ ApplyPatch linux-2.6-execshield.patch
 # xfs
 
 # btrfs
+ApplyPatch linux-2.6-btrfs-update.patch
 
 # cifs
 
 # NFSv4
 ApplyPatch linux-2.6-nfs4-callback-hidden.patch.gz
+
+# CPUFREQ
+ApplyPatch linux-2.6-cpufreq-locking.patch
 
 # USB
 ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff
@@ -125,6 +130,8 @@ ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch.gz
+ApplyPatch acpi-ec-add-delay-before-write.patch
+ApplyPatch acpi-ec-allow-multibyte-access-to-ec.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
@@ -216,6 +223,8 @@ ApplyPatch drm-nouveau-updates.patch
 # pm broken on my thinkpad t60p - airlied
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
+ApplyPatch drm-intel-make-lvds-work.patch
+ApplyPatch drm-intel-acpi-populate-didl.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -231,6 +240,7 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
 ApplyPatch linux-2.6-v4l-dvb-rebase-gspca-to-latest.patch
+ApplyPatch linux-2.6-v4l-dvb-gspca-fixes.patch
 
 # Patches headed upstream
 ApplyPatch linux-2.6-rfkill-all.patch
@@ -241,8 +251,7 @@ ApplyPatch neuter_intel_microcode_load.patch
 
 # Patches for -stable
 
-# Refactor UserModeHelper code & satisfy abrt recursion check request
-ApplyPatch linux-2.6-umh-refactor.patch
-ApplyPatch coredump-uid-pipe-check.patch
+# rhbz#533746
+ApplyPatch ssb_check_for_sprom.patch
 
 set +e +o pipefail

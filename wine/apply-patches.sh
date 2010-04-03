@@ -13,6 +13,5 @@ patch -p1 -E --backup -z .intz --verbose -i ${SB_PATCHDIR}/wine-1.1.41-wineintz.
 patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE}
 patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE2}
 patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE3}
-sed -i -e '/@DEPENDENCIES@/d' dlls/winepulse.drv/Makefile.in
 
 set +e +o pipefail

@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = konqinfohelper
-VERSION = 1.0.3
+VERSION = 1.0.4
 
 DESTDIR =
 PREFIX = /usr

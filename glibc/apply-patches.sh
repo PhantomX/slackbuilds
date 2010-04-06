@@ -50,7 +50,7 @@ zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose
   ApplyPatch 1055_all_glibc-resolv-dynamic.patch
   ApplyPatch 1060_all_glibc-localedef-mmap.patch
   ApplyPatch 1070_all_glibc-fadvise64_64.patch
-  ApplyPatch 1073_all_glibc-ldbl-nexttowardf.patch
+  #ApplyPatch 1073_all_glibc-ldbl-nexttowardf.patch
   ApplyPatch 1075_all_glibc-section-comments.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1080_all_glibc-no-inline-gmon.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1085_all_glibc-2.9-check_native-headers.patch
@@ -79,37 +79,39 @@ ApplyPatch glibc-2.4.90-gcc4-fortify.patch.gz
 ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
 ApplyPatch glibc-2.10.1-multiarch.patch.gz
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
-ApplyPatch glibc-2.11-Follow-kernel-F_OWNER_-GID-PGRP-change.patch.gz
-ApplyPatch glibc-2.11-Try-harder-to-re-exec-nscd-in-paranoia-mode.patch.gz
-ApplyPatch glibc-2.11-Use-struct-timespec-for-timestamps-in-struct-stat-al.patch.gz
-ApplyPatch glibc-2.11-Redefine-O_SYNC-and-O_DSYNC-to-match-2.6.33-kernels.patch.gz
+ApplyPatch glibc-2.11-Follow-kernel-F_OWNER_-GID-PGRP-change.patch
+ApplyPatch glibc-2.11-Try-harder-to-re-exec-nscd-in-paranoia-mode.patch
+ApplyPatch glibc-2.11-Use-struct-timespec-for-timestamps-in-struct-stat-al.patch
+ApplyPatch glibc-2.11-Define-SCHED_IDLE-and-SCHED_RESET_ON_FORK-for-Linux.patch
+ApplyPatch glibc-2.11-Redefine-O_SYNC-and-O_DSYNC-to-match-2.6.33-kernels.patch
 ApplyPatch glibc-2.11-Invalid-timeouts-in-i386-sem_timedwait.patch.gz
-ApplyPatch glibc-2.11-Avoid-ELF-lookup-race.patch.gz
-ApplyPatch glibc-2.11-Update-poll.h-header-for-POSIX-2008.patch.gz
-ApplyPatch glibc-2.11-check-fd-arg-in-futimens.patch.gz
-ApplyPatch glibc-2.11-Additional-setcontext-etc.-conformance-tests.patch.gz
-ApplyPatch glibc-2.11-Fix-typo-in-feature-selection-macro-use.patch.gz
-ApplyPatch glibc-2.11-Add-nonnull-attribute-to-unsetenv-declaration.patch.gz
-ApplyPatch glibc-2.11-Prevent-silent-errors-should-x86-64-strncmp-be-neede.patch.gz
-ApplyPatch glibc-2.11-Fix-malloc_info-without-prioor-allocations.patch.gz
-ApplyPatch glibc-2.11-Pass-sysdep-LDFLAGS-when-using-print-file-name.patch.gz
-ApplyPatch glibc-2.11-Make-unistd.h-pre-c-safe.patch.gz
-ApplyPatch glibc-2.11-regcomp.c-do-not-ignore-memory-allocation-failure.patch.gz
-ApplyPatch glibc-2.11-Always-use-IPv4-sockets-for-IPv4-addresses.patch.gz
-ApplyPatch glibc-2.11-Define-IPTOS_CLASS_-macros-according-to-RFC-2474.patch.gz
-ApplyPatch glibc-2.11-Fix-a-few-more-cases-of-ignored-return-values-in-reg.patch.gz
-ApplyPatch glibc-2.11-Ignore-negative-dynamic-entry-types.patch.gz
-ApplyPatch glibc-2.11-Use-correct-type-when-casting-d_tag.patch.gz
-ApplyPatch glibc-2.11-Remove-duplicate-definitions-of-O_DSYNC-and-O_RSYNC.patch.gz
-ApplyPatch glibc-2.11-Remove-unnecessary-returns.patch.gz
-ApplyPatch glibc-2.11-more-re-fixes.patch.gz
-ApplyPatch glibc-2.11-_nl_load_locale-incorrectly-handles-mmap-failures.patch.gz
-ApplyPatch glibc-2.11-Fix-error-checking-in-iconv.patch.gz
-ApplyPatch glibc-2.11-Don-t-map-U00DF-to-U1E9E-in-toupper-table.patch.gz
-ApplyPatch glibc-2.11-Avoid-alloca-in-setenv-for-long-strings.patch.gz
-ApplyPatch glibc-2.11-Fix-sorting-of-malayalam-letter-na.patch.gz
-ApplyPatch glibc-2.11-Fix-endless-loop-with-invalid-etc-shells-file.patch.gz
-ApplyPatch glibc-2.11-Update-constants-for-current-kernels.patch.gz
-ApplyPatch glibc-2.11-Fix-file-descriotor-leak-in-nftw-with-FTW_CHDIR.patch.gz
+ApplyPatch glibc-2.11-Avoid-ELF-lookup-race.patch
+ApplyPatch glibc-2.11-Update-poll.h-header-for-POSIX-2008.patch
+ApplyPatch glibc-2.11-check-fd-arg-in-futimens.patch
+ApplyPatch glibc-2.11-Additional-setcontext-etc.-conformance-tests.patch
+ApplyPatch glibc-2.11-Fix-typo-in-feature-selection-macro-use.patch
+ApplyPatch glibc-2.11-Add-nonnull-attribute-to-unsetenv-declaration.patch
+ApplyPatch glibc-2.11-Prevent-silent-errors-should-x86-64-strncmp-be-neede.patch
+ApplyPatch glibc-2.11-Fix-malloc_info-without-prioor-allocations.patch
+ApplyPatch glibc-2.11-Pass-sysdep-LDFLAGS-when-using-print-file-name.patch
+ApplyPatch glibc-2.11-Make-unistd.h-pre-c-safe.patch
+ApplyPatch glibc-2.11-regcomp.c-do-not-ignore-memory-allocation-failure.patch
+ApplyPatch glibc-2.11-Always-use-IPv4-sockets-for-IPv4-addresses.patch
+ApplyPatch glibc-2.11-Define-IPTOS_CLASS_-macros-according-to-RFC-2474.patch
+ApplyPatch glibc-2.11-Fix-a-few-more-cases-of-ignored-return-values-in-reg.patch
+ApplyPatch glibc-2.11-sysdeps-ieee754-ldbl-128-fixes.patch
+ApplyPatch glibc-2.11-Ignore-negative-dynamic-entry-types.patch
+ApplyPatch glibc-2.11-Use-correct-type-when-casting-d_tag.patch
+ApplyPatch glibc-2.11-Remove-duplicate-definitions-of-O_DSYNC-and-O_RSYNC.patch
+ApplyPatch glibc-2.11-Remove-unnecessary-returns.patch
+ApplyPatch glibc-2.11-more-re-fixes.patch
+ApplyPatch glibc-2.11-_nl_load_locale-incorrectly-handles-mmap-failures.patch
+ApplyPatch glibc-2.11-Fix-error-checking-in-iconv.patch
+ApplyPatch glibc-2.11-Don-t-map-U00DF-to-U1E9E-in-toupper-table.patch
+ApplyPatch glibc-2.11-Avoid-alloca-in-setenv-for-long-strings.patch
+ApplyPatch glibc-2.11-Fix-sorting-of-malayalam-letter-na.patch
+ApplyPatch glibc-2.11-Fix-endless-loop-with-invalid-etc-shells-file.patch
+ApplyPatch glibc-2.11-Update-constants-for-current-kernels.patch
+ApplyPatch glibc-2.11-Fix-file-descriotor-leak-in-nftw-with-FTW_CHDIR.patch
 
 set +e +o pipefail

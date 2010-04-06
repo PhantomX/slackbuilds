@@ -17,8 +17,8 @@ unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
-gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
-[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r date:${gitdate}"
+bzrdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r date:${bzrdate}"
 
 pushd "${tmp}"
   mkdir ${module}-${snap}

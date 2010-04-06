@@ -1,0 +1,176 @@
+From d561b3c952dcb14316bf6f9fd62f785cbcdab66f Mon Sep 17 00:00:00 2001
+From: Ulrich Drepper <drepper@redhat.com>
+Date: Tue, 2 Feb 2010 09:55:55 -0800
+Subject: [PATCH 4/8] Avoid alloca in setenv for long strings.
+
+(adjusted cherry-pick from c63bfa79941496190b22179cd5a73addff3a7e8b)
+---
+ ChangeLog       |    6 +++
+ stdlib/setenv.c |   94 +++++++++++++++++++++++++++++++++++++-----------------
+ 2 files changed, 70 insertions(+), 30 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index d0d6218..5295d70 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,9 @@
++2010-02-02  Ulrich Drepper  <drepper@redhat.com>
++
++	* stdlib/setenv.c (__add_to_environ): Don't use alloca if
++	__libc_use_alloca tells us not to.  Fix memory leak in an error
++	situation.  Based partially on patch by Jim Meyering.
++
+ 2010-01-25  Andreas Schwab  <schwab@redhat.com>
+ 
+ 	* iconv/iconv_prog.c (write_output): Fix check for open failure.
+diff --git a/stdlib/setenv.c b/stdlib/setenv.c
+index fe591b7..89644b4 100644
+--- a/stdlib/setenv.c
++++ b/stdlib/setenv.c
+@@ -1,4 +1,4 @@
+-/* Copyright (C) 1992,1995-2001,2004, 2008 Free Software Foundation, Inc.
++/* Copyright (C) 1992,1995-2001,2004, 2008, 2010 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
+ 
+    The GNU C Library is free software; you can redistribute it and/or
+@@ -136,6 +136,7 @@ __add_to_environ (name, value, combined, replace)
+ 
+   if (ep == NULL || __builtin_expect (*ep == NULL, 1))
+     {
++      const size_t varlen = namelen + 1 + vallen;
+       char **new_environ;
+ 
+       /* We allocated this space; we can extend it.  */
+@@ -156,11 +157,21 @@ __add_to_environ (name, value, combined, replace)
+ 	{
+ 	  /* See whether the value is already known.  */
+ #ifdef USE_TSEARCH
+-# ifdef __GNUC__
+-	  char new_value[namelen + 1 + vallen];
+-# else
+-	  char *new_value = (char *) alloca (namelen + 1 + vallen);
+-# endif
++	  char *new_value;
++	  int use_alloca = __libc_use_alloca (varlen);
++	  if (__builtin_expect (use_alloca, 1))
++	    new_value = (char *) alloca (varlen);
++	  else
++	    {
++	      new_value = malloc (varlen);
++	      if (new_value == NULL)
++		{
++		  UNLOCK;
++		  if (last_environ == NULL)
++		    free (new_environ);
++		  return -1;
++		}
++	    }
+ # ifdef _LIBC
+ 	  __mempcpy (__mempcpy (__mempcpy (new_value, name, namelen), "=", 1),
+ 		     value, vallen);
+@@ -174,21 +185,28 @@ __add_to_environ (name, value, combined, replace)
+ 	  if (__builtin_expect (new_environ[size] == NULL, 1))
+ #endif
+ 	    {
+-	      new_environ[size] = (char *) malloc (namelen + 1 + vallen);
+-	      if (__builtin_expect (new_environ[size] == NULL, 0))
++#ifdef USE_TSEARCH
++	      if (__builtin_expect (! use_alloca, 0))
++		new_environ[size] = new_value;
++	      else
++#endif
+ 		{
+-		  __set_errno (ENOMEM);
+-		  UNLOCK;
+-		  return -1;
+-		}
++		  new_environ[size] = (char *) malloc (varlen);
++		  if (__builtin_expect (new_environ[size] == NULL, 0))
++		    {
++		      UNLOCK;
++		      return -1;
++		    }
+ 
+ #ifdef USE_TSEARCH
+-	      memcpy (new_environ[size], new_value, namelen + 1 + vallen);
++		  memcpy (new_environ[size], new_value, varlen);
+ #else
+-	      memcpy (new_environ[size], name, namelen);
+-	      new_environ[size][namelen] = '=';
+-	      memcpy (&new_environ[size][namelen + 1], value, vallen);
++		  memcpy (new_environ[size], name, namelen);
++		  new_environ[size][namelen] = '=';
++		  memcpy (&new_environ[size][namelen + 1], value, vallen);
+ #endif
++		}
++
+ 	      /* And save the value now.  We cannot do this when we remove
+ 		 the string since then we cannot decide whether it is a
+ 		 user string or not.  */
+@@ -213,12 +231,21 @@ __add_to_environ (name, value, combined, replace)
+ 	np = (char *) combined;
+       else
+ 	{
++	  const size_t varlen = namelen + 1 + vallen;
+ #ifdef USE_TSEARCH
+-# ifdef __GNUC__
+-	  char new_value[namelen + 1 + vallen];
+-# else
+-	  char *new_value = (char *) alloca (namelen + 1 + vallen);
+-# endif
++	  char *new_value;
++	  int use_alloca = __libc_use_alloca (varlen);
++	  if (__builtin_expect (use_alloca, 1))
++	    new_value = (char *) alloca (varlen);
++	  else
++	    {
++	      new_value = malloc (varlen);
++	      if (new_value == NULL)
++		{
++		  UNLOCK;
++		  return -1;
++		}
++	    }
+ # ifdef _LIBC
+ 	  __mempcpy (__mempcpy (__mempcpy (new_value, name, namelen), "=", 1),
+ 		     value, vallen);
+@@ -232,20 +259,27 @@ __add_to_environ (name, value, combined, replace)
+ 	  if (__builtin_expect (np == NULL, 1))
+ #endif
+ 	    {
+-	      np = malloc (namelen + 1 + vallen);
+-	      if (__builtin_expect (np == NULL, 0))
++#ifdef USE_TSEARCH
++	      if (__builtin_expect (! use_alloca, 0))
++		np = new_value;
++	      else
++#endif
+ 		{
+-		  UNLOCK;
+-		  return -1;
+-		}
++		  np = malloc (varlen);
++		  if (__builtin_expect (np == NULL, 0))
++		    {
++		      UNLOCK;
++		      return -1;
++		    }
+ 
+ #ifdef USE_TSEARCH
+-	      memcpy (np, new_value, namelen + 1 + vallen);
++		  memcpy (np, new_value, varlen);
+ #else
+-	      memcpy (np, name, namelen);
+-	      np[namelen] = '=';
+-	      memcpy (&np[namelen + 1], value, vallen);
++		  memcpy (np, name, namelen);
++		  np[namelen] = '=';
++		  memcpy (&np[namelen + 1], value, vallen);
+ #endif
++		}
+ 	      /* And remember the value.  */
+ 	      STORE_VALUE (np);
+ 	    }
+-- 
+1.7.0
+

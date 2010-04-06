@@ -16,6 +16,7 @@ cleanup() {
 unset CDPATH
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
+gittree=master
 
 [ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
 
@@ -25,8 +26,8 @@ pushd "${tmp}"
     if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
       gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
       git checkout $(git rev-list -n 1 --before="${gitdate}" master)
+      gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
     fi
-    find . -type d -name .git -print0 | xargs -0r rm -rf
+    git archive --format=tar --prefix=${module}-${snap}/ ${gittree} | xz -9 > "${pwd}"/${module}-${snap}.tar.xz
   popd
-  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

@@ -1,0 +1,136 @@
+From e85ec62d2bc38aba887ae6b94474bcc69aabd759 Mon Sep 17 00:00:00 2001
+From: Ulrich Drepper <drepper@redhat.com>
+Date: Tue, 15 Dec 2009 12:32:27 -0800
+Subject: [PATCH 3/4] Avoid ELF lookup race.
+
+On some architectures the update of the l_used field in the lookup
+functions races with setting the other bits in the bitfield.  Simply
+avoid this and optimize use of l_used in general.
+
+(adjusted cherry-pick from 2af6396817fb9df98e63de75dd59fd999ee9f1d0)
+---
+ ChangeLog       |    8 ++++++++
+ elf/dl-lookup.c |    7 ++++---
+ elf/dl-object.c |    8 ++++++--
+ include/link.h  |    8 +++++---
+ 4 files changed, 23 insertions(+), 8 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index 96bc0e7..12dc32a 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -1,3 +1,11 @@
++2009-12-15  Ulrich Drepper  <drepper@redhat.com>
++
++	* include/link.h (struct link_map): Move l_used into its own word.
++	* elf/dl-lookup.c (_dl_lookup_symbol_x): Only update l_used when it is
++	still zero.
++	* elf/dl-object.c (_dl_new_object): Set dl_used if we know it is
++	never really used.
++
+ 2009-12-11  Ulrich Drepper  <drepper@redhat.com>
+ 
+ 	* sysdeps/unix/sysv/linux/sh/bits/fcntl.h: Redefine O_SYNC and
+diff --git a/elf/dl-lookup.c b/elf/dl-lookup.c
+index c1a1366..763ec16 100644
+--- a/elf/dl-lookup.c
++++ b/elf/dl-lookup.c
+@@ -777,7 +777,7 @@ _dl_lookup_symbol_x (const char *undef_name, struct link_map *undef_map,
+   if (__builtin_expect (protected != 0, 0))
+     {
+       /* It is very tricky.  We need to figure out what value to
+-         return for the protected symbol.  */
++	 return for the protected symbol.  */
+       if (type_class == ELF_RTYPE_CLASS_PLT)
+ 	{
+ 	  if (current_value.s != NULL && current_value.m != undef_map)
+@@ -822,7 +822,8 @@ _dl_lookup_symbol_x (const char *undef_name, struct link_map *undef_map,
+ 				  version, type_class, flags, skip_map);
+ 
+   /* The object is used.  */
+-  current_value.m->l_used = 1;
++  if (__builtin_expect (current_value.m->l_used == 0, 0))
++    current_value.m->l_used = 1;
+ 
+   if (__builtin_expect (GLRO(dl_debug_mask)
+ 			& (DL_DEBUG_BINDINGS|DL_DEBUG_PRELINK), 0))
+@@ -844,7 +845,7 @@ _dl_setup_hash (struct link_map *map)
+   Elf_Symndx nchain;
+ 
+   if (__builtin_expect (map->l_info[DT_ADDRTAGIDX (DT_GNU_HASH) + DT_NUM
+-  				    + DT_THISPROCNUM + DT_VERSIONTAGNUM
++				    + DT_THISPROCNUM + DT_VERSIONTAGNUM
+ 				    + DT_EXTRANUM + DT_VALNUM] != NULL, 1))
+     {
+       Elf32_Word *hash32
+diff --git a/elf/dl-object.c b/elf/dl-object.c
+index be4ea38..788e2c0 100644
+--- a/elf/dl-object.c
++++ b/elf/dl-object.c
+@@ -1,5 +1,5 @@
+ /* Storage management for the chain of loaded shared objects.
+-   Copyright (C) 1995-2002,2004,2006,2007,2008 Free Software Foundation, Inc.
++   Copyright (C) 1995-2002,2004,2006-2008,2009 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
+ 
+    The GNU C Library is free software; you can redistribute it and/or
+@@ -67,6 +67,10 @@ _dl_new_object (char *realname, const char *libname, int type,
+ 
+   new->l_name = realname;
+   new->l_type = type;
++  /* If we set the bit now since we know it is never used we avoid
++     dirtying the cache line later.  */
++  if ((GLRO(dl_debug_mask) & DL_DEBUG_UNUSED) == 0)
++    new->l_used = 1;
+   new->l_loader = loader;
+ #if NO_TLS_OFFSET != 0
+   new->l_tls_offset = NO_TLS_OFFSET;
+@@ -174,7 +178,7 @@ _dl_new_object (char *realname, const char *libname, int type,
+ 	  if (result == NULL)
+ 	    {
+ 	      /* We were not able to determine the current directory.
+-	         Note that free(origin) is OK if origin == NULL.  */
++		 Note that free(origin) is OK if origin == NULL.  */
+ 	      free (origin);
+ 	      origin = (char *) -1;
+ 	      goto out;
+diff --git a/include/link.h b/include/link.h
+index 4b9978a..26c6743 100644
+--- a/include/link.h
++++ b/include/link.h
+@@ -1,6 +1,6 @@
+ /* Data structure for communication from the run-time dynamic linker for
+    loaded ELF shared objects.
+-   Copyright (C) 1995-2006, 2007 Free Software Foundation, Inc.
++   Copyright (C) 1995-2006, 2007, 2009 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
+ 
+    The GNU C Library is free software; you can redistribute it and/or
+@@ -180,7 +180,6 @@ struct link_map
+     unsigned int l_need_tls_init:1; /* Nonzero if GL(dl_init_static_tls)
+ 				       should be called on this link map
+ 				       when relocation finishes.  */
+-    unsigned int l_used:1;	/* Nonzero if the DSO is used.  */
+     unsigned int l_auditing:1;	/* Nonzero if the DSO is used in auditing.  */
+     unsigned int l_audit_any_plt:1; /* Nonzero if at least one audit module
+ 				       is interested in the PLT interception.*/
+@@ -239,12 +238,15 @@ struct link_map
+     struct link_map **l_initfini;
+ 
+     /* List of the dependencies introduced through symbol binding.  */
+-    unsigned int l_reldepsmax;
+     struct link_map_reldeps
+       {
+ 	unsigned int act;
+ 	struct link_map *list[];
+       } *l_reldeps;
++    unsigned int l_reldepsmax;
++
++    /* Nonzero if the DSO is used.  */
++    unsigned int l_used;
+ 
+     /* Various flag words.  */
+     ElfW(Word) l_feature_1;
+-- 
+1.7.0
+

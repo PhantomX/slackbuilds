@@ -37,11 +37,12 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.0-randr-gamma-restore.patch
 zcat ${SB_PATCHDIR}/xserver-1.7.1-multilib.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch.gz | patch -p1 --verbose
 
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8-no-hardcoded-etc.patch
+
+
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/xserver-1.7.3.902-zap-warning.patch.gz | patch -p1 --verbose
 fi
-
-
 
 set +e +o pipefail

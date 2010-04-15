@@ -25,7 +25,10 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.98-battery-plasmoid-showremainingtime.patch.gz |
 # to the classic menu (as in KDE <= 4.2.x); the default is still the upstream
 # default Leave submenu
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-classicmenu-logout.patch.gz | patch -p1 -E --backup --verbose
-#zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kdm_plymouth.patch.gz | patch -p1 -E --backup --verbose
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-kdm_plymouth.patch
+# kubuntu kudos! bulletproof-X bits ripped out
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-kdm_plymouth081.patch
+
 zcat ${SB_PATCHDIR}/${NAME}-4.3.80-xsession_errors_O_APPEND.patch.gz | patch -p1 -E --backup --verbose
 # support the widgetStyle4 hack in the Qt KDE platform plugin
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-platformplugin-widgetstyle4.patch.gz | patch -p1 -E --backup --verbose
@@ -46,7 +49,14 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup -
 # FIXME: Not upstreamed yet --Ben (4.3.80)
 #Patch51: http://bazaar.launchpad.net/~kubuntu-members/kdebase-workspace/ubuntu/annotate/head%3A/debian/patches/kubuntu_101_brightness_fn_keys_and_osd.diff
 zcat ${SB_PATCHDIR}/${NAME}-4.3.95-brightness_keys.patch.gz | patch -p1 -E --backup --verbose
+# http://bugs.kde.org/221637
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-powerdevil_kdebug221637.patch
+# http://bugs.kde.org/221648
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-powerdevil_kdebug221648.patch
 
 # 4.4 patches
+# http://www.kde.org/info/security/advisory-20100413-1.txt
+# f12 tested to set HONORS_SOCKET_PERMS, so seems not affected by this
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.5-CVE-2010-0436.diff
 
 set +e +o pipefail

@@ -16,6 +16,10 @@ zcat ${SB_PATCHDIR}/file-5.03-delta.patch.gz | patch -p1 -E --verbose
 zcat ${SB_PATCHDIR}/file-5.04-ulaw-segfault.patch.gz | patch -p1 -E --verbose
 zcat ${SB_PATCHDIR}/file-5.04-ruby-modules.patch.gz | patch -p1 -E --verbose
 zcat ${SB_PATCHDIR}/file-5.04-filesystem.patch.gz | patch -p1 -E --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-separ.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-squashfs.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-core-trim.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-retval.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose

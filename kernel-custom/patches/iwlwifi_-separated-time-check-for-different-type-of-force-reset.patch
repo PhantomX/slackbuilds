@@ -1,0 +1,122 @@
+Backport of the following upstream commit...
+
+commit 8a472da431998b7357e6dc562e79a3061ed56cad
+Author: Wey-Yi Guy <wey-yi.w.guy@intel.com>
+Date:   Thu Feb 18 22:03:06 2010 -0800
+
+    iwlwifi: separated time check for different type of force reset
+    
+    Use different timing duration check for different type of force reset,
+    force reset request can come from different source and based on
+    different reason; one type of reset request should not block other type of
+    reset request.
+    
+    Adding structure to keep track of different force reset request.
+    
+    Signed-off-by: Wey-Yi Guy <wey-yi.w.guy@intel.com>
+    Signed-off-by: Reinette Chatre <reinette.chatre@intel.com>
+    Signed-off-by: John W. Linville <linville@tuxdriver.com>
+
+diff -up linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-agn.c.orig linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-agn.c
+--- linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-agn.c.orig	2010-04-13 13:44:14.000000000 -0400
++++ linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-agn.c	2010-04-13 13:47:34.000000000 -0400
+@@ -3189,6 +3189,12 @@ static int iwl_init_drv(struct iwl_priv 
+ 
+ 	priv->iw_mode = NL80211_IFTYPE_STATION;
+ 
++	/* initialize force reset */
++	priv->force_reset[IWL_RF_RESET].reset_duration =
++		IWL_DELAY_NEXT_FORCE_RF_RESET;
++	priv->force_reset[IWL_FW_RESET].reset_duration =
++		IWL_DELAY_NEXT_FORCE_FW_RELOAD;
++
+ 	/* Choose which receivers/antennas to use */
+ 	if (priv->cfg->ops->hcmd->set_rxon_chain)
+ 		priv->cfg->ops->hcmd->set_rxon_chain(priv);
+diff -up linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.c.orig linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.c
+--- linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.c.orig	2010-04-13 13:44:14.000000000 -0400
++++ linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.c	2010-04-13 13:47:34.000000000 -0400
+@@ -3220,22 +3220,30 @@ static void iwl_force_rf_reset(struct iw
+ 	return;
+ }
+ 
+-#define IWL_DELAY_NEXT_FORCE_RESET (HZ*3)
+ 
+ int iwl_force_reset(struct iwl_priv *priv, int mode)
+ {
++	struct iwl_force_reset *force_reset;
++
+ 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
+ 		return -EINVAL;
+ 
+-	if (priv->last_force_reset_jiffies &&
+-	    time_after(priv->last_force_reset_jiffies +
+-		       IWL_DELAY_NEXT_FORCE_RESET, jiffies)) {
++	if (mode >= IWL_MAX_FORCE_RESET) {
++		IWL_DEBUG_INFO(priv, "invalid reset request.\n");
++		return -EINVAL;
++	}
++	force_reset = &priv->force_reset[mode];
++	force_reset->reset_request_count++;
++	if (force_reset->last_force_reset_jiffies &&
++	    time_after(force_reset->last_force_reset_jiffies +
++	    force_reset->reset_duration, jiffies)) {
+ 		IWL_DEBUG_INFO(priv, "force reset rejected\n");
++		force_reset->reset_reject_count++;
+ 		return -EAGAIN;
+ 	}
+-
++	force_reset->reset_success_count++;
++	force_reset->last_force_reset_jiffies = jiffies;
+ 	IWL_DEBUG_INFO(priv, "perform force reset (%d)\n", mode);
+-
+ 	switch (mode) {
+ 	case IWL_RF_RESET:
+ 		iwl_force_rf_reset(priv);
+@@ -3252,12 +3260,7 @@ int iwl_force_reset(struct iwl_priv *pri
+ 		clear_bit(STATUS_READY, &priv->status);
+ 		queue_work(priv->workqueue, &priv->restart);
+ 		break;
+-	default:
+-		IWL_DEBUG_INFO(priv, "invalid reset request.\n");
+-		return -EINVAL;
+ 	}
+-	priv->last_force_reset_jiffies = jiffies;
+-
+ 	return 0;
+ }
+ 
+diff -up linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-dev.h.orig linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-dev.h
+--- linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-dev.h.orig	2010-04-13 13:45:06.000000000 -0400
++++ linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-dev.h	2010-04-13 13:47:34.000000000 -0400
+@@ -994,9 +994,21 @@ struct iwl_switch_rxon {
+ #define IWL_MAX_PLCP_ERR_EXT_LONG_THRESHOLD_DEF	(200)
+ #define IWL_MAX_PLCP_ERR_THRESHOLD_MAX	(255)
+ 
++#define IWL_DELAY_NEXT_FORCE_RF_RESET  (HZ*3)
++#define IWL_DELAY_NEXT_FORCE_FW_RELOAD (HZ*5)
++
+ enum iwl_reset {
+ 	IWL_RF_RESET = 0,
+ 	IWL_FW_RESET,
++	IWL_MAX_FORCE_RESET,
++};
++
++struct iwl_force_reset {
++	int reset_request_count;
++	int reset_success_count;
++	int reset_reject_count;
++	unsigned long reset_duration;
++	unsigned long last_force_reset_jiffies;
+ };
+ 
+ struct iwl_priv {
+@@ -1031,7 +1043,7 @@ struct iwl_priv {
+ 	unsigned long plcp_jiffies;
+ 
+ 	/* force reset */
+-	unsigned long last_force_reset_jiffies;
++	struct iwl_force_reset force_reset[IWL_MAX_FORCE_RESET];
+ 
+ 	/* we allocate array of iwl4965_channel_info for NIC's valid channels.
+ 	 *    Access via channel # using indirect index array */

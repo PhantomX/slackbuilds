@@ -67,6 +67,7 @@ zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose
 ) || exit 1
 
 # Mandriva
+ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
 ApplyPatch glibc-2.9-ldd-non-exec.patch.gz
 ApplyPatch glibc-2.2-nss-upgrade.patch.gz
 ApplyPatch glibc-2.4.90-compat-EUR-currencies.patch.gz

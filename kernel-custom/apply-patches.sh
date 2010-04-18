@@ -124,14 +124,18 @@ ApplyPatch linux-2.6-cpufreq-locking.patch
 ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff
 ApplyPatch linux-2.6-enable-btusb-autosuspend.patch
 ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
+ApplyPatch linux-2.6-usb-wwan-update.patch
 
 # WMI
 
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
-ApplyPatch linux-2.6-acpi-video-dos.patch.gz
+ApplyPatch linux-2.6-acpi-video-dos.patch
+ApplyPatch linux-2.6-acpi-video-export-edid.patch
+
 ApplyPatch acpi-ec-add-delay-before-write.patch
 ApplyPatch acpi-ec-allow-multibyte-access-to-ec.patch
+ApplyPatch acpi-ec-limit-burst-to-64-bit.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
@@ -195,6 +199,9 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 # /dev/crash driver.
 ApplyPatch linux-2.6-crash-driver.patch
 
+# Cantiga chipset b0rkage
+ApplyPatch linux-2.6-cantiga-iommu-gfx.patch
+
 # http://www.lirc.org/
 ApplyPatch lirc-2.6.33.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
@@ -209,6 +216,8 @@ ApplyPatch hdpvr-ir-enable.patch
 ApplyPatch vhost_net-rollup.patch
 ApplyPatch virt_console-rollup.patch
 ApplyPatch virt_console-fix-race.patch
+ApplyPatch virt_console-fix-fix-race.patch
+ApplyPatch virt_console-rollup2.patch
 
 # Fix block I/O errors in KVM
 #ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
@@ -216,15 +225,21 @@ ApplyPatch virt_console-fix-race.patch
 # fix x86-64 fbdev primary GPU selection
 ApplyPatch linux-2.6-x86-64-fbdev-primary.patch
 
+ApplyPatch drm-core-next.patch
+
 # Nouveau DRM + drm fixes
+ApplyPatch drm-radeon-evergreen.patch
 # squash nouveau firmware into a single commit until it gets into linux-firmware
 ApplyPatch drm-nouveau-abi16.patch
 ApplyPatch drm-nouveau-updates.patch
+ApplyPatch drm-nouveau-acpi-edid-fallback.patch
 # pm broken on my thinkpad t60p - airlied
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch drm-intel-acpi-populate-didl.patch
+
+ApplyPatch linux-2.6-phylib-autoload.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -249,9 +264,38 @@ ApplyPatch add-appleir-usb-driver.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
-# Patches for -stable
+# Refactor UserModeHelper code & satisfy abrt recursion check request
+ApplyPatch linux-2.6-umh-refactor.patch
 
 # rhbz#533746
 ApplyPatch ssb_check_for_sprom.patch
+
+# backport iwlwifi fixes (thanks, sgruszka!) -- drop when stable catches-up
+ApplyPatch iwlwifi-reset-card-during-probe.patch
+
+# make b43 gracefully switch to PIO mode in event of DMA errors
+ApplyPatch b43_-Allow-PIO-mode-to-be-selected-at-module-load.patch
+ApplyPatch b43_-fall-back-gracefully-to-PIO-mode-after-fatal-DMA-errors.patch
+
+ApplyPatch libata-fix-accesses-at-LBA28-boundary.patch
+
+# patches from Intel to address intermittent firmware failures with iwlagn
+ApplyPatch mac80211_-tear-down-all-agg-queues-when-restart_reconfig-hw.patch
+ApplyPatch iwlwifi_-check-for-aggregation-frame-and-queue.patch
+ApplyPatch iwlwifi_-clear-all-tx-queues-when-firmware-ready.patch
+ApplyPatch iwlwifi_-clear-all-the-stop_queue-flag-after-load-firmware.patch
+ApplyPatch iwlwifi_-add-function-to-reset_tune-radio-if-needed.patch
+ApplyPatch iwlwifi_-Logic-to-control-how-frequent-radio-should-be-reset-if-needed.patch
+ApplyPatch iwlwifi_-Tune-radio-to-prevent-unexpected-behavior.patch
+ApplyPatch iwlwifi_-multiple-force-reset-mode.patch
+ApplyPatch iwlwifi_-fix-scan-race.patch
+ApplyPatch iwlwifi_-Adjusting-PLCP-error-threshold-for-1000-NIC.patch
+ApplyPatch iwlwifi_-separated-time-check-for-different-type-of-force-reset.patch
+ApplyPatch iwlwifi_-add-internal-short-scan-support-for-3945.patch
+ApplyPatch iwlwifi_-Recover-TX-flow-stall-due-to-stuck-queue.patch
+ApplyPatch iwlwifi_-move-plcp-check-to-separated-function.patch
+ApplyPatch iwlwifi_-Recover-TX-flow-failure.patch
+ApplyPatch iwlwifi_-code-cleanup-for-connectivity-recovery.patch
+ApplyPatch iwlwifi_-iwl_good_ack_health-only-apply-to-AGN-device.patch
 
 set +e +o pipefail

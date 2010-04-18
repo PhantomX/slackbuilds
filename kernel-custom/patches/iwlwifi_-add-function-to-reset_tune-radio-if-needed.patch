@@ -1,0 +1,374 @@
+Backport of the following upstream commit...
+
+commit afbdd69af0e6a0c40676d4d4b94a0a4414708eaa
+Author: Wey-Yi Guy <wey-yi.w.guy@intel.com>
+Date:   Fri Jan 22 14:22:43 2010 -0800
+
+    iwlwifi: add function to reset/tune radio if needed
+    
+    Adding "radio reset" function to help reset and stabilize the radio.
+    
+    During normal operation, sometime for unknown reason, radio encounter
+    problem and can not recover by itself; the best way to
+    recover from it is to reset and re-tune the radio. Currently, there is
+    no RF reset command available, but since radio will get reset when
+    switching channel, use internal hw scan request to force radio
+    reset and get back to normal operation state.
+    
+    The internal hw scan will only perform passive scan on the first
+    available channel (not the channel being used) in associated state. The
+    request should be ignored if already performing scan operation or STA is
+    not in associated state.
+    
+    Also include an "internal_scan" debugfs file to help trigger the
+    internal scan from user mode.
+    
+    Signed-off-by: Wey-Yi Guy <wey-yi.w.guy@intel.com>
+    Signed-off-by: Reinette Chatre <reinette.chatre@intel.com>
+    Signed-off-by: John W. Linville <linville@tuxdriver.com>
+
+diff -up linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.c.orig linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.c
+--- linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.c.orig	2010-04-13 11:41:15.000000000 -0400
++++ linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.c	2010-04-13 11:53:36.000000000 -0400
+@@ -3197,6 +3197,30 @@ void iwl_update_stats(struct iwl_priv *p
+ EXPORT_SYMBOL(iwl_update_stats);
+ #endif
+ 
++void iwl_force_rf_reset(struct iwl_priv *priv)
++{
++	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
++		return;
++
++	if (!iwl_is_associated(priv)) {
++		IWL_DEBUG_SCAN(priv, "force reset rejected: not associated\n");
++		return;
++	}
++	/*
++	 * There is no easy and better way to force reset the radio,
++	 * the only known method is switching channel which will force to
++	 * reset and tune the radio.
++	 * Use internal short scan (single channel) operation to should
++	 * achieve this objective.
++	 * Driver should reset the radio when number of consecutive missed
++	 * beacon, or any other uCode error condition detected.
++	 */
++	IWL_DEBUG_INFO(priv, "perform radio reset.\n");
++	iwl_internal_short_hw_scan(priv);
++	return;
++}
++EXPORT_SYMBOL(iwl_force_rf_reset);
++
+ #ifdef CONFIG_PM
+ 
+ int iwl_pci_suspend(struct pci_dev *pdev, pm_message_t state)
+diff -up linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.h.orig linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.h
+--- linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.h.orig	2010-02-24 13:52:17.000000000 -0500
++++ linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-core.h	2010-04-13 11:53:36.000000000 -0400
+@@ -497,6 +497,8 @@ void iwl_init_scan_params(struct iwl_pri
+ int iwl_scan_cancel(struct iwl_priv *priv);
+ int iwl_scan_cancel_timeout(struct iwl_priv *priv, unsigned long ms);
+ int iwl_mac_hw_scan(struct ieee80211_hw *hw, struct cfg80211_scan_request *req);
++int iwl_internal_short_hw_scan(struct iwl_priv *priv);
++void iwl_force_rf_reset(struct iwl_priv *priv);
+ u16 iwl_fill_probe_req(struct iwl_priv *priv, struct ieee80211_mgmt *frame,
+ 		       const u8 *ie, int ie_len, int left);
+ void iwl_setup_rx_scan_handlers(struct iwl_priv *priv);
+diff -up linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-debugfs.c.orig linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-debugfs.c
+--- linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-debugfs.c.orig	2010-02-24 13:52:17.000000000 -0500
++++ linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-debugfs.c	2010-04-13 11:56:15.000000000 -0400
+@@ -1845,6 +1845,27 @@ static ssize_t iwl_dbgfs_clear_ucode_sta
+ 	return count;
+ }
+ 
++static ssize_t iwl_dbgfs_internal_scan_write(struct file *file,
++					 const char __user *user_buf,
++					 size_t count, loff_t *ppos)
++{
++	struct iwl_priv *priv = file->private_data;
++	char buf[8];
++	int buf_size;
++	int scan;
++
++	memset(buf, 0, sizeof(buf));
++	buf_size = min(count, sizeof(buf) -  1);
++	if (copy_from_user(buf, user_buf, buf_size))
++		return -EFAULT;
++	if (sscanf(buf, "%d", &scan) != 1)
++		return -EINVAL;
++
++	iwl_internal_short_hw_scan(priv);
++
++	return count;
++}
++
+ DEBUGFS_READ_FILE_OPS(rx_statistics);
+ DEBUGFS_READ_FILE_OPS(tx_statistics);
+ DEBUGFS_READ_WRITE_FILE_OPS(traffic_log);
+@@ -1859,6 +1880,7 @@ DEBUGFS_READ_FILE_OPS(tx_power);
+ DEBUGFS_READ_FILE_OPS(power_save_status);
+ DEBUGFS_WRITE_FILE_OPS(clear_ucode_statistics);
+ DEBUGFS_WRITE_FILE_OPS(clear_traffic_statistics);
++DEBUGFS_WRITE_FILE_OPS(internal_scan);
+ 
+ /*
+  * Create the debugfs files and directories
+@@ -1909,6 +1931,7 @@ int iwl_dbgfs_register(struct iwl_priv *
+ 	DEBUGFS_ADD_FILE(power_save_status, debug, S_IRUSR);
+ 	DEBUGFS_ADD_FILE(clear_ucode_statistics, debug, S_IWUSR);
+ 	DEBUGFS_ADD_FILE(clear_traffic_statistics, debug, S_IWUSR);
++	DEBUGFS_ADD_FILE(internal_scan, debug, S_IWUSR);
+ 	if ((priv->hw_rev & CSR_HW_REV_TYPE_MSK) != CSR_HW_REV_TYPE_3945) {
+ 		DEBUGFS_ADD_FILE(ucode_rx_stats, debug, S_IRUSR);
+ 		DEBUGFS_ADD_FILE(ucode_tx_stats, debug, S_IRUSR);
+@@ -1966,6 +1989,7 @@ void iwl_dbgfs_unregister(struct iwl_pri
+ 			file_clear_ucode_statistics);
+ 	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_debug_files.
+ 			file_clear_traffic_statistics);
++	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_debug_files.file_internal_scan);
+ 	if ((priv->hw_rev & CSR_HW_REV_TYPE_MSK) != CSR_HW_REV_TYPE_3945) {
+ 		DEBUGFS_REMOVE(priv->dbgfs->dbgfs_debug_files.
+ 			file_ucode_rx_stats);
+diff -up linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-debug.h.orig linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-debug.h
+--- linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-debug.h.orig	2010-02-24 13:52:17.000000000 -0500
++++ linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-debug.h	2010-04-13 11:54:48.000000000 -0400
+@@ -109,6 +109,7 @@ struct iwl_debugfs {
+ 		struct dentry *file_power_save_status;
+ 		struct dentry *file_clear_ucode_statistics;
+ 		struct dentry *file_clear_traffic_statistics;
++		struct dentry *file_internal_scan;
+ 	} dbgfs_debug_files;
+ 	u32 sram_offset;
+ 	u32 sram_len;
+diff -up linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-dev.h.orig linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-dev.h
+--- linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-dev.h.orig	2010-02-24 13:52:17.000000000 -0500
++++ linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-dev.h	2010-04-13 11:53:36.000000000 -0400
+@@ -1037,6 +1037,7 @@ struct iwl_priv {
+ 	void *scan;
+ 	int scan_bands;
+ 	struct cfg80211_scan_request *scan_request;
++	bool is_internal_short_scan;
+ 	u8 scan_tx_ant[IEEE80211_NUM_BANDS];
+ 	u8 mgmt_tx_ant;
+ 
+diff -up linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-scan.c.orig linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-scan.c
+--- linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-scan.c.orig	2010-02-24 13:52:17.000000000 -0500
++++ linux-2.6.33.noarch/drivers/net/wireless/iwlwifi/iwl-scan.c	2010-04-13 11:53:36.000000000 -0400
+@@ -314,6 +314,72 @@ u16 iwl_get_passive_dwell_time(struct iw
+ }
+ EXPORT_SYMBOL(iwl_get_passive_dwell_time);
+ 
++static int iwl_get_single_channel_for_scan(struct iwl_priv *priv,
++				     enum ieee80211_band band,
++				     struct iwl_scan_channel *scan_ch)
++{
++	const struct ieee80211_supported_band *sband;
++	const struct iwl_channel_info *ch_info;
++	u16 passive_dwell = 0;
++	u16 active_dwell = 0;
++	int i, added = 0;
++	u16 channel = 0;
++
++	sband = iwl_get_hw_mode(priv, band);
++	if (!sband) {
++		IWL_ERR(priv, "invalid band\n");
++		return added;
++	}
++
++	active_dwell = iwl_get_active_dwell_time(priv, band, 0);
++	passive_dwell = iwl_get_passive_dwell_time(priv, band);
++
++	if (passive_dwell <= active_dwell)
++		passive_dwell = active_dwell + 1;
++
++	/* only scan single channel, good enough to reset the RF */
++	/* pick the first valid not in-use channel */
++	if (band == IEEE80211_BAND_5GHZ) {
++		for (i = 14; i < priv->channel_count; i++) {
++			if (priv->channel_info[i].channel !=
++			    le16_to_cpu(priv->staging_rxon.channel)) {
++				channel = priv->channel_info[i].channel;
++				ch_info = iwl_get_channel_info(priv,
++					band, channel);
++				if (is_channel_valid(ch_info))
++					break;
++			}
++		}
++	} else {
++		for (i = 0; i < 14; i++) {
++			if (priv->channel_info[i].channel !=
++			    le16_to_cpu(priv->staging_rxon.channel)) {
++					channel =
++						priv->channel_info[i].channel;
++					ch_info = iwl_get_channel_info(priv,
++						band, channel);
++					if (is_channel_valid(ch_info))
++						break;
++			}
++		}
++	}
++	if (channel) {
++		scan_ch->channel = cpu_to_le16(channel);
++		scan_ch->type = SCAN_CHANNEL_TYPE_PASSIVE;
++		scan_ch->active_dwell = cpu_to_le16(active_dwell);
++		scan_ch->passive_dwell = cpu_to_le16(passive_dwell);
++		/* Set txpower levels to defaults */
++		scan_ch->dsp_atten = 110;
++		if (band == IEEE80211_BAND_5GHZ)
++			scan_ch->tx_gain = ((1 << 5) | (3 << 3)) | 3;
++		else
++			scan_ch->tx_gain = ((1 << 5) | (5 << 3));
++		added++;
++	} else
++		IWL_ERR(priv, "no valid channel found\n");
++	return added;
++}
++
+ static int iwl_get_channels_for_scan(struct iwl_priv *priv,
+ 				     enum ieee80211_band band,
+ 				     u8 is_active, u8 n_probes,
+@@ -421,6 +487,7 @@ static int iwl_scan_initiate(struct iwl_
+ 
+ 	IWL_DEBUG_INFO(priv, "Starting scan...\n");
+ 	set_bit(STATUS_SCANNING, &priv->status);
++	priv->is_internal_short_scan = false;
+ 	priv->scan_start = jiffies;
+ 	priv->scan_pass_start = priv->scan_start;
+ 
+@@ -488,6 +555,45 @@ out_unlock:
+ }
+ EXPORT_SYMBOL(iwl_mac_hw_scan);
+ 
++/*
++ * internal short scan, this function should only been called while associated.
++ * It will reset and tune the radio to prevent possible RF related problem
++ */
++int iwl_internal_short_hw_scan(struct iwl_priv *priv)
++{
++	int ret = 0;
++
++	if (!iwl_is_ready_rf(priv)) {
++		ret = -EIO;
++		IWL_DEBUG_SCAN(priv, "not ready or exit pending\n");
++		goto out;
++	}
++	if (test_bit(STATUS_SCANNING, &priv->status)) {
++		IWL_DEBUG_SCAN(priv, "Scan already in progress.\n");
++		ret = -EAGAIN;
++		goto out;
++	}
++	if (test_bit(STATUS_SCAN_ABORTING, &priv->status)) {
++		IWL_DEBUG_SCAN(priv, "Scan request while abort pending\n");
++		ret = -EAGAIN;
++		goto out;
++	}
++	priv->scan_bands = 0;
++	if (priv->band == IEEE80211_BAND_5GHZ)
++		priv->scan_bands |= BIT(IEEE80211_BAND_5GHZ);
++	else
++		priv->scan_bands |= BIT(IEEE80211_BAND_2GHZ);
++
++	IWL_DEBUG_SCAN(priv, "Start internal short scan...\n");
++	set_bit(STATUS_SCANNING, &priv->status);
++	priv->is_internal_short_scan = true;
++	queue_work(priv->workqueue, &priv->request_scan);
++
++out:
++	return ret;
++}
++EXPORT_SYMBOL(iwl_internal_short_hw_scan);
++
+ #define IWL_SCAN_CHECK_WATCHDOG (7 * HZ)
+ 
+ void iwl_bg_scan_check(struct work_struct *data)
+@@ -551,7 +657,8 @@ u16 iwl_fill_probe_req(struct iwl_priv *
+ 	if (WARN_ON(left < ie_len))
+ 		return len;
+ 
+-	memcpy(pos, ies, ie_len);
++	if (ies)
++		memcpy(pos, ies, ie_len);
+ 	len += ie_len;
+ 	left -= ie_len;
+ 
+@@ -654,7 +761,6 @@ static void iwl_bg_request_scan(struct w
+ 		unsigned long flags;
+ 
+ 		IWL_DEBUG_INFO(priv, "Scanning while associated...\n");
+-
+ 		spin_lock_irqsave(&priv->lock, flags);
+ 		interval = priv->beacon_int;
+ 		spin_unlock_irqrestore(&priv->lock, flags);
+@@ -672,7 +778,9 @@ static void iwl_bg_request_scan(struct w
+ 			       scan_suspend_time, interval);
+ 	}
+ 
+-	if (priv->scan_request->n_ssids) {
++	if (priv->is_internal_short_scan) {
++		IWL_DEBUG_SCAN(priv, "Start internal passive scan.\n");
++	} else if (priv->scan_request->n_ssids) {
+ 		int i, p = 0;
+ 		IWL_DEBUG_SCAN(priv, "Kicking off active scan\n");
+ 		for (i = 0; i < priv->scan_request->n_ssids; i++) {
+@@ -753,24 +861,38 @@ static void iwl_bg_request_scan(struct w
+ 	rx_chain |= rx_ant << RXON_RX_CHAIN_FORCE_SEL_POS;
+ 	rx_chain |= 0x1 << RXON_RX_CHAIN_DRIVER_FORCE_POS;
+ 	scan->rx_chain = cpu_to_le16(rx_chain);
+-	cmd_len = iwl_fill_probe_req(priv,
+-				(struct ieee80211_mgmt *)scan->data,
+-				priv->scan_request->ie,
+-				priv->scan_request->ie_len,
+-				IWL_MAX_SCAN_SIZE - sizeof(*scan));
++	if (!priv->is_internal_short_scan) {
++		cmd_len = iwl_fill_probe_req(priv,
++					(struct ieee80211_mgmt *)scan->data,
++					priv->scan_request->ie,
++					priv->scan_request->ie_len,
++					IWL_MAX_SCAN_SIZE - sizeof(*scan));
++	} else {
++		cmd_len = iwl_fill_probe_req(priv,
++					(struct ieee80211_mgmt *)scan->data,
++					NULL, 0,
++					IWL_MAX_SCAN_SIZE - sizeof(*scan));
+ 
++	}
+ 	scan->tx_cmd.len = cpu_to_le16(cmd_len);
+-
+ 	if (iwl_is_monitor_mode(priv))
+ 		scan->filter_flags = RXON_FILTER_PROMISC_MSK;
+ 
+ 	scan->filter_flags |= (RXON_FILTER_ACCEPT_GRP_MSK |
+ 			       RXON_FILTER_BCON_AWARE_MSK);
+ 
+-	scan->channel_count =
+-		iwl_get_channels_for_scan(priv, band, is_active, n_probes,
+-			(void *)&scan->data[le16_to_cpu(scan->tx_cmd.len)]);
+-
++	if (priv->is_internal_short_scan) {
++		scan->channel_count =
++			iwl_get_single_channel_for_scan(priv, band,
++				(void *)&scan->data[le16_to_cpu(
++				scan->tx_cmd.len)]);
++	} else {
++		scan->channel_count =
++			iwl_get_channels_for_scan(priv, band,
++				is_active, n_probes,
++				(void *)&scan->data[le16_to_cpu(
++				scan->tx_cmd.len)]);
++	}
+ 	if (scan->channel_count == 0) {
+ 		IWL_DEBUG_SCAN(priv, "channel count %d\n", scan->channel_count);
+ 		goto done;
+@@ -831,7 +953,12 @@ void iwl_bg_scan_completed(struct work_s
+ 
+ 	cancel_delayed_work(&priv->scan_check);
+ 
+-	ieee80211_scan_completed(priv->hw, false);
++	if (!priv->is_internal_short_scan)
++		ieee80211_scan_completed(priv->hw, false);
++	else {
++		priv->is_internal_short_scan = false;
++		IWL_DEBUG_SCAN(priv, "internal short scan completed\n");
++	}
+ 
+ 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
+ 		return;

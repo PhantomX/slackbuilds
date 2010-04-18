@@ -1,0 +1,236 @@
+From 84efb21352ab48f43ec824eb53378356c2ce9c63 Mon Sep 17 00:00:00 2001
+From: Ben Skeggs <bskeggs@redhat.com>
+Date: Fri, 16 Apr 2010 08:12:34 +1000
+Subject: [PATCH 2/2] drm-nouveau-acpi-edid-fallback
+
+---
+ drivers/gpu/drm/nouveau/nouveau_acpi.c      |   81 ++++++++++++++++++++++++--
+ drivers/gpu/drm/nouveau/nouveau_connector.c |    5 ++
+ drivers/gpu/drm/nouveau/nouveau_drv.h       |   20 +++++--
+ drivers/gpu/drm/nouveau/nouveau_state.c     |    5 +-
+ 4 files changed, 95 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_acpi.c b/drivers/gpu/drm/nouveau/nouveau_acpi.c
+index 48227e7..ac7fd04 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_acpi.c
++++ b/drivers/gpu/drm/nouveau/nouveau_acpi.c
+@@ -2,11 +2,13 @@
+ #include <linux/acpi.h>
+ #include <acpi/acpi_drivers.h>
+ #include <acpi/acpi_bus.h>
++#include <acpi/video.h>
+ 
+ #include "drmP.h"
+ #include "drm.h"
+ #include "drm_sarea.h"
+ #include "drm_crtc_helper.h"
++#include "nouveau_connector.h"
+ #include "nouveau_drv.h"
+ #include "nouveau_drm.h"
+ #include "nv50_display.h"
+@@ -35,7 +37,7 @@ static int nouveau_dsm(struct drm_device *dev, int func, int arg, int *result)
+ 		0xB3, 0x4D, 0x7E, 0x5F, 0xEA, 0x12, 0x9F, 0xD4,
+ 	};
+ 
+-	struct pci_dev *pdev = dev->pdev;
++	struct drm_nouveau_private *dev_priv = dev->dev_private;
+ 	struct acpi_handle *handle;
+ 	struct acpi_buffer output = { ACPI_ALLOCATE_BUFFER, NULL };
+ 	struct acpi_object_list input;
+@@ -43,11 +45,11 @@ static int nouveau_dsm(struct drm_device *dev, int func, int arg, int *result)
+ 	union acpi_object *obj;
+ 	int err;
+ 
+-	handle = DEVICE_ACPI_HANDLE(&pdev->dev);
+-
+-	if (!handle)
++	if (!dev_priv->acpi_device)
+ 		return -ENODEV;
+ 
++	handle = dev_priv->acpi_device->handle;
++
+ 	input.count = 4;
+ 	input.pointer = params;
+ 	params[0].type = ACPI_TYPE_BUFFER;
+@@ -62,7 +64,8 @@ static int nouveau_dsm(struct drm_device *dev, int func, int arg, int *result)
+ 
+ 	err = acpi_evaluate_object(handle, "_DSM", &input, &output);
+ 	if (err) {
+-		NV_INFO(dev, "failed to evaluate _DSM: %d\n", err);
++		if (err != AE_NOT_FOUND)
++			NV_INFO(dev, "failed to evaluate _DSM: %d\n", err);
+ 		return err;
+ 	}
+ 
+@@ -86,7 +89,7 @@ static int nouveau_dsm(struct drm_device *dev, int func, int arg, int *result)
+ 	return 0;
+ }
+ 
+-int nouveau_hybrid_setup(struct drm_device *dev)
++static int nouveau_hybrid_setup(struct drm_device *dev)
+ {
+ 	int result;
+ 
+@@ -110,7 +113,7 @@ int nouveau_hybrid_setup(struct drm_device *dev)
+ 	return 0;
+ }
+ 
+-bool nouveau_dsm_probe(struct drm_device *dev)
++static bool nouveau_dsm_probe(struct drm_device *dev)
+ {
+ 	int support = 0;
+ 
+@@ -123,3 +126,67 @@ bool nouveau_dsm_probe(struct drm_device *dev)
+ 
+ 	return true;
+ }
++
++int nouveau_acpi_get_edid(struct drm_device *dev,
++			  struct drm_connector *connector,
++			  struct edid **pedid)
++{
++	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	void *edid;
++	int connector_type = 0;
++	int ret;
++
++	switch (connector->connector_type) {
++	case DRM_MODE_CONNECTOR_VGA:
++		connector_type = ACPI_VIDEO_DISPLAY_CRT;
++		break;
++	case DRM_MODE_CONNECTOR_Composite:
++	case DRM_MODE_CONNECTOR_SVIDEO:
++	case DRM_MODE_CONNECTOR_Component:
++	case DRM_MODE_CONNECTOR_9PinDIN:
++		connector_type = ACPI_VIDEO_DISPLAY_TV;
++		break;
++	case DRM_MODE_CONNECTOR_DVII:
++	case DRM_MODE_CONNECTOR_DVID:
++	case DRM_MODE_CONNECTOR_HDMIA:
++	case DRM_MODE_CONNECTOR_HDMIB:
++	case DRM_MODE_CONNECTOR_DisplayPort:
++		connector_type = ACPI_VIDEO_DISPLAY_DVI;
++		break;
++	case DRM_MODE_CONNECTOR_LVDS:
++		connector_type = ACPI_VIDEO_DISPLAY_LCD;
++		break;
++	}
++
++	ret = acpi_video_get_edid(dev_priv->acpi_device, connector_type, -1, &edid);
++
++	if (ret < 0)
++		return ret;
++
++	*pedid = edid;
++	return 0;
++}
++
++int nouveau_acpi_setup(struct drm_device *dev)
++{
++	struct pci_dev *pdev = dev->pdev;
++	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	acpi_handle handle;
++	struct acpi_device *acpi_dev;
++
++	handle = DEVICE_ACPI_HANDLE(&pdev->dev);
++
++	if (!handle)
++		return -ENODEV;
++
++	if (acpi_bus_get_device(handle, &acpi_dev))
++		return -ENODEV;
++
++	dev_priv->acpi_device = acpi_dev;
++	dev_priv->acpi_dsm = nouveau_dsm_probe(dev);
++
++	if (dev_priv->acpi_dsm)
++		nouveau_hybrid_setup(dev);
++
++	return 0;
++}
+diff --git a/drivers/gpu/drm/nouveau/nouveau_connector.c b/drivers/gpu/drm/nouveau/nouveau_connector.c
+index 8fc0145..6ddb67c 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_connector.c
++++ b/drivers/gpu/drm/nouveau/nouveau_connector.c
+@@ -716,6 +716,11 @@ nouveau_connector_create_lvds(struct drm_device *dev,
+ 		}
+ 	}
+ 
++	/* Let's try ACPI */
++	if (!nv_connector->edid && !nv_connector->native_mode &&
++	    !dev_priv->vbios.fp_no_ddc)
++		nouveau_acpi_get_edid(dev, connector, &nv_connector->edid);
++
+ 	if (!nv_connector->edid)
+ 		goto out;
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drv.h b/drivers/gpu/drm/nouveau/nouveau_drv.h
+index 9e12c93..41b9b70 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drv.h
++++ b/drivers/gpu/drm/nouveau/nouveau_drv.h
+@@ -39,6 +39,8 @@
+ #define NOUVEAU_FAMILY   0x0000FFFF
+ #define NOUVEAU_FLAGS    0xFFFF0000
+ 
++#include <linux/acpi.h>
++
+ #include "ttm/ttm_bo_api.h"
+ #include "ttm/ttm_bo_driver.h"
+ #include "ttm/ttm_placement.h"
+@@ -615,7 +617,11 @@ struct drm_nouveau_private {
+ 	} susres;
+ 
+ 	struct backlight_device *backlight;
++
++#ifdef CONFIG_ACPI
+ 	bool acpi_dsm;
++	struct acpi_device *acpi_device;
++#endif
+ 
+ 	struct nouveau_channel *evo;
+ 
+@@ -846,16 +852,20 @@ extern int  nouveau_dma_wait(struct nouveau_channel *, int slots, int size);
+ 
+ /* nouveau_acpi.c */
+ #ifdef CONFIG_ACPI
+-extern int nouveau_hybrid_setup(struct drm_device *dev);
+-extern bool nouveau_dsm_probe(struct drm_device *dev);
++extern int nouveau_acpi_setup(struct drm_device *dev);
++extern int nouveau_acpi_get_edid(struct drm_device *dev,
++				 struct drm_connector *connector,
++				 struct edid **edid);
+ #else
+-static inline int nouveau_hybrid_setup(struct drm_device *dev)
++static inline int nouveau_acpi_setup(struct drm_device *dev)
+ {
+ 	return 0;
+ }
+-static inline bool nouveau_dsm_probe(struct drm_device *dev)
++static inline int nouveau_acpi_get_edid(struct drm_device *dev,
++					struct drm_connector *connector,
++					struct edid **edid)
+ {
+-	return false;
++	return -ENODEV;
+ }
+ #endif
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_state.c b/drivers/gpu/drm/nouveau/nouveau_state.c
+index a11cd7f..9f52b05 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_state.c
++++ b/drivers/gpu/drm/nouveau/nouveau_state.c
+@@ -627,10 +627,7 @@ int nouveau_load(struct drm_device *dev, unsigned long flags)
+ 	NV_DEBUG(dev, "vendor: 0x%X device: 0x%X class: 0x%X\n",
+ 		 dev->pci_vendor, dev->pci_device, dev->pdev->class);
+ 
+-	dev_priv->acpi_dsm = nouveau_dsm_probe(dev);
+-
+-	if (dev_priv->acpi_dsm)
+-		nouveau_hybrid_setup(dev);
++	nouveau_acpi_setup(dev);
+ 
+ 	dev_priv->wq = create_workqueue("nouveau");
+ 	if (!dev_priv->wq)
+-- 
+1.7.0.1
+

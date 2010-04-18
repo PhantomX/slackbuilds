@@ -15,7 +15,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.1p1-scp-manpage.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.2p1-edns.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.4p1-pka.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.3p1-randclean.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.3p1-dso.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.4p1-staterr.patch
 
 set +e +o pipefail

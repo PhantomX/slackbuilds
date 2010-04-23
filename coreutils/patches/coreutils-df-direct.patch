@@ -1,0 +1,188 @@
+diff --git a/doc/coreutils.texi b/doc/coreutils.texi
+index fa21f03..7b8b622 100644
+--- a/doc/coreutils.texi
++++ b/doc/coreutils.texi
+@@ -10104,6 +10104,13 @@ pseudo-file-systems, such as automounter entries.
+ Scale sizes by @var{size} before printing them (@pxref{Block size}).
+ For example, @option{-BG} prints sizes in units of 1,073,741,824 bytes.
+ 
++@itemx --direct
++@opindex --direct
++@cindex direct statfs for a file
++Do not resolve mount point and show statistics directly for a file. It can be
++especially useful for NFS mount points if there is a boundary between two
++storage policies behind the mount point.
++
+ @itemx --total
+ @opindex --total
+ @cindex grand total of disk size, usage and available space
+diff --git a/src/df.c b/src/df.c
+index b862879..a74c353 100644
+--- a/src/df.c
++++ b/src/df.c
+@@ -110,6 +110,9 @@ static bool print_type;
+ /* If true, print a grand total at the end.  */
+ static bool print_grand_total;
+ 
++/* If true, show statistics for a file instead of mount point.  */
++static bool direct_statfs;
++
+ /* Grand total data. */
+ static struct fs_usage grand_fsu;
+ 
+@@ -118,13 +121,15 @@ static struct fs_usage grand_fsu;
+ enum
+ {
+   NO_SYNC_OPTION = CHAR_MAX + 1,
+-  SYNC_OPTION
++  SYNC_OPTION,
++  DIRECT_OPTION
+ };
+ 
+ static struct option const long_options[] =
+ {
+   {"all", no_argument, NULL, 'a'},
+   {"block-size", required_argument, NULL, 'B'},
++  {"direct", no_argument, NULL, DIRECT_OPTION},
+   {"inodes", no_argument, NULL, 'i'},
+   {"human-readable", no_argument, NULL, 'h'},
+   {"si", no_argument, NULL, 'H'},
+@@ -205,7 +210,10 @@ print_header (void)
+               human_readable (output_block_size, buf, opts, 1, 1));
+     }
+ 
+-  fputs (_(" Mounted on\n"), stdout);
++  if (direct_statfs)
++    fputs (_(" File\n"), stdout);
++  else
++    fputs (_(" Mounted on\n"), stdout);
+ }
+ 
+ /* Is FSTYPE a type of file system that should be listed?  */
+@@ -754,6 +762,17 @@ show_point (const char *point, const struct stat *statp)
+ static void
+ show_entry (char const *name, struct stat const *statp)
+ {
++  if (direct_statfs)
++    {
++      char *resolved = canonicalize_file_name (name);
++      if (resolved)
++	{
++	  show_dev (NULL, resolved, NULL, NULL, false, false, NULL);
++	  free (resolved);
++	  return;
++	}
++    }
++
+   if ((S_ISBLK (statp->st_mode) || S_ISCHR (statp->st_mode))
+       && show_disk (name))
+     return;
+@@ -820,6 +839,7 @@ Mandatory arguments to long options are mandatory for short options too.\n\
+       fputs (_("\
+   -a, --all             include dummy file systems\n\
+   -B, --block-size=SIZE  use SIZE-byte blocks\n\
++      --direct          show statistics for a file instead of mount point\n\
+       --total           produce a grand total\n\
+   -h, --human-readable  print sizes in human readable format (e.g., 1K 234M 2G)\n\
+   -H, --si              likewise, but use powers of 1000 not 1024\n\
+@@ -894,6 +914,9 @@ main (int argc, char **argv)
+               xstrtol_fatal (e, oi, c, long_options, optarg);
+           }
+           break;
++        case DIRECT_OPTION:
++          direct_statfs = true;
++          break;
+         case 'i':
+           inode_format = true;
+           break;
+@@ -954,6 +977,13 @@ main (int argc, char **argv)
+         }
+     }
+ 
++  if (direct_statfs && show_local_fs)
++    {
++      error (0, 0, _("options --direct and --local (-l) are mutually "
++		     "exclusive"));
++      usage (EXIT_FAILURE);
++    }
++
+   if (human_output_opts == -1)
+     {
+       if (posix_format)
+diff --git a/tests/Makefile.am b/tests/Makefile.am
+index 1cb5a76..ab7abb4 100644
+--- a/tests/Makefile.am
++++ b/tests/Makefile.am
+@@ -328,6 +328,7 @@ TESTS =						\
+   dd/stderr					\
+   dd/unblock					\
+   dd/unblock-sync				\
++  df/direct					\
+   df/total-verify				\
+   du/2g						\
+   du/8gb					\
+diff --git a/tests/df/direct b/tests/df/direct
+new file mode 100644
+index 0000000..9088f27
+--- /dev/null
++++ b/tests/df/direct
+@@ -0,0 +1,59 @@
++#!/bin/sh
++# Ensure "df --direct" works as documented
++
++# Copyright (C) 2010 Free Software Foundation, Inc.
++
++# This program is free software: you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation, either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++if test "$VERBOSE" = yes; then
++  set -x
++  df --version
++fi
++
++. $srcdir/test-lib.sh
++
++df || skip_test_ "df fails"
++
++DIR=`pwd` || framework_failure
++FILE="$DIR/file"
++touch "$FILE" || framework_failure
++echo "$FILE" > file_exp || framework_failure
++echo "Mounted on" > header_mounted_exp || framework_failure
++echo "File" > header_file_exp || framework_failure
++
++fail=0
++
++df --portability "$FILE" > df_out || fail=1
++df --portability --direct "$FILE" > df_direct_out || fail=1
++df --portability --direct --local "$FILE" > /dev/null 2>&1 && fail=1
++
++# check df header
++$AWK '{ if (NR==1) print $6 " " $7; }' df_out > header_mounted_out \
++  || framework_failure
++$AWK '{ if (NR==1) print $6; }' df_direct_out > header_file_out \
++  || framework_failure
++compare header_mounted_out header_mounted_exp || fail=1
++compare header_file_out header_file_exp || fail=1
++
++# check df output (without --direct)
++$AWK '{ if (NR==2) print $6; }' df_out > file_out \
++  || framework_failure
++compare file_out file_exp && fail=1
++
++# check df output (with --direct)
++$AWK '{ if (NR==2) print $6; }' df_direct_out > file_out \
++  || framework_failure
++compare file_out file_exp || fail=1
++
++Exit $fail

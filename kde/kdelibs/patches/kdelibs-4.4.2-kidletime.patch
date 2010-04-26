@@ -1,0 +1,609 @@
+Index: widgetbasedpoller.cpp
+===================================================================
+--- widgetbasedpoller.cpp	(.../tags/KDE/4.4.2/kdelibs/kutils/kidletime)	(revision 1118483)
++++ widgetbasedpoller.cpp	(.../branches/KDE/4.4/kdelibs/kutils/kidletime)	(revision 1118483)
+@@ -21,10 +21,11 @@
+ #include <QWidget>
+ #include <QTimer>
+ #include <QEvent>
+-#include <QDebug>
++
+ #ifndef WIN32
+ #include <fixx11h.h>
+ #endif
++
+ WidgetBasedPoller::WidgetBasedPoller(QWidget *parent)
+         : AbstractSystemPoller(parent)
+ {
+Index: kidletime.cpp
+===================================================================
+--- kidletime.cpp	(.../tags/KDE/4.4.2/kdelibs/kutils/kidletime)	(revision 1118483)
++++ kidletime.cpp	(.../branches/KDE/4.4/kdelibs/kutils/kidletime)	(revision 1118483)
+@@ -35,8 +35,10 @@
+ #endif
+ #endif
+ 
++#include <QWeakPointer>
++#include <QSet>
++
+ #include <kglobal.h>
+-#include <QPointer>
+ 
+ class KIdleTimeHelper
+ {
+@@ -61,18 +63,17 @@
+ 
+ class KIdleTimePrivate
+ {
++    Q_DECLARE_PUBLIC(KIdleTime)
++    KIdleTime *q_ptr;
+ public:
+     KIdleTimePrivate() : catchResume(false), currentId(0) {}
+ 
+-    Q_DECLARE_PUBLIC(KIdleTime)
+-    KIdleTime *q_ptr;
+-
+     void loadSystem();
+     void unloadCurrentSystem();
+     void _k_resumingFromIdle();
+     void _k_timeoutReached(int msec);
+ 
+-    QPointer<AbstractSystemPoller> poller;
++    QWeakPointer<AbstractSystemPoller> poller;
+     bool catchResume;
+ 
+     int currentId;
+@@ -87,16 +88,19 @@
+     s_globalKIdleTime->q = this;
+ 
+     d_ptr->q_ptr = this;
+-    d_ptr->loadSystem();
+ 
+-    connect(d_ptr->poller, SIGNAL(resumingFromIdle()), this, SLOT(_k_resumingFromIdle()));
+-    connect(d_ptr->poller, SIGNAL(timeoutReached(int)), this, SLOT(_k_timeoutReached(int)));
++    Q_D(KIdleTime);
++    d->loadSystem();
++
++    connect(d->poller.data(), SIGNAL(resumingFromIdle()), this, SLOT(_k_resumingFromIdle()));
++    connect(d->poller.data(), SIGNAL(timeoutReached(int)), this, SLOT(_k_timeoutReached(int)));
+ }
+ 
+ KIdleTime::~KIdleTime()
+ {
+     Q_D(KIdleTime);
+     d->unloadCurrentSystem();
++    delete d_ptr;
+ }
+ 
+ void KIdleTime::catchNextResumeEvent()
+@@ -105,7 +109,7 @@
+ 
+     if (!d->catchResume) {
+         d->catchResume = true;
+-        d->poller->catchIdleEvent();
++        d->poller.data()->catchIdleEvent();
+     }
+ }
+ 
+@@ -115,7 +119,7 @@
+ 
+     if (d->catchResume) {
+         d->catchResume = false;
+-        d->poller->stopCatchingIdleEvents();
++        d->poller.data()->stopCatchingIdleEvents();
+     }
+ }
+ 
+@@ -123,7 +127,7 @@
+ {
+     Q_D(KIdleTime);
+ 
+-    d->poller->addTimeout(msec);
++    d->poller.data()->addTimeout(msec);
+ 
+     ++d->currentId;
+     d->associations[d->currentId] = msec;
+@@ -144,7 +148,7 @@
+     d->associations.remove(identifier);
+ 
+     if (!d->associations.values().contains(msec)) {
+-        d->poller->removeTimeout(msec);
++        d->poller.data()->removeTimeout(msec);
+     }
+ }
+ 
+@@ -152,14 +156,25 @@
+ {
+     Q_D(KIdleTime);
+ 
+-    foreach(int i, d->poller->timeouts()) {
+-        removeIdleTimeout(i);
++    QHash< int, int >::iterator i = d->associations.begin();
++    QSet< int > removed;
++    removed.reserve(d->associations.size());
++
++    while (i != d->associations.end()) {
++        int msec = d->associations[i.key()];
++
++        i = d->associations.erase(i);
++
++        if (!removed.contains(msec)) {
++            d->poller.data()->removeTimeout(msec);
++            removed.insert(msec);
++        }
+     }
+ }
+ 
+ void KIdleTimePrivate::loadSystem()
+ {
+-    if (poller) {
++    if (!poller.isNull()) {
+         unloadCurrentSystem();
+     }
+ 
+@@ -169,41 +184,39 @@
+ #ifdef HAVE_XSYNC
+ #ifdef HAVE_XSCREENSAVER
+     if (XSyncBasedPoller::instance()->isAvailable()) {
+-        XSyncBasedPoller::instance()->setUpPoller();
+         poller = XSyncBasedPoller::instance();
+     } else {
+         poller = new XScreensaverBasedPoller();
+-        poller->setUpPoller();
+     }
+ #else
+-    XSyncBasedPoller::instance()->setUpPoller();
+     poller = XSyncBasedPoller::instance();
+ #endif
+ #else
+ #ifdef HAVE_XSCREENSAVER
+     poller = new XScreensaverBasedPoller();
+-    poller->setUpPoller();
+ #endif
+ #endif
+ #else
+ #ifdef Q_WS_MAC
+     poller = new MacPoller();
+-    poller->setUpPoller();
+ #else
+     poller = new WindowsPoller();
+-    poller->setUpPoller();
+ #endif
+ #endif
++
++    if (!poller.isNull()) {
++        poller.data()->setUpPoller();
++    }
+ }
+ 
+ void KIdleTimePrivate::unloadCurrentSystem()
+ {
+-    if (poller) {
+-        poller->unloadPoller();
++    if (!poller.isNull()) {
++        poller.data()->unloadPoller();
+ #ifdef Q_WS_X11
+-        if (qobject_cast<XSyncBasedPoller*>(poller) == 0) {
++        if (qobject_cast<XSyncBasedPoller*>(poller.data()) == 0) {
+ #endif
+-            poller->deleteLater();
++            poller.data()->deleteLater();
+ #ifdef Q_WS_X11
+         }
+ #endif
+@@ -216,7 +229,7 @@
+ 
+     if (catchResume) {
+         emit q->resumingFromIdle();
+-        catchResume = false;
++        q->stopCatchingResumeEvent();
+     }
+ }
+ 
+@@ -236,14 +249,14 @@
+ {
+     Q_D(KIdleTime);
+ 
+-    d->poller->simulateUserActivity();
++    d->poller.data()->simulateUserActivity();
+ }
+ 
+ int KIdleTime::idleTime() const
+ {
+     Q_D(const KIdleTime);
+ 
+-    return d->poller->forcePollRequest();
++    return d->poller.data()->forcePollRequest();
+ }
+ 
+ QHash<int, int> KIdleTime::idleTimeouts() const
+Index: kidletime.h
+===================================================================
+--- kidletime.h	(.../tags/KDE/4.4.2/kdelibs/kutils/kidletime)	(revision 1118483)
++++ kidletime.h	(.../branches/KDE/4.4/kdelibs/kutils/kidletime)	(revision 1118483)
+@@ -99,7 +99,7 @@
+      *
+      */
+     int addIdleTimeout(int msec);
+-    
++
+     /**
+      * Stops catching the idle timeout identified by the token \c identifier,
+      * if it was registered earlier with addIdleTimeout.
+@@ -108,7 +108,7 @@
+      * @param identifier the token returned from addIdleTimeout of the timeout you want to stop listening to
+      */
+     void removeIdleTimeout(int identifier);
+-    
++
+     /**
+      * Stops catching every set timeout (if any). This means that after calling this method, the signal
+      * \link timeoutReached won't be called again until you will add another timeout
+@@ -117,7 +117,7 @@
+      * @see addIdleTimeout
+      */
+     void removeAllIdleTimeouts();
+-    
++
+     /**
+      * Catches the next resume from idle event. This means that whenever user activity will be registered, or
+      * \link simulateUserActivity is called, the signal \link resumingFromIdle will be triggered. 
+@@ -156,7 +156,7 @@
+      * @see catchNextResumeEvent
+      */
+     void resumingFromIdle();
+-    
++
+     /**
+      * Triggered when the system has been idle for x milliseconds, identified by the previously set
+      * timeout.
+Index: xsyncbasedpoller.cpp
+===================================================================
+--- xsyncbasedpoller.cpp	(.../tags/KDE/4.4.2/kdelibs/kutils/kidletime)	(revision 1118483)
++++ xsyncbasedpoller.cpp	(.../branches/KDE/4.4/kdelibs/kutils/kidletime)	(revision 1118483)
+@@ -23,10 +23,6 @@
+ #include <klocalizedstring.h>
+ #include <kglobal.h>
+ 
+-#ifdef HAVE_XTEST
+-#include <X11/keysym.h>
+-#include <X11/extensions/XTest.h>
+-#endif // HAVE_XTEST
+ #include <fixx11h.h>
+ 
+ class XSyncBasedPollerHelper
+@@ -52,19 +48,17 @@
+ 
+ XSyncBasedPoller::XSyncBasedPoller(QWidget *parent)
+         : AbstractSystemPoller(parent)
+-#ifdef HAVE_XSYNC
+         , m_display(QX11Info::display())
+         , m_idleCounter(X::None)
+         , m_resetAlarm(X::None)
+-#endif
+         , m_available(true)
+ {
+     Q_ASSERT(!s_globalXSyncBasedPoller->q);
+     s_globalXSyncBasedPoller->q = this;
+ 
+-#ifdef HAVE_XSYNC
+     int sync_major, sync_minor;
+     int ncounters;
++    XSyncSystemCounter *counters;
+ 
+     if (!XSyncQueryExtension(m_display, &m_sync_event, &m_sync_error)) {
+         m_available = false;
+@@ -78,33 +72,29 @@
+ 
+     kDebug() << sync_major << sync_minor;
+ 
+-    m_counters = XSyncListSystemCounters(m_display, &ncounters);
++    counters = XSyncListSystemCounters(m_display, &ncounters);
+ 
+     bool idleFound = false;
+ 
+     for (int i = 0; i < ncounters; ++i) {
+-        if (!strcmp(m_counters[i].name, "IDLETIME")) {
++        if (!strcmp(counters[i].name, "IDLETIME")) {
++            m_idleCounter = counters[i].counter;
+             idleFound = true;
+             break;
+         }
+     }
+ 
+-    XSyncFreeSystemCounterList(m_counters);
++    XSyncFreeSystemCounterList(counters);
+ 
+     if (!idleFound) {
+         m_available = false;
+     }
+ 
+-#else
+-    m_available = false;
+-#endif
+-
+     if (m_available) {
+         kDebug() << "XSync seems available and ready";
+     } else {
+         kDebug() << "XSync seems not available";
+     }
+-
+ }
+ 
+ XSyncBasedPoller::~XSyncBasedPoller()
+@@ -118,43 +108,21 @@
+ 
+ bool XSyncBasedPoller::setUpPoller()
+ {
+-#ifdef HAVE_XSYNC
+-    int ncounters;
+-
+     if (!isAvailable()) {
+         return false;
+     }
+ 
+     kDebug() << "XSync Inited";
+ 
+-    m_counters = XSyncListSystemCounters(m_display, &ncounters);
+-
+-    bool idleFound = false;
+-
+-    for (int i = 0; i < ncounters && !m_idleCounter; ++i) {
+-        if (!strcmp(m_counters[i].name, "IDLETIME")) {
+-            m_idleCounter = m_counters[i].counter;
+-            idleFound = true;
+-        }
+-    }
+-
+-    if (!idleFound) {
+-        return false;
+-    }
+-
+     KApplication::kApplication()->installX11EventFilter(this);
+ 
+     kDebug() << "Supported, init completed";
+ 
+     return true;
+-#else
+-    return false;
+-#endif
+ }
+ 
+ void XSyncBasedPoller::unloadPoller()
+ {
+-    //XSyncFreeSystemCounterList( m_counters );
+ }
+ 
+ void XSyncBasedPoller::addTimeout(int nextTimeout)
+@@ -162,24 +130,21 @@
+     /* We need to set the counter to the idle time + the value
+      * requested for next timeout
+      */
+-#ifdef HAVE_XSYNC
++
++    // If there's already an alarm for the requested timeout, skip
++    if (m_timeoutAlarm.contains(nextTimeout)) {
++        return;
++    }
++
+     XSyncValue timeout;
+     XSyncAlarm newalarm = X::None;
+-    /*XSyncValue idleTime;
+-    XSyncValue result;
+-    int overflow;*/
+ 
+-//    XSyncQueryCounter(m_display, m_idleCounter, &idleTime);
+-
+     XSyncIntToValue(&timeout, nextTimeout);
+ 
+-//    XSyncValueAdd(&result, idleTime, timeout, &overflow);
+-
+     setAlarm(m_display, &newalarm, m_idleCounter,
+              XSyncPositiveComparison, timeout);
+ 
+-    m_timeoutAlarm[nextTimeout] = newalarm;
+-#endif
++    m_timeoutAlarm.insert(nextTimeout, newalarm);
+ }
+ 
+ int XSyncBasedPoller::forcePollRequest()
+@@ -189,25 +154,19 @@
+ 
+ int XSyncBasedPoller::poll()
+ {
+-#ifdef HAVE_XSYNC
+     XSyncValue idleTime;
+-
+     XSyncQueryCounter(m_display, m_idleCounter, &idleTime);
+ 
+     return XSyncValueLow32(idleTime);
+-#endif
+-    return -1;
+ }
+ 
+ void XSyncBasedPoller::removeTimeout(int timeout)
+ {
+-#ifdef HAVE_XSYNC
+     if (m_timeoutAlarm.contains(timeout)) {
+         XSyncAlarm a = m_timeoutAlarm[timeout];
+-        m_timeoutAlarm.remove(timeout);
+         XSyncDestroyAlarm(m_display, a);
++        m_timeoutAlarm.remove(timeout);
+     }
+-#endif
+ }
+ 
+ QList<int> XSyncBasedPoller::timeouts() const
+@@ -217,15 +176,14 @@
+ 
+ void XSyncBasedPoller::stopCatchingIdleEvents()
+ {
+-#ifdef HAVE_XSYNC
+-    XSyncDestroyAlarm(m_display, m_resetAlarm);
+-    m_resetAlarm = X::None;
+-#endif
++    if (m_resetAlarm != X::None) {
++        XSyncDestroyAlarm(m_display, m_resetAlarm);
++        m_resetAlarm = X::None;
++    }
+ }
+ 
+ void XSyncBasedPoller::catchIdleEvent()
+ {
+-#ifdef HAVE_XSYNC
+     XSyncValue idleTime;
+ 
+     XSyncQueryCounter(m_display, m_idleCounter, &idleTime);
+@@ -242,25 +200,22 @@
+     XSyncValueAdd(&plusone, idleTime, add, &overflow);
+     setAlarm(m_display, &m_resetAlarm, m_idleCounter,
+              XSyncNegativeComparison, plusone);
+-#endif
+-
+ }
+ 
+ void XSyncBasedPoller::reloadAlarms()
+ {
+     XSyncValue timeout;
+ 
+-    foreach(int nextTimeout, m_timeoutAlarm.keys()) {
+-        XSyncIntToValue(&timeout, nextTimeout);
++    for (QHash<int, XSyncAlarm>::iterator i = m_timeoutAlarm.begin(); i != m_timeoutAlarm.end(); ++i) {
++        XSyncIntToValue(&timeout, i.key());
+ 
+-        setAlarm(m_display, &(m_timeoutAlarm[nextTimeout]), m_idleCounter,
++        setAlarm(m_display, &(i.value()), m_idleCounter,
+                  XSyncPositiveComparison, timeout);
+     }
+ }
+ 
+ bool XSyncBasedPoller::x11Event(XEvent *event)
+ {
+-#ifdef HAVE_XSYNC
+     XSyncAlarmNotifyEvent *alarmEvent;
+ 
+     if (event->type != m_sync_event + XSyncAlarmNotify) {
+@@ -273,11 +228,11 @@
+         return false;
+     }
+ 
+-    foreach(int timeout, m_timeoutAlarm.keys()) {
+-        if (alarmEvent->alarm == m_timeoutAlarm[timeout]) {
++    for (QHash<int, XSyncAlarm>::const_iterator i = m_timeoutAlarm.constBegin(); i != m_timeoutAlarm.constEnd(); ++i) {
++        if (alarmEvent->alarm == i.value()) {
+             /* Bling! Caught! */
+-            emit timeoutReached(timeout);
+-            // Update back the alarm to fire back if the system gets inactive for the same time
++            emit timeoutReached(i.key());
++            // Update the alarm to fire back if the system gets inactive for the same time
+             catchIdleEvent();
+             return false;
+         }
+@@ -291,12 +246,8 @@
+     }
+ 
+     return false;
+-#else
+-    return false;
+-#endif
+ }
+ 
+-#ifdef HAVE_XSYNC
+ void XSyncBasedPoller::setAlarm(Display *dpy, XSyncAlarm *alarm, XSyncCounter counter,
+                                 XSyncTestType test, XSyncValue value)
+ {
+@@ -315,22 +266,16 @@
+     flags = XSyncCACounter | XSyncCAValueType | XSyncCATestType |
+             XSyncCAValue | XSyncCADelta;
+ 
+-    if (*alarm)
++    if (*alarm) {
+         XSyncChangeAlarm(dpy, *alarm, flags, &attr);
+-    else
++    } else {
+         *alarm = XSyncCreateAlarm(dpy, flags, &attr);
++    }
+ }
+-#endif
+ 
+ void XSyncBasedPoller::simulateUserActivity()
+ {
+-#ifdef HAVE_XTEST
+-    Display* display = QX11Info::display();
+-    XTestFakeMotionEvent(display, 0, 1, 2, 0);
+-    XSync(display, false);
+-#endif // HAVE_XTEST
++    XResetScreenSaver(QX11Info::display());
+ }
+ 
+ #include "xsyncbasedpoller.moc"
+-
+-
+Index: xscreensaverbasedpoller.cpp
+===================================================================
+--- xscreensaverbasedpoller.cpp	(.../tags/KDE/4.4.2/kdelibs/kutils/kidletime)	(revision 1118483)
++++ xscreensaverbasedpoller.cpp	(.../branches/KDE/4.4/kdelibs/kutils/kidletime)	(revision 1118483)
+@@ -25,12 +25,6 @@
+ #include <X11/Xlib.h>
+ #include <X11/extensions/scrnsaver.h>
+ 
+-#ifdef HAVE_XTEST
+-#include <X11/keysym.h>
+-#include <X11/extensions/XTest.h>
+-#include <fixx11h.h>
+-#endif // HAVE_XTEST
+-
+ XScreensaverBasedPoller::XScreensaverBasedPoller(QWidget *parent)
+         : WidgetBasedPoller(parent)
+ {
+@@ -72,11 +66,7 @@
+ void XScreensaverBasedPoller::simulateUserActivity()
+ {
+     stopCatchingIdleEvents();
+-#ifdef HAVE_XTEST
+-    Display* display = QX11Info::display();
+-    XTestFakeMotionEvent(display, 0, 1, 2, 0);
+-    XSync(display, false);
+-#endif // HAVE_XTEST
++    XResetScreenSaver(QX11Info::display());
+     emit resumingFromIdle();
+ }
+ 
+Index: xsyncbasedpoller.h
+===================================================================
+--- xsyncbasedpoller.h	(.../tags/KDE/4.4.2/kdelibs/kutils/kidletime)	(revision 1118483)
++++ xsyncbasedpoller.h	(.../branches/KDE/4.4/kdelibs/kutils/kidletime)	(revision 1118483)
+@@ -26,10 +26,8 @@
+ 
+ #include <config-kidletime.h>
+ 
+-#ifdef HAVE_XSYNC
+ #include <X11/Xlib.h>
+ #include <X11/extensions/sync.h>
+-#endif
+ 
+ class XSyncBasedPoller : public AbstractSystemPoller
+ {
+@@ -61,22 +59,16 @@
+     int poll();
+     void reloadAlarms();
+ 
+-#ifdef HAVE_XSYNC
+ private:
+     void setAlarm(Display *dpy, XSyncAlarm *alarm, XSyncCounter counter,
+                   XSyncTestType test, XSyncValue value);
+-#endif
+ 
+ private:
+-#ifdef HAVE_XSYNC
+     Display * m_display;
+     int                 m_sync_event, m_sync_error;
+-    XSyncSystemCounter  *m_counters;
+     XSyncCounter        m_idleCounter;
+     QHash<int, XSyncAlarm>   m_timeoutAlarm;
+     XSyncAlarm          m_resetAlarm;
+-#endif
+-    QWidget * m_filterWidget;
+     bool m_available;
+ };
+ 

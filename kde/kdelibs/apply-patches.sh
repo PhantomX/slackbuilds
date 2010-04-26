@@ -12,6 +12,9 @@ zcat ${SB_PATCHDIR}/kdelibs-4.2.85-kde149705.patch.gz | patch -p1 --verbose --ba
 # http://fedoraproject.org/wiki/Releases/FeatureDictionary
 # http://bugs.kde.org/show_bug.cgi?id=154561
 zcat ${SB_PATCHDIR}/kdelibs-4.0.0-k3spell-hunspell.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+# install all .css files and Doxyfile.global in kdelibs-common to build
+# kdepimlibs-apidocs against
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.3.90-install_all_css.patch
 
 # Add "(Slackware)" to khtml user agent
 zcat ${SB_PATCHDIR}/kdelibs-4.0.2-branding-slk.patch.gz |sed \
@@ -36,7 +39,13 @@ patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-4.4.1-add-
 zcat ${SB_PATCHDIR}/kdelibs-4.3.98-no_rpath.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 
 # 4.4 upstream
-
+# https://bugzilla.redhat.com/585242
+# http://bugs.kde.org/206455
+patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-kate-inputmethod.patch
+# fix kidletime, http://bugs.kde.org/231628, 227279, 218468
+( cd kutils/kidletime
+  patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-kidletime.patch
+)
 # security fix
 ## Not Upstreamed? why not ? -- Rex
 zcat ${SB_PATCHDIR}/kdelibs-4.3.1-CVE-2009-2702.patch.gz | patch -p1 --verbose --backup --suffix=.orig

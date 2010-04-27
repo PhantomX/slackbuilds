@@ -10,7 +10,7 @@ zcat ${SB_PATCHDIR}/x11.startwithblackscreen.diff.gz | patch -p1 --verbose
 # Patches from Fedora
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.5.0-bg-none-root.patch
 
-zcat ${SB_PATCHDIR}/xserver-1.4.99-pic-libxf86config.patch.gz | patch -p1 --verbose
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0.901-pic-libxf86config.patch
 zcat ${SB_PATCHDIR}/xserver-1.7.4-z-now.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/xserver-1.5.0-projector-fb-size.patch.gz | patch -p1 --verbose
 
@@ -37,8 +37,7 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.0-randr-gamma-restore.patch
 zcat ${SB_PATCHDIR}/xserver-1.7.1-multilib.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch.gz | patch -p1 --verbose
 
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8-no-hardcoded-etc.patch
-
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.6-export-more-dix-functions.patch
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then

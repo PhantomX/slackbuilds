@@ -1,60 +1,3 @@
-diff --git a/drivers/gpu/drm/drm_crtc.c b/drivers/gpu/drm/drm_crtc.c
-index d91fb8c..aa24f2f 100644
---- a/drivers/gpu/drm/drm_crtc.c
-+++ b/drivers/gpu/drm/drm_crtc.c
-@@ -33,6 +33,7 @@
- #include "drm.h"
- #include "drmP.h"
- #include "drm_crtc.h"
-+#include "drm_edid.h"
- 
- struct drm_prop_enum_list {
- 	int type;
-@@ -2349,7 +2350,7 @@ int drm_mode_connector_update_edid_property(struct drm_connector *connector,
- 					    struct edid *edid)
- {
- 	struct drm_device *dev = connector->dev;
--	int ret = 0;
-+	int ret = 0, size;
- 
- 	if (connector->edid_blob_ptr)
- 		drm_property_destroy_blob(dev, connector->edid_blob_ptr);
-@@ -2361,7 +2362,9 @@ int drm_mode_connector_update_edid_property(struct drm_connector *connector,
- 		return ret;
- 	}
- 
--	connector->edid_blob_ptr = drm_property_create_blob(connector->dev, 128, edid);
-+	size = EDID_LENGTH * (1 + edid->extensions);
-+	connector->edid_blob_ptr = drm_property_create_blob(connector->dev,
-+							    size, edid);
- 
- 	ret = drm_connector_property_set_value(connector,
- 					       dev->mode_config.edid_property,
-diff --git a/drivers/gpu/drm/drm_crtc_helper.c b/drivers/gpu/drm/drm_crtc_helper.c
-index 7d0f00a..51103aa 100644
---- a/drivers/gpu/drm/drm_crtc_helper.c
-+++ b/drivers/gpu/drm/drm_crtc_helper.c
-@@ -104,6 +104,7 @@ int drm_helper_probe_single_connector_modes(struct drm_connector *connector,
- 	if (connector->status == connector_status_disconnected) {
- 		DRM_DEBUG_KMS("%s is disconnected\n",
- 			  drm_get_connector_name(connector));
-+		drm_mode_connector_update_edid_property(connector, NULL);
- 		goto prune;
- 	}
- 
-@@ -836,11 +837,7 @@ int drm_crtc_helper_set_config(struct drm_mode_set *set)
- 			mode_changed = true;
- 		} else if (set->fb == NULL) {
- 			mode_changed = true;
--		} else if ((set->fb->bits_per_pixel !=
--			 set->crtc->fb->bits_per_pixel) ||
--			 set->fb->depth != set->crtc->fb->depth)
--			fb_changed = true;
--		else
-+		} else
- 			fb_changed = true;
- 	}
- 
 diff --git a/drivers/gpu/drm/drm_drv.c b/drivers/gpu/drm/drm_drv.c
 index 766c468..f3c58e2 100644
 --- a/drivers/gpu/drm/drm_drv.c
@@ -146,15 +89,6 @@ index ab6c973..4ea2721 100644
  
  static struct edid_quirk {
  	char *vendor;
-@@ -85,6 +86,8 @@ static struct edid_quirk {
- 
- 	/* Envision Peripherals, Inc. EN-7100e */
- 	{ "EPI", 59264, EDID_QUIRK_135_CLOCK_TOO_HIGH },
-+	/* Envision EN2028 */
-+	{ "EPI", 8232, EDID_QUIRK_PREFER_LARGE_60 },
- 
- 	/* Funai Electronics PM36B */
- 	{ "FCM", 13600, EDID_QUIRK_PREFER_LARGE_75 |
 @@ -107,36 +110,38 @@ static struct edid_quirk {
  	{ "SAM", 638, EDID_QUIRK_PREFER_LARGE_60 },
  };
@@ -605,34 +539,6 @@ index ab6c973..4ea2721 100644
  	case LEVEL_CVT:
  		mode = drm_cvt_mode(dev, hsize, vsize, vrefresh_rate, 0, 0,
  				    false);
-@@ -707,25 +1010,16 @@ static struct drm_display_mode *drm_mode_detailed(struct drm_device *dev,
- 	mode->vsync_end = mode->vsync_start + vsync_pulse_width;
- 	mode->vtotal = mode->vdisplay + vblank;
- 
--	/* perform the basic check for the detailed timing */
--	if (mode->hsync_end > mode->htotal ||
--		mode->vsync_end > mode->vtotal) {
--		drm_mode_destroy(dev, mode);
--		DRM_DEBUG_KMS("Incorrect detailed timing. "
--				"Sync is beyond the blank.\n");
--		return NULL;
--	}
--
- 	/* Some EDIDs have bogus h/vtotal values */
- 	if (mode->hsync_end > mode->htotal)
- 		mode->htotal = mode->hsync_end + 1;
- 	if (mode->vsync_end > mode->vtotal)
- 		mode->vtotal = mode->vsync_end + 1;
- 
--	drm_mode_set_name(mode);
--
- 	drm_mode_do_interlace_quirk(mode, pt);
- 
-+	drm_mode_set_name(mode);
-+
- 	if (quirks & EDID_QUIRK_DETAILED_SYNC_PP) {
- 		pt->misc |= DRM_EDID_PT_HSYNC_POSITIVE | DRM_EDID_PT_VSYNC_POSITIVE;
- 	}
 @@ -808,10 +1102,6 @@ static struct drm_display_mode edid_est_modes[] = {
  		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_PVSYNC) }, /* 1152x864@75Hz */
  };
@@ -1275,34 +1181,6 @@ index 0f9e905..da258ca 100644
  #endif
  
  static void drm_fb_helper_on(struct fb_info *info)
-diff --git a/drivers/gpu/drm/drm_fops.c b/drivers/gpu/drm/drm_fops.c
-index 08d14df..4804872 100644
---- a/drivers/gpu/drm/drm_fops.c
-+++ b/drivers/gpu/drm/drm_fops.c
-@@ -140,14 +140,16 @@ int drm_open(struct inode *inode, struct file *filp)
- 		spin_unlock(&dev->count_lock);
- 	}
- out:
--	mutex_lock(&dev->struct_mutex);
--	if (minor->type == DRM_MINOR_LEGACY) {
--		BUG_ON((dev->dev_mapping != NULL) &&
--			(dev->dev_mapping != inode->i_mapping));
--		if (dev->dev_mapping == NULL)
--			dev->dev_mapping = inode->i_mapping;
-+	if (!retcode) {
-+		mutex_lock(&dev->struct_mutex);
-+		if (minor->type == DRM_MINOR_LEGACY) {
-+			if (dev->dev_mapping == NULL)
-+				dev->dev_mapping = inode->i_mapping;
-+			else if (dev->dev_mapping != inode->i_mapping)
-+				retcode = -ENODEV;
-+		}
-+		mutex_unlock(&dev->struct_mutex);
- 	}
--	mutex_unlock(&dev->struct_mutex);
- 
- 	return retcode;
- }
 diff --git a/drivers/gpu/drm/drm_gem.c b/drivers/gpu/drm/drm_gem.c
 index 8bf3770..aa89d4b 100644
 --- a/drivers/gpu/drm/drm_gem.c
@@ -1928,24 +1806,6 @@ index d1a651e..cfabeb9 100644
  	return ret;
  }
  
-diff --git a/drivers/gpu/drm/radeon/radeon_cs.c b/drivers/gpu/drm/radeon/radeon_cs.c
-index e9d0850..70ba02e 100644
---- a/drivers/gpu/drm/radeon/radeon_cs.c
-+++ b/drivers/gpu/drm/radeon/radeon_cs.c
-@@ -194,11 +194,8 @@ static void radeon_cs_parser_fini(struct radeon_cs_parser *parser, int error)
- 	}
- 	radeon_bo_list_unreserve(&parser->validated);
- 	for (i = 0; i < parser->nrelocs; i++) {
--		if (parser->relocs[i].gobj) {
--			mutex_lock(&parser->rdev->ddev->struct_mutex);
--			drm_gem_object_unreference(parser->relocs[i].gobj);
--			mutex_unlock(&parser->rdev->ddev->struct_mutex);
--		}
-+		if (parser->relocs[i].gobj)
-+			drm_gem_object_unreference_unlocked(parser->relocs[i].gobj);
- 	}
- 	kfree(parser->track);
- 	kfree(parser->relocs);
 diff --git a/drivers/gpu/drm/radeon/radeon_cursor.c b/drivers/gpu/drm/radeon/radeon_cursor.c
 index 28772a3..6f4a553 100644
 --- a/drivers/gpu/drm/radeon/radeon_cursor.c

@@ -17,4 +17,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-gvfs-desktop-key-2.pat
 # http://bugzilla.gnome.org/show_bug.cgi?id=519743
 zcat ${SB_PATCHDIR}/${NAME}-filetype-symlink-fix.patch.gz | patch -p0 -E --backup --verbose
 
+# from upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nautilus-2.30.1-hide-unmount-when-eject.patch
+
 set +e +o pipefail

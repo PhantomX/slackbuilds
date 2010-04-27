@@ -1,0 +1,377 @@
+commit 17660f81243e998f36257881ac3ae61685bf91c1
+Author: Michael S. Tsirkin <mst@redhat.com>
+Date:   Thu Jan 21 01:28:45 2010 -0800
+
+    vhost: fix TUN=m VHOST_NET=y
+    
+    drivers/built-in.o: In function `get_tun_socket':
+        net.c:(.text+0x15436e): undefined reference to `tun_get_socket'
+    
+    If tun is a module, vhost must be a module, too.
+    If tun is built-in or disabled, vhost can be built-in.
+    
+    Note: TUN || !TUN might look a bit strange until you realize
+    that boolean logic rules do not apply for tristate variables.
+    
+    Reported-by: Randy Dunlap <randy.dunlap@oracle.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Acked-by: Randy Dunlap <randy.dunlap@oracle.com>
+    Signed-off-by: David S. Miller <davem@davemloft.net>
+
+diff --git a/drivers/vhost/Kconfig b/drivers/vhost/Kconfig
+index 9f409f4..9e93553 100644
+--- a/drivers/vhost/Kconfig
++++ b/drivers/vhost/Kconfig
+@@ -1,6 +1,6 @@
+ config VHOST_NET
+ 	tristate "Host kernel accelerator for virtio net (EXPERIMENTAL)"
+-	depends on NET && EVENTFD && EXPERIMENTAL
++	depends on NET && EVENTFD && (TUN || !TUN) && EXPERIMENTAL
+ 	---help---
+ 	  This kernel module can be loaded in host kernel to accelerate
+ 	  guest networking with virtio_net. Not to be confused with virtio_net
+commit 5659338c88963ea791118e5e11e314b24f90c3eb
+Author: Michael S. Tsirkin <mst@redhat.com>
+Date:   Mon Feb 1 07:21:02 2010 +0000
+
+    vhost-net: switch to smp barriers
+    
+    vhost-net only uses memory barriers to control SMP effects
+    (communication with userspace potentially running on a different CPU),
+    so it should use SMP barriers and not mandatory barriers for memory
+    access ordering, as suggested by Documentation/memory-barriers.txt
+    
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Acked-by: Rusty Russell <rusty@rustcorp.com.au>
+    Signed-off-by: David S. Miller <davem@davemloft.net>
+
+diff --git a/drivers/vhost/vhost.c b/drivers/vhost/vhost.c
+index c8c25db..6eb1525 100644
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -685,7 +685,7 @@ int vhost_log_write(struct vhost_virtqueue *vq, struct vhost_log *log,
+ 	int i, r;
+
+ 	/* Make sure data written is seen before log. */
+-	wmb();
++	smp_wmb();
+ 	for (i = 0; i < log_num; ++i) {
+ 		u64 l = min(log[i].len, len);
+ 		r = log_write(vq->log_base, log[i].addr, l);
+@@ -884,7 +884,7 @@ unsigned vhost_get_vq_desc(struct vhost_dev *dev, struct vhost_virtqueue *vq,
+ 		return vq->num;
+
+ 	/* Only get avail ring entries after they have been exposed by guest. */
+-	rmb();
++	smp_rmb();
+
+ 	/* Grab the next descriptor number they're advertising, and increment
+ 	 * the index we've seen. */
+@@ -996,14 +996,14 @@ int vhost_add_used(struct vhost_virtqueue *vq, unsigned int head, int len)
+ 		return -EFAULT;
+ 	}
+ 	/* Make sure buffer is written before we update index. */
+-	wmb();
++	smp_wmb();
+ 	if (put_user(vq->last_used_idx + 1, &vq->used->idx)) {
+ 		vq_err(vq, "Failed to increment used idx");
+ 		return -EFAULT;
+ 	}
+ 	if (unlikely(vq->log_used)) {
+ 		/* Make sure data is seen before log. */
+-		wmb();
++		smp_wmb();
+ 		log_write(vq->log_base, vq->log_addr + sizeof *vq->used->ring *
+ 			  (vq->last_used_idx % vq->num),
+ 			  sizeof *vq->used->ring);
+@@ -1060,7 +1060,7 @@ bool vhost_enable_notify(struct vhost_virtqueue *vq)
+ 	}
+ 	/* They could have slipped one in as we were doing that: make
+ 	 * sure it's written, then check again. */
+-	mb();
++	smp_mb();
+ 	r = get_user(avail_idx, &vq->avail->idx);
+ 	if (r) {
+ 		vq_err(vq, "Failed to check avail idx at %p: %d\n",
+commit 86e9424d7252bae5ad1c17b4b8088193e6b27cbe
+Author: Michael S. Tsirkin <mst@redhat.com>
+Date:   Wed Feb 17 19:11:33 2010 +0200
+
+    vhost: logging thinko fix
+    
+    vhost was dong some complex math to get
+    offset to log at, and got it wrong by a couple of bytes,
+    while in fact it's simple: get address where we write,
+    subtract start of buffer, add log base.
+    
+    Do it this way.
+    
+    Reviewed-by: Juan Quintela <quintela@redhat.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+
+diff --git a/drivers/vhost/vhost.c b/drivers/vhost/vhost.c
+index 6eb1525..db21518 100644
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -1004,10 +1004,14 @@ int vhost_add_used(struct vhost_virtqueue *vq, unsigned int head, int len)
+ 	if (unlikely(vq->log_used)) {
+ 		/* Make sure data is seen before log. */
+ 		smp_wmb();
+-		log_write(vq->log_base, vq->log_addr + sizeof *vq->used->ring *
+-			  (vq->last_used_idx % vq->num),
+-			  sizeof *vq->used->ring);
+-		log_write(vq->log_base, vq->log_addr, sizeof *vq->used->ring);
++		/* Log used ring entry write. */
++		log_write(vq->log_base,
++			  vq->log_addr + ((void *)used - (void *)vq->used),
++			  sizeof *used);
++		/* Log used index update. */
++		log_write(vq->log_base,
++			  vq->log_addr + offsetof(struct vring_used, idx),
++			  sizeof vq->used->idx);
+ 		if (vq->log_ctx)
+ 			eventfd_signal(vq->log_ctx, 1);
+ 	}
+commit 73a99f083009d67d8e12603420e008d5c21b0b7d
+Author: Michael S. Tsirkin <mst@redhat.com>
+Date:   Tue Feb 23 11:23:45 2010 +0200
+
+    vhost: initialize log eventfd context pointer
+    
+    vq log eventfd context pointer needs to be initialized, otherwise
+    operation may fail or oops if log is enabled but log eventfd not set by
+    userspace.  When log_ctx for device is created, it is copied to the vq.
+    This reset was missing.
+    
+    Reviewed-by: Juan Quintela <quintela@redhat.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+
+diff --git a/drivers/vhost/vhost.c b/drivers/vhost/vhost.c
+index db21518..6c31c0c 100644
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -121,6 +121,7 @@ static void vhost_vq_reset(struct vhost_dev *dev,
+ 	vq->kick = NULL;
+ 	vq->call_ctx = NULL;
+ 	vq->call = NULL;
++	vq->log_ctx = NULL;
+ }
+
+ long vhost_dev_init(struct vhost_dev *dev,
+commit d6db3f5c11dc7ed5712d5d5682aa34025ee5248e
+Author: Michael S. Tsirkin <mst@redhat.com>
+Date:   Tue Feb 23 11:25:23 2010 +0200
+
+    vhost: fix get_user_pages_fast error handling
+    
+    get_user_pages_fast returns number of pages on success, negative value
+    on failure, but never 0. Fix vhost code to match this logic.
+    
+    Reviewed-by: Juan Quintela <quintela@redhat.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+
+diff --git a/drivers/vhost/vhost.c b/drivers/vhost/vhost.c
+index 6c31c0c..7cd55e0 100644
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -646,8 +646,9 @@ static int set_bit_to_user(int nr, void __user *addr)
+ 	int bit = nr + (log % PAGE_SIZE) * 8;
+ 	int r;
+ 	r = get_user_pages_fast(log, 1, 1, &page);
+-	if (r)
++	if (r < 0)
+ 		return r;
++	BUG_ON(r != 1);
+ 	base = kmap_atomic(page, KM_USER0);
+ 	set_bit(bit, base);
+ 	kunmap_atomic(base, KM_USER0);
+commit 39286fa41a8b2c6a9c1f656a7b3c3efca95bc1b9
+Author: Sridhar Samudrala <samudrala@us.ibm.com>
+Date:   Sun Feb 28 19:39:16 2010 +0200
+
+    vhost-net: restart tx poll on sk_sndbuf full
+    
+    guest to remote communication with vhost net sometimes stops until
+    guest driver is restarted. This happens when we get guest kick precisely
+    when the backend send queue is full, as a result handle_tx() returns without
+    polling backend. This patch fixes this by restarting tx poll on this condition.
+    
+    Signed-off-by: Sridhar Samudrala <samudrala@us.ibm.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+    Tested-by: Tom Lendacky <toml@us.ibm.com>
+
+diff --git a/drivers/vhost/net.c b/drivers/vhost/net.c
+index 91a324c..ad37da2 100644
+--- a/drivers/vhost/net.c
++++ b/drivers/vhost/net.c
+@@ -114,8 +114,12 @@ static void handle_tx(struct vhost_net *net)
+ 		return;
+
+ 	wmem = atomic_read(&sock->sk->sk_wmem_alloc);
+-	if (wmem >= sock->sk->sk_sndbuf)
++	if (wmem >= sock->sk->sk_sndbuf) {
++		mutex_lock(&vq->mutex);
++		tx_poll_start(net, sock);
++		mutex_unlock(&vq->mutex);
+ 		return;
++	}
+
+ 	use_mm(net->dev.mm);
+ 	mutex_lock(&vq->mutex);
+commit 1dace8c801ac531022bd31a7316a6b4351837617
+Author: Jeff Dike <jdike@addtoit.com>
+Date:   Thu Mar 4 16:10:14 2010 -0500
+
+    vhost: fix error path in vhost_net_set_backend
+    
+    An error could cause vhost_net_set_backend to exit without unlocking
+    vq->mutex. Fix this.
+    
+    Signed-off-by: Jeff Dike <jdike@linux.intel.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+
+diff --git a/drivers/vhost/net.c b/drivers/vhost/net.c
+index ad37da2..fcafb6b 100644
+--- a/drivers/vhost/net.c
++++ b/drivers/vhost/net.c
+@@ -508,12 +508,12 @@ static long vhost_net_set_backend(struct vhost_net *n, unsigned index, int fd)
+ 	/* Verify that ring has been setup correctly. */
+ 	if (!vhost_vq_access_ok(vq)) {
+ 		r = -EFAULT;
+-		goto err;
++		goto err_vq;
+ 	}
+ 	sock = get_socket(fd);
+ 	if (IS_ERR(sock)) {
+ 		r = PTR_ERR(sock);
+-		goto err;
++		goto err_vq;
+ 	}
+
+ 	/* start polling new socket */
+@@ -524,12 +524,14 @@ static long vhost_net_set_backend(struct vhost_net *n, unsigned index, int fd)
+ 	vhost_net_disable_vq(n, vq);
+ 	rcu_assign_pointer(vq->private_data, sock);
+ 	vhost_net_enable_vq(n, vq);
+-	mutex_unlock(&vq->mutex);
+ done:
+ 	if (oldsock) {
+ 		vhost_net_flush_vq(n, index);
+ 		fput(oldsock->file);
+ 	}
++
++err_vq:
++	mutex_unlock(&vq->mutex);
+ err:
+ 	mutex_unlock(&n->dev.mutex);
+ 	return r;
+commit 0e255572121180c900e24e33b87047abd8153cce
+Author: Michael S. Tsirkin <mst@redhat.com>
+Date:   Mon Mar 8 23:24:22 2010 +0200
+
+    vhost: fix interrupt mitigation with raw sockets
+    
+    A thinko in code means we never trigger interrupt
+    mitigation. Fix this.
+    
+    Reported-by: Juan Quintela <quintela@redhat.com>
+    Reported-by: Unai Uribarri <unai.uribarri@optenet.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+
+diff --git a/drivers/vhost/net.c b/drivers/vhost/net.c
+index fcafb6b..a6a88df 100644
+--- a/drivers/vhost/net.c
++++ b/drivers/vhost/net.c
+@@ -125,7 +125,7 @@ static void handle_tx(struct vhost_net *net)
+ 	mutex_lock(&vq->mutex);
+ 	vhost_disable_notify(vq);
+
+-	if (wmem < sock->sk->sk_sndbuf * 2)
++	if (wmem < sock->sk->sk_sndbuf / 2)
+ 		tx_poll_stop(net);
+ 	hdr_size = vq->hdr_size;
+
+commit 535297a6ae4c3b7a0562e71fac15c213eeec68e7
+Author: Michael S. Tsirkin <mst@redhat.com>
+Date:   Wed Mar 17 16:06:11 2010 +0200
+
+    vhost: fix error handling in vring ioctls
+    
+    Stanse found a locking problem in vhost_set_vring:
+    several returns from VHOST_SET_VRING_KICK, VHOST_SET_VRING_CALL,
+    VHOST_SET_VRING_ERR with the vq->mutex held.
+    Fix these up.
+    
+    Reported-by: Jiri Slaby <jirislaby@gmail.com>
+    Acked-by: Laurent Chavey <chavey@google.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+
+diff --git a/drivers/vhost/vhost.c b/drivers/vhost/vhost.c
+index 7cd55e0..7bd7a1e 100644
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -476,8 +476,10 @@ static long vhost_set_vring(struct vhost_dev *d, int ioctl, void __user *argp)
+ 		if (r < 0)
+ 			break;
+ 		eventfp = f.fd == -1 ? NULL : eventfd_fget(f.fd);
+-		if (IS_ERR(eventfp))
+-			return PTR_ERR(eventfp);
++		if (IS_ERR(eventfp)) {
++			r = PTR_ERR(eventfp);
++			break;
++		}
+ 		if (eventfp != vq->kick) {
+ 			pollstop = filep = vq->kick;
+ 			pollstart = vq->kick = eventfp;
+@@ -489,8 +491,10 @@ static long vhost_set_vring(struct vhost_dev *d, int ioctl, void __user *argp)
+ 		if (r < 0)
+ 			break;
+ 		eventfp = f.fd == -1 ? NULL : eventfd_fget(f.fd);
+-		if (IS_ERR(eventfp))
+-			return PTR_ERR(eventfp);
++		if (IS_ERR(eventfp)) {
++			r = PTR_ERR(eventfp);
++			break;
++		}
+ 		if (eventfp != vq->call) {
+ 			filep = vq->call;
+ 			ctx = vq->call_ctx;
+@@ -505,8 +509,10 @@ static long vhost_set_vring(struct vhost_dev *d, int ioctl, void __user *argp)
+ 		if (r < 0)
+ 			break;
+ 		eventfp = f.fd == -1 ? NULL : eventfd_fget(f.fd);
+-		if (IS_ERR(eventfp))
+-			return PTR_ERR(eventfp);
++		if (IS_ERR(eventfp)) {
++			r = PTR_ERR(eventfp);
++			break;
++		}
+ 		if (eventfp != vq->error) {
+ 			filep = vq->error;
+ 			vq->error = eventfp;
+commit 179b284e2fc0c638035843968f7d7ab8ab701525
+Author: Jeff Dike <jdike@addtoit.com>
+Date:   Wed Apr 7 09:59:10 2010 -0400
+
+    vhost-net: fix vq_memory_access_ok error checking
+    
+    vq_memory_access_ok needs to check whether mem == NULL
+    
+    Signed-off-by: Jeff Dike <jdike@linux.intel.com>
+    Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+
+diff --git a/drivers/vhost/vhost.c b/drivers/vhost/vhost.c
+index 7bd7a1e..b8e1127 100644
+--- a/drivers/vhost/vhost.c
++++ b/drivers/vhost/vhost.c
+@@ -235,6 +235,10 @@ static int vq_memory_access_ok(void __user *log_base, struct vhost_memory *mem,
+ 			       int log_all)
+ {
+ 	int i;
++
++        if (!mem)
++                return 0;
++
+ 	for (i = 0; i < mem->nregions; ++i) {
+ 		struct vhost_memory_region *m = mem->regions + i;
+ 		unsigned long a = m->userspace_addr;

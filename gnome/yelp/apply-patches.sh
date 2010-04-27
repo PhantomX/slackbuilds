@@ -11,4 +11,6 @@ zcat ${SB_PATCHDIR}/${NAME}-use-pango.patch.gz | patch -p1 -E --backup --verbose
 # http://bugzilla.gnome.org/show_bug.cgi?id=592762
 zcat ${SB_PATCHDIR}/ellipsis.patch.gz | patch -p1 -E --backup --verbose
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/libs.patch
+
 set +e +o pipefail

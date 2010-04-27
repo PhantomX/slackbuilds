@@ -1,0 +1,74 @@
+Message-ID: <20100421092825.19520.48557.stgit@warthog.procyon.org.uk>
+From: David Howells <dhowells@redhat.com>
+Subject: [PATCH] CRED: Fix a race in creds_are_invalid() in credentials
+	debugging
+Date: Wed, 21 Apr 2010 10:28:25 +0100
+
+creds_are_invalid() reads both cred->usage and cred->subscribers and then
+compares them to make sure the number of processes subscribed to a cred struct
+never exceeds the refcount of that cred struct.
+
+The problem is that this can cause a race with both copy_creds() and
+exit_creds() as the two counters, whilst they are of atomic_t type, are only
+atomic with respect to themselves, and not atomic with respect to each other.
+
+This means that if creds_are_invalid() can read the values on one CPU whilst
+they're being modified on another CPU, and so can observe an evolving state in
+which the subscribers count now is greater than the usage count a moment
+before.
+
+Switching the order in which the counts are read cannot help, so the thing to
+do is to remove that particular check.
+
+I had considered rechecking the values to see if they're in flux if the test
+fails, but I can't guarantee they won't appear the same, even if they've
+changed several times in the meantime.
+
+Note that this can only happen if CONFIG_DEBUG_CREDENTIALS is enabled.
+
+The problem is only likely to occur with multithreaded programs, and can be
+tested by the tst-eintr1 program from glibc's "make check".  The symptoms look
+like:
+
+	CRED: Invalid credentials
+	CRED: At include/linux/cred.h:240
+	CRED: Specified credentials: ffff88003dda5878 [real][eff]
+	CRED: ->magic=43736564, put_addr=(null)
+	CRED: ->usage=766, subscr=766
+	CRED: ->*uid = { 0,0,0,0 }
+	CRED: ->*gid = { 0,0,0,0 }
+	CRED: ->security is ffff88003d72f538
+	CRED: ->security {359, 359}
+	------------[ cut here ]------------
+	kernel BUG at kernel/cred.c:850!
+	...
+	RIP: 0010:[<ffffffff81049889>]  [<ffffffff81049889>] __invalid_creds+0x4e/0x52
+	...
+	Call Trace:
+	 [<ffffffff8104a37b>] copy_creds+0x6b/0x23f
+
+Note the ->usage=766 and subscr=766.  The values appear the same because
+they've been re-read since the check was made.
+
+Reported-by: Roland McGrath <roland@redhat.com>
+Signed-off-by: David Howells <dhowells@redhat.com>
+---
+
+ kernel/cred.c |    2 --
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/cred.c b/kernel/cred.c
+index ce1a52b..62af181 100644
+--- a/kernel/cred.c
++++ b/kernel/cred.c
+@@ -793,8 +793,6 @@ bool creds_are_invalid(const struct cred *cred)
+ {
+ 	if (cred->magic != CRED_MAGIC)
+ 		return true;
+-	if (atomic_read(&cred->usage) < atomic_read(&cred->subscribers))
+-		return true;
+ #ifdef CONFIG_SECURITY_SELINUX
+ 	if (selinux_is_enabled()) {
+ 		if ((unsigned long) cred->security < PAGE_SIZE)
+
+

@@ -13,11 +13,9 @@ else
 fi
 
 # From upstream
-#"who" doesn't determine user's message status correctly - #454261
-zcat ${SB_PATCHDIR}/coreutils-8.4-who-msgstatus.patch.gz | patch -p1 -E --backup --verbose
 
 # Fedora patches
-zcat ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch
 # add note about no difference between binary/text mode on Linux - md5sum manpage
 zcat ${SB_PATCHDIR}/${NAME}-6.10-manpages.patch.gz | patch -p1 -E --backup --verbose
 # temporarily workaround probable kernel issue with TCSADRAIN
@@ -33,12 +31,12 @@ zcat ${SB_PATCHDIR}/sh-utils-1.16-paths.patch.gz | patch -p1 -E --backup --verbo
 zcat ${SB_PATCHDIR}/${NAME}-4.5.3-langinfo.patch.gz | patch -p1 -E --backup --verbose
 
 # (sb) lin18nux/lsb compliance
-zcat ${SB_PATCHDIR}/${NAME}-i18n.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-i18n.patch
 
 if [ "${SB_PAM}" = "YES" ] ; then
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-pam.patch
   zcat ${SB_PATCHDIR}/${NAME}-setsid.patch.gz | patch -p1 -E --backup --verbose
-  zcat ${SB_PATCHDIR}/${NAME}-5.2.1-runuser.patch.gz | patch -p1 -E --backup --verbose
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.2.1-runuser.patch
   zcat ${SB_PATCHDIR}/${NAME}-split-pam.patch.gz | patch -p1 -E --backup --verbose
 fi
 

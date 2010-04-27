@@ -134,8 +134,9 @@ ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch linux-2.6-acpi-video-export-edid.patch
 
 ApplyPatch acpi-ec-add-delay-before-write.patch
-ApplyPatch acpi-ec-allow-multibyte-access-to-ec.patch
-ApplyPatch acpi-ec-limit-burst-to-64-bit.patch
+
+ApplyPatch linux-2.6-acpi-sleep-live-sci-live.patch
+ApplyPatch linux-2.6-pci-fixup-resume.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
@@ -218,6 +219,7 @@ ApplyPatch virt_console-rollup.patch
 ApplyPatch virt_console-fix-race.patch
 ApplyPatch virt_console-fix-fix-race.patch
 ApplyPatch virt_console-rollup2.patch
+ApplyPatch vhost_net-rollup2.patch
 
 # Fix block I/O errors in KVM
 #ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
@@ -229,6 +231,8 @@ ApplyPatch drm-core-next.patch
 
 # Nouveau DRM + drm fixes
 ApplyPatch drm-radeon-evergreen.patch
+ApplyPatch drm-radeon-kms-fix-dual-link-dvi.patch
+ApplyPatch drm-radeon-ss-fix.patch
 # squash nouveau firmware into a single commit until it gets into linux-firmware
 ApplyPatch drm-nouveau-abi16.patch
 ApplyPatch drm-nouveau-updates.patch
@@ -237,7 +241,9 @@ ApplyPatch drm-nouveau-acpi-edid-fallback.patch
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
-ApplyPatch drm-intel-acpi-populate-didl.patch
+ApplyPatch linux-2.6-intel-iommu-igfx.patch
+ApplyPatch drm-intel-gen5-dither.patch
+ApplyPatch drm-intel-sdvo-fix.patch
 
 ApplyPatch linux-2.6-phylib-autoload.patch
 
@@ -273,22 +279,15 @@ ApplyPatch ssb_check_for_sprom.patch
 # backport iwlwifi fixes (thanks, sgruszka!) -- drop when stable catches-up
 ApplyPatch iwlwifi-reset-card-during-probe.patch
 
-# make b43 gracefully switch to PIO mode in event of DMA errors
-ApplyPatch b43_-Allow-PIO-mode-to-be-selected-at-module-load.patch
-ApplyPatch b43_-fall-back-gracefully-to-PIO-mode-after-fatal-DMA-errors.patch
-
 ApplyPatch libata-fix-accesses-at-LBA28-boundary.patch
 
 # patches from Intel to address intermittent firmware failures with iwlagn
-ApplyPatch mac80211_-tear-down-all-agg-queues-when-restart_reconfig-hw.patch
 ApplyPatch iwlwifi_-check-for-aggregation-frame-and-queue.patch
-ApplyPatch iwlwifi_-clear-all-tx-queues-when-firmware-ready.patch
 ApplyPatch iwlwifi_-clear-all-the-stop_queue-flag-after-load-firmware.patch
 ApplyPatch iwlwifi_-add-function-to-reset_tune-radio-if-needed.patch
 ApplyPatch iwlwifi_-Logic-to-control-how-frequent-radio-should-be-reset-if-needed.patch
 ApplyPatch iwlwifi_-Tune-radio-to-prevent-unexpected-behavior.patch
 ApplyPatch iwlwifi_-multiple-force-reset-mode.patch
-ApplyPatch iwlwifi_-fix-scan-race.patch
 ApplyPatch iwlwifi_-Adjusting-PLCP-error-threshold-for-1000-NIC.patch
 ApplyPatch iwlwifi_-separated-time-check-for-different-type-of-force-reset.patch
 ApplyPatch iwlwifi_-add-internal-short-scan-support-for-3945.patch
@@ -297,5 +296,8 @@ ApplyPatch iwlwifi_-move-plcp-check-to-separated-function.patch
 ApplyPatch iwlwifi_-Recover-TX-flow-failure.patch
 ApplyPatch iwlwifi_-code-cleanup-for-connectivity-recovery.patch
 ApplyPatch iwlwifi_-iwl_good_ack_health-only-apply-to-AGN-device.patch
+
+# RHBZ#583843
+ApplyPatch linux-2.6-creds_are_invalid-race.patch
 
 set +e +o pipefail

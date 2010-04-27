@@ -1,0 +1,114 @@
+From ef59fcdd9d7fe818d36a0072c80770c0d1a3cc9c Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Fri, 23 Apr 2010 16:07:40 -0400
+Subject: [PATCH] drm/i915: Fix DDC bus selection for multifunction SDVO
+
+Multifunction SDVO cards stopped working after 14571b4, and would report
+something that looked remarkably like an ADD2 SPD ROM instead of EDID.
+This appears to be because DDC bus selection was utterly horked by that
+commit; controlled_output was no longer always a single bit, so
+intel_sdvo_select_ddc_bus would pick bus 0, which is (unsurprisingly)
+the SPD ROM bus, not a DDC bus.
+
+So, instead of that, let's just use the DDC bus the child device table
+tells us to use.  I'm guessing at the bitmask and shifting from VBIOS
+dumps, but it can't possibly be worse.
+
+cf. https://bugzilla.redhat.com/584229
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+---
+ drivers/gpu/drm/i915/i915_drv.h   |    1 +
+ drivers/gpu/drm/i915/intel_bios.c |    1 +
+ drivers/gpu/drm/i915/intel_sdvo.c |   41 ++++++++----------------------------
+ 3 files changed, 11 insertions(+), 32 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index a43a4f5..5d609a8 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -135,6 +135,7 @@ struct sdvo_device_mapping {
+ 	u8 slave_addr;
+ 	u8 dvo_wiring;
+ 	u8 initialized;
++	u8 ddc_pin;
+ };
+ 
+ struct drm_i915_error_state {
+diff --git a/drivers/gpu/drm/i915/intel_bios.c b/drivers/gpu/drm/i915/intel_bios.c
+index f9ba452..4c748d8 100644
+--- a/drivers/gpu/drm/i915/intel_bios.c
++++ b/drivers/gpu/drm/i915/intel_bios.c
+@@ -366,6 +366,7 @@ parse_sdvo_device_mapping(struct drm_i915_private *dev_priv,
+ 			p_mapping->dvo_port = p_child->dvo_port;
+ 			p_mapping->slave_addr = p_child->slave_addr;
+ 			p_mapping->dvo_wiring = p_child->dvo_wiring;
++			p_mapping->ddc_pin = p_child->ddc_pin;
+ 			p_mapping->initialized = 1;
+ 		} else {
+ 			DRM_DEBUG_KMS("Maybe one SDVO port is shared by "
+diff --git a/drivers/gpu/drm/i915/intel_sdvo.c b/drivers/gpu/drm/i915/intel_sdvo.c
+index df9f997..f55c0d7 100644
+--- a/drivers/gpu/drm/i915/intel_sdvo.c
++++ b/drivers/gpu/drm/i915/intel_sdvo.c
+@@ -2053,40 +2053,17 @@ static const struct drm_encoder_funcs intel_sdvo_enc_funcs = {
+  * outputs, then LVDS outputs.
+  */
+ static void
+-intel_sdvo_select_ddc_bus(struct intel_sdvo_priv *dev_priv)
++intel_sdvo_select_ddc_bus(struct drm_i915_private *dev_priv,
++			  struct intel_sdvo_priv *sdvo, u32 reg)
+ {
+-	uint16_t mask = 0;
+-	unsigned int num_bits;
++	struct sdvo_device_mapping *mapping;
+ 
+-	/* Make a mask of outputs less than or equal to our own priority in the
+-	 * list.
+-	 */
+-	switch (dev_priv->controlled_output) {
+-	case SDVO_OUTPUT_LVDS1:
+-		mask |= SDVO_OUTPUT_LVDS1;
+-	case SDVO_OUTPUT_LVDS0:
+-		mask |= SDVO_OUTPUT_LVDS0;
+-	case SDVO_OUTPUT_TMDS1:
+-		mask |= SDVO_OUTPUT_TMDS1;
+-	case SDVO_OUTPUT_TMDS0:
+-		mask |= SDVO_OUTPUT_TMDS0;
+-	case SDVO_OUTPUT_RGB1:
+-		mask |= SDVO_OUTPUT_RGB1;
+-	case SDVO_OUTPUT_RGB0:
+-		mask |= SDVO_OUTPUT_RGB0;
+-		break;
+-	}
+-
+-	/* Count bits to find what number we are in the priority list. */
+-	mask &= dev_priv->caps.output_flags;
+-	num_bits = hweight16(mask);
+-	if (num_bits > 3) {
+-		/* if more than 3 outputs, default to DDC bus 3 for now */
+-		num_bits = 3;
+-	}
++	if (IS_SDVOB(reg))
++		mapping = &(dev_priv->sdvo_mappings[0]);
++	else
++		mapping = &(dev_priv->sdvo_mappings[1]);
+ 
+-	/* Corresponds to SDVO_CONTROL_BUS_DDCx */
+-	dev_priv->ddc_bus = 1 << num_bits;
++	sdvo->ddc_bus = 1 << ((mapping->ddc_pin & 0xf0) >> 4);
+ }
+ 
+ static bool
+@@ -2863,7 +2840,7 @@ bool intel_sdvo_init(struct drm_device *dev, int sdvo_reg)
+ 		goto err_i2c;
+ 	}
+ 
+-	intel_sdvo_select_ddc_bus(sdvo_priv);
++	intel_sdvo_select_ddc_bus(dev_priv, sdvo_priv, sdvo_reg);
+ 
+ 	/* Set the input timing to the screen. Assume always input 0. */
+ 	intel_sdvo_set_target_input(intel_encoder, true, false);
+-- 
+1.7.0.1
+

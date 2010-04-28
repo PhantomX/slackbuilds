@@ -34,16 +34,11 @@ ApplyPatch() {
   esac
 }
 
+ApplyPatch gdb-upstream.patch
+
 # The merged branch `archer' of: http://sourceware.org/gdb/wiki/ProjectArcher
-ApplyPatch gdb-archer.patch.gz
-
-# Support multiple directories for `set debug-file-directory' (BZ 528668).
-ApplyPatch gdb-bz528668-symfile-sepcrc.patch.gz
-ApplyPatch gdb-bz528668-symfile-cleanup.patch.gz
-ApplyPatch gdb-bz528668-symfile-multi.patch.gz
-
-# Fix bp conditionals [bp_location-accel] regression (BZ 538626).
-ApplyPatch gdb-bz538626-bp_location-accel-bp-cond.patch.gz
+ApplyPatch gdb-archer.patch
+ApplyPatch gdb-archer-ada.patch
 
 # Work around out-of-date dejagnu that does not have KFAIL
 ApplyPatch gdb-6.3-rh-dummykfail-20041202.patch.gz
@@ -63,11 +58,11 @@ ApplyPatch gdb-6.3-framepczero-20040927.patch.gz
 ApplyPatch gdb-6.3-ppc64displaysymbol-20041124.patch.gz
 
 # Fix upstream `set scheduler-locking step' vs. upstream PPC atomic seqs.
-ApplyPatch gdb-6.6-scheduler_locking-step-sw-watchpoints2.patch.gz
+ApplyPatch gdb-6.6-scheduler_locking-step-sw-watchpoints2.patch
 
 # Add a wrapper script to GDB that implements pstack using the
 # --readnever option.
-ApplyPatch gdb-6.3-gstack-20050411.patch.gz
+ApplyPatch gdb-6.3-gstack-20050411.patch
 
 # Get selftest working with sep-debug-info
 ApplyPatch gdb-6.3-test-self-20050110.patch.gz
@@ -116,7 +111,7 @@ ApplyPatch gdb-6.3-ia64-info-frame-fix-20050725.patch.gz
 ApplyPatch gdb-6.3-inheritancetest-20050726.patch.gz
 
 # Add readnever option
-ApplyPatch gdb-6.3-readnever-20050907.patch.gz
+ApplyPatch gdb-6.3-readnever-20050907.patch
 
 # Fix ia64 gdb problem with user-specified SIGILL handling
 ApplyPatch gdb-6.3-ia64-sigill-20051115.patch.gz
@@ -125,21 +120,17 @@ ApplyPatch gdb-6.3-ia64-sigill-20051115.patch.gz
 ApplyPatch gdb-6.3-bt-past-zero-20051201.patch.gz
 
 # Use bigger numbers than int.
-ApplyPatch gdb-6.3-large-core-20051206.patch.gz
-
-# Hard-code executable names in gstack, such that it can run with a
-# corrupted or missing PATH.
-ApplyPatch gdb-6.3-gstack-without-path-20060414.patch.gz
+ApplyPatch gdb-6.3-large-core-20051206.patch
 
 # Fix debuginfo addresses resolving for --emit-relocs Linux kernels (BZ 203661).
-ApplyPatch gdb-6.5-bz203661-emit-relocs.patch.gz
+ApplyPatch gdb-6.5-bz203661-emit-relocs.patch
 
 # Security patch: avoid stack overflows in dwarf expression computation.
 # CVE-2006-4146
 ApplyPatch gdb-6.5-dwarf-stack-overflow.patch.gz
 
 # Support TLS symbols (+`errno' suggestion if no pthread is found) (BZ 185337).
-ApplyPatch gdb-6.5-bz185337-resolve-tls-without-debuginfo-v2.patch.gz
+ApplyPatch gdb-6.5-bz185337-resolve-tls-without-debuginfo-v2.patch
 
 # Fix TLS symbols resolving for objects with separate .debug file (-debuginfo).
 ApplyPatch gdb-6.5-tls-of-separate-debuginfo.patch.gz
@@ -153,7 +144,7 @@ ApplyPatch gdb-6.5-sharedlibrary-path.patch.gz
 ApplyPatch gdb-6.5-bz190810-gdbserver-arch-advice.patch.gz
 
 # Fix `gcore' command for 32bit inferiors on 64bit hosts.
-ApplyPatch gdb-6.5-gcore-i386-on-amd64.patch.gz
+ApplyPatch gdb-6.5-gcore-i386-on-amd64.patch
 
 # Improved testsuite results by the testsuite provided by the courtesy of BEA.
 ApplyPatch gdb-6.5-BEA-testsuite.patch.gz
@@ -167,7 +158,7 @@ ApplyPatch gdb-6.5-last-address-space-byte-test.patch.gz
 ApplyPatch gdb-6.5-readline-long-line-crash-test.patch.gz
 
 # Fix bogus 0x0 unwind of the thread's topmost function clone(3) (BZ 216711).
-ApplyPatch gdb-6.5-bz216711-clone-is-outermost.patch.gz
+ApplyPatch gdb-6.5-bz216711-clone-is-outermost.patch
 
 # Try to reduce sideeffects of skipping ppc .so libs trampolines (BZ 218379).
 ApplyPatch gdb-6.5-bz218379-ppc-solib-trampoline-fix.patch.gz
@@ -201,10 +192,10 @@ ApplyPatch gdb-6.6-bz225783-gdb-debuginfo-paths.patch.gz
 ApplyPatch gdb-6.6-bz229517-gcore-without-terminal.patch.gz
 
 # Notify user of a child forked process being detached (BZ 235197).
-ApplyPatch gdb-6.6-bz235197-fork-detach-info.patch.gz
+ApplyPatch gdb-6.6-bz235197-fork-detach-info.patch
 
 # New testcase for gcore of 32bit inferiors on 64bit hosts.
-ApplyPatch gdb-6.6-gcore32-test.patch.gz
+ApplyPatch gdb-6.6-gcore32-test.patch
 
 # Avoid too long timeouts on failing cases of "annota1.exp annota3.exp".
 ApplyPatch gdb-6.6-testsuite-timeouts.patch.gz
@@ -235,7 +226,7 @@ ApplyPatch gdb-6.7-charsign-test.patch.gz
 ApplyPatch gdb-6.7-ppc-clobbered-registers-O2-test.patch.gz
 
 # Testsuite fixes for more stable/comparable results.
-ApplyPatch gdb-6.7-testsuite-stable-results.patch.gz
+ApplyPatch gdb-6.7-testsuite-stable-results.patch
 
 # Test ia64 memory leaks of the code using libunwind.
 ApplyPatch gdb-6.5-ia64-libunwind-leak-test.patch.gz
@@ -263,9 +254,6 @@ ApplyPatch gdb-6.3-mapping-zero-inode-test.patch.gz
 # Test a crash on `focus cmd', `focus prev' commands.
 ApplyPatch gdb-6.3-focus-cmd-prev-test.patch.gz
 
-# Test crash on a sw watchpoint condition getting out of the scope.
-ApplyPatch gdb-6.3-watchpoint-cond-gone-test.patch.gz
-
 # Test various forms of threads tracking across exec() (BZ 442765).
 ApplyPatch gdb-6.8-bz442765-threaded-exec-test.patch.gz
 
@@ -279,7 +267,7 @@ ApplyPatch gdb-6.8-gcc35998-ada-memory-trash.patch.gz
 ApplyPatch gdb-6.5-section-num-fixup-test.patch.gz
 
 # Refuse creating watchpoints of an address value, suggested by Martin Stransky.
-ApplyPatch gdb-6.8-constant-watchpoints.patch.gz
+ApplyPatch gdb-6.8-constant-watchpoints.patch
 
 # Fix compatibility with recent glibc headers.
 ApplyPatch gdb-6.8-glibc-headers-compat.patch.gz
@@ -288,11 +276,11 @@ ApplyPatch gdb-6.8-glibc-headers-compat.patch.gz
 ApplyPatch gdb-6.8-tui-singlebinary.patch.gz
 
 # Support transparent debugging of inlined functions for an optimized code.
-ApplyPatch gdb-6.8-inlining-addon.patch.gz
+ApplyPatch gdb-6.8-inlining-addon.patch
 ApplyPatch gdb-6.8-inlining-by-name.patch.gz
 
 # Fix PRPSINFO in the core files dumped by gcore (BZ 254229).
-ApplyPatch gdb-6.8-bz254229-gcore-prpsinfo.patch.gz
+ApplyPatch gdb-6.8-bz254229-gcore-prpsinfo.patch
 
 # Fix register assignments with no GDB stack frames (BZ 436037).
 ApplyPatch gdb-6.8-bz436037-reg-no-longer-active.patch.gz
@@ -300,8 +288,11 @@ ApplyPatch gdb-6.8-bz436037-reg-no-longer-active.patch.gz
 # Make the GDB quit processing non-abortable to cleanup everything properly.
 ApplyPatch gdb-6.8-quit-never-aborts.patch.gz
 
+# Support DW_TAG_constant for Fortran in recent Fedora/RH GCCs.
+ApplyPatch gdb-6.8-fortran-tag-constant.patch
+
 # Fix attaching to stopped processes and/or pending signals.
-ApplyPatch gdb-6.8-attach-signalled-detach-stopped.patch.gz
+ApplyPatch gdb-6.8-attach-signalled-detach-stopped.patch
 
 # Test the watchpoints conditionals works.
 ApplyPatch gdb-6.8-watchpoint-conditionals-test.patch.gz
@@ -311,14 +302,7 @@ ApplyPatch gdb-6.8-bz466901-backtrace-full-prelinked.patch.gz
 
 # Fix parsing elf64-i386 files for kdump PAE vmcore dumps (BZ 457187).
 # - Turn on 64-bit BFD support, globally enable AC_SYS_LARGEFILE.
-ApplyPatch gdb-6.8-bz457187-largefile.patch.gz
-ApplyPatch gdb-6.8-bz457187-largefile-test.patch.gz
-
-# Fix compatibility of --with-system-readline and readline-6.0+.
-ApplyPatch gdb-readline-6.0.patch.gz
-
-# Fix python pretty printers lookup on x86_64.
-ApplyPatch libstdc++-v3-python-common-prefix.patch.gz
+ApplyPatch gdb-6.8-bz457187-largefile-test.patch
 
 # New test for step-resume breakpoint placed in multiple threads at once.
 ApplyPatch gdb-simultaneous-step-resume-breakpoint-test.patch.gz
@@ -326,34 +310,88 @@ ApplyPatch gdb-simultaneous-step-resume-breakpoint-test.patch.gz
 # Fix GNU/Linux core open: Can't read pathname for load map: Input/output error.
 ApplyPatch gdb-core-open-vdso-warning.patch.gz
 
-# Support GNU IFUNCs - indirect functions (BZ 539590).
-ApplyPatch gdb-bz539590-gnu-ifunc.patch.gz
-
-# Fix callback-mode readline-6.0 regression for CTRL-C.
-ApplyPatch gdb-readline-6.0-signal.patch.gz
-
 # Fix syscall restarts for amd64->i386 biarch.
 ApplyPatch gdb-x86_64-i386-syscall-restart.patch.gz
 
 # Fix stepping with OMP parallel Fortran sections (BZ 533176).
 ApplyPatch gdb-bz533176-fortran-omp-step.patch.gz
 
-# Fix backward compatibility with G++ 4.1 namespaces "::".
-ApplyPatch gdb-empty-namespace.patch.gz
-
-# Fix regression on re-setting the single ppc watchpoint slot.
-ApplyPatch gdb-ppc-hw-watchpoint-twice.patch.gz
-
 # Fix regression by python on ia64 due to stale current frame.
 ApplyPatch gdb-follow-child-stale-parent.patch.gz
 
-# testsuite: Fix false MI "unknown output after running" regression.
-ApplyPatch gdb-testsuite-unknown-output.patch.gz
+# Workaround ccache making lineno non-zero for command-line definitions.
+ApplyPatch gdb-ccache-workaround.patch
 
-# Fix regression of gdb-7.0.1 not preserving typedef of a field.
-ApplyPatch gdb-bitfield-check_typedef.patch.gz
+# Implement 'info common' for Fortran.
+ApplyPatch gdb-fortran-common-reduce.patch
+ApplyPatch gdb-fortran-common.patch
 
-# Fix related_breakpoint stale ref crash.
-ApplyPatch gdb-stale-related_breakpoint.patch.gz
+# Fix Fortran logical-kind=8 (BZ 465310).
+ApplyPatch gdb-fortran-logical8.patch
+
+# Testcase for "Do not make up line information" fix by Daniel Jacobowitz.
+ApplyPatch gdb-lineno-makeup-test.patch
+
+# Test power7 ppc disassembly.
+ApplyPatch gdb-ppc-power7-test.patch
+
+# Revert: Add -Wunused-function to compile flags.
+ApplyPatch gdb-unused-revert.patch
+
+# Fix i386+x86_64 rwatch+awatch before run, regression against 6.8 (BZ 541866).
+ApplyPatch gdb-bz541866-rwatch-before-run.patch
+
+# Remove false gdb_assert on $sp underflow.
+ApplyPatch gdb-infcall-sp-underflow.patch
+
+# Fix double-free on std::terminate handler (Tom Tromey, BZ 562975).
+ApplyPatch gdb-bz562975-std-terminate-double-free.patch
+
+# PIE: Fix back re-reun.
+ApplyPatch gdb-pie-rerun.patch
+
+# Do not consider memory error on reading _r_debug->r_map as fatal (BZ 576742).
+ApplyPatch gdb-solib-memory-error-nonfatal.patch
+
+# testsuite: Fix unstable results of gdb.base/prelink.exp.
+ApplyPatch gdb-6.7-testsuite-stable-results-prelink.patch 
+
+# [patch 1/6] PIE: Attach binary even after re-prelinked underneath
+# [patch 2/6] PIE: Attach binary even after ld.so re-prelinked underneath
+# [patch 3/6] PIE: Fix occasional error attaching i686 binary
+ApplyPatch gdb-pie-1of6-reprelinked-bin.patch
+ApplyPatch gdb-pie-2of6-reprelinked-ld.patch
+ApplyPatch gdb-pie-3of6-relocate-once.patch
+
+# [expr-cumulative] using-directive: Fix memory leak (Sami Wagiaalla).
+ApplyPatch gdb-using-directive-leak.patch
+
+# Fix dangling displays in separate debuginfo (BZ 574483).
+ApplyPatch gdb-bz574483-display-sepdebug.patch
+
+# Support AVX registers (BZ 578250).
+ApplyPatch gdb-bz578250-avx-01of10.patch
+ApplyPatch gdb-bz578250-avx-02of10.patch
+ApplyPatch gdb-bz578250-avx-03of10.patch
+ApplyPatch gdb-bz578250-avx-04of10.patch
+ApplyPatch gdb-bz578250-avx-05of10.patch
+ApplyPatch gdb-bz578250-avx-06of10.patch
+ApplyPatch gdb-bz578250-avx-07of10.patch
+ApplyPatch gdb-bz578250-avx-08of10.patch
+ApplyPatch gdb-bz578250-avx-09of10.patch
+ApplyPatch gdb-bz578250-avx-10of10.patch
+ApplyPatch gdb-bz578250-avx-10of10-ppc.patch
+
+# Fix crash on C++ types in some debug info files (BZ 575292, Keith Seitz).
+# Temporarily workaround the crash of BZ 575292 as there was now BZ 585445.
+ApplyPatch gdb-bz575292-delayed-physname.patch
+ApplyPatch gdb-bz575292-void-workaround.patch
+
+# Pretty printers not well documented (BZ 570635, Tom Tromey, Jan Kratochvil).
+ApplyPatch gdb-bz570635-prettyprint-doc1.patch
+ApplyPatch gdb-bz570635-prettyprint-doc2.patch
+
+# Fix crash when using GNU IFUNC call from breakpoint condition.
+ApplyPatch gdb-bz539590-gnu-ifunc-fix-cond.patch
 
 set +e +o pipefail

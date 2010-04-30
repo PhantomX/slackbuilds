@@ -6,7 +6,7 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/${NAME}-time.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-message.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-security-scripts.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-security-code.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-security-code.patch
 zcat ${SB_PATCHDIR}/${NAME}-nodoc.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-gcc4.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-bmptopnm.patch.gz | patch -p1 -E --backup --verbose
@@ -22,6 +22,7 @@ zcat ${SB_PATCHDIR}/netpbm-ppmfadeusage.patch.gz | patch -p1 -E --backup --verbo
 zcat ${SB_PATCHDIR}/netpbm-fiasco-overflow.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/netpbm-lz.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/netpbm-pnmmontagefix.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-noppmtompeg.patch
 zcat ${SB_PATCHDIR}/netpbm-libpng14.patch.gz | patch -p0 -E --backup -z .png14 --verbose
 
 set +e +o pipefail

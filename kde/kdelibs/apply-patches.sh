@@ -38,14 +38,16 @@ patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-4.4.1-add-
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
 zcat ${SB_PATCHDIR}/kdelibs-4.3.98-no_rpath.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 
+# official backports
+patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-b1121957-khtml-html5-fix.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-b1122130-fix-nl.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-b1122692-khtml-fix-lynksys-confpage.patch
+# Trunk patches
+patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.1-t1098322-fix-kdialog-focus.patch
+patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-use-nepomuk-from-trunk.patch 
+
 # 4.4 upstream
-# https://bugzilla.redhat.com/585242
-# http://bugs.kde.org/206455
-patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-kate-inputmethod.patch
-# fix kidletime, http://bugs.kde.org/231628, 227279, 218468
-( cd kutils/kidletime
-  patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-kidletime.patch
-)
+
 # security fix
 ## Not Upstreamed? why not ? -- Rex
 zcat ${SB_PATCHDIR}/kdelibs-4.3.1-CVE-2009-2702.patch.gz | patch -p1 --verbose --backup --suffix=.orig

@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-4.3.90-cantor_part_desktop_fix.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.3-cantor_part_desktop_fix.patch
+patch -p0 -E --backup -z .dso --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.3-cln.patch
 
 set +e +o pipefail

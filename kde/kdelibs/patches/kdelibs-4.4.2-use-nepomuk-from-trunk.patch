@@ -1,0 +1,1562 @@
+Index: nepomuk/Mainpage.dox
+===================================================================
+--- nepomuk/Mainpage.dox
++++ nepomuk/Mainpage.dox	2010-05-04 15:50:49.000000000 +0200
+@@ -3,7 +3,7 @@
+  * $Id: sourceheader 511311 2006-02-19 14:51:05Z trueg $
+  *
+  * This file is part of the Nepomuk KDE project.
+- * Copyright (C) 2006-2009 Sebastian Trueg <trueg@kde.org>
++ * Copyright (C) 2006-2010 Sebastian Trueg <trueg@kde.org>
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -314,6 +314,8 @@
+ Nepomuk::Query::FileQuery fileQuery( term );
+ \endcode
+ 
++\subsection query_examples_file Listing Files
++
+ Restrict the search to a specific folder:
+ 
+ \code
+@@ -330,6 +332,19 @@
+ fileQuery.setTerm( Nepomuk::Query::AndTerm( fileQuery.term(), noFolderTerm ) );
+ \endcode
+ 
++List all query results in a KDirModel:
++
++\code
++KDirModel* model = getFancyDirModel();
++Nepomuk::Query::Query query = buildFancyQuery();
++KUrl searchUrl = query.toSearchUrl();
++model->dirLister()->open( searchUrl );
++\endcode
++
++KIO will use the \p nepomuksearch:/ slave to list search results as file entries.
++
++\subsection query_examples_misc Misc Query Examples
++
+ Match all EmailAddress instances with a specific email address:
+ \code
+ Nepomuk::Query::ComparisonTerm email( Vocabulary::NCO::emailAddress(), Soprano::LiteralValue( "trueg@kde.org" ) );
+@@ -344,17 +359,6 @@
+ \code
+ Nepomuk::Query::AndTerm( type, Nepomuk::Query::ComparisonTerm( Vocabulary::NCO::hasEmailAddress(), email ) );
+ \endcode
+-
+-List all query results in a KDirModel:
+-
+-\code
+-KDirModel* model = getFancyDirModel();
+-Nepomuk::Query::Query query = buildFancyQuery();
+-KUrl searchUrl = query.toSearchUrl();
+-model->dirLister()->open( searchUrl );
+-\endcode
+-
+-KIO will use the \p nepomuksearch:/ slave to list search results as file entries.
+ */
+ 
+ 
+Index: nepomuk/query/CMakeLists.txt
+===================================================================
+--- nepomuk/query/CMakeLists.txt
++++ nepomuk/query/CMakeLists.txt	2010-05-04 15:50:53.000000000 +0200
+@@ -12,6 +12,7 @@
+ )
+ 
+ add_definitions (${QT_DEFINITIONS} ${KDE4_DEFINITIONS})
++add_definitions(-DDISABLE_NEPOMUK_LEGACY=1)
+ 
+ set(nepomukquery_SRC
+   term.cpp
+Index: nepomuk/query/comparisonterm.cpp
+===================================================================
+--- nepomuk/query/comparisonterm.cpp
++++ nepomuk/query/comparisonterm.cpp	2010-05-04 15:50:50.000000000 +0200
+@@ -1,6 +1,6 @@
+ /*
+    This file is part of the Nepomuk KDE project.
+-   Copyright (C) 2009 Sebastian Trueg <trueg@kde.org>
++   Copyright (C) 2009-2010 Sebastian Trueg <trueg@kde.org>
+ 
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+@@ -63,7 +63,7 @@
+     // 1.1. operator =
+     //      use a single pattern like: ?r <prop> "value"
+     // 1.2. operator :
+-    //      use two patterns: ?r <prop> ?v . ?v bif:contains "'value*'"
++    //      use two patterns: ?r <prop> ?v . ?v bif:contains "'value'"
+     // 1.3. operator <,>,<=,>=
+     //      use two patterns: ?r <prop> ?v . FILTER(?v < value)
+     // fail if subterm is not a literal term
+@@ -78,7 +78,7 @@
+     //        use one pattern and the subpattern: ?r <prop> ?v . subpattern(?v)
+     // 2.2. operator :
+     // 2.2.1. literal subterm
+-    //        use 3 pattern: ?r <prop> ?v . ?v rdfs:label ?l . ?l bif:contains "'value*'"
++    //        use 3 pattern: ?r <prop> ?v . ?v rdfs:label ?l . ?l bif:contains "'value'"
+     // 2.2.2. resource subterm
+     //        same as =
+     // 2.2.3. subterm type and, or, comparision
+@@ -98,7 +98,7 @@
+         }
+         else if ( m_comparator == ComparisonTerm::Contains ) {
+             QString v = qbd->uniqueVarName();
+-            return QString( "%1 %2 %3 . %3 bif:contains \"'%4'\" . " )
++            return QString( "%1 %2 %3 . %3 bif:contains \"%4\" . " )
+                 .arg( resourceVarName,
+                       Soprano::Node::resourceToN3( m_property.uri() ),
+                       v,
+@@ -130,23 +130,33 @@
+             kDebug() << "Incompatible property range:" << m_property.range().uri();
+ 
+         //
+-        // The core pattern is always the same: we match to resource that have a certain
++        // The core pattern is always the same: we match to resources that have a certain
+         // property defined. The value of that property is filled in below.
+         //
+         QString corePattern;
++        QString subject;
++        QString object;
++        if( m_inverted && !m_subTerm.isLiteralTerm() ) {
++            subject = QLatin1String("%1"); // funny way to have a resulting string which takes only one arg
++            object = resourceVarName;
++        }
++        else {
++            subject = resourceVarName;
++            object = QLatin1String("%1");
++        }
+         if( qbd->flags() & Query::HandleInverseProperties &&
+             m_property.inverseProperty().isValid() ) {
+             corePattern = QString::fromLatin1("{ %1 %2 %3 . } UNION { %3 %4 %1 . } . ")
+-                              .arg( resourceVarName,
++                              .arg( subject,
+                                     Soprano::Node::resourceToN3( m_property.uri() ),
+-                                    QLatin1String("%1"), // funny way to have a resulting string which takes only one arg
++                                    object,
+                                     Soprano::Node::resourceToN3( m_property.inverseProperty().uri() ) );
+         }
+         else {
+             corePattern = QString::fromLatin1("%1 %2 %3 . ")
+-                              .arg( resourceVarName,
++                              .arg( subject,
+                                     Soprano::Node::resourceToN3( m_property.uri() ),
+-                                    QLatin1String("%1") ); // funny way to have a resulting string which takes only one arg
++                                    object );
+         }
+ 
+         if ( m_subTerm.isLiteralTerm() ) {
+@@ -169,7 +179,7 @@
+             }
+             else if ( m_comparator == ComparisonTerm::Contains ) {
+                 QString v3 = qbd->uniqueVarName();
+-                return QString::fromLatin1( "%1%2 bif:contains \"'%3'\" . " )
++                return QString::fromLatin1( "%1%2 bif:contains \"%3\" . " )
+                     .arg( pattern.arg(v3),
+                           v3,
+                           static_cast<const LiteralTermPrivate*>(m_subTerm.toLiteralTerm().d_ptr.constData())->queryText() );
+@@ -289,3 +299,25 @@
+     N_D( ComparisonTerm );
+     d->m_property = property;
+ }
++
++
++bool Nepomuk::Query::ComparisonTerm::isInverted() const
++{
++    N_D_CONST( ComparisonTerm );
++    return d->m_inverted;
++}
++
++
++void Nepomuk::Query::ComparisonTerm::setInverted( bool invert )
++{
++    N_D( ComparisonTerm );
++    d->m_inverted = invert;
++}
++
++
++Nepomuk::Query::ComparisonTerm Nepomuk::Query::ComparisonTerm::inverted() const
++{
++    ComparisonTerm ct( *this );
++    ct.setInverted( !isInverted() );
++    return ct;
++}
+Index: nepomuk/query/comparisonterm.h
+===================================================================
+--- nepomuk/query/comparisonterm.h
++++ nepomuk/query/comparisonterm.h	2010-05-04 15:50:53.000000000 +0200
+@@ -1,6 +1,6 @@
+ /*
+    This file is part of the Nepomuk KDE project.
+-   Copyright (C) 2009 Sebastian Trueg <trueg@kde.org>
++   Copyright (C) 2009-2010 Sebastian Trueg <trueg@kde.org>
+ 
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+@@ -160,6 +160,52 @@
+              * \sa property
+              */
+             void setProperty( const Types::Property& );
++
++            /**
++             * \return \p true if the comparison is inverted.
++             * \sa setInverted
++             *
++             * \since 4.5
++             */
++            bool isInverted() const;
++
++            /**
++             * Invert the comparison, i.e. make the subterm the subject
++             * of the term and match to objects of the term.
++             *
++             * A typical example would be:
++             *
++             * \code
++             * select ?r where { <somefile> nao:hasTag ?r . }
++             * \endcode
++             *
++             * to get all tags attached to a file.
++             *
++             * Be aware that this does only make sense with
++             * sub terms that match to resources. When using
++             * LiteralTerm as a sub term \p invert is ignored.
++             *
++             * \since 4.5
++             */
++            void setInverted( bool invert );
++
++            /**
++             * Create an inverted copy of this %ComparisonTerm.
++             * This is a convenience method to allow inline creation of
++             * inverted comparison terms when creating queries in a
++             * single line of code.
++             *
++             * Be aware that calling this method twice wil result in
++             * a non-inverted comparison term:
++             *
++             * \code
++             * // always true:
++             * (term.inverted().inverted() == term);
++             * \endcode
++             *
++             * \since 4.5
++             */
++            ComparisonTerm inverted() const;
+         };
+     }
+ }
+Index: nepomuk/query/comparisonterm_p.h
+===================================================================
+--- nepomuk/query/comparisonterm_p.h
++++ nepomuk/query/comparisonterm_p.h	2010-05-04 15:50:52.000000000 +0200
+@@ -34,6 +34,7 @@
+         public:
+             ComparisonTermPrivate() {
+                 m_type = Term::Comparison;
++                m_inverted = false;
+             }
+ 
+             TermPrivate* clone() const { return new ComparisonTermPrivate( *this ); }
+@@ -45,6 +46,8 @@
+ 
+             Types::Property m_property;
+             ComparisonTerm::Comparator m_comparator;
++
++            bool m_inverted;
+         };
+     }
+ }
+Index: nepomuk/query/literalterm.cpp
+===================================================================
+--- nepomuk/query/literalterm.cpp
++++ nepomuk/query/literalterm.cpp	2010-05-04 15:50:55.000000000 +0200
+@@ -1,6 +1,6 @@
+ /*
+    This file is part of the Nepomuk KDE project.
+-   Copyright (C) 2009 Sebastian Trueg <trueg@kde.org>
++   Copyright (C) 2009-2010 Sebastian Trueg <trueg@kde.org>
+ 
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+@@ -56,9 +56,9 @@
+     QString v3 = qbd->uniqueVarName();
+     QString v4 = qbd->uniqueVarName();
+     // { ?r ?v1 ?v2 . ?v2 bif:contains XXX . } UNION { ?r ?v1 ?v3 . ?v3 ?v4 ?v2 . ?v4 rdfs:subPropertyOf rdfs:label . ?v2 bif:contains XXX . } .
+-    return QString::fromLatin1( "{ %1 %2 %3 . %3 bif:contains \"'%4'\" . } "
++    return QString::fromLatin1( "{ %1 %2 %3 . %3 bif:contains \"%4\" . } "
+                                 "UNION "
+-                                "{ %1 %2 %5 . %5 %6 %3 . %6 %7 %8 . %3 bif:contains \"'%4'\" . } . " )
++                                "{ %1 %2 %5 . %5 %6 %3 . %6 %7 %8 . %3 bif:contains \"%4\" . } . " )
+         .arg( resourceVarName,
+               v1,
+               v2,
+@@ -78,15 +78,42 @@
+ 
+ QString Nepomuk::Query::LiteralTermPrivate::queryText() const
+ {
+-    // Virtuoso 6 has a min of 4 leading chars before a wildcard.
+-    // Thus, we do not use one with less chars.
+-
+-    QString s = m_value.toString();
+-     if( s.length() > 3 &&
+-         !s.endsWith(QLatin1String("*")) &&
+-         !s.endsWith(QLatin1String("?")) ) {
+-        s += QLatin1String("*");
++    //
++    // we try to be a little smart about creating the query text
++    // by following a few simple rules:
++    //
++    // 1. multiple terms need to be enclosed in quotes
++    // 2. quotes in search terms are not handled. replace them with spaces
++    // 3. replace double quotes with single quotes
++    // [4. wildcards can only be used if they are preceeded by at least 4 chars]
++    //
++
++    QString s = m_value.toString().simplified();
++    if( s.isEmpty() )
++        return s;
++
++    bool haveQuotes = false;
++
++    // strip quotes
++    if( s[0] == '"' || s[0] == '\'' ) {
++        haveQuotes = true;
++        s = s.mid(1);
++    }
++    if( !s.isEmpty() &&
++        ( s[s.length()-1] == '"' || s[s.length()-1] == '\'' ) ) {
++        haveQuotes = true;
++        s.truncate(s.length()-1);
+     }
++
++    // replace quotes with spaces
++    s.replace( '"', ' ' );
++    s.replace( '\'', ' ' );
++
++    bool needQuotes = s.contains( ' ' ) || s.contains( '*' ) || s.contains( '?' );
++
++    if( needQuotes || haveQuotes )
++        s = '\'' + s + '\'';
++
+     return s;
+ }
+ 
+Index: nepomuk/query/literalterm.h
+===================================================================
+--- nepomuk/query/literalterm.h
++++ nepomuk/query/literalterm.h	2010-05-04 15:50:52.000000000 +0200
+@@ -62,6 +62,23 @@
+          * The example above will match all resources that have a property with a value containing
+          * the string "nepomuk".
+          *
++         * \section literalterm_examples Examples
++         *
++         * <pre>LiteralTerm("nepomuk")</pre> searches for the term "nepomuk".
++         *
++         * <pre>LiteralTerm("'nepomuk*'")</pre> searches for the terms starting with "nepomuk".
++         *
++         * <pre>LiteralTerm("'nepomuk kde'")</pre> searches for the term "nepomuk kde".
++         *
++         * <pre>LiteralTerm("'nepomuk* kde'")</pre> searches for terms matching "nepomuk* kde".
++         *
++         * %LiteralTerm always tries to normalize the query terms as best as possible. This includes
++         * automatically adding quotes as needed.
++         *
++         * \warning Be aware that the examples above apply to using %LiteralTerm as a stand-alone term
++         * or in a ComparisonTerm::Contains term. When using ComparisonTerm::Regexp the test as specified
++         * will be used as-is to create the regular expression.
++         *
+          * \author Sebastian Trueg <trueg@kde.org>
+          *
+          * \since 4.4
+Index: nepomuk/query/literalterm_p.h
+===================================================================
+--- nepomuk/query/literalterm_p.h
++++ nepomuk/query/literalterm_p.h	2010-05-04 15:50:51.000000000 +0200
+@@ -1,6 +1,6 @@
+ /*
+    This file is part of the Nepomuk KDE project.
+-   Copyright (C) 2009 Sebastian Trueg <trueg@kde.org>
++   Copyright (C) 2009-2010 Sebastian Trueg <trueg@kde.org>
+ 
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+@@ -40,8 +40,7 @@
+             QString toSparqlGraphPattern( const QString& resourceVarName, QueryBuilderData* qbd ) const;
+             QString toString() const;
+ 
+-            /// The text that is to be used in the bif:contains pattern. A '*' wildcard will be
+-            /// added if it does not exist yet.
++            /// The text that is to be used in the bif:contains pattern.
+             QString queryText() const;
+ 
+             Soprano::LiteralValue m_value;
+Index: nepomuk/query/query.cpp
+===================================================================
+--- nepomuk/query/query.cpp
++++ nepomuk/query/query.cpp	2010-05-04 15:50:50.000000000 +0200
+@@ -50,11 +50,18 @@
+ 
+ #include <kdebug.h>
+ 
++/*
++## Full Text Score
++## Entity Rank
++## Surfaced via SPARQL
++
++SELECT ?s ?sc  ( <LONG::IRI_RANK> (?s) ) as ?Rank
++WHERE { ?s ?p ?o .
++?o bif:contains 'NEW AND YOR' option (score ?sc). }
++ORDER BY  desc (?
++*/
+ 
+ 
+-namespace {
+-}
+-
+ 
+ QString Nepomuk::Query::QueryPrivate::createFolderFilter( const QString& resourceVarName, QueryBuilderData* qbd ) const
+ {
+@@ -203,6 +210,12 @@
+ }
+ 
+ 
++int Nepomuk::Query::Query::offset() const
++{
++    return d->m_offset;
++}
++
++
+ void Nepomuk::Query::Query::setTerm( const Term& term )
+ {
+     d->m_term = term;
+@@ -215,6 +228,12 @@
+ }
+ 
+ 
++void Nepomuk::Query::Query::setOffset( int offset )
++{
++    d->m_offset = offset;
++}
++
++
+ void Nepomuk::Query::Query::addRequestProperty( const RequestProperty& property )
+ {
+     d->m_requestProperties.append( property );
+@@ -254,6 +273,7 @@
+ bool Nepomuk::Query::Query::operator==( const Query& other ) const
+ {
+     return( d->m_limit == other.d->m_limit &&
++            d->m_offset == other.d->m_offset &&
+             d->m_term == other.d->m_term &&
+             compareQList( d->m_requestProperties, other.d->m_requestProperties ) &&
+             compareQList( d->m_includeFolders, other.d->m_includeFolders ) &&
+@@ -277,22 +297,30 @@
+ 
+     // actually build the SPARQL query string
+     QueryBuilderData qbd( flags );
+-    QString termGraphPattern = term.d_ptr->toSparqlGraphPattern( QLatin1String( "?r" ), &qbd );
+-    if( !termGraphPattern.isEmpty() ) {
+-        QString query = QString::fromLatin1( "select %1 %2 where { %3 %4 %5 }" )
+-                        .arg( flags & CreateCountQuery ? QLatin1String("count(distinct ?r)") : QLatin1String("distinct ?r"),
+-                              d->buildRequestPropertyVariableList(),
+-                              termGraphPattern,
+-                              d->createFolderFilter( QLatin1String( "?r" ), &qbd ),
+-                              d->buildRequestPropertyPatterns() );
+-        if ( d->m_limit > 0 )
+-            query += QString::fromLatin1( " LIMIT %1" ).arg( d->m_limit );
+-        return query;
++    QString termGraphPattern;
++    if( term.isValid() ) {
++        termGraphPattern = term.d_ptr->toSparqlGraphPattern( QLatin1String( "?r" ), &qbd );
++        if( termGraphPattern.isEmpty() ) {
++            kDebug() << "Got no valid SPARQL pattern from" << term;
++            return QString();
++        }
+     }
+     else {
+-        kDebug() << "Got no valid SPARQL pattern from" << term;
+-        return QString();
++        // create the "all resources query"
++        termGraphPattern = QLatin1String("graph ?g { ?r a ?t . } . ?g a ?gt . ?gt rdfs:subClassOf nrl:InstanceBase . ");
+     }
++
++    QString query = QString::fromLatin1( "select %1 %2 where { %3 %4 %5 }" )
++                    .arg( flags & CreateCountQuery ? QLatin1String("count(distinct ?r)") : QLatin1String("distinct ?r"),
++                          d->buildRequestPropertyVariableList(),
++                          termGraphPattern,
++                          d->createFolderFilter( QLatin1String( "?r" ), &qbd ),
++                          d->buildRequestPropertyPatterns() );
++    if ( d->m_offset > 0 )
++        query += QString::fromLatin1( " OFFSET %1" ).arg( d->m_offset );
++    if ( d->m_limit > 0 )
++        query += QString::fromLatin1( " LIMIT %1" ).arg( d->m_limit );
++    return query.simplified();
+ }
+ 
+ 
+@@ -323,6 +351,7 @@
+ QDebug operator<<( QDebug dbg, const Nepomuk::Query::Query& query )
+ {
+     dbg << "(Query:           " << query.term() << endl
++        << " Offset:           " << query.offset()
+         << " Limit:           " << query.limit() << ")";
+     return dbg;
+ }
+Index: nepomuk/query/query.h
+===================================================================
+--- nepomuk/query/query.h
++++ nepomuk/query/query.h	2010-05-04 15:50:54.000000000 +0200
+@@ -109,18 +109,27 @@
+              * The root term of the query.
+              * This can be any type of term.
+              *
+-             * \sa setTerm
++             * \sa setTerm()
+              */
+             Term term() const;
+ 
+             /**
+              * The maximum number of results that this query should yield.
+              *
+-             * \sa setLimit
++             * \sa setLimit()
+              */
+             int limit() const;
+ 
+             /**
++             * The first result that should be retrieved.
++             *
++             * \sa setOffset()
++             *
++             * \since 4.5
++             */
++            int offset() const;
++
++            /**
+              * Set the root term of the query.
+              *
+              * \sa term
+@@ -136,6 +145,14 @@
+             void setLimit( int );
+ 
+             /**
++             * The first result that should be retrieved. This can be combined
++             * with setLimit() to do paged results.
++             *
++             * \since 4.5
++             */
++            void setOffset( int offset );
++
++            /**
+              * \class RequestProperty query.h Nepomuk/Query/Query
+              *
+              * \brief A request property can be added to a Query to retrieve
+Index: nepomuk/query/query_p.h
+===================================================================
+--- nepomuk/query/query_p.h
++++ nepomuk/query/query_p.h	2010-05-04 15:50:52.000000000 +0200
+@@ -40,6 +40,7 @@
+         public:
+             QueryPrivate()
+                 : m_limit( 0 ),
++                  m_offset( 0 ),
+                   m_isFileQuery( false ) {
+             }
+ 
+@@ -54,6 +55,7 @@
+ 
+             Term m_term;
+             int m_limit;
++            int m_offset;
+ 
+             QList<Query::RequestProperty> m_requestProperties;
+ 
+Index: nepomuk/query/queryparser.cpp
+===================================================================
+--- nepomuk/query/queryparser.cpp
++++ nepomuk/query/queryparser.cpp	2010-05-04 15:50:55.000000000 +0200
+@@ -1,6 +1,6 @@
+ /*
+    This file is part of the Nepomuk KDE project.
+-   Copyright (C) 2007-2009 Sebastian Trueg <trueg@kde.org>
++   Copyright (C) 2007-2010 Sebastian Trueg <trueg@kde.org>
+ 
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Library General Public
+@@ -106,12 +106,16 @@
+         }
+     }
+ 
+-    QString stripQuotes( const QString& s ) {
++    QString stripQuotes( const QString& s, bool* hadQuotes = 0 ) {
+         if ( s[0] == '\'' ||
+              s[0] == '\"' ) {
++            if( hadQuotes )
++                *hadQuotes = true;
+             return s.mid( 1 ).left( s.length()-2 );
+         }
+         else {
++            if( hadQuotes )
++                *hadQuotes = false;
+             return s;
+         }
+     }
+@@ -125,7 +129,9 @@
+         }
+     }
+ 
+-    Soprano::LiteralValue createLiteral( const QString& s ) {
++    Soprano::LiteralValue createLiteral( const QString& s_, bool globbing ) {
++        bool hadQuotes = false;
++        QString s = stripQuotes( s_, &hadQuotes );
+         bool b = false;
+         int i = s.toInt( &b );
+         if ( b )
+@@ -133,10 +139,17 @@
+         double d = s.toDouble( &b );
+         if ( b )
+             return Soprano::LiteralValue( d );
+-        return s;
++
++        //
++        // we can only do query term globbing for strings longer than 3 chars
++        //
++        if( !hadQuotes && globbing && s.length() > 3 && !s.endsWith('*') && !s.endsWith('?') )
++            return s + '*';
++        else
++            return s;
+     }
+ 
+-    bool positiveTerm( const QString& s) {
++    bool positiveTerm( const QString& s ) {
+         if(s.isEmpty())
+             return true;
+         else if(s == "+")
+@@ -411,6 +424,12 @@
+ 
+ Nepomuk::Query::Query Nepomuk::Query::QueryParser::parse( const QString& query ) const
+ {
++    return parse( query, NoParserFlags );
++}
++
++
++Nepomuk::Query::Query Nepomuk::Query::QueryParser::parse( const QString& query, ParserFlags flags ) const
++{
+     // TODO: a "real" parser which can handle all of the Xesam user language
+     //       This one for example does not handle nesting at all.
+ 
+@@ -446,7 +465,7 @@
+                 kDebug() << "matched property term at" << pos << s_propertyRx.cap( 0 );
+                 ComparisonTerm ct;
+                 ct.setProperty( tryToBeIntelligentAboutParsingUrl( s_propertyRx.cap( 2 ) ) );
+-                ct.setSubTerm( LiteralTerm( createLiteral( stripQuotes( s_propertyRx.cap( 4 ) ) ) ) );
++                ct.setSubTerm( LiteralTerm( createLiteral( s_propertyRx.cap( 4 ), flags&QueryTermGlobbing ) ) );
+                 QString comparator = s_propertyRx.cap( 3 );
+                 ct.setComparator( fieldTypeRelationFromString( comparator ) );
+                 pos += s_propertyRx.matchedLength();
+@@ -472,7 +491,7 @@
+                 QString comparator = s_fieldFieldRx.cap( 4 );
+                 ct.setComparator( fieldTypeRelationFromString( comparator ) );
+                 ct.setSubTerm( ComparisonTerm( QUrl(stripQuotes( s_fieldFieldRx.cap( 5 ) )),
+-                                               LiteralTerm( s_fieldFieldRx.cap( 8 ) ),
++                                               LiteralTerm( createLiteral( s_fieldFieldRx.cap( 8 ), flags&QueryTermGlobbing ) ),
+                                                fieldTypeRelationFromString( s_fieldFieldRx.cap( 7 ) ) ) );
+                 pos += s_fieldFieldRx.matchedLength();
+ 
+@@ -499,7 +518,7 @@
+                 else {
+                     ComparisonTerm ct;
+                     ct.setProperty( QUrl( stripQuotes( s_fieldRx.cap( 2 ) ) ) );
+-                    ct.setSubTerm( LiteralTerm( createLiteral( stripQuotes( s_fieldRx.cap( 5 ) ) ) ) );
++                    ct.setSubTerm( LiteralTerm( createLiteral( s_fieldRx.cap( 5 ), flags&QueryTermGlobbing ) ) );
+                     QString comparator = s_fieldRx.cap( 4 );
+                     ct.setComparator( fieldTypeRelationFromString( comparator ) );
+                     pos += s_fieldRx.matchedLength();
+@@ -515,7 +534,7 @@
+             }
+ 
+             else if ( s_plainTermRx.indexIn( query, pos ) == pos ) {
+-                QString value = stripQuotes( s_plainTermRx.cap( 2 ) );
++                QString value = s_plainTermRx.cap( 2 );
+                 if ( d->orKeywords.contains( value.toLower() ) ) {
+                     inOrBlock = true;
+                 }
+@@ -524,7 +543,7 @@
+                 }
+                 else {
+                     kDebug() << "matched literal at" << pos << value;
+-                    term = LiteralTerm( Soprano::LiteralValue( value ) );
++                    term = LiteralTerm( createLiteral( value, flags&QueryTermGlobbing ) );
+                     if ( !positiveTerm(s_plainTermRx.cap( 1 ) ) ) {
+                         term = NegationTerm::negateTerm( term );
+                     }
+Index: nepomuk/query/queryparser.h
+===================================================================
+--- nepomuk/query/queryparser.h
++++ nepomuk/query/queryparser.h	2010-05-04 15:50:52.000000000 +0200
+@@ -99,6 +99,31 @@
+             ~QueryParser();
+ 
+             /**
++             * Flags to change the behaviour of the parser.
++             *
++             * \since 4.5
++             */
++            enum ParserFlag {
++                /**
++                 * No flags. Default for parse()
++                 */
++                NoParserFlags = 0x0,
++
++                /**
++                 * Make each full text term use a '*' wildcard
++                 * to match longer strings ('foobar' is matched
++                 * by 'foob*').
++                 *
++                 * Be aware that the query engine needs at least
++                 * 4 chars to do globbing though.
++                 *
++                 * This is disabled by default.
++                 */
++                QueryTermGlobbing = 0x1
++            };
++            Q_DECLARE_FLAGS( ParserFlags, ParserFlag )
++
++            /**
+              * Parse a user query.
+              *
+              * \return The parsed query or an invalid Query object
+@@ -107,6 +132,19 @@
+             Query parse( const QString& query ) const;
+ 
+             /**
++             * Parse a user query.
++             *
++             * \param query The query string to parse
++             * \param flags a set of flags influencing the parsing process.
++             *
++             * \return The parsed query or an invalid Query object
++             * in case the parsing failed.
++             *
++             * \since 4.5
++             */
++            Query parse( const QString& query, ParserFlags flags ) const;
++
++            /**
+              * Try to match a field name as used in a query string to actual
+              * properties.
+              *
+@@ -140,4 +178,6 @@
+     }
+ }
+ 
++Q_DECLARE_OPERATORS_FOR_FLAGS( Nepomuk::Query::QueryParser::ParserFlags )
++
+ #endif
+Index: nepomuk/query/test/CMakeLists.txt
+===================================================================
+--- nepomuk/query/test/CMakeLists.txt
++++ nepomuk/query/test/CMakeLists.txt	2010-05-04 15:50:50.000000000 +0200
+@@ -2,8 +2,10 @@
+ 
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
+ 
++add_definitions(-DDISABLE_NEPOMUK_LEGACY=1)
++
+ kde4_add_unit_test(queryparsertest NOGUI queryparsertest.cpp)
+-target_link_libraries(queryparsertest nepomukquery
++target_link_libraries(queryparsertest nepomuk nepomukquery
+   ${QT_QTTEST_LIBRARY}
+   ${SOPRANO_LIBRARIES}
+   ${KDE4_KDECORE_LIBS}
+Index: nepomuk/query/test/queryparsertest.cpp
+===================================================================
+--- nepomuk/query/test/queryparsertest.cpp
++++ nepomuk/query/test/queryparsertest.cpp	2010-05-04 15:50:50.000000000 +0200
+@@ -1,6 +1,6 @@
+ /*
+    This file is part of the Nepomuk KDE project.
+-   Copyright (C) 2009 Sebastian Trueg <trueg@kde.org>
++   Copyright (C) 2009-2010 Sebastian Trueg <trueg@kde.org>
+ 
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+@@ -30,18 +30,72 @@
+ #include "comparisonterm.h"
+ 
+ #include <QtTest>
++#include <qtest_kde.h>
++
++#include "ktempdir.h"
+ 
+ #include <Soprano/LiteralValue>
+ #include <Soprano/Node>
++#include <Soprano/StorageModel>
++#include <Soprano/Backend>
++#include <Soprano/PluginManager>
+ #include <Soprano/Vocabulary/NAO>
++#include <Soprano/Vocabulary/NRL>
++#include <Soprano/Vocabulary/RDF>
++#include <Soprano/Vocabulary/RDFS>
++#include <Soprano/Vocabulary/XMLSchema>
+ 
+ #include "property.h"
+-
++#include "resourcemanager.h"
+ 
+ Q_DECLARE_METATYPE( Nepomuk::Query::Query )
+ 
+ using namespace Nepomuk::Query;
+ 
++void QueryParserTest::initTestCase()
++{
++    // we need to use a Virtuoso model as tmp model since redland misses important SPARQL features
++    // that are used by libnepomuk below
++    const Soprano::Backend* backend = Soprano::PluginManager::instance()->discoverBackendByName( "virtuosobackend" );
++    QVERIFY( backend );
++    m_storageDir = new KTempDir();
++    m_model = backend->createModel( Soprano::BackendSettings() << Soprano::BackendSetting(Soprano::BackendOptionStorageDir, m_storageDir->name()) );
++    QVERIFY( m_model );
++
++    // we create one fake ontology
++    QUrl graph("graph:/onto");
++    m_model->addStatement( graph, Soprano::Vocabulary::RDF::type(), Soprano::Vocabulary::NRL::Ontology(), graph );
++
++    m_model->addStatement( QUrl("onto:/label"), Soprano::Vocabulary::RDF::type(), Soprano::Vocabulary::RDF::Property(), graph );
++    m_model->addStatement( QUrl("onto:/label"), Soprano::Vocabulary::RDFS::label(), Soprano::LiteralValue::createPlainLiteral("label"), graph );
++    m_model->addStatement( QUrl("onto:/label"), Soprano::Vocabulary::RDFS::range(), Soprano::Vocabulary::XMLSchema::string(), graph );
++
++    m_model->addStatement( QUrl("onto:/hasTag"), Soprano::Vocabulary::RDF::type(), Soprano::Vocabulary::RDF::Property(), graph );
++    m_model->addStatement( QUrl("onto:/hasTag"), Soprano::Vocabulary::RDFS::label(), Soprano::LiteralValue::createPlainLiteral("has tag"), graph );
++    m_model->addStatement( QUrl("onto:/hasTag"), Soprano::Vocabulary::RDFS::range(), QUrl("onto:/Tag"), graph );
++
++    m_model->addStatement( QUrl("onto:/tag"), Soprano::Vocabulary::RDF::type(), Soprano::Vocabulary::RDF::Property(), graph );
++    m_model->addStatement( QUrl("onto:/tag"), Soprano::Vocabulary::RDFS::label(), Soprano::LiteralValue::createPlainLiteral("hastag"), graph );
++    m_model->addStatement( QUrl("onto:/tag"), Soprano::Vocabulary::RDFS::range(), QUrl("onto:/Tag"), graph );
++
++    m_model->addStatement( QUrl("onto:/Tag"), Soprano::Vocabulary::RDF::type(), Soprano::Vocabulary::RDFS::Class(), graph );
++
++    m_model->addStatement( QUrl("onto:/int"), Soprano::Vocabulary::RDF::type(), Soprano::Vocabulary::RDF::Property(), graph );
++    m_model->addStatement( QUrl("onto:/int"), Soprano::Vocabulary::RDFS::label(), Soprano::LiteralValue::createPlainLiteral("int value"), graph );
++    m_model->addStatement( QUrl("onto:/int"), Soprano::Vocabulary::RDFS::range(), Soprano::Vocabulary::XMLSchema::integer(), graph );
++
++    Nepomuk::ResourceManager::instance()->setOverrideMainModel( m_model );
++}
++
++
++void QueryParserTest::cleanupTestCase()
++{
++    Nepomuk::ResourceManager::instance()->setOverrideMainModel( 0 );
++    delete m_model;
++    delete m_storageDir;
++}
++
++
+ void QueryParserTest::testQueryParser_data()
+ {
+     QTest::addColumn<QString>( "queryString" );
+@@ -49,36 +103,38 @@
+ 
+     // simple literal queries
+     QTest::newRow( "simple literal query" ) << QString( "Hello" ) << Query( LiteralTerm( "Hello" ) );
+-    QTest::newRow( "literal with spaces query" ) << QString( "'Hello World'" ) << Query( LiteralTerm( "Hello World" ) );
++    QTest::newRow( "literal with spaces without quotes" ) << QString( "Hello World" ) << Query( AndTerm( LiteralTerm("Hello"), LiteralTerm("World" ) ) );
++    QTest::newRow( "literal with spaces with quotes" ) << QString( "'Hello World'" ) << Query( LiteralTerm( "Hello World" ) );
+ 
+     // comparison queries
+-#ifdef MAKE_OR_QUERIES_WITH_PROPERTIES_IN_THEM
+     QTest::newRow( "simple field query" )    << QString( "hastag:nepomuk" )
+-                                             << Query( ComparisonTerm( Soprano::Vocabulary::NAO::hasTag(), LiteralTerm( "nepomuk" ) ) );
+-    QTest::newRow( "simple property query" ) << QString( "%1:nepomuk" ).arg( Soprano::Node::resourceToN3( Soprano::Vocabulary::NAO::hasTag() ) )
+-                                             << Query( ComparisonTerm( Soprano::Vocabulary::NAO::hasTag(), LiteralTerm( "nepomuk" ) ) );
++                                             << Query( OrTerm( ComparisonTerm( QUrl("onto:/hasTag"), LiteralTerm( "nepomuk" ) ),
++                                                               ComparisonTerm( QUrl("onto:/tag"), LiteralTerm( "nepomuk" ) ) ) );
++    QTest::newRow( "simple property query" ) << QString( "<onto:/hasTag>:nepomuk" )
++                                             << Query( ComparisonTerm( QUrl("onto:/hasTag"), LiteralTerm( "nepomuk" ) ) );
+ #ifdef QUERY_PARSER_SUPPORTS_RESOURCE_VALUES
+     QTest::newRow( "resource field query" )  << QString( "hastag:<nepomuk:/Nepomuk>" )
+                                              << Query( ComparisonTerm( "hastag", ResourceTerm( QUrl( "nepomuk:/Nepomuk" ) ) ) );
+ #endif
+     QTest::newRow( "nested resource query" ) << QString( "hastag:(label:nepomuk)" )
+-                                             << Query( ComparisonTerm( Soprano::Vocabulary::NAO::hasTag(), LiteralTerm( "nepomuk" ) ) );
+-                                             << Query( ComparisonTerm( "hastag", ComparisonTerm( "label", LiteralTerm( "nepomuk" ) ) ) );
+-#endif
++                                             << Query( OrTerm( ComparisonTerm( QUrl("onto:/hasTag"), ComparisonTerm( QUrl("onto:/label"), LiteralTerm( "nepomuk" ) ) ),
++                                                               ComparisonTerm( QUrl("onto:/tag"), ComparisonTerm( QUrl("onto:/label"), LiteralTerm( "nepomuk" ) ) ) ) );
++    QTest::newRow( "int property query" ) << QString( "'int value':42" )
++                                          << Query( ComparisonTerm( QUrl("onto:/int"), LiteralTerm( 42 ) ) );
++    QTest::newRow( "int property query 2" ) << QString( "int:\"42\"" )
++                                            << Query( ComparisonTerm( QUrl("onto:/int"), LiteralTerm( 42 ) ) );
+ 
+ 
+     // negation
+     QTest::newRow( "simple negation" ) << QString( "-Hello" ) << Query( NegationTerm::negateTerm( LiteralTerm( "Hello" ) ) );
+-#ifdef MAKE_OR_QUERIES_WITH_PROPERTIES_IN_THEM
+-    QTest::newRow( "field negation" ) << QString( "-hastag:nepomuk" ) << Query( NegationTerm::negateTerm( ComparisonTerm( "hastag", LiteralTerm( "nepomuk" ) ) ) );
+-#endif
++    QTest::newRow( "field negation" ) << QString( "-label:nepomuk" ) << Query( NegationTerm::negateTerm( ComparisonTerm( QUrl("onto:/label"), LiteralTerm( "nepomuk" ) ) ) );
+ 
+     // and query
+-    QTest::newRow( "and: two literals" )          << QString( "Hello World" ) << Query( AndTerm( QList<Term>() << LiteralTerm( "Hello" ) << LiteralTerm( "World" ) ) );
+-    QTest::newRow( "and: two literals with AND" ) << QString( "Hello AND World" ) << Query( AndTerm( QList<Term>() << LiteralTerm( "Hello" ) << LiteralTerm( "World" ) ) );
++    QTest::newRow( "and: two literals" )          << QString( "Hello World" ) << Query( AndTerm( LiteralTerm( "Hello" ), LiteralTerm( "World" ) ) );
++    QTest::newRow( "and: two literals with AND" ) << QString( "Hello AND World" ) << Query( AndTerm( LiteralTerm( "Hello" ), LiteralTerm( "World" ) ) );
+ 
+     // or queries
+-    QTest::newRow( "or: two literals" )          << QString( "Hello OR World" ) << Query( OrTerm( QList<Term>() << LiteralTerm( "Hello" ) << LiteralTerm( "World" ) ) );
++    QTest::newRow( "or: two literals" )          << QString( "Hello OR World" ) << Query( OrTerm( LiteralTerm( "Hello" ), LiteralTerm( "World" ) ) );
+ }
+ 
+ 
+@@ -87,16 +143,42 @@
+     QFETCH( QString, queryString );
+     QFETCH( Nepomuk::Query::Query, query );
+ 
+-    qDebug() << "Wanted query:" << query;
+-
+     Query q = QueryParser::parseQuery( queryString );
+ 
+-    qDebug() << "Parsed query:" << q;
++//    qDebug() << "Wanted query:" << query;
++//    qDebug() << "Parsed query:" << q;
+ 
+     QCOMPARE( q, query );
+ }
+ 
+ 
+-QTEST_MAIN( QueryParserTest )
++void QueryParserTest::testQueryParserWithGlobbing_data()
++{
++    QTest::addColumn<QString>( "queryString" );
++    QTest::addColumn<Nepomuk::Query::Query>( "query" );
++
++    // simple literal queries
++    QTest::newRow( "simple literal query" ) << QString( "Hello" ) << Query( LiteralTerm( "Hello*" ) );
++    QTest::newRow( "simple literal query" ) << QString( "\"Hello\"" ) << Query( LiteralTerm( "Hello" ) );
++    QTest::newRow( "literal with spaces without quotes" ) << QString( "Hello World" ) << Query( AndTerm( LiteralTerm("Hello*"), LiteralTerm("World*" ) ) );
++    QTest::newRow( "literal with spaces with quotes" ) << QString( "'Hello World'" ) << Query( LiteralTerm( "Hello World" ) );
++}
++
++
++void QueryParserTest::testQueryParserWithGlobbing()
++{
++    QFETCH( QString, queryString );
++    QFETCH( Nepomuk::Query::Query, query );
++
++    QueryParser p;
++    Query q = p.parse( queryString, QueryParser::QueryTermGlobbing );
++
++//     qDebug() << "Wanted query:" << query;
++//     qDebug() << "Parsed query:" << q;
++
++    QCOMPARE( q, query );
++}
++
++QTEST_KDEMAIN_CORE( QueryParserTest )
+ 
+ #include "queryparsertest.moc"
+Index: nepomuk/query/test/queryparsertest.h
+===================================================================
+--- nepomuk/query/test/queryparsertest.h
++++ nepomuk/query/test/queryparsertest.h	2010-05-04 15:50:50.000000000 +0200
+@@ -1,6 +1,6 @@
+ /*
+    This file is part of the Nepomuk KDE project.
+-   Copyright (C) 2009 Sebastian Trueg <trueg@kde.org>
++   Copyright (C) 2009-2010 Sebastian Trueg <trueg@kde.org>
+ 
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+@@ -23,14 +23,25 @@
+ #define _NEPOMUK_QUERY_PARSER_TEST_H_
+ 
+ #include <QtCore/QObject>
++#include "ktempdir.h"
++
++#include <Soprano/Model>
+ 
+ class QueryParserTest : public QObject
+ {
+     Q_OBJECT
+ 
+ private Q_SLOTS:
++    void initTestCase();
++    void cleanupTestCase();
+     void testQueryParser_data();
+     void testQueryParser();
++    void testQueryParserWithGlobbing_data();
++    void testQueryParserWithGlobbing();
++
++private:
++    KTempDir* m_storageDir;
++    Soprano::Model* m_model;
+ };
+ 
+ #endif
+Index: nepomuk/query/test/querytest.cpp
+===================================================================
+--- nepomuk/query/test/querytest.cpp
++++ nepomuk/query/test/querytest.cpp	2010-05-04 15:50:50.000000000 +0200
+@@ -1,6 +1,6 @@
+ /*
+    This file is part of the Nepomuk KDE project.
+-   Copyright (C) 2009 Sebastian Trueg <trueg@kde.org>
++   Copyright (C) 2009-2010 Sebastian Trueg <trueg@kde.org>
+ 
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+@@ -38,8 +38,10 @@
+ #include <Soprano/Node>
+ #include <Soprano/Vocabulary/NAO>
+ #include <Soprano/Vocabulary/RDFS>
++#include <Soprano/Vocabulary/XMLSchema>
+ 
+ #include <kdebug.h>
++#include <qtest_kde.h>
+ 
+ Q_DECLARE_METATYPE( Nepomuk::Query::Query )
+ 
+@@ -54,10 +56,25 @@
+ 
+     QTest::newRow( "simple literal query" )
+         << Query( LiteralTerm( "Hello" ) )
+-        << QString::fromLatin1( "select distinct ?r where { { ?r ?v1 ?v2 . ?v2 bif:contains \"'Hello*'\" . } UNION { ?r ?v1 ?v3 . ?v3 ?v4 ?v2 . ?v4 %1 %2 . ?v2 bif:contains \"'Hello*'\" . } . }" )
++        << QString::fromLatin1( "select distinct ?r where { { ?r ?v1 ?v2 . ?v2 bif:contains \"Hello\" . } UNION { ?r ?v1 ?v3 . ?v3 ?v4 ?v2 . ?v4 %1 %2 . ?v2 bif:contains \"Hello\" . } . }" )
+         .arg( Soprano::Node::resourceToN3(Soprano::Vocabulary::RDFS::subPropertyOf()),
+               Soprano::Node::resourceToN3(Soprano::Vocabulary::RDFS::label()) );
+ 
++    QString helloWorldQuery = QString::fromLatin1( "select distinct ?r where { { ?r ?v1 ?v2 . ?v2 bif:contains \"'Hello World'\" . } "
++                                                   "UNION "
++                                                   "{ ?r ?v1 ?v3 . ?v3 ?v4 ?v2 . ?v4 %1 %2 . ?v2 bif:contains \"'Hello World'\" . } . }" )
++                              .arg( Soprano::Node::resourceToN3(Soprano::Vocabulary::RDFS::subPropertyOf()),
++                                    Soprano::Node::resourceToN3(Soprano::Vocabulary::RDFS::label()) );
++    QTest::newRow( "simple literal query with space" )
++        << Query( LiteralTerm( "Hello World" ) )
++        << helloWorldQuery;
++    QTest::newRow( "simple literal query with space and quotes" )
++        << Query( LiteralTerm( "'Hello World'" ) )
++        << helloWorldQuery;
++    QTest::newRow( "simple literal query with space and quotes" )
++        << Query( LiteralTerm( "\"Hello World\"" ) )
++        << helloWorldQuery;
++
+     QTest::newRow( "type query" )
+         << Query( ResourceTypeTerm( Soprano::Vocabulary::NAO::Tag() ) )
+         << QString::fromLatin1("select distinct ?r where { ?r a ?v1 . ?v1 %1 %2 . }")
+@@ -73,7 +90,7 @@
+ 
+     QTest::newRow( "hastag with literal term" )
+         << Query( ComparisonTerm( Soprano::Vocabulary::NAO::hasTag(), LiteralTerm( QLatin1String("nepomuk")) ) )
+-        << QString::fromLatin1("select distinct ?r where { ?r %1 ?v1 . ?v1 ?v2 ?v3 . ?v2 %2 %3 . ?v3 bif:contains \"'nepomuk*'\" . }")
++        << QString::fromLatin1("select distinct ?r where { ?r %1 ?v1 . ?v1 ?v2 ?v3 . ?v2 %2 %3 . ?v3 bif:contains \"nepomuk\" . }")
+         .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::NAO::hasTag()))
+         .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::RDFS::subPropertyOf()))
+         .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::RDFS::label()));
+@@ -87,6 +104,35 @@
+         << Query( NegationTerm::negateTerm(ComparisonTerm( Soprano::Vocabulary::NAO::hasTag(), ResourceTerm( QUrl("nepomuk:/res/foobar") ) )))
+         << QString::fromLatin1("select distinct ?r where { OPTIONAL { ?v1 %1 <nepomuk:/res/foobar> . FILTER(?v1=?r) . } . FILTER(!BOUND(?v1)) . }")
+         .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::NAO::hasTag()));
++
++    QTest::newRow( "comparators <" )
++        << Query( ComparisonTerm( Soprano::Vocabulary::NAO::numericRating(), LiteralTerm(4), ComparisonTerm::Smaller ) )
++        << QString::fromLatin1("select distinct ?r where { ?r %1 ?v1 . FILTER(?v1<\"4\"^^%2) . }")
++        .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::NAO::numericRating()),
++             Soprano::Node::resourceToN3(Soprano::Vocabulary::XMLSchema::xsdInt()) );
++
++    QTest::newRow( "comparators <=" )
++        << Query( ComparisonTerm( Soprano::Vocabulary::NAO::numericRating(), LiteralTerm(4), ComparisonTerm::SmallerOrEqual ) )
++        << QString::fromLatin1("select distinct ?r where { ?r %1 ?v1 . FILTER(?v1<=\"4\"^^%2) . }")
++        .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::NAO::numericRating()),
++             Soprano::Node::resourceToN3(Soprano::Vocabulary::XMLSchema::xsdInt()) );
++
++    QTest::newRow( "comparators >" )
++        << Query( ComparisonTerm( Soprano::Vocabulary::NAO::numericRating(), LiteralTerm(4), ComparisonTerm::Greater ) )
++        << QString::fromLatin1("select distinct ?r where { ?r %1 ?v1 . FILTER(?v1>\"4\"^^%2) . }")
++        .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::NAO::numericRating()),
++             Soprano::Node::resourceToN3(Soprano::Vocabulary::XMLSchema::xsdInt()) );
++
++    QTest::newRow( "comparators >=" )
++        << Query( ComparisonTerm( Soprano::Vocabulary::NAO::numericRating(), LiteralTerm(4), ComparisonTerm::GreaterOrEqual ) )
++        << QString::fromLatin1("select distinct ?r where { ?r %1 ?v1 . FILTER(?v1>=\"4\"^^%2) . }")
++        .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::NAO::numericRating()),
++             Soprano::Node::resourceToN3(Soprano::Vocabulary::XMLSchema::xsdInt()) );
++
++    QTest::newRow( "inverted comparisonterm" )
++        << Query( ComparisonTerm( Soprano::Vocabulary::NAO::hasTag(), ResourceTerm( QUrl("nepomuk:/res/foobar") ) ).inverted() )
++        << QString::fromLatin1("select distinct ?r where { <nepomuk:/res/foobar> %1 ?r . }")
++        .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::NAO::hasTag()));
+ }
+ 
+ 
+@@ -123,6 +169,6 @@
+     QVERIFY(optimized.isLiteralTerm());
+ }
+ 
+-QTEST_MAIN( QueryTest )
++QTEST_KDEMAIN_CORE( QueryTest )
+ 
+ #include "querytest.moc"
+Index: nepomuk/rcgen/fastcode.cpp
+===================================================================
+--- nepomuk/rcgen/fastcode.cpp
++++ nepomuk/rcgen/fastcode.cpp	2010-05-04 15:50:58.000000000 +0200
+@@ -29,6 +29,9 @@
+ 
+ QString FastCode::propertyGetterDeclaration( const Property* property, const ResourceClass* rc, const QString &nameSpace ) const
+ {
++    Q_UNUSED( property );
++    Q_UNUSED( rc );
++    Q_UNUSED( nameSpace );
+     return QString();
+ }
+ 
+@@ -43,11 +46,16 @@
+ 
+ QString FastCode::propertyReversePropertyGetterDeclaration( const Property* property, const ResourceClass* rc, const QString &nameSpace ) const
+ {
++    Q_UNUSED( property );
++    Q_UNUSED( rc );
++    Q_UNUSED( nameSpace );
+     return QString();
+ }
+ 
+ QString FastCode::resourceAllResourcesDeclaration( const ResourceClass* rc, const QString &nameSpace ) const
+ {
++    Q_UNUSED( rc );
++    Q_UNUSED( nameSpace );
+     return QString();
+ }
+ 
+@@ -90,6 +98,8 @@
+ 
+ QString FastCode::propertyGetterDefinition( const Property* property, const ResourceClass* rc ) const
+ {
++    Q_UNUSED( property );
++    Q_UNUSED( rc );
+     return QString();
+ }
+ 
+@@ -110,11 +120,14 @@
+ 
+ QString FastCode::propertyReversePropertyGetterDefinition( const Property* property, const ResourceClass* rc ) const
+ {
++    Q_UNUSED( property );
++    Q_UNUSED( rc );
+     return QString();
+ }
+ 
+ QString FastCode::resourceAllResourcesDefinition( const ResourceClass* rc ) const
+ {
++    Q_UNUSED( rc );
+     return QString();
+ }
+ 
+Index: nepomuk/rcgen/templates/source_safe.tpl
+===================================================================
+--- nepomuk/rcgen/templates/source_safe.tpl
++++ nepomuk/rcgen/templates/source_safe.tpl	2010-05-04 15:50:56.000000000 +0200
+@@ -87,7 +87,7 @@
+ 
+ QString Nepomuk::NEPOMUK_RESOURCENAME::resourceTypeUri()
+ {
+-    return "NEPOMUK_RESOURCETYPEURI";
++    return QLatin1String("NEPOMUK_RESOURCETYPEURI");
+ }
+ 
+ NEPOMUK_METHODS
+Index: nepomuk/core/nepomukservice.cpp
+===================================================================
+--- nepomuk/core/nepomukservice.cpp
++++ nepomuk/core/nepomukservice.cpp	2010-05-04 15:50:45.000000000 +0200
+@@ -17,7 +17,7 @@
+ */
+ 
+ #include "nepomukservice.h"
+-#include "nepomukmainmodel.h"
++#include "resourcemanager.h"
+ 
+ #include <QtCore/QTimer>
+ 
+@@ -25,7 +25,6 @@
+ class Nepomuk::Service::Private
+ {
+ public:
+-    MainModel* model;
+ };
+ 
+ 
+@@ -33,7 +32,6 @@
+     : QObject( parent ),
+       d( new Private() )
+ {
+-    d->model = 0;
+     if ( !delayedInitialization ) {
+         setServiceInitialized( true );
+     }
+@@ -42,17 +40,13 @@
+ 
+ Nepomuk::Service::~Service()
+ {
+-    delete d->model;
+     delete d;
+ }
+ 
+ 
+ Soprano::Model* Nepomuk::Service::mainModel()
+ {
+-    if ( !d->model ) {
+-        d->model = new MainModel( this );
+-    }
+-    return d->model;
++    return ResourceManager::instance()->mainModel();
+ }
+ 
+ 
+Index: nepomuk/core/resource.cpp
+===================================================================
+--- nepomuk/core/resource.cpp
++++ nepomuk/core/resource.cpp	2010-05-04 15:50:48.000000000 +0200
+@@ -36,6 +36,8 @@
+ #include <Soprano/Vocabulary/NAO>
+ #include <Soprano/Vocabulary/Xesam>
+ #include <Soprano/Vocabulary/RDFS>
++#include <Soprano/Model>
++#include <Soprano/QueryResultIterator>
+ 
+ #include <kmimetype.h>
+ 
+@@ -353,6 +355,7 @@
+ }
+ 
+ 
++// KDE 4.5: cache this one in ResourceData
+ QString Nepomuk::Resource::genericLabel() const
+ {
+     QString label = this->label();
+Index: nepomuk/core/resource.h
+===================================================================
+--- nepomuk/core/resource.h
++++ nepomuk/core/resource.h	2010-05-04 15:50:49.000000000 +0200
+@@ -659,7 +659,7 @@
+ 
+         /**
+          * Get property 'Symbol'. Each resource can have a symbol assigned.
+-         * For now this is a simple string which can either be the patch to
++         * For now this is a simple string which can either be the path to
+          * an actual pixmap file or just the name of an icon as defined by
+          * the freedesktop.org standard.
+          */
+@@ -667,7 +667,7 @@
+ 
+         /**
+          * Set property 'Symbol'. Each resource can have a symbol assigned.
+-         * For now this is a simple string which can either be the patch to
++         * For now this is a simple string which can either be the path to
+          * an actual pixmap file or just the name of an icon as defined by
+          * the freedesktop.org standard.
+          */
+@@ -676,7 +676,7 @@
+         /**
+          * Add a value to property 'Symbol'. Each resource can have a symbol
+          * assigned. For now this is a simple string which can either be
+-         * the patch to an actual pixmap file or just the name of an icon as
++         * the path to an actual pixmap file or just the name of an icon as
+          * defined by the freedesktop.org standard.
+          */
+         void addSymbol( const QString& value );
+Index: nepomuk/core/resourcedata.cpp
+===================================================================
+--- nepomuk/core/resourcedata.cpp
++++ nepomuk/core/resourcedata.cpp	2010-05-04 15:50:48.000000000 +0200
+@@ -202,7 +202,7 @@
+     m_groundingOccurence = 0;
+ 
+     // when we are being deleted the value of m_mainType is not important
+-    // andmore. Also since ResourceManager is a global static it might be
++    // anymore. Also since ResourceManager is a global static it might be
+     // deleted after the global static behind Soprano::Vocabulary::RDFS
+     // which results in a crash.
+     if( !isDelete )
+@@ -723,11 +723,12 @@
+             if( !m_uri.isEmpty() ) {
+                 QMutexLocker rmlock(&m_rm->mutex);
+ 
+-                if( !m_rm->m_initializedData.contains( m_uri ) ) {
++                ResourceDataHash::iterator it = m_rm->m_initializedData.find(m_uri);
++                if( it == m_rm->m_initializedData.end() ) {
+                     m_rm->m_initializedData.insert( m_uri, this );
+                 }
+                 else {
+-                    m_proxyData = m_rm->m_initializedData.value( m_uri );
++                    m_proxyData = it.value();
+                     m_proxyData->ref();
+                 }
+             }
+Index: nepomuk/core/resourcemanager.cpp
+===================================================================
+--- nepomuk/core/resourcemanager.cpp
++++ nepomuk/core/resourcemanager.cpp	2010-05-04 15:50:48.000000000 +0200
+@@ -45,6 +45,7 @@
+ #include <QtCore/QUuid>
+ #include <QtDBus/QDBusConnection>
+ #include <QtDBus/QDBusConnectionInterface>
++#include <QtDBus/QDBusServiceWatcher>
+ 
+ using namespace Soprano;
+ 
+@@ -241,10 +242,9 @@
+ }
+ 
+ 
+-void Nepomuk::ResourceManagerPrivate::_k_dbusServiceOwnerChanged( const QString& name, const QString&, const QString& newOwner )
++void Nepomuk::ResourceManagerPrivate::_k_dbusServiceUnregistered( const QString& serviceName )
+ {
+-    if( name == QLatin1String("org.kde.NepomukStorage") &&
+-        newOwner.isEmpty() ) {
++    if( serviceName == QLatin1String("org.kde.NepomukStorage") ) {
+         kDebug() << "Nepomuk Storage service went down.";
+         emit m_manager->nepomukSystemStopped();
+     }
+@@ -270,10 +270,14 @@
+                                            this,
+                                            SLOT(_k_storageServiceInitialized(bool)) );
+ 
+-    // connect to the ownerChanged signal to be able to connect the nepomukSystemStopped
++    // connect to the serviceUnregistered signal to be able to connect the nepomukSystemStopped
+     // signal once the storage service goes away
+-    connect( QDBusConnection::sessionBus().interface(), SIGNAL(serviceOwnerChanged(QString, QString, QString)),
+-             this, SLOT(_k_dbusServiceOwnerChanged(QString, QString, QString)) );
++    QDBusServiceWatcher *watcher = new QDBusServiceWatcher( QLatin1String("org.kde.NepomukStorage"),
++                                                            QDBusConnection::sessionBus(),
++                                                            QDBusServiceWatcher::WatchForUnregistration,
++                                                            this );
++    connect( watcher, SIGNAL(serviceUnregistered(QString)),
++             this, SLOT(_k_dbusServiceUnregistered(QString)) );
+ 
+     init();
+ }
+@@ -519,12 +523,14 @@
+ {
+     QMutexLocker lock( &d->mutex );
+ 
+-    d->overrideModel = model;
+-    d->resourceFilterModel->setParentModel( model ? model : d->mainModel );
+-
+-    // clear cache to make sure we do not mix data
+-    Q_FOREACH( ResourceData* data, d->allResourceData()) {
+-        data->invalidateCache();
++    if( model != d->resourceFilterModel ) {
++        d->overrideModel = model;
++        d->resourceFilterModel->setParentModel( model ? model : d->mainModel );
++
++        // clear cache to make sure we do not mix data
++        Q_FOREACH( ResourceData* data, d->allResourceData()) {
++            data->invalidateCache();
++        }
+     }
+ }
+ 
+Index: nepomuk/core/resourcemanager.h
+===================================================================
+--- nepomuk/core/resourcemanager.h
++++ nepomuk/core/resourcemanager.h	2010-05-04 15:50:49.000000000 +0200
+@@ -259,7 +259,7 @@
+         ResourceManagerPrivate* const d;
+ 
+         Q_PRIVATE_SLOT( d, void _k_storageServiceInitialized(bool) )
+-        Q_PRIVATE_SLOT( d, void _k_dbusServiceOwnerChanged(QString, QString, QString) )
++        Q_PRIVATE_SLOT( d, void _k_dbusServiceUnregistered(QString) )
+     };
+ }
+ 
+Index: nepomuk/core/resourcemanager_p.h
+===================================================================
+--- nepomuk/core/resourcemanager_p.h
++++ nepomuk/core/resourcemanager_p.h	2010-05-04 15:50:46.000000000 +0200
+@@ -120,7 +120,7 @@
+         QList<ResourceData*> allResourceDataWithProperty( const QUrl& _uri, const Variant& v );
+ 
+         void _k_storageServiceInitialized( bool );
+-        void _k_dbusServiceOwnerChanged( const QString& name, const QString& oldOwner, const QString& newOwner );
++        void _k_dbusServiceUnregistered( const QString& serviceName );
+ 
+     private:
+         QUrl m_mainContext;
+Index: nepomuk/core/test/resourcetest.cpp
+===================================================================
+--- nepomuk/core/test/resourcetest.cpp
++++ nepomuk/core/test/resourcetest.cpp	2010-05-04 15:50:38.000000000 +0200
+@@ -293,6 +293,11 @@
+         QCOMPARE( fileRes.resourceUri(), fileRes3.resourceUri() );
+ 
+         tmpFile1ResUri = fileRes.resourceUri();
++
++        // make sure even the string constructor will find the resource again with
++        Resource fileRes4( KUrl(tmpFile1ResUri).url() );
++        fileRes4.setRating(4);
++        QCOMPARE( fileRes4.resourceUri(), tmpFile1ResUri );
+     }
+ 
+     // clear cache to be sure we call ResourceData::determineUri
+@@ -338,8 +343,6 @@
+ 
+     // clear cache to be sure we do not reuse the cache
+     ResourceManager::instance()->clearCache();
+-
+-
+ }
+ 
+ QTEST_KDEMAIN(ResourceTest, NoGUI)
+Index: nepomuk/core/ui/CMakeLists.txt
+===================================================================
+--- nepomuk/core/ui/CMakeLists.txt
++++ nepomuk/core/ui/CMakeLists.txt	2010-05-04 15:50:45.000000000 +0200
+@@ -15,6 +15,7 @@
+   kmetadatatagwidget.h
+   ktagdisplaywidget.h
+   kratingpainter.h
++  nepomukmassupdatejob.h
+   DESTINATION ${INCLUDE_INSTALL_DIR}/nepomuk COMPONENT Devel
+ )
+ 
+Index: nepomuk/core/ui/kratingwidget.cpp
+===================================================================
+--- nepomuk/core/ui/kratingwidget.cpp
++++ nepomuk/core/ui/kratingwidget.cpp	2010-05-04 15:50:44.000000000 +0200
+@@ -162,9 +162,13 @@
+ 
+ void KRatingWidget::setRating( int rating )
+ {
+-    d->rating = rating;
+-    d->hoverRating = rating;
+-    update();
++    if ( rating != d->rating ) {
++        d->rating = rating;
++        d->hoverRating = rating;
++        emit ratingChanged( rating );
++        emit ratingChanged( (unsigned int)rating );
++        update();
++    }
+ }
+ 
+ 
+@@ -197,10 +201,8 @@
+ void KRatingWidget::mousePressEvent( QMouseEvent* e )
+ {
+     if ( e->button() == Qt::LeftButton ) {
+-        d->hoverRating = d->rating = d->ratingPainter.ratingFromPosition( contentsRect(), e->pos() );
+-        update();
+-        emit ratingChanged( d->rating );
+-        emit ratingChanged( (unsigned int)d->rating );
++        d->hoverRating = d->ratingPainter.ratingFromPosition( contentsRect(), e->pos() );
++        setRating( d->hoverRating );
+     }
+ }
+ 
+@@ -208,13 +210,14 @@
+ void KRatingWidget::mouseMoveEvent( QMouseEvent* e )
+ {
+     // when moving the mouse we show the user what the result of clicking will be
++    const int prevHoverRating = d->hoverRating;
+     d->hoverRating = d->ratingPainter.ratingFromPosition( contentsRect(), e->pos() );
++    if ( d->hoverRating != prevHoverRating ) {
++        update();
++    }
+     if ( d->hoverRating >= 0 && e->buttons() & Qt::LeftButton ) {
+-        d->rating = d->hoverRating;
+-        emit ratingChanged( d->rating );
+-        emit ratingChanged( (unsigned int)d->rating );
++        setRating( d->hoverRating );
+     }
+-    update();
+ }
+ 
+ 
+Index: nepomuk/core/ui/kratingwidget.h
+===================================================================
+--- nepomuk/core/ui/kratingwidget.h
++++ nepomuk/core/ui/kratingwidget.h	2010-05-04 15:50:44.000000000 +0200
+@@ -69,7 +69,7 @@
+ 
+     /**
+      * The layout direction. If RTL the stars
+-     * representing the rating value will be drawn from the 
++     * representing the rating value will be drawn from the
+      * right.
+      *
+      * \sa setLayoutDirection
+@@ -104,21 +104,20 @@
+ 
+  Q_SIGNALS:
+     /**
+-     * Emitted if the rating is changed by user interaction (ie. mouse click).
+-     * A call to setRating does not trigger this signal.
++     * This signal is emitted when the rating is changed.
+      */
+     void ratingChanged( unsigned int rating );
+     void ratingChanged( int rating );
+ 
+  public Q_SLOTS:
+     /**
+-     * Set the current rating. Calling this method will NOT trigger the
+-     * ratingChanged signal.
++     * Set the current rating. Calling this method will trigger the
++     * ratingChanged signal if @p rating is different from the previous rating.
+      */
+     void setRating( int rating );
+ 
+     /**
+-     * \deprecated use setRating( int max )
++     * \deprecated use setRating( int rating )
+      */
+     KDE_DEPRECATED void setRating( unsigned int rating );
+ 
+Index: nepomuk/core/ui/nepomukmassupdatejob.cpp
+===================================================================
+--- nepomuk/core/ui/nepomukmassupdatejob.cpp
++++ nepomuk/core/ui/nepomukmassupdatejob.cpp	2010-05-04 15:50:43.000000000 +0200
+@@ -153,4 +153,12 @@
+     return job;
+ }
+ 
++Nepomuk::MassUpdateJob* Nepomuk::MassUpdateJob::commentResources( const QList<Nepomuk::Resource>& rl, const QString& comment )
++{
++    Nepomuk::MassUpdateJob* job = new Nepomuk::MassUpdateJob();
++    job->setResources( rl );
++    job->setProperties( QList<QPair<QUrl,Nepomuk::Variant> >() << qMakePair( QUrl( Nepomuk::Resource::descriptionUri() ), Nepomuk::Variant( comment ) ) );
++    return job;
++}
++
+ #include "nepomukmassupdatejob.moc"
+Index: nepomuk/core/ui/nepomukmassupdatejob.h
+===================================================================
+--- nepomuk/core/ui/nepomukmassupdatejob.h
++++ nepomuk/core/ui/nepomukmassupdatejob.h	2010-05-04 15:50:44.000000000 +0200
+@@ -29,12 +29,12 @@
+ #include <QtCore/QPair>
+ #include <QtCore/QTimer>
+ 
+-#include "resource.h"
+-#include "variant.h"
++#include <nepomuk/core/resource.h>
++#include <nepomuk/core/variant.h>
+ 
+ 
+ namespace Nepomuk {
+-    class MassUpdateJob : public KJob
++    class NEPOMUK_EXPORT MassUpdateJob : public KJob
+     {
+         Q_OBJECT
+ 
+@@ -66,6 +66,7 @@
+ 
+         static MassUpdateJob* tagResources( const QList<Nepomuk::Resource>&, const QList<Nepomuk::Tag>& tags );
+         static MassUpdateJob* rateResources( const QList<Nepomuk::Resource>&, int rating );
++        static MassUpdateJob* commentResources( const QList<Nepomuk::Resource>&, const QString& comment);
+ 
+     protected:
+         bool doKill();

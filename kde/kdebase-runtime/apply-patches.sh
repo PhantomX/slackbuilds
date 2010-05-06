@@ -15,6 +15,9 @@ zcat ${SB_PATCHDIR}/${NAME}-nepomuk-strigi-smartfile.patch.gz | patch -p0 -E --b
 zcat ${SB_PATCHDIR}/${NAME}-4.3.2-knotify-fix-cpu-charge.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nepomuk-sync-with-trunk.patch
 
+# Branch patches
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-b1121161-fix-kreadconf.patch 
+
 # Trunk  patches
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079784-add-kupnp-support.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079789-fix-kdebug.patch.gz | patch -p1 -E --backup --verbose
@@ -23,6 +26,7 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079845-disable-kioslave.patch.gz | patch -p
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079847-remove-upnp.cmake.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079848-fix-build.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079849-activate-shared-lib.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-t1107759-fix-reload-model.patch 
 
 ## 4.4 Upstream patches
 zcat ${SB_PATCHDIR}/kdebase-runtime-4.4.0-virtuosoconverter.patch.gz | patch -p1 -E --backup --verbose

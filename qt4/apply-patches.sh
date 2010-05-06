@@ -81,8 +81,11 @@ ApplyPatch qt-x11-opensource-src-4.5.3-cve-2010-0052-destroyed-input-cached.patc
 ApplyPatch qt-everywhere-opensource-src-4.6.2-cve-2010-0051-lax-css-parsing-cross-domain-theft.patch
 ApplyPatch qt-everywhere-opensource-src-4.6.2-cve-2010-0054-image-element-pointer-name-getter.patch
 
+ApplyPatch 0012-Add-context-to-tr-calls-in-QShortcut.patch
 ApplyPatch qt-x11-opensource-src-4.6.2-tablet-wacom-QTBUG-8599.patch
 ApplyPatch qt-everywhere-opensource-src-4.6.2-QTBUG-6932.patch
+ApplyPatch qt-everywhere-opensource-src-4.6.2-atomic-s390.patch
+ApplyPatch qt-everywhere-opensource-src-4.6.2-cups-QTBUG-6471.patch
 
 # kde-qt patches
 ( SB_PATCHDIR=patches

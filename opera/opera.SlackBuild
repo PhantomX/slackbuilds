@@ -40,18 +40,9 @@ fi
 NAME=opera
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-10.10-4742}
-if [ $(echo ${VERSION} | cut -d - -f2 | grep b) ] ;then
-  RVER="$(echo ${VERSION} | cut -d - -f1,3)"
-  RVER2="$(echo ${VERSION} | cut -d - -f1-2)"
-  CRVER=${RVER2//.}
-  REL="beta$(echo ${RVER2} | cut -d - -f2 | cut -c 2)"
-else
-  RVER="${VERSION}"
-  RVER2="$(echo ${VERSION} | cut -d - -f1)"
-  CRVER=${RVER2//.}
-  REL=final
-fi
+VERSION=${VERSION:-10.53-6330}
+RVER="$(echo ${VERSION} | cut -d - -f1)"
+CRVER=${RVER//.}
 # x86 or x86_64
 ARCH=${ARCH:-x86}
 if [ "${ARCH}" = "x86_64" ] ;then
@@ -70,18 +61,21 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}-${RVER}.gcc4-qt4.${PARCH}
-SRCARCHIVE=${NAME}-${RVER2}.gcc4-qt4.${PARCH}.tar.bz2
+SRCDIR=${NAME}-${VERSION}.${PARCH}.linux
+SRCARCHIVE=${SRCDIR}.tar.bz2
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 OPERA_MIRROR=${OPERA_MIRROR:-http://ftp.opera.com/pub/opera}
-DL_URL="${OPERA_MIRROR}/linux/${CRVER//-}/${REL}/en/${PARCH}/shared/${SRCARCHIVE}"
-DL_URLB="${OPERA_MIRROR}/linux/${CRVER//-}/${REL}/en/${PARCH}/${SRCARCHIVE}"
+DL_URL="${OPERA_MIRROR}/linux/${CRVER}/${SRCARCHIVE}"
+DL_URLB="${OPERA_MIRROR}/linux/${CRVER}b_BETA_/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible, or in /tmp
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || ${DL_PROG} ${DL_OPTS} ${DL_URLB} || exit 1
+test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL}
+for i in $(seq 10) ;do
+  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URLB/_BETA_/$i} || exit 1
+done
 
 if [ "${ARCH}" = "x86_64" ] ;then
   LIBDIRSUFFIX="64"
@@ -100,60 +94,96 @@ rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
-echo "Checking md5..."
-if ! md5sum --quiet -c Manifest.md5 &>/dev/null ;then
-  echo "Some files are corrupted, download ${SRCARCHIVE} again."
-  exit 1
+if [ -f Manifest.md5 ] ;then
+  echo "Checking md5..."
+  if [ -f Manifest.md5 ] && ! md5sum --quiet -c Manifest.md5 &>/dev/null ;then
+    echo "Some files are corrupted, download ${SRCARCHIVE} again."
+    exit 1
+  fi
 fi
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-10-multilib.patch.gz | patch -p0 -E --backup --verbose || exit 1
-#zcat ${CWD}/${NAME}-10-qt4-theme.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
-zcat ${CWD}/${NAME}.policy.gz > \
-     usr/share/${NAME}/java/${NAME}.policy || exit 1
-
-cat ${CWD}/BluecurveX.zip > \
-    usr/share/${NAME}/skin/BluecurveX.zip || exit 1
+sed -i -e 's|@@{PREFIX}/bin/||g;s|@@{SUFFIX}||g;s|@@{_SUFFIX}||g' \
+  share/applications/*.desktop || exit 1
 
 mkdir -p ${PKG}/usr/bin
-sed -i \
-  -e '/OPERA_PERSONALDIR=/s|=.*|=$HOME/.opera|g' \
-  -e 's|^case.*esac$|OPERA_SCRIPT_PATH=$0|g' \
-  -e 's|$PWD||g' ${NAME} || exit 1
-install -m0755 ${NAME} ${PKG}/usr/bin/${NAME} || exit 1
+cat > ${PKG}/usr/bin/${NAME} <<'EOF'
+#!/bin/sh
+# Use this if you don't want to install Opera to any special location,
+# but execute it from the extracted package or current location.
+
+OP_ARCH=$(uname -m)
+case ${OP_ARCH} in
+  x86_64 | ia64 | s390 )
+    OP_LIB_DIR="/usr/lib64"
+    SECONDARY_LIB_DIR="/usr/lib"
+    ;;
+  * )
+    OP_LIB_DIR="/usr/lib"
+    SECONDARY_LIB_DIR="/usr/lib64"
+    ;;
+esac
+
+if [ ! -x ${OP_LIB_DIR}/opera/opera ]; then
+  if [ ! -x ${SECONDARY_LIB_DIR/}opera/opera ]; then
+    echo "Error: ${OP_LIB_DIR}/opera/opera not found"
+    if [ -d ${SECONDARY_LIB_DIR} ]; then
+      echo "       ${SECONDARY_LIB_DIR}/opera/opera not found"
+    fi
+    exit 1
+  fi
+  OP_LIB_DIR="${SECONDARY_LIB_DIR}"
+fi
+
+# Location of the Opera binaries
+export OPERA_BINARYDIR=${OP_LIB_DIR}/opera
+
+export OPERA_DIR=${OPERA_DIR:-/usr/share/opera}
+export OPERA_PERSONALDIR=${OPERA_PERSONALDIR:-${HOME}/.opera}
+exec "${OPERA_BINARYDIR}/opera" "$@"
+EOF
+
+cat > ${PKG}/usr/bin/${NAME}-widget-manager <<'EOF'
+#!/bin/sh
+exec /usr/bin/opera --widgetmanager "$@"
+EOF
+
+chmod 0755 ${PKG}/usr/bin/${NAME}* || exit 1
 
 mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}
-cp -a usr/lib/${NAME} \
-      ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME} || exit 1
+cp -a lib/${NAME} \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME} || exit 1
 chmod 0755 ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME}/*.so
 
-mkdir -p ${PKG}/usr/share
-cp -a usr/share/{icons,${NAME}} \
-      ${PKG}/usr/share/ || exit 1
-mkdir -p ${PKG}/usr/share/icons/hicolor/scalable/apps
-zcat ${CWD}/${NAME}.svg.gz > \
-     ${PKG}/usr/share/icons/hicolor/scalable/apps/${NAME}.svg || exit 1
+rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME}/plugins/README
 
-mkdir -p ${PKG}/etc
-for file in etc/${NAME}prefs*.ini ;do
-  install -m0644 ${file} ${PKG}/${file}.new || exit 1
-done
+mkdir -p ${PKG}/usr/share
+cp -a share/{icons,mime,${NAME}} \
+  ${PKG}/usr/share/ || exit 1
 
 mkdir -p ${PKG}/usr/man/man1
-install -m0644 usr/share/man/man1/${NAME}.1 \
-               ${PKG}/usr/man/man1/${NAME}.1 || exit 1
+install -m0644 share/man/man1/${NAME}*.1* \
+  ${PKG}/usr/man/man1/ || exit 1
 
 mkdir -p ${PKG}/usr/share/applications
-zcat ${CWD}/${NAME}.desktop.gz > \
-     ${PKG}/usr/share/applications/${NAME}.desktop || exit 1
+desktop-file-install --vendor="" \
+  --dir ${PKG}/usr/share/applications \
+  --remove-key="TryExec" \
+  --add-mime-type="application/x-shockwave-flash" \
+  share/applications/${NAME}-browser.desktop || exit 1
+
+desktop-file-install --vendor="" \
+  --dir ${PKG}/usr/share/applications \
+  --remove-key="TryExec" \
+  share/applications/${NAME}-widget-{installer,manager}.desktop || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  usr/share/doc/${NAME}/* ${CWD}/ChangeLog.SB \
+  share/doc/${NAME}/* ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
@@ -184,19 +214,23 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 
 cat > ${PKG}/install/doinst.sh <<EOF
-config() {
-  NEW="\$1"
-  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
-  # If there's no config file by that name, mv it over:
-  if [ ! -r \$OLD ]; then
-    mv \$NEW \$OLD
-  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
-    # toss the redundant copy
-    rm \$NEW
-  fi
-  # Otherwise, we leave the .new copy for the admin to consider...
-}
-## List of conf files to check.  The conf files in your package should end in .new
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/update-desktop-database ]; then
+  \${CHROOT} /usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1
+fi
+if [ -x usr/bin/gtk-update-icon-cache ]; then
+  \${CHROOT} /usr/bin/gtk-update-icon-cache ${_kde4_iconsdir}/hicolor >/dev/null 2>&1
+fi
+if [ -x usr/bin/update-mime-database ]; then
+  \${CHROOT} /usr/bin/update-mime-database /usr/share/mime &> /dev/null
+fi
 EOF
 
 ( cd ${PKG}
@@ -211,8 +245,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.patch.gz ${CWD}/${NAME}*.{desktop,policy}.gz \
-                 ${CWD}/${NAME}.svg.gz ${SBDIR}/
+                 ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
 fi

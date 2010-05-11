@@ -1,0 +1,114 @@
+From ebca24d6c9eb12f91eed3993de65945ee97dd467 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <bonzini@gnu.org>
+Date: Tue, 4 May 2010 18:07:28 +0200
+Subject: [PATCH] dfa: speed up [[:digit:]] and [[:xdigit:]]
+
+There's no "multibyte pain" in these two classes, since POSIX
+and ISO C99 mandate their contents.
+
+Time for "./grep -x '[[:digit:]]' /usr/share/dict/linux.words"
+Before: 1.5s, after: 0.07s.  (sed manages only 0.5s).
+
+* src/dfa.c (predicates): Declare struct dfa_ctype separately
+from definition.  Add sb_only.
+(find_pred): Return const struct dfa_ctype *.
+(parse_bracket_exp): Return const struct dfa_ctype *.  Do
+not fill MBCSET for sb_only character types.
+---
+ src/dfa.c |   55 ++++++++++++++++++++++++++++---------------------------
+ 1 files changed, 28 insertions(+), 27 deletions(-)
+
+diff --git a/src/dfa.c b/src/dfa.c
+index 4dd26c9..da5a306 100644
+--- a/src/dfa.c
++++ b/src/dfa.c
+@@ -429,26 +429,29 @@ typedef int predicate (int);
+ /* The following list maps the names of the Posix named character classes
+    to predicate functions that determine whether a given character is in
+    the class.  The leading [ has already been eaten by the lexical analyzer. */
+-static struct {
++struct dfa_ctype {
+   const char *name;
+-  predicate *pred;
+-} const prednames[] = {
+-  { "alpha", is_alpha },
+-  { "upper", is_upper },
+-  { "lower", is_lower },
+-  { "digit", is_digit },
+-  { "xdigit", is_xdigit },
+-  { "space", is_space },
+-  { "punct", is_punct },
+-  { "alnum", is_alnum },
+-  { "print", is_print },
+-  { "graph", is_graph },
+-  { "cntrl", is_cntrl },
+-  { "blank", is_blank },
+-  { NULL, NULL }
++  predicate *func;
++  bool sb_only;
+ };
+ 
+-static predicate *
++static const struct dfa_ctype prednames[] = {
++  { "alpha", isalpha, false },
++  { "upper", isupper, false },
++  { "lower", islower, false },
++  { "digit", isdigit, true },
++  { "xdigit", isxdigit, true },
++  { "space", isspace, false },
++  { "punct", ispunct, false },
++  { "alnum", isalnum, false },
++  { "print", isprint, false },
++  { "graph", isgraph, false },
++  { "cntrl", iscntrl, false },
++  { "blank", isblank, false },
++  { NULL, NULL, false }
++};
++
++static const struct dfa_ctype *
+ find_pred (const char *str)
+ {
+   unsigned int i;
+@@ -456,7 +459,7 @@ find_pred (const char *str)
+     if (!strcmp(str, prednames[i].name))
+       break;
+ 
+-  return prednames[i].pred;
++  return &prednames[i];
+ }
+ 
+ /* Multibyte character handling sub-routine for lex.
+@@ -553,8 +556,11 @@ parse_bracket_exp (void)
+ 				     || !strcmp (str, "lower"))
+ 				       ? "alpha"
+ 				       : str);
++                  const struct dfa_ctype *pred = find_pred (class);
++                  if (!pred)
++                    dfaerror(_("invalid character class"));
+ #ifdef MBS_SUPPORT
+-                  if (MB_CUR_MAX > 1)
++                  if (MB_CUR_MAX > 1 && !pred->sb_only)
+                     {
+ 		      /* Store the character class as wctype_t.  */
+                       wctype_t wt = wctype (class);
+@@ -568,14 +574,9 @@ parse_bracket_exp (void)
+                     }
+ #endif
+ 
+-                  {
+-                    predicate *pred = find_pred (class);
+-                    if (!pred)
+-                      dfaerror(_("invalid character class"));
+-                    for (c2 = 0; c2 < NOTCHAR; ++c2)
+-                      if ((*pred)(c2))
+-                        setbit_case_fold (c2, ccl);
+-                  }
++                  for (c2 = 0; c2 < NOTCHAR; ++c2)
++                    if (pred->func(c2))
++                      setbit_case_fold (c2, ccl);
+                 }
+ 
+ #ifdef MBS_SUPPORT
+-- 
+1.6.6.1
+

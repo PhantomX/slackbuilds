@@ -9,5 +9,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.20.51.0.2-set-long-
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.20.51.0.2-copy-osabi.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.20.51.0.7-do-not-bind-unique-symbols-locally.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.20.51.0.7-dwarf4.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.20.51.0.7-unique-archive-symbols.patch
 
 set +e +o pipefail

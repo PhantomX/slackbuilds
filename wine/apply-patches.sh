@@ -5,6 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 zcat ${SB_PATCHDIR}/wine-rpath.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/wine-1.1.15-winegcc.patch.gz | patch -p1 -E --backup --verbose
+patch -p0 -E --backup -z .gecko --verbose -i ${SB_PATCHDIR}/wine-gecko.patch
 
 # http://bugs.winehq.org/show_bug.cgi?id=16328
 patch -p1 -E --backup -z .intz --verbose -i ${SB_PATCHDIR}/wine-1.1.41-wineintz.patch

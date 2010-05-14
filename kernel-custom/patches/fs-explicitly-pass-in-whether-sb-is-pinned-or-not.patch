@@ -1,0 +1,190 @@
+diff --git a/fs/fs-writeback.c b/fs/fs-writeback.c
+index 1a7c42c..92c6708 100644
+--- a/fs/fs-writeback.c
++++ b/fs/fs-writeback.c
+@@ -44,6 +44,7 @@ struct wb_writeback_args {
+ 	int for_kupdate:1;
+ 	int range_cyclic:1;
+ 	int for_background:1;
++	int sb_pinned:1;
+ };
+ 
+ /*
+@@ -229,6 +230,11 @@ static void bdi_sync_writeback(struct backing_dev_info *bdi,
+ 		.sync_mode	= WB_SYNC_ALL,
+ 		.nr_pages	= LONG_MAX,
+ 		.range_cyclic	= 0,
++		/*
++		 * Setting sb_pinned is not necessary for WB_SYNC_ALL, but
++		 * lets make it explicitly clear.
++		 */
++		.sb_pinned	= 1,
+ 	};
+ 	struct bdi_work work;
+ 
+@@ -244,21 +250,23 @@ static void bdi_sync_writeback(struct backing_dev_info *bdi,
+  * @bdi: the backing device to write from
+  * @sb: write inodes from this super_block
+  * @nr_pages: the number of pages to write
++ * @sb_locked: caller already holds sb umount sem.
+  *
+  * Description:
+  *   This does WB_SYNC_NONE opportunistic writeback. The IO is only
+  *   started when this function returns, we make no guarentees on
+- *   completion. Caller need not hold sb s_umount semaphore.
++ *   completion. Caller specifies whether sb umount sem is held already or not.
+  *
+  */
+ void bdi_start_writeback(struct backing_dev_info *bdi, struct super_block *sb,
+-			 long nr_pages)
++			 long nr_pages, int sb_locked)
+ {
+ 	struct wb_writeback_args args = {
+ 		.sb		= sb,
+ 		.sync_mode	= WB_SYNC_NONE,
+ 		.nr_pages	= nr_pages,
+ 		.range_cyclic	= 1,
++		.sb_pinned	= sb_locked,
+ 	};
+ 
+ 	/*
+@@ -585,7 +593,7 @@ static int pin_sb_for_writeback(struct writeback_control *wbc,
+ 	/*
+ 	 * Caller must already hold the ref for this
+ 	 */
+-	if (wbc->sync_mode == WB_SYNC_ALL) {
++	if (wbc->sync_mode == WB_SYNC_ALL || wbc->sb_pinned) {
+ 		WARN_ON(!rwsem_is_locked(&sb->s_umount));
+ 		return 0;
+ 	}
+@@ -733,6 +741,7 @@ static long wb_writeback(struct bdi_writeback *wb,
+ 		.for_kupdate		= args->for_kupdate,
+ 		.for_background		= args->for_background,
+ 		.range_cyclic		= args->range_cyclic,
++		.sb_pinned		= args->sb_pinned,
+ 	};
+ 	unsigned long oldest_jif;
+ 	long wrote = 0;
+@@ -1165,6 +1174,18 @@ static void wait_sb_inodes(struct super_block *sb)
+ 	iput(old_inode);
+ }
+ 
++static void __writeback_inodes_sb(struct super_block *sb, int sb_locked)
++{
++	unsigned long nr_dirty = global_page_state(NR_FILE_DIRTY);
++	unsigned long nr_unstable = global_page_state(NR_UNSTABLE_NFS);
++	long nr_to_write;
++
++	nr_to_write = nr_dirty + nr_unstable +
++			(inodes_stat.nr_inodes - inodes_stat.nr_unused);
++
++	bdi_start_writeback(sb->s_bdi, sb, nr_to_write, sb_locked);
++}
++
+ /**
+  * writeback_inodes_sb	-	writeback dirty inodes from given super_block
+  * @sb: the superblock
+@@ -1176,18 +1197,23 @@ static void wait_sb_inodes(struct super_block *sb)
+  */
+ void writeback_inodes_sb(struct super_block *sb)
+ {
+-	unsigned long nr_dirty = global_page_state(NR_FILE_DIRTY);
+-	unsigned long nr_unstable = global_page_state(NR_UNSTABLE_NFS);
+-	long nr_to_write;
+-
+-	nr_to_write = nr_dirty + nr_unstable +
+-			(inodes_stat.nr_inodes - inodes_stat.nr_unused);
+-
+-	bdi_start_writeback(sb->s_bdi, sb, nr_to_write);
++	__writeback_inodes_sb(sb, 0);
+ }
+ EXPORT_SYMBOL(writeback_inodes_sb);
+ 
+ /**
++ * writeback_inodes_sb_locked	- writeback dirty inodes from given super_block
++ * @sb: the superblock
++ *
++ * Like writeback_inodes_sb(), except the caller already holds the
++ * sb umount sem.
++ */
++void writeback_inodes_sb_locked(struct super_block *sb)
++{
++	__writeback_inodes_sb(sb, 1);
++}
++
++/**
+  * writeback_inodes_sb_if_idle	-	start writeback if none underway
+  * @sb: the superblock
+  *
+diff --git a/fs/sync.c b/fs/sync.c
+index 418727a..234bcff 100644
+--- a/fs/sync.c
++++ b/fs/sync.c
+@@ -37,11 +37,12 @@ static int __sync_filesystem(struct super_block *sb, int wait)
+ 	/* Avoid doing twice syncing and cache pruning for quota sync */
+ 	if (!wait) {
+ 		writeout_quota_sb(sb, -1);
+-		writeback_inodes_sb(sb);
++		writeback_inodes_sb_locked(sb);
+ 	} else {
+ 		sync_quota_sb(sb, -1);
+ 		sync_inodes_sb(sb);
+ 	}
++
+ 	if (sb->s_op->sync_fs)
+ 		sb->s_op->sync_fs(sb, wait);
+ 	return __sync_blockdev(sb->s_bdev, wait);
+diff --git a/include/linux/backing-dev.h b/include/linux/backing-dev.h
+index fcbc26a..a249798 100644
+--- a/include/linux/backing-dev.h
++++ b/include/linux/backing-dev.h
+@@ -102,7 +102,7 @@ int bdi_register(struct backing_dev_info *bdi, struct device *parent,
+ int bdi_register_dev(struct backing_dev_info *bdi, dev_t dev);
+ void bdi_unregister(struct backing_dev_info *bdi);
+ void bdi_start_writeback(struct backing_dev_info *bdi, struct super_block *sb,
+-				long nr_pages);
++				long nr_pages, int sb_locked);
+ int bdi_writeback_task(struct bdi_writeback *wb);
+ int bdi_has_dirty_io(struct backing_dev_info *bdi);
+ 
+diff --git a/include/linux/writeback.h b/include/linux/writeback.h
+index 76e8903..05e64d2 100644
+--- a/include/linux/writeback.h
++++ b/include/linux/writeback.h
+@@ -62,6 +62,15 @@ struct writeback_control {
+ 	 * so we use a single control to update them
+ 	 */
+ 	unsigned no_nrwrite_index_update:1;
++
++	/*
++	 * For WB_SYNC_ALL, the sb must always be pinned. For WB_SYNC_NONE,
++	 * the writeback code will pin the sb for the caller. However,
++	 * for eg umount, the caller does WB_SYNC_NONE but already has
++	 * the sb pinned. If the below is set, caller already has the
++	 * sb pinned.
++	 */
++	unsigned sb_pinned:1;
+ };
+ 
+ /*
+@@ -70,6 +79,7 @@ struct writeback_control {
+ struct bdi_writeback;
+ int inode_wait(void *);
+ void writeback_inodes_sb(struct super_block *);
++void writeback_inodes_sb_locked(struct super_block *);
+ int writeback_inodes_sb_if_idle(struct super_block *);
+ void sync_inodes_sb(struct super_block *);
+ void writeback_inodes_wbc(struct writeback_control *wbc);
+diff --git a/mm/page-writeback.c b/mm/page-writeback.c
+index 0b19943..49d3508 100644
+--- a/mm/page-writeback.c
++++ b/mm/page-writeback.c
+@@ -597,7 +597,7 @@ static void balance_dirty_pages(struct address_space *mapping,
+ 	    (!laptop_mode && ((global_page_state(NR_FILE_DIRTY)
+ 			       + global_page_state(NR_UNSTABLE_NFS))
+ 					  > background_thresh)))
+-		bdi_start_writeback(bdi, NULL, 0);
++		bdi_start_writeback(bdi, NULL, 0, 0);
+ }
+ 
+ void set_page_dirty_balance(struct page *page, int page_mkwrite)

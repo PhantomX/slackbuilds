@@ -112,6 +112,9 @@ ApplyPatch linux-2.6-execshield.patch
 # btrfs
 ApplyPatch linux-2.6-btrfs-update.patch
 
+# Sort out umount versus sync penalty: rhbz#588930
+ApplyPatch fs-explicitly-pass-in-whether-sb-is-pinned-or-not.patch
+
 # cifs
 
 # NFSv4
@@ -136,7 +139,6 @@ ApplyPatch linux-2.6-acpi-video-export-edid.patch
 ApplyPatch acpi-ec-add-delay-before-write.patch
 
 ApplyPatch linux-2.6-acpi-sleep-live-sci-live.patch
-ApplyPatch linux-2.6-pci-fixup-resume.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
@@ -178,6 +180,10 @@ ApplyPatch die-floppy-die.patch.gz
 #ApplyPatch linux-2.6-input-fix-toshiba-hotkeys.patch.gz
 
 ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch.gz
+
+ApplyPatch linux-2.6-input-hid-quirk-egalax.patch
+ApplyPatch linux-2.6-input-clickpad-support.patch
+ApplyPatch thinkpad-acpi-add-x100e.patch
 
 # Allow to use 480600 baud on 16C950 UARTs
 ApplyPatch linux-2.6-serial-460800.patch
@@ -231,12 +237,14 @@ ApplyPatch drm-core-next.patch
 
 # Nouveau DRM + drm fixes
 ApplyPatch drm-radeon-evergreen.patch
+ApplyPatch drm-radeon-firemv-pciid.patch
 ApplyPatch drm-radeon-kms-fix-dual-link-dvi.patch
+ApplyPatch drm-radeon-fix-rs600-tlb.patch
 ApplyPatch drm-radeon-ss-fix.patch
-# squash nouveau firmware into a single commit until it gets into linux-firmware
 ApplyPatch drm-nouveau-abi16.patch
 ApplyPatch drm-nouveau-updates.patch
 ApplyPatch drm-nouveau-acpi-edid-fallback.patch
+ApplyPatch drm-nouveau-drm-fixed-header.patch
 # pm broken on my thinkpad t60p - airlied
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
@@ -244,6 +252,7 @@ ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 ApplyPatch drm-intel-gen5-dither.patch
 ApplyPatch drm-intel-sdvo-fix.patch
+ApplyPatch drm-intel-sdvo-fix-2.patch
 
 ApplyPatch linux-2.6-phylib-autoload.patch
 
@@ -266,6 +275,7 @@ ApplyPatch linux-2.6-v4l-dvb-gspca-fixes.patch
 # Patches headed upstream
 ApplyPatch linux-2.6-rfkill-all.patch
 
+# appleir remote controller
 ApplyPatch add-appleir-usb-driver.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
@@ -278,8 +288,6 @@ ApplyPatch ssb_check_for_sprom.patch
 
 # backport iwlwifi fixes (thanks, sgruszka!) -- drop when stable catches-up
 ApplyPatch iwlwifi-reset-card-during-probe.patch
-
-ApplyPatch libata-fix-accesses-at-LBA28-boundary.patch
 
 # patches from Intel to address intermittent firmware failures with iwlagn
 ApplyPatch iwlwifi_-check-for-aggregation-frame-and-queue.patch
@@ -297,7 +305,19 @@ ApplyPatch iwlwifi_-Recover-TX-flow-failure.patch
 ApplyPatch iwlwifi_-code-cleanup-for-connectivity-recovery.patch
 ApplyPatch iwlwifi_-iwl_good_ack_health-only-apply-to-AGN-device.patch
 
-# RHBZ#583843
-ApplyPatch linux-2.6-creds_are_invalid-race.patch
+# fix possible corruption with ssd
+ApplyPatch ext4-issue-discard-operation-before-releasing-blocks.patch
+
+# Revert "ath9k: fix lockdep warning when unloading module"
+ApplyPatch revert-ath9k_-fix-lockdep-warning-when-unloading-module.patch
+
+ApplyPatch ibmvscsi-fix-DMA-API-misuse.patch
+
+ApplyPatch disable-i8042-check-on-apple-mac.patch
+
+# iwlwifi: recalculate average tpt if not current
+ApplyPatch iwlwifi-recalculate-average-tpt-if-not-current.patch
+
+ApplyPatch crypto-aesni-kill-module_alias.patch
 
 set +e +o pipefail

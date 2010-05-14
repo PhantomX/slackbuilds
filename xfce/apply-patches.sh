@@ -26,6 +26,7 @@ if [ "${SPNAME}" = "xfdesktop" ]; then
   patch -p1 --verbose -i ${SB_PATCHDIR}/xfdesktop-4.6.1-education-menu-icon.patch
   # Upstream bug: http://bugzilla.xfce.org/show_bug.cgi?id=6235
   patch -p1 --verbose -i ${SB_PATCHDIR}/xfdesktop-4.6.1-dsofix.patch
+  patch -p1 --verbose -i ${SB_PATCHDIR}/xfdesktop-4.6.1-assert.patch
 fi
 
 if [ "${SPNAME}" = "xfwm4" ]; then
@@ -47,7 +48,7 @@ if [ "${SPNAME}" = "xfce-utils" ]; then
     zcat ${SB_PATCHDIR}/xfce-utils-4.4.2-pulseaudio.patch.gz | patch -p1 --verbose
   fi
   zcat ${SB_PATCHDIR}/xfce-utils-4.4.3-xfterm4-bug.patch.gz | patch -p1 --verbose
-  zcat ${SB_PATCHDIR}/xfce-utils-4.6.1-startxfce-data-dirs.patch.gz | patch -p1 --verbose
+  patch -p1 --verbose -i ${SB_PATCHDIR}/xfce-utils-4.6.1-startxfce-data-dirs.patch
   zcat ${SB_PATCHDIR}/xfce-utils-4.6.1-xdgconfig.patch.gz | patch -p1 --verbose
 fi
 

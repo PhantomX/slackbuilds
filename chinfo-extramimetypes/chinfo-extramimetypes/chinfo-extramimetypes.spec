@@ -1,5 +1,5 @@
 Name:		kdelibs-extramimetypes
-Version:	5.2
+Version:	7.0
 Release: 	1%{?dist}
 Summary:	Extra mimetypes for KDE.
 License:	GPL

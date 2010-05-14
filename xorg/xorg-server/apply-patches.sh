@@ -37,7 +37,12 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.0-randr-gamma-restore.patch
 zcat ${SB_PATCHDIR}/xserver-1.7.1-multilib.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch.gz | patch -p1 --verbose
 
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.6-export-more-dix-functions.patch
+# Backports from master
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-swap-fixes.patch
+# https://bugs.freedesktop.org/show_bug.cgi?id=27767 (plus related
+# pieces needed backported from master)
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-resource-accounting.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8-no-connected-outputs.patch
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then

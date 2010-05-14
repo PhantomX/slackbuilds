@@ -1,0 +1,1377 @@
+diff --git a/src/mesa/drivers/dri/nouveau/Makefile b/src/mesa/drivers/dri/nouveau/Makefile
+index 49e8933..7be19b2 100644
+--- a/src/mesa/drivers/dri/nouveau/Makefile
++++ b/src/mesa/drivers/dri/nouveau/Makefile
+@@ -8,8 +8,6 @@ DRI_LIB_DEPS += $(shell pkg-config libdrm_nouveau --libs)
+ 
+ LIBNAME = nouveau_vieux_dri.so
+ 
+-MINIGLX_SOURCES =
+-
+ DRIVER_SOURCES = \
+ 	nouveau_screen.c \
+ 	nouveau_context.c \
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_context.c b/src/mesa/drivers/dri/nouveau/nouveau_context.c
+index 52185a2..42bec65 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_context.c
++++ b/src/mesa/drivers/dri/nouveau/nouveau_context.c
+@@ -43,19 +43,23 @@
+ 
+ #define need_GL_EXT_framebuffer_object
+ #define need_GL_EXT_fog_coord
++#define need_GL_EXT_secondary_color
+ 
+ #include "main/remap_helper.h"
+ 
+ static const struct dri_extension nouveau_extensions[] = {
+ 	{ "GL_ARB_multitexture",	NULL },
++	{ "GL_ARB_texture_env_add",	NULL },
+ 	{ "GL_ARB_texture_env_combine",	NULL },
+ 	{ "GL_ARB_texture_env_dot3",	NULL },
+-	{ "GL_ARB_texture_env_add",	NULL },
+-	{ "GL_EXT_texture_lod_bias",	NULL },
+-	{ "GL_EXT_framebuffer_object",	GL_EXT_framebuffer_object_functions },
+ 	{ "GL_ARB_texture_mirrored_repeat", NULL },
+-	{ "GL_EXT_stencil_wrap",	NULL },
+ 	{ "GL_EXT_fog_coord",		GL_EXT_fog_coord_functions },
++	{ "GL_EXT_framebuffer_blit",	NULL },
++	{ "GL_EXT_framebuffer_object",	GL_EXT_framebuffer_object_functions },
++	{ "GL_EXT_secondary_color",	GL_EXT_secondary_color_functions },
++	{ "GL_EXT_stencil_wrap",	NULL },
++	{ "GL_EXT_texture_lod_bias",	NULL },
++	{ "GL_NV_blend_square",         NULL },
+ 	{ "GL_SGIS_generate_mipmap",	NULL },
+ 	{ NULL,				NULL }
+ };
+@@ -66,8 +70,8 @@ nouveau_channel_flush_notify(struct nouveau_channel *chan)
+ 	struct nouveau_context *nctx = chan->user_private;
+ 	GLcontext *ctx = &nctx->base;
+ 
+-	if (nctx->fallback < SWRAST && ctx->DrawBuffer)
+-		nouveau_state_emit(&nctx->base);
++	if (nctx->fallback < SWRAST)
++		nouveau_bo_state_emit(ctx);
+ }
+ 
+ GLboolean
+@@ -334,6 +338,8 @@ nouveau_validate_framebuffer(GLcontext *ctx)
+ 		update_framebuffer(dri_ctx, dri_read,
+ 				   &dri_ctx->dri2.read_stamp);
+ 
+-	if (nouveau_next_dirty_state(ctx) >= 0)
++	if (nouveau_next_dirty_state(ctx) >= 0) {
++		nouveau_state_emit(ctx);
+ 		FIRE_RING(context_chan(ctx));
++	}
+ }
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_context.h b/src/mesa/drivers/dri/nouveau/nouveau_context.h
+index 682f8a4..fe64fec 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_context.h
++++ b/src/mesa/drivers/dri/nouveau/nouveau_context.h
+@@ -85,6 +85,8 @@ struct nouveau_context {
+ 	BITSET_SET(to_nouveau_context(ctx)->dirty, NOUVEAU_STATE_##s)
+ #define context_dirty_i(ctx, s, i) \
+ 	BITSET_SET(to_nouveau_context(ctx)->dirty, NOUVEAU_STATE_##s##0 + i)
++#define context_emit(ctx, s) \
++	context_drv(ctx)->emit[NOUVEAU_STATE_##s](ctx, NOUVEAU_STATE_##s)
+ 
+ GLboolean
+ nouveau_context_create(const __GLcontextModes *visual, __DRIcontext *dri_ctx,
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_driver.c b/src/mesa/drivers/dri/nouveau/nouveau_driver.c
+index 1d12f43..4ec864c 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_driver.c
++++ b/src/mesa/drivers/dri/nouveau/nouveau_driver.c
+@@ -135,4 +135,8 @@ nouveau_driver_functions_init(struct dd_function_table *functions)
+ 	functions->Flush = nouveau_flush;
+ 	functions->Finish = nouveau_finish;
+ 	functions->Clear = nouveau_clear;
++	functions->DrawPixels = _mesa_meta_DrawPixels;
++	functions->CopyPixels = _mesa_meta_CopyPixels;
++	functions->Bitmap = _mesa_meta_Bitmap;
++	functions->BlitFramebuffer = _mesa_meta_BlitFramebuffer;
+ }
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_fbo.c b/src/mesa/drivers/dri/nouveau/nouveau_fbo.c
+index 2ec3dc9..8be7edb 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_fbo.c
++++ b/src/mesa/drivers/dri/nouveau/nouveau_fbo.c
+@@ -236,7 +236,7 @@ nouveau_render_texture(GLcontext *ctx, struct gl_framebuffer *fb,
+ 	/* Allocate a renderbuffer object for the texture if we
+ 	 * haven't already done so. */
+ 	if (!rb) {
+-		rb = nouveau_renderbuffer_new(ctx, 0);
++		rb = nouveau_renderbuffer_new(ctx, ~0);
+ 		assert(rb);
+ 
+ 		rb->AllocStorage = NULL;
+@@ -259,11 +259,7 @@ static void
+ nouveau_finish_render_texture(GLcontext *ctx,
+ 			      struct gl_renderbuffer_attachment *att)
+ {
+-	struct nouveau_renderbuffer *nrb
+-		= to_nouveau_renderbuffer(att->Renderbuffer);
+-
+ 	texture_dirty(att->Texture);
+-	nouveau_surface_ref(NULL, &nrb->surface);
+ }
+ 
+ void
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_gldefs.h b/src/mesa/drivers/dri/nouveau/nouveau_gldefs.h
+index 00007a9..fbeed3b 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_gldefs.h
++++ b/src/mesa/drivers/dri/nouveau/nouveau_gldefs.h
+@@ -260,4 +260,23 @@ nvgl_filter_mode(unsigned filter)
+ 	}
+ }
+ 
++static inline unsigned
++nvgl_texgen_mode(unsigned mode)
++{
++	switch (mode) {
++	case GL_EYE_LINEAR:
++		return 0x2400;
++	case GL_OBJECT_LINEAR:
++		return 0x2401;
++	case GL_SPHERE_MAP:
++		return 0x2402;
++	case GL_NORMAL_MAP:
++		return 0x8511;
++	case GL_REFLECTION_MAP:
++		return 0x8512;
++	default:
++		assert(0);
++	}
++}
++
+ #endif
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_render.h b/src/mesa/drivers/dri/nouveau/nouveau_render.h
+index bff0ccf..923b79b 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_render.h
++++ b/src/mesa/drivers/dri/nouveau/nouveau_render.h
+@@ -32,8 +32,8 @@
+ struct nouveau_array_state;
+ 
+ typedef void (*dispatch_t)(GLcontext *, unsigned int, int, unsigned int);
+-typedef unsigned (*extract_u_t)(struct nouveau_array_state *a, int i, int j);
+-typedef float (*extract_f_t)(struct nouveau_array_state *a, int i, int j);
++typedef unsigned (*extract_u_t)(struct nouveau_array_state *, int, int);
++typedef float (*extract_f_t)(struct nouveau_array_state *, int, int);
+ 
+ struct nouveau_attr_info {
+ 	int vbo_index;
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_render_t.c b/src/mesa/drivers/dri/nouveau/nouveau_render_t.c
+index c050578..7ccd7e6 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_render_t.c
++++ b/src/mesa/drivers/dri/nouveau/nouveau_render_t.c
+@@ -254,7 +254,7 @@ get_scratch_vbo(GLcontext *ctx, unsigned size, struct nouveau_bo **bo,
+  */
+ static inline unsigned
+ get_max_vertices(GLcontext *ctx, const struct _mesa_index_buffer *ib,
+-		 unsigned n)
++		 int n)
+ {
+ 	struct nouveau_render_state *render = to_render_state(ctx);
+ 
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_span.c b/src/mesa/drivers/dri/nouveau/nouveau_span.c
+index f1a56dd..1bfdecc 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_span.c
++++ b/src/mesa/drivers/dri/nouveau/nouveau_span.c
+@@ -32,7 +32,6 @@
+ #include "swrast/swrast.h"
+ 
+ #define LOCAL_VARS							\
+-	struct gl_framebuffer *fb = ctx->DrawBuffer;			\
+ 	struct nouveau_surface *s = &to_nouveau_renderbuffer(rb)->surface; \
+ 	GLuint p;							\
+ 	(void)p;
+@@ -45,12 +44,12 @@
+ #define HW_CLIPLOOP() {							\
+ 	int minx = 0;							\
+ 	int miny = 0;							\
+-	int maxx = fb->Width;						\
+-	int maxy = fb->Height;
++	int maxx = rb->Width;						\
++	int maxy = rb->Height;
+ 
+ #define HW_ENDCLIPLOOP() }
+ 
+-#define Y_FLIP(y) (fb->Name ? (y) : rb->Height - 1 - (y))
++#define Y_FLIP(y) (rb->Name ? (y) : rb->Height - 1 - (y))
+ 
+ /* RGB565 span functions */
+ #define SPANTMP_PIXEL_FMT GL_RGB
+@@ -144,17 +143,28 @@ texture_unit_map_unmap(GLcontext *ctx, struct gl_texture_unit *u, GLboolean map)
+ }
+ 
+ static void
+-span_map_unmap(GLcontext *ctx, GLboolean map)
++framebuffer_map_unmap(struct gl_framebuffer *fb, GLboolean map)
+ {
+ 	int i;
+ 
+-	for (i = 0; i < ctx->DrawBuffer->_NumColorDrawBuffers; i++)
+-		renderbuffer_map_unmap(ctx->DrawBuffer->_ColorDrawBuffers[i], map);
++	for (i = 0; i < fb->_NumColorDrawBuffers; i++)
++		renderbuffer_map_unmap(fb->_ColorDrawBuffers[i], map);
++
++	renderbuffer_map_unmap(fb->_ColorReadBuffer, map);
++
++	if (fb->_DepthBuffer)
++		renderbuffer_map_unmap(fb->_DepthBuffer->Wrapped, map);
++}
++
++static void
++span_map_unmap(GLcontext *ctx, GLboolean map)
++{
++	int i;
+ 
+-	renderbuffer_map_unmap(ctx->DrawBuffer->_ColorReadBuffer, map);
++	framebuffer_map_unmap(ctx->DrawBuffer, map);
+ 
+-	if (ctx->DrawBuffer->_DepthBuffer)
+-		renderbuffer_map_unmap(ctx->DrawBuffer->_DepthBuffer->Wrapped, map);
++	if (ctx->ReadBuffer != ctx->DrawBuffer)
++		framebuffer_map_unmap(ctx->ReadBuffer, map);
+ 
+ 	for (i = 0; i < ctx->Const.MaxTextureUnits; i++)
+ 		texture_unit_map_unmap(ctx, &ctx->Texture.Unit[i], map);
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_state.c b/src/mesa/drivers/dri/nouveau/nouveau_state.c
+index e1871db..a57df2d 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_state.c
++++ b/src/mesa/drivers/dri/nouveau/nouveau_state.c
+@@ -150,6 +150,7 @@ nouveau_enable(GLcontext *ctx, GLenum cap, GLboolean state)
+ 		break;
+ 	case GL_COLOR_SUM_EXT:
+ 		context_dirty(ctx, FRAG);
++		context_dirty(ctx, LIGHT_MODEL);
+ 		break;
+ 	case GL_CULL_FACE:
+ 		context_dirty(ctx, CULL_FACE);
+@@ -188,6 +189,7 @@ nouveau_enable(GLcontext *ctx, GLenum cap, GLboolean state)
+ 	case GL_LIGHTING:
+ 		context_dirty(ctx, FRAG);
+ 		context_dirty(ctx, MODELVIEW);
++		context_dirty(ctx, LIGHT_MODEL);
+ 		context_dirty(ctx, LIGHT_ENABLE);
+ 
+ 		for (i = 0; i < MAX_LIGHTS; i++) {
+@@ -230,9 +232,17 @@ nouveau_enable(GLcontext *ctx, GLenum cap, GLboolean state)
+ 	case GL_TEXTURE_1D:
+ 	case GL_TEXTURE_2D:
+ 	case GL_TEXTURE_3D:
++	case GL_TEXTURE_RECTANGLE:
+ 		context_dirty_i(ctx, TEX_ENV, ctx->Texture.CurrentUnit);
+ 		context_dirty_i(ctx, TEX_OBJ, ctx->Texture.CurrentUnit);
+ 		break;
++	case GL_TEXTURE_GEN_S:
++	case GL_TEXTURE_GEN_T:
++	case GL_TEXTURE_GEN_R:
++	case GL_TEXTURE_GEN_Q:
++		context_dirty_i(ctx, TEX_GEN, ctx->Texture.CurrentUnit);
++		context_dirty(ctx, MODELVIEW);
++		break;
+ 	}
+ }
+ 
+@@ -367,7 +377,15 @@ static void
+ nouveau_tex_gen(GLcontext *ctx, GLenum coord, GLenum pname,
+ 		const GLfloat *params)
+ {
+-	context_dirty_i(ctx, TEX_GEN, ctx->Texture.CurrentUnit);
++	switch (pname) {
++	case GL_TEXTURE_GEN_MODE:
++		context_dirty_i(ctx, TEX_GEN, ctx->Texture.CurrentUnit);
++		context_dirty(ctx, MODELVIEW);
++		break;
++	default:
++		context_dirty_i(ctx, TEX_GEN, ctx->Texture.CurrentUnit);
++		break;
++	}
+ }
+ 
+ static void
+@@ -453,12 +471,19 @@ nouveau_state_emit(GLcontext *ctx)
+ static void
+ nouveau_update_state(GLcontext *ctx, GLbitfield new_state)
+ {
++	int i;
++
+ 	if (new_state & (_NEW_PROJECTION | _NEW_MODELVIEW))
+ 		context_dirty(ctx, PROJECTION);
+ 
+ 	if (new_state & _NEW_MODELVIEW)
+ 		context_dirty(ctx, MODELVIEW);
+ 
++	if (new_state & _NEW_TEXTURE_MATRIX) {
++		for (i = 0; i < ctx->Const.MaxTextureCoordUnits; i++)
++			context_dirty_i(ctx, TEX_MAT, i);
++	}
++
+ 	if (new_state & _NEW_CURRENT_ATTRIB &&
+ 	    new_state & _NEW_LIGHT) {
+ 		context_dirty(ctx, MATERIAL_FRONT_AMBIENT);
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_state.h b/src/mesa/drivers/dri/nouveau/nouveau_state.h
+index d01d962..38ac975 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_state.h
++++ b/src/mesa/drivers/dri/nouveau/nouveau_state.h
+@@ -89,6 +89,10 @@ enum {
+ 	NOUVEAU_STATE_TEX_GEN1,
+ 	NOUVEAU_STATE_TEX_GEN2,
+ 	NOUVEAU_STATE_TEX_GEN3,
++	NOUVEAU_STATE_TEX_MAT0,
++	NOUVEAU_STATE_TEX_MAT1,
++	NOUVEAU_STATE_TEX_MAT2,
++	NOUVEAU_STATE_TEX_MAT3,
+ 	NOUVEAU_STATE_TEX_OBJ0,
+ 	NOUVEAU_STATE_TEX_OBJ1,
+ 	NOUVEAU_STATE_TEX_OBJ2,
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_texture.c b/src/mesa/drivers/dri/nouveau/nouveau_texture.c
+index bf365bf..dbf9a5c 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_texture.c
++++ b/src/mesa/drivers/dri/nouveau/nouveau_texture.c
+@@ -177,15 +177,15 @@ nouveau_choose_tex_format(GLcontext *ctx, GLint internalFormat,
+ }
+ 
+ static GLboolean
+-teximage_fits(struct gl_texture_object *t, int level,
+-	      struct gl_texture_image *ti)
++teximage_fits(struct gl_texture_object *t, int level)
+ {
+ 	struct nouveau_surface *s = &to_nouveau_texture(t)->surfaces[level];
++	struct gl_texture_image *ti = t->Image[0][level];
+ 
+-	return t->Target == GL_TEXTURE_RECTANGLE ||
+-		(s->bo && s->width == ti->Width &&
+-		 s->height == ti->Height &&
+-		 s->format == ti->TexFormat);
++	return ti && (t->Target == GL_TEXTURE_RECTANGLE ||
++		      (s->bo && s->width == ti->Width &&
++		       s->height == ti->Height &&
++		       s->format == ti->TexFormat));
+ }
+ 
+ static GLboolean
+@@ -195,7 +195,7 @@ validate_teximage(GLcontext *ctx, struct gl_texture_object *t,
+ {
+ 	struct gl_texture_image *ti = t->Image[0][level];
+ 
+-	if (ti && teximage_fits(t, level, ti)) {
++	if (teximage_fits(t, level)) {
+ 		struct nouveau_surface *ss = to_nouveau_texture(t)->surfaces;
+ 		struct nouveau_surface *s = &to_nouveau_teximage(ti)->surface;
+ 
+@@ -283,7 +283,8 @@ nouveau_texture_validate(GLcontext *ctx, struct gl_texture_object *t)
+ 	struct nouveau_texture *nt = to_nouveau_texture(t);
+ 	int i, last = get_last_level(t);
+ 
+-	if (!nt->surfaces[last].bo)
++	if (!teximage_fits(t, t->BaseLevel) ||
++	    !teximage_fits(t, last))
+ 		return GL_FALSE;
+ 
+ 	if (nt->dirty) {
+@@ -296,6 +297,8 @@ nouveau_texture_validate(GLcontext *ctx, struct gl_texture_object *t)
+ 			validate_teximage(ctx, t, i, 0, 0, 0,
+ 					  s->width, s->height, 1);
+ 		}
++
++		FIRE_RING(context_chan(ctx));
+ 	}
+ 
+ 	return GL_TRUE;
+@@ -304,9 +307,12 @@ nouveau_texture_validate(GLcontext *ctx, struct gl_texture_object *t)
+ void
+ nouveau_texture_reallocate(GLcontext *ctx, struct gl_texture_object *t)
+ {
+-	texture_dirty(t);
+-	relayout_texture(ctx, t);
+-	nouveau_texture_validate(ctx, t);
++	if (!teximage_fits(t, t->BaseLevel) ||
++	    !teximage_fits(t, get_last_level(t))) {
++		texture_dirty(t);
++		relayout_texture(ctx, t);
++		nouveau_texture_validate(ctx, t);
++	}
+ }
+ 
+ static unsigned
+@@ -364,7 +370,7 @@ nouveau_teximage(GLcontext *ctx, GLint dims, GLenum target, GLint level,
+ 	}
+ 
+ 	if (level == t->BaseLevel) {
+-		if (!teximage_fits(t, level, ti))
++		if (!teximage_fits(t, level))
+ 			relayout_texture(ctx, t);
+ 		nouveau_texture_validate(ctx, t);
+ 	}
+@@ -416,6 +422,40 @@ nouveau_teximage_3d(GLcontext *ctx, GLenum target, GLint level,
+ }
+ 
+ static void
++nouveau_texsubimage(GLcontext *ctx, GLint dims, GLenum target, GLint level,
++		    GLint xoffset, GLint yoffset, GLint zoffset,
++		    GLint width, GLint height, GLint depth,
++		    GLenum format, GLenum type, const void *pixels,
++		    const struct gl_pixelstore_attrib *packing,
++		    struct gl_texture_object *t,
++		    struct gl_texture_image *ti)
++{
++	struct nouveau_surface *s = &to_nouveau_teximage(ti)->surface;
++	int ret;
++
++	pixels = _mesa_validate_pbo_teximage(ctx, dims, width, height, depth,
++					     format, type, pixels, packing,
++					     "glTexSubImage");
++	if (pixels) {
++		nouveau_teximage_map(ctx, ti);
++
++		ret = _mesa_texstore(ctx, 3, ti->_BaseFormat, ti->TexFormat,
++				     ti->Data, xoffset, yoffset, zoffset,
++				     s->pitch, ti->ImageOffsets,
++				     width, height, depth, format, type,
++				     pixels, packing);
++		assert(ret);
++
++		nouveau_teximage_unmap(ctx, ti);
++		_mesa_unmap_teximage_pbo(ctx, packing);
++	}
++
++	if (!to_nouveau_texture(t)->dirty)
++		validate_teximage(ctx, t, level, xoffset, yoffset, zoffset,
++				  width, height, depth);
++}
++
++static void
+ nouveau_texsubimage_3d(GLcontext *ctx, GLenum target, GLint level,
+ 		       GLint xoffset, GLint yoffset, GLint zoffset,
+ 		       GLint width, GLint height, GLint depth,
+@@ -424,15 +464,9 @@ nouveau_texsubimage_3d(GLcontext *ctx, GLenum target, GLint level,
+ 		       struct gl_texture_object *t,
+ 		       struct gl_texture_image *ti)
+ {
+-	nouveau_teximage_map(ctx, ti);
+-	_mesa_store_texsubimage3d(ctx, target, level, xoffset, yoffset, zoffset,
+-				  width, height, depth, format, type, pixels,
+-				  packing, t, ti);
+-	nouveau_teximage_unmap(ctx, ti);
+-
+-	if (!to_nouveau_texture(t)->dirty)
+-		validate_teximage(ctx, t, level, xoffset, yoffset, zoffset,
+-				  width, height, depth);
++	nouveau_texsubimage(ctx, 3, target, level, xoffset, yoffset, zoffset,
++			    width, height, depth, format, type, pixels,
++			    packing, t, ti);
+ }
+ 
+ static void
+@@ -444,15 +478,9 @@ nouveau_texsubimage_2d(GLcontext *ctx, GLenum target, GLint level,
+ 		       struct gl_texture_object *t,
+ 		       struct gl_texture_image *ti)
+ {
+-	nouveau_teximage_map(ctx, ti);
+-	_mesa_store_texsubimage2d(ctx, target, level, xoffset, yoffset,
+-				  width, height, format, type, pixels,
+-				  packing, t, ti);
+-	nouveau_teximage_unmap(ctx, ti);
+-
+-	if (!to_nouveau_texture(t)->dirty)
+-		validate_teximage(ctx, t, level, xoffset, yoffset, 0,
+-				  width, height, 1);
++	nouveau_texsubimage(ctx, 2, target, level, xoffset, yoffset, 0,
++			    width, height, 1, format, type, pixels,
++			    packing, t, ti);
+ }
+ 
+ static void
+@@ -463,15 +491,9 @@ nouveau_texsubimage_1d(GLcontext *ctx, GLenum target, GLint level,
+ 		       struct gl_texture_object *t,
+ 		       struct gl_texture_image *ti)
+ {
+-	nouveau_teximage_map(ctx, ti);
+-	_mesa_store_texsubimage1d(ctx, target, level, xoffset,
+-				  width, format, type, pixels,
+-				  packing, t, ti);
+-	nouveau_teximage_unmap(ctx, ti);
+-
+-	if (!to_nouveau_texture(t)->dirty)
+-		validate_teximage(ctx, t, level, xoffset, 0, 0,
+-				  width, 1, 1);
++	nouveau_texsubimage(ctx, 1, target, level, xoffset, 0, 0,
++			    width, 1, 1, format, type, pixels,
++			    packing, t, ti);
+ }
+ 
+ static void
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_texture.h b/src/mesa/drivers/dri/nouveau/nouveau_texture.h
+index b91facb..251f537 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_texture.h
++++ b/src/mesa/drivers/dri/nouveau/nouveau_texture.h
+@@ -41,7 +41,7 @@ struct nouveau_texture {
+ #define to_nouveau_texture(x) ((struct nouveau_texture *)(x))
+ 
+ #define texture_dirty(t) \
+-	to_nouveau_texture(t)->dirty = GL_TRUE;
++	to_nouveau_texture(t)->dirty = GL_TRUE
+ 
+ void
+ nouveau_set_texbuffer(__DRIcontext *dri_ctx,
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_util.h b/src/mesa/drivers/dri/nouveau/nouveau_util.h
+index d6007ab..584cb80 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_util.h
++++ b/src/mesa/drivers/dri/nouveau/nouveau_util.h
+@@ -191,4 +191,22 @@ is_texture_source(int s)
+ 	return s == GL_TEXTURE || (s >= GL_TEXTURE0 && s <= GL_TEXTURE31);
+ }
+ 
++static inline struct gl_texgen *
++get_texgen_coord(struct gl_texture_unit *u, int i)
++{
++	return ((struct gl_texgen *[])
++		{ &u->GenS, &u->GenT, &u->GenR, &u->GenQ }) [i];
++}
++
++static inline float *
++get_texgen_coeff(struct gl_texgen *c)
++{
++	if (c->Mode == GL_OBJECT_LINEAR)
++		return c->ObjectPlane;
++	else if (c->Mode == GL_EYE_LINEAR)
++		return c->EyePlane;
++	else
++		return NULL;
++}
++
+ #endif
+diff --git a/src/mesa/drivers/dri/nouveau/nouveau_vbo_t.c b/src/mesa/drivers/dri/nouveau/nouveau_vbo_t.c
+index 69a9b96..e5858f8 100644
+--- a/src/mesa/drivers/dri/nouveau/nouveau_vbo_t.c
++++ b/src/mesa/drivers/dri/nouveau/nouveau_vbo_t.c
+@@ -85,6 +85,18 @@ vbo_deinit_array(struct nouveau_array_state *a)
+ 	a->fields = 0;
+ }
+ 
++static int
++get_array_stride(GLcontext *ctx, const struct gl_client_array *a)
++{
++	struct nouveau_render_state *render = to_render_state(ctx);
++
++	if (render->mode == VBO && !_mesa_is_bufferobj(a->BufferObj))
++		/* Pack client buffers. */
++		return align(_mesa_sizeof_type(a->Type) * a->Size, 4);
++	else
++		return a->StrideB;
++}
++
+ static void
+ vbo_init_arrays(GLcontext *ctx, const struct _mesa_index_buffer *ib,
+ 		const struct gl_client_array **arrays)
+@@ -101,18 +113,10 @@ vbo_init_arrays(GLcontext *ctx, const struct _mesa_index_buffer *ib,
+ 
+ 		if (attr >= 0) {
+ 			const struct gl_client_array *array = arrays[attr];
+-			int stride;
+-
+-			if (render->mode == VBO &&
+-			    !_mesa_is_bufferobj(array->BufferObj))
+-				/* Pack client buffers. */
+-				stride = align(_mesa_sizeof_type(array->Type)
+-					       * array->Size, 4);
+-			else
+-				stride = array->StrideB;
+ 
+ 			vbo_init_array(&render->attrs[attr], attr,
+-				       stride, array->Size, array->Type,
++				       get_array_stride(ctx, array),
++				       array->Size, array->Type,
+ 				       array->BufferObj, array->Ptr,
+ 				       render->mode == IMM);
+ 		}
+@@ -224,9 +228,11 @@ vbo_choose_attrs(GLcontext *ctx, const struct gl_client_array **arrays)
+ 	if (ctx->Fog.Enabled && ctx->Fog.FogCoordinateSource == GL_FOG_COORD)
+ 		vbo_emit_attr(ctx, arrays, VERT_ATTRIB_FOG);
+ 
+-	if (ctx->Light.Enabled) {
++	if (ctx->Light.Enabled ||
++	    (ctx->Texture._GenFlags & TEXGEN_NEED_NORMALS))
+ 		vbo_emit_attr(ctx, arrays, VERT_ATTRIB_NORMAL);
+ 
++	if (ctx->Light.Enabled) {
+ 		vbo_emit_attr(ctx, arrays, MAT(FRONT_AMBIENT));
+ 		vbo_emit_attr(ctx, arrays, MAT(FRONT_DIFFUSE));
+ 		vbo_emit_attr(ctx, arrays, MAT(FRONT_SPECULAR));
+@@ -243,18 +249,21 @@ vbo_choose_attrs(GLcontext *ctx, const struct gl_client_array **arrays)
+ 	vbo_emit_attr(ctx, arrays, VERT_ATTRIB_POS);
+ }
+ 
+-static unsigned
+-get_max_client_stride(GLcontext *ctx)
++static int
++get_max_client_stride(GLcontext *ctx, const struct gl_client_array **arrays)
+ {
+ 	struct nouveau_render_state *render = to_render_state(ctx);
+ 	int i, s = 0;
+ 
+ 	for (i = 0; i < render->attr_count; i++) {
+ 		int attr = render->map[i];
+-		struct nouveau_array_state *a = &render->attrs[attr];
+ 
+-		if (attr >= 0 && !a->bo)
+-			s = MAX2(a->stride, s);
++		if (attr >= 0) {
++			const struct gl_client_array *a = arrays[attr];
++
++			if (!_mesa_is_bufferobj(a->BufferObj))
++				s = MAX2(s, get_array_stride(ctx, a));
++		}
+ 	}
+ 
+ 	return s;
+@@ -275,20 +284,20 @@ vbo_maybe_split(GLcontext *ctx, const struct gl_client_array **arrays,
+ {
+ 	struct nouveau_context *nctx = to_nouveau_context(ctx);
+ 	struct nouveau_render_state *render = to_render_state(ctx);
+-	unsigned pushbuf_avail = PUSHBUF_DWORDS - 2 * nctx->bo.count,
++	unsigned pushbuf_avail = PUSHBUF_DWORDS - 2 * (nctx->bo.count +
++						       render->attr_count),
+ 		vert_avail = get_max_vertices(ctx, NULL, pushbuf_avail),
+ 		idx_avail = get_max_vertices(ctx, ib, pushbuf_avail);
+ 	int stride;
+ 
+ 	/* Try to keep client buffers smaller than the scratch BOs. */
+-	if (!ib && render->mode == VBO &&
+-	    (stride = get_max_client_stride(ctx)))
++	if (render->mode == VBO &&
++	    (stride = get_max_client_stride(ctx, arrays)))
+ 		    vert_avail = MIN2(vert_avail,
+ 				      RENDER_SCRATCH_SIZE / stride);
+ 
+-
+-	if ((ib && ib->count > idx_avail) ||
+-	    (!ib && max_index - min_index > vert_avail)) {
++	if (max_index - min_index > vert_avail ||
++	    (ib && ib->count > idx_avail)) {
+ 		struct split_limits limits = {
+ 			.max_verts = vert_avail,
+ 			.max_indices = idx_avail,
+@@ -322,6 +331,7 @@ vbo_bind_vertices(GLcontext *ctx, const struct gl_client_array **arrays,
+ 				* array->StrideB;
+ 
+ 			if (a->bo) {
++				/* Array in a buffer obj. */
+ 				a->offset = (intptr_t)array->Ptr + delta;
+ 			} else {
+ 				int j, n = max_index - min_index + 1;
+@@ -329,6 +339,8 @@ vbo_bind_vertices(GLcontext *ctx, const struct gl_client_array **arrays,
+ 				char *dp = get_scratch_vbo(ctx, n * a->stride,
+ 							   &a->bo, &a->offset);
+ 
++				/* Array in client memory, move it to
++				 * a scratch buffer obj. */
+ 				for (j = 0; j < n; j++)
+ 					memcpy(dp + j * a->stride,
+ 					       sp + j * array->StrideB,
+@@ -372,8 +384,6 @@ vbo_draw_vbo(GLcontext *ctx, const struct gl_client_array **arrays,
+ 		dispatch(ctx, start, delta, count);
+ 		BATCH_END();
+ 	}
+-
+-	FIRE_RING(chan);
+ }
+ 
+ /* Immediate rendering path. */
+@@ -417,8 +427,6 @@ vbo_draw_imm(GLcontext *ctx, const struct gl_client_array **arrays,
+ 
+ 		BATCH_END();
+ 	}
+-
+-	FIRE_RING(chan);
+ }
+ 
+ /* draw_prims entry point when we're doing hw-tnl. */
+diff --git a/src/mesa/drivers/dri/nouveau/nv04_context.c b/src/mesa/drivers/dri/nouveau/nv04_context.c
+index a442425..6834f7c 100644
+--- a/src/mesa/drivers/dri/nouveau/nv04_context.c
++++ b/src/mesa/drivers/dri/nouveau/nv04_context.c
+@@ -75,18 +75,16 @@ nv04_channel_flush_notify(struct nouveau_channel *chan)
+ 	struct nouveau_context *nctx = chan->user_private;
+ 	GLcontext *ctx = &nctx->base;
+ 
+-	if (nctx->fallback < SWRAST && ctx->DrawBuffer) {
+-		GLcontext *ctx = &nctx->base;
+-
++	if (nctx->fallback < SWRAST) {
+ 		/* Flushing seems to clobber the engine context. */
+-		context_dirty_i(ctx, TEX_OBJ, 0);
+-		context_dirty_i(ctx, TEX_OBJ, 1);
+-		context_dirty_i(ctx, TEX_ENV, 0);
+-		context_dirty_i(ctx, TEX_ENV, 1);
+-		context_dirty(ctx, CONTROL);
+-		context_dirty(ctx, BLEND);
+-
+-		nouveau_state_emit(ctx);
++		context_emit(ctx, TEX_OBJ0);
++		context_emit(ctx, TEX_OBJ1);
++		context_emit(ctx, TEX_ENV0);
++		context_emit(ctx, TEX_ENV1);
++		context_emit(ctx, CONTROL);
++		context_emit(ctx, BLEND);
++
++		nouveau_bo_state_emit(ctx);
+ 	}
+ }
+ 
+@@ -200,9 +198,9 @@ nv04_context_create(struct nouveau_screen *screen, const GLvisual *visual,
+ 	if (ret)
+ 		goto fail;
+ 
++	init_dummy_texture(ctx);
+ 	nv04_hwctx_init(ctx);
+ 	nv04_render_init(ctx);
+-	init_dummy_texture(ctx);
+ 
+ 	return ctx;
+ 
+@@ -278,6 +276,10 @@ const struct nouveau_driver nv04_driver = {
+ 		nouveau_emit_nothing,
+ 		nouveau_emit_nothing,
+ 		nouveau_emit_nothing,
++		nouveau_emit_nothing,
++		nouveau_emit_nothing,
++		nouveau_emit_nothing,
++		nouveau_emit_nothing,
+ 		nv04_emit_tex_obj,
+ 		nv04_emit_tex_obj,
+ 		nouveau_emit_nothing,
+diff --git a/src/mesa/drivers/dri/nouveau/nv04_state_fb.c b/src/mesa/drivers/dri/nouveau/nv04_state_fb.c
+index aad1e49..5e5e0c5 100644
+--- a/src/mesa/drivers/dri/nouveau/nv04_state_fb.c
++++ b/src/mesa/drivers/dri/nouveau/nv04_state_fb.c
+@@ -63,7 +63,7 @@ nv04_emit_framebuffer(GLcontext *ctx, int emit)
+ 		return;
+ 
+ 	/* Render target */
+-	if (fb->_NumColorDrawBuffers) {
++	if (fb->_ColorDrawBuffers[0]) {
+ 		s = &to_nouveau_renderbuffer(
+ 			fb->_ColorDrawBuffers[0])->surface;
+ 
+diff --git a/src/mesa/drivers/dri/nouveau/nv04_state_raster.c b/src/mesa/drivers/dri/nouveau/nv04_state_raster.c
+index 4314fc3..c191571 100644
+--- a/src/mesa/drivers/dri/nouveau/nv04_state_raster.c
++++ b/src/mesa/drivers/dri/nouveau/nv04_state_raster.c
+@@ -275,6 +275,10 @@ nv04_emit_blend(GLcontext *ctx, int emit)
+ 		else
+ 			blend |= NV04_MULTITEX_TRIANGLE_BLEND_SHADE_MODE_FLAT;
+ 
++		/* Secondary color */
++		if (NEED_SECONDARY_COLOR(ctx))
++			blend |= NV04_MULTITEX_TRIANGLE_BLEND_SPECULAR_ENABLE;
++
+ 		/* Fog. */
+ 		if (ctx->Fog.Enabled)
+ 			blend |= NV04_MULTITEX_TRIANGLE_BLEND_FOG_ENABLE;
+@@ -309,6 +313,10 @@ nv04_emit_blend(GLcontext *ctx, int emit)
+ 		else
+ 			blend |= get_texenv_mode(GL_MODULATE);
+ 
++		/* Secondary color */
++		if (NEED_SECONDARY_COLOR(ctx))
++			blend |= NV04_TEXTURED_TRIANGLE_BLEND_SPECULAR_ENABLE;
++
+ 		/* Fog. */
+ 		if (ctx->Fog.Enabled)
+ 			blend |= NV04_TEXTURED_TRIANGLE_BLEND_FOG_ENABLE;
+diff --git a/src/mesa/drivers/dri/nouveau/nv10_context.c b/src/mesa/drivers/dri/nouveau/nv10_context.c
+index 860d0ae..b6d1036 100644
+--- a/src/mesa/drivers/dri/nouveau/nv10_context.c
++++ b/src/mesa/drivers/dri/nouveau/nv10_context.c
+@@ -212,7 +212,7 @@ nv10_hwctx_init(GLcontext *ctx)
+ 	OUT_RING(chan, 0);
+ 	BEGIN_RING(chan, celsius, NV10TCL_CULL_FACE_ENABLE, 1);
+ 	OUT_RING(chan, 0);
+-	BEGIN_RING(chan, celsius, NV10TCL_TX_GEN_S(0), 8);
++	BEGIN_RING(chan, celsius, NV10TCL_TX_GEN_MODE_S(0), 8);
+ 	for (i = 0; i < 8; i++)
+ 		OUT_RING(chan, 0);
+ 
+@@ -412,6 +412,10 @@ const struct nouveau_driver nv10_driver = {
+ 		nv10_emit_tex_gen,
+ 		nouveau_emit_nothing,
+ 		nouveau_emit_nothing,
++		nv10_emit_tex_mat,
++		nv10_emit_tex_mat,
++		nouveau_emit_nothing,
++		nouveau_emit_nothing,
+ 		nv10_emit_tex_obj,
+ 		nv10_emit_tex_obj,
+ 		nouveau_emit_nothing,
+diff --git a/src/mesa/drivers/dri/nouveau/nv10_driver.h b/src/mesa/drivers/dri/nouveau/nv10_driver.h
+index d662712..cefd6c6 100644
+--- a/src/mesa/drivers/dri/nouveau/nv10_driver.h
++++ b/src/mesa/drivers/dri/nouveau/nv10_driver.h
+@@ -134,6 +134,9 @@ void
+ nv10_emit_tex_gen(GLcontext *ctx, int emit);
+ 
+ void
++nv10_emit_tex_mat(GLcontext *ctx, int emit);
++
++void
+ nv10_emit_tex_obj(GLcontext *ctx, int emit);
+ 
+ /* nv10_state_tnl.c */
+diff --git a/src/mesa/drivers/dri/nouveau/nv10_state_fb.c b/src/mesa/drivers/dri/nouveau/nv10_state_fb.c
+index 05c36b4..a2fcb6b 100644
+--- a/src/mesa/drivers/dri/nouveau/nv10_state_fb.c
++++ b/src/mesa/drivers/dri/nouveau/nv10_state_fb.c
+@@ -71,6 +71,7 @@ setup_lma_buffer(GLcontext *ctx)
+ 	nouveau_bo_markl(bctx, celsius, NV17TCL_LMA_DEPTH_BUFFER_OFFSET,
+ 			 nfb->lma_bo, 0, NOUVEAU_BO_VRAM | NOUVEAU_BO_RDWR);
+ 
++	WAIT_RING(chan, 9);
+ 	BEGIN_RING(chan, celsius, NV17TCL_LMA_DEPTH_WINDOW_X, 4);
+ 	OUT_RINGf(chan, - 1792);
+ 	OUT_RINGf(chan, - 2304 + fb->Height);
+@@ -111,7 +112,7 @@ nv10_emit_framebuffer(GLcontext *ctx, int emit)
+ 	}
+ 
+ 	/* Render target */
+-	if (fb->_NumColorDrawBuffers) {
++	if (fb->_ColorDrawBuffers[0]) {
+ 		s = &to_nouveau_renderbuffer(
+ 			fb->_ColorDrawBuffers[0])->surface;
+ 
+@@ -171,15 +172,13 @@ nv10_emit_viewport(GLcontext *ctx, int emit)
+ 	struct nouveau_grobj *celsius = context_eng3d(ctx);
+ 	struct gl_framebuffer *fb = ctx->DrawBuffer;
+ 	float a[4] = {};
+-	int i;
+ 
+ 	get_viewport_translate(ctx, a);
+ 	a[0] -= 2048;
+ 	a[1] -= 2048;
+ 
+ 	BEGIN_RING(chan, celsius, NV10TCL_VIEWPORT_TRANSLATE_X, 4);
+-	for (i = 0; i < 4; i++)
+-		OUT_RINGf(chan, a[i]);
++	OUT_RINGp(chan, a, 4);
+ 
+ 	BEGIN_RING(chan, celsius, NV10TCL_VIEWPORT_CLIP_HORIZ(0), 1);
+ 	OUT_RING(chan, (fb->Width - 1) << 16 | 0x08000800);
+diff --git a/src/mesa/drivers/dri/nouveau/nv10_state_tex.c b/src/mesa/drivers/dri/nouveau/nv10_state_tex.c
+index 02a5ca7..6dedb18 100644
+--- a/src/mesa/drivers/dri/nouveau/nv10_state_tex.c
++++ b/src/mesa/drivers/dri/nouveau/nv10_state_tex.c
+@@ -32,9 +32,64 @@
+ #include "nouveau_util.h"
+ #include "nv10_driver.h"
+ 
++#define TX_GEN_MODE(i, j) (NV10TCL_TX_GEN_MODE_S(i) + 4 * (j))
++#define TX_GEN_COEFF(i, j) (NV10TCL_TX_GEN_COEFF_S_A(i) + 16 * (j))
++#define TX_MATRIX(i) (NV10TCL_TX0_MATRIX(0) + 64 * (i))
++
+ void
+ nv10_emit_tex_gen(GLcontext *ctx, int emit)
+ {
++	const int i = emit - NOUVEAU_STATE_TEX_GEN0;
++	struct nouveau_context *nctx = to_nouveau_context(ctx);
++	struct nouveau_channel *chan = context_chan(ctx);
++	struct nouveau_grobj *celsius = context_eng3d(ctx);
++	struct gl_texture_unit *unit = &ctx->Texture.Unit[i];
++	int j;
++
++	for (j = 0; j < 4; j++) {
++		if (nctx->fallback == HWTNL && (unit->TexGenEnabled & 1 << j)) {
++			struct gl_texgen *coord = get_texgen_coord(unit, j);
++			float *k = get_texgen_coeff(coord);
++
++			if (k) {
++				BEGIN_RING(chan, celsius,
++					   TX_GEN_COEFF(i, j), 4);
++				OUT_RINGp(chan, k, 4);
++			}
++
++			BEGIN_RING(chan, celsius, TX_GEN_MODE(i, j), 1);
++			OUT_RING(chan, nvgl_texgen_mode(coord->Mode));
++
++		} else {
++			BEGIN_RING(chan, celsius, TX_GEN_MODE(i, j), 1);
++			OUT_RING(chan, 0);
++		}
++	}
++
++	context_dirty_i(ctx, TEX_MAT, i);
++}
++
++void
++nv10_emit_tex_mat(GLcontext *ctx, int emit)
++{
++	const int i = emit - NOUVEAU_STATE_TEX_MAT0;
++	struct nouveau_context *nctx = to_nouveau_context(ctx);
++	struct nouveau_channel *chan = context_chan(ctx);
++	struct nouveau_grobj *celsius = context_eng3d(ctx);
++
++	if (nctx->fallback == HWTNL &&
++	    ((ctx->Texture._TexMatEnabled & 1 << i) ||
++	     ctx->Texture.Unit[i]._GenFlags)) {
++		BEGIN_RING(chan, celsius, NV10TCL_TX_MATRIX_ENABLE(i), 1);
++		OUT_RING(chan, 1);
++
++		BEGIN_RING(chan, celsius, TX_MATRIX(i), 16);
++		OUT_RINGm(chan, ctx->TextureMatrixStack[i].Top->m);
++
++	} else {
++		BEGIN_RING(chan, celsius, NV10TCL_TX_MATRIX_ENABLE(i), 1);
++		OUT_RING(chan, 0);
++	}
+ }
+ 
+ static uint32_t
+diff --git a/src/mesa/drivers/dri/nouveau/nv10_state_tnl.c b/src/mesa/drivers/dri/nouveau/nv10_state_tnl.c
+index 6db14d8..0e592a1 100644
+--- a/src/mesa/drivers/dri/nouveau/nv10_state_tnl.c
++++ b/src/mesa/drivers/dri/nouveau/nv10_state_tnl.c
+@@ -140,9 +140,7 @@ nv10_emit_fog(GLcontext *ctx, int emit)
+ 	OUT_RING(chan, pack_rgba_f(MESA_FORMAT_RGBA8888_REV, f->Color));
+ 
+ 	BEGIN_RING(chan, celsius, NV10TCL_FOG_EQUATION_CONSTANT, 3);
+-	OUT_RINGf(chan, k[0]);
+-	OUT_RINGf(chan, k[1]);
+-	OUT_RINGf(chan, k[2]);
++	OUT_RINGp(chan, k, 3);
+ 
+ 	context_dirty(ctx, FRAG);
+ }
+@@ -201,8 +199,10 @@ nv10_emit_light_model(GLcontext *ctx, int emit)
+ 	BEGIN_RING(chan, celsius, NV10TCL_LIGHT_MODEL, 1);
+ 	OUT_RING(chan, ((m->LocalViewer ?
+ 			 NV10TCL_LIGHT_MODEL_LOCAL_VIEWER : 0) |
+-			(m->ColorControl == GL_SEPARATE_SPECULAR_COLOR ?
+-			 NV10TCL_LIGHT_MODEL_SEPARATE_SPECULAR : 0)));
++			(NEED_SECONDARY_COLOR(ctx) ?
++			 NV10TCL_LIGHT_MODEL_SEPARATE_SPECULAR : 0) |
++			(!ctx->Light.Enabled && ctx->Fog.ColorSumEnabled ?
++			 NV10TCL_LIGHT_MODEL_VERTEX_SPECULAR : 0)));
+ }
+ 
+ static float
+@@ -282,9 +282,7 @@ nv10_emit_light_source(GLcontext *ctx, int emit)
+ 
+ 	if (l->_Flags & LIGHT_POSITIONAL) {
+ 		BEGIN_RING(chan, celsius, NV10TCL_LIGHT_POSITION_X(i), 3);
+-		OUT_RINGf(chan, l->_Position[0]);
+-		OUT_RINGf(chan, l->_Position[1]);
+-		OUT_RINGf(chan, l->_Position[2]);
++		OUT_RINGp(chan, l->_Position, 3);
+ 
+ 		BEGIN_RING(chan, celsius,
+ 			   NV10TCL_LIGHT_ATTENUATION_CONSTANT(i), 3);
+@@ -294,14 +292,10 @@ nv10_emit_light_source(GLcontext *ctx, int emit)
+ 
+ 	} else {
+ 		BEGIN_RING(chan, celsius, NV10TCL_LIGHT_DIRECTION_X(i), 3);
+-		OUT_RINGf(chan, l->_VP_inf_norm[0]);
+-		OUT_RINGf(chan, l->_VP_inf_norm[1]);
+-		OUT_RINGf(chan, l->_VP_inf_norm[2]);
++		OUT_RINGp(chan, l->_VP_inf_norm, 3);
+ 
+ 		BEGIN_RING(chan, celsius, NV10TCL_LIGHT_HALF_VECTOR_X(i), 3);
+-		OUT_RINGf(chan, l->_h_inf_norm[0]);
+-		OUT_RINGf(chan, l->_h_inf_norm[1]);
+-		OUT_RINGf(chan, l->_h_inf_norm[2]);
++		OUT_RINGp(chan, l->_h_inf_norm, 3);
+ 	}
+ 
+ 	if (l->_Flags & LIGHT_SPOT) {
+@@ -310,13 +304,7 @@ nv10_emit_light_source(GLcontext *ctx, int emit)
+ 		nv10_get_spot_coeff(l, k);
+ 
+ 		BEGIN_RING(chan, celsius, NV10TCL_LIGHT_SPOT_CUTOFF_A(i), 7);
+-		OUT_RINGf(chan, k[0]);
+-		OUT_RINGf(chan, k[1]);
+-		OUT_RINGf(chan, k[2]);
+-		OUT_RINGf(chan, k[3]);
+-		OUT_RINGf(chan, k[4]);
+-		OUT_RINGf(chan, k[5]);
+-		OUT_RINGf(chan, k[6]);
++		OUT_RINGp(chan, k, 7);
+ 	}
+ }
+ 
+@@ -348,15 +336,11 @@ nv10_emit_material_ambient(GLcontext *ctx, int emit)
+ 	}
+ 
+ 	BEGIN_RING(chan, celsius, NV10TCL_LIGHT_MODEL_AMBIENT_R, 3);
+-	OUT_RINGf(chan, c_scene[0]);
+-	OUT_RINGf(chan, c_scene[1]);
+-	OUT_RINGf(chan, c_scene[2]);
++	OUT_RINGp(chan, c_scene, 3);
+ 
+ 	if (ctx->Light.ColorMaterialEnabled) {
+ 		BEGIN_RING(chan, celsius, NV10TCL_MATERIAL_FACTOR_R, 3);
+-		OUT_RINGf(chan, c_factor[0]);
+-		OUT_RINGf(chan, c_factor[1]);
+-		OUT_RINGf(chan, c_factor[2]);
++		OUT_RINGp(chan, c_factor, 3);
+ 	}
+ 
+ 	foreach(l, &ctx->Light.EnabledList) {
+@@ -366,9 +350,7 @@ nv10_emit_material_ambient(GLcontext *ctx, int emit)
+ 				  l->_MatAmbient[0]);
+ 
+ 		BEGIN_RING(chan, celsius, NV10TCL_LIGHT_AMBIENT_R(i), 3);
+-		OUT_RINGf(chan, c_light[0]);
+-		OUT_RINGf(chan, c_light[1]);
+-		OUT_RINGf(chan, c_light[2]);
++		OUT_RINGp(chan, c_light, 3);
+ 	}
+ }
+ 
+@@ -390,9 +372,7 @@ nv10_emit_material_diffuse(GLcontext *ctx, int emit)
+ 				  l->_MatDiffuse[0]);
+ 
+ 		BEGIN_RING(chan, celsius, NV10TCL_LIGHT_DIFFUSE_R(i), 3);
+-		OUT_RINGf(chan, c_light[0]);
+-		OUT_RINGf(chan, c_light[1]);
+-		OUT_RINGf(chan, c_light[2]);
++		OUT_RINGp(chan, c_light, 3);
+ 	}
+ }
+ 
+@@ -410,9 +390,7 @@ nv10_emit_material_specular(GLcontext *ctx, int emit)
+ 				  l->_MatSpecular[0]);
+ 
+ 		BEGIN_RING(chan, celsius, NV10TCL_LIGHT_SPECULAR_R(i), 3);
+-		OUT_RINGf(chan, c_light[0]);
+-		OUT_RINGf(chan, c_light[1]);
+-		OUT_RINGf(chan, c_light[2]);
++		OUT_RINGp(chan, c_light, 3);
+ 	}
+ }
+ 
+@@ -453,12 +431,7 @@ nv10_emit_material_shininess(GLcontext *ctx, int emit)
+ 		k);
+ 
+ 	BEGIN_RING(chan, celsius, NV10TCL_MATERIAL_SHININESS(0), 6);
+-	OUT_RINGf(chan, k[0]);
+-	OUT_RINGf(chan, k[1]);
+-	OUT_RINGf(chan, k[2]);
+-	OUT_RINGf(chan, k[3]);
+-	OUT_RINGf(chan, k[4]);
+-	OUT_RINGf(chan, k[5]);
++	OUT_RINGp(chan, k, 6);
+ }
+ 
+ void
+@@ -472,12 +445,14 @@ nv10_emit_modelview(GLcontext *ctx, int emit)
+ 	if (nctx->fallback != HWTNL)
+ 		return;
+ 
+-	if (ctx->Light._NeedEyeCoords || ctx->Fog.Enabled) {
++	if (ctx->Light._NeedEyeCoords || ctx->Fog.Enabled ||
++	    (ctx->Texture._GenFlags & TEXGEN_NEED_EYE_COORD)) {
+ 		BEGIN_RING(chan, celsius, NV10TCL_MODELVIEW0_MATRIX(0), 16);
+ 		OUT_RINGm(chan, m->m);
+ 	}
+ 
+-	if (ctx->Light.Enabled) {
++	if (ctx->Light.Enabled ||
++	    (ctx->Texture._GenFlags & TEXGEN_NEED_EYE_COORD)) {
+ 		int i, j;
+ 
+ 		BEGIN_RING(chan, celsius,
+diff --git a/src/mesa/drivers/dri/nouveau/nv20_context.c b/src/mesa/drivers/dri/nouveau/nv20_context.c
+index db39ef7..789dcaa 100644
+--- a/src/mesa/drivers/dri/nouveau/nv20_context.c
++++ b/src/mesa/drivers/dri/nouveau/nv20_context.c
+@@ -297,9 +297,9 @@ nv20_hwctx_init(GLcontext *ctx)
+ 	BEGIN_RING(chan, kelvin, NV20TCL_POLYGON_STIPPLE_ENABLE, 1);
+ 	OUT_RING  (chan, 0);
+ 
+-	BEGIN_RING(chan, kelvin, NV20TCL_TX_GEN_S(0),
+-		   4 * NV20TCL_TX_GEN_S__SIZE);
+-	for (i=0; i < 4 * NV20TCL_TX_GEN_S__SIZE; i++)
++	BEGIN_RING(chan, kelvin, NV20TCL_TX_GEN_MODE_S(0),
++		   4 * NV20TCL_TX_GEN_MODE_S__SIZE);
++	for (i=0; i < 4 * NV20TCL_TX_GEN_MODE_S__SIZE; i++)
+ 		OUT_RING(chan, 0);
+ 
+ 	BEGIN_RING(chan, kelvin, NV20TCL_FOG_EQUATION_CONSTANT, 3);
+@@ -497,10 +497,14 @@ const struct nouveau_driver nv20_driver = {
+ 		nv20_emit_tex_env,
+ 		nv20_emit_tex_env,
+ 		nv20_emit_tex_env,
+-		nv10_emit_tex_gen,
+-		nv10_emit_tex_gen,
+-		nv10_emit_tex_gen,
+-		nv10_emit_tex_gen,
++		nv20_emit_tex_gen,
++		nv20_emit_tex_gen,
++		nv20_emit_tex_gen,
++		nv20_emit_tex_gen,
++		nv20_emit_tex_mat,
++		nv20_emit_tex_mat,
++		nv20_emit_tex_mat,
++		nv20_emit_tex_mat,
+ 		nv20_emit_tex_obj,
+ 		nv20_emit_tex_obj,
+ 		nv20_emit_tex_obj,
+diff --git a/src/mesa/drivers/dri/nouveau/nv20_driver.h b/src/mesa/drivers/dri/nouveau/nv20_driver.h
+index 18574e9..8adecef 100644
+--- a/src/mesa/drivers/dri/nouveau/nv20_driver.h
++++ b/src/mesa/drivers/dri/nouveau/nv20_driver.h
+@@ -68,6 +68,12 @@ nv20_emit_frag(GLcontext *ctx, int emit);
+ 
+ /* nv20_state_tex.c */
+ void
++nv20_emit_tex_gen(GLcontext *ctx, int emit);
++
++void
++nv20_emit_tex_mat(GLcontext *ctx, int emit);
++
++void
+ nv20_emit_tex_obj(GLcontext *ctx, int emit);
+ 
+ void
+diff --git a/src/mesa/drivers/dri/nouveau/nv20_state_fb.c b/src/mesa/drivers/dri/nouveau/nv20_state_fb.c
+index 869acd6..21da4f7 100644
+--- a/src/mesa/drivers/dri/nouveau/nv20_state_fb.c
++++ b/src/mesa/drivers/dri/nouveau/nv20_state_fb.c
+@@ -67,7 +67,7 @@ nv20_emit_framebuffer(GLcontext *ctx, int emit)
+ 		return;
+ 
+ 	/* Render target */
+-	if (fb->_NumColorDrawBuffers) {
++	if (fb->_ColorDrawBuffers[0]) {
+ 		s = &to_nouveau_renderbuffer(
+ 			fb->_ColorDrawBuffers[0])->surface;
+ 
+@@ -106,13 +106,11 @@ nv20_emit_viewport(GLcontext *ctx, int emit)
+ 	struct nouveau_grobj *kelvin = context_eng3d(ctx);
+ 	struct gl_framebuffer *fb = ctx->DrawBuffer;
+ 	float a[4] = {};
+-	int i;
+ 
+ 	get_viewport_translate(ctx, a);
+ 
+ 	BEGIN_RING(chan, kelvin, NV20TCL_VIEWPORT_TRANSLATE_X, 4);
+-	for (i = 0; i < 4; i++)
+-		OUT_RINGf(chan, a[i]);
++	OUT_RINGp(chan, a, 4);
+ 
+ 	BEGIN_RING(chan, kelvin, NV20TCL_VIEWPORT_CLIP_HORIZ(0), 1);
+ 	OUT_RING(chan, (fb->Width - 1) << 16);
+diff --git a/src/mesa/drivers/dri/nouveau/nv20_state_tex.c b/src/mesa/drivers/dri/nouveau/nv20_state_tex.c
+index 9287010..e46118e 100644
+--- a/src/mesa/drivers/dri/nouveau/nv20_state_tex.c
++++ b/src/mesa/drivers/dri/nouveau/nv20_state_tex.c
+@@ -32,6 +32,62 @@
+ #include "nouveau_util.h"
+ #include "nv20_driver.h"
+ 
++#define TX_GEN_MODE(i, j) (NV20TCL_TX_GEN_MODE_S(i) + 4 * (j))
++#define TX_GEN_COEFF(i, j) (NV20TCL_TX_GEN_COEFF_S_A(i) + 16 * (j))
++#define TX_MATRIX(i) (NV20TCL_TX0_MATRIX(0) + 64 * (i))
++
++void
++nv20_emit_tex_gen(GLcontext *ctx, int emit)
++{
++	const int i = emit - NOUVEAU_STATE_TEX_GEN0;
++	struct nouveau_context *nctx = to_nouveau_context(ctx);
++	struct nouveau_channel *chan = context_chan(ctx);
++	struct nouveau_grobj *kelvin = context_eng3d(ctx);
++	struct gl_texture_unit *unit = &ctx->Texture.Unit[i];
++	int j;
++
++	for (j = 0; j < 4; j++) {
++		if (nctx->fallback == HWTNL && (unit->TexGenEnabled & 1 << j)) {
++			struct gl_texgen *coord = get_texgen_coord(unit, j);
++			float *k = get_texgen_coeff(coord);
++
++			if (k) {
++				BEGIN_RING(chan, kelvin, TX_GEN_COEFF(i, j), 4);
++				OUT_RINGp(chan, k, 4);
++			}
++
++			BEGIN_RING(chan, kelvin, TX_GEN_MODE(i, j), 1);
++			OUT_RING(chan, nvgl_texgen_mode(coord->Mode));
++
++		} else {
++			BEGIN_RING(chan, kelvin, TX_GEN_MODE(i, j), 1);
++			OUT_RING(chan, 0);
++		}
++	}
++}
++
++void
++nv20_emit_tex_mat(GLcontext *ctx, int emit)
++{
++	const int i = emit - NOUVEAU_STATE_TEX_MAT0;
++	struct nouveau_context *nctx = to_nouveau_context(ctx);
++	struct nouveau_channel *chan = context_chan(ctx);
++	struct nouveau_grobj *kelvin = context_eng3d(ctx);
++
++	if (nctx->fallback == HWTNL &&
++	    (ctx->Texture._TexMatEnabled & 1 << i)) {
++		BEGIN_RING(chan, kelvin, NV20TCL_TX_MATRIX_ENABLE(i), 1);
++		OUT_RING(chan, 1);
++
++		BEGIN_RING(chan, kelvin, TX_MATRIX(i), 16);
++		OUT_RINGm(chan, ctx->TextureMatrixStack[i].Top->m);
++
++	} else {
++		BEGIN_RING(chan, kelvin, NV20TCL_TX_MATRIX_ENABLE(i), 1);
++		OUT_RING(chan, 0);
++	}
++}
++
+ static uint32_t
+ get_tex_format_pot(struct gl_texture_image *ti)
+ {
+diff --git a/src/mesa/drivers/dri/nouveau/nv20_state_tnl.c b/src/mesa/drivers/dri/nouveau/nv20_state_tnl.c
+index 0d56606..62efe80 100644
+--- a/src/mesa/drivers/dri/nouveau/nv20_state_tnl.c
++++ b/src/mesa/drivers/dri/nouveau/nv20_state_tnl.c
+@@ -139,9 +139,7 @@ nv20_emit_fog(GLcontext *ctx, int emit)
+ 	OUT_RING(chan, pack_rgba_f(MESA_FORMAT_RGBA8888_REV, f->Color));
+ 
+ 	BEGIN_RING(chan, kelvin, NV20TCL_FOG_EQUATION_CONSTANT, 3);
+-	OUT_RINGf(chan, k[0]);
+-	OUT_RINGf(chan, k[1]);
+-	OUT_RINGf(chan, k[2]);
++	OUT_RINGp(chan, k, 3);
+ }
+ 
+ void
+@@ -158,7 +156,7 @@ nv20_emit_light_model(GLcontext *ctx, int emit)
+ 	OUT_RING(chan, ((m->LocalViewer ?
+ 			 NV20TCL_LIGHT_MODEL_VIEWER_LOCAL :
+ 			 NV20TCL_LIGHT_MODEL_VIEWER_NONLOCAL) |
+-			(m->ColorControl == GL_SEPARATE_SPECULAR_COLOR ?
++			(NEED_SECONDARY_COLOR(ctx) ?
+ 			 NV20TCL_LIGHT_MODEL_SEPARATE_SPECULAR :
+ 			 0)));
+ 
+@@ -176,9 +174,7 @@ nv20_emit_light_source(GLcontext *ctx, int emit)
+ 
+ 	if (l->_Flags & LIGHT_POSITIONAL) {
+ 		BEGIN_RING(chan, kelvin, NV20TCL_LIGHT_POSITION_X(i), 3);
+-		OUT_RINGf(chan, l->_Position[0]);
+-		OUT_RINGf(chan, l->_Position[1]);
+-		OUT_RINGf(chan, l->_Position[2]);
++		OUT_RINGp(chan, l->_Position, 3);
+ 
+ 		BEGIN_RING(chan, kelvin, NV20TCL_LIGHT_ATTENUATION_CONSTANT(i), 3);
+ 		OUT_RINGf(chan, l->ConstantAttenuation);
+@@ -187,14 +183,10 @@ nv20_emit_light_source(GLcontext *ctx, int emit)
+ 
+ 	} else {
+ 		BEGIN_RING(chan, kelvin, NV20TCL_LIGHT_DIRECTION_X(i), 3);
+-		OUT_RINGf(chan, l->_VP_inf_norm[0]);
+-		OUT_RINGf(chan, l->_VP_inf_norm[1]);
+-		OUT_RINGf(chan, l->_VP_inf_norm[2]);
++		OUT_RINGp(chan, l->_VP_inf_norm, 3);
+ 
+ 		BEGIN_RING(chan, kelvin, NV20TCL_LIGHT_HALF_VECTOR_X(i), 3);
+-		OUT_RINGf(chan, l->_h_inf_norm[0]);
+-		OUT_RINGf(chan, l->_h_inf_norm[1]);
+-		OUT_RINGf(chan, l->_h_inf_norm[2]);
++		OUT_RINGp(chan, l->_h_inf_norm, 3);
+ 	}
+ 
+ 	if (l->_Flags & LIGHT_SPOT) {
+@@ -203,13 +195,7 @@ nv20_emit_light_source(GLcontext *ctx, int emit)
+ 		nv10_get_spot_coeff(l, k);
+ 
+ 		BEGIN_RING(chan, kelvin, NV20TCL_LIGHT_SPOT_CUTOFF_A(i), 7);
+-		OUT_RINGf(chan, k[0]);
+-		OUT_RINGf(chan, k[1]);
+-		OUT_RINGf(chan, k[2]);
+-		OUT_RINGf(chan, k[3]);
+-		OUT_RINGf(chan, k[4]);
+-		OUT_RINGf(chan, k[5]);
+-		OUT_RINGf(chan, k[6]);
++		OUT_RINGp(chan, k, 7);
+ 	}
+ }
+ 
+@@ -246,15 +232,11 @@ nv20_emit_material_ambient(GLcontext *ctx, int emit)
+ 	}
+ 
+ 	BEGIN_RING(chan, kelvin, m_scene[side], 3);
+-	OUT_RINGf(chan, c_scene[0]);
+-	OUT_RINGf(chan, c_scene[1]);
+-	OUT_RINGf(chan, c_scene[2]);
++	OUT_RINGp(chan, c_scene, 3);
+ 
+ 	if (ctx->Light.ColorMaterialEnabled) {
+ 		BEGIN_RING(chan, kelvin, m_factor[side], 3);
+-		OUT_RINGf(chan, c_factor[0]);
+-		OUT_RINGf(chan, c_factor[1]);
+-		OUT_RINGf(chan, c_factor[2]);
++		OUT_RINGp(chan, c_factor, 3);
+ 	}
+ 
+ 	foreach(l, &ctx->Light.EnabledList) {
+@@ -266,9 +248,7 @@ nv20_emit_material_ambient(GLcontext *ctx, int emit)
+ 				  l->_MatAmbient[side]);
+ 
+ 		BEGIN_RING(chan, kelvin, m_light[side], 3);
+-		OUT_RINGf(chan, c_light[0]);
+-		OUT_RINGf(chan, c_light[1]);
+-		OUT_RINGf(chan, c_light[2]);
++		OUT_RINGp(chan, c_light, 3);
+ 	}
+ }
+ 
+@@ -295,9 +275,7 @@ nv20_emit_material_diffuse(GLcontext *ctx, int emit)
+ 				  l->_MatDiffuse[side]);
+ 
+ 		BEGIN_RING(chan, kelvin, m_light[side], 3);
+-		OUT_RINGf(chan, c_light[0]);
+-		OUT_RINGf(chan, c_light[1]);
+-		OUT_RINGf(chan, c_light[2]);
++		OUT_RINGp(chan, c_light, 3);
+ 	}
+ }
+ 
+@@ -318,9 +296,7 @@ nv20_emit_material_specular(GLcontext *ctx, int emit)
+ 				  l->_MatSpecular[side]);
+ 
+ 		BEGIN_RING(chan, kelvin, m_light[side], 3);
+-		OUT_RINGf(chan, c_light[0]);
+-		OUT_RINGf(chan, c_light[1]);
+-		OUT_RINGf(chan, c_light[2]);
++		OUT_RINGp(chan, c_light, 3);
+ 	}
+ }
+ 
+@@ -340,12 +316,7 @@ nv20_emit_material_shininess(GLcontext *ctx, int emit)
+ 		k);
+ 
+ 	BEGIN_RING(chan, kelvin, mthd[side], 6);
+-	OUT_RINGf(chan, k[0]);
+-	OUT_RINGf(chan, k[1]);
+-	OUT_RINGf(chan, k[2]);
+-	OUT_RINGf(chan, k[3]);
+-	OUT_RINGf(chan, k[4]);
+-	OUT_RINGf(chan, k[5]);
++	OUT_RINGp(chan, k, 6);
+ }
+ 
+ void
+@@ -359,12 +330,14 @@ nv20_emit_modelview(GLcontext *ctx, int emit)
+ 	if (nctx->fallback != HWTNL)
+ 		return;
+ 
+-	if (ctx->Light._NeedEyeCoords || ctx->Fog.Enabled) {
++	if (ctx->Light._NeedEyeCoords || ctx->Fog.Enabled ||
++	    (ctx->Texture._GenFlags & TEXGEN_NEED_EYE_COORD)) {
+ 		BEGIN_RING(chan, kelvin, NV20TCL_MODELVIEW0_MATRIX(0), 16);
+ 		OUT_RINGm(chan, m->m);
+ 	}
+ 
+-	if (ctx->Light.Enabled) {
++	if (ctx->Light.Enabled ||
++	    (ctx->Texture._GenFlags & TEXGEN_NEED_EYE_COORD)) {
+ 		int i, j;
+ 
+ 		BEGIN_RING(chan, kelvin,

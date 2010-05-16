@@ -26,6 +26,12 @@ zcat ${SB_PATCHDIR}/cups-0755.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-EAI_AGAIN.patch
 zcat ${SB_PATCHDIR}/cups-str3505.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-str3541.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-snmp-quirks.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-hp-deviceid-oid.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-dnssd-deviceid.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-ricoh-deviceid-oid.patch
+
+## SECURITY PATCHES:
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-CVE-2010-0302.patch
 
 set +e +o pipefail

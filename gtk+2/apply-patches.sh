@@ -26,4 +26,7 @@ zcat ${SB_PATCHDIR}/gtk2-remove-connecting-reason.patch.gz | patch -p1 --verbose
 # https://bugzilla.gnome.org/show_bug.cgi?id=611313
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/window-dragging.patch
 
+# Revert 64bit fix issue
+patch -p1 -R --backup --verbose -i ${SB_PATCHDIR}/gtk-png-ulong.patch
+
 set +e +o pipefail

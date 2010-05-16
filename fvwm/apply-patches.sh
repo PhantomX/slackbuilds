@@ -32,6 +32,4 @@ zcat ${SB_PATCHDIR}/16-FirstItemUnderPointer.patch.gz | patch -p0 -E --backup --
 zcat ${SB_PATCHDIR}/17-TextOffset.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/18-ThinGeometryProxy.patch.gz | patch -p0 -E --backup --verbose
 
-zcat ${SB_PATCHDIR}/fvwm-2.5.28-png14.patch.gz | patch -p0 -E --backup --verbose
-
 set +e +o pipefail

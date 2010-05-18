@@ -74,9 +74,9 @@ ApplyOptionalPatch linux-2.6-compile-fixes.patch.gz
 ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
 ApplyOptionalPatch git-cpufreq.patch.gz
-ApplyPatch git-bluetooth.patch
+#ApplyPatch git-bluetooth.patch
 
-ApplyOptionalPatch linux-2.6-hotfixes.patch.gz
+ApplyOptionalPatch linux-2.6-hotfixes.patch
 
 # Roland's utrace ptrace replacement.
 ApplyPatch linux-2.6-tracehook.patch
@@ -90,7 +90,7 @@ ApplyPatch linux-2.6-utrace-ptrace.patch
 
 # Architecture patches
 # x86(-64)
-ApplyPatch linux-2.6-dell-laptop-rfkill-fix.patch
+ApplyPatch linux-2.6-x86-cfi_sections.patch
 
 #
 # Intel IOMMU
@@ -110,7 +110,6 @@ ApplyPatch linux-2.6-execshield.patch
 # xfs
 
 # btrfs
-ApplyPatch linux-2.6-btrfs-update.patch
 
 # Sort out umount versus sync penalty: rhbz#588930
 ApplyPatch fs-explicitly-pass-in-whether-sb-is-pinned-or-not.patch
@@ -118,15 +117,11 @@ ApplyPatch fs-explicitly-pass-in-whether-sb-is-pinned-or-not.patch
 # cifs
 
 # NFSv4
-ApplyPatch linux-2.6-nfs4-callback-hidden.patch.gz
-
-# CPUFREQ
-ApplyPatch linux-2.6-cpufreq-locking.patch
 
 # USB
-ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff
-ApplyPatch linux-2.6-enable-btusb-autosuspend.patch
-ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
+#ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff
+#ApplyPatch linux-2.6-enable-btusb-autosuspend.patch
+#ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
 ApplyPatch linux-2.6-usb-wwan-update.patch
 
 # WMI
@@ -134,9 +129,6 @@ ApplyPatch linux-2.6-usb-wwan-update.patch
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
-ApplyPatch linux-2.6-acpi-video-export-edid.patch
-
-ApplyPatch acpi-ec-add-delay-before-write.patch
 
 ApplyPatch linux-2.6-acpi-sleep-live-sci-live.patch
 
@@ -144,7 +136,6 @@ ApplyPatch linux-2.6-acpi-sleep-live-sci-live.patch
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
 ApplyPatch linux-2.6-debug-nmi-timeout.patch
 ApplyPatch linux-2.6-debug-taint-vm.patch
-ApplyPatch linux-2.6-debug-spinlock-taint.patch.gz
 ## try to find out what is breaking acpi-cpufreq
 ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
 ApplyPatch linux-2.6-debug-always-inline-kzalloc.patch.gz
@@ -153,7 +144,7 @@ ApplyPatch linux-2.6-debug-always-inline-kzalloc.patch.gz
 # PCI
 #
 # disable message signaled interrupts
-ApplyPatch linux-2.6-defaults-pci_no_msi.patch.gz
+ApplyPatch linux-2.6-defaults-pci_no_msi.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
 
@@ -162,7 +153,7 @@ ApplyPatch linux-2.6-defaults-aspm.patch.gz
 #
 
 # ALSA
-ApplyPatch hda_intel-prealloc-4mb-dmabuffer.patch.gz
+ApplyPatch hda_intel-prealloc-4mb-dmabuffer.patch
 
 # block/bio
 #
@@ -171,10 +162,10 @@ ApplyPatch hda_intel-prealloc-4mb-dmabuffer.patch.gz
 
 # Misc fixes
 # The input layer spews crap no-one cares about.
-ApplyPatch linux-2.6-input-kill-stupid-messages.patch.gz
+ApplyPatch linux-2.6-input-kill-stupid-messages.patch
 
 # stop floppy.ko from autoloading during udev...
-ApplyPatch die-floppy-die.patch.gz
+ApplyPatch die-floppy-die.patch
 
 # Get away from having to poll Toshibas
 #ApplyPatch linux-2.6-input-fix-toshiba-hotkeys.patch.gz
@@ -182,7 +173,6 @@ ApplyPatch die-floppy-die.patch.gz
 ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch.gz
 
 ApplyPatch linux-2.6-input-hid-quirk-egalax.patch
-ApplyPatch linux-2.6-input-clickpad-support.patch
 ApplyPatch thinkpad-acpi-add-x100e.patch
 
 # Allow to use 480600 baud on 16C950 UARTs
@@ -190,7 +180,7 @@ ApplyPatch linux-2.6-serial-460800.patch
 
 # Silence some useless messages that still get printed with 'quiet'
 ApplyPatch linux-2.6-silence-noise.patch.gz
-ApplyPatch linux-2.6.30-hush-rom-warning.patch
+ApplyPatch pci-hush-rom-warning.patch
 
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
@@ -220,41 +210,21 @@ ApplyPatch hdpvr-ir-enable.patch
 
 # Assorted Virt Fixes
 #ApplyPatch linux-2.6-userspace_kvmclock_offset.patch
-ApplyPatch vhost_net-rollup.patch
-ApplyPatch virt_console-rollup.patch
-ApplyPatch virt_console-fix-race.patch
-ApplyPatch virt_console-fix-fix-race.patch
-ApplyPatch virt_console-rollup2.patch
-ApplyPatch vhost_net-rollup2.patch
+#ApplyPatch vhost_net-rollup.patch
+#ApplyPatch virt_console-rollup.patch
 
 # Fix block I/O errors in KVM
 #ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
 
 # fix x86-64 fbdev primary GPU selection
-ApplyPatch linux-2.6-x86-64-fbdev-primary.patch
-
-ApplyPatch drm-core-next.patch
+#ApplyPatch linux-2.6-x86-64-fbdev-primary.patch
 
 # Nouveau DRM + drm fixes
-ApplyPatch drm-radeon-evergreen.patch
-ApplyPatch drm-radeon-firemv-pciid.patch
-ApplyPatch drm-radeon-kms-fix-dual-link-dvi.patch
-ApplyPatch drm-radeon-fix-rs600-tlb.patch
-ApplyPatch drm-radeon-ss-fix.patch
-ApplyPatch drm-nouveau-abi16.patch
-ApplyPatch drm-nouveau-updates.patch
-ApplyPatch drm-nouveau-acpi-edid-fallback.patch
-ApplyPatch drm-nouveau-drm-fixed-header.patch
+#ApplyPatch drm-nouveau-abi16.patch
 # pm broken on my thinkpad t60p - airlied
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
-ApplyPatch linux-2.6-intel-iommu-igfx.patch
-ApplyPatch drm-intel-gen5-dither.patch
-ApplyPatch drm-intel-sdvo-fix.patch
-ApplyPatch drm-intel-sdvo-fix-2.patch
-
-ApplyPatch linux-2.6-phylib-autoload.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -269,55 +239,17 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
-ApplyPatch linux-2.6-v4l-dvb-rebase-gspca-to-latest.patch
 ApplyPatch linux-2.6-v4l-dvb-gspca-fixes.patch
 
 # Patches headed upstream
-ApplyPatch linux-2.6-rfkill-all.patch
+#ApplyPatch linux-2.6-rfkill-all.patch
 
 # appleir remote controller
-ApplyPatch add-appleir-usb-driver.patch
+#ApplyPatch add-appleir-usb-driver.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
 # Refactor UserModeHelper code & satisfy abrt recursion check request
-ApplyPatch linux-2.6-umh-refactor.patch
+#ApplyPatch linux-2.6-umh-refactor.patch
 
-# rhbz#533746
-ApplyPatch ssb_check_for_sprom.patch
-
-# backport iwlwifi fixes (thanks, sgruszka!) -- drop when stable catches-up
-ApplyPatch iwlwifi-reset-card-during-probe.patch
-
-# patches from Intel to address intermittent firmware failures with iwlagn
-ApplyPatch iwlwifi_-check-for-aggregation-frame-and-queue.patch
-ApplyPatch iwlwifi_-clear-all-the-stop_queue-flag-after-load-firmware.patch
-ApplyPatch iwlwifi_-add-function-to-reset_tune-radio-if-needed.patch
-ApplyPatch iwlwifi_-Logic-to-control-how-frequent-radio-should-be-reset-if-needed.patch
-ApplyPatch iwlwifi_-Tune-radio-to-prevent-unexpected-behavior.patch
-ApplyPatch iwlwifi_-multiple-force-reset-mode.patch
-ApplyPatch iwlwifi_-Adjusting-PLCP-error-threshold-for-1000-NIC.patch
-ApplyPatch iwlwifi_-separated-time-check-for-different-type-of-force-reset.patch
-ApplyPatch iwlwifi_-add-internal-short-scan-support-for-3945.patch
-ApplyPatch iwlwifi_-Recover-TX-flow-stall-due-to-stuck-queue.patch
-ApplyPatch iwlwifi_-move-plcp-check-to-separated-function.patch
-ApplyPatch iwlwifi_-Recover-TX-flow-failure.patch
-ApplyPatch iwlwifi_-code-cleanup-for-connectivity-recovery.patch
-ApplyPatch iwlwifi_-iwl_good_ack_health-only-apply-to-AGN-device.patch
-
-# fix possible corruption with ssd
-ApplyPatch ext4-issue-discard-operation-before-releasing-blocks.patch
-
-# Revert "ath9k: fix lockdep warning when unloading module"
-ApplyPatch revert-ath9k_-fix-lockdep-warning-when-unloading-module.patch
-
-ApplyPatch ibmvscsi-fix-DMA-API-misuse.patch
-
-ApplyPatch disable-i8042-check-on-apple-mac.patch
-
-# iwlwifi: recalculate average tpt if not current
-ApplyPatch iwlwifi-recalculate-average-tpt-if-not-current.patch
-
-ApplyPatch crypto-aesni-kill-module_alias.patch
-
-set +e +o pipefail
+set +e +o pipefail +o xtrace

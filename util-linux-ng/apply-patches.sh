@@ -16,7 +16,15 @@ zcat ${SB_PATCHDIR}/util-linux-ng-2.13-login-lastlog.patch.gz | patch -p1 -E --b
 zcat ${SB_PATCHDIR}/util-linux-ng-2.13-ctrlaltdel-man.patch.gz | patch -p1 -E --backup --verbose
 # 231192 - ipcs is not printing correct values on pLinux
 zcat ${SB_PATCHDIR}/util-linux-ng-2.15-ipcs-32bit.patch.gz | patch -p1 -E --backup --verbose
+
+### Upstream Patches
+###
+
 # 533874 - RFE: libblkid should allow the developer to ask for scanning of slow devices (eg. cdroms)
 zcat ${SB_PATCHDIR}/util-linux-ng-2.17-blkid-removable.patch.gz | patch -p1 -E --backup --verbose
+# 575734 - use microsecond resolution for blkid cache entries
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-ng-2.17-blkid-usec.patch
+# 580296 - "rtcwake" does miss the "off" option
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-ng-2.17-rtcwake-off.patch
 
 set +e +o pipefail

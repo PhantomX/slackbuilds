@@ -1,0 +1,1113 @@
+diff --git a/convert/convert.c b/convert/convert.c
+index 357d585..30aaf96 100644
+--- a/convert/convert.c
++++ b/convert/convert.c
+@@ -171,8 +171,8 @@ struct btrfs_extent_ops extent_ops = {
+ 	.free_extent = custom_free_extent,
+ };
+
+-static int read_disk_extent(struct btrfs_root *root, u64 bytenr,
+-		            u64 num_bytes, char *buffer)
++int read_disk_extent(struct btrfs_root *root, u64 bytenr, u64 num_bytes,
++		     char *buffer)
+ {
+ 	int ret;
+ 	struct btrfs_fs_devices *fs_devs = root->fs_info->fs_devices;
+@@ -1794,6 +1794,141 @@ err:
+ 	return ret;
+ }
+
++static u8 imode_to_type(u32 imode)
++{
++#define S_SHIFT 12
++	static unsigned char btrfs_type_by_mode[S_IFMT >> S_SHIFT] = {
++		[S_IFREG >> S_SHIFT]	= BTRFS_FT_REG_FILE,
++		[S_IFDIR >> S_SHIFT]	= BTRFS_FT_DIR,
++		[S_IFCHR >> S_SHIFT]	= BTRFS_FT_CHRDEV,
++		[S_IFBLK >> S_SHIFT]	= BTRFS_FT_BLKDEV,
++		[S_IFIFO >> S_SHIFT]	= BTRFS_FT_FIFO,
++		[S_IFSOCK >> S_SHIFT]	= BTRFS_FT_SOCK,
++		[S_IFLNK >> S_SHIFT]	= BTRFS_FT_SYMLINK,
++	};
++
++	return btrfs_type_by_mode[(imode & S_IFMT) >> S_SHIFT];
++#undef S_SHIFT
++}
++
++static int fix_dir_item_type(struct btrfs_trans_handle *trans,
++			     struct btrfs_root *root, u64 dir, u64 index,
++			     const char *name, int name_len, int type)
++{
++	struct btrfs_path path;
++	struct btrfs_dir_item *di;
++
++	btrfs_init_path(&path);
++
++	di = btrfs_lookup_dir_item(trans, root, &path, dir, name, name_len, 1);
++	if (IS_ERR(di))
++		return PTR_ERR(di);
++	if (!di)
++		return -ENOENT;
++	btrfs_set_dir_type(path.nodes[0], di, type);
++	btrfs_mark_buffer_dirty(path.nodes[0]);
++	btrfs_release_path(root, &path);
++
++	di = btrfs_lookup_dir_index_item(trans, root, &path, dir, index,
++					 name, name_len, 1);
++	if (IS_ERR(di))
++		return PTR_ERR(di);
++	if (!di)
++		return -ENOENT;
++	btrfs_set_dir_type(path.nodes[0], di, type);
++	btrfs_mark_buffer_dirty(path.nodes[0]);
++	btrfs_release_path(root, &path);
++
++	return 0;
++}
++
++int fix_dir_item_types(struct btrfs_trans_handle *trans,
++		       struct btrfs_root *root)
++{
++	struct btrfs_path path;
++	int ret;
++	struct btrfs_key key;
++	struct btrfs_key found_key;
++	struct extent_buffer *node;
++	int slot;
++	int cur_type = BTRFS_FT_UNKNOWN;
++
++	btrfs_init_path(&path);
++
++	key.objectid = BTRFS_FIRST_FREE_OBJECTID;
++	key.type = BTRFS_INODE_ITEM_KEY;
++	key.offset = 0;
++
++	while (1) {
++		ret = btrfs_search_slot(trans, root, &key, &path, 0, 0);
++		if (ret < 0)
++			return ret;
++		node = path.nodes[0];
++		slot = path.slots[0];
++		if (slot >= btrfs_header_nritems(node)) {
++			ret = btrfs_next_leaf(root, &path);
++			if (ret < 0)
++				return ret;
++			if (ret > 0)
++				break; /* finished the whole tree */
++			node = path.nodes[0];
++			slot = path.slots[0];
++		}
++		btrfs_item_key_to_cpu(node, &found_key, slot);
++
++		if (btrfs_key_type(&found_key) == BTRFS_INODE_ITEM_KEY) {
++			/* found an inode, look for refs */
++			struct btrfs_inode_item *ii =
++				btrfs_item_ptr(node, slot,
++					       struct btrfs_inode_item);
++			cur_type = imode_to_type(btrfs_inode_mode(node, ii));
++			key.objectid = found_key.objectid;
++			key.type = BTRFS_INODE_REF_KEY;
++			key.offset = 0;
++			goto next;
++		}
++		if (key.objectid != found_key.objectid
++		    || btrfs_key_type(&key) != btrfs_key_type(&found_key)) {
++			/* no more refs, look for next inode */
++			key.objectid = found_key.objectid + 1;
++			key.type = BTRFS_INODE_ITEM_KEY;
++			key.offset = 0;
++			goto next;
++		}
++		key.offset = found_key.offset + 1;
++		/* leave the root dir's ".." entry alone */
++		if (found_key.objectid == BTRFS_FIRST_FREE_OBJECTID
++		    && found_key.offset == BTRFS_FIRST_FREE_OBJECTID)
++			goto next;
++
++		struct btrfs_inode_ref *ref;
++		ref = btrfs_item_ptr(node, slot, struct btrfs_inode_ref);
++		u32 size = btrfs_item_size_nr(node, slot);
++		while (size) {
++			u64 index = btrfs_inode_ref_index(node, ref);
++			char namebuf[BTRFS_NAME_LEN];
++			u32 name_len = btrfs_inode_ref_name_len(node, ref);
++			BUG_ON(name_len > sizeof(namebuf));
++			read_extent_buffer(node, namebuf, (u64)(ref + 1),
++					   name_len);
++
++			ret = fix_dir_item_type(trans, root, found_key.offset,
++						index, namebuf, name_len,
++						cur_type);
++			if (ret)
++				return ret;
++
++			u32 len = sizeof(*ref) + name_len;
++			ref = (struct btrfs_inode_ref *)((char *)ref + len);
++			size -= len;
++		}
++next:
++		btrfs_release_path(root, &path);
++	}
++	btrfs_release_path(root, &path);
++	return 0;
++}
++
+ static int copy_dirtiness(struct extent_io_tree *out,
+ 			  struct extent_io_tree *in)
+ {
+@@ -1818,6 +1953,7 @@ static int open_fs(struct convert_fs *fs, const char *devname)
+ 		{"ext3", ext2_open},
+ 		{"ext4", ext2_open},
+ 		{"ext4dev", ext2_open},
++		{"reiserfs", reiserfs_open},
+ 	};
+
+ 	int i;
+diff --git a/convert/convert.h b/convert/convert.h
+index 4f31775..d13e929 100644
+--- a/convert/convert.h
++++ b/convert/convert.h
+@@ -41,6 +41,7 @@ struct convert_fs {
+ };
+
+ int ext2_open(struct convert_fs *fs, const char *name);
++int reiserfs_open(struct convert_fs *fs, const char *name);
+
+ struct extent_iterate_data {
+ 	struct btrfs_trans_handle *trans;
+@@ -73,4 +74,10 @@ int add_file_mem_extent(struct extent_iterate_data *priv, u64 file_off,
+ int add_file_disk_extent(struct extent_iterate_data *priv, u64 file_off,
+ 			 u64 disk_off, u64 size);
+
++int fix_dir_item_types(struct btrfs_trans_handle *trans,
++		       struct btrfs_root *root);
++
++int read_disk_extent(struct btrfs_root *root, u64 bytenr, u64 num_bytes,
++		     char *buffer);
++
+ #endif
+diff --git a/convert/reiserfs.c b/convert/reiserfs.c
+new file mode 100644
+index 0000000..dd57536
+--- /dev/null
++++ b/convert/reiserfs.c
+@@ -0,0 +1,890 @@
++/*
++ * Copyright (C) 2010 Sean Bartell. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License v2 as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program; if not, write to the
++ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
++ * Boston, MA 021110-1307, USA.
++ */
++
++#define _XOPEN_SOURCE 600
++#define _GNU_SOURCE 1
++#include <fcntl.h>
++#include <linux/fs.h>
++#include <stdlib.h>
++#include <sys/acl.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#include "convert.h"
++#include "disk-io.h"
++
++/*
++ * Aside from the ReiserFS source, this file is also based on
++ * http://homes.cerias.purdue.edu/~florian/reiser/reiserfs.php
++ *
++ * A ReiserFS filesystem consists of a superblock, allocation bitmap blocks at
++ * regular intervals, and a single tree that describes the entire filesystem.
++ * Keys in the tree are like:
++ *         (parent objectid, objectid, item type, offset)
++ * The "parent objectid" is normally (but not always) the objectid of the
++ * parent, and is used to keep related objects together. The root directory has
++ * objectid 2 and parent objectid 1. The ".." entry for the root points to
++ * objectid 1 with parent objectid 0, but there is no such inode.
++ *
++ * Items can be stat items (inode information), indirect items (disk extents),
++ * direct items (inline extents), or directory items.
++ */
++
++#define SUPERBLOCK_OFFSET 0x10000
++#define REISERFS_ROOT_OBJECTID 2
++#define OID_OFFSET (BTRFS_FIRST_FREE_OBJECTID - REISERFS_ROOT_OBJECTID)
++
++#define REISERFS_STATE_CLEAN 1
++#define REISERFS_STATE_DIRTY 2
++
++#define REISERFS_MAGIC_1 "ReIsErFs\0"
++#define REISERFS_MAGIC_2 "ReIsEr2Fs"
++#define REISERFS_MAGIC_3 "ReIsEr3Fs"
++
++struct reiserfs_super {
++	__le32 block_count;
++	__le32 free_blocks;
++	__le32 root_block;
++	char journal_info[32];
++	__le16 block_size;
++	__le16 oid_max_size;
++	__le16 oid_current_size;
++	__le16 mount_state;
++	char magic[10];
++	__le16 fsck_state;
++	__le32 hash_type;
++	__le16 tree_height;
++	__le16 num_bitmaps;
++	__le16 version;
++	__le16 journal_reserved;
++
++	/* everything below this is only for REISERFS_MAGIC_2 or _3, not _1. */
++
++	char ignored[8];
++	char uuid[16];
++	char label[16];
++	char ignored2[88];
++} __attribute__ ((__packed__));
++
++struct reiserfs_node_header {
++	__le16 level, num, free;
++	char ignored[18];
++} __attribute__ ((__packed__));
++
++struct reiserfs_key {
++	__le32 dirid, objid, off, type;
++} __attribute__ ((__packed__));
++
++struct reiserfs_child_ptr {
++	__le32 block;
++	__le16 size, reserved;
++} __attribute__ ((__packed__));
++
++struct reiserfs_item_header {
++	struct reiserfs_key key;
++	__le16 count, len, loc, version;
++} __attribute__ ((__packed__));
++
++struct reiserfs_stat_item_1 {
++	__le16 mode, nlink, uid, gid;
++	__le32 size, atime, mtime, ctime, rdev, first_direct;
++} __attribute__ ((__packed__));
++
++struct reiserfs_stat_item_2 {
++	__le16 mode, attrs;
++	__le32 nlink;
++	__le64 size;
++	__le32 uid, gid, atime, mtime, ctime, blocks, rdev;
++} __attribute__ ((__packed__));
++
++struct reiserfs_dir_item {
++	__le32 offset, parid, objid;
++	__le16 name_loc, flags;
++} __attribute__ ((__packed__));
++
++struct reiserfs_xattr_header {
++	char magic[4];
++	__le32 checksum;
++} __attribute__ ((__packed__));
++
++struct reiserfs_priv {
++	int fd;
++	u64 block_size;
++	u64 block_count;
++	u64 root;
++	char label[17];
++
++	struct btrfs_trans_handle *trans;
++	struct btrfs_root *btrfs_root;
++	int datacsum, packing;
++
++	u64 cur_objid;
++	struct btrfs_inode_item inode; /* when converting any inode */
++	u64 next_dir_index; /* when converting a directory */
++	struct extent_iterate_data itdata; /* when converting a file */
++	u64 inode_nbytes; /* nbytes when converting a file; size when
++			     converting a directory */
++};
++
++static int read_bitmap(struct reiserfs_priv *priv, u64 bitmap_num, u8 *data)
++{
++	int ret;
++	u64 disk_off = bitmap_num * (8 * priv->block_size) * priv->block_size;
++	if (bitmap_num == 0)
++		disk_off = (SUPERBLOCK_OFFSET / priv->block_size + 1)
++			   * priv->block_size;
++	ret = pread(priv->fd, data, priv->block_size, disk_off);
++	if (ret != priv->block_size)
++		return -1;
++	return 0;
++}
++
++static int reiserfs_cache_free_extents(struct convert_fs *fs,
++				       struct extent_io_tree *free_tree)
++{
++	struct reiserfs_priv *priv = (struct reiserfs_priv*)fs->privdata;
++	u64 num_bitmaps = (priv->block_count + 8 * priv->block_size - 1)
++			  / (8 * priv->block_size);
++	u64 bitmap_num;
++	u8 *block = malloc(priv->block_size);
++	if (!block)
++		return -ENOMEM;
++	int ret;
++	for (bitmap_num = 0; bitmap_num < num_bitmaps; bitmap_num++) {
++		u64 bitmap_pos = bitmap_num * priv->block_size * 8;
++		ret = read_bitmap(priv, bitmap_num, block);
++		if (ret)
++			goto done;
++		u32 index;
++		for (index = 0; index < priv->block_size * 8; index++) {
++			if (block[index / 8] & (1 << (index % 8)))
++				continue; /* used */
++			u64 bytenr = (index + bitmap_pos) * priv->block_size;
++			u64 bytenr_end = bytenr + priv->block_size - 1;
++			ret = set_extent_dirty(free_tree, bytenr, bytenr_end,
++					       0);
++			if (ret)
++				goto done;
++		}
++	}
++	ret = 0;
++done:
++	free(block);
++	return ret;
++}
++
++static int handle_stat_item(struct reiserfs_priv *priv, u32 objid,
++			    char *data, u16 len)
++{
++	int ret;
++	struct btrfs_inode_item *inode = &priv->inode;
++	u64 newobjid = objid + OID_OFFSET;
++	u32 mode;
++	u64 rdev;
++
++	btrfs_set_stack_inode_generation(inode, 1);
++	btrfs_set_stack_inode_nbytes(inode, 0);
++	btrfs_set_stack_inode_block_group(inode, 0);
++	btrfs_set_stack_inode_rdev(inode, 0);
++	btrfs_set_stack_timespec_nsec(&inode->atime, 0);
++	btrfs_set_stack_timespec_nsec(&inode->mtime, 0);
++	btrfs_set_stack_timespec_nsec(&inode->ctime, 0);
++	btrfs_set_stack_timespec_sec(&inode->otime, 0);
++	btrfs_set_stack_timespec_nsec(&inode->otime, 0);
++
++	if (len == sizeof(struct reiserfs_stat_item_1)) {
++		struct reiserfs_stat_item_1 *item
++			= (struct reiserfs_stat_item_1 *)data;
++		btrfs_set_stack_inode_size(inode, le32_to_cpu(item->size));
++		btrfs_set_stack_inode_nlink(inode, le16_to_cpu(item->nlink));
++		btrfs_set_stack_inode_uid(inode, le16_to_cpu(item->uid));
++		btrfs_set_stack_inode_gid(inode, le16_to_cpu(item->gid));
++		btrfs_set_stack_inode_flags(inode, 0);
++		btrfs_set_stack_timespec_sec(&inode->atime,
++					     le32_to_cpu(item->atime));
++		btrfs_set_stack_timespec_sec(&inode->mtime,
++					     le32_to_cpu(item->mtime));
++		btrfs_set_stack_timespec_sec(&inode->ctime,
++					     le32_to_cpu(item->ctime));
++
++		mode = le16_to_cpu(item->mode);
++		rdev = le32_to_cpu(item->rdev);
++	} else {
++		BUG_ON(len != sizeof(struct reiserfs_stat_item_2));
++		struct reiserfs_stat_item_2 *item
++			= (struct reiserfs_stat_item_2 *)data;
++		btrfs_set_stack_inode_size(inode, le64_to_cpu(item->size));
++		btrfs_set_stack_inode_nlink(inode, le32_to_cpu(item->nlink));
++		btrfs_set_stack_inode_uid(inode, le32_to_cpu(item->uid));
++		btrfs_set_stack_inode_gid(inode, le32_to_cpu(item->gid));
++		btrfs_set_stack_timespec_sec(&inode->atime,
++					     le32_to_cpu(item->atime));
++		btrfs_set_stack_timespec_sec(&inode->mtime,
++					     le32_to_cpu(item->mtime));
++		btrfs_set_stack_timespec_sec(&inode->ctime,
++					     le32_to_cpu(item->ctime));
++
++		/*
++		 * btrfs only supports the attributes shown below. reiserfs
++		 * stores anything given to it by userspace, however
++		 * nonsensical.
++		 */
++		u16 attrs = le16_to_cpu(item->attrs);
++		u64 flags = 0;
++		if (attrs & FS_IMMUTABLE_FL)
++			flags |= BTRFS_INODE_IMMUTABLE;
++		if (attrs & FS_APPEND_FL)
++			flags |= BTRFS_INODE_APPEND;
++		if (attrs & FS_NOATIME_FL)
++			flags |= BTRFS_INODE_NOATIME;
++		if (attrs & FS_NODUMP_FL)
++			flags |= BTRFS_INODE_NODUMP;
++		if (attrs & FS_SYNC_FL)
++			flags |= BTRFS_INODE_SYNC;
++		if (attrs & FS_DIRSYNC_FL)
++			flags |= BTRFS_INODE_DIRSYNC;
++		btrfs_set_stack_inode_flags(inode, flags);
++
++		mode = le16_to_cpu(item->mode);
++		rdev = le32_to_cpu(item->rdev);
++	}
++
++	btrfs_set_stack_inode_mode(inode, mode);
++
++	if (S_ISDIR(mode)) {
++		btrfs_set_stack_inode_nlink(inode, 1);
++		priv->inode_nbytes = 0;
++		priv->next_dir_index = 2;
++	} else if (S_ISREG(mode) || S_ISLNK(mode)) {
++		priv->inode_nbytes = 0;
++		ret = start_file_extents(&priv->itdata, priv->trans,
++					 priv->btrfs_root, &priv->inode_nbytes,
++					 newobjid,
++					 priv->datacsum, priv->packing,
++					 btrfs_stack_inode_size(inode));
++		if (ret)
++			return ret;
++		if (!priv->datacsum) {
++			u32 flags = btrfs_stack_inode_flags(inode) |
++				    BTRFS_INODE_NODATASUM;
++			btrfs_set_stack_inode_flags(inode, flags);
++		}
++	} else {
++		/* ReiserFS: mmmMMMmm
++		 * Btrfs: ...MMMmmmmm */
++		rdev = (rdev & 0xff) | ((rdev & 0xfff00000) >> 12)
++		       | ((rdev & 0xfff00) << 12);
++		btrfs_set_stack_inode_rdev(inode, rdev);
++	}
++
++	return 0;
++}
++
++static int handle_indirect_item(struct reiserfs_priv *priv, u64 file_off,
++				char *data, u16 len)
++{
++	int ret;
++	int i;
++	file_off--; /* ReiserFS uses offsets offset by 1. */
++	__le32 *disk_blocks = (__le32 *)data;
++	for (i = 0; i < len / 4; i++) {
++		u64 disk_off = le32_to_cpu(disk_blocks[i]) * priv->block_size;
++		if (disk_off) {
++			ret = add_file_disk_extent(&priv->itdata, file_off,
++						   disk_off, priv->block_size);
++			if (ret)
++				return ret;
++		}
++		file_off += priv->block_size;
++	}
++	return 0;
++}
++
++static int handle_direct_item(struct reiserfs_priv *priv, u64 file_off,
++			      u64 disk_off, u64 len)
++{
++	file_off--; /* ReiserFS uses offsets offset by 1. */
++	u64 size = btrfs_stack_inode_size(&priv->inode);
++	len = min_t(u64, len, size - file_off);
++	return add_file_disk_extent(&priv->itdata, file_off, disk_off, len);
++}
++
++static int handle_dir_item(struct reiserfs_priv *priv, u64 parentid_orig,
++			   const char *data, u16 len, u16 count)
++{
++	int ret;
++	int i;
++	u64 parentid = parentid_orig + OID_OFFSET;
++	const char *name_end = data + len;
++	struct reiserfs_dir_item *dir = (struct reiserfs_dir_item *)data;
++	for (i = 0; i < count; i++) {
++		struct btrfs_key location;
++		u64 childid = (u64)le32_to_cpu(dir[i].objid) + OID_OFFSET;
++
++		u16 name_loc = le16_to_cpu(dir[i].name_loc);
++		const char *name = data + name_loc;
++
++		/* Each name ends where the next begins. There may also be
++		 * nulls for padding. */
++		u16 name_len = name_end - name;
++		name_end = name;
++		const char *real_name_end = memchr(name, '\0', name_len);
++		if (real_name_end)
++			name_len = real_name_end - name;
++
++		if (name_len == 1 && !strncmp(name, ".", 1))
++			continue;
++		if (name_len == 2 && !strncmp(name, "..", 2))
++			continue;
++
++		/* The size of a btrfs directory is twice the total number of
++		 * characters in the names of its contents. */
++		priv->inode_nbytes += 2 * name_len;
++
++		location.objectid = childid;
++		location.offset = 0;
++		btrfs_set_key_type(&location, BTRFS_INODE_ITEM_KEY);
++		ret = btrfs_insert_dir_item(priv->trans, priv->btrfs_root,
++					    name, name_len, parentid,
++					    &location, BTRFS_FT_UNKNOWN,
++					    priv->next_dir_index);
++		if (ret)
++			return ret;
++		ret = btrfs_insert_inode_ref(priv->trans, priv->btrfs_root,
++					     name, name_len, childid,
++					     parentid, priv->next_dir_index);
++		if (ret)
++			return ret;
++		priv->next_dir_index++;
++	}
++	return 0;
++}
++
++static int finish_inode(struct reiserfs_priv *priv)
++{
++	int ret;
++	u64 newobjid = priv->cur_objid + OID_OFFSET;
++	u32 mode = btrfs_stack_inode_mode(&priv->inode);
++	if (S_ISDIR(mode)) {
++		btrfs_set_stack_inode_size(&priv->inode, priv->inode_nbytes);
++	} else if (S_ISREG(mode) || S_ISLNK(mode)) {
++		ret = finish_file_extents(&priv->itdata);
++		if (ret)
++			return ret;
++		btrfs_set_stack_inode_nbytes(&priv->inode, priv->inode_nbytes);
++	}
++	ret = btrfs_insert_inode(priv->trans, priv->btrfs_root,
++				 newobjid, &priv->inode);
++	return ret;
++}
++
++static int handle_item(struct reiserfs_priv *priv,
++		       struct reiserfs_item_header *item,
++		       char *data, u64 offset, u16 len)
++{
++	int ret;
++	u16 count = le16_to_cpu(item->count);
++	u16 version = le16_to_cpu(item->version);
++	u64 objid = le32_to_cpu(item->key.objid);
++	u64 off = le32_to_cpu(item->key.off);
++	u32 type = le32_to_cpu(item->key.type);
++
++	if (objid != priv->cur_objid) {
++		ret = finish_inode(priv);
++		if (ret)
++			return ret;
++		priv->cur_objid = objid;
++
++		/* We can only commit between inodes. */
++		if (priv->trans->blocks_used >= 4096) {
++			ret = btrfs_commit_transaction(priv->trans,
++						       priv->btrfs_root);
++			BUG_ON(ret);
++			priv->trans = btrfs_start_transaction(priv->btrfs_root,
++							      1);
++			BUG_ON(!priv->trans);
++		}
++	}
++
++	if (version == 1) {
++		off |= (u64)(type & 0xfffffff) << 32;
++		type >>= 28;
++	}
++
++	if (type == 0)
++		return handle_stat_item(priv, objid, data, len);
++	else if (type == 1 || type == 0xfffffffe)
++		return handle_indirect_item(priv, off, data, len);
++	else if (type == 2 || type == 0xffffffff)
++		return handle_direct_item(priv, off, offset, len);
++	else if (type == 3 || type == 500)
++		return handle_dir_item(priv, objid, data, len, count);
++	return -1;
++}
++
++static int handle_node(struct reiserfs_priv *priv, u64 node)
++{
++	int i;
++	int ret;
++	u64 disk_off = node * priv->block_size;
++	char *block = malloc(priv->block_size);
++	if (!block)
++		return -ENOMEM;
++	ret = pread(priv->fd, block, priv->block_size, disk_off);
++	if (ret != priv->block_size) {
++		ret = -1;
++		goto done;
++	}
++
++	struct reiserfs_node_header *hdr
++		= (struct reiserfs_node_header *)block;
++	u16 num = le16_to_cpu(hdr->num);
++	u16 level = le16_to_cpu(hdr->level);
++	BUG_ON(level < 1);
++	if (level > 1) {
++		u32 off = sizeof(*hdr) + num * sizeof(struct reiserfs_key);
++		struct reiserfs_child_ptr *ptr =
++			(struct reiserfs_child_ptr *)(block + off);
++		for (i = 0; i < num + 1; i++) {
++			ret = handle_node(priv, le32_to_cpu(ptr[i].block));
++			if (ret)
++				goto done;
++		}
++	} else {
++		struct reiserfs_item_header *item =
++			(struct reiserfs_item_header *)(block + sizeof(*hdr));
++		for (i = 0; i < num; i++) {
++			u16 loc = le16_to_cpu(item[i].loc);
++			u16 len = le16_to_cpu(item[i].len);
++			ret = handle_item(priv, &item[i], block + loc,
++					  disk_off + loc, len);
++			if (ret)
++				goto done;
++		}
++	}
++	ret = 0;
++done:
++	free(block);
++	return ret;
++}
++
++// Get the objectid of a child with a given name in btrfs
++static int get_child(struct btrfs_root *root, u64 objid, u64 *child,
++		     const char *name)
++{
++	int ret;
++	struct btrfs_path path;
++	struct btrfs_dir_item *dir;
++	btrfs_init_path(&path);
++	dir = btrfs_lookup_dir_item(NULL, root, &path, objid, name,
++				    strlen(name), 0);
++	if (!dir) {
++		ret = -ENOENT;
++	} else if(IS_ERR(dir)) {
++		ret = PTR_ERR(dir);
++	} else {
++		struct btrfs_key key;
++		btrfs_dir_item_key_to_cpu(path.nodes[0], dir, &key);
++		*child = key.objectid;
++		ret = 0;
++	}
++	btrfs_release_path(root, &path);
++	return ret;
++}
++
++// Read the full data of a btrfs file
++static int read_full_data(struct btrfs_root *root,
++			  u64 objid, char *data, u64 size)
++{
++	int ret;
++	struct btrfs_path path;
++	struct btrfs_key key;
++
++	memset(data, 0, size);
++	btrfs_init_path(&path);
++	key.objectid = objid;
++	key.type = BTRFS_EXTENT_DATA_KEY;
++	key.offset = 0;
++
++	while (key.offset < size) {
++		ret = btrfs_search_slot(NULL, root, &key, &path, 0, 0);
++		if (ret < 0)
++			return ret;
++		struct extent_buffer *node = path.nodes[0];
++		int slot = path.slots[0];
++
++		btrfs_item_key_to_cpu(node, &key, slot);
++		if (key.objectid != objid
++		    || btrfs_key_type(&key) != BTRFS_EXTENT_DATA_KEY) {
++			btrfs_release_path(root, &path);
++			break;
++		}
++
++		struct btrfs_file_extent_item *ext;
++		ext = btrfs_item_ptr(node, slot, struct btrfs_file_extent_item);
++		BUG_ON(btrfs_file_extent_compression(node, ext)
++		       != BTRFS_COMPRESS_NONE);
++		BUG_ON(btrfs_file_extent_encryption(node, ext)
++		       != BTRFS_ENCRYPTION_NONE);
++
++		u64 ei_size = btrfs_file_extent_ram_bytes(node, ext);
++		ei_size = min_t(u64, ei_size, size - key.offset);
++		u8 ei_type = btrfs_file_extent_type(node, ext);
++
++		if (ei_type == BTRFS_FILE_EXTENT_INLINE) {
++			u64 inline_start = btrfs_file_extent_inline_start(ext);
++			read_extent_buffer(node, data + key.offset,
++					   inline_start, ei_size);
++		} else if (ei_type == BTRFS_FILE_EXTENT_REG) {
++			u64 disk_off = btrfs_file_extent_disk_bytenr(node, ext);
++			disk_off += btrfs_file_extent_offset(node, ext);
++			ret = read_disk_extent(root, disk_off, ei_size,
++					       data + key.offset);
++			if (ret)
++				return ret;
++		} else {
++			BUG_ON(1);
++		}
++
++		key.offset += ei_size;
++		btrfs_release_path(root, &path);
++	}
++
++	return 0;
++}
++
++struct acl_xattr_entry {
++	__le16 tag;
++	__le16 perm;
++	__le32 id;
++} __attribute__ ((packed));
++
++/* ReiserFS omits the id field when it isn't necessary. This converts the
++ * ReiserFS ACL into btrfs format in-place, using "extra" extra bytes. */
++static int convert_acl(char *buffer, int len, int extra)
++{
++	/* Change version number from 1 to 2. */
++	BUG_ON(le32_to_cpu(*(__le32*)buffer) != 1);
++	*(__le32*)buffer = cpu_to_le32(2);
++
++	len -= 4;
++	struct acl_xattr_entry *entry = (struct acl_xattr_entry *)(buffer + 4);
++
++	while (len) {
++		BUG_ON(len < sizeof(*entry) - 4);
++		u16 tag = le16_to_cpu(entry->tag);
++		if (tag != ACL_USER && tag != ACL_GROUP) {
++			BUG_ON(extra < 4);
++			memmove(entry + 1, &entry->id, len - 4);
++			entry->id = cpu_to_le32(ACL_UNDEFINED_ID);
++			len += 4;
++			extra -= 4;
++		}
++		entry++;
++		len -= sizeof(*entry);
++		BUG_ON(len < 0);
++	}
++	return (char *)entry - buffer;
++}
++
++/*
++ * ReiserFS stores extended attributes in files like this:
++ *   /.reiserfs_priv/xattrs/12DE.70/system.posix_acl_access
++ * where 12DE is the objectid and 70 is the generation. This function converts
++ * a single xattr.
++ */
++static int copy_inode_xattr(struct btrfs_trans_handle *trans,
++			    struct btrfs_root *root,
++			    u64 objid, struct btrfs_key *xattr_file,
++			    const char *name, int name_len)
++{
++	int ret;
++	u64 size;
++
++	/* Determine size */
++	struct btrfs_path path;
++	btrfs_init_path(&path);
++	ret = btrfs_search_slot(NULL, root, xattr_file, &path, 0, 0);
++	if (ret < 0)
++		return ret;
++	BUG_ON(ret > 0);
++	struct btrfs_inode_item *inode =
++		btrfs_item_ptr(path.nodes[0], path.slots[0],
++			       struct btrfs_inode_item);
++	size = btrfs_inode_size(path.nodes[0], inode);
++	btrfs_release_path(root, &path);
++
++	/* ReiserFS omits four u32s from ACLs. They must be re-added. */
++	int is_acl = !strncmp(name, "system.posix_acl_", 17);
++	int extra = is_acl? 16: 0;
++
++	/* ReiserFS uses an 8-byte header for all xattrs. */
++	u64 contents_size = size - sizeof(struct reiserfs_xattr_header);
++
++	if (contents_size + extra + name_len > BTRFS_MAX_XATTR_SIZE(root)) {
++		fprintf(stderr, "WARNING: attribute %.*s on btrfs inode %Lu is"
++				" too big (%Lu bytes) and will not be"
++				" converted\n", name_len, name,
++				(unsigned long long)objid,
++				(unsigned long long)contents_size);
++		return 0;
++	}
++
++	char *buffer = malloc(size + extra);
++	if (!buffer)
++		return -ENOMEM;
++	ret = read_full_data(root, xattr_file->objectid, buffer, size);
++	if (ret) {
++		free(buffer);
++		return ret;
++	}
++
++	struct reiserfs_xattr_header *header
++		= (struct reiserfs_xattr_header *)buffer;
++	BUG_ON(memcmp(header->magic, "AXFR", 4));
++	char *contents = (char *)(header + 1);
++
++	if (is_acl) {
++		ret = convert_acl(contents, contents_size, extra);
++		if (ret < 0)
++			return ret;
++		contents_size = ret;
++	}
++	ret = btrfs_insert_xattr_item(trans, root, name, name_len,
++				      contents, contents_size, objid);
++	free(buffer);
++	return ret;
++}
++
++/* Copies all xattrs for a given inode. */
++static int copy_inode_xattrs(struct btrfs_trans_handle *trans,
++			     struct btrfs_root *root,
++			     u64 objid, u64 xattr_dir)
++{
++	int ret;
++	struct btrfs_path path;
++	struct btrfs_key key;
++	btrfs_init_path(&path);
++	key.objectid = xattr_dir;
++	key.type = BTRFS_DIR_INDEX_KEY;
++	key.offset = 0;
++
++	while (1) {
++		ret = btrfs_search_slot(trans, root, &key, &path, 0, 0);
++		if (ret < 0)
++			return ret;
++		struct extent_buffer *node = path.nodes[0];
++		int slot = path.slots[0];
++		btrfs_item_key_to_cpu(node, &key, slot);
++		if (key.objectid != xattr_dir
++		    || btrfs_key_type(&key) != BTRFS_DIR_INDEX_KEY) {
++			btrfs_release_path(root, &path);
++			break;
++		}
++		key.offset++;
++
++		struct btrfs_dir_item *dir = btrfs_item_ptr(node, slot, struct btrfs_dir_item);
++		char namebuf[BTRFS_NAME_LEN];
++		u32 name_len = btrfs_dir_name_len(node, dir);
++		BUG_ON(name_len > sizeof(namebuf));
++		read_extent_buffer(node, namebuf, (u64)(dir + 1), name_len);
++
++		btrfs_release_path(root, &path);
++
++		struct btrfs_key dest_key;
++		btrfs_dir_item_key_to_cpu(node, dir, &dest_key);
++		dest_key.type = BTRFS_INODE_ITEM_KEY;
++		dest_key.offset = 0;
++
++		ret = copy_inode_xattr(trans, root, objid, &dest_key, namebuf, name_len);
++		if (ret)
++			return ret;
++	}
++	return 0;
++}
++
++/* Copies all xattrs. */
++static int copy_xattrs(struct btrfs_trans_handle *trans,
++		       struct btrfs_root *root)
++{
++	int ret;
++	struct btrfs_path path;
++	struct btrfs_key key;
++
++	u64 xattrs_dir = btrfs_root_dirid(&root->root_item);
++	ret = get_child(root, xattrs_dir, &xattrs_dir, ".reiserfs_priv");
++	if (ret == -ENOENT)
++		return 0;
++	if (ret)
++		return ret;
++
++	ret = get_child(root, xattrs_dir, &xattrs_dir, "xattrs");
++	if (ret == -ENOENT)
++		return 0;
++	if (ret)
++		return ret;
++
++	btrfs_init_path(&path);
++
++	key.objectid = xattrs_dir;
++	key.type = BTRFS_DIR_INDEX_KEY;
++	key.offset = 2;
++
++	while (1) {
++		ret = btrfs_search_slot(trans, root, &key, &path, 0, 0);
++		if (ret < 0)
++			return ret;
++		struct extent_buffer *node = path.nodes[0];
++		int slot = path.slots[0];
++		btrfs_item_key_to_cpu(node, &key, slot);
++
++		if (key.objectid != xattrs_dir
++		    || btrfs_key_type(&key) != BTRFS_DIR_INDEX_KEY) {
++			btrfs_release_path(root, &path);
++			break;
++		}
++
++		struct btrfs_dir_item *dir = btrfs_item_ptr(node, slot,
++							struct btrfs_dir_item);
++		char namebuf[BTRFS_NAME_LEN + 1];
++		u32 name_len = btrfs_dir_name_len(node, dir);
++		BUG_ON(name_len + 1 > sizeof(namebuf));
++		read_extent_buffer(node, namebuf, (u64)(dir + 1), name_len);
++		namebuf[name_len] = 0;
++
++		unsigned long long inode_num, inode_gen;
++		ret = sscanf(namebuf, "%LX.%LX", &inode_num, &inode_gen);
++		if (ret != 2)
++			return -1;
++
++		u64 objid = inode_num + OID_OFFSET;
++		struct btrfs_key obj_xattr_dir;
++		btrfs_dir_item_key_to_cpu(node, dir, &obj_xattr_dir);
++
++		ret = copy_inode_xattrs(trans, root, objid,
++					obj_xattr_dir.objectid);
++		if (ret)
++			return ret;
++
++		key.offset++;
++		btrfs_release_path(root, &path);
++	}
++	return 0;
++}
++
++static int reiserfs_copy_inodes(struct convert_fs *fs, struct btrfs_root *root,
++				int datacsum, int packing, int noxattr)
++{
++	struct reiserfs_priv *priv = (struct reiserfs_priv*)fs->privdata;
++	int ret;
++
++	priv->trans = btrfs_start_transaction(root, 1);
++	priv->btrfs_root = root;
++	priv->datacsum = datacsum;
++	priv->packing = packing;
++
++	priv->cur_objid = REISERFS_ROOT_OBJECTID;
++	ret = handle_node(priv, priv->root);
++	if (ret)
++		return ret;
++	ret = finish_inode(priv);
++	if (ret)
++		return ret;
++
++	ret = btrfs_insert_inode_ref(priv->trans, priv->btrfs_root, "..", 2,
++				     BTRFS_FIRST_FREE_OBJECTID,
++				     BTRFS_FIRST_FREE_OBJECTID, 0);
++	if (ret)
++		return ret;
++
++	if (!noxattr) {
++		ret = copy_xattrs(priv->trans, priv->btrfs_root);
++		if (ret)
++			return ret;
++	}
++
++	ret = fix_dir_item_types(priv->trans, priv->btrfs_root);
++	if (ret)
++		return ret;
++
++	ret = btrfs_commit_transaction(priv->trans, root);
++	return ret;
++}
++
++static int reiserfs_close(struct convert_fs *fs)
++{
++	struct reiserfs_priv *priv = (struct reiserfs_priv*)fs->privdata;
++	close(priv->fd);
++	free(priv);
++	return 0;
++}
++
++int reiserfs_open(struct convert_fs *fs, const char *name)
++{
++	int ret;
++	struct reiserfs_priv *priv = calloc(1, sizeof(*priv));
++	if (!priv)
++		return -ENOMEM;
++	priv->fd = open(name, O_RDONLY);
++	if (priv->fd == -1)
++		goto fail;
++
++	struct reiserfs_super sb;
++	ret = pread(priv->fd, &sb, sizeof(sb), SUPERBLOCK_OFFSET);
++	if (ret != sizeof(sb))
++		goto fail;
++
++	if (le16_to_cpu(sb.mount_state) != REISERFS_STATE_CLEAN) {
++		fprintf(stderr, "%s is dirty and must be unmounted or fscked"
++				" before conversion.\n", name);
++		goto fail;
++	}
++
++	int version;
++	if (!memcmp(REISERFS_MAGIC_1, sb.magic, 10))
++		version = 1;
++	else if (!memcmp(REISERFS_MAGIC_2, sb.magic, 10))
++		version = 2;
++	else if (!memcmp(REISERFS_MAGIC_3, sb.magic, 10))
++		version = 3;
++	else
++		goto fail;
++
++	priv->block_size = le16_to_cpu(sb.block_size);
++	priv->block_count = le32_to_cpu(sb.block_count);
++	priv->root = le32_to_cpu(sb.root_block);
++	priv->label[16] = '\0';
++	strncpy(priv->label, (version > 1? sb.label: ""), 16);
++
++	fs->total_bytes = priv->block_count * priv->block_size;
++	fs->blocksize = priv->block_size;
++	fs->label = priv->label;
++	fs->privdata = priv;
++
++	fs->close = reiserfs_close;
++	fs->cache_free_extents = reiserfs_cache_free_extents;
++	fs->copy_inodes = reiserfs_copy_inodes;
++
++	return 0;
++
++fail:
++	if (priv->fd != -1)
++		close(priv->fd);
++	free(priv);
++	return -1;
++}
+diff --git a/ctree.h b/ctree.h
+index 64ecf12..eaf5b9f 100644
+--- a/ctree.h
++++ b/ctree.h
+@@ -290,6 +290,9 @@ struct btrfs_header {
+ #define BTRFS_MAX_INLINE_DATA_SIZE(r) (BTRFS_LEAF_DATA_SIZE(r) - \
+ 					sizeof(struct btrfs_item) - \
+ 					sizeof(struct btrfs_file_extent_item))
++#define BTRFS_MAX_XATTR_SIZE(r)	(BTRFS_LEAF_DATA_SIZE(r) - \
++				 sizeof(struct btrfs_item) -\
++				 sizeof(struct btrfs_dir_item))
+
+ 
+ /*
+@@ -858,6 +861,14 @@ struct btrfs_root {
+ #define BTRFS_INODE_NODATASUM		(1 << 0)
+ #define BTRFS_INODE_NODATACOW		(1 << 1)
+ #define BTRFS_INODE_READONLY		(1 << 2)
++#define BTRFS_INODE_NOCOMPRESS		(1 << 3)
++#define BTRFS_INODE_PREALLOC		(1 << 4)
++#define BTRFS_INODE_SYNC		(1 << 5)
++#define BTRFS_INODE_IMMUTABLE		(1 << 6)
++#define BTRFS_INODE_APPEND		(1 << 7)
++#define BTRFS_INODE_NODUMP		(1 << 8)
++#define BTRFS_INODE_NOATIME		(1 << 9)
++#define BTRFS_INODE_DIRSYNC		(1 << 10)
+
+ #define read_eb_member(eb, ptr, type, member, result) (			\
+ 	read_extent_buffer(eb, (char *)(result),			\

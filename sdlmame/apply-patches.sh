@@ -13,6 +13,4 @@ if [ "${SB_GCONF}" != "YES" ] ;then
   zcat ${SB_PATCHDIR}/sdlmame-0.136u2-nogconf.patch.gz | patch -p0 -E --backup -z .nogconf --verbose
 fi
 
-patch -p0 -E --backup -z .gcc45 --verbose -i ${SB_PATCHDIR}/sdlmame-0.137u3-gcc45.patch
-
 set +e +o pipefail

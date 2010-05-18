@@ -20,28 +20,24 @@ ApplyPatch() {
 
 # Use old-style locale directories rather than a single (and strangely
 # formatted) /usr/lib/locale/locale-archive file:
-#zcat ${CWD}/glibc.locale.no-archive.diff.gz | patch -p1 --verbose
+zcat ${SB_PATCHDIR}/glibc.locale.no-archive.diff.gz | patch -p1 --verbose
 # The is_IS locale is causing a strange error about the "echn" command
 # not existing.  This patch reverts is_IS to the version shipped in
 # glibc-2.5:
-#zcat ${SB_PATCHDIR}/is_IS.diff.gz | patch -p1 --verbose
+zcat ${SB_PATCHDIR}/is_IS.diff.gz | patch -p1 --verbose
 # Fix NIS netgroups:
 zcat ${SB_PATCHDIR}/glibc.nis-netgroups.diff.gz | patch -p1 --verbose
-# Evidently glibc never expected Linux kernel versions to be in the
-# format 1.2.3.4.  This patch makes glibc consider the kernel version
-# to be only the first three digit groups found, and drops any
-# trailing non-digit characters:
-#zcat ${SB_PATCHDIR}/glibc.kernelversion.diff.gz | patch -p1 --verbose
 # Support ru_RU.CP1251 locale:
-#zcat ${CWD}/glibc.ru_RU.CP1251.diff.gz | patch -p1 --verbose
+zcat ${SB_PATCHDIR}/glibc.ru_RU.CP1251.diff.gz | patch -p1 --verbose
 # Fix missing MAX macro in getcwd.c:
 zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose
 # Gentoo patches
+patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cfi.patch
 ( SB_PATCHDIR=patches
 
+  ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
   ApplyPatch 0030_all_glibc-respect-env-CPPFLAGS.patch
   ApplyPatch 0044_all_glibc-2.10-resolv-nameserver-fallback.patch
-  patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cfi.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch
   ApplyPatch 1020_all_glibc-longjmp-chk-hidden-fortify.patch
@@ -58,6 +54,7 @@ zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose
   patch -p0 --verbose -i ${SB_PATCHDIR}/1095_all_glibc-2.9-assume-pipe2.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1100_all_glibc-2.3.3-china.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1103_all_glibc-new-valencian-locale.patch
+  patch -p0 --verbose -i ${SB_PATCHDIR}/1120_all_glibc-2.11-longjmp-chk-fallback.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1130_all_glibc-2.4-undefine-__i686.patch
   ApplyPatch 1160_all_glibc-2.8-nscd-one-fork.patch
   ApplyPatch 3020_all_glibc-tests-sandbox-libdl-paths.patch

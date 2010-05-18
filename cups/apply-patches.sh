@@ -3,6 +3,9 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# Fix the USB backend to use either usblp or libusb:
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/usb-backend-both-usblp-and-libusb.dpatch
+
 zcat ${SB_PATCHDIR}/cups-no-gzip-man.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/cups-multilib.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/cups-serial.patch.gz | patch -p1 -E --backup --verbose

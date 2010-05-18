@@ -1,29 +1,32 @@
-implement utrace-ptrace
+utrace: ptrace cooperation
 
-The patch adds the new file, kernel/ptrace-utrace.c, which contains
-the new implementation of ptrace over utrace.
+This adds the CONFIG_UTRACE_PTRACE option under CONFIG_UTRACE.
+When set, parts of ptrace are replaced so it uses the utrace
+facilities for noticing events, stopping and resuming threads.
 
-This file is not compiled until we have CONFIG_UTRACE option, will be
-added by the next "utrace core" patch.
-
-It's supposed to be an invisible implementation change, nothing should
-change to userland when CONFIG_UTRACE is enabled.
+This makes ptrace play nicely with other utrace-based things
+tracing the same threads.  It also makes all ptrace uses rely on
+some of the utrace code working right, even when you are not
+using any other utrace-based things.  So it's experimental and
+not real well proven yet.  But it's recommended if you enable
+CONFIG_UTRACE and want to try new utrace things.
 
 Signed-off-by: Roland McGrath <roland@redhat.com>
-Signed-off-by: Oleg Nesterov <oleg@redhat.com>
 ---
+
  include/linux/ptrace.h |    2 +-
  kernel/Makefile        |    1 +
  kernel/ptrace-utrace.c | 1080 ++++++++++++++++++++++++++++++++++++++++++++++++
- kernel/ptrace.c        |  572 +++++++++++++-------------
+ kernel/ptrace.c        |  571 +++++++++++++-------------
  kernel/utrace.c        |   16 +
- 5 files changed, 1378 insertions(+), 293 deletions(-)
+ 5 files changed, 1378 insertions(+), 292 deletions(-)
+ create mode 100644 kernel/ptrace-utrace.c
 
 diff --git a/include/linux/ptrace.h b/include/linux/ptrace.h
-index 4802e2a..03f8fc7 100644  
+index 0d84f1e..102cb0f 100644
 --- a/include/linux/ptrace.h
 +++ b/include/linux/ptrace.h
-@@ -79,7 +79,7 @@
+@@ -99,7 +99,7 @@
  #include <linux/compiler.h>		/* For unlikely.  */
  #include <linux/sched.h>		/* For struct task_struct.  */
  
@@ -33,10 +36,10 @@ index 4802e2a..03f8fc7 100644
  extern int ptrace_traceme(void);
  extern int ptrace_readdata(struct task_struct *tsk, unsigned long src, char __user *dst, int len);
 diff --git a/kernel/Makefile b/kernel/Makefile
-index 8a0185e..30a118d 100644  
+index 8bbb631..0cf7a15 100644
 --- a/kernel/Makefile
 +++ b/kernel/Makefile
-@@ -70,6 +70,7 @@ obj-$(CONFIG_RESOURCE_COUNTERS) += res_c
+@@ -71,6 +71,7 @@ obj-$(CONFIG_RESOURCE_COUNTERS) += res_counter.o
  obj-$(CONFIG_STOP_MACHINE) += stop_machine.o
  obj-$(CONFIG_KPROBES_SANITY_TEST) += test_kprobes.o
  obj-$(CONFIG_UTRACE) += utrace.o
@@ -46,7 +49,7 @@ index 8a0185e..30a118d 100644
  obj-$(CONFIG_GCOV_KERNEL) += gcov/
 diff --git a/kernel/ptrace-utrace.c b/kernel/ptrace-utrace.c
 new file mode 100644
-index ...ea419ee 100644  
+index 0000000..ea419ee
 --- /dev/null
 +++ b/kernel/ptrace-utrace.c
 @@ -0,0 +1,1080 @@
@@ -1131,7 +1134,7 @@ index ...ea419ee 100644
 +}
 +#endif	/* CONFIG_COMPAT */
 diff --git a/kernel/ptrace.c b/kernel/ptrace.c
-index a408bf7..4e87441 100644  
+index 0ad4dc0..9f53f98 100644
 --- a/kernel/ptrace.c
 +++ b/kernel/ptrace.c
 @@ -16,7 +16,6 @@
@@ -1142,9 +1145,9 @@ index a408bf7..4e87441 100644
  #include <linux/security.h>
  #include <linux/signal.h>
  #include <linux/audit.h>
-@@ -24,7 +23,286 @@
- #include <linux/syscalls.h>
+@@ -25,8 +24,287 @@
  #include <linux/uaccess.h>
+ #include <linux/regset.h>
  
 +int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 +{
@@ -1192,8 +1195,8 @@ index a408bf7..4e87441 100644
 +	task_unlock(task);
 +	return !err;
 +}
-+
-+/*
+ 
+ /*
 + * Called with irqs disabled, returns true if childs should reap themselves.
 + */
 +static int ignoring_children(struct sighand_struct *sigh)
@@ -1312,7 +1315,7 @@ index a408bf7..4e87441 100644
 +#ifndef arch_ptrace_attach
 +#define arch_ptrace_attach(child)	do { } while (0)
 +#endif
- 
++
 +SYSCALL_DEFINE4(ptrace, long, request, long, pid, long, addr, long, data)
 +{
 +	struct task_struct *child;
@@ -1426,30 +1429,14 @@ index a408bf7..4e87441 100644
 +#endif	/* CONFIG_COMPAT */
 +
 +#ifndef CONFIG_UTRACE
- /*
++/*
   * ptrace a task: make the debugger its new parent and
   * move it to the ptrace list.
-@@ -101,76 +379,21 @@ int ptrace_check_attach(struct task_stru
- 		/*
- 		 * child->sighand can't be NULL, release_task()
- 		 * does ptrace_unlink() before __exit_signal().
--		 */
--		spin_lock_irq(&child->sighand->siglock);
--		if (task_is_stopped(child))
--			child->state = TASK_TRACED;
--		else if (!task_is_traced(child) && !kill)
--			ret = -ESRCH;
--		spin_unlock_irq(&child->sighand->siglock);
--	}
--	read_unlock(&tasklist_lock);
--
--	if (!ret && !kill)
--		ret = wait_task_inactive(child, TASK_TRACED) ? 0 : -ESRCH;
--
--	/* All systems go.. */
--	return ret;
--}
--
+  *
+@@ -119,61 +397,6 @@ int ptrace_check_attach(struct task_struct *child, int kill)
+ 	return ret;
+ }
+ 
 -int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 -{
 -	const struct cred *cred = current_cred(), *tcred;
@@ -1487,16 +1474,7 @@ index a408bf7..4e87441 100644
 -
 -	return security_ptrace_access_check(task, mode);
 -}
-+		 */
-+		spin_lock_irq(&child->sighand->siglock);
-+		if (task_is_stopped(child))
-+			child->state = TASK_TRACED;
-+		else if (!task_is_traced(child) && !kill)
-+			ret = -ESRCH;
-+		spin_unlock_irq(&child->sighand->siglock);
-+	}
-+	read_unlock(&tasklist_lock);
- 
+-
 -bool ptrace_may_access(struct task_struct *task, unsigned int mode)
 -{
 -	int err;
@@ -1505,21 +1483,19 @@ index a408bf7..4e87441 100644
 -	task_unlock(task);
 -	return !err;
 -}
-+	if (!ret && !kill)
-+		ret = wait_task_inactive(child, TASK_TRACED) ? 0 : -ESRCH;
- 
+-
 -/*
 - * For experimental use of utrace, exclude ptrace on the same task.
 - */
 -static inline bool exclude_ptrace(struct task_struct *task)
 -{
 -	return unlikely(!!task_utrace_flags(task));
-+	/* All systems go.. */
-+	return ret;
- }
- 
+-}
+-
  int ptrace_attach(struct task_struct *task)
-@@ -196,8 +419,6 @@ int ptrace_attach(struct task_struct *ta
+ {
+ 	int retval;
+@@ -197,8 +420,6 @@ int ptrace_attach(struct task_struct *task)
  
  	task_lock(task);
  	retval = __ptrace_may_access(task, PTRACE_MODE_ATTACH);
@@ -1528,7 +1504,7 @@ index a408bf7..4e87441 100644
  	task_unlock(task);
  	if (retval)
  		goto unlock_creds;
-@@ -235,9 +456,6 @@ int ptrace_traceme(void)
+@@ -236,9 +457,6 @@ int ptrace_traceme(void)
  {
  	int ret = -EPERM;
  
@@ -1538,7 +1514,7 @@ index a408bf7..4e87441 100644
  	write_lock_irq(&tasklist_lock);
  	/* Are we already being traced? */
  	if (!current->ptrace) {
-@@ -257,57 +475,6 @@ int ptrace_traceme(void)
+@@ -258,57 +476,6 @@ int ptrace_traceme(void)
  	return ret;
  }
  
@@ -1596,7 +1572,7 @@ index a408bf7..4e87441 100644
  int ptrace_detach(struct task_struct *child, unsigned int data)
  {
  	bool dead = false;
-@@ -361,56 +528,6 @@ void exit_ptrace(struct task_struct *tra
+@@ -362,56 +529,6 @@ void exit_ptrace(struct task_struct *tracer)
  	}
  }
  
@@ -1653,7 +1629,7 @@ index a408bf7..4e87441 100644
  static int ptrace_setoptions(struct task_struct *child, long data)
  {
  	child->ptrace &= ~PT_TRACE_MASK;
-@@ -594,93 +710,7 @@ int ptrace_request(struct task_struct *c
+@@ -656,93 +773,7 @@ int ptrace_request(struct task_struct *child, long request,
  	return ret;
  }
  
@@ -1747,7 +1723,7 @@ index a408bf7..4e87441 100644
  int compat_ptrace_request(struct task_struct *child, compat_long_t request,
  			  compat_ulong_t addr, compat_ulong_t data)
  {
-@@ -732,47 +762,5 @@ int compat_ptrace_request(struct task_st
+@@ -820,47 +851,5 @@ int compat_ptrace_request(struct task_struct *child, compat_long_t request,
  
  	return ret;
  }
@@ -1797,7 +1773,7 @@ index a408bf7..4e87441 100644
  #endif	/* CONFIG_COMPAT */
 +#endif	/* CONFIG_UTRACE */
 diff --git a/kernel/utrace.c b/kernel/utrace.c
-index f003e34..f5a9e2c 100644  
+index 84d965d..ead1f13 100644
 --- a/kernel/utrace.c
 +++ b/kernel/utrace.c
 @@ -811,6 +811,22 @@ relock:
@@ -1823,3 +1799,6 @@ index f003e34..f5a9e2c 100644
  	schedule();
  
  	utrace_finish_stop();
+-- 
+1.7.0.1
+

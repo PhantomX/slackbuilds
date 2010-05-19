@@ -7,6 +7,7 @@ if [ "${SPNAME}" = "exo" ]; then
   zcat ${SB_PATCHDIR}/exo-0.3.0-x86_64-build.patch.gz | patch -p1 --verbose
   # http://patches.ubuntu.com/e/exo/extracted/xubuntu-default-mount-options.patch
   zcat ${SB_PATCHDIR}/exo-0.3.105-default-mount-options.patch.gz | patch -p1 --verbose
+  patch -p1 --verbose -i ${SB_PATCHDIR}/exo-fix-treeview-gtk2.20.patch
 fi
 
 if [ "${SPNAME}" = "Thunar" ]; then
@@ -78,6 +79,11 @@ fi
 if [ "${SPNAME}" = "orage" ]; then
   # Upstream bug: http://bugzilla.xfce.org/show_bug.cgi?id=6237
   patch -p1 --verbose -i ${SB_PATCHDIR}/orage-4.6.1-dsofix.patch
+fi
+
+if [ "${SPNAME}" = "Terminal" ]; then
+  # From Slackware
+  patch -p1 --verbose -i ${SB_PATCHDIR}/terminal.gtk.2.18.fix.diff
 fi
 
 set +e +o pipefail

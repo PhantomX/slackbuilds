@@ -3,6 +3,6 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/nouveau-bgnr.patch.gz | patch -p1 -E --backup --verbose || exit 1
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nouveau-bgnr.patch
 
 set +e +o pipefail

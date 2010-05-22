@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = fluxbox-chinfo-menu
-VERSION = 1.0.2
+VERSION = 1.0.3
 
 DESTDIR =
 PREFIX = /usr

@@ -45,7 +45,7 @@ NAME=lastfm
 PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-1.5.4.26862}
-PVER=${PVER:-1.5.4.26862+dfsg-1}
+PVER=${PVER:-1.5.4.26862+dfsg-3}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -57,7 +57,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -69,7 +69,7 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}+dfsg
 SRCARCHIVE=${SRCDIR//-/_}.orig.tar.gz
-SRCARCHIVE2=${NAME}_${PVER}.diff.gz
+PSRCARCHIVE=${NAME}_${PVER}.debian.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
@@ -78,7 +78,7 @@ DEB_MIRROR=${DEB_MIRROR:-http://ftp.debian.org}
 DL_URL="http://ftp.debian.org/debian/pool/main/$(echo ${NAME} | sed -e 's/\(.\).*/\1/')/${NAME}"
 
 # if source is not present, download in source rootdir if possible
-for file in ${SRCARCHIVE} ${SRCARCHIVE2} ;do
+for file in ${SRCARCHIVE} ${PSRCARCHIVE} ;do
   test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
 done
 
@@ -115,14 +115,14 @@ cd ${TMP}
 rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
+tar -xvf ${CWD}/${PSRCARCHIVE} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${SRCARCHIVE2} | patch -p1 --verbose || exit 1
-for i in $(< debian/patches/series); do
-  patch -p1 --verbose --backup --suffix=".pdeb" < debian/patches/${i} || exit 1
-done
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
 for filepro in $(find . -type f -name "*.pro") ; do
   echo "QMAKE_CFLAGS_RELEASE = ${SLKCFLAGS}" >> "${filepro}"
@@ -130,50 +130,57 @@ for filepro in $(find . -type f -name "*.pro") ; do
   echo "QMAKE_LFLAGS_RELEASE = ${LDFLAGS}" >> "${filepro}"
 done
 
-sed -i -e "s|/lib/|/lib${LIBDIRSUFFIX}/|g" debian/${NAME}.{install,sh}
-sed -i -e '/share\/pixmaps/d' \
-          debian/${NAME}.install || exit 1
+sed -i -e "s|/lib/glib-2.0|/lib${LIBDIRSUFFIX}/glib-2.0|g" \
+  src/mediadevices/ipod/ipod.pro || exit 1
+
+# fix plugin search path
+sed -i "s:/usr/lib/services:/usr/lib${LIBDIRSUFFIX}/lastfm_services:" \
+  src/libMoose/MooseCommon.cpp || exit 1
+
+sed -i \
+  -e "/^bin\/last.fm/s|/usr/lib/lastfm|/usr/bin|g" \
+  -e "/^bin\/lib/s|/usr/lib/lastfm|/usr/lib${LIBDIRSUFFIX}|g" \
+  -e "/^bin\/services/s|/usr/lib/lastfm|/usr/lib${LIBDIRSUFFIX}/lastfm_services|g" \
+  -e 's|^bin/services|&/*|g' \
+  -e '/package-files/d' \
+  debian/${NAME}.install || exit 1
+echo 'debian/package-files/share/*   /usr/share' >> debian/${NAME}.install
+mv debian/package-files/share/lastfm/icons/user_*.png bin/data/icons/ || exit 1
+rm -rf debian/package-files/bin
+rm -rf debian/package-files/share/lastfm
+rm -rf debian/package-files/share/pixmaps
 
 sed -i -e "/^Exec=/s|=.*$|=${NAME}|g" \
-           debian/${NAME}.desktop || exit 1
+  debian/package-files/share/applications/${NAME}.desktop || exit 1
 
-./configure || exit 1
-
-make -j${NJOBS} || make || exit 1
+${QTDIR}/bin/qmake LastFM.pro PREFIX=/usr || exit $?
+make -j${NJOBS} || make || exit $?
 
 ( cd i18n
-  lrelease-qt4 *.ts
+  ${QTDIR}/bin/lrelease *.ts
 ) || exit 1
 
 mkdir -p ${PKG}/usr/man/man1
 install -m0644 debian/${NAME}.1 \
-               ${PKG}/usr/man/man1/ || exit 1
-
-uudecode -o icons.tar.gz debian/icons.tar.gz.uu
-tar xzvf icons.tar.gz
-uudecode -o trayicons22.tar.gz debian/trayicons22.tar.gz.uu
-tar xzvf trayicons22.tar.gz
-
-mkdir -p ${PKG}/usr/share
-cp -a icons ${PKG}/usr/share/ || exit 1
-find ${PKG}/usr/share/ -type d -print0 | xargs -0 chmod 0755
-find ${PKG}/usr/share/ -type f -print0 | xargs -0 chmod 0644
-mkdir -p ${PKG}/usr/share/lastfm/icons
-install -m0644 user_*.png \
-               ${PKG}/usr/share/lastfm/icons/ || exit 1
+  ${PKG}/usr/man/man1/ || exit 1
 
 # make directories
 for i in $(<debian/lastfm.install); do 
   [ ${i:0:1} == / ] && mkdir -p ${PKG}/${i}
 done
 # debian installation
-sed -i -e "s:^:mv :" -e "s: /:${PKG}/:" \
-          debian/lastfm.install || exit 1
+sed -i -e "s:^:cp -a :" -e "s: /: ${PKG}/:" -e 's/$/ || exit 1/g' \
+  debian/lastfm.install || exit 1
 sh debian/lastfm.install || exit 1
 
-# copied..
-mv ${PKG}/usr/bin/lastfm.sh ${PKG}/usr/bin/lastfm || exit 1
-chmod 0755 ${PKG}/usr/bin/lastfm
+mv ${PKG}/usr/bin/last.fm ${PKG}/usr/bin/lastfm || exit 1
+chmod 0755 ${PKG}/usr/bin/lastfm || exit 1
+chmod 0755 ${PKG}/usr/lib${LIBDIRSUFFIX}/lastfm_services/*.so || exit 1
+chmod 0755 ${PKG}/usr/lib${LIBDIRSUFFIX}/lib*.so* || exit 1
+
+find ${PKG}/usr/share/ -type d -print0 | xargs -0 chmod 0755
+find ${PKG}/usr/share/ -type f -print0 | xargs -0 chmod 0644
+
 rm -f ${PKG}/usr/share/lastfm/icons/{*profile24,systray_mac}.png
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
@@ -185,8 +192,10 @@ cp -a \
   ChangeLog README debian/README.Debian-source ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 zcat ${CWD}/mozillaservice.txt.gz > ${DOCDIR}/mozillaservice
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -218,11 +227,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${SRCARCHIVE2} ${SBDIR}/
+                  ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

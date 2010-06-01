@@ -5,7 +5,8 @@ SB_PATCHDIR=${CWD}/patches
 
 if [ "${PVER}" != "0" ] ;then
   for i in ${PVER} ; do
-    patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}-${SVER}-${i}.patch
+    patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}-${SVER}-${i}.patch \
+      || patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}-${SSVER}-${i}.patch
   done
 fi
 

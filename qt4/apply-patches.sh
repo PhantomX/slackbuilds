@@ -86,6 +86,8 @@ ApplyPatch qt-x11-opensource-src-4.6.2-tablet-wacom-QTBUG-8599.patch
 ApplyPatch qt-everywhere-opensource-src-4.6.2-QTBUG-6932.patch
 ApplyPatch qt-everywhere-opensource-src-4.6.2-atomic-s390.patch
 ApplyPatch qt-everywhere-opensource-src-4.6.2-cups-QTBUG-6471.patch
+# QTBUG-9793
+ApplyPatch 0ebc9783d8ca0c4b27208bbc002c53c52c19ab4c.patch
 
 # kde-qt patches
 ( SB_PATCHDIR=patches

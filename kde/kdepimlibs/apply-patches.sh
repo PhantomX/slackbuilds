@@ -3,8 +3,6 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.3-b1122692-fix-timesInInterval.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.3-b1122722-revert-parts-of-commit-1122720.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-t1088138-silent-akonadi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-t1088147-silent-akonadi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-t1088151-add-missing-file.patch

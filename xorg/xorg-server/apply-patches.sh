@@ -38,7 +38,7 @@ zcat ${SB_PATCHDIR}/xserver-1.7.1-multilib.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch.gz | patch -p1 --verbose
 
 # Backports from master
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-swap-fixes.patch
+#patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-swap-fixes.patch
 # https://bugs.freedesktop.org/show_bug.cgi?id=27767 (plus related
 # pieces needed backported from master)
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-resource-accounting.patch

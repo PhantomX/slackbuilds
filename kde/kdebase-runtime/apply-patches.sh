@@ -10,13 +10,15 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.1-manpath.patch.gz | patch -p1 -E --backup --ver
 # add OnlyShowIn=KDE  to Desktop/Home.desktop (like trash.desktop)
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-home_onlyshowin_kde.patch.gz | patch -p1 -E --backup --verbose
 
+# Fix build with attica >= 0.1.4
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.4-attica.patch
+
 # Mandriva
-zcat ${SB_PATCHDIR}/${NAME}-nepomuk-strigi-smartfile.patch.gz | patch -p0 -E --backup --verbose
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nepomuk-strigi-smartfile.patch
 zcat ${SB_PATCHDIR}/${NAME}-4.3.2-knotify-fix-cpu-charge.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nepomuk-sync-with-trunk.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nepomuk-sync-with-trunk.patch
 
 # Branch patches
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-b1121161-fix-kreadconf.patch 
 
 # Trunk  patches
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-t1079784-add-kupnp-support.patch.gz | patch -p1 -E --backup --verbose

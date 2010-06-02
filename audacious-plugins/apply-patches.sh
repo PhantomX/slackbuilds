@@ -48,5 +48,7 @@ zcat ${SB_PATCHDIR}/${NAME}-2.2-playlist-font-safety.patch.gz | patch -p1 -E --b
 zcat ${SB_PATCHDIR}/${NAME}-2.2-amidi.patch.gz | patch -p1 -E --backup --verbose
 # merged upstream - Visualization Mode issues, fixed while looking at bz 575093
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.2-ui_vis.patch
+# obsolete with version upgrade
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.2-g_markup.patch
 
 set +e +o pipefail

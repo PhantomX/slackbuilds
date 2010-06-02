@@ -30,7 +30,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta4-aesni.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-name-hash.patch
 
 # Upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-dtls1-backports.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-init-sha256.patch
 
 set +e +o pipefail

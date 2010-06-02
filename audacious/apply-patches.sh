@@ -20,5 +20,6 @@ zcat ${SB_PATCHDIR}/${NAME}-2.2-libm.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.2-coverart-2.patch.gz | patch -p1 -E --backup --verbose
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.2-unescape-fileinfo.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.2-doc-enqueue.patch
 
 set +e +o pipefail

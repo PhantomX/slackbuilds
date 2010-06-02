@@ -4,7 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-startkde.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-4.3.98-plasma-konsole.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.98-plasma-konsole.patch
 zcat ${SB_PATCHDIR}/${NAME}-4.3.75-show_systemsettings.patch.gz | patch -p1 -E --backup --verbose
 # For ck 0.3.1
 #zcat ${SB_PATCHDIR}/${NAME}-4.2.85-ck-shutdown.patch.gz | patch -p1 -E --backup --verbose
@@ -36,12 +36,14 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.98-platformplugin-widgetstyle4.patch.gz | patch 
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-classicmenu-games.patch.gz | patch -p1 -E --backup --verbose
 
 # Mandriva
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.3-b1122355-plasma-netbook-fix-icon.patch 
+#patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.3-b1122355-plasma-netbook-fix-icon.patch 
 zcat ${SB_PATCHDIR}/${NAME}-4.1.1-save_color_scheme_name.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.1.2-notify_color_changes.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-lowdiskspace.patch.gz | patch -p0 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-battery-always-show-percent-left.patch
-zcat ${SB_PATCHDIR}/${NAME}-4.4.0-fix-lock-out.patch.gz | patch -p0 -E --backup --verbose
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-trash-applet-add-confirmation.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.3-add-tooltip-simpleapplet.patch 
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.0-fix-lock-out.patch
 
 # upstream patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135

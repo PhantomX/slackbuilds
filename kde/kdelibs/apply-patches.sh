@@ -30,21 +30,22 @@ zcat ${SB_PATCHDIR}/kdelibs-4.1.72-kstandarddirs.patch.gz | patch -p1 --verbose 
 zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 #zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 
-patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-4.4.1-add-confirmation-window.patch
-
 # die rpath die, since we're using standard paths, we can avoid
 # this extra hassle (even though cmake is *supposed* to not add standard
 # paths (like /usr/lib64) already! With this, we can drop
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
 zcat ${SB_PATCHDIR}/kdelibs-4.3.98-no_rpath.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 
+# Mandriva
+patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-4.4.1-add-confirmation-window.patch
+patch -p0 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-4.4.2-FindFFmpeg.cmake.patch 
+
 # official backports
-patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-b1121957-khtml-html5-fix.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-b1122130-fix-nl.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-b1122692-khtml-fix-lynksys-confpage.patch
+
 # Trunk patches
 patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.1-t1098322-fix-kdialog-focus.patch
 patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-use-nepomuk-from-trunk.patch 
+patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-t1130778-nepomuk-fix-crash.patch
 
 # 4.4 upstream
 

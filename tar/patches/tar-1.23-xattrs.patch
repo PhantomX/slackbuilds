@@ -1,0 +1,1601 @@
+diff -urNp tar-1.23-orig/configure.ac tar-1.23/configure.ac
+--- tar-1.23-orig/configure.ac	2010-03-10 11:47:54.000000000 +0100
++++ tar-1.23/configure.ac	2010-04-07 20:35:40.393187469 +0200
+@@ -44,7 +44,7 @@ AC_CHECK_HEADERS_ONCE(fcntl.h linux/fd.h
+   sys/param.h sys/device.h sys/filio.h sys/gentape.h \
+   sys/inet.h sys/io/trioctl.h \
+   sys/mtio.h sys/time.h sys/tprintf.h sys/tape.h \
+-  unistd.h locale.h)
++  unistd.h locale.h attr/xattr.h sys/acl.h)
+ 
+ AC_CHECK_HEADERS([sys/buf.h], [], [],
+ [#if HAVE_SYS_PARAM_H
+@@ -91,6 +91,12 @@ gl_INIT
+ tar_PAXUTILS
+ 
+ AC_CHECK_FUNCS(fsync getdtablesize lstat mkfifo readlink symlink setlocale utimes)
++AC_CHECK_FUNCS(getxattr  fgetxattr  lgetxattr \
++               setxattr  fsetxattr  lsetxattr \
++               listxattr flistxattr llistxattr,
++               AC_DEFINE(HAVE_XATTRS,,[Define if we have a working extended attributes]),)
++AC_CHECK_LIB(acl, acl_get_fd)
++
+ AC_CHECK_DECLS([getgrgid],,, [#include <grp.h>])
+ AC_CHECK_DECLS([getpwuid],,, [#include <pwd.h>])
+ AC_CHECK_DECLS([time],,, [#include <time.h>])
+@@ -214,6 +220,7 @@ AC_DEFINE_UNQUOTED(DEFAULT_QUOTING_STYLE
+ # Iconv
+ AM_ICONV
+ AC_CHECK_HEADERS(iconv.h)
++AC_CHECK_HEADERS(attr/xattr.h)
+ AC_CHECK_TYPE(iconv_t,:,
+               AC_DEFINE(iconv_t, int,
+                         [Conversion descriptor type]),
+@@ -223,6 +230,17 @@ AC_CHECK_TYPE(iconv_t,:,
+ #endif
+ ])
+ 
++AC_ARG_ENABLE(selinux,
++  AC_HELP_STRING([--enable-selinux],
++    [enable SELinux support (disabled by default)]),
++  [selinux_enabled=$enableval],
++  [selinux_enabled=no])
++
++if test "x$selinux_enabled" = xyes; then
++  AC_CHECK_LIB(selinux, getfilecon)
++  AC_CHECK_HEADERS(selinux/selinux.h)
++fi
++
+ # Gettext.
+ AM_GNU_GETTEXT([external], [need-formatstring-macros])
+ AM_GNU_GETTEXT_VERSION([0.16])
+diff -urNp tar-1.23-orig/doc/tar.texi tar-1.23/doc/tar.texi
+--- tar-1.23-orig/doc/tar.texi	2010-03-09 15:24:24.000000000 +0100
++++ tar-1.23/doc/tar.texi	2010-04-07 20:35:40.413184481 +0200
+@@ -2364,6 +2364,10 @@ Normally when creating an archive, @comm
+ @samp{/} from member names.  This option disables that behavior.
+ @xref{absolute}.
+ 
++@opsummary{acl}
++@item --acls
++Causes @command{tar} to store ACL's.  @xref{Attributes}.
++
+ @opsummary{after-date}
+ @item --after-date
+ 
+@@ -2885,6 +2889,10 @@ contents have changed (as opposed to jus
+ also back up files for which any status information has
+ changed).  @xref{after}.
+ 
++@opsummary{no-acl}
++@item --no-acls
++Causes @command{tar} not to store and not to extract ACL's.  @xref{Attributes}.
++
+ @opsummary{no-anchored}
+ @item --no-anchored
+ An exclude pattern can match any subsequence of the name's components.
+@@ -2968,11 +2976,21 @@ locations.  Usually @command{tar} determ
+ the archive can be seeked or not.  Use this option to disable this
+ mechanism.
+ 
++@opsummary{no-selinux}
++@item --no-selinux
++Causes @command{tar} not to store and not to extract SELinux security context.
++@xref{Attributes}.
++
+ @opsummary{no-unquote}
+ @item --no-unquote
+ Treat all input file or member names literally, do not interpret
+ escape sequences.  @xref{input name quoting}.
+ 
++@opsummary{no-xattrs}
++@item --no-xattrs
++Causes @command{tar} not to store and not to extract xattrs. This option also
++enables @option{--no-selinux} and @option{--no-acls}.  @xref{Attributes}.
++
+ @opsummary{no-wildcards}
+ @item --no-wildcards
+ Do not use wildcards.
+@@ -3202,6 +3220,11 @@ in cases when such recognition fails.  I
+ archive is open for reading (e.g. with @option{--list} or
+ @option{--extract} options).
+ 
++@opsummary{selinux}
++@item --selinux
++Causes @command{tar} to store SElinux security context.  @xref{Attributes}.
++
++
+ @opsummary{show-defaults}
+ @item --show-defaults
+ 
+@@ -3411,6 +3434,11 @@ Enable or disable warning messages ident
+ messages are suppressed if @var{keyword} is prefixed with @samp{no-}.
+ @xref{warnings}.
+ 
++@opsummary{xattrs}
++@item --xattrs
++Causes @command{tar} to store xattrs. This option also enables
++@option{--selinux} and @option{--acls}.  @xref{Attributes}.
++
+ @opsummary{wildcards}
+ @item --wildcards
+ Use wildcards when matching member names with patterns.
+@@ -8599,6 +8627,8 @@ implementation able to read @samp{ustar}
+ most @samp{posix} archives as well, with the only exception that any
+ additional information (such as long file names etc.) will in such
+ case be extracted as plain text files along with the files it refers to.
++This is the only format that can store ACLs, SELinux context and extended
++attributes.
+ 
+ This archive format will be the default format for future versions
+ of @GNUTAR{}.
+@@ -9160,6 +9190,51 @@ Same as both @option{--same-permissions}
+ 
+ This option is deprecated, and will be removed in @GNUTAR{} version 1.23.
+ 
++@opindex acls
++@item --acls
++This option causes @command{tar} to store the current ACL in the archive.
++
++The @option{--acls} option has no equivalent short option name.
++
++@opindex selinux
++@item --selinux
++This option causes @command{tar} to store the current SELinux security context
++information in the archive.
++
++The @option{--selinux} option has no equivalent short option name.
++
++@opindex xattrs
++@item --xattrs
++This option causes @command{tar} to store the current extended attributes in
++the archive. This option also enables @option{--acls} and @option{--selinux} if
++they haven't been set already.
++
++The @option{--xattrs} option has no equivalent short option name.
++
++@opindex no-acls
++@item --no-acls
++This option causes @command{tar} not to store the current ACL in the archive
++and not to extract any ACL information in an archive.
++
++The @option{--no-acls} option has no equivalent short option name.
++
++@opindex no-selinux
++@item --no-selinux
++This option causes @command{tar} not to store the current SELinux security
++context information in the archive and not to extract any SELinux information in
++an archive.
++
++The @option{--no-selinux} option has no equivalent short option name.
++
++@opindex no-xattrs
++@item --no-xattrs
++This option causes @command{tar} not to store the current extended attributes in
++the archive and not to extract any extended attributes in an archive. This
++option also enables @option{--no-acls} and @option{--no-selinux} if
++they haven't been set already.
++
++The @option{--no-xattrs} option has no equivalent short option name.
++
+ @end table
+ 
+ @node Portability
+diff -urNp tar-1.23-orig/src/common.h tar-1.23/src/common.h
+--- tar-1.23-orig/src/common.h	2010-01-26 13:21:18.000000000 +0100
++++ tar-1.23/src/common.h	2010-04-07 20:35:40.417182960 +0200
+@@ -251,6 +251,15 @@ GLOBAL int same_owner_option;
+ /* If positive, preserve permissions when extracting.  */
+ GLOBAL int same_permissions_option;
+ 
++/* If positive, save the SELinux context.  */
++GLOBAL int selinux_context_option;
++
++/* If positive, save the ACLs.  */
++GLOBAL int acls_option;
++
++/* If positive, save the user and root xattrs.  */
++GLOBAL int xattrs_option;
++
+ /* When set, strip the given number of file name components from the file name
+    before extracting */
+ GLOBAL size_t strip_name_components;
+@@ -732,6 +741,9 @@ extern char *output_start;
+ 
+ void update_archive (void);
+ 
++/* Module attrs.c.  */
++#include "xattrs.h"
++
+ /* Module xheader.c.  */
+ 
+ void xheader_init (struct xheader *xhdr);
+@@ -753,6 +765,12 @@ bool xheader_string_end (struct xheader 
+ bool xheader_keyword_deleted_p (const char *kw);
+ char *xheader_format_name (struct tar_stat_info *st, const char *fmt,
+ 			   size_t n);
++void xheader_xattr_init(struct tar_stat_info *st);
++void xheader_xattr_free(struct xattr_array *vals, size_t sz);
++void xheader_xattr_copy(const struct tar_stat_info *st,
++                        struct xattr_array **vals, size_t *sz);
++void xheader_xattr_add(struct tar_stat_info *st,
++                       const char *key, const char *val, size_t len);
+ 
+ /* Module system.c */
+ 
+diff -urNp tar-1.23-orig/src/create.c tar-1.23/src/create.c
+--- tar-1.23-orig/src/create.c	2010-03-09 13:52:41.000000000 +0100
++++ tar-1.23/src/create.c	2010-04-07 20:37:14.972186814 +0200
+@@ -24,6 +24,7 @@
+ #include <quotearg.h>
+ 
+ #include "common.h"
++
+ #include <hash.h>
+ 
+ struct link
+@@ -947,6 +948,30 @@ start_header (struct tar_stat_info *st)
+       GNAME_TO_CHARS (st->gname, header->header.gname);
+     }
+ 
++  if (archive_format == POSIX_FORMAT)
++    {
++      if (acls_option > 0)
++        {
++          if (st->acls_a_ptr)
++            xheader_store ("SCHILY.acl.access", st, NULL);
++          if (st->acls_d_ptr)
++            xheader_store ("SCHILY.acl.default", st, NULL);
++        }
++      if ((selinux_context_option > 0) && st->cntx_name)
++        xheader_store ("RHT.security.selinux", st, NULL);
++      if (xattrs_option > 0)
++        {
++          size_t scan_xattr = 0;
++          struct xattr_array *xattr_map = st->xattr_map;
++
++          while (scan_xattr < st->xattr_map_size)
++            {
++              xheader_store (xattr_map[scan_xattr].xkey, st, &scan_xattr);
++              ++scan_xattr;
++            }
++        }
++    }
++
+   return header;
+ }
+ 
+@@ -1580,6 +1605,10 @@ dump_file0 (struct tar_stat_info *st, co
+ 	    }
+ 	}
+ 
++      xattrs_acls_get(st, p, fd, !is_dir);
++      xattrs_selinux_get(st, p, fd);
++      xattrs_xattrs_get(st, p, fd);
++
+       if (is_dir)
+ 	{
+ 	  const char *tag_file_name;
+@@ -1702,6 +1731,9 @@ dump_file0 (struct tar_stat_info *st, co
+       if (NAME_FIELD_SIZE - (archive_format == OLDGNU_FORMAT) < size)
+ 	write_long_link (st);
+ 
++      xattrs_selinux_get(st, p, -1);
++      xattrs_xattrs_get(st, p, -1);
++
+       block_ordinal = current_block_ordinal ();
+       st->stat.st_size = 0;	/* force 0 size on symlink */
+       header = start_header (st);
+@@ -1720,11 +1752,23 @@ dump_file0 (struct tar_stat_info *st, co
+     }
+ #endif
+   else if (S_ISCHR (st->stat.st_mode))
+-    type = CHRTYPE;
++    {
++      type = CHRTYPE;
++      xattrs_selinux_get(st, p, -1);
++      xattrs_xattrs_get(st, p, -1);
++    }
+   else if (S_ISBLK (st->stat.st_mode))
+-    type = BLKTYPE;
++    {
++      type = BLKTYPE;
++      xattrs_selinux_get(st, p, -1);
++      xattrs_xattrs_get(st, p, -1);
++    }
+   else if (S_ISFIFO (st->stat.st_mode))
+-    type = FIFOTYPE;
++    {
++      type = FIFOTYPE;
++      xattrs_selinux_get(st, p, -1);
++      xattrs_xattrs_get(st, p, -1);
++    }
+   else if (S_ISSOCK (st->stat.st_mode))
+     {
+       WARNOPT (WARN_FILE_IGNORED,
+diff -urNp tar-1.23-orig/src/extract.c tar-1.23/src/extract.c
+--- tar-1.23-orig/src/extract.c	2010-01-26 12:28:09.000000000 +0100
++++ tar-1.23/src/extract.c	2010-04-07 20:35:40.419184383 +0200
+@@ -70,6 +70,13 @@ struct delayed_set_stat
+     mode_t invert_permissions;
+     enum permstatus permstatus;
+     bool after_links;
++    char *cntx_name;
++    char *acls_a_ptr;
++    size_t acls_a_len;
++    char *acls_d_ptr;
++    size_t acls_d_len;
++    size_t xattr_map_size;   /* Size of the xattr map */
++    struct xattr_array *xattr_map;
+     char file_name[1];
+   };
+ 
+@@ -97,6 +104,18 @@ struct delayed_link
+        hard-linked together.  */
+     struct string_list *sources;
+ 
++    /* SELinux context */
++    char *cntx_name;
++
++    /* ACLs */
++    char *acls_a_ptr;
++    size_t acls_a_len;
++    char *acls_d_ptr;
++    size_t acls_d_len;
++
++    size_t xattr_map_size;   /* Size of the xattr map */
++    struct xattr_array *xattr_map;
++
+     /* The desired target of the desired link.  */
+     char target[1];
+   };
+@@ -290,6 +309,10 @@ set_stat (char const *file_name,
+ 	 give files away.  */
+     }
+ 
++  xattrs_acls_set(st, file_name, typeflag);
++  xattrs_selinux_set(st, file_name, typeflag);
++  xattrs_xattrs_set(st, file_name, typeflag);
++
+   if (0 < same_owner_option && permstatus != INTERDIR_PERMSTATUS)
+     {
+       /* When lchown exists, it should be used to change the attributes of
+@@ -366,6 +389,29 @@ delay_set_stat (char const *file_name, s
+   data->invert_permissions = invert_permissions;
+   data->permstatus = permstatus;
+   data->after_links = 0;
++  data->cntx_name = NULL;
++  assign_string (&data->cntx_name, st->cntx_name);
++  if (st->acls_a_ptr)
++    {
++      data->acls_a_ptr = xmemdup(st->acls_a_ptr, st->acls_a_len + 1);
++      data->acls_a_len = st->acls_a_len;
++    }
++  else
++    {
++      data->acls_a_ptr = NULL;
++      data->acls_a_len = 0;
++    }
++  if (st->acls_d_ptr)
++    {
++      data->acls_d_ptr = xmemdup(st->acls_d_ptr, st->acls_d_len + 1);
++      data->acls_d_len = st->acls_d_len;
++    }
++  else
++    {
++      data->acls_d_ptr = NULL;
++      data->acls_d_len = 0;
++    }
++  xheader_xattr_copy (st, &data->xattr_map, &data->xattr_map_size);
+   strcpy (data->file_name, file_name);
+   delayed_set_stat_head = data;
+ }
+@@ -571,6 +617,31 @@ maybe_recoverable (char *file_name, int 
+     }
+ }
+ 
++/* Restore stat extended attributes (xattr) for FILE_NAME, using information
++   given in *ST.  Restore before extraction because they may affect layout.
++   If not restoring permissions, invert the
++   INVERT_PERMISSIONS bits from the file's current permissions.
++   TYPEFLAG specifies the type of the file.
++   FILE_CREATED indicates set_xattr has created the file */
++static int
++set_xattr (char const *file_name, struct tar_stat_info const *st,
++	   mode_t invert_permissions, char typeflag, int *file_created)
++{
++  int status = 0;
++  int interdir_made = 0;
++
++  if ((xattrs_option >= 0) && st->xattr_map_size) {
++    mode_t mode = current_stat_info.stat.st_mode & MODE_RWX & ~ current_umask;
++
++    do
++      status = mknod (file_name, mode ^ invert_permissions, 0);
++    while (status && maybe_recoverable ((char *)file_name, &interdir_made));
++    xattrs_xattrs_set(st, file_name, typeflag);
++    *file_created = 1;
++  }
++  return(status);
++}
++
+ /* Fix the statuses of all directories whose statuses need fixing, and
+    which are not ancestors of FILE_NAME.  If AFTER_LINKS is
+    nonzero, do this for all such directories; otherwise, stop at the
+@@ -624,11 +695,22 @@ apply_nonancestor_delayed_set_stat (char
+ 	  sb.stat.st_gid = data->gid;
+ 	  sb.atime = data->atime;
+ 	  sb.mtime = data->mtime;
++          sb.cntx_name = data->cntx_name;
++          sb.acls_a_ptr = data->acls_a_ptr;
++          sb.acls_a_len = data->acls_a_len;
++          sb.acls_d_ptr = data->acls_d_ptr;
++          sb.acls_d_len = data->acls_d_len;
++          sb.xattr_map = data->xattr_map;
++          sb.xattr_map_size = data->xattr_map_size;
+ 	  set_stat (data->file_name, &sb, cur_info,
+ 		    data->invert_permissions, data->permstatus, DIRTYPE);
+ 	}
+ 
+       delayed_set_stat_head = data->next;
++      xheader_xattr_free (data->xattr_map, data->xattr_map_size);
++      free (data->cntx_name);
++      free (data->acls_a_ptr);
++      free (data->acls_d_ptr);
+       free (data);
+     }
+ }
+@@ -730,7 +812,7 @@ extract_dir (char *file_name, int typefl
+ 
+ 
+ static int
+-open_output_file (char *file_name, int typeflag, mode_t mode)
++open_output_file (char *file_name, int typeflag, mode_t mode, int file_created)
+ {
+   int fd;
+   int openflag = (O_WRONLY | O_BINARY | O_CREAT
+@@ -738,6 +820,10 @@ open_output_file (char *file_name, int t
+ 		     ? O_TRUNC
+ 		     : O_EXCL));
+ 
++  /* File might be created in set_xattr. So clear O_EXCL to avoid open() failure */
++  if (file_created)
++    openflag = openflag & ~O_EXCL;
++
+ #if O_CTG
+   /* Contiguous files (on the Masscomp) have to specify the size in
+      the open call that creates them.  */
+@@ -796,8 +882,18 @@ extract_file (char *file_name, int typef
+   else
+     {
+       int recover = RECOVER_NO;
++      int file_created = 0;
++      if (set_xattr (file_name, &current_stat_info, invert_permissions,
++		     typeflag, &file_created))
++        {
++          skip_member ();
++          open_error (file_name);
++          return 1;
++        }
++
+       do
+-	fd = open_output_file (file_name, typeflag, mode ^ invert_permissions);
++	fd = open_output_file (file_name, typeflag, mode ^ invert_permissions,
++			       file_created);
+       while (fd < 0
+ 	     && (recover = maybe_recoverable (file_name, &interdir_made))
+ 	         == RECOVER_OK);
+@@ -922,6 +1018,13 @@ create_placeholder_file (char *file_name
+ 			    + strlen (file_name) + 1);
+       p->sources->next = 0;
+       strcpy (p->sources->string, file_name);
++      p->cntx_name = NULL;
++      assign_string (&p->cntx_name, current_stat_info.cntx_name);
++      p->acls_a_ptr = NULL;
++      p->acls_a_len = 0;
++      p->acls_d_ptr = NULL;
++      p->acls_d_len = 0;
++      xheader_xattr_copy (&current_stat_info, &p->xattr_map, &p->xattr_map_size);
+       strcpy (p->target, current_stat_info.link_name);
+ 
+       h = delayed_set_stat_head;
+@@ -1335,6 +1438,13 @@ apply_delayed_links (void)
+ 		  struct tar_stat_info st1;
+ 		  st1.stat.st_uid = ds->uid;
+ 		  st1.stat.st_gid = ds->gid;
++                  st1.cntx_name = ds->cntx_name;
++                  st1.acls_a_ptr = ds->acls_a_ptr;
++                  st1.acls_a_len = ds->acls_a_len;
++                  st1.acls_d_ptr = ds->acls_d_ptr;
++                  st1.acls_d_len = ds->acls_d_len;
++                  st1.xattr_map = ds->xattr_map;
++                  st1.xattr_map_size = ds->xattr_map_size;
+ 		  set_stat (source, &st1, NULL, 0, 0, SYMTYPE);
+ 		  valid_source = source;
+ 		}
+@@ -1348,6 +1458,9 @@ apply_delayed_links (void)
+ 	  sources = next;
+ 	}
+ 
++   xheader_xattr_free (ds->xattr_map, ds->xattr_map_size);
++   free (ds->cntx_name);
++
+       {
+ 	struct delayed_link *next = ds->next;
+ 	free (ds);
+diff -urNp tar-1.23-orig/src/list.c tar-1.23/src/list.c
+--- tar-1.23-orig/src/list.c	2010-04-07 20:34:14.637500018 +0200
++++ tar-1.23/src/list.c	2010-04-07 20:35:40.421184013 +0200
+@@ -586,6 +586,13 @@ decode_header (union block *header, stru
+   assign_string (&stat_info->gname,
+ 		 header->header.gname[0] ? header->header.gname : NULL);
+ 
++  stat_info->acls_a_ptr = NULL;
++  stat_info->acls_a_len = 0;
++  stat_info->acls_d_ptr = NULL;
++  stat_info->acls_d_len = 0;
++  stat_info->cntx_name = NULL;
++  xheader_xattr_init(stat_info);
++
+   if (format == OLDGNU_FORMAT && incremental_option)
+     {
+       stat_info->atime.tv_sec = TIME_FROM_HEADER (header->oldgnu_header.atime);
+diff -urNp tar-1.23-orig/src/Makefile.am tar-1.23/src/Makefile.am
+--- tar-1.23-orig/src/Makefile.am	2010-01-26 12:30:20.000000000 +0100
++++ tar-1.23/src/Makefile.am	2010-04-07 20:35:40.423194594 +0200
+@@ -20,7 +20,7 @@
+ 
+ bin_PROGRAMS = tar
+ 
+-noinst_HEADERS = arith.h common.h tar.h
++noinst_HEADERS = arith.h common.h tar.h xattrs.h
+ tar_SOURCES = \
+  buffer.c\
+  checkpoint.c\
+@@ -42,10 +42,11 @@ tar_SOURCES = \
+  unlink.c\
+  update.c\
+  utf8.c\
+- warning.c
++ warning.c\
++ xattrs.c
+ 
+ INCLUDES = -I$(top_srcdir)/gnu -I../ -I../gnu -I$(top_srcdir)/lib -I../lib
+ 
+ LDADD = ../lib/libtar.a ../gnu/libgnu.a $(LIBINTL) $(LIBICONV)
+ 
+-tar_LDADD = $(LDADD) $(LIB_CLOCK_GETTIME)
++tar_LDADD = $(LIBS) $(LDADD) $(LIB_CLOCK_GETTIME)
+diff -urNp tar-1.23-orig/src/tar.c tar-1.23/src/tar.c
+--- tar-1.23-orig/src/tar.c	2010-03-09 13:52:41.000000000 +0100
++++ tar-1.23/src/tar.c	2010-04-07 20:35:40.426309460 +0200
+@@ -255,7 +255,8 @@ tar_set_quoting_style (char *arg)
+ 
+ enum
+ {
+-  ANCHORED_OPTION = CHAR_MAX + 1,
++  ACLS_OPTION = CHAR_MAX + 1,
++  ANCHORED_OPTION,
+   ATIME_PRESERVE_OPTION,
+   BACKUP_OPTION,
+   CHECK_DEVICE_OPTION,
+@@ -287,6 +288,7 @@ enum
+   MODE_OPTION,
+   MTIME_OPTION,
+   NEWER_MTIME_OPTION,
++  NO_ACLS_OPTION,
+   NO_ANCHORED_OPTION,
+   NO_AUTO_COMPRESS_OPTION,
+   NO_CHECK_DEVICE_OPTION,
+@@ -300,9 +302,11 @@ enum
+   NO_SAME_OWNER_OPTION,
+   NO_SAME_PERMISSIONS_OPTION,
+   NO_SEEK_OPTION,
++  NO_SELINUX_CONTEXT_OPTION,
+   NO_UNQUOTE_OPTION,
+   NO_WILDCARDS_MATCH_SLASH_OPTION,
+   NO_WILDCARDS_OPTION,
++  NO_XATTR_OPTION,
+   NULL_OPTION,
+   NUMERIC_OWNER_OPTION,
+   OCCURRENCE_OPTION,
+@@ -324,6 +328,7 @@ enum
+   RMT_COMMAND_OPTION,
+   RSH_COMMAND_OPTION,
+   SAME_OWNER_OPTION,
++  SELINUX_CONTEXT_OPTION,
+   SHOW_DEFAULTS_OPTION,
+   SHOW_OMITTED_DIRS_OPTION,
+   SHOW_TRANSFORMED_NAMES_OPTION,
+@@ -339,7 +344,8 @@ enum
+   VOLNO_FILE_OPTION,
+   WARNING_OPTION, 
+   WILDCARDS_MATCH_SLASH_OPTION,
+-  WILDCARDS_OPTION
++  WILDCARDS_OPTION,
++  XATTR_OPTION
+ };
+ 
+ const char *argp_program_version = "tar (" PACKAGE_NAME ") " VERSION;
+@@ -485,6 +491,10 @@ static struct argp_option options[] = {
+   {NULL, 0, NULL, 0,
+    N_("Handling of file attributes:"), GRID },
+ 
++  {"acls", ACLS_OPTION, 0, 0,
++   N_("Save the ACLs to the archive"), GRID+1 },
++  {"no-acls", NO_ACLS_OPTION, 0, 0,
++   N_("Don't extract the ACLs from the archive"), GRID+1 },
+   {"owner", OWNER_OPTION, N_("NAME"), 0,
+    N_("force NAME as owner for added files"), GRID+1 },
+   {"group", GROUP_OPTION, N_("NAME"), 0,
+@@ -515,6 +525,14 @@ static struct argp_option options[] = {
+   {"preserve-order", 's', 0, 0,
+    N_("sort names to extract to match archive"), GRID+1 },
+   {"same-order", 0, 0, OPTION_ALIAS, NULL, GRID+1 },
++  {"selinux", SELINUX_CONTEXT_OPTION, 0, 0,
++   N_("Save the SELinux context to the archive"), GRID+1 },
++  {"no-selinux", NO_SELINUX_CONTEXT_OPTION, 0, 0,
++   N_("Don't extract the SELinux context from the archive"), GRID+1 },
++  {"xattrs", XATTR_OPTION, 0, 0,
++   N_("Save the user/root xattrs to the archive"), GRID+1 },
++  {"no-xattrs", NO_XATTR_OPTION, 0, 0,
++   N_("Don't extract the user/root xattrs from the archive"), GRID+1 },
+   {"preserve", PRESERVE_OPTION, 0, 0,
+    N_("same as both -p and -s"), GRID+1 },
+   {"delay-directory-restore", DELAY_DIRECTORY_RESTORE_OPTION, 0, 0,
+@@ -2060,6 +2078,37 @@ parse_opt (int key, char *arg, struct ar
+       same_permissions_option = -1;
+       break;
+ 
++    case ACLS_OPTION:
++      set_archive_format ("posix");
++      acls_option = 1;
++      break;
++
++    case NO_ACLS_OPTION:
++      acls_option = -1;
++      break;
++
++    case SELINUX_CONTEXT_OPTION:
++      set_archive_format ("posix");
++      selinux_context_option = 1;
++      break;
++
++    case NO_SELINUX_CONTEXT_OPTION:
++      selinux_context_option = -1;
++      break;
++
++    case XATTR_OPTION:
++      set_archive_format ("posix");
++      if (!acls_option) acls_option = 1;
++      if (!selinux_context_option) selinux_context_option = 1;
++      xattrs_option = 1;
++      break;
++
++    case NO_XATTR_OPTION:
++      if (!acls_option) acls_option = -1;
++      if (!selinux_context_option) selinux_context_option = -1;
++      xattrs_option = -1;
++      break;
++
+     case RECURSION_OPTION:
+       recursion_option = FNM_LEADING_DIR;
+       break;
+@@ -2442,6 +2491,29 @@ decode_options (int argc, char **argv)
+ 	  || subcommand_option != LIST_SUBCOMMAND))
+     USAGE_ERROR ((0, 0, _("--pax-option can be used only on POSIX archives")));
+ 
++  /* star create's non-POSIX typed archives with xattr support, so allow the
++     extra headers */
++  if ((acls_option > 0)
++      && archive_format != POSIX_FORMAT
++      && (subcommand_option != EXTRACT_SUBCOMMAND
++	  || subcommand_option != DIFF_SUBCOMMAND
++	  || subcommand_option != LIST_SUBCOMMAND))
++    USAGE_ERROR ((0, 0, _("--acls can be used only on POSIX archives")));
++
++  if ((selinux_context_option > 0)
++      && archive_format != POSIX_FORMAT
++      && (subcommand_option != EXTRACT_SUBCOMMAND
++	  || subcommand_option != DIFF_SUBCOMMAND
++	  || subcommand_option != LIST_SUBCOMMAND))
++    USAGE_ERROR ((0, 0, _("--selinux can be used only on POSIX archives")));
++
++  if ((xattrs_option > 0)
++      && archive_format != POSIX_FORMAT
++      && (subcommand_option != EXTRACT_SUBCOMMAND
++	  || subcommand_option != DIFF_SUBCOMMAND
++	  || subcommand_option != LIST_SUBCOMMAND))
++    USAGE_ERROR ((0, 0, _("--xattrs can be used only on POSIX archives")));
++
+   /* If ready to unlink hierarchies, so we are for simpler files.  */
+   if (recursive_unlink_option)
+     old_files_option = UNLINK_FIRST_OLD_FILES;
+@@ -2662,11 +2734,15 @@ tar_stat_init (struct tar_stat_info *st)
+ void
+ tar_stat_destroy (struct tar_stat_info *st)
+ {
++  xheader_xattr_free (st->xattr_map, st->xattr_map_size);
+   free (st->orig_file_name);
+   free (st->file_name);
+   free (st->link_name);
+   free (st->uname);
+   free (st->gname);
++  free (st->cntx_name);
++  free (st->acls_a_ptr);
++  free (st->acls_d_ptr);
+   free (st->sparse_map);
+   free (st->dumpdir);
+   xheader_destroy (&st->xhdr);
+diff -urNp tar-1.23-orig/src/tar.h tar-1.23/src/tar.h
+--- tar-1.23-orig/src/tar.h	2010-01-26 12:30:20.000000000 +0100
++++ tar-1.23/src/tar.h	2010-04-07 20:35:40.428311754 +0200
+@@ -276,6 +276,14 @@ struct xheader
+   uintmax_t string_length;
+ };
+ 
++/* Information about xattrs for a file.  */
++struct xattr_array
++  {
++    char *xkey;
++    char *xval_ptr;
++    size_t xval_len;
++  };
++
+ struct tar_stat_info
+ {
+   char *orig_file_name;     /* name of file read from the archive header */
+@@ -287,6 +295,15 @@ struct tar_stat_info
+ 
+   char          *uname;     /* user name of owner */
+   char          *gname;     /* group name of owner */
++
++  char *cntx_name;          /* SELinux context for the current archive entry. */
++
++  char *acls_a_ptr;         /* Access ACLs for the current archive entry. */
++  size_t acls_a_len;        /* Access ACLs for the current archive entry. */
++
++  char *acls_d_ptr;         /* Default ACLs for the current archive entry. */
++  size_t acls_d_len;        /* Default ACLs for the current archive entry. */
++
+   struct stat   stat;       /* regular filesystem stat */
+ 
+   /* STAT doesn't always have access, data modification, and status
+@@ -309,6 +326,9 @@ struct tar_stat_info
+   size_t sparse_map_size;   /* Size of the sparse map */
+   struct sp_array *sparse_map;
+ 
++  size_t xattr_map_size;   /* Size of the xattr map */
++  struct xattr_array *xattr_map;
++
+   /* Extended headers */
+   struct xheader xhdr;
+   
+diff -urNp tar-1.23-orig/src/xattrs.c tar-1.23/src/xattrs.c
+--- tar-1.23-orig/src/xattrs.c	1970-01-01 01:00:00.000000000 +0100
++++ tar-1.23/src/xattrs.c	2010-04-07 20:35:40.430309239 +0200
+@@ -0,0 +1,488 @@
++/* Create a tar archive.
++
++   Copyright (C) 2006 Free Software Foundation, Inc.
++
++   Written by James Antill, on 2006-07-27.
++
++   This program is free software; you can redistribute it and/or modify it
++   under the terms of the GNU General Public License as published by the
++   Free Software Foundation; either version 2, or (at your option) any later
++   version.
++
++   This program is distributed in the hope that it will be useful, but
++   WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
++   Public License for more details.
++
++   You should have received a copy of the GNU General Public License along
++   with this program; if not, write to the Free Software Foundation, Inc.,
++   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.  */
++
++#include <system.h>
++
++#include <quotearg.h>
++
++#include "common.h"
++
++
++#ifndef HAVE_SELINUX_SELINUX_H
++# undef HAVE_LIBSELINUX
++#endif
++
++#ifndef HAVE_ATTR_XATTR_H
++# undef HAVE_XATTRS
++#endif
++
++#ifndef HAVE_SYS_ACL_H
++# undef HAVE_LIBACL
++#endif
++
++#ifdef HAVE_SELINUX_SELINUX_H
++# include <selinux/selinux.h>
++#endif
++
++#ifdef HAVE_ATTR_XATTR_H
++# include <attr/xattr.h>
++#endif
++
++#ifdef HAVE_SYS_ACL_H
++# include <sys/acl.h>
++#endif
++
++
++#if 0 /* unused by xattr's atm. */
++static void xattrs__fd_get(struct tar_stat_info *st,
++                           char const *file_name, int fd, const char *attr,
++                           char **ret_ptr, size_t *ret_len)
++{
++#ifdef HAVE_XATTRS
++  static ssize_t asz = 1024;
++  ssize_t ret = 0;
++  static char *val = NULL;
++
++  if (!val) val = xmalloc (asz);
++
++  while (((ret = fgetxattr (fd, attr, val, asz)) == -1) &&
++         (errno == ERANGE))
++    {
++      asz <<= 1;
++      val = xrealloc (val, asz);
++    }
++
++  if (ret != -1)
++    {
++      *ret_ptr = xmemdup (val, ret + 1);
++      *ret_len = ret;
++    }
++  else if (errno != ENOATTR)
++    call_arg_warn ("fgetxattr", file_name);
++#endif
++}
++#endif
++
++static void xattrs__acls_get_a(struct tar_stat_info *st,
++                               char const *file_name, int fd,
++                               char **ret_ptr, size_t *ret_len)
++{ /* "system.posix_acl_access" */
++#ifdef HAVE_LIBACL
++  char *val = NULL;
++  ssize_t len;
++  acl_t acl;
++
++  if (fd != -1)
++  {
++    if ((acl = acl_get_fd (fd)) == (acl_t)NULL)
++    {
++      if (errno != ENOTSUP)
++        call_arg_warn ("acl_get_fd", file_name);
++      return;
++    }
++  }
++  else if ((acl = acl_get_file (file_name, ACL_TYPE_ACCESS)) == (acl_t)NULL)
++  {
++    if (errno != ENOTSUP)
++      call_arg_warn ("acl_get_file", file_name);
++    return;
++  }
++
++
++  val = acl_to_text(acl, &len);
++  acl_free (acl);
++
++  if (val == NULL)
++  {
++    call_arg_warn ("acl_to_text", file_name);
++    return;
++  }
++
++  *ret_ptr = xstrdup (val);
++  *ret_len = len;
++
++  acl_free (val);
++#endif
++}
++
++static void xattrs__acls_get_d(struct tar_stat_info *st,
++                               char const *file_name,
++                               char **ret_ptr, size_t *ret_len)
++{ /* "system.posix_acl_default" */
++#ifdef HAVE_LIBACL
++  char *val = NULL;
++  ssize_t len;
++  acl_t acl;
++
++  if ((acl = acl_get_file (file_name, ACL_TYPE_DEFAULT)) == (acl_t)NULL)
++  {
++    if (errno != ENOTSUP)
++      call_arg_warn ("acl_get_file", file_name);
++    return;
++  }
++
++  val = acl_to_text(acl, &len);
++  acl_free (acl);
++
++  if (val == NULL)
++  {
++    call_arg_warn ("acl_to_text", file_name);
++    return;
++  }
++
++  *ret_ptr = xstrdup (val);
++  *ret_len = len;
++
++  acl_free (val);
++#endif
++}
++
++void xattrs_acls_get(struct tar_stat_info *st, char const *file_name, int fd,
++                     int xisfile)
++{
++  if (acls_option > 0)
++    {
++#ifndef HAVE_LIBACL
++      static int done = 0;
++      if (!done)
++          WARN ((0, 0, _("ACL support requested, but not available")));
++      done = 1;
++#endif
++      xattrs__acls_get_a (st, file_name, fd,
++                          &st->acls_a_ptr, &st->acls_a_len);
++      if (!xisfile)
++        xattrs__acls_get_d (st, file_name,
++                            &st->acls_d_ptr, &st->acls_d_len);
++    }
++}
++
++void xattrs_selinux_get(struct tar_stat_info *st, char const *file_name, int fd)
++{
++  if (selinux_context_option > 0)
++  {
++#ifndef HAVE_LIBSELINUX
++      static int done = 0;
++      if (!done)
++          WARN ((0, 0, _("SELinux support requested, but not available")));
++      done = 1;
++#else
++    if (fd == -1)
++    {
++      if ((lgetfilecon (file_name, &st->cntx_name) == -1) && (errno != ENOTSUP) && (errno != ENODATA))
++        call_arg_warn ("lgetfilecon", file_name);
++    }
++    else if ((fgetfilecon (fd, &st->cntx_name) == -1) && (errno != ENOTSUP) && (errno != ENODATA))
++      call_arg_warn ("fgetfilecon", file_name);
++#endif
++  }
++}
++
++void xattrs_xattrs_get(struct tar_stat_info *st, char const *file_name, int fd)
++{
++  if (xattrs_option > 0)
++    { /* get all xattrs ... this include security.* and system.* if
++         available. We filter them here, but we have to filter them
++         in xattrs_xattrs_set() anyway.
++      */
++      static ssize_t xsz = 1024;
++      static char *xatrs = NULL;
++      ssize_t xret = -1;
++
++#ifndef HAVE_XATTRS
++      static int done = 0;
++      if ((xattrs_option > 0) && !done)
++          WARN ((0, 0, _("Xattr support requested, but not available")));
++      done = 1;
++#else
++
++      if (!xatrs) xatrs = xmalloc (xsz);
++
++      while (((fd == -1) ?
++              ((xret = llistxattr (file_name, xatrs, xsz)) == -1) :
++              ((xret = flistxattr (fd, xatrs, xsz)) == -1)) &&
++             (errno == ERANGE))
++        {
++          xsz <<= 1;
++          xatrs = xrealloc (xatrs, xsz);
++        }
++
++      if (xret == -1)
++        call_arg_warn ((fd == -1) ? "llistxattrs" : "flistxattrs", file_name);
++      else
++        {
++          const char *attr = xatrs;
++          static ssize_t asz = 1024;
++          static char *val = NULL;
++
++          if (!val) val = xmalloc (asz);
++
++          while (xret > 0)
++            {
++              size_t len = strlen (attr);
++              ssize_t aret = 0;
++
++              /* Archive all xattrs during creation, decide at extraction time
++               * which ones are of interest/use for the target filesystem. */
++              while (((fd == -1) ?
++                      ((aret = lgetxattr (file_name, attr, val, asz)) == -1) :
++                      ((aret = fgetxattr (fd, attr, val, asz)) == -1)) &&
++                     (errno == ERANGE))
++                {
++                  asz <<= 1;
++                  val = xrealloc (val, asz);
++                }
++
++              if (aret != -1)
++                xheader_xattr_add (st, attr, val, aret);
++              else if (errno != ENOATTR)
++                call_arg_warn ((fd==-1) ? "lgetxattr" : "fgetxattr", file_name);
++
++              attr += len + 1;
++              xret -= len + 1;
++            }
++        }
++#endif
++    }
++}
++
++static void xattrs__fd_set(struct tar_stat_info const *st,
++                           char const *file_name, char typeflag,
++                           const char *attr,
++                           const char *ptr, size_t len)
++{
++#ifdef HAVE_XATTRS
++  if (ptr)
++    {
++      const char *sysname = "setxattr";
++      int ret = -1;
++
++      if (typeflag != SYMTYPE)
++        ret = setxattr (file_name, attr, ptr, len, 0);
++      else
++        {
++          sysname = "lsetxattr";
++          ret = lsetxattr (file_name, attr, ptr, len, 0);
++        }
++
++      /* do not print warnings when SELinux is disabled */
++      if ((ret == -1) && (errno != EPERM) && (errno != ENOTSUP))
++        call_arg_error(sysname, file_name);
++    }
++#endif
++}
++
++/* convert unix permissions into an ACL ... needed due to "default" ACLs */
++#ifdef HAVE_LIBACL
++static acl_t perms2acl(int perms)
++{
++  char val[] = "user::---,group::---,other::---";
++  /*            0123456789 123456789 123456789 123456789 */
++
++   /* user */
++  if (perms & 0400) val[ 6] = 'r';
++  if (perms & 0200) val[ 7] = 'w';
++  if (perms & 0100) val[ 8] = 'x';
++
++  /* group */
++  if (perms & 0040) val[17] = 'r';
++  if (perms & 0020) val[18] = 'w';
++  if (perms & 0010) val[19] = 'x';
++
++  /* other */
++  if (perms & 0004) val[28] = 'r';
++  if (perms & 0002) val[29] = 'w';
++  if (perms & 0001) val[30] = 'x';
++
++  return (acl_from_text (val));
++}
++#endif
++
++static char *skip_to_ext_fields(char *ptr)
++{
++  ptr += strcspn(ptr, ":,\n"); /* skip tag name. Ie. user/group/default/mask */
++
++  if (*ptr != ':')
++    return (ptr); /* error? no user/group field */
++  ++ptr;
++
++  ptr += strcspn(ptr, ":,\n"); /* skip user/group name */
++
++  if (*ptr != ':')
++    return (ptr); /* error? no perms field */
++  ++ptr;
++
++  ptr += strcspn(ptr, ":,\n"); /* skip perms */
++
++  if (*ptr != ':')
++    return (ptr); /* no extra fields */
++
++  return (ptr);
++}
++
++/* The POSIX draft allows extra fields after the three main ones. Star
++   uses this to add a fourth field for user/group which is the numeric ID.
++   We just skip all extra fields atm. */
++static const char *fixup_extra_acl_fields(const char *ptr)
++{
++  char *src = (char *)ptr;
++  char *dst = (char *)ptr;
++
++  while (*src)
++  {
++    const char *old = src;
++    size_t len = 0;
++
++    src = skip_to_ext_fields(src);
++    len = src - old;
++    if (old != dst) memmove(dst, old, len);
++    dst += len;
++
++    if (*src == ':') /* We have extra fields, skip them all */
++      src += strcspn(src, "\n,");
++
++    if ((*src == '\n') || (*src == ','))
++      *dst++ = *src++; /* also done when dst == src, but that's ok */
++  }
++  if (src != dst)
++    *dst = 0;
++
++  return ptr;
++}
++
++static void xattrs__acls_set(struct tar_stat_info const *st,
++                             char const *file_name, int type,
++                             const char *ptr, size_t len)
++{ /* "system.posix_acl_access" */
++#ifdef HAVE_LIBACL
++  acl_t acl;
++
++  if (ptr)
++    {
++      /* assert (strlen (ptr) == len); */
++      ptr = fixup_extra_acl_fields(ptr);
++
++      acl = acl_from_text (ptr);
++      acls_option = 1;
++    }
++  else if (acls_option > 0)
++    acl = perms2acl (st->stat.st_mode);
++  else
++    return; /* don't call acl functions unless we first hit an ACL, or
++               --acls was passed explicitly */
++
++  if (acl == (acl_t)NULL)
++    {
++      call_arg_warn ("acl_from_text", file_name);
++      return;
++    }
++
++  if (acl_set_file (file_name, type, acl) == -1)
++    {
++      if (errno != ENOTSUP)
++        call_arg_warn ("acl_set_file", file_name);
++    }
++  acl_free (acl);
++#endif
++}
++
++void xattrs_acls_set(struct tar_stat_info const *st,
++                     char const *file_name, char typeflag)
++{
++  if ((acls_option >= 0) && (typeflag != SYMTYPE))
++    {
++#ifndef HAVE_LIBACL
++      static int done = 0;
++      if (!done)
++        WARN ((0, 0, _("ACL support requested, but not available")));
++      done = 1;
++#else
++      xattrs__acls_set (st, file_name, ACL_TYPE_ACCESS,
++                        st->acls_a_ptr, st->acls_a_len);
++      if ((typeflag == DIRTYPE) || (typeflag == GNUTYPE_DUMPDIR))
++        xattrs__acls_set (st, file_name, ACL_TYPE_DEFAULT,
++                          st->acls_d_ptr, st->acls_d_len);
++#endif
++    }
++}
++
++void xattrs_selinux_set(struct tar_stat_info const *st,
++                        char const *file_name, char typeflag)
++{
++  if ((selinux_context_option >= 0) && st->cntx_name)
++    {
++      const char *sysname = "setfilecon";
++      int ret = -1;
++
++#ifndef HAVE_LIBSELINUX
++      static int done = 0;
++      if (!done)
++          WARN ((0, 0, _("SELinux support requested, but not available")));
++      done = 1;
++#else
++      if (typeflag != SYMTYPE)
++        ret = setfilecon (file_name, st->cntx_name);
++      else
++        {
++          sysname = "lsetfilecon";
++          ret = lsetfilecon (file_name, st->cntx_name);
++        }
++
++      if ((ret == -1) && (errno == EPERM))
++        call_arg_warn(sysname, file_name);
++      else if ((ret == -1) && (errno != EOPNOTSUPP))
++        call_arg_error(sysname, file_name);
++#endif
++    }
++}
++
++void xattrs_xattrs_set(struct tar_stat_info const *st,
++                       char const *file_name, char typeflag)
++{
++  if ((xattrs_option >= 0) && st->xattr_map_size)
++    {
++      size_t scan = 0;
++
++#ifndef HAVE_XATTRS
++      static int done = 0;
++      if (!done)
++          WARN ((0, 0, _("Xattr support requested, but not available")));
++      done = 1;
++#else
++      while (scan < st->xattr_map_size)
++        {
++          char *keyword = st->xattr_map[scan].xkey;
++
++          /* assert (!memcpy (keyword, "SCHILY.xattr.", strlen("SCHILY.xattr."))); */
++          keyword += strlen("SCHILY.xattr.");
++
++          if (strncmp (keyword, "user.", strlen("user.")) &&
++              strncmp (keyword, "lustre.", strlen("lustre.")) &&
++              strncmp (keyword, "trusted.", strlen("trusted.")))
++            continue; /* don't try and set anything but normal xattrs */
++
++          xattrs__fd_set (st, file_name, typeflag, keyword,
++                          st->xattr_map[scan].xval_ptr,
++                          st->xattr_map[scan].xval_len);
++
++          ++scan;
++        }
++#endif
++    }
++}
+diff -urNp tar-1.23-orig/src/xattrs.h tar-1.23/src/xattrs.h
+--- tar-1.23-orig/src/xattrs.h	1970-01-01 01:00:00.000000000 +0100
++++ tar-1.23/src/xattrs.h	2010-04-07 20:35:40.431310870 +0200
+@@ -0,0 +1,14 @@
++
++extern void xattrs_acls_get(struct tar_stat_info *st,
++                            char const *file_name, int fd, int xisfile);
++extern void xattrs_selinux_get(struct tar_stat_info *st,
++                               char const *file_name, int fd);
++extern void xattrs_xattrs_get(struct tar_stat_info *st,
++                              char const *file_name, int fd);
++
++extern void xattrs_acls_set(struct tar_stat_info const *st,
++                            char const *file_name, char typeflag);
++extern void xattrs_selinux_set(struct tar_stat_info const *st,
++                               char const *file_name, char typeflag);
++extern void xattrs_xattrs_set(struct tar_stat_info const *st,
++                              char const *file_name, char typeflag);
+diff -urNp tar-1.23-orig/src/xheader.c tar-1.23/src/xheader.c
+--- tar-1.23-orig/src/xheader.c	2010-02-12 11:03:09.000000000 +0100
++++ tar-1.23/src/xheader.c	2010-04-07 20:35:40.434310075 +0200
+@@ -459,6 +459,74 @@ xheader_write_global (struct xheader *xh
+     }
+ }
+ 
++void xheader_xattr_init(struct tar_stat_info *st)
++{
++  st->xattr_map = NULL;
++  st->xattr_map_size = 0;
++}
++
++void xheader_xattr_free(struct xattr_array *xattr_map, size_t xattr_map_size)
++{
++  size_t scan = 0;
++
++  while (scan < xattr_map_size)
++    {
++      free (xattr_map[scan].xkey);
++      free (xattr_map[scan].xval_ptr);
++
++      ++scan;
++    }
++  free (xattr_map);
++}
++
++static void xheader_xattr__add(struct xattr_array **xattr_map,
++                               size_t *xattr_map_size,
++                               const char *key, const char *val, size_t len)
++{
++  size_t pos = (*xattr_map_size)++;
++
++  *xattr_map = xrealloc (*xattr_map,
++                         *xattr_map_size * sizeof(struct xattr_array));
++  (*xattr_map)[pos].xkey = xstrdup (key);
++  (*xattr_map)[pos].xval_ptr = xmemdup (val, len + 1);
++  (*xattr_map)[pos].xval_len = len;
++}
++
++void xheader_xattr_add(struct tar_stat_info *st,
++                       const char *key, const char *val, size_t len)
++{
++  size_t klen = strlen (key);
++  char *xkey = xmalloc (strlen("SCHILY.xattr.") + klen + 1);
++  char *tmp = xkey;
++
++  tmp = stpcpy (tmp, "SCHILY.xattr.");
++  tmp = stpcpy (tmp, key);
++
++  xheader_xattr__add (&st->xattr_map, &st->xattr_map_size, xkey, val, len);
++
++  free (xkey);
++}
++
++void xheader_xattr_copy(const struct tar_stat_info *st,
++                        struct xattr_array **xattr_map, size_t *xattr_map_size)
++{
++  size_t scan = 0;
++
++  *xattr_map = NULL;
++  *xattr_map_size = 0;
++
++  while (scan < st->xattr_map_size)
++    {
++      char  *key = st->xattr_map[scan].xkey;
++      char  *val = st->xattr_map[scan].xval_ptr;
++      size_t len = st->xattr_map[scan].xval_len;
++
++      xheader_xattr__add(xattr_map, xattr_map_size, key, val, len);
++
++      ++scan;
++    }
++}
++
+ 
+ /* General Interface */
+ 
+@@ -472,6 +540,7 @@ struct xhdr_tab
+ 		 struct xheader *, void const *data);
+   void (*decoder) (struct tar_stat_info *, char const *, char const *, size_t);
+   int flags;
++  bool prefix;
+ };
+ 
+ /* This declaration must be extern, because ISO C99 section 6.9.2
+@@ -488,8 +557,17 @@ locate_handler (char const *keyword)
+   struct xhdr_tab const *p;
+ 
+   for (p = xhdr_tab; p->keyword; p++)
+-    if (strcmp (p->keyword, keyword) == 0)
+-      return p;
++    if (p->prefix)
++      {
++        if (strncmp (p->keyword, keyword, strlen(p->keyword)) == 0)
++          return p;
++      }
++  else
++      {
++        if (strcmp (p->keyword, keyword) == 0)
++          return p;
++      }
++
+   return NULL;
+ }
+ 
+@@ -499,7 +577,7 @@ xheader_protected_pattern_p (const char 
+   struct xhdr_tab const *p;
+ 
+   for (p = xhdr_tab; p->keyword; p++)
+-    if ((p->flags & XHDR_PROTECTED) && fnmatch (pattern, p->keyword, 0) == 0)
++    if (!p->prefix && (p->flags & XHDR_PROTECTED) && fnmatch (pattern, p->keyword, 0) == 0)
+       return true;
+   return false;
+ }
+@@ -510,7 +588,7 @@ xheader_protected_keyword_p (const char 
+   struct xhdr_tab const *p;
+ 
+   for (p = xhdr_tab; p->keyword; p++)
+-    if ((p->flags & XHDR_PROTECTED) && strcmp (p->keyword, keyword) == 0)
++    if (!p->prefix && (p->flags & XHDR_PROTECTED) && strcmp (p->keyword, keyword) == 0)
+       return true;
+   return false;
+ }
+@@ -1469,6 +1547,71 @@ volume_filename_decoder (struct tar_stat
+ }
+ 
+ static void
++xattr_selinux_coder (struct tar_stat_info const *st, char const *keyword,
++                     struct xheader *xhdr, void const *data)
++{
++  code_string (st->cntx_name, keyword, xhdr);
++}
++
++static void
++xattr_selinux_decoder (struct tar_stat_info *st,
++                       char const *keyword, char const *arg, size_t size)
++{
++  decode_string (&st->cntx_name, arg);
++}
++
++static void
++xattr_acls_a_coder (struct tar_stat_info const *st , char const *keyword,
++                    struct xheader *xhdr, void const *data)
++{
++  xheader_print_n (xhdr, keyword, st->acls_a_ptr, st->acls_a_len);
++}
++
++static void
++xattr_acls_a_decoder (struct tar_stat_info *st,
++                      char const *keyword, char const *arg, size_t size)
++{
++  st->acls_a_ptr = xmemdup (arg, size + 1);
++  st->acls_a_len = size;
++}
++
++static void
++xattr_acls_d_coder (struct tar_stat_info const *st , char const *keyword,
++                    struct xheader *xhdr, void const *data)
++{
++  xheader_print_n (xhdr, keyword, st->acls_d_ptr, st->acls_d_len);
++}
++
++static void
++xattr_acls_d_decoder (struct tar_stat_info *st,
++                      char const *keyword, char const *arg, size_t size)
++{
++  st->acls_d_ptr = xmemdup (arg, size + 1);
++  st->acls_d_len = size;
++}
++
++static void
++xattr_coder (struct tar_stat_info const *st , char const *keyword,
++             struct xheader *xhdr, void const *data)
++{
++  struct xattr_array *xattr_map = st->xattr_map;
++  const size_t *off = data;
++  xheader_print_n (xhdr, keyword,
++                   xattr_map[*off].xval_ptr, xattr_map[*off].xval_len);
++}
++
++static void
++xattr_decoder (struct tar_stat_info *st,
++               char const *keyword, char const *arg, size_t size)
++{
++  char *xstr = NULL;
++
++  xstr = xmemdup(arg, size + 1);
++  xheader_xattr_add(st, keyword + strlen("SCHILY.xattr."), xstr, size);
++  free(xstr);
++}
++
++static void
+ sparse_major_coder (struct tar_stat_info const *st, char const *keyword,
+ 		    struct xheader *xhdr, void const *data)
+ {
+@@ -1505,53 +1648,53 @@ sparse_minor_decoder (struct tar_stat_in
+ }
+ 
+ struct xhdr_tab const xhdr_tab[] = {
+-  { "atime",	atime_coder,	atime_decoder,	  0 },
+-  { "comment",	dummy_coder,	dummy_decoder,	  0 },
+-  { "charset",	dummy_coder,	dummy_decoder,	  0 },
+-  { "ctime",	ctime_coder,	ctime_decoder,	  0 },
+-  { "gid",	gid_coder,	gid_decoder,	  0 },
+-  { "gname",	gname_coder,	gname_decoder,	  0 },
+-  { "linkpath", linkpath_coder, linkpath_decoder, 0 },
+-  { "mtime",	mtime_coder,	mtime_decoder,	  0 },
+-  { "path",	path_coder,	path_decoder,	  0 },
+-  { "size",	size_coder,	size_decoder,	  0 },
+-  { "uid",	uid_coder,	uid_decoder,	  0 },
+-  { "uname",	uname_coder,	uname_decoder,	  0 },
++  { "atime",   atime_coder,    atime_decoder,    0, false },
++  { "comment", dummy_coder,    dummy_decoder,    0, false },
++  { "charset", dummy_coder,    dummy_decoder,    0, false },
++  { "ctime",   ctime_coder,    ctime_decoder,    0, false },
++  { "gid",     gid_coder,      gid_decoder,      0, false },
++  { "gname",   gname_coder,    gname_decoder,    0, false },
++  { "linkpath", linkpath_coder, linkpath_decoder, 0, false },
++  { "mtime",   mtime_coder,    mtime_decoder,    0, false },
++  { "path",    path_coder,     path_decoder,     0, false },
++  { "size",    size_coder,     size_decoder,     0, false },
++  { "uid",     uid_coder,      uid_decoder,      0, false },
++  { "uname",   uname_coder,    uname_decoder,    0, false },
+ 
+   /* Sparse file handling */
+   { "GNU.sparse.name",       path_coder, path_decoder,
+-    XHDR_PROTECTED },
++    XHDR_PROTECTED, false },
+   { "GNU.sparse.major",      sparse_major_coder, sparse_major_decoder,
+-    XHDR_PROTECTED },
++    XHDR_PROTECTED, false },
+   { "GNU.sparse.minor",      sparse_minor_coder, sparse_minor_decoder,
+-    XHDR_PROTECTED },
++    XHDR_PROTECTED, false },
+   { "GNU.sparse.realsize",   sparse_size_coder, sparse_size_decoder,
+-    XHDR_PROTECTED },
++    XHDR_PROTECTED, false },
+   { "GNU.sparse.numblocks",  sparse_numblocks_coder, sparse_numblocks_decoder,
+-    XHDR_PROTECTED },
++    XHDR_PROTECTED, false },
+ 
+   /* tar 1.14 - 1.15.90 keywords. */
+   { "GNU.sparse.size",       sparse_size_coder, sparse_size_decoder,
+-    XHDR_PROTECTED },
++    XHDR_PROTECTED, false },
+   /* tar 1.14 - 1.15.1 keywords. Multiple instances of these appeared in 'x'
+      headers, and each of them was meaningful. It confilcted with POSIX specs,
+      which requires that "when extended header records conflict, the last one
+      given in the header shall take precedence." */
+   { "GNU.sparse.offset",     sparse_offset_coder, sparse_offset_decoder,
+-    XHDR_PROTECTED },
++    XHDR_PROTECTED, false },
+   { "GNU.sparse.numbytes",   sparse_numbytes_coder, sparse_numbytes_decoder,
+-    XHDR_PROTECTED },
++    XHDR_PROTECTED, false },
+   /* tar 1.15.90 keyword, introduced to remove the above-mentioned conflict. */
+   { "GNU.sparse.map",        NULL /* Unused, see pax_dump_header() */,
+-    sparse_map_decoder, 0 },
++    sparse_map_decoder, 0, false },
+ 
+   { "GNU.dumpdir",           dumpdir_coder, dumpdir_decoder,
+-    XHDR_PROTECTED },
++    XHDR_PROTECTED, false },
+ 
+   /* Keeps the tape/volume label. May be present only in the global headers.
+      Equivalent to GNUTYPE_VOLHDR.  */
+   { "GNU.volume.label", volume_label_coder, volume_label_decoder,
+-    XHDR_PROTECTED | XHDR_GLOBAL },
++    XHDR_PROTECTED | XHDR_GLOBAL, false },
+ 
+   /* These may be present in a first global header of the archive.
+      They provide the same functionality as GNUTYPE_MULTIVOL header.
+@@ -1560,11 +1703,40 @@ struct xhdr_tab const xhdr_tab[] = {
+      GNU.volume.offset keeps the offset of the start of this volume,
+      otherwise kept in oldgnu_header.offset.  */
+   { "GNU.volume.filename", volume_label_coder, volume_filename_decoder,
+-    XHDR_PROTECTED | XHDR_GLOBAL },
++    XHDR_PROTECTED | XHDR_GLOBAL, false },
+   { "GNU.volume.size", volume_size_coder, volume_size_decoder,
+-    XHDR_PROTECTED | XHDR_GLOBAL },
++    XHDR_PROTECTED | XHDR_GLOBAL, false },
+   { "GNU.volume.offset", volume_offset_coder, volume_offset_decoder,
+-    XHDR_PROTECTED | XHDR_GLOBAL },
++    XHDR_PROTECTED | XHDR_GLOBAL, false },
++
++  /* We get the SELinux value from filecon, so add a namespace for SELinux
++     instead of storing it in SCHILY.xattr.* (which would be RAW). */
++  { "RHT.security.selinux",
++    xattr_selinux_coder, xattr_selinux_decoder, 0, false },
++
++  /* ACLs, use the star format... */
++  { "SCHILY.acl.access",
++    xattr_acls_a_coder, xattr_acls_a_decoder, 0, false },
++
++  { "SCHILY.acl.default",
++    xattr_acls_d_coder, xattr_acls_d_decoder, 0, false },
++
++  /* FIXME: These are compat. for FC-6 ... we shipped a tar using the generic
++     header names by accident. */
++  { "SCHILY.xattr.security.selinux",
++    xattr_selinux_coder, xattr_selinux_decoder, 0, false },
++  { "SCHILY.xattr.system.posix_acl_access",
++    xattr_acls_a_coder, xattr_acls_a_decoder, 0, false },
++  { "SCHILY.xattr.system.posix_acl_default",
++    xattr_acls_d_coder, xattr_acls_d_decoder, 0, false },
++
++  /* xattrs use the star format.  note we only save some variants... */
++  { "SCHILY.xattr.user",    xattr_coder, xattr_decoder, 0, true },
++  { "SCHILY.xattr.trusted", xattr_coder, xattr_decoder, 0, true },
++  { "SCHILY.xattr.lustre",  xattr_coder, xattr_decoder, 0, true },
++
++  /* ignore everything else in the xattr namespaces... */
++  { "SCHILY.xattr",         dummy_coder, dummy_decoder, 0, true },
+ 
+-  { NULL, NULL, NULL, 0 }
++  { NULL, NULL, NULL, 0, false }
+ };

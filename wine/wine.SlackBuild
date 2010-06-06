@@ -61,7 +61,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -145,9 +145,9 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-sed -i \
+sed -i.rpath \
   -e '/WINE_TRY_CFLAGS/s| -Wl,--rpath,\\$ORIGIN/../lib||g' \
-  -e '/LDRPATH_INSTALL=/s|=".*"|=""|g' \
+  -e '/LDRPATH_INSTALL=/s|=".*RELPATH.*"|=""|g' \
   -e '/LDRPATH_LOCAL=/s|=".*"|=""|g' \
   configure.ac || exit 1
 
@@ -162,27 +162,32 @@ fi
 
 autoreconf -ivf || exit 1
 
+( unset ARCH
+
 CFLAGS="${SLKCFLAGS} -Wno-error" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --datadir=/usr/share \
   --sysconfdir=/etc/wine \
   --localstatedir=/var/lib \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-tests \
+  --with-x \
   --x-includes=/usr/include \
   --x-libraries=/usr/lib${LIBDIRSUFFIX} \
   ${SB_PAOPTS} ${ARCHOPT} ${SB_MMOPTS} \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
 
-make depend || exit 1
-make TARGETFLAGS="" -j${NJOBS} || exit 1
+make TARGETFLAGS="" -j${NJOBS} || make TARGETFLAGS="" || exit $?
 make install DESTDIR=${PKG} \
   LDCONFIG=/bin/true \
-  UPDATE_DESKTOP_DATABASE=/bin/true || exit 1
+  UPDATE_DESKTOP_DATABASE=/bin/true || exit $?
+
+) || exit $?
 
 mkdir -p ${PKG}/etc/wine
 
@@ -193,11 +198,6 @@ echo "/usr/lib${LIBDIRSUFFIX}/wine" \
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-if [ "${ARCH}" != "x86_64" ] ;then
-  mv ${PKG}/usr/bin/${NAME} ${PKG}/usr/bin/${NAME}32 || exit 1
-  ln -s /usr/bin/${NAME}32 ${PKG}/usr/bin/${NAME}
-fi
-
 # add wine dir to desktop
 mkdir -p ${PKG}/etc/xdg/menus/applications-merged
 zcat ${CWD}/desktop/wine.menu.gz \
@@ -207,9 +207,9 @@ zcat ${CWD}/desktop/wine.directory.gz \
   > ${PKG}/usr/share/desktop-directories/wine.directory || exit 1
 
 mkdir -p ${PKG}/usr/share/applications
-for desktop in ${NAME}-{mime-msi,oleview,notepad,regedit,uninstaller,wordpad,wine{boot,cfg,file,mine}}.desktop.gz; do
-  zcat ${CWD}/desktop/${desktop} \
-    > ${PKG}/usr/share/applications/${desktop%.gz}
+for desktop in ${NAME}-{mime-msi,oleview,notepad,regedit,taskmgr,uninstaller,winhelp,wordpad,wine{boot,cfg,file,mine}}.desktop; do
+  install -pm0644 ${CWD}/desktop/${desktop} \
+    ${PKG}/usr/share/applications/${desktop} || exit 1
 done
 
 desktop-file-install --delete-original --vendor="" \
@@ -221,14 +221,37 @@ mkdir -p ${PKG}/usr/share/icons/hicolor/48x48/apps
 zcat ${CWD}/desktop/${NAME}.png.gz \
   > ${PKG}/usr/share/icons/hicolor/48x48/apps/${NAME}.png || exit 1
 
+for ico in msiexec notepad regedit taskmgr winefile winemine wordpad ;do
+  rm -f programs/${ico}/${ico}*.png
+  icotool -x --width=48 --height=48 --bit-depth=32 -o programs/${ico}/ \
+    programs/${ico}/${ico}.ico || exit 1
+  install -p -m 644 programs/${ico}/${ico}*.png \
+    ${PKG}/usr/share/icons/hicolor/48x48/apps/wine_${ico}.png || exit 1
+done
+
+rm -f programs/winecfg/winecfg*.png
+icotool -x --width=48 --height=48 --bit-depth=32 -o programs/winecfg/ \
+  programs/winecfg/winecfg.ico || exit 1
+install -p -m 644 programs/winecfg/winecfg*.png \
+  ${PKG}/usr/share/icons/hicolor/48x48/apps/winecfg.png || exit 1
+
+rm -f programs/winhlp32/winhelp*.png
+icotool -x --width=48 --height=48 --bit-depth=32 -o programs/winhlp32/ \
+  programs/winhlp32/winhelp.ico || exit 1
+install -p -m 644 programs/winhlp32/winhelp*.png \
+  ${PKG}/usr/share/icons/hicolor/48x48/apps/wine_winhelp.png || exit 1
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  ANNOUNCE AUTHORS COPYING* ChangeLog LICENSE* README documentation/README.* \
+  ANNOUNCE AUTHORS COPYING* LICENSE* README documentation/README.* \
   ${CWD}/ChangeLog.SB ${DOCDIR}/
-[ "${SB_PA}" = "YES" ] && zcat ${CWD}/README-FEDORA-PULSEAUDIO.gz > ${DOCDIR}/README-FEDORA-PULSEAUDIO
+[ "${SB_PA}" = "YES" ] && zcat ${CWD}/README-FEDORA-PULSEAUDIO.gz \
+  > ${DOCDIR}/README-FEDORA-PULSEAUDIO
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -255,7 +278,24 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<'EOF'
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/gtk-update-icon-cache ]; then
+  \${CHROOT} /usr/bin/gtk-update-icon-cache -q /usr/share/icons/hicolor > /dev/null 2>&1
+fi
+if [ -x usr/bin/update-desktop-database ]; then
+  \${CHROOT} /usr/bin/update-desktop-database &> /dev/null
+fi
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
 # Add ld.so.conf.d directory to /etc/ld.so.conf:
 if fgrep ld.so.conf.d etc/ld.so.conf 1> /dev/null 2> /dev/null ; then
   true
@@ -277,7 +317,7 @@ if [ "${SB_REP}" = "YES" ] ;then
                  ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
                  ${SBDIR}/patches/
-  install -m0644 ${CWD}/desktop/*.gz \
+  install -m0644 ${CWD}/desktop/*.* \
                  ${SBDIR}/desktop/
 fi
 

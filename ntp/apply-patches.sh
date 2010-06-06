@@ -37,6 +37,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-mlock.patch
   zcat ${SB_PATCHDIR}/ntpstat-0.2-clksrc.patch.gz | patch -p2 -E --backup --verbose
   # process first packet in multipacket response
   zcat ${SB_PATCHDIR}/ntpstat-0.2-multipacket.patch.gz | patch -p2 -E --backup --verbose
+  # use current system variable names
+  patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/ntpstat-0.2-sysvars.patch
+  # print synchronization distance instead of dispersion
+  patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/ntpstat-0.2-maxerror.patch
 )
 
 set +e +o pipefail

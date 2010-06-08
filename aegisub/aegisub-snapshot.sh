@@ -3,8 +3,8 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-#snaproot="http://svn.aegisub.net/trunk/${module}"
-snaproot="http://svn.aegisub.net/branches/aegisub_2.1.8/${module}"
+snaproot="http://svn.aegisub.net/trunk/${module}"
+#snaproot="http://svn.aegisub.net/branches/aegisub_2.1.8/${module}"
 
 tmp=$(mktemp -d)
 
@@ -15,6 +15,7 @@ cleanup() {
 }
 
 unset CDPATH
+unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 

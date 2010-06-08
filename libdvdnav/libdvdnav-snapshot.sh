@@ -14,11 +14,14 @@ cleanup() {
 }
 
 unset CDPATH
+unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 
+[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+
 pushd "${tmp}"
-  svn export -r {$snap} ${snaproot} ${module}-${snap}
+  svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
     # Force revision number
     SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"
@@ -26,5 +29,5 @@ pushd "${tmp}"
     find . -type d -name .svn -print0 | xargs -0r rm -rf
     sed -i -e '/^\.PHONY: version\.h$/d' Makefile
   popd
-  tar -jcf "${pwd}"/${module}-${snap}.tar.bz2 ${module}-${snap}
+  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

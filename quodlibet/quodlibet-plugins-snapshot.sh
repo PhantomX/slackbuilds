@@ -14,6 +14,7 @@ cleanup() {
 }
 
 unset CDPATH
+unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 snap2=${snap/quodlibet-/}

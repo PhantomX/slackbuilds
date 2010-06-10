@@ -4,6 +4,8 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+
 zcat ${SB_PATCHDIR}/${NAME}-2007-png14.patch.gz | patch -p0 -E --backup --verbose
 
 ######
@@ -36,6 +38,8 @@ zcat ${SB_PATCHDIR}/${NAME}-elif.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-getline.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-poolfix.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-dvipsconfig.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-CVE-2010-0829-dvipng-multiple-array-indexing-errors.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-CVE-2010-0739_1440-integer-overflows.patch
 
 ######
 # mpeters contributed patches

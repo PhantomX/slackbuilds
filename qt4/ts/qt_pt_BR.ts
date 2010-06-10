@@ -1929,7 +1929,7 @@ Deseja removê-lo assim mesmo?</translation>
     <message>
         <location line="+3"/>
         <source>Traditional Chinese</source>
-        <translation type="unfinished"></translation>
+        <translation>Chinês Tradicional</translation>
     </message>
     <message>
         <location line="+3"/>
@@ -5929,19 +5929,19 @@ Por favor selecione um nome de arquivo diferente.</translation>
     <message>
         <location filename="../src/3rdparty/webkit/WebCore/platform/network/qt/QNetworkReplyHandler.cpp" line="+382"/>
         <source>Bad HTTP request</source>
-        <translation type="unfinished"></translation>
+        <translation>Requisição HTTP ruim</translation>
     </message>
     <message>
         <location filename="../src/3rdparty/webkit/WebCore/platform/qt/Localizations.cpp" line="+42"/>
         <source>Submit</source>
         <comment>default label for Submit buttons in forms on web pages</comment>
-        <translation type="unfinished"></translation>
+        <translation>Enviar</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Submit</source>
         <comment>Submit (input element) alt text for &lt;input&gt; elements with no alt, title, or value</comment>
-        <translation type="unfinished"></translation>
+        <translation>Enviar</translation>
     </message>
     <message>
         <location line="+5"/>
@@ -5953,79 +5953,79 @@ Por favor selecione um nome de arquivo diferente.</translation>
         <location line="+10"/>
         <source>This is a searchable index. Enter search keywords: </source>
         <comment>text that appears at the start of nearly-obsolete web pages in the form of a &apos;searchable index&apos;</comment>
-        <translation type="unfinished"></translation>
+        <translation>Isto é um índice pesquisável. Insira os termos para pesquisa:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Choose File</source>
         <comment>title for file button used in HTML forms</comment>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar Arquivo</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>No file selected</source>
         <comment>text to display in file button used in HTML forms when no file is selected</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nenhum arquivo selecionado</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Open in New Window</source>
         <comment>Open in New Window context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abrir em Nova Janela</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Save Link...</source>
         <comment>Download Linked File context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Salvar Link...</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Copy Link</source>
         <comment>Copy Link context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Copiar Link</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Open Image</source>
         <comment>Open Image in New Window context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abrir Imagem</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Save Image</source>
         <comment>Download Image context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Salvar Imagem</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Copy Image</source>
         <comment>Copy Link context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Copiar Imagem</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Open Frame</source>
         <comment>Open Frame in New Window context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abrir Quadro</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Copy</source>
         <comment>Copy context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Copiar</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Go Back</source>
         <comment>Back context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Voltar</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Go Forward</source>
         <comment>Forward context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Avançar</translation>
     </message>
     <message>
         <location line="+5"/>
@@ -6043,19 +6043,19 @@ Por favor selecione um nome de arquivo diferente.</translation>
         <location line="+5"/>
         <source>Cut</source>
         <comment>Cut context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Cortar</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Paste</source>
         <comment>Paste context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Colar</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>No Guesses Found</source>
         <comment>No Guesses Found context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nenhum resultado encontrado</translation>
     </message>
     <message>
         <location line="+5"/>
@@ -6067,25 +6067,25 @@ Por favor selecione um nome de arquivo diferente.</translation>
         <location line="+5"/>
         <source>Add To Dictionary</source>
         <comment>Learn Spelling context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Adicionar Para Dicionário</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Search The Web</source>
         <comment>Search The Web context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Pesqusar A Web</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Look Up In Dictionary</source>
         <comment>Look Up in Dictionary context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Procurar No Dicionário</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Open Link</source>
         <comment>Open Link context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Abrir Link</translation>
     </message>
     <message>
         <location line="+5"/>
@@ -6097,121 +6097,121 @@ Por favor selecione um nome de arquivo diferente.</translation>
         <location line="+5"/>
         <source>Spelling</source>
         <comment>Spelling and Grammar context sub-menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Verificação Ortográfica</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Show Spelling and Grammar</source>
         <comment>menu item title</comment>
-        <translation type="unfinished"></translation>
+        <translation>Exibir Verificação Ortográfica e Gramatical</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hide Spelling and Grammar</source>
         <comment>menu item title</comment>
-        <translation type="unfinished"></translation>
+        <translation>Ocultar Verificação Ortográfica e Gramatical</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Check Spelling</source>
         <comment>Check spelling context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Verificar Ortografia</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Check Spelling While Typing</source>
         <comment>Check spelling while typing context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Verificar Ortografia Ao Digitar</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Check Grammar With Spelling</source>
         <comment>Check grammar with spelling context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Verificar Gramática Com a Verificação Ortográfica</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Fonts</source>
         <comment>Font context sub-menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Fontes</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Bold</source>
         <comment>Bold context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Negrito</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Italic</source>
         <comment>Italic context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Itálico</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Underline</source>
         <comment>Underline context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Sublinhado</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Outline</source>
         <comment>Outline context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Alinhado</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Direction</source>
         <comment>Writing direction context sub-menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Direção</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Text Direction</source>
         <comment>Text direction context sub-menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Direção do Texto</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Default</source>
         <comment>Default writing direction context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Padrão</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>LTR</source>
         <comment>Left to Right context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Direita a Esquerda</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>RTL</source>
         <comment>Right to Left context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Esquerda a Direita</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Inspect</source>
         <comment>Inspect Element context menu item</comment>
-        <translation type="unfinished"></translation>
+        <translation>Inspecionar</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>No recent searches</source>
         <comment>Label for only item in menu that appears when clicking on the search field image, when no searches have been performed</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nenhuma pesquisa recente</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Recent searches</source>
         <comment>label for first item in the menu that appears when clicking on the search field image, used as embedded menu title</comment>
-        <translation type="unfinished"></translation>
+        <translation>Pesquisas recentes</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Clear recent searches</source>
         <comment>menu item in Recent Searches menu that empties menu&apos;s contents</comment>
-        <translation type="unfinished"></translation>
+        <translation>Limpar pesquisas recentes</translation>
     </message>
     <message>
         <location line="+75"/>
@@ -6223,12 +6223,12 @@ Por favor selecione um nome de arquivo diferente.</translation>
         <location line="+5"/>
         <source>%1 (%2x%3 pixels)</source>
         <comment>Title string for images</comment>
-        <translation type="unfinished"></translation>
+        <translation></translation>
     </message>
     <message>
         <location filename="../src/3rdparty/webkit/WebKit/qt/WebCoreSupport/InspectorClientQt.cpp" line="+185"/>
         <source>Web Inspector - %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Inspetor Web - %2</translation>
     </message>
     <message>
         <location filename="../src/3rdparty/webkit/WebCore/platform/qt/ScrollbarQt.cpp" line="+58"/>
@@ -6299,169 +6299,170 @@ Por favor selecione um nome de arquivo diferente.</translation>
         <location filename="../src/3rdparty/webkit/WebCore/platform/qt/FileChooserQt.cpp" line="+45"/>
         <source>%n file(s)</source>
         <comment>number of chosen file</comment>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n arquivo</numerusform>
+            <numerusform>%n arquivos</numerusform>
         </translation>
     </message>
     <message>
         <location filename="../src/3rdparty/webkit/WebKit/qt/Api/qwebpage.cpp" line="+1322"/>
         <source>JavaScript Alert - %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Alerta JavaScript - %1</translation>
     </message>
     <message>
         <location line="+15"/>
         <source>JavaScript Confirm - %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Confirmação JavaScript - %1</translation>
     </message>
     <message>
         <location line="+17"/>
         <source>JavaScript Prompt - %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Sugestão JavaScript - %1</translation>
     </message>
     <message>
         <location line="+333"/>
         <source>Move the cursor to the next character</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para o próximo caractere</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the previous character</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para o caractere anterior</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the next word</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para a próxima palavra</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the previous word</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para a palavra anterior</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the next line</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para a próxima linha</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the previous line</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para a palavra anterior</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the start of the line</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para o início da linha</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the end of the line</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para o fim da linha</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the start of the block</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para o início do bloco</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the end of the block</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para o fim do bloco</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the start of the document</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para o início do documento</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Move the cursor to the end of the document</source>
-        <translation type="unfinished"></translation>
+        <translation>Mover o cursor para o fim do documento</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select all</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar tudo</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the next character</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até o próximo caractere</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the previous character</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até o caractere anterior</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the next word</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até a próxima palavra</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the previous word</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até a palavra anterior</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the next line</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até a próxima linha</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the previous line</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até a linha anterior</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the start of the line</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até o início da linha</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the end of the line</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até o fim da linha</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the start of the block</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até o início do bloco</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the end of the block</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até o fim do bloco</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the start of the document</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até o início do documento</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Select to the end of the document</source>
-        <translation type="unfinished"></translation>
+        <translation>Selecionar até o fim do documento</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Delete to the start of the word</source>
-        <translation type="unfinished"></translation>
+        <translation>Apagar até o início da palavra</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Delete to the end of the word</source>
-        <translation type="unfinished"></translation>
+        <translation>Apagar até o fim da palavra</translation>
     </message>
     <message>
         <location line="+33"/>
         <source>Insert a new paragraph</source>
-        <translation type="unfinished"></translation>
+        <translation>Inserir um novo parágrafo</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Insert a new line</source>
-        <translation type="unfinished"></translation>
+        <translation>Inserir uma nova linha</translation>
     </message>
 </context>
 <context>
@@ -6736,22 +6737,22 @@ Por favor selecione um nome de arquivo diferente.</translation>
         <location filename="../src/corelib/xml/qxmlstream.cpp" line="+592"/>
         <location filename="../src/corelib/xml/qxmlstream_p.h" line="+1769"/>
         <source>Extra content at end of document.</source>
-        <translation type="unfinished"></translation>
+        <translation>Conteúdo extra ao fim do documento.</translation>
     </message>
     <message>
         <location line="+222"/>
         <source>Invalid entity value.</source>
-        <translation type="unfinished"></translation>
+        <translation>Valor de entidade inválido.</translation>
     </message>
     <message>
         <location line="+107"/>
         <source>Invalid XML character.</source>
-        <translation type="unfinished"></translation>
+        <translation>Caractere XML inválido.</translation>
     </message>
     <message>
         <location line="+259"/>
         <source>Sequence &apos;]]&gt;&apos; not allowed in content.</source>
-        <translation type="unfinished"></translation>
+        <translation>Sequência &apos;]]&gt;&apos; não permitida no conteúdo.</translation>
     </message>
     <message>
         <location line="+309"/>
@@ -6761,7 +6762,7 @@ Por favor selecione um nome de arquivo diferente.</translation>
     <message>
         <location line="+78"/>
         <source>Attribute redefined.</source>
-        <translation type="unfinished"></translation>
+        <translation>Atributo redefinido.</translation>
     </message>
     <message>
         <location line="+115"/>
@@ -6776,17 +6777,17 @@ Por favor selecione um nome de arquivo diferente.</translation>
     <message>
         <location line="+2"/>
         <source>Unsupported XML version.</source>
-        <translation type="unfinished"></translation>
+        <translation>Versão XML não suportada.</translation>
     </message>
     <message>
         <location line="+23"/>
         <source>%1 is an invalid encoding name.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 é um nome de codificação inválida.</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Encoding %1 is unsupported</source>
-        <translation type="unfinished"></translation>
+        <translation>Codificação %1 não é suportada</translation>
     </message>
     <message>
         <location line="+16"/>
@@ -6796,42 +6797,42 @@ Por favor selecione um nome de arquivo diferente.</translation>
     <message>
         <location line="+2"/>
         <source>Invalid attribute in XML declaration.</source>
-        <translation type="unfinished"></translation>
+        <translation>Atributo inválido na declaração XML.</translation>
     </message>
     <message>
         <location line="+16"/>
         <source>Premature end of document.</source>
-        <translation type="unfinished"></translation>
+        <translation>Fim prematuro do documento.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Invalid document.</source>
-        <translation type="unfinished"></translation>
+        <translation>Documento inválido.</translation>
     </message>
     <message>
         <location line="+40"/>
         <source>Expected </source>
-        <translation type="unfinished"></translation>
+        <translation>Esperado</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>, but got &apos;</source>
-        <translation type="unfinished"></translation>
+        <translation>, mas recebeu </translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Unexpected &apos;</source>
-        <translation type="unfinished"></translation>
+        <translation>Inesperado </translation>
     </message>
     <message>
         <location line="+210"/>
         <source>Expected character data.</source>
-        <translation type="unfinished"></translation>
+        <translation>Dados de caractere esperado.</translation>
     </message>
     <message>
         <location filename="../src/corelib/xml/qxmlstream_p.h" line="-995"/>
         <source>Recursive entity detected.</source>
-        <translation type="unfinished"></translation>
+        <translation>Entidade recursiva detectada.</translation>
     </message>
     <message>
         <location line="+516"/>
@@ -6841,22 +6842,22 @@ Por favor selecione um nome de arquivo diferente.</translation>
     <message>
         <location line="+222"/>
         <source>XML declaration not at start of document.</source>
-        <translation type="unfinished"></translation>
+        <translation>Declaração XML fora do início do documento.</translation>
     </message>
     <message>
         <location line="-31"/>
         <source>NDATA in parameter entity declaration.</source>
-        <translation type="unfinished"></translation>
+        <translation>NDATA na declaração de entidade de parâmetro.</translation>
     </message>
     <message>
         <location line="+34"/>
         <source>%1 is an invalid processing instruction name.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 é um nome de instrução de processamento inválida.</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Invalid processing instruction name.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nome de instrução de processamento inválida.</translation>
     </message>
     <message>
         <location filename="../src/corelib/xml/qxmlstream.cpp" line="-521"/>
@@ -6869,7 +6870,7 @@ Por favor selecione um nome de arquivo diferente.</translation>
     <message>
         <location filename="../src/corelib/xml/qxmlstream_p.h" line="+15"/>
         <source>Invalid XML name.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nome XML inválido.</translation>
     </message>
     <message>
         <location line="+23"/>
@@ -6886,33 +6887,33 @@ Por favor selecione um nome de arquivo diferente.</translation>
         <location line="+61"/>
         <location line="+40"/>
         <source>Entity &apos;%1&apos; not declared.</source>
-        <translation type="unfinished"></translation>
+        <translation>entidade &apos;%1&apos; não declarada.</translation>
     </message>
     <message>
         <location line="-26"/>
         <source>Reference to external entity &apos;%1&apos; in attribute value.</source>
-        <translation type="unfinished"></translation>
+        <translation>Referência para entidade externa &apos;%1&apos; no valor de atributo.</translation>
     </message>
     <message>
         <location line="+40"/>
         <source>Invalid character reference.</source>
-        <translation type="unfinished"></translation>
+        <translation>Referência de caractere inválida.</translation>
     </message>
     <message>
         <location filename="../src/corelib/xml/qxmlstream.cpp" line="-75"/>
         <location filename="../src/corelib/xml/qxmlstream_p.h" line="-823"/>
         <source>Encountered incorrectly encoded content.</source>
-        <translation type="unfinished"></translation>
+        <translation>Encontrado conteúdo codificado incorreto.</translation>
     </message>
     <message>
         <location line="+274"/>
         <source>The standalone pseudo attribute must appear after the encoding.</source>
-        <translation type="unfinished"></translation>
+        <translation>O pseudo atributo independente deve aparecer após a codificação.</translation>
     </message>
     <message>
         <location filename="../src/corelib/xml/qxmlstream_p.h" line="+562"/>
         <source>%1 is an invalid PUBLIC identifier.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 é um identificador PUBLIC inválido.</translation>
     </message>
 </context>
 <context>

@@ -13,12 +13,14 @@
 SHELL=/bin/sh
 
 PACKAGE = qt_pt_BR
+PACKAGE2 = qtconfig_pt_BR
 
 srcdir = .
 top_srcdir = .
 subdir = .
 
 all:
-	gzip -9c $(PACKAGE).ts > $(PACKAGE).ts.gz
+	gzip -9c ts/$(PACKAGE).ts > ts/$(PACKAGE).ts.gz
+	gzip -9c ts/$(PACKAGE2).ts > ts/$(PACKAGE2).ts.gz
 
 .NOEXPORT:

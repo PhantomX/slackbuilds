@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/gimp-2.6.0-xdg-open.patch.gz | patch -p1 -E --backup --verbose
 # http://bugzilla.gnome.org/show_bug.cgi?id=559081
 # "JPEG Save dialog preview should adjust size units"

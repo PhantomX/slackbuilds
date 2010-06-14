@@ -41,10 +41,16 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
+SNAPBUILD=${SNAPBUILD:-YES}
+
 NAME=libvpx
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.9.0}
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+else
+  VERSION=${VERSION:-0.9.0}
+fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -67,16 +73,25 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.bz2
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  SRCARCHIVE=${SRCDIR}.tar.xz
+else
+  SRCARCHIVE=${SRCDIR}.tar.bz2
+fi
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
 DL_URL="http://webm.googlecode.com/files/${SRCARCHIVE}"
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+else
+  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -117,58 +132,40 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+if [ -f CHANGELOG ] ;then
+  VPXSONAME=$(head -n1 "CHANGELOG" | awk '{print $2}'|sed -e 's|^v||g')
+else
+  VPXSONAME=0.9.0
+fi
+
+export verbose=yes
+
+CFLAGS="${SLKCFLAGS}" \
+CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
+  --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --enable-shared \
   --enable-pic \
+  --enable-vp8 \
+  --enable-postproc \
   --disable-install-srcs \
+  --disable-optimizations \
+  --enable-install-docs \
   --target=${ARCHTARGET} || exit $?
 
-sed -i "s|\"vpx_config.h\"|\"vpx_config.h\" ${SLKCFLAGS} -fPIC|g" \
-  {libs,examples,docs}-${ARCHTARGET}.mk || exit 1
+make -j${NJOBS} target=libs || make target=libs || exit $?
+rm -f libvpx*.a
+ln -s libvpx.so.${VPXSONAME} libvpx.so
+make -j${NJOBS} target=examples || make target=examples || exit $?
+make -j${NJOBS} target=docs || make target=docs || exit $?
+make install DESTDIR=${PKG} || exit $?
 
-make -j${NJOBS} verbose=true target=libs || make verbose=true target=libs || exit $?
-
-mkdir tmp
-( cd tmp
-  ar x ../libvpx_g.a || exit $?
-) || exit $?
-( set -o xtrace
-  gcc -fPIC -shared -pthread -lm ${LDFLAGS} -Wl,--no-undefined -Wl,-soname,libvpx.so.0 \
-    -Wl,--version-script,${CWD}/${NAME}.ver -Wl,-z,noexecstack -o libvpx.so.0.0.0 tmp/*.o || exit $?
-) || exit $?
-rm -rf tmp
-
-mv libvpx.a libNOTvpx.a
-mv libvpx_g.a libNOTvpx_g.a
-
-ln -sf libvpx.so.0.0.0 libvpx.so
-
-make -j${NJOBS} verbose=true target=examples || make verbose=true target=examples || exit $?
-make -j${NJOBS} verbose=true target=docs || make verbose=true target=docs || exit $?
-
-mv libNOTvpx.a libvpx.a
-mv libNOTvpx_g.a libvpx_g.a
-
-make install DIST_DIR=${PKG}/usr || exit $?
-rm -rf ${PKG}/usr/lib*
-
-mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig
-install -p libvpx.so.0.0.0 ${PKG}/usr/lib${LIBDIRSUFFIX}/ || exit 1
-ln -sf libvpx.so.0.0.0 ${PKG}/usr/lib${LIBDIRSUFFIX}/libvpx.so.0
-ln -sf libvpx.so.0.0.0 ${PKG}/usr/lib${LIBDIRSUFFIX}/libvpx.so.0.0
-ln -sf libvpx.so.0 ${PKG}/usr/lib${LIBDIRSUFFIX}/libvpx.so
-
-rm -rf ${PKG}/usr/{build,md5sums.txt,CHANGELOG,README}
 rm -f ${PKG}/usr/lib*/*.a
-
-for file in simple_decoder simple_encoder twopass_encoder ;do
-  mv ${PKG}/usr/bin/${file} ${PKG}/usr/bin/vp8_${file} || exit 1
-done
 
 chmod 0755 ${PKG}/usr/bin/*
 
-mkdir -p ${PKG}/usr/include/vpx
-mv ${PKG}/usr/include/*.h ${PKG}/usr/include/vpx/ || exit 1
-
+mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig
 cat > ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig/${NAME}.pc <<EOF
 prefix=/usr
 exec_prefix=/usr
@@ -177,7 +174,7 @@ includedir=/usr/include
 
 Name: libvpx
 Description: VP8 Video Codec SDK library
-Version: 0.9.0
+Version: ${VPXSONAME}
 URL: http://www.webmproject.org/tools/vp8-sdk/
 Requires:
 Conflicts:
@@ -186,19 +183,13 @@ Libs.private:
 Cflags: -I\${includedir}/vpx/
 EOF
 
-mv %{buildroot}/usr/docs doc/
-
-
-
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
-mv ${PKG}/usr/docs/html ${DOCDIR}/
-rm -rf ${PKG}/usr/docs
 cp -a \
-  AUTHORS LICENSE README ${CWD}/ChangeLog.SB \
+  AUTHORS LICENSE README docs/html ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 [ -r CHANGELOG ] && head -n 1000 CHANGELOG > ${DOCDIR}/CHANGELOG
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
@@ -237,7 +228,8 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/${NAME}.ver ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${CWD}/${SNAPUPDATE} ${CWD}/${NAME}.ver \
+                 ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \

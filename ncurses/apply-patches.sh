@@ -3,6 +3,8 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -it ${SB_PATCHDIR}/${NAME}.patch
+
 if [ "${PVER}" -ne 0 ] ; then
   bzcat ${SB_PATCHDIR}/updates/${PSRCARCHIVE} | patch -p1 --verbose
 fi

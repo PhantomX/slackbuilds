@@ -110,9 +110,10 @@ ApplyPatch linux-2.6-execshield.patch
 # xfs
 
 # btrfs
+# CVE-2010-2071.
+ApplyPatch btrfs-should-add-permission-check-for-setfacl.patch
+ApplyPatch btrfs-prohibit-a-operation-of-changing-acls-mask-when-noacl-mount-option-is-used.patch
 
-# Sort out umount versus sync penalty: rhbz#588930
-ApplyPatch fs-explicitly-pass-in-whether-sb-is-pinned-or-not.patch
 
 # cifs
 
@@ -129,6 +130,8 @@ ApplyPatch linux-2.6-usb-wwan-update.patch
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
+ApplyPatch linux-2.6-acpi-video-export-edid.patch
+ApplyPatch acpi-ec-add-delay-before-write.patch
 
 ApplyPatch linux-2.6-acpi-sleep-live-sci-live.patch
 
@@ -174,6 +177,7 @@ ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch.gz
 
 ApplyPatch linux-2.6-input-hid-quirk-egalax.patch
 ApplyPatch thinkpad-acpi-add-x100e.patch
+ApplyPatch thinkpad-acpi-fix-backlight.patch
 
 # Allow to use 480600 baud on 16C950 UARTs
 ApplyPatch linux-2.6-serial-460800.patch
@@ -209,22 +213,18 @@ ApplyPatch hdpvr-ir-enable.patch
 #ApplyPatch linux-2.6-ksm-kvm.patch
 
 # Assorted Virt Fixes
-#ApplyPatch linux-2.6-userspace_kvmclock_offset.patch
-#ApplyPatch vhost_net-rollup.patch
-#ApplyPatch virt_console-rollup.patch
+ApplyPatch virtqueue-wrappers.patch
+ApplyPatch virt_console-rollup.patch
+ApplyPatch fix_xen_guest_on_old_EC2.patch
 
-# Fix block I/O errors in KVM
-#ApplyPatch linux-2.6-block-silently-error-unsupported-empty-barriers-too.patch.gz
-
-# fix x86-64 fbdev primary GPU selection
-#ApplyPatch linux-2.6-x86-64-fbdev-primary.patch
+ApplyPatch drm-next.patch
 
 # Nouveau DRM + drm fixes
-#ApplyPatch drm-nouveau-abi16.patch
-# pm broken on my thinkpad t60p - airlied
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
+ApplyPatch linux-2.6-intel-iommu-igfx.patch
+
 
 # linux1394 git patches
 # apply if non-empty
@@ -241,15 +241,23 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
 ApplyPatch linux-2.6-v4l-dvb-gspca-fixes.patch
 
-# Patches headed upstream
-#ApplyPatch linux-2.6-rfkill-all.patch
+ApplyPatch linux-2.6-v4l-dvb-add-lgdt3304-support.patch
+ApplyPatch linux-2.6-v4l-dvb-add-kworld-a340-support.patch
 
-# appleir remote controller
-#ApplyPatch add-appleir-usb-driver.patch
+ApplyPatch linux-2.6-phylib-autoload.patch
+
+# Patches headed upstream
+ApplyPatch add-appleir-usb-driver.patch
+ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
 # Refactor UserModeHelper code & satisfy abrt recursion check request
 #ApplyPatch linux-2.6-umh-refactor.patch
+
+# rhbz#533746
+ApplyPatch ssb_check_for_sprom.patch
+
+ApplyPatch quiet-prove_RCU-in-cgroups.patch
 
 set +e +o pipefail +o xtrace

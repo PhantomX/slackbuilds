@@ -32,7 +32,6 @@ zcat ${SB_PATCHDIR}/glibc.ru_RU.CP1251.diff.gz | patch -p1 --verbose
 # Fix missing MAX macro in getcwd.c:
 zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose
 # Gentoo patches
-patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cfi.patch
 ( SB_PATCHDIR=patches
 
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
@@ -82,34 +81,25 @@ ApplyPatch glibc-2.11-Try-harder-to-re-exec-nscd-in-paranoia-mode.patch
 ApplyPatch glibc-2.11-Use-struct-timespec-for-timestamps-in-struct-stat-al.patch
 ApplyPatch glibc-2.11-Define-SCHED_IDLE-and-SCHED_RESET_ON_FORK-for-Linux.patch
 ApplyPatch glibc-2.11-Redefine-O_SYNC-and-O_DSYNC-to-match-2.6.33-kernels.patch
-ApplyPatch glibc-2.11-Invalid-timeouts-in-i386-sem_timedwait.patch.gz
-ApplyPatch glibc-2.11-Avoid-ELF-lookup-race.patch
 ApplyPatch glibc-2.11-Update-poll.h-header-for-POSIX-2008.patch
 ApplyPatch glibc-2.11-check-fd-arg-in-futimens.patch
 ApplyPatch glibc-2.11-Additional-setcontext-etc.-conformance-tests.patch
-ApplyPatch glibc-2.11-Fix-typo-in-feature-selection-macro-use.patch
 ApplyPatch glibc-2.11-Add-nonnull-attribute-to-unsetenv-declaration.patch
 ApplyPatch glibc-2.11-Prevent-silent-errors-should-x86-64-strncmp-be-neede.patch
 ApplyPatch glibc-2.11-Fix-malloc_info-without-prioor-allocations.patch
 ApplyPatch glibc-2.11-Pass-sysdep-LDFLAGS-when-using-print-file-name.patch
-ApplyPatch glibc-2.11-Make-unistd.h-pre-c-safe.patch
-ApplyPatch glibc-2.11-regcomp.c-do-not-ignore-memory-allocation-failure.patch
 ApplyPatch glibc-2.11-Always-use-IPv4-sockets-for-IPv4-addresses.patch
 ApplyPatch glibc-2.11-Define-IPTOS_CLASS_-macros-according-to-RFC-2474.patch
 ApplyPatch glibc-2.11-Fix-a-few-more-cases-of-ignored-return-values-in-reg.patch
 ApplyPatch glibc-2.11-sysdeps-ieee754-ldbl-128-fixes.patch
-ApplyPatch glibc-2.11-Ignore-negative-dynamic-entry-types.patch
-ApplyPatch glibc-2.11-Use-correct-type-when-casting-d_tag.patch
 ApplyPatch glibc-2.11-Remove-duplicate-definitions-of-O_DSYNC-and-O_RSYNC.patch
-ApplyPatch glibc-2.11-Remove-unnecessary-returns.patch
 ApplyPatch glibc-2.11-more-re-fixes.patch
-ApplyPatch glibc-2.11-_nl_load_locale-incorrectly-handles-mmap-failures.patch
-ApplyPatch glibc-2.11-Fix-error-checking-in-iconv.patch
-ApplyPatch glibc-2.11-Don-t-map-U00DF-to-U1E9E-in-toupper-table.patch
 ApplyPatch glibc-2.11-Avoid-alloca-in-setenv-for-long-strings.patch
 ApplyPatch glibc-2.11-Fix-sorting-of-malayalam-letter-na.patch
-ApplyPatch glibc-2.11-Fix-endless-loop-with-invalid-etc-shells-file.patch
 ApplyPatch glibc-2.11-Update-constants-for-current-kernels.patch
-ApplyPatch glibc-2.11-Fix-file-descriotor-leak-in-nftw-with-FTW_CHDIR.patch
+ApplyPatch glibc-2.6.1-CVE-2010-0015.diff
+ApplyPatch glibc-2.11.2-Dont-crash-on-unresolved-weak-symbol-reference.patch
+ApplyPatch glibc-2.11.2-Dont-crash-on-unresolved-weak-symbol-reference-whe.patch
+ApplyPatch glibc-2.11.2-Incorrect-x86-CPU-family-and-model-check.patch
 
 set +e +o pipefail

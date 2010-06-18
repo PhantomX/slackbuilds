@@ -4,7 +4,6 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 #patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-const-buf-r48686.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ffmpeg-const-buf-48807.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-gyp-fixes-r2.patch
 
 set +e +o pipefail

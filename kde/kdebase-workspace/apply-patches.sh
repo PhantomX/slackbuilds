@@ -52,6 +52,9 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup -
 # FIXME: Not upstreamed yet --Ben (4.3.80)
 #Patch51: http://bazaar.launchpad.net/~kubuntu-members/kdebase-workspace/ubuntu/annotate/head%3A/debian/patches/kubuntu_101_brightness_fn_keys_and_osd.diff
 zcat ${SB_PATCHDIR}/${NAME}-4.3.95-brightness_keys.patch.gz | patch -p1 -E --backup --verbose
+# "Adding "Enable networking" button to knetworkmanager"
+# https://bugzilla.redhat.com/598765 https://bugs.kde.org/238325
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.85-kdebug238325.patch
 
 # 4.4 patches
 

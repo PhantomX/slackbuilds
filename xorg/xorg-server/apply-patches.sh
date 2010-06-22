@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/x11.startwithblackscreen.diff.gz | patch -p1 --verbose
 #zcat ${SB_PATCHDIR}/xorgconfig.diff.gz | patch -p1 --verbose
 #zcat ${SB_PATCHDIR}/xorg-server.dpi.diff.gz | patch -p1 --verbose
@@ -29,7 +30,7 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.1-nouveau.patch
 # ajax needs to upstream this
 zcat ${SB_PATCHDIR}/xserver-1.6.0-displayfd.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/xserver-1.6.99-randr-error-debugging.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch.gz | patch -p1 --verbose
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-default-modes.patch
 #zcat ${SB_PATCHDIR}/xserver-1.6.99-hush-prerelease-warning.patch.gz | patch -p1 --verbose
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.0-randr-gamma-restore.patch
@@ -38,11 +39,10 @@ zcat ${SB_PATCHDIR}/xserver-1.7.1-multilib.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch.gz | patch -p1 --verbose
 
 # Backports from master
-#patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-swap-fixes.patch
-# https://bugs.freedesktop.org/show_bug.cgi?id=27767 (plus related
-# pieces needed backported from master)
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-resource-accounting.patch
+
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8-no-connected-outputs.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8-randr-initial.patch
+
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then

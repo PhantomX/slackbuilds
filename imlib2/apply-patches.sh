@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-1.3.0-multilib.patch.gz | patch -p1 -E --backup --verbose
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p0 -E --backup -z .multilib --verbose -i ${SB_PATCHDIR}/${NAME}-1.4.4-multilib.patch
 
 set +e +o pipefail

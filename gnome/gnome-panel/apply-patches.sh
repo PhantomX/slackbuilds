@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}-vendor.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.10.1-speak-to-us-ye-old-wise-fish.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-search.patch.gz | patch -p1 -E --backup --verbose
@@ -28,8 +29,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bookmarks-submenu.patch
 # http://bugzilla.gnome.org/show_bug.cgi?id=343436
 zcat ${SB_PATCHDIR}/panel-padding.patch.gz | patch -p1 -E --backup --verbose
 # https://bugzilla.gnome.org/show_bug.cgi?id=583273
-zcat ${SB_PATCHDIR}/icon-padding.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup -z .icon-padding --verbose -i ${SB_PATCHDIR}/icon-padding.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=537798
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-clock-crash.patch
+patch -p1 -E --backup -z .libs --verbose -i ${SB_PATCHDIR}/gnome-panel-libs.patch
 
 set +e +o pipefail

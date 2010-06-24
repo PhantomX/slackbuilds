@@ -1,0 +1,255 @@
+diff -up gnome-panel-2.30.2/applets/notification_area/Makefile.am.icon-padding gnome-panel-2.30.2/applets/notification_area/Makefile.am
+--- gnome-panel-2.30.2/applets/notification_area/Makefile.am.icon-padding	2010-06-22 14:27:02.000000000 -0300
++++ gnome-panel-2.30.2/applets/notification_area/Makefile.am	2010-06-22 19:08:35.563859399 -0300
+@@ -66,6 +66,24 @@ $(server_in_files): $(server_in_files).i
+ 
+ @INTLTOOL_SERVER_RULE@
+ 
++schemasdir       = $(GCONF_SCHEMA_FILE_DIR)
++schemas_in_files = notification_area_applet.schemas.in
++schemas_DATA     = $(schemas_in_files:.schemas.in=.schemas)
++
++@INTLTOOL_SCHEMAS_RULE@
++
++if GCONF_SCHEMAS_INSTALL
++# don't do this if we are building in eg. rpm
++install-data-local:
++	if test -z "$(DESTDIR)" ; then \
++		for p in $(schemas_DATA) ; do \
++			GCONF_CONFIG_SOURCE=$(GCONF_SCHEMA_CONFIG_SOURCE) $(GCONFTOOL) --makefile-install-rule $(top_builddir)/applets/notification_area/$$p ; \
++		done \
++	fi
++else
++install-data-local:
++endif
++
+ uidir = $(datadir)/gnome-2.0/ui
+ ui_DATA = GNOME_NotificationAreaApplet.xml
+ 
+diff -up gnome-panel-2.30.2/applets/notification_area/main.c.icon-padding gnome-panel-2.30.2/applets/notification_area/main.c
+--- gnome-panel-2.30.2/applets/notification_area/main.c.icon-padding	2010-06-22 14:27:02.000000000 -0300
++++ gnome-panel-2.30.2/applets/notification_area/main.c	2010-06-22 19:09:07.688734851 -0300
+@@ -25,6 +25,7 @@
+ 
+ #include <panel-applet.h>
+ #include <panel-applet-gconf.h>
++#include <gconf/gconf-client.h>
+ 
+ #include <glib/gi18n.h>
+ #include <gtk/gtk.h>
+@@ -34,6 +35,7 @@
+ #include "fixedtip.h"
+ 
+ #define NOTIFICATION_AREA_ICON "gnome-panel-notification-area"
++#define SCHEMA_DIR "/schemas/apps/notification_area_applet/prefs"
+ 
+ typedef struct
+ {
+@@ -210,6 +212,39 @@ free_applet_data (AppletData *data)
+ }
+ 
+ static void
++padding_changed (GConfClient *client,
++                 guint        cnxn_id,
++                 GConfEntry  *entry,
++                 gpointer     user_data)
++{
++  AppletData *data = user_data;
++  gint value;
++
++  if (!entry->value || entry->value->type != GCONF_VALUE_INT)
++    return;
++
++  value = gconf_value_get_int (entry->value);
++
++  na_tray_set_padding (data->tray, value);
++}
++
++static void
++setup_gconf (AppletData *data)
++{
++  GConfClient *client;
++  char *key;
++  int value;
++
++  client = gconf_client_get_default ();
++  key = panel_applet_gconf_get_full_key (data->applet, "padding");
++  value = gconf_client_get_int (client, key, NULL);
++  na_tray_set_padding (data->tray, value);
++  gconf_client_notify_add (client, key, padding_changed, data, NULL, NULL);
++  g_free (key);
++  g_object_unref (client);
++}
++
++static void
+ on_applet_realized (GtkWidget *widget,
+                     gpointer   user_data)
+ {
+@@ -243,6 +278,8 @@ on_applet_realized (GtkWidget *widget,
+   g_signal_connect (applet, "destroy",
+                     G_CALLBACK (applet_destroy), data);
+ 
++  setup_gconf (data);
++
+   gtk_container_add (GTK_CONTAINER (applet), GTK_WIDGET (tray));
+   gtk_widget_show (GTK_WIDGET (tray));
+ 
+@@ -296,9 +333,10 @@ applet_factory (PanelApplet *applet,
+   atko = gtk_widget_get_accessible (GTK_WIDGET (applet));
+   atk_object_set_name (atko, _("Panel Notification Area"));
+ 
++  panel_applet_add_preferences (applet, SCHEMA_DIR, NULL);
+   panel_applet_set_flags (applet,
+                           PANEL_APPLET_HAS_HANDLE|PANEL_APPLET_EXPAND_MINOR);
+-  
++
+   panel_applet_set_background_widget (applet, GTK_WIDGET (applet));
+ 
+   force_no_focus_padding (GTK_WIDGET (applet));
+diff -up gnome-panel-2.30.2/applets/notification_area/na-tray-manager.c.icon-padding gnome-panel-2.30.2/applets/notification_area/na-tray-manager.c
+--- gnome-panel-2.30.2/applets/notification_area/na-tray-manager.c.icon-padding	2010-05-26 05:30:28.000000000 -0300
++++ gnome-panel-2.30.2/applets/notification_area/na-tray-manager.c	2010-06-22 19:08:35.564859257 -0300
+@@ -653,6 +653,32 @@ na_tray_manager_set_visual_property (NaT
+ #endif
+ }
+ 
++static void
++na_tray_manager_set_padding_property (NaTrayManager *manager)
++{
++#ifdef GDK_WINDOWING_X11
++  GdkDisplay *display;
++  Atom        orientation_atom;
++  gulong      data[1];
++
++  if (!manager->invisible || !manager->invisible->window)
++    return;
++
++  display = gtk_widget_get_display (manager->invisible);
++  orientation_atom = gdk_x11_get_xatom_by_name_for_display (display,
++                                                            "_NET_SYSTEM_TRAY_PADDING");
++
++  data[0] = manager->padding;
++
++  XChangeProperty (GDK_DISPLAY_XDISPLAY (display),
++		   GDK_WINDOW_XWINDOW (manager->invisible->window),
++                   orientation_atom,
++		   XA_CARDINAL, 32,
++		   PropModeReplace,
++		   (guchar *) &data, 1);
++#endif
++}
++
+ #ifdef GDK_WINDOWING_X11
+ 
+ static gboolean
+@@ -697,6 +723,7 @@ na_tray_manager_manage_screen_x11 (NaTra
+ 
+   na_tray_manager_set_orientation_property (manager);
+   na_tray_manager_set_visual_property (manager);
++  na_tray_manager_set_padding_property (manager);
+   
+   timestamp = gdk_x11_get_server_time (invisible->window);
+ 
+@@ -836,6 +863,20 @@ na_tray_manager_set_orientation (NaTrayM
+     }
+ }
+ 
++void
++na_tray_manager_set_padding (NaTrayManager *manager,
++                             gint           padding)
++{
++  g_return_if_fail (NA_IS_TRAY_MANAGER (manager));
++
++  if (manager->padding != padding)
++    {
++      manager->padding = padding;
++
++      na_tray_manager_set_padding_property (manager);
++    }
++}
++
+ GtkOrientation
+ na_tray_manager_get_orientation (NaTrayManager *manager)
+ {
+diff -up gnome-panel-2.30.2/applets/notification_area/na-tray-manager.h.icon-padding gnome-panel-2.30.2/applets/notification_area/na-tray-manager.h
+--- gnome-panel-2.30.2/applets/notification_area/na-tray-manager.h.icon-padding	2010-02-09 10:32:08.000000000 -0200
++++ gnome-panel-2.30.2/applets/notification_area/na-tray-manager.h	2010-06-22 19:08:35.564859257 -0300
+@@ -55,6 +55,7 @@ struct _NaTrayManager
+   GtkWidget *invisible;
+   GdkScreen *screen;
+   GtkOrientation orientation;
++  gint padding;
+ 
+   GList *messages;
+   GHashTable *socket_table;
+@@ -91,6 +92,8 @@ gboolean        na_tray_manager_manage_s
+ void            na_tray_manager_set_orientation (NaTrayManager      *manager,
+ 						 GtkOrientation      orientation);
+ GtkOrientation  na_tray_manager_get_orientation (NaTrayManager      *manager);
++void            na_tray_manager_set_padding      (NaTrayManager      *manager,
++						  gint                padding);
+ 
+ G_END_DECLS
+ 
+diff -up gnome-panel-2.30.2/applets/notification_area/na-tray.c.icon-padding gnome-panel-2.30.2/applets/notification_area/na-tray.c
+--- gnome-panel-2.30.2/applets/notification_area/na-tray.c.icon-padding	2010-05-26 05:31:06.000000000 -0300
++++ gnome-panel-2.30.2/applets/notification_area/na-tray.c	2010-06-22 19:08:35.564859257 -0300
+@@ -619,6 +619,8 @@ na_tray_constructor (GType type,
+         {
+           trays_screens [screen_number].tray_manager = tray_manager;
+ 
++          na_tray_manager_set_padding (tray_manager, 0);
++
+           g_signal_connect (tray_manager, "tray_icon_added",
+                             G_CALLBACK (tray_added),
+                             &trays_screens [screen_number]);
+@@ -821,6 +823,16 @@ idle_redraw_cb (NaTray *tray)
+ }
+ 
+ void
++na_tray_set_padding (NaTray *tray,
++                     gint    padding)
++{
++  NaTrayPrivate *priv = tray->priv;
++
++  if (get_tray (priv->trays_screen) == tray)
++    na_tray_manager_set_padding (priv->trays_screen->tray_manager, padding);
++}
++
++void
+ na_tray_force_redraw (NaTray *tray)
+ {
+   NaTrayPrivate *priv = tray->priv;
+diff -up gnome-panel-2.30.2/applets/notification_area/na-tray.h.icon-padding gnome-panel-2.30.2/applets/notification_area/na-tray.h
+--- gnome-panel-2.30.2/applets/notification_area/na-tray.h.icon-padding	2010-02-09 10:32:08.000000000 -0200
++++ gnome-panel-2.30.2/applets/notification_area/na-tray.h	2010-06-22 19:08:35.565850179 -0300
+@@ -60,6 +60,8 @@ NaTray         *na_tray_new_for_screen
+ void            na_tray_set_orientation	(NaTray        *tray,
+ 					 GtkOrientation orientation);
+ GtkOrientation  na_tray_get_orientation (NaTray        *tray);
++void            na_tray_set_padding     (NaTray        *tray,
++                                         gint           padding);
+ void		na_tray_force_redraw	(NaTray        *tray);
+ 
+ G_END_DECLS
+diff -up gnome-panel-2.30.2/applets/notification_area/notification_area_applet.schemas.in.icon-padding gnome-panel-2.30.2/applets/notification_area/notification_area_applet.schemas.in
+--- gnome-panel-2.30.2/applets/notification_area/notification_area_applet.schemas.in.icon-padding	2010-06-22 19:08:35.565850179 -0300
++++ gnome-panel-2.30.2/applets/notification_area/notification_area_applet.schemas.in	2010-06-22 19:08:35.565850179 -0300
+@@ -0,0 +1,17 @@
++<?xml version="1.0"?>
++<gconfschemafile>
++    <schemalist>
++      <schema>
++        <key>/schemas/apps/notification_area_applet/prefs/padding</key>
++        <owner>notification-area-applet</owner>
++        <type>int</type>
++        <default>3</default>
++        <locale name="C">
++          <short>Padding</short>
++          <long>
++            This key specifies padding to be put around status icons.
++          </long>
++        </locale>
++      </schema>
++    </schemalist>
++</gconfschemafile>

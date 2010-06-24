@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # build patches
 zcat ${SB_PATCHDIR}/${NAME}-version.patch.gz | sed -e "s/__RPM_VERSION_INTERNAL__/${VERSION_INTERNAL}/" | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/mozilla-build.patch.gz | patch -p1 -E --backup --verbose
@@ -12,6 +13,7 @@ zcat ${SB_PATCHDIR}/mozilla-jemalloc-526152.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/xulrunner-1.9.2.1-build.patch.gz | patch -p2 -E --backup --verbose
 zcat ${SB_PATCHDIR}/mozilla-plugin.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/mozilla-build-sbrk.patch.gz | patch -p2 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nspr-build.patch
 
 # Fedora specific patches
 zcat ${SB_PATCHDIR}/mozilla-192-pkgconfig.patch.gz | patch -p1 -E --backup --verbose
@@ -21,5 +23,6 @@ zcat ${SB_PATCHDIR}/mozilla-ps-pdf-simplify-operators.patch.gz | patch -p1 -E --
 
 # From Arch
 zcat ${SB_PATCHDIR}/fix-mozilla-launcher.patch.gz | patch -p0 -E --backup --verbose
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/enable-x86_64-tracemonkey.patch
 
 set +e +o pipefail

@@ -3,7 +3,8 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/libtool-2.2.4-nomovedwarning.patch.gz | patch -p1 --verbose --backup --verbose
-patch -p0 -E --backup -z .rpath --verbose -i ${SB_PATCHDIR}/libtool-2.2.8-rpath.patch
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 --verbose --backup --verbose -i ${SB_PATCHDIR}/libtool.no.moved.warning.diff
+patch -p1 -E --backup -z .rpath --verbose -i ${SB_PATCHDIR}/libtool-2.2.10-rpath.patch
 
 set +e +o pipefail

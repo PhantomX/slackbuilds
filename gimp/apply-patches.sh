@@ -16,4 +16,7 @@ zcat ${SB_PATCHDIR}/gimp-2.6.6-minimize-dialogs.patch.gz | patch -p1 -E --backup
 # backport: fix building with "gold" linker
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.8-gold.patch
 
+# backport: GIMP crashes when clicking any scroll bar from combo boxes
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.9-combo-popup.patch
+
 set +e +o pipefail

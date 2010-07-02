@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # revert http://websvn.kde.org/?view=revision&revision=1072331
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-install-headers.patch.gz | patch -p0 -E --backup --verbose
 

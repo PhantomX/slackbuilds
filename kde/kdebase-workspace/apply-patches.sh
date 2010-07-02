@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-startkde.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.98-plasma-konsole.patch
 zcat ${SB_PATCHDIR}/${NAME}-4.3.75-show_systemsettings.patch.gz | patch -p1 -E --backup --verbose
@@ -16,7 +17,6 @@ zcat ${SB_PATCHDIR}/${NAME}-4.2.85-klipper-url.patch.gz | patch -p1 -E --backup 
 # 434824: KDE4 System Settings - No Method To Enter Administrative Mode
 zcat ${SB_PATCHDIR}/${NAME}-4.3.75-rootprivs.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.1.96-font.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-4.2.0-pykde4.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.3.75-kio_sysinfo.patch.gz | patch -p1 -E --backup --verbose
 # show the remaining time in the battery plasmoid's popup (as in 4.2) (#515166)
 # currently requires backport from pre-4.3.80 trunk (Patch100)
@@ -55,6 +55,8 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.95-brightness_keys.patch.gz | patch -p1 -E --bac
 # "Adding "Enable networking" button to knetworkmanager"
 # https://bugzilla.redhat.com/598765 https://bugs.kde.org/238325
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.85-kdebug238325.patch
+# Display Settings are Lost on Logout, http://bugs.kde.org/183143 , http://bugzilla.redhat.com/607180
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.4-kdebug183143.patch
 
 # 4.4 patches
 

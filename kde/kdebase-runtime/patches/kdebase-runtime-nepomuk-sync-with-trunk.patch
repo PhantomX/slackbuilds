@@ -1,15 +1,605 @@
+Index: nepomuk/kioslaves/search/searchfolder.cpp
+===================================================================
+--- nepomuk/kioslaves/search/searchfolder.cpp	(révision 1121160)
++++ nepomuk/kioslaves/search/searchfolder.cpp	(copie de travail)
+@@ -23,6 +23,7 @@
+ #include "nie.h"
+ #include "pimo.h"
+ #include "nepomuksearchurltools.h"
++#include "resourcestat.h"
+ 
+ #include <Soprano/Vocabulary/Xesam>
+ #include <Soprano/Vocabulary/NAO>
+@@ -55,8 +56,19 @@
+ 
+     qRegisterMetaType<QList<QUrl> >();
+ 
+-    // parse URL
+-    m_query = queryFromUrl( url );
++    // parse URL (this may fail in which case we fall back to pure SPARQL below)
++    m_query = Nepomuk::fromQueryUrl( url );
++
++    // the only request property we handle is nie:url
++    m_query.setRequestProperties( QList<Query::Query::RequestProperty>() << Query::Query::RequestProperty( Nepomuk::Vocabulary::NIE::url() ) );
++
++    if ( m_query.isValid() ) {
++        m_sparqlQuery = m_query.toSparqlQuery();
++    }
++    else {
++        // the URL contains pure sparql. We simply list it without trying to change the limit
++        m_sparqlQuery = Nepomuk::sparqlFromQueryUrl( url );
++    }
+ }
+ 
+ 
+@@ -87,9 +99,7 @@
+              this, SLOT( slotFinishedListing() ),
+              Qt::DirectConnection );
+ 
+-    Query::Query q;
+-    q.addRequestProperty( Query::Query::RequestProperty( Nepomuk::Vocabulary::NIE::url() ) );
+-    m_client->sparqlQuery( m_query, q.requestPropertyMap() );
++    m_client->sparqlQuery( m_sparqlQuery, m_query.requestPropertyMap() );
+     exec();
+     delete m_client;
+ 
+@@ -109,9 +119,6 @@
+ 
+     kDebug() << "listing done";
+ 
+-    m_slave->listEntry( KIO::UDSEntry(), true );
+-    m_slave->finished();
+-
+     // shutdown and delete
+     exit();
+     deleteLater();
+@@ -121,7 +128,7 @@
+ // always called in search thread
+ void Nepomuk::SearchFolder::slotNewEntries( const QList<Nepomuk::Query::Result>& results )
+ {
+-    kDebug() << m_url << QThread::currentThread();
++    kDebug() << m_url;
+ 
+     m_resultMutex.lock();
+     m_resultsQueue += results;
+@@ -137,7 +144,7 @@
+ // always called in search thread
+ void Nepomuk::SearchFolder::slotFinishedListing()
+ {
+-    kDebug() << m_url << QThread::currentThread();
++    kDebug() << m_url;
+     QMutexLocker lock( &m_resultMutex );
+     m_initialListingFinished = true;
+     m_resultWaiter.wakeAll();
+@@ -171,50 +178,58 @@
+ 
+ 
+ namespace {
+-    bool statFile( const KUrl& url, KIO::UDSEntry& uds )
++    bool statFile( const KUrl& url, const KUrl& fileUrl, KIO::UDSEntry& uds )
+     {
+         // the akonadi kio slave is just way too slow and
+         // in KDE 4.4 akonadi items should have nepomuk:/res/<uuid> URIs anyway
+         if ( url.scheme() == QLatin1String( "akonadi" ) )
+             return false;
+ 
+-        bool success = false;
+-
+-        if ( KIO::StatJob* job = KIO::stat( url, KIO::HideProgressInfo ) ) {
+-            job->setAutoDelete( false );
+-            if ( KIO::NetAccess::synchronousRun( job, 0 ) ) {
+-                uds = job->statResult();
+-                success = true;
++        if ( !fileUrl.isEmpty() ) {
++            if ( KIO::StatJob* job = KIO::stat( fileUrl, KIO::HideProgressInfo ) ) {
++                // we do not want to wait for the event loop to delete the job
++                QScopedPointer<KIO::StatJob> sp( job );
++                job->setAutoDelete( false );
++                if ( KIO::NetAccess::synchronousRun( job, 0 ) ) {
++                    uds = job->statResult();
++                    return true;
++                }
+             }
+-            else {
+-                kDebug() << "failed to stat" << url;
+-            }
+-            delete job;
+         }
+ 
+-        return success;
++        Nepomuk::Resource res( url );
++        if ( res.exists() ) {
++            uds = Nepomuk::statNepomukResource( res );
++            return true;
++        }
++
++        kDebug() << "failed to stat" << url;
++        return false;
+     }
+ }
+ 
+ 
+ // always called in main thread
++// This method tries to avoid loading the Nepomuk::Resource as long as possible by only using the
++// request property nie:url in the Result for local files.
+ KIO::UDSEntry Nepomuk::SearchFolder::statResult( const Query::Result& result )
+ {
+     Resource res( result.resource() );
+-    KUrl url = res.resourceUri();
++    KUrl url( res.resourceUri() );
++    KUrl nieUrl( result[Nepomuk::Vocabulary::NIE::url()].uri() );
++    if ( nieUrl.isEmpty() )
++        nieUrl = Nepomuk::nepomukToFileUrl( url );
+ 
+     KIO::UDSEntry uds;
+-    if ( statFile( url, uds ) ) {
+-        if ( result.resource().hasProperty( Nepomuk::Vocabulary::NIE::url() ) ) {
+-            KUrl fileUrl( res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl() );
+-
++    if ( statFile( url, nieUrl, uds ) ) {
++        if ( !nieUrl.isEmpty() ) {
+             // needed since the nepomuk:/ KIO slave does not do stating of files in its own
+             // subdirs (tags and filesystems), and neither do we with real subdirs
+             if ( uds.isDir() )
+-                uds.insert( KIO::UDSEntry::UDS_URL, fileUrl.url() );
++                uds.insert( KIO::UDSEntry::UDS_URL, nieUrl.url() );
+ 
+-            if ( fileUrl.isLocalFile() ) {
+-                uds.insert( KIO::UDSEntry::UDS_LOCAL_PATH, fileUrl.toLocalFile() );
++            if ( nieUrl.isLocalFile() ) {
++                uds.insert( KIO::UDSEntry::UDS_LOCAL_PATH, nieUrl.toLocalFile() );
+             }
+         }
+ 
+@@ -227,25 +242,26 @@
+ 
+         // make sure we do not use these ugly names for display
+         if ( !uds.contains( KIO::UDSEntry::UDS_DISPLAY_NAME ) ) {
+-            if ( res.hasType( Nepomuk::Vocabulary::PIMO::Thing() ) ) {
++            // by checking nieUrl we avoid loading the resource for local files
++            if ( nieUrl.isEmpty() &&
++                 res.hasType( Nepomuk::Vocabulary::PIMO::Thing() ) ) {
+                 if ( !res.pimoThing().groundingOccurrences().isEmpty() ) {
+                     res = res.pimoThing().groundingOccurrences().first();
+                 }
+             }
+ 
+-            if ( res.hasProperty( Nepomuk::Vocabulary::NIE::url() ) ) {
+-                KUrl fileUrl( res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl() );
+-                uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, fileUrl.fileName() );
++            if ( !nieUrl.isEmpty() ) {
++                uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, nieUrl.fileName() );
+ 
+                 // since we change the UDS_NAME KFileItem cannot handle mimetype and such anymore
+                 QString mimetype = uds.stringValue( KIO::UDSEntry::UDS_MIME_TYPE );
+                 if ( mimetype.isEmpty() ) {
+-                    mimetype = KMimeType::findByUrl(fileUrl)->name();
++                    mimetype = KMimeType::findByUrl(nieUrl)->name();
+                     uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, mimetype );
+                 }
+             }
+             else {
+-                uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, result.resource().genericLabel() );
++                uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, res.genericLabel() );
+             }
+         }
+ 
 Index: nepomuk/kioslaves/search/kio_nepomuksearch.cpp
 ===================================================================
 --- nepomuk/kioslaves/search/kio_nepomuksearch.cpp	(révision 1121160)
 +++ nepomuk/kioslaves/search/kio_nepomuksearch.cpp	(copie de travail)
-@@ -69,7 +69,6 @@
+@@ -29,18 +29,25 @@
+ #include <KDebug>
+ #include <KAboutData>
+ #include <KApplication>
+-#include <KConfig>
++#include <KSharedConfig>
+ #include <KConfigGroup>
+ #include <KCmdLineArgs>
+ #include <kio/global.h>
+ #include <kio/job.h>
+ #include <KMimeType>
+ #include <KStandardDirs>
++#include <KFileItem>
++#include <KDirNotify>
+ 
+-#include <Nepomuk/Resource>
++#include <Nepomuk/Thing>
+ #include <Nepomuk/ResourceManager>
+ #include <Nepomuk/Variant>
+ #include <Nepomuk/Query/QueryServiceClient>
++#include <Nepomuk/Query/ComparisonTerm>
++#include <Nepomuk/Query/ResourceTypeTerm>
++#include <Nepomuk/Query/AndTerm>
++#include <Nepomuk/Query/NegationTerm>
++#include <Nepomuk/Query/Query>
+ 
+ #include <Soprano/Vocabulary/RDF>
+ #include <Soprano/Vocabulary/RDFS>
+@@ -53,14 +60,21 @@
+ 
+ 
+ namespace {
+-    KIO::UDSEntry statDefaultSearchFolder( const QString& name ) {
+-        KIO::UDSEntry uds;
+-        uds.insert( KIO::UDSEntry::UDS_NAME, name );
+-        uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, i18n("Query Results") );
++    void addGenericSearchFolderItems( KIO::UDSEntry& uds ) {
+         uds.insert( KIO::UDSEntry::UDS_ACCESS, 0700 );
+         uds.insert( KIO::UDSEntry::UDS_USER, KUser().loginName() );
+         uds.insert( KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR );
+         uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, QString::fromLatin1( "inode/directory" ) );
++// FIXME        uds.insert( KIO::UDSEntry::UDS_CUSTOM_SORT_WEIGHT, -1 );
++        uds.insert( KIO::UDSEntry::UDS_ICON_OVERLAY_NAMES, QLatin1String( "nepomuk" ) );
++    }
++
++    KIO::UDSEntry statSearchFolder( const KUrl& url ) {
++        KIO::UDSEntry uds;
++        addGenericSearchFolderItems( uds );
++        uds.insert( KIO::UDSEntry::UDS_NAME, Nepomuk::resourceUriToUdsName( url ) );
++        uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, Nepomuk::Query::Query::titleFromQueryUrl( url ) );
++        uds.insert( KIO::UDSEntry::UDS_URL, url.url() );
+         return uds;
+     }
+ 
+@@ -69,9 +83,9 @@
       * Empty if the path only contains the query.
       */
      QString fileNameFromUrl( const KUrl& url ) {
 -        QString fn;
          if ( url.hasQueryItem( QLatin1String( "sparql" ) ) ||
               url.hasQueryItem( QLatin1String( "query" ) ) ||
++             url.hasQueryItem( QLatin1String( "encodedquery" ) ) ||
               url.directory() != QLatin1String( "/" ) ) {
+             return url.fileName();
+         }
+@@ -85,30 +99,13 @@
+         return( !url.hasQuery() &&
+                 ( path.isEmpty() || path == QLatin1String("/") ) );
+     }
+-
+-    // do not cache more than SEARCH_CACHE_MAX search folders at the same time
+-    const int SEARCH_CACHE_MAX = 5;
++    const int s_historyMax = 10;
+ }
+ 
+ 
+ Nepomuk::SearchProtocol::SearchProtocol( const QByteArray& poolSocket, const QByteArray& appSocket )
+     : KIO::ForwardingSlaveBase( "nepomuksearch", poolSocket, appSocket )
+ {
+-    // FIXME: trueg: install a file watch on this file and update it whenever the queries change.
+-    // FIXME: trueg: also emit a KDirNotify signal to inform KIO about that change
+-    KConfig config("kionepomukuserqueriesrc" );
+-
+-    foreach( QString search, config.group("Searches").readEntry("All searches", QStringList() ) )
+-    {
+-        search = search.simplified();
+-        KConfigGroup grp = config.group(search);
+-        KUrl url( grp.readEntry("Query", QString() ) );
+-        url.setScheme( QLatin1String( "nepomuksearch" ) );
+-        QString name = grp.readEntry( "Name", QString() );
+-        if ( !name.isEmpty() ) {
+-            addDefaultSearch( name, url );
+-        }
+-    }
+ }
+ 
+ 
+@@ -137,45 +134,10 @@
+ }
+ 
+ 
+-void Nepomuk::SearchProtocol::addDefaultSearch( const QString& name, const KUrl& url )
+-{
+-    m_defaultSearches.insert( name, url );
+-}
+-
+-
+-Nepomuk::SearchFolder* Nepomuk::SearchProtocol::extractSearchFolder( const KUrl& url )
+-{
+-    kDebug() << url;
+-    if ( SearchFolder* sf = getDefaultQueryFolder( url.fileName() ) ) {
+-        kDebug() << "-----> is default search folder";
+-        return sf;
+-    }
+-    else if ( SearchFolder* sf = getQueryFolder( url ) ) {
+-        kDebug() << "-----> is on-the-fly search folder";
+-        return sf;
+-    }
+-    else {
+-        kDebug() << "-----> does not exist.";
+-        return 0;
+-    }
+-}
+-
+-
+ void Nepomuk::SearchProtocol::listDir( const KUrl& url )
+ {
+     kDebug() << url;
+ 
+-    //
+-    // Root dir: * list default searches: "all music files", "recent files"
+-    //           * list configuration entries: "create new default search"
+-    //
+-    // Root dir with query:
+-    //           * execute the query (cached) and list its results
+-    //
+-    // some folder:
+-    //           * Look for a default search and execute that
+-    //
+-
+     if ( isRootUrl( url ) ) {
+         listRoot();
+     }
+@@ -185,8 +147,10 @@
+             listEntry( KIO::UDSEntry(),  true);
+             finished();
+         }
+-        else if ( SearchFolder* folder = extractSearchFolder( url ) ) {
++        else if ( SearchFolder* folder = getQueryFolder( url ) ) {
+             folder->list();
++            listEntry( KIO::UDSEntry(), true );
++            finished();
+         }
+         else {
+             error( KIO::ERR_DOES_NOT_EXIST, url.prettyUrl() );
+@@ -226,8 +190,7 @@
+         mimeType( QString::fromLatin1( "inode/directory" ) );
+         finished();
+     }
+-    else if ( url.directory() == QLatin1String( "/" ) &&
+-              m_defaultSearches.contains( url.fileName() ) ) {
++    else if ( url.directory() == QLatin1String( "/" ) ) {
+         mimeType( QString::fromLatin1( "inode/directory" ) );
+         finished();
+     }
+@@ -248,7 +211,7 @@
+         //
+         KIO::UDSEntry uds;
+         uds.insert( KIO::UDSEntry::UDS_NAME, QString::fromLatin1( "/" ) );
+-        uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, i18n("Query Results") );
++        uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, i18n("Desktop Queries") );
+         uds.insert( KIO::UDSEntry::UDS_ICON_NAME, QString::fromLatin1( "nepomuk" ) );
+         uds.insert( KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR );
+         uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, QString::fromLatin1( "inode/directory" ) );
+@@ -258,8 +221,7 @@
+     }
+     else if ( fileNameFromUrl( url ).isEmpty() ) {
+         kDebug() << "Stat search folder" << url;
+-        // we use the encoded query url as UDS_NAME
+-        statEntry( statDefaultSearchFolder( QString::fromAscii( url.toEncoded().toPercentEncoding( QByteArray(), QByteArray(), '_' ) ) ) );
++        statEntry( statSearchFolder( url ) );
+         finished();
+     }
+     else {
+@@ -284,8 +246,8 @@
+ {
+     // we do it the speedy but slightly umpf way: decode the encoded URI from the filename
+     newURL = Nepomuk::udsNameToResourceUri( url.fileName() );
+-    kDebug() << "NEW URL:" << newURL << newURL.protocol() << newURL.path() << newURL.fileName();
+-    return newURL.isValid();
++    kDebug() << "URL:" << url << "NEW URL:" << newURL << newURL.protocol() << newURL.path() << newURL.fileName();
++    return !newURL.isEmpty();
+ }
+ 
+ 
+@@ -299,69 +261,34 @@
+ {
+     kDebug();
+ 
+-    listDefaultSearches();
+-    listActions();
+-
+     listEntry( KIO::UDSEntry(), true );
+     finished();
+ }
+ 
+ 
+-void Nepomuk::SearchProtocol::listActions()
+-{
+-    // FIXME: manage default searches
+-}
+-
+-
+ Nepomuk::SearchFolder* Nepomuk::SearchProtocol::getQueryFolder( const KUrl& url )
+ {
++    // this is necessary to properly handle user queries which are encoded in the filename in
++    // statSearchFolder(). This is necessary for cases in which UDS_URL is ignored like in
++    // KUrlNavigator's popup menus
++    KUrl normalizedUrl = Nepomuk::udsNameToResourceUri( url.fileName() );
++    if ( normalizedUrl.protocol() != QLatin1String( "nepomuksearch" ) ) {
++        normalizedUrl = url;
++    }
++
+     // here we strip off the entry's name since that is not part of the query URL
+-    KUrl strippedUrl( url );
+     if ( url.hasQuery() ) {
+-        strippedUrl.setPath( QLatin1String( "/" ) );
++        normalizedUrl.setPath( QLatin1String( "/" ) );
+     }
+     else if ( url.directory() != QLatin1String( "/" ) ) {
+-        strippedUrl.setPath( QLatin1String( "/" ) + url.path().section( '/', 0, 0 ) );
++        normalizedUrl.setPath( QLatin1String( "/" ) + url.path().section( '/', 0, 0 ) );
+     }
+ 
+-    QString urlStr = strippedUrl.url();
+-    SearchFolder* folder = new SearchFolder( strippedUrl, this );
++    SearchFolder* folder = new SearchFolder( normalizedUrl, this );
+     return folder;
+ }
+ 
+ 
+-Nepomuk::SearchFolder* Nepomuk::SearchProtocol::getDefaultQueryFolder( const QString& name )
+-{
+-    if ( m_defaultSearches.contains( name ) ) {
+-        return getQueryFolder( m_defaultSearches[name] );
+-    }
+-    else {
+-        return 0;
+-    }
+-}
+-
+-
+-void Nepomuk::SearchProtocol::listDefaultSearches()
+-{
+-    for ( QHash<QString, KUrl>::const_iterator it = m_defaultSearches.constBegin();
+-          it != m_defaultSearches.constEnd(); ++it ) {
+-        listEntry( statDefaultSearchFolder( it.key() ), false );
+-    }
+-}
+-
+-
+-void Nepomuk::SearchProtocol::listDefaultSearch( const QString& name )
+-{
+-    kDebug() << name;
+-    if ( m_defaultSearches.contains( name ) ) {
+-        getDefaultQueryFolder( name )->list();
+-    }
+-    else {
+-        error( KIO::ERR_CANNOT_ENTER_DIRECTORY, "Unknown default search: " + name );
+-        finished();
+-    }
+-}
+-
+ extern "C"
+ {
+     KDE_EXPORT int kdemain( int argc, char **argv )
+Index: nepomuk/kioslaves/search/searchfolder.h
+===================================================================
+--- nepomuk/kioslaves/search/searchfolder.h	(révision 1121160)
++++ nepomuk/kioslaves/search/searchfolder.h	(copie de travail)
+@@ -47,12 +47,31 @@
+         Q_OBJECT
+ 
+     public:
++        /**
++         * Create a new search folder which reads the query from \a url.
++         * Call list() to actually let it list results via slave->listEntry()
++         */
+         SearchFolder( const KUrl& url, KIO::SlaveBase* slave );
++
++        /**
++         * Destructor
++         */
+         ~SearchFolder();
+ 
+-        QString query() const { return m_query; }
++        /**
++         * Query URL used by this folder.
++         */
+         KUrl url() const { return m_url; }
+ 
++        /**
++         * The query used by this folder or an invalid one in case
++         * the query URL contains a pure SPARQL query string.
++         */
++        Query::Query query() const { return m_query; }
++
++        /**
++         * List the results directly on the parent slave.
++         */
+         void list();
+ 
+     private Q_SLOTS:
+@@ -83,8 +102,12 @@
+         // folder properties
+         KUrl m_url;
+ 
++        /// might be invalid in case the url contained a SPARQL query which
++        /// we could not parse. In that case use m_sparqlQuery
++        Query::Query m_query;
++
+         // SPARQL query that is actually sent to the query service
+-        QString m_query;
++        QString m_sparqlQuery;
+ 
+         // result cache, filled by the search thread
+         QQueue<Query::Result> m_resultsQueue;
+Index: nepomuk/kioslaves/search/kio_nepomuksearch.h
+===================================================================
+--- nepomuk/kioslaves/search/kio_nepomuksearch.h	(révision 1121160)
++++ nepomuk/kioslaves/search/kio_nepomuksearch.h	(copie de travail)
+@@ -80,21 +80,11 @@
+     private:
+         bool ensureNepomukRunning( bool emitError = true );
+         void listRoot();
+-        void listActions();
+-        void listDefaultSearches();
+-        void listDefaultSearch( const QString& path );
+-        void addDefaultSearch( const QString& name, const KUrl& url );
+ 
+-        SearchFolder* extractSearchFolder( const KUrl& url );
+-
+         /**
+          * Get (possibly cached) query folder
+          */
+         SearchFolder* getQueryFolder( const KUrl& url );
+-        SearchFolder* getDefaultQueryFolder( const QString& name );
+-
+-        // the default search folders
+-        QHash<QString, KUrl> m_defaultSearches;
+     };
+ }
+ 
+Index: nepomuk/kioslaves/search/kdedmodule/searchurllistener.cpp
+===================================================================
+--- nepomuk/kioslaves/search/kdedmodule/searchurllistener.cpp	(révision 1121160)
++++ nepomuk/kioslaves/search/kdedmodule/searchurllistener.cpp	(copie de travail)
+@@ -46,13 +46,16 @@
+ }
+ 
+ 
+-Nepomuk::SearchUrlListener::SearchUrlListener( const KUrl& queryUrl )
++Nepomuk::SearchUrlListener::SearchUrlListener( const KUrl& queryUrl, const KUrl& notifyUrl )
+     : QObject( 0 ),
+       m_ref( 0 ),
+       m_queryUrl( queryUrl ),
++      m_notifyUrl( notifyUrl ),
+       m_queryInterface( 0 )
+ {
+-    kDebug() << queryUrl;
++    kDebug() << queryUrl << notifyUrl;
++    if ( m_notifyUrl.isEmpty() )
++        m_notifyUrl = queryUrl;
+ 
+     const QString queryService = QLatin1String( "org.kde.nepomuk.services.nepomukqueryservice" );
+     if ( QDBusConnection::sessionBus().interface()->isServiceRegistered( queryService ) ) {
+@@ -97,7 +100,7 @@
+ 
+ void Nepomuk::SearchUrlListener::slotNewEntries( const QList<Nepomuk::Query::Result>& )
+ {
+-    org::kde::KDirNotify::emitFilesAdded( m_queryUrl.url() );
++    org::kde::KDirNotify::emitFilesAdded( m_notifyUrl.url() );
+ }
+ 
+ 
+@@ -105,7 +108,7 @@
+ {
+     QStringList urls;
+     foreach( const QString& uri, entries ) {
+-        KUrl resultUrl( m_queryUrl );
++        KUrl resultUrl( m_notifyUrl );
+         resultUrl.addPath( Nepomuk::resourceUriToUdsName( uri ) );
+         urls << resultUrl.url();
+     }
+@@ -122,7 +125,7 @@
+         createInterface();
+ 
+         // inform KIO that results are available
+-        org::kde::KDirNotify::emitFilesAdded( m_queryUrl.url() );
++        org::kde::KDirNotify::emitFilesAdded( m_notifyUrl.url() );
+     }
+ }
+ 
+@@ -138,7 +141,7 @@
+                                                            "/nepomukqueryservice",
+                                                            QDBusConnection::sessionBus() );
+ 
+-    QDBusReply<QDBusObjectPath> r = queryServiceInterface.sparqlQuery( Nepomuk::queryFromUrl( m_queryUrl ),
++    QDBusReply<QDBusObjectPath> r = queryServiceInterface.sparqlQuery( Nepomuk::sparqlFromQueryUrl( m_queryUrl ),
+                                                                        nieUriReqProp() );
+ 
+     if ( r.isValid() ) {
 Index: nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.h
 ===================================================================
 --- nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.h	(révision 1121160)
@@ -42,19 +632,43 @@ Index: nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.h
      };
  }
  
+Index: nepomuk/kioslaves/search/kdedmodule/searchurllistener.h
+===================================================================
+--- nepomuk/kioslaves/search/kdedmodule/searchurllistener.h	(révision 1121160)
++++ nepomuk/kioslaves/search/kdedmodule/searchurllistener.h	(copie de travail)
+@@ -36,7 +36,7 @@
+         Q_OBJECT
+ 
+     public:
+-        SearchUrlListener( const KUrl& queryUrl );
++        SearchUrlListener( const KUrl& queryUrl, const KUrl& notifyUrl = KUrl() );
+         ~SearchUrlListener();
+ 
+         int ref();
+@@ -52,6 +52,7 @@
+ 
+         int m_ref;
+         KUrl m_queryUrl;
++        KUrl m_notifyUrl;
+         org::kde::nepomuk::Query* m_queryInterface;
+     };
+ }
 Index: nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.cpp
 ===================================================================
 --- nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.cpp	(révision 1121160)
 +++ nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.cpp	(copie de travail)
-@@ -23,6 +23,7 @@
+@@ -21,8 +21,10 @@
+ #include "searchurllistener.h"
+ #include "nie.h"
  #include "dbusoperators_p.h"
++#include "timelinetools.h"
  
  #include <QtDBus/QDBusConnection>
 +#include <QtDBus/QDBusServiceWatcher>
  
  #include <kdebug.h>
  #include <kdirnotify.h>
-@@ -30,7 +31,7 @@
+@@ -30,9 +32,20 @@
  namespace {
      inline bool isNepomukSearchUrl( const KUrl& url )
      {
@@ -62,8 +676,21 @@ Index: nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.cpp
 +        static const char s_nepProName[] = "nepomuksearch";
          return url.protocol() == QLatin1String( s_nepProName );
      }
++
++    inline bool isTimelineUrl( const KUrl& url )
++    {
++        static const char s_timelineProName[] = "timeline";
++        return url.protocol() == QLatin1String( s_timelineProName );
++    }
++
++    inline bool isNepomukSearchOrTimelineUrl( const KUrl& url )
++    {
++        return isNepomukSearchUrl( url ) || isTimelineUrl( url );
++    }
  }
-@@ -47,10 +48,12 @@
+ 
+ 
+@@ -47,10 +60,12 @@
      // connect to serviceOwnerChanged to catch crashed clients that never unregistered
      // themselves
      //
@@ -80,7 +707,31 @@ Index: nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.cpp
  
      //
      // connect to KDirLister telling us that it entered a dir
-@@ -93,8 +96,10 @@
+@@ -80,12 +95,22 @@
+ void Nepomuk::SearchModule::registerSearchUrl( const QString& urlString )
+ {
+     const KUrl url( urlString );
++    KUrl queryUrl;
+ 
+     if ( isNepomukSearchUrl( url ) ) {
++        queryUrl = url;
++    }
++    else if ( isTimelineUrl( url ) ) {
++        QDate date;
++        if ( Nepomuk::parseTimelineUrl( url, &date ) == Nepomuk::DayFolder )
++            queryUrl = Nepomuk::buildTimelineQueryUrl( date );
++    }
++
++    if ( queryUrl.isValid() ) {
+         kDebug() << "REGISTER REGISTER REGISTER REGISTER REGISTER REGISTER" << url;
+         QHash<KUrl, SearchUrlListener*>::iterator it = m_queryHash.find( url );
+         if ( it == m_queryHash.end() ) {
+-            SearchUrlListener* listener = new SearchUrlListener( url );
++            SearchUrlListener* listener = new SearchUrlListener( queryUrl, url );
+             listener->ref();
+             m_queryHash.insert( url, listener );
+         }
+@@ -93,8 +118,10 @@
              it.value()->ref();
          }
  
@@ -92,8 +743,12 @@ Index: nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.cpp
      }
  }
  
-@@ -105,8 +110,11 @@
-     if ( isNepomukSearchUrl( url ) ) {
+@@ -102,11 +129,14 @@
+ void Nepomuk::SearchModule::unregisterSearchUrl( const QString& urlString )
+ {
+     const KUrl url( urlString );
+-    if ( isNepomukSearchUrl( url ) ) {
++    if ( isNepomukSearchOrTimelineUrl( url ) ) {
          kDebug() << "UNREGISTER UNREGISTER UNREGISTER UNREGISTER UNREGISTER" << url;
          unrefUrl( url );
 -        if ( calledFromDBus() )
@@ -105,7 +760,7 @@ Index: nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.cpp
      }
  }
  
-@@ -117,18 +125,15 @@
+@@ -117,18 +147,15 @@
  }
  
  
@@ -131,20 +786,685 @@ Index: nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.cpp
  }
  
  
-Index: nepomuk/kioslaves/nepomuk/kio_nepomuk.cpp
+Index: nepomuk/kioslaves/search/kdedmodule/CMakeLists.txt
 ===================================================================
---- nepomuk/kioslaves/nepomuk/kio_nepomuk.cpp	(révision 1121160)
-+++ nepomuk/kioslaves/nepomuk/kio_nepomuk.cpp	(copie de travail)
-@@ -402,8 +402,24 @@
-     //
-     KIO::UDSEntry uds;
+--- nepomuk/kioslaves/search/kdedmodule/CMakeLists.txt	(révision 1121160)
++++ nepomuk/kioslaves/search/kdedmodule/CMakeLists.txt	(copie de travail)
+@@ -11,6 +11,7 @@
+ set(nepomuksearchmodule_SRCS
+   nepomuksearchmodule.cpp
+   searchurllistener.cpp
++  ../../common/timelinetools.cpp
+ )
  
+ soprano_add_ontology(nepomuksearchmodule_SRCS
+@@ -18,6 +19,16 @@
+   "NIE"
+   "Nepomuk::Vocabulary"
+   "trig")
++soprano_add_ontology(nepomuksearchmodule_SRCS
++  ${SHAREDDESKTOPONTOLOGIES_ROOT_DIR}/nie/nfo.trig
++  "NFO"
++  "Nepomuk::Vocabulary"
++  "trig")
++soprano_add_ontology(nepomuksearchmodule_SRCS
++  ${SHAREDDESKTOPONTOLOGIES_ROOT_DIR}/nepomuk/nuao.trig
++  "NUAO"
++  "Nepomuk::Vocabulary"
++  "trig")
+ 
+ set_source_files_properties(
+   ${nepomuk_kio_slaves_SOURCE_DIR}/../interfaces/org.kde.nepomuk.Query.xml
+Index: nepomuk/kioslaves/search/CMakeLists.txt
+===================================================================
+--- nepomuk/kioslaves/search/CMakeLists.txt	(révision 1121160)
++++ nepomuk/kioslaves/search/CMakeLists.txt	(copie de travail)
+@@ -18,6 +18,7 @@
+ set(kio_nepomuksearch_PART_SRCS
+   kio_nepomuksearch.cpp
+   searchfolder.cpp
++  ../common/resourcestat.cpp
+ )
+ 
+ soprano_add_ontology(kio_nepomuksearch_PART_SRCS
+@@ -41,6 +42,7 @@
+ 
+ target_link_libraries(kio_nepomuksearch
+   ${KDE4_KIO_LIBS}
++  ${KDE4_SOLID_LIBS}
+   ${NEPOMUK_LIBRARIES}
+   ${NEPOMUK_QUERY_LIBRARIES}
+   ${SOPRANO_LIBRARIES}
+Index: nepomuk/kioslaves/timeline/kio_timeline.cpp
+===================================================================
+--- nepomuk/kioslaves/timeline/kio_timeline.cpp	(révision 1121160)
++++ nepomuk/kioslaves/timeline/kio_timeline.cpp	(copie de travail)
+@@ -20,6 +20,11 @@
+ 
+ #include "kio_timeline.h"
+ 
++#include "nfo.h"
++#include "nie.h"
++#include "nuao.h"
++#include "timelinetools.h"
++
+ #include <KUrl>
+ #include <kio/global.h>
+ #include <klocale.h>
+@@ -28,8 +33,8 @@
+ #include <KDebug>
+ #include <KLocale>
+ #include <kio/netaccess.h>
+-#include <KCalendarSystem>
+ #include <KComponentData>
++#include <KCalendarSystem>
+ 
+ #include <Soprano/Vocabulary/NAO>
+ #include <Soprano/Vocabulary/XMLSchema>
+@@ -47,38 +52,6 @@
+ 
+ 
+ namespace {
+-    const char* DATEFORMATSTART("yyyy-MM-ddT00:00:00.000Z");
+-    const char* DATEFORMATEND("yyyy-MM-ddT23:59:59.999Z");
+-
+-    KUrl buildQueryUrl( const QDate& date )
+-    {
+-        QString dateFrom = date.toString(DATEFORMATSTART);
+-        QString dateTo = date.toString(DATEFORMATEND);
+-
+-        QString query = QString("select distinct ?r where { "
+-                                "?r a nfo:FileDataObject . "
+-                                "{"
+-                                "  ?r nie:lastModified ?date . "
+-                                "} "
+-#ifdef NEPOMUK_TIMELINE_WITH_NTAO
+-                                "UNION "
+-                                "{"
+-                                "  ?de a ?det . ?det rdfs:subClassOf ntao:DataObjectEvent . "
+-                                "  ?de ntao:timestamp ?date . "
+-                                "  ?de ntao:dataObject ?r . "
+-                                "} "
+-#endif
+-                                "FILTER(?date > '%1'^^%3 && ?date < '%2'^^%3) . "
+-                                "OPTIONAL { ?r2 a nfo:Folder . FILTER(?r=?r2) . } . FILTER(!BOUND(?r2)) . "
+-                                "}")
+-                        .arg(dateFrom)
+-                        .arg(dateTo)
+-                        .arg(Soprano::Node::resourceToN3(Soprano::Vocabulary::XMLSchema::dateTime()));
+-        KUrl url("nepomuksearch:/");
+-        url.addQueryItem( "sparql", query );
+-        return url;
+-    }
+-
+     KIO::UDSEntry createFolderUDSEntry( const QString& name, const QString& displayName, const QDate& date )
+     {
+         KIO::UDSEntry uds;
+@@ -116,50 +89,11 @@
+                                      KGlobal::locale()->formatDate( date, KLocale::FancyLongDate ),
+                                      date );
+     }
+-
+-    QDate applyRelativeDateModificators( const QDate& date, const QMap<QString, QString>& modificators )
+-    {
+-        QDate newDate( date );
+-        const QString dayKey = QLatin1String("relDays");
+-        const QString weekKey = QLatin1String("relWeeks");
+-        const QString monthKey = QLatin1String("relMonths");
+-        const QString yearKey = QLatin1String("relYears");
+-        bool ok = false;
+-
+-        if (modificators.contains(yearKey)) {
+-            int relYears = modificators[yearKey].toInt(&ok);
+-            if (ok) {
+-                newDate = newDate.addYears(relYears);
+-            }
+-        }
+-        if (modificators.contains(monthKey)) {
+-            int relMonths = modificators[monthKey].toInt(&ok);
+-            if (ok) {
+-                newDate = newDate.addMonths(relMonths);
+-            }
+-        }
+-        if (modificators.contains(weekKey)) {
+-            int relWeeks = modificators[weekKey].toInt(&ok);
+-            if (ok) {
+-                const KCalendarSystem * calSystem = KGlobal::locale()->calendar();
+-                newDate = newDate.addDays(relWeeks * calSystem->daysInWeek(date));
+-            }
+-        }
+-        if (modificators.contains(dayKey)) {
+-            int relDays = modificators[dayKey].toInt(&ok);
+-            if (ok) {
+-                newDate = newDate.addDays(relDays);
+-            }
+-        }
+-        return newDate;
+-    }
+ }
+ 
+ 
+ Nepomuk::TimelineProtocol::TimelineProtocol( const QByteArray& poolSocket, const QByteArray& appSocket )
+-    : KIO::ForwardingSlaveBase( "timeline", poolSocket, appSocket ),
+-      m_folderType( NoFolder ),
+-      m_dateRegexp( QLatin1String("\\d{4}-\\d{2}(?:-(\\d{2}))?") )
++    : KIO::ForwardingSlaveBase( "timeline", poolSocket, appSocket )
+ {
+     kDebug();
+ }
+@@ -173,39 +107,34 @@
+ 
+ void Nepomuk::TimelineProtocol::listDir( const KUrl& url )
+ {
+-    if ( parseUrl( url ) ) {
+-        switch( m_folderType ) {
+-        case RootFolder:
+-            listEntry( createFolderUDSEntry( QLatin1String("today"), i18n("Today"), QDate::currentDate() ), false );
+-            listEntry( createFolderUDSEntry( QLatin1String("calendar"), i18n("Calendar"), QDate::currentDate() ), false );
+-            listEntry( KIO::UDSEntry(), true );
+-            finished();
+-            break;
++    switch( parseTimelineUrl( url, &m_date, &m_filename ) ) {
++    case RootFolder:
++        listEntry( createFolderUDSEntry( QLatin1String("today"), i18n("Today"), QDate::currentDate() ), false );
++        listEntry( createFolderUDSEntry( QLatin1String("calendar"), i18n("Calendar"), QDate::currentDate() ), false );
++        listEntry( KIO::UDSEntry(), true );
++        finished();
++        break;
+ 
+-        case CalendarFolder:
+-            listThisYearsMonths();
+-            // TODO: add entry for previous years
+-            listEntry( KIO::UDSEntry(), true );
+-            finished();
+-            break;
++    case CalendarFolder:
++        listThisYearsMonths();
++        // TODO: add entry for previous years
++        listEntry( KIO::UDSEntry(), true );
++        finished();
++        break;
+ 
+-        case MonthFolder:
+-            listDays( m_date.month(), m_date.year() );
+-            listEntry( KIO::UDSEntry(), true );
+-            finished();
+-            break;
++    case MonthFolder:
++        listDays( m_date.month(), m_date.year() );
++        listEntry( KIO::UDSEntry(), true );
++        finished();
++        break;
+ 
+-        case DayFolder:
+-            ForwardingSlaveBase::listDir( url );
+-            break;
++    case DayFolder:
++        ForwardingSlaveBase::listDir( url );
++        break;
+ 
+-        default:
+-            error( KIO::ERR_DOES_NOT_EXIST, url.prettyUrl() );
+-            break;
+-        }
+-    }
+-    else {
++    default:
+         error( KIO::ERR_DOES_NOT_EXIST, url.prettyUrl() );
++        break;
+     }
+ }
+ 
+@@ -221,7 +150,7 @@
+ {
+     kDebug() << url;
+ 
+-    if ( parseUrl( url ) && !m_filename.isEmpty() ) {
++    if ( parseTimelineUrl( url, &m_date, &m_filename ) && !m_filename.isEmpty() ) {
+         ForwardingSlaveBase::get( url );
+     }
+     else {
+@@ -234,7 +163,7 @@
+ {
+     kDebug() << url;
+ 
+-    if ( parseUrl( url ) && !m_filename.isEmpty() ) {
++    if ( parseTimelineUrl( url, &m_date, &m_filename ) && !m_filename.isEmpty() ) {
+         ForwardingSlaveBase::put( url, permissions, flags );
+     }
+     else {
+@@ -280,46 +209,41 @@
+ 
+ void Nepomuk::TimelineProtocol::stat( const KUrl& url )
+ {
+-    if ( parseUrl( url ) ) {
+-        switch( m_folderType ) {
+-        case RootFolder: {
+-            KIO::UDSEntry uds;
+-            uds.insert( KIO::UDSEntry::UDS_NAME, QString::fromLatin1( "/" ) );
+-            uds.insert( KIO::UDSEntry::UDS_ICON_NAME, QString::fromLatin1( "nepomuk" ) );
+-            uds.insert( KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR );
+-            uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, QString::fromLatin1( "inode/directory" ) );
+-            statEntry( uds );
+-            finished();
+-            break;
+-        }
++    switch( parseTimelineUrl( url, &m_date, &m_filename ) ) {
++    case RootFolder: {
++        KIO::UDSEntry uds;
++        uds.insert( KIO::UDSEntry::UDS_NAME, QString::fromLatin1( "/" ) );
++        uds.insert( KIO::UDSEntry::UDS_ICON_NAME, QString::fromLatin1( "nepomuk" ) );
++        uds.insert( KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR );
++        uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, QString::fromLatin1( "inode/directory" ) );
++        statEntry( uds );
++        finished();
++        break;
++    }
+ 
+-        case CalendarFolder:
+-            statEntry( createFolderUDSEntry( QLatin1String("calendar"), i18n("Calendar"), QDate::currentDate() ) );
+-            finished();
+-            break;
++    case CalendarFolder:
++        statEntry( createFolderUDSEntry( QLatin1String("calendar"), i18n("Calendar"), QDate::currentDate() ) );
++        finished();
++        break;
+ 
+-        case MonthFolder:
+-            statEntry( createMonthUDSEntry( m_date.month(), m_date.year() ) );
+-            finished();
+-            break;
++    case MonthFolder:
++        statEntry( createMonthUDSEntry( m_date.month(), m_date.year() ) );
++        finished();
++        break;
+ 
+-        case DayFolder:
+-            if ( m_filename.isEmpty() ) {
+-                statEntry( createDayUDSEntry( m_date ) );
+-                finished();
+-            }
+-            else {
+-                ForwardingSlaveBase::stat( url );
+-            }
+-            break;
+-
+-        default:
+-            error( KIO::ERR_DOES_NOT_EXIST, url.prettyUrl() );
+-            break;
++    case DayFolder:
++        if ( m_filename.isEmpty() ) {
++            statEntry( createDayUDSEntry( m_date ) );
++            finished();
+         }
+-    }
+-    else {
++        else {
++            ForwardingSlaveBase::stat( url );
++        }
++        break;
++
++    default:
+         error( KIO::ERR_DOES_NOT_EXIST, url.prettyUrl() );
++        break;
+     }
+ }
+ 
+@@ -327,8 +251,8 @@
+ // only used for the queries
+ bool Nepomuk::TimelineProtocol::rewriteUrl( const KUrl& url, KUrl& newURL )
+ {
+-    if ( parseUrl( url ) && m_folderType == DayFolder ) {
+-        newURL = buildQueryUrl( m_date );
++    if ( parseTimelineUrl( url, &m_date, &m_filename ) == DayFolder ) {
++        newURL = buildTimelineQueryUrl( m_date );
+         newURL.setPath( QLatin1String( "/" ) + m_filename );
+         return true;
+     }
+@@ -377,67 +301,6 @@
+ }
+ 
+ 
+-bool Nepomuk::TimelineProtocol::parseUrl( const KUrl& url )
+-{
+-    kDebug() << url;
+-
+-    // rest
+-    m_date = QDate();
+-    m_filename.truncate(0);
+-
+-    const QString path = url.path(KUrl::RemoveTrailingSlash);
+-
+-    if( path.isEmpty() || path == QLatin1String("/") ) {
+-        m_folderType = RootFolder;
+-        kDebug() << url << "is root folder";
+-        return true;
+-    }
+-    else if( path.startsWith( QLatin1String( "/today" ) ) ) {
+-        m_folderType = DayFolder;
+-        m_date = QDate::currentDate();
+-        m_filename = path.mid( 7 );
+-        kDebug() << url << "is today folder:" << m_date << m_filename;
+-        return true;
+-    }
+-    else if( path == QLatin1String( "/calendar" ) ) {
+-        m_folderType = CalendarFolder;
+-        kDebug() << url << "is calendar folder";
+-        return true;
+-    }
+-    else {
+-        QStringList sections = path.split( QLatin1String( "/" ), QString::SkipEmptyParts );
+-        QString dateString;
+-        if ( m_dateRegexp.exactMatch( sections.last() ) ) {
+-            dateString = sections.last();
+-        }
+-        else if ( sections.count() > 1 && m_dateRegexp.exactMatch( sections[sections.count()-2] ) ) {
+-            dateString = sections[sections.count()-2];
+-            m_filename = sections.last();
+-        }
+-        else {
+-            kDebug() << url << "COULD NOT PARSE";
+-            return false;
+-        }
+-
+-        if ( m_dateRegexp.cap( 1 ).isEmpty() ) {
+-            // no day -> month listing
+-            m_folderType = MonthFolder;
+-            kDebug() << "parsing " << dateString;
+-            m_date = QDate::fromString( dateString, QLatin1String("yyyy-MM") );
+-            kDebug() << url << "is month folder:" << m_date.month() << m_date.year();
+-            return m_date.month() > 0 && m_date.year() > 0;
+-        }
+-        else {
+-            m_folderType = DayFolder;
+-            kDebug() << "parsing " << dateString;
+-            m_date = applyRelativeDateModificators( QDate::fromString( dateString, "yyyy-MM-dd" ), url.queryItems() );
+-            // only in day folders we can have filenames
+-            kDebug() << url << "is day folder:" << m_date << m_filename;
+-            return m_date.isValid();
+-        }
+-    }
+-}
+-
+ extern "C"
+ {
+     KDE_EXPORT int kdemain( int argc, char **argv )
+Index: nepomuk/kioslaves/timeline/CMakeLists.txt
+===================================================================
+--- nepomuk/kioslaves/timeline/CMakeLists.txt	(révision 1121160)
++++ nepomuk/kioslaves/timeline/CMakeLists.txt	(copie de travail)
+@@ -5,12 +5,31 @@
+   ${KDE4_INCLUDES}
+   ${KDE4_KIO_INCLUDES}
+   ${NEPOMUK_INCLUDE_DIR}
++  ${nepomuk_kio_slaves_SOURCE_DIR}/common
+ )
+ 
+ ########### next target ###############
+ 
+-set(kio_timeline_PART_SRCS kio_timeline.cpp)
++set(kio_timeline_PART_SRCS
++  kio_timeline.cpp
++  ../common/timelinetools.cpp)
+ 
++soprano_add_ontology(kio_timeline_PART_SRCS
++  ${SHAREDDESKTOPONTOLOGIES_ROOT_DIR}/nie/nfo.trig
++  "NFO"
++  "Nepomuk::Vocabulary"
++  "trig")
++soprano_add_ontology(kio_timeline_PART_SRCS
++  ${SHAREDDESKTOPONTOLOGIES_ROOT_DIR}/nie/nie.trig
++  "NIE"
++  "Nepomuk::Vocabulary"
++  "trig")
++soprano_add_ontology(kio_timeline_PART_SRCS
++  ${SHAREDDESKTOPONTOLOGIES_ROOT_DIR}/nepomuk/nuao.trig
++  "NUAO"
++  "Nepomuk::Vocabulary"
++  "trig")
++
+ kde4_add_plugin(kio_timeline ${kio_timeline_PART_SRCS})
+ 
+ target_link_libraries(kio_timeline
+Index: nepomuk/kioslaves/timeline/kio_timeline.h
+===================================================================
+--- nepomuk/kioslaves/timeline/kio_timeline.h	(révision 1121160)
++++ nepomuk/kioslaves/timeline/kio_timeline.h	(copie de travail)
+@@ -24,9 +24,7 @@
+ #include <kio/forwardingslavebase.h>
+ 
+ #include <QtCore/QDate>
+-#include <QtCore/QRegExp>
+ 
+-
+ namespace Nepomuk {
+     class TimelineProtocol : public KIO::ForwardingSlaveBase
+     {
+@@ -100,24 +98,9 @@
+         void listThisYearsMonths();
+         void listPreviousYears();
+ 
+-        /// will set m_date, m_filename, and m_folderType
+-        bool parseUrl( const KUrl& url );
+-
+-        /// folder type that is set by parseUrl
+-        enum FolderType {
+-            NoFolder = 0,    /// nothing
+-            RootFolder,      /// the root folder
+-            CalendarFolder,  /// the calendar folder listing all months
+-            MonthFolder,     /// a folder listing a month's days (m_date contains the month)
+-            DayFolder        /// a folder listing a day (m_date); optionally m_filename is set
+-        };
+-
+         /// temp vars for the currently handled URL
+         QDate m_date;
+         QString m_filename;
+-        FolderType m_folderType;
+-
+-        const QRegExp m_dateRegexp;
+     };
+ }
+ 
+Index: nepomuk/kioslaves/common/resourcestat.cpp
+===================================================================
+--- nepomuk/kioslaves/common/resourcestat.cpp	(révision 0)
++++ nepomuk/kioslaves/common/resourcestat.cpp	(révision 0)
+@@ -0,0 +1,382 @@
++/*
++   Copyright 2008-2010 Sebastian Trueg <trueg@kde.org>
++
++   This program is free software; you can redistribute it and/or
++   modify it under the terms of the GNU General Public License as
++   published by the Free Software Foundation; either version 2 of
++   the License or (at your option) version 3 or any later version
++   accepted by the membership of KDE e.V. (or its successor approved
++   by the membership of KDE e.V.), which shall act as a proxy
++   defined in Section 14 of version 3 of the license.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#include "resourcestat.h"
++#include "nepomuksearchurltools.h"
++#include "nie.h"
++#include "nfo.h"
++#include "pimo.h"
++
++#include <QtCore/QEventLoop>
++#include <QtCore/QTimer>
++#include <QtCore/QFile>
++
++#include <KUrl>
++#include <KMimeType>
++#include <KUser>
++#include <kio/udsentry.h>
++#include <KDebug>
++
++#include <Nepomuk/Thing>
++#include <Nepomuk/Variant>
++#include <Nepomuk/Types/Class>
++#include <Nepomuk/ResourceManager>
++#include <Nepomuk/Query/Query>
++#include <Nepomuk/Query/ComparisonTerm>
++#include <Nepomuk/Query/ResourceTerm>
++
++#include <Soprano/Vocabulary/RDF>
++#include <Soprano/Vocabulary/NAO>
++#include <Soprano/QueryResultIterator>
++#include <Soprano/NodeIterator>
++#include <Soprano/Node>
++#include <Soprano/Model>
++
++#include <Solid/Device>
++#include <Solid/StorageAccess>
++
++
++KUrl Nepomuk::stripQuery( const KUrl& url )
++{
++    KUrl newUrl( url );
++    newUrl.setEncodedQuery( QByteArray() );
++    return newUrl;
++}
++
++
++Nepomuk::Resource Nepomuk::splitNepomukUrl( const KUrl& url, QString* filename )
++{
++    //
++    // let's try to extract the resource from the url in case we listed a tag or
++    // filesystem and need to stat the entries in those virtual folders
++    //
++    // pre KDE 4.4 resources had just a single section, in KDE 4.4 we have "/res/<UUID>"
++    //
++    QString urlStr = stripQuery( url ).url();
++    int pos = urlStr.indexOf( '/', urlStr.startsWith( QLatin1String( "nepomuk:/res/" ) ) ? 13 : 9 );
++    if ( pos > 0 ) {
++        KUrl resourceUri = urlStr.left(pos);
++        if ( filename )
++            *filename = urlStr.mid( pos+1 );
++        return resourceUri;
++    }
++    else {
++        return stripQuery( url );
++    }
++}
++
++
++bool Nepomuk::isRemovableMediaFile( const Nepomuk::Resource& res )
++{
++    if ( res.hasProperty( Nepomuk::Vocabulary::NIE::url() ) ) {
++        KUrl url = res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl();
++        return ( url.protocol() == QLatin1String( "filex" ) );
++    }
++    else {
++        return false;
++    }
++}
++
++
++Solid::StorageAccess* Nepomuk::storageFromUUID( const QString& uuid )
++{
++    QString solidQuery = QString::fromLatin1( "[ StorageVolume.usage=='FileSystem' AND StorageVolume.uuid=='%1' ]" ).arg( uuid.toLower() );
++    QList<Solid::Device> devices = Solid::Device::listFromQuery( solidQuery );
++    kDebug() << uuid << solidQuery << devices.count();
++    if ( !devices.isEmpty() )
++        return devices.first().as<Solid::StorageAccess>();
++    else
++        return 0;
++}
++
++
++bool Nepomuk::mountAndWait( Solid::StorageAccess* storage )
++{
++    kDebug() << storage;
++    QEventLoop loop;
++    loop.connect( storage,
++                  SIGNAL(accessibilityChanged(bool, QString)),
++                  SLOT(quit()) );
++    // timeout 20 second
++    QTimer::singleShot( 20000, &loop, SLOT(quit()) );
++
++    storage->setup();
++    loop.exec();
++
++    kDebug() << storage << storage->isAccessible();
++
++    return storage->isAccessible();
++}
++
++
++KUrl Nepomuk::determineFilesystemPath( const Nepomuk::Resource& fsRes )
++{
++    QString uuidQuery = QString::fromLatin1( "select ?uuid where { %1 %2 ?uuid . }" )
++                        .arg( Soprano::Node::resourceToN3( fsRes.resourceUri() ),
++                              Soprano::Node::resourceToN3( Soprano::Vocabulary::NAO::identifier() ) );
++    Soprano::QueryResultIterator it = Nepomuk::ResourceManager::instance()->mainModel()->executeQuery( uuidQuery, Soprano::Query::QueryLanguageSparql );
++    if ( it.next() ) {
++        Solid::StorageAccess* storage = storageFromUUID( it["uuid"].toString() );
++        it.close();
++        if ( storage &&
++             ( storage->isAccessible() ||
++               mountAndWait( storage ) ) ) {
++            return storage->filePath();
++        }
++    }
++    return KUrl();
++}
++
++
++QString Nepomuk::getFileSystemLabelForRemovableMediaFileUrl( const Nepomuk::Resource& res )
++{
++    QList<Soprano::Node> labelNodes
++        = Nepomuk::ResourceManager::instance()->mainModel()->executeQuery( QString::fromLatin1( "select ?label where { "
++                                                                                                "%1 nie:isPartOf ?fs . "
++                                                                                                "?fs a nfo:Filesystem . "
++                                                                                                "?fs nao:prefLabel ?label . "
++                                                                                                "} LIMIT 1" )
++                                                                           .arg( Soprano::Node::resourceToN3( res.resourceUri() ) ),
++                                                                           Soprano::Query::QueryLanguageSparql ).iterateBindings( "label" ).allNodes();
++
++    if ( !labelNodes.isEmpty() )
++        return labelNodes.first().toString();
++    else
++        return res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl().host(); // Solid UUID
++}
++
++
++KUrl Nepomuk::convertRemovableMediaFileUrl( const KUrl& url, bool evenMountIfNecessary )
++{
++    Solid::StorageAccess* storage = Nepomuk::storageFromUUID( url.host() );
++    kDebug() << url << storage;
++    if ( storage &&
++         ( storage->isAccessible() ||
++           ( evenMountIfNecessary && Nepomuk::mountAndWait( storage ) ) ) ) {
++        kDebug() << "converted:" << KUrl( storage->filePath() + QLatin1String( "/" ) + url.path() );
++        return storage->filePath() + QLatin1String( "/" ) + url.path();
++    }
++    else {
++        return KUrl();
++    }
++}
++
++
++KIO::UDSEntry Nepomuk::statNepomukResource( const Nepomuk::Resource& res )
++{
++    //
++    // We do not have a local file
++    // This is where the magic starts to happen.
++    // This is where we only use Nepomuk properties
++    //
++    KIO::UDSEntry uds;
++
 +    // we handle files on removable media which are not mounted
 +    // as a special case
 +    bool isFileOnRemovableMedium = isRemovableMediaFile( res );
 +
-     // The display name can be anything
--    uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, res.genericLabel() );
++    // The display name can be anything
 +    QString displayName;
 +    if ( isFileOnRemovableMedium ) {
 +        displayName = i18nc( "%1 is a filename of a file on a removable device, "
@@ -158,27 +1478,1159 @@ Index: nepomuk/kioslaves/nepomuk/kio_nepomuk.cpp
 +        displayName = res.genericLabel();
 +    }
 +    uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, displayName );
- 
-     // UDS_NAME needs to be unique but can be ugly
-     uds.insert( KIO::UDSEntry::UDS_NAME, resourceUriToUdsName( res.resourceUri() ) );
-@@ -418,7 +434,7 @@
-         uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, mimeTypes.first() );
-     }
-     else */
--    if ( isRemovableMediaFile( res ) ) {
++
++    // UDS_NAME needs to be unique but can be ugly
++    uds.insert( KIO::UDSEntry::UDS_NAME, resourceUriToUdsName( res.resourceUri() ) );
++
++    //
++    // There can still be file resources that have a mimetype but are
++    // stored remotely, thus they do not have a local nie:url
++    //
++    // Sadly Strigi's mimetype is not very useful (yet)
++    /* QStringList mimeTypes = res.property( Vocabulary::NIE::mimeType() ).toStringList();
++    if ( !mimeTypes.isEmpty() ) {
++        uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, mimeTypes.first() );
++    }
++    else */
 +    if ( isFileOnRemovableMedium ) {
-         KMimeType::Ptr mt = KMimeType::findByUrl( res.property( Vocabulary::NIE::url() ).toUrl(),
-                                                   0,
-                                                   false, /* no local file as it is not accessible at the moment */
-@@ -565,7 +584,7 @@
++        KMimeType::Ptr mt = KMimeType::findByUrl( res.property( Vocabulary::NIE::url() ).toUrl(),
++                                                  0,
++                                                  false, /* no local file as it is not accessible at the moment */
++                                                  true   /* fast mode */ );
++        if ( mt ) {
++            uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, mt->name() );
++        }
++    }
++    else {
++        // Use nice display types like "Person", "Project" and so on
++        Nepomuk::Types::Class type( res.resourceType() );
++        if (!type.label().isEmpty())
++            uds.insert( KIO::UDSEntry::UDS_DISPLAY_TYPE, type.label() );
++
++        QString icon = res.genericIcon();
++        if ( !icon.isEmpty() ) {
++            uds.insert( KIO::UDSEntry::UDS_ICON_NAME, icon );
++        }
++        else {
++            // a fallback icon for nepomuk resources
++            uds.insert( KIO::UDSEntry::UDS_ICON_NAME, QLatin1String( "nepomuk" ) );
++        }
++
++        if ( uds.stringValue( KIO::UDSEntry::UDS_ICON_NAME ) != QLatin1String( "nepomuk" ) )
++            uds.insert( KIO::UDSEntry::UDS_ICON_OVERLAY_NAMES, QLatin1String( "nepomuk" ) );
++    }
++
++    //
++    // Add some random values
++    //
++    uds.insert( KIO::UDSEntry::UDS_ACCESS, 0700 );
++    uds.insert( KIO::UDSEntry::UDS_USER, KUser().loginName() );
++    if ( res.hasProperty( Vocabulary::NIE::lastModified() ) ) {
++        // remotely stored files
++        uds.insert( KIO::UDSEntry::UDS_MODIFICATION_TIME, res.property( Vocabulary::NIE::lastModified() ).toDateTime().toTime_t() );
++    }
++    else {
++        // all nepomuk resources
++        uds.insert( KIO::UDSEntry::UDS_MODIFICATION_TIME, res.property( Soprano::Vocabulary::NAO::lastModified() ).toDateTime().toTime_t() );
++        uds.insert( KIO::UDSEntry::UDS_CREATION_TIME, res.property( Soprano::Vocabulary::NAO::created() ).toDateTime().toTime_t() );
++    }
++
++    if ( res.hasProperty( Vocabulary::NIE::contentSize() ) ) {
++        // remotely stored files
++        uds.insert( KIO::UDSEntry::UDS_SIZE, res.property( Vocabulary::NIE::contentSize() ).toInt() );
++    }
++
++
++    //
++    // Starting with KDE 4.4 we have the pretty UDS_NEPOMUK_URI which makes
++    // everything much cleaner since kio slaves can decide if the resources can be
++    // annotated or not.
++    //
++    uds.insert( KIO::UDSEntry::UDS_NEPOMUK_URI, KUrl( res.resourceUri() ).url() );
++
++    KUrl reUrl = Nepomuk::redirectionUrl( res );
++    if ( !reUrl.isEmpty() ) {
++        uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, QLatin1String( "inode/directory" ) );
++        uds.insert( KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR );
++
++        // FIXME: not sure this is necessary if we already do the redirect in listDir()
++        uds.insert( KIO::UDSEntry::UDS_URL, reUrl.url() );
++    }
++
++    return uds;
++}
++
++
++bool Nepomuk::willBeRedirected( const Nepomuk::Resource& res )
++{
++    return( res.hasType( Nepomuk::Vocabulary::NFO::Folder() ) ||
++            res.hasType( Soprano::Vocabulary::NAO::Tag() ) ||
++            res.hasType( Nepomuk::Vocabulary::NFO::Filesystem() ) );
++}
++
++
++KUrl Nepomuk::redirectionUrl( const Nepomuk::Resource& res )
++{
++    if ( res.hasType( Nepomuk::Vocabulary::NFO::Folder() ) ) {
++        return res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl();
++    }
++    else if ( res.hasType( Nepomuk::Vocabulary::NFO::Filesystem() ) ) {
++        KUrl fsUrl = determineFilesystemPath( res );
++        if ( fsUrl.isValid() ) {
++            return fsUrl;
++        }
++    }
++    else if ( res.hasType( Soprano::Vocabulary::NAO::Tag() ) ) {
++        Query::ComparisonTerm term( Soprano::Vocabulary::NAO::hasTag(), Query::ResourceTerm( res ), Query::ComparisonTerm::Equal );
++        KUrl queryUrl( Query::Query( term ).toSearchUrl() );
++        queryUrl.addQueryItem( QLatin1String( "title" ), i18n( "Things tagged '%1'", res.genericLabel() ) );
++        return queryUrl.url();
++    }
++
++#if 0 // disabled as long as the strigi service does create a dedicated album resource for each track
++    else if ( res.hasType( Nepomuk::Vocabulary::NMM::MusicAlbum() ) ) {
++        Query::ComparisonTerm term( Nepomuk::Vocabulary::NMM::musicAlbum(), Query::ResourceTerm( res ) );
++        KUrl queryUrl( Query::Query( term ).toSearchUrl() );
++        queryUrl.addQueryItem( QLatin1String( "title" ), res.genericLabel() );
++        return queryUrl.url();
++    }
++#endif
++
++    return KUrl();
++}
++
++
++namespace {
++    /**
++     * Check if the resource represents a local file with an existing nie:url property.
++     */
++    bool isLocalFile( const Nepomuk::Resource& res )
++    {
++        if ( res.hasProperty( Nepomuk::Vocabulary::NIE::url() ) ) {
++            KUrl url = res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl();
++            return ( !url.isEmpty() &&
++                     QFile::exists( url.toLocalFile() ) );
++        }
++        else {
++            return false;
++        }
++    }
++}
++
++KUrl Nepomuk::nepomukToFileUrl( const KUrl& url, bool evenMountIfNecessary )
++{
++    QString filename;
++    Nepomuk::Resource res = splitNepomukUrl( url, &filename );
++
++    if ( !res.exists() )
++        return KUrl();
++
++    KUrl newURL;
++
++    //
++    // let's see if it is a pimo thing which refers to a file
++    //
++    if ( res.hasType( Nepomuk::Vocabulary::PIMO::Thing() ) ) {
++        if ( !res.pimoThing().groundingOccurrences().isEmpty() ) {
++            res = res.pimoThing().groundingOccurrences().first();
++        }
++    }
++
++    if ( isLocalFile( res ) ) {
++        newURL = res.property( Vocabulary::NIE::url() ).toUrl();
++    }
++    else if ( isRemovableMediaFile( res ) ) {
++        const KUrl removableMediaUrl = res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl();
++        newURL = convertRemovableMediaFileUrl( removableMediaUrl, evenMountIfNecessary );
++    }
++
++    if ( newURL.isValid() && !filename.isEmpty() ) {
++        newURL.addPath( filename );
++    }
++
++    kDebug() << url << newURL;
++
++    return newURL;
++}
+
+Modification de propriétés sur nepomuk/kioslaves/common/resourcestat.cpp
+___________________________________________________________________
+Ajouté : svn:eol-style
+   + native
+
+Index: nepomuk/kioslaves/common/timelinetools.cpp
+===================================================================
+--- nepomuk/kioslaves/common/timelinetools.cpp	(révision 0)
++++ nepomuk/kioslaves/common/timelinetools.cpp	(révision 0)
+@@ -0,0 +1,173 @@
++/*
++   This file is part of the Nepomuk KDE project.
++   Copyright (C) 2010 Sebastian Trueg <trueg@kde.org>
++
++   This library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Library General Public
++   License version 2 as published by the Free Software Foundation.
++
++   This library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Library General Public License for more details.
++
++   You should have received a copy of the GNU Library General Public License
++   along with this library; see the file COPYING.LIB.  If not, write to
++   the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++   Boston, MA 02110-1301, USA.
++ */
++
++#include "timelinetools.h"
++
++#include <Soprano/Node>
++#include <Soprano/Vocabulary/XMLSchema>
++
++#include "nie.h"
++#include "nfo.h"
++#include "nie.h"
++#include "nuao.h"
++
++#include <KUrl>
++#include <KCalendarSystem>
++#include <KGlobal>
++#include <KLocale>
++#include <KDebug>
++
++#include <QtCore/QDate>
++#include <QtCore/QRegExp>
++
++
++namespace {
++    QDate applyRelativeDateModificators( const QDate& date, const QMap<QString, QString>& modificators )
++    {
++        QDate newDate( date );
++        const QString dayKey = QLatin1String("relDays");
++        const QString weekKey = QLatin1String("relWeeks");
++        const QString monthKey = QLatin1String("relMonths");
++        const QString yearKey = QLatin1String("relYears");
++        bool ok = false;
++
++        if (modificators.contains(yearKey)) {
++            int relYears = modificators[yearKey].toInt(&ok);
++            if (ok) {
++                newDate = newDate.addYears(relYears);
++            }
++        }
++        if (modificators.contains(monthKey)) {
++            int relMonths = modificators[monthKey].toInt(&ok);
++            if (ok) {
++                newDate = newDate.addMonths(relMonths);
++            }
++        }
++        if (modificators.contains(weekKey)) {
++            int relWeeks = modificators[weekKey].toInt(&ok);
++            if (ok) {
++                const KCalendarSystem* calSystem = KGlobal::locale()->calendar();
++                newDate = newDate.addDays(relWeeks * calSystem->daysInWeek(date));
++            }
++        }
++        if (modificators.contains(dayKey)) {
++            int relDays = modificators[dayKey].toInt(&ok);
++            if (ok) {
++                newDate = newDate.addDays(relDays);
++            }
++        }
++        return newDate;
++    }
++}
++
++
++Nepomuk::TimelineFolderType Nepomuk::parseTimelineUrl( const KUrl& url, QDate* date, QString* filename )
++{
++    kDebug() << url;
++
++    static QRegExp s_dateRegexp( QLatin1String("\\d{4}-\\d{2}(?:-(\\d{2}))?") );
++
++    // reset
++    *date = QDate();
++
++    const QString path = url.path(KUrl::RemoveTrailingSlash);
++
++    if( path.isEmpty() || path == QLatin1String("/") ) {
++        kDebug() << url << "is root folder";
++        return RootFolder;
++    }
++    else if( path.startsWith( QLatin1String( "/today" ) ) ) {
++        *date = QDate::currentDate();
++        if ( filename )
++            *filename = path.mid( 7 );
++        kDebug() << url << "is today folder:" << *date;
++        return DayFolder;
++    }
++    else if( path == QLatin1String( "/calendar" ) ) {
++        kDebug() << url << "is calendar folder";
++        return CalendarFolder;
++    }
++    else {
++        QStringList sections = path.split( QLatin1String( "/" ), QString::SkipEmptyParts );
++        QString dateString;
++        if ( s_dateRegexp.exactMatch( sections.last() ) ) {
++            dateString = sections.last();
++        }
++        else if ( sections.count() > 1 && s_dateRegexp.exactMatch( sections[sections.count()-2] ) ) {
++            dateString = sections[sections.count()-2];
++            if ( filename )
++                *filename = sections.last();
++        }
++        else {
++            kDebug() << url << "COULD NOT PARSE";
++            return NoFolder;
++        }
++
++        if ( s_dateRegexp.cap( 1 ).isEmpty() ) {
++            // no day -> month listing
++            kDebug() << "parsing " << dateString;
++            *date = QDate::fromString( dateString, QLatin1String("yyyy-MM") );
++            kDebug() << url << "is month folder:" << date->month() << date->year();
++            if ( date->month() > 0 && date->year() > 0 )
++                return MonthFolder;
++        }
++        else {
++            kDebug() << "parsing " << dateString;
++            *date = applyRelativeDateModificators( QDate::fromString( dateString, "yyyy-MM-dd" ), url.queryItems() );
++            // only in day folders we can have filenames
++            kDebug() << url << "is day folder:" << *date;
++            if ( date->isValid() )
++                return DayFolder;
++        }
++    }
++
++    return NoFolder;
++}
++
++
++KUrl Nepomuk::buildTimelineQueryUrl( const QDate& date )
++{
++    static const char* DATEFORMATSTART("yyyy-MM-ddT00:00:00.000Z");
++    static const char* DATEFORMATEND("yyyy-MM-ddT23:59:59.999Z");
++
++    QString dateFrom = date.toString(DATEFORMATSTART);
++    QString dateTo = date.toString(DATEFORMATEND);
++
++    QString query = QString("select distinct ?r where { "
++                            "?r a %1 . "
++                            "{ ?r %2 ?date . } "
++                            "UNION "
++                            "{ ?r %3 ?date . } "
++                            "UNION "
++                            "{ ?r %4 ?date . } "
++                            "FILTER(?date > '%5'^^%7 && ?date < '%6'^^%7) . "
++                            "OPTIONAL { ?r2 a %8 . FILTER(?r=?r2) . } . FILTER(!BOUND(?r2)) . "
++                            "}")
++                    .arg( Soprano::Node::resourceToN3(Nepomuk::Vocabulary::NFO::FileDataObject()),
++                          Soprano::Node::resourceToN3(Nepomuk::Vocabulary::NIE::lastModified()),
++                          Soprano::Node::resourceToN3(Nepomuk::Vocabulary::NUAO::lastUsage()),
++                          Soprano::Node::resourceToN3(Nepomuk::Vocabulary::NIE::contentCreated()),
++                          dateFrom,
++                          dateTo,
++                          Soprano::Node::resourceToN3(Soprano::Vocabulary::XMLSchema::dateTime()),
++                          Soprano::Node::resourceToN3(Nepomuk::Vocabulary::NFO::Folder()) );
++    KUrl url("nepomuksearch:/");
++    url.addQueryItem( "sparql", query );
++    return url;
++}
+
+Modification de propriétés sur nepomuk/kioslaves/common/timelinetools.cpp
+___________________________________________________________________
+Ajouté : svn:eol-style
+   + native
+
+Index: nepomuk/kioslaves/common/resourcestat.h
+===================================================================
+--- nepomuk/kioslaves/common/resourcestat.h	(révision 0)
++++ nepomuk/kioslaves/common/resourcestat.h	(révision 0)
+@@ -0,0 +1,109 @@
++/*
++   Copyright 2008-2010 Sebastian Trueg <trueg@kde.org>
++
++   This program is free software; you can redistribute it and/or
++   modify it under the terms of the GNU General Public License as
++   published by the Free Software Foundation; either version 2 of
++   the License or (at your option) version 3 or any later version
++   accepted by the membership of KDE e.V. (or its successor approved
++   by the membership of KDE e.V.), which shall act as a proxy
++   defined in Section 14 of version 3 of the license.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#ifndef _NEPOMUK_RESOURCE_STAT_H_
++#define _NEPOMUK_RESOURCE_STAT_H_
++
++class QString;
++class KUrl;
++namespace KIO {
++    class UDSEntry;
++}
++namespace Solid {
++    class StorageAccess;
++}
++
++namespace Nepomuk {
++
++    class Resource;
++
++    /**
++     * Remove all query parts from a KUrl.
++     */
++    KUrl stripQuery( const KUrl& url );
++
++    /**
++     * Split the filename part off a nepomuk:/ URI. This is used in many methods for identifying
++     * entries listed from tags and filesystems.
++     */
++    Nepomuk::Resource splitNepomukUrl( const KUrl& url, QString* filename = 0 );
++
++    /**
++     * Check if the resource represents a file on a removable media using a filex:/
++     * URL.
++     */
++    bool isRemovableMediaFile( const Nepomuk::Resource& res );
++
++    /**
++     * Create a Solid storage access interface from the volume UUID.
++     */
++    Solid::StorageAccess* storageFromUUID( const QString& uuid );
++
++    /**
++     * Mount a storage volume via Solid and wait for it to be mounted with
++     * a timeout of 20 seconds.
++     */
++    bool mountAndWait( Solid::StorageAccess* storage );
++
++    /**
++     * Get the mount path of a nfo:Filesystem resource as created by the removable storage service.
++     */
++    KUrl determineFilesystemPath( const Nepomuk::Resource& fsRes );
++
++    /**
++     * Determine the label for a filesystem \p res is stored on.
++     */
++    QString getFileSystemLabelForRemovableMediaFileUrl( const Nepomuk::Resource& res );
++
++    /**
++     * Convert a filex:/ URL into its actual local file URL.
++     *
++     * \param url The filex:/ URL to convert
++     * \param evenMountIfNecessary If true an existing unmouted volume will be mounted to grant access to the local file.
++     *
++     * \return The converted local URL or an invalid URL if the filesystem the file is stored on could not be/was not mounted.
++     */
++    KUrl convertRemovableMediaFileUrl( const KUrl& url, bool evenMountIfNecessary = false );
++
++    /**
++     * Stat a Nepomuk resource. Might start a local event loop
++     */
++    KIO::UDSEntry statNepomukResource( const Nepomuk::Resource& res );
++
++    /**
++     * \return \p true for all resources that will get a valid redirection url in
++     * redirectionUrl().
++     */
++    bool willBeRedirected( const Nepomuk::Resource& res );
++
++    /**
++     * Create a redirection query URL for resources such as tags or filesystems.
++     * For other resources an empty KUrl is returned.
++     */
++    KUrl redirectionUrl( const Nepomuk::Resource& res );
++
++    /**
++     * Convert a nepomuk:/ URL to a file:/ URL if possible.
++     * Otherwise return an empty KUrl.
++     */
++    KUrl nepomukToFileUrl( const KUrl& url, bool evenMountIfNecessary = false );
++}
++
++#endif
+
+Modification de propriétés sur nepomuk/kioslaves/common/resourcestat.h
+___________________________________________________________________
+Ajouté : svn:eol-style
+   + native
+
+Index: nepomuk/kioslaves/common/timelinetools.h
+===================================================================
+--- nepomuk/kioslaves/common/timelinetools.h	(révision 0)
++++ nepomuk/kioslaves/common/timelinetools.h	(révision 0)
+@@ -0,0 +1,50 @@
++/*
++   This file is part of the Nepomuk KDE project.
++   Copyright (C) 2010 Sebastian Trueg <trueg@kde.org>
++
++   This library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Library General Public
++   License version 2 as published by the Free Software Foundation.
++
++   This library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Library General Public License for more details.
++
++   You should have received a copy of the GNU Library General Public License
++   along with this library; see the file COPYING.LIB.  If not, write to
++   the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++   Boston, MA 02110-1301, USA.
++ */
++
++#ifndef _NEPOMUK_TIMELINE_TOOLS_H_
++#define _NEPOMUK_TIMELINE_TOOLS_H_
++
++class QDate;
++class KUrl;
++class QString;
++
++namespace Nepomuk {
++    enum TimelineFolderType {
++        NoFolder = 0,    /// nothing
++        RootFolder,      /// the root folder
++        CalendarFolder,  /// the calendar folder listing all months
++        MonthFolder,     /// a folder listing a month's days (m_date contains the month)
++        DayFolder        /// a folder listing a day (m_date); optionally m_filename is set
++    };
++
++    /**
++     * Parse a timeline URL like timeline:/today and return the type of folder it
++     * represents. If DayFolder is returned \p date is set to the date that should be listed.
++     * Otherwise it is an invalid date. \p filename is optionally set to the name of the file
++     * in the folder.
++     */
++    TimelineFolderType parseTimelineUrl( const KUrl& url, QDate* date, QString* filename = 0 );
++
++    /**
++     * Create a nepomuksearch:/ URL that lists all files modified at \p date.
++     */
++    KUrl buildTimelineQueryUrl( const QDate& date );
++}
++
++#endif
+
+Modification de propriétés sur nepomuk/kioslaves/common/timelinetools.h
+___________________________________________________________________
+Ajouté : svn:eol-style
+   + native
+
+Index: nepomuk/kioslaves/common/nepomuksearchurltools.h
+===================================================================
+--- nepomuk/kioslaves/common/nepomuksearchurltools.h	(révision 1121160)
++++ nepomuk/kioslaves/common/nepomuksearchurltools.h	(copie de travail)
+@@ -48,24 +48,60 @@
+         return QUrl::fromEncoded( QByteArray::fromPercentEncoding( name.toAscii(), '_' ) );
      }
-     else if ( isRemovableMediaFile( res ) ) {
-         const KUrl removableMediaUrl = res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl();
+ 
+-    /**
+-     * Extract SPARQL query from a nepomuksearch query URL.
+-     */
+-    inline QString queryFromUrl( const KUrl& url ) {
+-        if(url.queryItems().contains( "sparql" ) ) {
++    /// can be removed on Monday when we start using the Nepomuk::Query::Query methods
++    inline QString extractPlainQuery( const KUrl& url ) {
++        if( url.queryItems().contains( "query" ) ) {
++            return url.queryItem( "query" );
++        }
++        else if ( !url.queryItems().contains( "sparql" ) &&
++                  !url.queryItems().contains( "encodedquery" ) ) {
++            return url.path().section( '/', 0, 0, QString::SectionSkipEmpty );
++        }
++        else {
++            return QString();
++        }
++    }
++
++    /// can be removed on Monday and be replaced with Nepomuk::Query::Query::fromQueryUrl
++    inline Nepomuk::Query::Query fromQueryUrl( const KUrl& url )
++    {
++        if( url.protocol() != QLatin1String("nepomuksearch") ) {
++            return Nepomuk::Query::Query();
++        }
++
++        if ( url.queryItems().contains( "sparql" ) ) {
++            return Nepomuk::Query::Query();
++        }
++        else if( url.queryItems().contains( "encodedquery" ) ) {
++            return Nepomuk::Query::Query::fromString( url.queryItem( "encodedquery") );
++        }
++        else {
++            Nepomuk::Query::Query query = Nepomuk::Query::QueryParser::parseQuery( extractPlainQuery(url) );
++            query.setRequestProperties( QList<Nepomuk::Query::Query::RequestProperty>() << Nepomuk::Query::Query::RequestProperty( Nepomuk::Vocabulary::NIE::url(), true ) );
++            return query;
++        }
++    }
++
++
++    /// can be removed on Monday and be replaced with Nepomuk::Query::Query::sparqlFromQueryUrl
++    inline QString sparqlFromQueryUrl( const KUrl& url )
++    {
++        if( url.protocol() != QLatin1String("nepomuksearch") ) {
++            return QString();
++        }
++
++        if( url.queryItems().contains( "sparql" ) ) {
+             return url.queryItem( "sparql" );
+         }
+         else {
+-            QString plainQuery;
+-            if(url.queryItems().contains( "query" ) ) {
+-                plainQuery = url.queryItem( "query" );
++            Nepomuk::Query::Query query = Nepomuk::Query::Query::fromQueryUrl( url );
++            if( query.isValid() ) {
++                query.setRequestProperties( QList<Nepomuk::Query::Query::RequestProperty>() << Nepomuk::Query::Query::RequestProperty( Nepomuk::Vocabulary::NIE::url(), true ) );
++                return query.toSparqlQuery();
+             }
+             else {
+-                plainQuery = url.path().section( '/', 0, 0, QString::SectionSkipEmpty );
++                return QString();
+             }
+-            Query::Query query = Query::QueryParser::parseQuery( plainQuery );
+-            query.addRequestProperty( Query::Query::RequestProperty( Nepomuk::Vocabulary::NIE::url(), true ) );
+-            return query.toSparqlQuery();
+         }
+     }
+ }
+Index: nepomuk/kioslaves/nepomuk/kio_nepomuk.cpp
+===================================================================
+--- nepomuk/kioslaves/nepomuk/kio_nepomuk.cpp	(révision 1121160)
++++ nepomuk/kioslaves/nepomuk/kio_nepomuk.cpp	(copie de travail)
+@@ -21,15 +21,16 @@
+ #include "kio_nepomuk.h"
+ #include "nie.h"
+ #include "nfo.h"
++//#include "nmm.h"
+ #include "pimo.h"
+ #include "resourcepagegenerator.h"
+ #include "nepomuksearchurltools.h"
++#include "resourcestat.h"
+ 
+ #include <QtCore/QByteArray>
+ #include <QtCore/QDateTime>
+ #include <QtCore/QFile>
+ #include <QtCore/QCoreApplication>
+-#include <QtCore/QEventLoop>
+ #include <QtCore/QTimer>
+ #include <QtDBus/QDBusConnection>
+ 
+@@ -60,170 +61,6 @@
+ #include <Solid/StorageAccess>
+ 
+ 
+-namespace {
+-    /**
+-     * Check if the resource represents a local file with an existing nie:url property.
+-     */
+-    bool isLocalFile( const Nepomuk::Resource& res )
+-    {
+-        if ( res.hasProperty( Nepomuk::Vocabulary::NIE::url() ) ) {
+-            KUrl url = res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl();
+-            return ( !url.isEmpty() &&
+-                     QFile::exists( url.toLocalFile() ) );
+-        }
+-        else {
+-            return false;
+-        }
+-    }
+-
+-    /**
+-     * Check if the resource represents a file on a removable media using a filex:/
+-     * URL.
+-     */
+-    bool isRemovableMediaFile( const Nepomuk::Resource& res )
+-    {
+-        if ( res.hasProperty( Nepomuk::Vocabulary::NIE::url() ) ) {
+-            KUrl url = res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl();
+-            return ( url.protocol() == QLatin1String( "filex" ) );
+-        }
+-        else {
+-            return false;
+-        }
+-    }
+-
+-    /**
+-     * Mount a storage volume via Solid and wait for it to be mounted with
+-     * a timeout of 20 seconds.
+-     */
+-    bool mountAndWait( Solid::StorageAccess* storage )
+-    {
+-        kDebug() << storage;
+-        QEventLoop loop;
+-        loop.connect( storage,
+-                      SIGNAL(accessibilityChanged(bool, QString)),
+-                      SLOT(quit()) );
+-        // timeout 20 second
+-        QTimer::singleShot( 20000, &loop, SLOT(quit()) );
+-
+-        storage->setup();
+-        loop.exec();
+-
+-        kDebug() << storage << storage->isAccessible();
+-
+-        return storage->isAccessible();
+-    }
+-
+-    /**
+-     * Create a Solid storage access interface from the volume UUID.
+-     */
+-    Solid::StorageAccess* storageFromUUID( const QString& uuid )
+-    {
+-        QString solidQuery = QString::fromLatin1( "[ StorageVolume.usage=='FileSystem' AND StorageVolume.uuid=='%1' ]" ).arg( uuid.toLower() );
+-        QList<Solid::Device> devices = Solid::Device::listFromQuery( solidQuery );
+-        kDebug() << uuid << solidQuery << devices.count();
+-        if ( !devices.isEmpty() )
+-            return devices.first().as<Solid::StorageAccess>();
+-        else
+-            return 0;
+-    }
+-
+-    /**
+-     * Convert a filex:/ URL into its actual local file URL.
+-     *
+-     * \param url The filex:/ URL to convert
+-     * \param evenMountIfNecessary If true an existing unmouted volume will be mounted to grant access to the local file.
+-     *
+-     * \return The converted local URL or an invalid URL if the filesystem the file is stored on could not be/was not mounted.
+-     */
+-    KUrl convertRemovableMediaFileUrl( const KUrl& url, bool evenMountIfNecessary = false )
+-    {
+-        Solid::StorageAccess* storage = storageFromUUID( url.host() );
+-        kDebug() << url << storage;
+-        if ( storage &&
+-             ( storage->isAccessible() ||
+-               ( evenMountIfNecessary && mountAndWait( storage ) ) ) ) {
+-            kDebug() << "converted:" << KUrl( storage->filePath() + QLatin1String( "/" ) + url.path() );
+-            return storage->filePath() + QLatin1String( "/" ) + url.path();
+-        }
+-        else {
+-            return KUrl();
+-        }
+-    }
+-
+-    /**
+-     * Get the mount path of a nfo:Filesystem resource as created by the removable storage service.
+-     */
+-    KUrl determineFilesystemPath( const Nepomuk::Resource& fsRes )
+-    {
+-        QString uuidQuery = QString::fromLatin1( "select ?uuid where { %1 %2 ?uuid . }" )
+-                            .arg( Soprano::Node::resourceToN3( fsRes.resourceUri() ),
+-                                  Soprano::Node::resourceToN3( Soprano::Vocabulary::NAO::identifier() ) );
+-        Soprano::QueryResultIterator it = Nepomuk::ResourceManager::instance()->mainModel()->executeQuery( uuidQuery, Soprano::Query::QueryLanguageSparql );
+-        if ( it.next() ) {
+-            Solid::StorageAccess* storage = storageFromUUID( it["uuid"].toString() );
+-            it.close();
+-            if ( storage &&
+-                 ( storage->isAccessible() ||
+-                   mountAndWait( storage ) ) ) {
+-                return storage->filePath();
+-            }
+-        }
+-        return KUrl();
+-    }
+-
+-    /**
+-     * Determine the label for a filesystem \p res is stored on.
+-     */
+-    QString getFileSystemLabelForRemovableMediaFileUrl( const Nepomuk::Resource& res )
+-    {
+-        QList<Soprano::Node> labelNodes
+-            = Nepomuk::ResourceManager::instance()->mainModel()->executeQuery( QString::fromLatin1( "select ?label where { "
+-                                                                                                    "%1 nie:isPartOf ?fs . "
+-                                                                                                    "?fs a nfo:Filesystem . "
+-                                                                                                    "?fs nao:prefLabel ?label . "
+-                                                                                                    "} LIMIT 1" )
+-                                                                               .arg( Soprano::Node::resourceToN3( res.resourceUri() ) ),
+-                                                                               Soprano::Query::QueryLanguageSparql ).iterateBindings( "label" ).allNodes();
+-
+-        if ( !labelNodes.isEmpty() )
+-            return labelNodes.first().toString();
+-        else
+-            return res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl().host(); // Solid UUID
+-    }
+-
+-    KUrl stripQuery( const KUrl& url )
+-    {
+-        KUrl newUrl( url );
+-        newUrl.setEncodedQuery( QByteArray() );
+-        return newUrl;
+-    }
+-
+-    /**
+-     * Split the filename part off a nepomuk:/ URI. This is used in many methods for identifying
+-     * entries listed from tags and filesystems.
+-     */
+-    Nepomuk::Resource splitNepomukUrl( const KUrl& url, QString& filename )
+-    {
+-        //
+-        // let's try to extract the resource from the url in case we listed a tag or
+-        // filesystem and need to stat the entries in those virtual folders
+-        //
+-        // pre KDE 4.4 resources had just a single section, in KDE 4.4 we have "/res/<UUID>"
+-        //
+-        QString urlStr = stripQuery( url ).url();
+-        int pos = urlStr.indexOf( '/', urlStr.startsWith( QLatin1String( "nepomuk:/res/" ) ) ? 13 : 9 );
+-        if ( pos > 0 ) {
+-            KUrl resourceUri = urlStr.left(pos);
+-            filename = urlStr.mid( pos+1 );
+-            return resourceUri;
+-        }
+-        else {
+-            return stripQuery( url );
+-        }
+-    }
+-}
+-
+-
+ Nepomuk::NepomukProtocol::NepomukProtocol( const QByteArray& poolSocket, const QByteArray& appSocket )
+     : KIO::ForwardingSlaveBase( "nepomuk", poolSocket, appSocket )
+ {
+@@ -247,28 +84,12 @@
+     // anything.
+     // See README for details
+     //
+-    QString filename;
+-    Nepomuk::Resource res = splitNepomukUrl( url, filename );
+-
+-    if ( res.hasType( Nepomuk::Vocabulary::NFO::Folder() ) ) {
+-        redirection( res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl() );
++    Nepomuk::Resource res = Nepomuk::splitNepomukUrl( url );
++    KUrl reUrl = Nepomuk::redirectionUrl( res );
++    if ( !reUrl.isEmpty() ) {
++        redirection( reUrl );
+         finished();
+     }
+-    else if ( res.hasType( Soprano::Vocabulary::NAO::Tag() ) ) {
+-        Query::ComparisonTerm term( Soprano::Vocabulary::NAO::hasTag(), Query::ResourceTerm( res ), Query::ComparisonTerm::Equal );
+-        redirection( Query::Query( term ).toSearchUrl().url() );
+-        finished();
+-    }
+-    else if ( res.hasType( Nepomuk::Vocabulary::NFO::Filesystem() ) ) {
+-        KUrl fsUrl = determineFilesystemPath( res );
+-        if ( fsUrl.isValid() ) {
+-            redirection( fsUrl );
+-            finished();
+-        }
+-        else {
+-            error( KIO::ERR_DOES_NOT_EXIST, url.prettyUrl() );
+-        }
+-    }
+     else {
+         error( KIO::ERR_DOES_NOT_EXIST, url.prettyUrl() );
+     }
+@@ -284,30 +105,15 @@
+ 
+     m_currentOperation = Get;
+ 
+-    //
+-    // First we check if it is a generic resource which cannot be forwarded
+-    // If we could rewrite the URL than we can continue as Get operation
+-    // which will also try to mount removable devices.
+-    // If not we generate a HTML page.
+-    //
+-    KUrl newUrl;
+-    if ( rewriteUrl( url, newUrl ) ) {
+-        //
+-        // rewriteUrl() returns true even if we have no new url for removable media
+-        //
+-        if ( newUrl.isEmpty() ) {
+-            QString filename;
+-            Nepomuk::Resource res = splitNepomukUrl( url, filename );
+-            if ( isRemovableMediaFile( res ) ) {
+-                error( KIO::ERR_SLAVE_DEFINED,
+-                       i18nc( "@info", "Please insert the removable medium <resource>%1</resource> to access this file.",
+-                              getFileSystemLabelForRemovableMediaFileUrl( res ) ) );
+-            }
+-        }
+-        else {
+-            ForwardingSlaveBase::get( url );
+-        }
++    Nepomuk::Resource res = splitNepomukUrl( url );
++    if ( Nepomuk::isRemovableMediaFile( res ) ) {
++        error( KIO::ERR_SLAVE_DEFINED,
++               i18nc( "@info", "Please insert the removable medium <resource>%1</resource> to access this file.",
++                      getFileSystemLabelForRemovableMediaFileUrl( res ) ) );
+     }
++    else if ( !Nepomuk::nepomukToFileUrl( url ).isEmpty() ) {
++        ForwardingSlaveBase::get( url );
++    }
+     else {
+         // TODO: call the share service for remote files (KDE 4.5)
+ 
+@@ -358,34 +164,18 @@
+     kDebug() << url;
+ 
+     m_currentOperation = Stat;
+-    KUrl newUrl;
+-    if ( rewriteUrl( url, newUrl ) ) {
++    if ( !Nepomuk::nepomukToFileUrl( url ).isEmpty() ) {
+         ForwardingSlaveBase::stat( url );
+     }
+     else {
+-        newUrl = stripQuery( url );
+-        Nepomuk::Resource res( newUrl );
++        KUrl strippedUrl = stripQuery( url );
++        Nepomuk::Resource res( strippedUrl );
+ 
+         if ( !res.exists() ) {
+-            error( KIO::ERR_DOES_NOT_EXIST, url.prettyUrl() );
++            error( KIO::ERR_DOES_NOT_EXIST, strippedUrl.prettyUrl() );
+         }
+         else {
+-            KIO::UDSEntry uds = statNepomukResource( res );
+-
+-            // special case: tags and filesystems are handled as folders
+-            if ( res.hasType( Soprano::Vocabulary::NAO::Tag() ) ||
+-                 res.hasType( Nepomuk::Vocabulary::NFO::Filesystem() ) ) {
+-                kDebug() << res.resourceUri() << "is tag or filesystem -> mimetype inode/directory";
+-                uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, QLatin1String( "inode/directory" ) );
+-                uds.insert( KIO::UDSEntry::UDS_FILE_TYPE, S_IFDIR );
+-            }
+-
+-            // special case: tags cannot be redirected in stat, thus we need to use UDS_URL here
+-            if ( res.hasType( Soprano::Vocabulary::NAO::Tag() ) ) {
+-                Query::ComparisonTerm term( Soprano::Vocabulary::NAO::hasTag(), Query::ResourceTerm( res ), Query::ComparisonTerm::Equal );
+-                uds.insert( KIO::UDSEntry::UDS_URL, Query::Query( term ).toSearchUrl().url() );
+-            }
+-
++            KIO::UDSEntry uds = Nepomuk::statNepomukResource( res );
+             statEntry( uds );
+             finished();
+         }
+@@ -393,88 +183,6 @@
+ }
+ 
+ 
+-KIO::UDSEntry Nepomuk::NepomukProtocol::statNepomukResource( const Nepomuk::Resource& res )
+-{
+-    //
+-    // We do not have a local file
+-    // This is where the magic starts to happen.
+-    // This is where we only use Nepomuk properties
+-    //
+-    KIO::UDSEntry uds;
+-
+-    // The display name can be anything
+-    uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, res.genericLabel() );
+-
+-    // UDS_NAME needs to be unique but can be ugly
+-    uds.insert( KIO::UDSEntry::UDS_NAME, resourceUriToUdsName( res.resourceUri() ) );
+-
+-    //
+-    // There can still be file resources that have a mimetype but are
+-    // stored remotely, thus they do not have a local nie:url
+-    //
+-    // Sadly Strigi's mimetype is not very useful (yet)
+-    /* QStringList mimeTypes = res.property( Vocabulary::NIE::mimeType() ).toStringList();
+-    if ( !mimeTypes.isEmpty() ) {
+-        uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, mimeTypes.first() );
+-    }
+-    else */
+-    if ( isRemovableMediaFile( res ) ) {
+-        KMimeType::Ptr mt = KMimeType::findByUrl( res.property( Vocabulary::NIE::url() ).toUrl(),
+-                                                  0,
+-                                                  false, /* no local file as it is not accessible at the moment */
+-                                                  true   /* fast mode */ );
+-        if ( mt ) {
+-            uds.insert( KIO::UDSEntry::UDS_MIME_TYPE, mt->name() );
+-        }
+-    }
+-    else {
+-        // Use nice display types like "Person", "Project" and so on
+-        Nepomuk::Types::Class type( res.resourceType() );
+-        if (!type.label().isEmpty())
+-            uds.insert( KIO::UDSEntry::UDS_DISPLAY_TYPE, type.label() );
+-
+-        QString icon = res.genericIcon();
+-        if ( !icon.isEmpty() ) {
+-            uds.insert( KIO::UDSEntry::UDS_ICON_NAME, icon );
+-        }
+-        else {
+-            // a fallback icon for nepomuk resources
+-            uds.insert( KIO::UDSEntry::UDS_ICON_NAME, "nepomuk" );
+-        }
+-    }
+-
+-    //
+-    // Add some random values
+-    //
+-    uds.insert( KIO::UDSEntry::UDS_ACCESS, 0700 );
+-    uds.insert( KIO::UDSEntry::UDS_USER, KUser().loginName() );
+-    if ( res.hasProperty( Vocabulary::NIE::lastModified() ) ) {
+-        // remotely stored files
+-        uds.insert( KIO::UDSEntry::UDS_MODIFICATION_TIME, res.property( Vocabulary::NIE::lastModified() ).toDateTime().toTime_t() );
+-    }
+-    else {
+-        // all nepomuk resources
+-        uds.insert( KIO::UDSEntry::UDS_MODIFICATION_TIME, res.property( Soprano::Vocabulary::NAO::lastModified() ).toDateTime().toTime_t() );
+-        uds.insert( KIO::UDSEntry::UDS_CREATION_TIME, res.property( Soprano::Vocabulary::NAO::created() ).toDateTime().toTime_t() );
+-    }
+-
+-    if ( res.hasProperty( Vocabulary::NIE::contentSize() ) ) {
+-        // remotely stored files
+-        uds.insert( KIO::UDSEntry::UDS_SIZE, res.property( Vocabulary::NIE::contentSize() ).toInt() );
+-    }
+-
+-
+-    //
+-    // Starting with KDE 4.4 we have the pretty UDS_NEPOMUK_URI which makes
+-    // everything much cleaner since kio slaves can decide if the resources can be
+-    // annotated or not.
+-    //
+-    uds.insert( KIO::UDSEntry::UDS_NEPOMUK_URI, KUrl( res.resourceUri() ).url() );
+-
+-    return uds;
+-}
+-
+-
+ void Nepomuk::NepomukProtocol::mimetype( const KUrl& url )
+ {
+     if ( !ensureNepomukRunning() )
+@@ -485,18 +193,15 @@
+     m_currentOperation = Other;
+ 
+     QString filename;
+-    Nepomuk::Resource res = splitNepomukUrl( url, filename );
++    Nepomuk::Resource res = Nepomuk::splitNepomukUrl( url, &filename );
+     if ( filename.isEmpty() &&
+-         ( res.hasType( Soprano::Vocabulary::NAO::Tag() ) ||
+-           res.hasType( Nepomuk::Vocabulary::NFO::Filesystem() ) ) ) {
++         Nepomuk::willBeRedirected( res ) ) {
+         kDebug() << res.resourceUri() << "is tag or file system -> mimetype inode/directory";
+-        // in listDir() we list tags as search folders
+         mimeType( QLatin1String( "inode/directory" ) );
+         finished();
+     }
+     else {
+-        KUrl newUrl;
+-        if ( rewriteUrl( url, newUrl ) ) {
++        if ( !Nepomuk::nepomukToFileUrl( url ).isEmpty() ) {
+             ForwardingSlaveBase::mimetype( url );
+         }
+         else {
+@@ -548,73 +253,11 @@
+     if ( url.queryItemValue( QLatin1String( "noFollow" ) ) == QLatin1String( "true" ) )
+         return false;
+ 
+-    QString filename;
+-    Nepomuk::Resource res = splitNepomukUrl( url, filename );
+-
+-    if ( !res.exists() )
+-        return false;
+-
+-    //
+-    // let's see if it is a pimo thing which refers to a file
+-    //
+-    if ( res.hasType( Nepomuk::Vocabulary::PIMO::Thing() ) ) {
+-        if ( !res.pimoThing().groundingOccurrences().isEmpty() ) {
+-            res = res.pimoThing().groundingOccurrences().first();
+-        }
+-    }
+-
+-    if ( isLocalFile( res ) ) {
+-        newURL = res.property( Vocabulary::NIE::url() ).toUrl();
+-    }
+-    else if ( isRemovableMediaFile( res ) ) {
+-        const KUrl removableMediaUrl = res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl();
 -        newURL = convertRemovableMediaFileUrl( res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl(), m_currentOperation == Get );
-+        newURL = convertRemovableMediaFileUrl( removableMediaUrl, m_currentOperation == Get );
-         if ( !newURL.isValid() && m_currentOperation == Get ) {
-             // error handling in get()
-             return true;
+-        if ( !newURL.isValid() && m_currentOperation == Get ) {
+-            // error handling in get()
+-            return true;
+-        }
+-        kDebug() << "Rewriting removable media URL" << url << "to" << newURL;
+-    }
+-
+-    if ( newURL.isValid() && !filename.isEmpty() ) {
+-        newURL.addPath( filename );
+-    }
+-
+-    kDebug() << url << newURL;
+-
++    newURL = Nepomuk::nepomukToFileUrl( url, m_currentOperation == Get );
+     return newURL.isValid();
+ }
+ 
+ 
+-void Nepomuk::NepomukProtocol::prepareUDSEntry( KIO::UDSEntry& uds,
+-                                                bool listing ) const
+-{
+-    // this will set mimetype and UDS_LOCAL_PATH for local files
+-    ForwardingSlaveBase::prepareUDSEntry( uds, listing );
+-
+-    // make sure we have unique names for everything
+-    uds.insert( KIO::UDSEntry::UDS_NAME, resourceUriToUdsName( requestedUrl() ) );
+-
+-    // make sure we do not use these ugly names for display
+-    if ( !uds.contains( KIO::UDSEntry::UDS_DISPLAY_NAME ) ) {
+-        Nepomuk::Resource res( requestedUrl() );
+-        if ( res.hasType( Nepomuk::Vocabulary::PIMO::Thing() ) ) {
+-            if ( !res.pimoThing().groundingOccurrences().isEmpty() ) {
+-                res = res.pimoThing().groundingOccurrences().first();
+-            }
+-        }
+-
+-        if ( res.hasProperty( Nepomuk::Vocabulary::NIE::url() ) ) {
+-            KUrl fileUrl( res.property( Nepomuk::Vocabulary::NIE::url() ).toUrl() );
+-            uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, fileUrl.fileName() );
+-        }
+-        else {
+-            uds.insert( KIO::UDSEntry::UDS_DISPLAY_NAME, res.genericLabel() );
+-        }
+-    }
+-}
+-
+-
+ bool Nepomuk::NepomukProtocol::ensureNepomukRunning()
+ {
+     if ( Nepomuk::ResourceManager::instance()->init() ) {
+Index: nepomuk/kioslaves/nepomuk/kio_nepomuk.h
+===================================================================
+--- nepomuk/kioslaves/nepomuk/kio_nepomuk.h	(révision 1121160)
++++ nepomuk/kioslaves/nepomuk/kio_nepomuk.h	(copie de travail)
+@@ -45,9 +45,6 @@
+          */
+         bool rewriteUrl( const KUrl& url, KUrl& newURL );
+ 
+-        void prepareUDSEntry( KIO::UDSEntry &entry,
+-                              bool listing = false ) const;
+-
+     private:
+         enum Operation {
+             Get,
+@@ -56,11 +53,6 @@
+         };
+         Operation m_currentOperation;
+         bool ensureNepomukRunning();
+-
+-        /**
+-         * Creates an UDS entry for an arbitrary Nepomuk resource by relying on its properties.
+-         */
+-        KIO::UDSEntry statNepomukResource( const Nepomuk::Resource& res );
+     };
+ }
+ 
+Index: nepomuk/kioslaves/nepomuk/CMakeLists.txt
+===================================================================
+--- nepomuk/kioslaves/nepomuk/CMakeLists.txt	(révision 1121160)
++++ nepomuk/kioslaves/nepomuk/CMakeLists.txt	(copie de travail)
+@@ -6,7 +6,8 @@
+ 
+ set(kio_nepomuk_PART_SRCS 
+   kio_nepomuk.cpp
+-  resourcepagegenerator.cpp)
++  resourcepagegenerator.cpp
++  ../common/resourcestat.cpp)
+ 
+ soprano_add_ontology(kio_nepomuk_PART_SRCS ${SHAREDDESKTOPONTOLOGIES_ROOT_DIR}/nie/nie.trig "NIE" "Nepomuk::Vocabulary" "trig")
+ soprano_add_ontology(kio_nepomuk_PART_SRCS ${SHAREDDESKTOPONTOLOGIES_ROOT_DIR}/nie/nfo.trig "NFO" "Nepomuk::Vocabulary" "trig")
 Index: nepomuk/interfaces/org.kde.nepomuk.RemovableStorage.xml
 ===================================================================
 --- nepomuk/interfaces/org.kde.nepomuk.RemovableStorage.xml	(révision 1121160)
@@ -206,6 +2658,16 @@ Index: nepomuk/interfaces/org.kde.nepomuk.Strigi.xml
      <method name="suspend" />
      <method name="resume" />
      <method name="updateFolder">
+@@ -24,6 +27,9 @@
+       <arg name="path" type="s" direction="in" />
+       <arg name="forced" type="b" direction="in" />
+     </method>
++    <method name="indexFile">
++      <arg name="path" type="s" direction="in" />
++    </method>
+     <method name="analyzeResource" >
+       <arg name="uri" direction="in" type="s" />
+       <arg name="lastModificationDate" direction="in" type="u" />
 Index: nepomuk/interfaces/org.kde.nepomuk.FileWatch.xml
 ===================================================================
 --- nepomuk/interfaces/org.kde.nepomuk.FileWatch.xml	(révision 0)
@@ -357,52 +2819,6 @@ Index: nepomuk/services/removablestorage/removablestorageservice.h
  
              Solid::Device m_device;
              QString m_lastMountPath;
-Index: nepomuk/services/removablestorage/nepomukremovablestorageservice.desktop
-===================================================================
---- nepomuk/services/removablestorage/nepomukremovablestorageservice.desktop	(révision 1121160)
-+++ nepomuk/services/removablestorage/nepomukremovablestorageservice.desktop	(copie de travail)
-@@ -18,10 +18,9 @@
- Name[fi]=Nepomukin irrotettava tallennuspalvelu
- Name[fr]=Service de stockage amovible de Nepomuk
- Name[fy]=Nepomuk opslach tsjinst
--Name[ga]=Seirbhís Stórála Inbhainte Nepomuk
- Name[he]=שירות התקני אחסון נשלפים של Nepomuk
- Name[hr]=Nepomukova usluga za uklonjivo skladište
--Name[hu]=Nepomuk eltávolítható tároló szolgáltatás
-+Name[ia]=Servicio de Nepomuk de Storage Removibile
- Name[id]=Layanan Penyimpanan Dapat Dilepas Nepomuk
- Name[is]=Nepomuk miðlari fyrir aftengjanlegar gagnageymslur
- Name[it]=Servizio per supporti rimovibili di Nepomuk
-@@ -50,9 +49,9 @@
- Name[sr@ijekavianlatin]=Nepomukov servis uklonjivih skladišta
- Name[sr@latin]=Nepomukov servis uklonjivih skladišta
- Name[sv]=Nepomuk-tjänst för flyttbara medier
--Name[tg]=Основная служба хранения данных Nepomuk
-+Name[tg]=Хидмати захирагоҳи Nepomuk
- Name[th]=บริการเก็บข้อมูล Nepomuk บนสื่อถอด/เสียบได้
--Name[tr]=Nepomuk Çıkarılabilir Depolama Servisi
-+Name[tr]=Nepomuk Çıkarılabilir Depolama Hizmeti
- Name[uk]=Служба зберігання на портативних пристроях Nepomuk
- Name[x-test]=xxNepomuk Removable Storage Servicexx
- Name[zh_CN]=Nepomuk 可移动存储服务
-@@ -72,7 +71,7 @@
- Comment[fr]=Le service de stockage amovible de Nepomuk, fournissant les méta-données de Mepomuk sur les périphériques de stockage amovibles.
- Comment[fy]=De Nepomuk útnimber opslach tsjinst, ferskaft troch de Nepomuk metadata op útnimber opslach apparaten.
- Comment[hr]=Nepomukova usluga uklonjivih uređaja za pohranu pruža pristup Nepomukovim metapodacima na uklonjivim uređajima za pohranu.
--Comment[hu]=A Nepomuk cserélhető tároló szolgáltatás, hozzáférést biztosít a Nepumuk metaadatához a cserélhető tároló eszközökön.
-+Comment[ia]=Le servicio de storage removibile de Nepomuk forni accesso a metadata de Nepomuk su dispositivos de storage removibile.
- Comment[id]=Layanan penyimpanan dapat dilepas Nepomuk, memberikan akses ke metadata Nepomuk di divais penyimpanan dapat dilepas.
- Comment[is]=Nepomuk miðlari fyrir aftengjanlegar gagnageymslur, gerir kleift að nálgast Nepomuk lýsigögn á aftengjanlegum gagnageymslum.
- Comment[it]=Il servizio per supporti rimovibili di Nepomuk, che dà accesso ai dati aggiuntivi di Nepomuk sui supporti rimovibili.
-@@ -99,7 +98,7 @@
- Comment[sr@latin]=Nepomukov servis uklonjivih skladišta daje pristup Nepomukovim metapodacima na uklonjivim skladišnim uređajima.
- Comment[sv]=Nepomuks tjänst för flyttbara medier, vilken ger tillgång till Nepomuk metadata för flyttbara lagringsenheter.
- Comment[th]=บริการเก็บข้อมูล Nepomuk บนสื่อถอด/เสียบได้ ให้บริการในการเข้าใช้งานข้อมูลต่าง ๆ ของ Nepomuk บนอุปกรณ์ต่าง ๆ ที่เป็นประเภทถอด/เสียบได้
--Comment[tr]=Nepomuk çıkarılabilir depolama servisi, çıkarılabilir depolama aygıtlarındaki Nepomuk meta verisine erişmeyi sağlar.
-+Comment[tr]=Nepomuk çıkarılabilir depolama hizmeti, çıkarılabilir depolama aygıtlarındaki Nepomuk verilerine erişmeyi sağlar.
- Comment[uk]=Служба зберігання на портативних носіях Nepomuk надає вам доступ до метаданих Nepomuk, що зберігаються на портативних носіях.
- Comment[x-test]=xxThe Nepomuk removable storage service, providing access to Nepomuk metadata on removable storage devices.xx
- Comment[zh_CN]=Nepomuk 可移动存储服务，提供了对可移动存储设备上的 Nepomuk 元数据访问功能。
 Index: nepomuk/services/removablestorage/CMakeLists.txt
 ===================================================================
 --- nepomuk/services/removablestorage/CMakeLists.txt	(révision 1121160)
@@ -472,7 +2888,17 @@ Index: nepomuk/services/strigi/strigiserviceadaptor.h
                      "    <method name=\"suspend\"/>\n"
                      "    <method name=\"resume\"/>\n"
                      "    <method name=\"updateFolder\">\n"
-@@ -86,6 +89,7 @@
+@@ -56,6 +59,9 @@
+                     "      <arg direction=\"in\" type=\"s\" name=\"path\"/>\n"
+                     "      <arg direction=\"in\" type=\"b\" name=\"forced\"/>\n"
+                     "    </method>\n"
++                    "    <method name=\"indexFile\">\n"
++                    "      <arg direction=\"in\" type=\"s\" name=\"path\"/>\n"
++                    "    </method>\n"
+                     "    <method name=\"analyzeResource\">\n"
+                     "      <arg direction=\"in\" type=\"s\" name=\"uri\"/>\n"
+                     "      <arg direction=\"in\" type=\"u\" name=\"lastModificationDate\"/>\n"
+@@ -86,6 +92,7 @@
          bool isIndexing();
          bool isSuspended();
          QString currentFolder();
@@ -480,6 +2906,117 @@ Index: nepomuk/services/strigi/strigiserviceadaptor.h
          void resume();
          void suspend();
  
+@@ -104,6 +111,11 @@
+          */
+         void indexFolder( const QString& path, bool forced );
+ 
++        /**
++         * Index a specific file
++         */
++        void indexFile( const QString& path );
++
+         void analyzeResource( const QString& uri, uint mTime, const QByteArray& data );
+         void analyzeResourceFromTempFileAndDeleteTempFile( const QString& uri, uint mTime, const QString& tmpFile );
+         QString userStatusString() const;
+Index: nepomuk/services/strigi/indexscheduler.cpp
+===================================================================
+--- nepomuk/services/strigi/indexscheduler.cpp	(révision 1121160)
++++ nepomuk/services/strigi/indexscheduler.cpp	(copie de travail)
+@@ -32,6 +32,7 @@
+ #include <QtCore/QDateTime>
+ #include <QtCore/QByteArray>
+ #include <QtCore/QUrl>
++#include <QtCore/QTimer>
+ 
+ #include <KDebug>
+ #include <KTemporaryFile>
+@@ -130,6 +131,13 @@
+ {
+     m_analyzerConfig = new StoppableConfiguration;
+ 
++    // see updateDir(QString,bool) for details on the timer
++    m_dirsToUpdateWakeupTimer = new QTimer( this );
++    m_dirsToUpdateWakeupTimer->setSingleShot( true );
++    m_dirsToUpdateWakeupTimer->setInterval(1000);
++    connect( m_dirsToUpdateWakeupTimer, SIGNAL( timeout() ),
++             this, SLOT( slotDirsToUpdateWakeupTimeout() ) );
++
+     connect( StrigiServiceConfig::self(), SIGNAL( configChanged() ),
+              this, SLOT( slotConfigChanged() ) );
+ }
+@@ -383,7 +391,9 @@
+         if ( !waitForContinue() )
+             return false;
+ 
++        m_currentUrl = file.filePath();
+         analyzeFile( file, analyzer );
++        m_currentUrl = KUrl();
+     }
+ 
+     // recurse into subdirs (we do this in a separate loop to always keep a proper state:
+@@ -405,7 +415,6 @@
+     //
+     // strigi asserts if the file path has a trailing slash
+     //
+-    m_currentUrl = file.filePath();
+     QString filePath = m_currentUrl.toLocalFile( KUrl::RemoveTrailingSlash );
+     QString dir = m_currentUrl.directory(KUrl::IgnoreTrailingSlash);
+ 
+@@ -427,9 +436,6 @@
+     else {
+         analysisresult.index(0);
+     }
+-
+-    // done with this file
+-    m_currentUrl = KUrl();
+ }
+ 
+ 
+@@ -453,7 +459,15 @@
+ {
+     QMutexLocker lock( &m_dirsToUpdateMutex );
+     m_dirsToUpdate << qMakePair( path, UpdateDirFlags( forceUpdate ? ForceUpdate : NoUpdateFlags ) );
+-    m_dirsToUpdateWc.wakeAll();
++
++    // sometimes the filewatch service will call this method many times in a row with the same
++    // folder (in case a whole folder is created or modified). In order not to run an update every
++    // time we slightly delay the update process
++    if ( !isSuspended() &&
++         isIndexing() &&
++         !m_dirsToUpdateWakeupTimer->isActive() ) {
++        m_dirsToUpdateWakeupTimer->start();
++    }
+ }
+ 
+ 
+@@ -495,6 +509,12 @@
+ }
+ 
+ 
++void Nepomuk::IndexScheduler::slotDirsToUpdateWakeupTimeout()
++{
++    m_dirsToUpdateWc.wakeAll();
++}
++
++
+ namespace {
+     class QDataStreamStrigiBufferedStream : public Strigi::BufferedStream<char>
+     {
+@@ -545,6 +565,14 @@
+ }
+ 
+ 
++void Nepomuk::IndexScheduler::analyzeFile( const QString& path )
++{
++    Strigi::StreamAnalyzer analyzer( *m_analyzerConfig );
++    analyzer.setIndexWriter( *m_indexManager->indexWriter() );
++    analyzeFile( path, &analyzer );
++}
++
++
+ void Nepomuk::IndexScheduler::deleteEntries( const QStringList& entries )
+ {
+     // recurse into subdirs
 Index: nepomuk/services/strigi/nepomukstrigiservice.desktop
 ===================================================================
 --- nepomuk/services/strigi/nepomukstrigiservice.desktop	(révision 1121160)
@@ -505,7 +3042,7 @@ Index: nepomuk/services/strigi/nepomukstrigiservice.desktop
  Comment[hr]=Nepomukova usluga koja upravlja strigidaemonom, tj. indeksira datoteke na računalu
  Comment[hsb]=Nepomukowa słužba za strigidemon, to su indeksowe dataje na dźěłowym powjerchu
  Comment[hu]=A Strigi szolgáltatást kezeli, amely fájlok indexelését végzi
-+Comment[ia]=Servicio de Nepomuk que controla le strigidaemon, i.e. indicisa le archivos su le scriptorio
++Comment[ia]=Servicio de Nepomuk que controla le strigidaemon, i.e. indicisa le files su le scriptorio
  Comment[id]=Layanan Nepomuk yang mengontrol jurik strigi, misalnya berkas indeks di desktop
  Comment[is]=Nepomuk þjónusta sem stýrir strigidaemon, þ.e. býr til yfirlit um skrár á skjáborði
  Comment[it]=Servizio di Nepomuk che controlla il demone strigi, cioè indicizza i file del desktop
@@ -542,6 +3079,48 @@ Index: nepomuk/services/strigi/strigiserviceconfig.cpp
      QStringList excludeFoldersPlain = m_config.group( "General" ).readPathEntry( "exclude folders", QStringList() );;
  
      m_folderCache.clear();
+Index: nepomuk/services/strigi/indexscheduler.h
+===================================================================
+--- nepomuk/services/strigi/indexscheduler.h	(révision 1121160)
++++ nepomuk/services/strigi/indexscheduler.h	(copie de travail)
+@@ -37,8 +37,8 @@
+ 
+ class QFileInfo;
+ class QByteArray;
++class QTimer;
+ 
+-
+ namespace Nepomuk {
+     /**
+      * The IndexScheduler performs the normal indexing,
+@@ -157,6 +157,11 @@
+         void updateAll( bool forceUpdate = false );
+ 
+         /**
++         * Analyze the one file without conditions.
++         */
++        void analyzeFile( const QString& path );
++
++        /**
+          * Analyze a resource that is not read from the local harddisk.
+          *
+          * \param uri The resource URI to identify the resource.
+@@ -174,6 +179,7 @@
+ 
+     private Q_SLOTS:
+         void slotConfigChanged();
++        void slotDirsToUpdateWakeupTimeout();
+ 
+     private:
+         void run();
+@@ -215,6 +221,7 @@
+ 
+         QMutex m_dirsToUpdateMutex;
+         QWaitCondition m_dirsToUpdateWc;
++        QTimer* m_dirsToUpdateWakeupTimer;
+ 
+         QString m_currentFolder;
+         KUrl m_currentUrl;
 Index: nepomuk/services/strigi/systray.cpp
 ===================================================================
 --- nepomuk/services/strigi/systray.cpp	(révision 1121160)
@@ -951,7 +3530,15 @@ Index: nepomuk/services/strigi/strigiserviceadaptor.cpp
 ===================================================================
 --- nepomuk/services/strigi/strigiserviceadaptor.cpp	(révision 1121160)
 +++ nepomuk/services/strigi/strigiserviceadaptor.cpp	(copie de travail)
-@@ -72,6 +72,12 @@
+@@ -27,6 +27,7 @@
+ #include <QtCore/QUrl>
+ #include <QtCore/QDateTime>
+ #include <QtCore/QFile>
++#include <QtCore/QFileInfo>
+ #include <QtCore/QDataStream>
+ 
+ #include <KDebug>
+@@ -72,6 +73,12 @@
  }
  
  
@@ -964,6 +3551,53 @@ Index: nepomuk/services/strigi/strigiserviceadaptor.cpp
  void Nepomuk::StrigiServiceAdaptor::resume()
  {
      // handle method call org.kde.nepomuk.Strigi.resume
+@@ -88,8 +95,17 @@
+ 
+ void Nepomuk::StrigiServiceAdaptor::updateFolder( const QString& path, bool forced )
+ {
+-    if ( StrigiServiceConfig::self()->shouldFolderBeIndexed( path ) )
+-        m_service->indexScheduler()->updateDir( path, forced );
++    QFileInfo info( path );
++    if ( info.exists() ) {
++        QString dirPath;
++        if ( info.isDir() )
++            dirPath = info.absoluteFilePath();
++        else
++            dirPath = info.absolutePath();
++
++        if ( StrigiServiceConfig::self()->shouldFolderBeIndexed( dirPath ) )
++            m_service->indexScheduler()->updateDir( dirPath, forced );
++    }
+ }
+ 
+ 
+@@ -101,10 +117,25 @@
+ 
+ void Nepomuk::StrigiServiceAdaptor::indexFolder( const QString& path, bool forced )
+ {
+-    m_service->indexScheduler()->updateDir( path, forced );
++    QFileInfo info( path );
++    if ( info.exists() ) {
++        QString dirPath;
++        if ( info.isDir() )
++            dirPath = info.absoluteFilePath();
++        else
++            dirPath = info.absolutePath();
++
++        m_service->indexScheduler()->updateDir( dirPath, forced );
++    }
+ }
+ 
+ 
++void Nepomuk::StrigiServiceAdaptor::indexFile( const QString& path )
++{
++    m_service->indexScheduler()->analyzeFile( path );
++}
++
++
+ void Nepomuk::StrigiServiceAdaptor::analyzeResource( const QString& uri, uint mTime, const QByteArray& data )
+ {
+     QDataStream stream( data );
 Index: nepomuk/services/storage/repository.cpp
 ===================================================================
 --- nepomuk/services/storage/repository.cpp	(révision 1121160)
@@ -1602,7 +4236,7 @@ Index: nepomuk/services/activities/nepomukactivitiesservice.desktop
 ===================================================================
 --- nepomuk/services/activities/nepomukactivitiesservice.desktop	(révision 0)
 +++ nepomuk/services/activities/nepomukactivitiesservice.desktop	(révision 0)
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,38 @@
 +[Desktop Entry]
 +Type=Service
 +ServiceTypes=NepomukService
@@ -1610,17 +4244,36 @@ Index: nepomuk/services/activities/nepomukactivitiesservice.desktop
 +X-KDE-Nepomuk-autostart=true
 +X-KDE-Nepomuk-start-on-demand=false
 +Name=Nepomuk Activities Service
++Name[ca]=Servei d'activitats del Nepomuk
++Name[ca@valencia]=Servei d'activitats del Nepomuk
++Name[da]=Nepomuk aktivitetstjeneste
++Name[de]=Nepomuk-Aktivitäten-Dienst
++Name[el]=Υπηρεσία δραστηριοτήτων Nepomuk
 +Name[en_GB]=Nepomuk Activities Service
++Name[es]=Servicio de actividades de Nepomuk
++Name[et]=Nepomuki tegevuste teenus
++Name[fr]=Service d'agencements de Nepomuk
++Name[hr]=Usluga Aktivnosti Nepomuka
 +Name[ia]=Servicio de Activitate de Nepomuk
++Name[id]=Layanan Aktivitas Nepomuk
++Name[is]=Nepomuk virkniþjónusta
++Name[it]=Servizio delle attività di Nepomuk
++Name[ja]=Nepomuk アクティビティサービス
++Name[kk]=Nepomuk белсенділік қызметі
 +Name[km]=សេវា​សកម្មភាព​របស់ Nepomuk
++Name[kn]=ನೆಪೋಮುಕ್ ಚಟುವಟಿಕೆಗಳ ಸೇವೆ
 +Name[lt]=Nepomuk veiklų tarnyba
++Name[nb]=Nepomuk aktivitetstjeneste
 +Name[nds]=Nepomuk-Aktivitetendeenst
 +Name[nl]=Nepomuk activiteitenservice
++Name[pa]=ਨਿਪੋਮੁਕ ਸਟਰੀਗੀ ਸਰਵਿਸ
 +Name[pt]=Serviço de Actividades do Nepomuk
 +Name[pt_BR]=Serviço de Atividades do Nepomuk
 +Name[sv]=Nepomuk aktivitetstjänst
 +Name[uk]=Служба просторів дій Nepomuk
 +Name[x-test]=xxNepomuk Activities Servicexx
++Name[zh_CN]=Nepomuk 活动服务
++Name[zh_TW]=Nepomuk 活動服務
 +Comment=
 Index: nepomuk/services/activities/CMakeLists.txt
 ===================================================================
@@ -1685,7 +4338,24 @@ Index: nepomuk/services/filewatch/metadatamover.h
 ===================================================================
 --- nepomuk/services/filewatch/metadatamover.h	(révision 1121160)
 +++ nepomuk/services/filewatch/metadatamover.h	(copie de travail)
-@@ -68,7 +68,7 @@
+@@ -50,6 +50,16 @@
+ 
+         void stop();
+ 
++    Q_SIGNALS:
++        /**
++         * Emitted for files (and folders) that have been moved but
++         * do not have metadata to be moved. This allows the strigi
++         * service to pick them up in case they are of interest. The
++         * typical example would be moving a file from a non-indexed into
++         * an indexed folder.
++         */
++        void movedWithoutData( const QString& path );
++
+     private Q_SLOTS:
+         void slotClearRecentlyFinishedRequests();
+ 
+@@ -68,7 +78,7 @@
           * If old pre-KDE 4.4 file:/ resource URIs are used these are
           * updated to the new nepomuk:/res/<UUID> scheme
           */
@@ -1892,7 +4562,7 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.cpp
  
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
-@@ -18,33 +18,68 @@
+@@ -18,45 +18,114 @@
  
  #include "nepomukfilewatch.h"
  #include "metadatamover.h"
@@ -1937,7 +4607,7 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.cpp
  
  
 +namespace {
-+    
++
 +    class RemoveInvalidThread : public QThread {
 +    public :
 +        RemoveInvalidThread(QObject* parent = 0);
@@ -1958,7 +4628,7 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.cpp
 +        while( it.next() ) {
 +            QUrl url( it["url"].uri() );
 +            QString file = url.toLocalFile();
-+            
++
 +            if( !file.isEmpty() && !QFile::exists(file) ) {
 +                kDebug() << "REMOVING " << file;
 +                Nepomuk::ResourceManager::instance()->mainModel()->removeContext( it["g"] );
@@ -1972,8 +4642,11 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.cpp
  Nepomuk::FileWatch::FileWatch( QObject* parent, const QList<QVariant>& )
      : Service( parent )
  {
-@@ -52,11 +87,40 @@
+     // start the mover thread
      m_metadataMover = new MetadataMover( mainModel(), this );
++    connect( m_metadataMover, SIGNAL(movedWithoutData(QString)),
++             this, SLOT(slotMovedWithoutData(QString)),
++             Qt::QueuedConnection );
      m_metadataMover->start();
  
 -    // monitor KIO for changes
@@ -1997,6 +4670,8 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.cpp
 +             this, SLOT( slotFileDeleted( const QString& ) ) );
 +    connect( m_dirWatch, SIGNAL( created( const QString& ) ),
 +             this, SLOT( slotFileCreated( const QString& ) ) );
++    connect( m_dirWatch, SIGNAL( modified( const QString& ) ),
++             this, SLOT( slotFileModified( const QString& ) ) );
 +    connect( m_dirWatch, SIGNAL( watchUserLimitReached() ),
 +             this, SLOT( slotInotifyWatchUserLimitReached() ) );
 +
@@ -2013,12 +4688,12 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.cpp
 +#else
 +    connectToKDirWatch();
 +#endif
-+    
++
 +    (new RemoveInvalidThread())->start();
  }
  
  
-@@ -67,9 +131,15 @@
+@@ -67,9 +136,15 @@
  }
  
  
@@ -2036,17 +4711,40 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.cpp
  }
  
  
-@@ -102,4 +172,34 @@
+@@ -102,4 +177,57 @@
      slotFilesDeleted( QStringList( urlString ) );
  }
  
 +
 +void Nepomuk::FileWatch::slotFileCreated( const QString& path )
 +{
-+    // tell Strigi service (if running)
++    updateFolderViaStrigi( path );
++}
++
++
++void Nepomuk::FileWatch::slotFileModified( const QString& path )
++{
++    updateFolderViaStrigi( path );
++}
++
++
++void Nepomuk::FileWatch::slotMovedWithoutData( const QString& path )
++{
++    updateFolderViaStrigi( path );
++}
++
++
++// static
++void Nepomuk::FileWatch::updateFolderViaStrigi( const QString& path )
++{
++    //
++    // Tell Strigi service (if running) to update the newly created
++    // folder or the folder containing the newly created file
++    //
 +    org::kde::nepomuk::Strigi strigi( "org.kde.nepomuk.services.nepomukstrigiservice", "/nepomukstrigiservice", QDBusConnection::sessionBus() );
-+    if ( strigi.isValid() )
++    if ( strigi.isValid() ) {
 +        strigi.updateFolder( path, false /* no forced update */ );
++    }
 +}
 +
 +
@@ -2082,7 +4780,23 @@ Index: nepomuk/services/filewatch/metadatamover.cpp
  
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
-@@ -39,6 +39,7 @@
+@@ -19,6 +19,7 @@
+ #include "metadatamover.h"
+ #include "nie.h"
+ #include "nfo.h"
++#include "nepomukfilewatch.h"
+ 
+ #include <QtCore/QDir>
+ #include <QtCore/QRegExp>
+@@ -30,6 +32,7 @@
+ #include <Soprano/Node>
+ #include <Soprano/NodeIterator>
+ #include <Soprano/QueryResultIterator>
++#include <Soprano/LiteralValue>
+ #include <Soprano/Vocabulary/Xesam>
+ 
+ #include <Nepomuk/Resource>
+@@ -39,6 +42,7 @@
  #include <Nepomuk/Query/Query>
  #include <Nepomuk/Query/ComparisonTerm>
  #include <Nepomuk/Query/ResourceTerm>
@@ -2090,7 +4804,7 @@ Index: nepomuk/services/filewatch/metadatamover.cpp
  
  #include <KDebug>
  
-@@ -70,6 +71,7 @@
+@@ -70,6 +74,7 @@
  
  void Nepomuk::MetadataMover::moveFileMetadata( const KUrl& from, const KUrl& to )
  {
@@ -2098,7 +4812,7 @@ Index: nepomuk/services/filewatch/metadatamover.cpp
      m_queueMutex.lock();
      UpdateRequest req( from, to );
      if ( !m_updateQueue.contains( req ) &&
-@@ -82,18 +84,13 @@
+@@ -82,18 +87,13 @@
  
  void Nepomuk::MetadataMover::removeFileMetadata( const KUrl& file )
  {
@@ -2119,7 +4833,7 @@ Index: nepomuk/services/filewatch/metadatamover.cpp
      m_queueMutex.lock();
      foreach( const KUrl& file, files ) {
          UpdateRequest req( file );
-@@ -189,7 +186,7 @@
+@@ -189,7 +189,7 @@
  }
  
  
@@ -2128,12 +4842,100 @@ Index: nepomuk/services/filewatch/metadatamover.cpp
  {
      kDebug() << from << "->" << to;
  
-@@ -226,19 +223,41 @@
-         if ( newParent.exists() ) {
-             newResource.setProperty( Nepomuk::Vocabulary::NIE::isPartOf(), newParent );
-         }
-+    }
+@@ -206,8 +206,8 @@
+     Resource oldResource( from );
  
+     if ( oldResource.exists() ) {
+-        QUrl oldResourceUri = oldResource.resourceUri();
+-        QUrl newResourceUri = oldResourceUri;
++        const QUrl oldResourceUri = oldResource.resourceUri();
++        QUrl newResourceUri( oldResourceUri );
+ 
+         //
+         // Handle legacy file:/ resource URIs
+@@ -217,31 +216,110 @@
+             newResourceUri = updateLegacyMetadata( oldResourceUri );
+         }
+ 
+-
+         //
+-        // Now update the nie:url and nie:isPartOf relations
++        // Now update the nie:url, nfo:fileName, and nie:isPartOf relations.
+         //
+-        Resource newResource( newResourceUri );
+-        newResource.setProperty( Nepomuk::Vocabulary::NIE::url(), to );
+-        if ( newResource.hasProperty( Nepomuk::Vocabulary::NFO::fileName() ) )
+-            newResource.setProperty( Nepomuk::Vocabulary::NFO::fileName(), to.fileName() );
+-        Resource newParent( to.directory( KUrl::IgnoreTrailingSlash ) );
+-        if ( newParent.exists() ) {
+-            newResource.setProperty( Nepomuk::Vocabulary::NIE::isPartOf(), newParent );
+-        }
++        // We do NOT use Resource::setProperty to avoid the overhead and data clutter of creating
++        // new metadata graphs for the changed data.
++        //
++        // TODO: put this into a nice API which can act as the low-level version of Nepomuk::Resource
++        //
++        QString query = QString::fromLatin1( "select distinct ?g ?u ?f ?p where { "
++                                             "graph ?g { %1 ?prop ?obj . "
++                                             "OPTIONAL { %1 %2 ?u . } . "
++                                             "OPTIONAL { %1 %3 ?f . } . "
++                                             "OPTIONAL { %1 %4 ?p . } . "
++                                             "} . "
++                                             "FILTER(BOUND(?u) || BOUND(?f) || BOUND(?p)) . }" )
++                        .arg( Soprano::Node::resourceToN3( newResourceUri ),
++                              Soprano::Node::resourceToN3( Nepomuk::Vocabulary::NIE::url() ),
++                              Soprano::Node::resourceToN3( Nepomuk::Vocabulary::NFO::fileName() ),
++                              Soprano::Node::resourceToN3( Nepomuk::Vocabulary::NIE::isPartOf() ) );
++        QList<Soprano::BindingSet> graphs
++            = m_model->executeQuery( query, Soprano::Query::QueryLanguageSparql ).allBindings();
+ 
++        Q_FOREACH( const Soprano::BindingSet& graph, graphs ) {
++
++            if ( graph["u"].isValid() ) {
++                m_model->removeStatement( newResourceUri,
++                                          Nepomuk::Vocabulary::NIE::url(),
++                                          graph["u"],
++                                          graph["g"] );
++                m_model->addStatement( newResourceUri,
++                                       Nepomuk::Vocabulary::NIE::url(),
++                                       to,
++                                       graph["g"] );
++            }
++
++            if ( graph["f"].isValid() ) {
++                m_model->removeStatement( newResourceUri,
++                                          Nepomuk::Vocabulary::NFO::fileName(),
++                                          graph["f"],
++                                          graph["g"] );
++                m_model->addStatement( newResourceUri,
++                                       Nepomuk::Vocabulary::NFO::fileName(),
++                                       Soprano::LiteralValue( to.fileName() ),
++                                       graph["g"] );
++            }
++
++            if ( graph["p"].isValid() ) {
++                m_model->removeStatement( newResourceUri,
++                                          Nepomuk::Vocabulary::NIE::isPartOf(),
++                                          graph["p"],
++                                          graph["g"] );
++                Resource newParent( to.directory( KUrl::IgnoreTrailingSlash ) );
++                if ( newParent.exists() ) {
++                    m_model->addStatement( newResourceUri,
++                                           Nepomuk::Vocabulary::NIE::isPartOf(),
++                                           newParent.resourceUri(),
++                                           graph["g"] );
++                }
++            }
++        }
++    }
++    else {
++        //
++        // If we have no metadata yet we need to tell strigi (if running) so it can
++        // create the metadata in case the target folder is configured to be indexed.
++        //
++        emit movedWithoutData( to.directory( KUrl::IgnoreTrailingSlash ) );
++    }
++ 
 +    if ( includeChildren && QFileInfo( to.toLocalFile() ).isDir() ) {
          //
          // Recursively update children
@@ -2153,6 +4955,10 @@ Index: nepomuk/services/filewatch/metadatamover.cpp
 +                        .arg( Soprano::Node::resourceToN3( Nepomuk::Vocabulary::NIE::url() ),
 +                              from.url(KUrl::AddTrailingSlash) );
 +        kDebug() << query;
++
++        const QString oldBasePath = from.path( KUrl::AddTrailingSlash );
++        const QString newBasePath = to.path( KUrl::AddTrailingSlash );
++
 +        Soprano::QueryResultIterator it = m_model->executeQuery( query, Soprano::Query::QueryLanguageSparql );
          while ( it.next() ) {
 -            QUrl uri = it[0].uri();
@@ -2168,8 +4974,6 @@ Index: nepomuk/services/filewatch/metadatamover.cpp
 +            const KUrl url = it[1].uri();
 +
 +            // now construct the new URL
-+            const QString oldBasePath = from.path( KUrl::AddTrailingSlash );
-+            const QString newBasePath = to.path( KUrl::AddTrailingSlash );
 +            QString oldRelativePath = url.path().mid( oldBasePath.length() );
 +            KUrl newUrl( newBasePath + oldRelativePath );
 +
@@ -2178,6 +4982,34 @@ Index: nepomuk/services/filewatch/metadatamover.cpp
          }
      }
  }
+@@ -256,9 +337,9 @@
+     //
+     // update the resource properties
+     //
+-    QList<Soprano::Statement> sl = m_model->listStatements( Soprano::Statement( oldResourceUri,
+-                                                                                Soprano::Node(),
+-                                                                                Soprano::Node() ) ).allStatements();
++    QList<Soprano::Statement> sl = m_model->listStatements( oldResourceUri,
++                                                            Soprano::Node(),
++                                                            Soprano::Node() ).allStatements();
+     Q_FOREACH( const Soprano::Statement& s, sl ) {
+         //
+         // Skip all the stuff we will update later on
+@@ -270,10 +351,10 @@
+             continue;
+         }
+ 
+-        m_model->addStatement( Soprano::Statement( newResourceUri,
+-                                                   s.predicate(),
+-                                                   s.object(),
+-                                                   s.context() ) );
++        m_model->addStatement( newResourceUri,
++                               s.predicate(),
++                               s.object(),
++                               s.context() );
+     }
+ 
+     m_model->removeStatements( sl );
 Index: nepomuk/services/filewatch/nepomukfilewatch.h
 ===================================================================
 --- nepomuk/services/filewatch/nepomukfilewatch.h	(révision 1121160)
@@ -2200,9 +5032,16 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.h
  
  class KUrl;
  
-@@ -51,18 +49,23 @@
+@@ -50,19 +48,32 @@
+         FileWatch( QObject* parent, const QVariantList& );
          ~FileWatch();
  
++        /**
++         * Tells strigi to update the folder at \p path or the folder
++         * containing \p path in case it is a file.
++         */
++        static void updateFolderViaStrigi( const QString& path );
++
      public Q_SLOTS:
 -        Q_SCRIPTABLE void moveFileMetadata( const QString& from, const QString& to );
 +        Q_SCRIPTABLE void watchFolder( const QString& path );
@@ -2212,6 +5051,8 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.h
          void slotFileDeleted( const QString& path );
          void slotFilesDeleted( const QStringList& path );
 +        void slotFileCreated( const QString& );
++        void slotFileModified( const QString& );
++        void slotMovedWithoutData( const QString& );
 +        void connectToKDirWatch();
 +#ifdef BUILD_KINOTIFY
 +        void slotInotifyWatchUserLimitReached();
@@ -2267,7 +5108,7 @@ Index: nepomuk/services/filewatch/nepomukfilewatch.desktop
  Comment[hr]=Nepomukova usluga nadgledanja datoteka za otkrivanje promjena nad istima
  Comment[hsb]=Nepomukowe wobkedźbowanje datajow za zwěsćenje změnow
  Comment[hu]=Nepomuk fájlfigyelő szolgáltatás fájlváltozások követéséhez
-+Comment[ia]=Servicio de guarda de archivo Nepomuk pro monitorar variationes de archivo
++Comment[ia]=Servicio de guarda de file Nepomuk pro monitorar variationes de file
  Comment[id]=Layanan pengawas berkas Nepomuk untuk memonitor perubahan pada berkas
  Comment[is]=Nepomuk skráavarslan fylgist með breytingum á skrám
  Comment[it]=Il servizio di sorveglianza di Nepomuk per monitorare i cambiamenti dei file
@@ -2694,6 +5535,52 @@ ___________________________________________________________________
 Ajouté : svn:eol-style
    + native
 
+Index: nepomuk/services/queryservice/folder.h
+===================================================================
+--- nepomuk/services/queryservice/folder.h	(révision 1121160)
++++ nepomuk/services/queryservice/folder.h	(copie de travail)
+@@ -63,6 +63,8 @@
+ 
+             QList<FolderConnection*> openConnections() const;
+ 
++            QString query() const { return m_query; }
++
+         public Q_SLOTS:
+             void update();
+ 
+Index: nepomuk/services/queryservice/folderconnection.h
+===================================================================
+--- nepomuk/services/queryservice/folderconnection.h	(révision 1121160)
++++ nepomuk/services/queryservice/folderconnection.h	(copie de travail)
+@@ -48,6 +48,13 @@
+             /// close the connection to the folder. Will delete this connection
+             void close();
+ 
++            /// \return \p true if the initial listing has been finished and the finishedListing()
++            /// has been emitted
++            bool isListingFinished() const;
++
++            /// \return the SPARQL query of the folder
++            QString queryString() const;
++
+         Q_SIGNALS:
+             void newEntries( const QList<Nepomuk::Query::Result>& );
+             void entriesRemoved( const QStringList& );
+Index: nepomuk/services/queryservice/searchthread.h
+===================================================================
+--- nepomuk/services/queryservice/searchthread.h	(révision 1121160)
++++ nepomuk/services/queryservice/searchthread.h	(copie de travail)
+@@ -59,8 +59,8 @@
+             void run();
+ 
+         private:
+-            void sparqlQuery( const QString& query, double baseScore );
+-            Nepomuk::Query::Result extractResult( const Soprano::QueryResultIterator& it ) const;
++            void sparqlQuery( const QString& query );
++            Nepomuk::Query::Result extractResult( const Resource& resultResource, const Soprano::QueryResultIterator& it ) const;
+ 
+             QString m_sparqlQuery;
+             RequestPropertyMap m_requestProperties;
 Index: nepomuk/services/queryservice/queryservice.cpp
 ===================================================================
 --- nepomuk/services/queryservice/queryservice.cpp	(révision 1121160)
@@ -2757,6 +5644,27 @@ Index: nepomuk/services/queryservice/queryservice.cpp
  }
  
  #include "queryservice.moc"
+Index: nepomuk/services/queryservice/folderconnection.cpp
+===================================================================
+--- nepomuk/services/queryservice/folderconnection.cpp	(révision 1121160)
++++ nepomuk/services/queryservice/folderconnection.cpp	(copie de travail)
+@@ -115,4 +115,16 @@
+     deleteLater();
+ }
+ 
++
++bool Nepomuk::Query::FolderConnection::isListingFinished() const
++{
++    return m_folder->initialListingDone();
++}
++
++
++QString Nepomuk::Query::FolderConnection::queryString() const
++{
++    return m_folder->query();
++}
++
+ #include "folderconnection.moc"
 Index: nepomuk/services/queryservice/queryservice.h
 ===================================================================
 --- nepomuk/services/queryservice/queryservice.h	(révision 1121160)
@@ -2809,7 +5717,7 @@ Index: nepomuk/services/queryservice/nepomukqueryservice.desktop
  Name[uk]=NepomukQueryService
  Name[wa]=SierviceCweraedjeNepomuk
  Name[x-test]=xxNepomukQueryServicexx
-@@ -101,6 +102,7 @@
+@@ -101,9 +102,11 @@
  Comment[hr]=Nepomuk Upitna Usluga pruža sučelje za trajne upitne direktorije
  Comment[hsb]=Nepomukowa naprašowanska słužba staji intefejs za persistentne naprašowanske zapiski k dispoziciji.
  Comment[hu]=A Nepomuk lekérdező szolgáltatás keresőmappákhoz nyújt felületet
@@ -2817,7 +5725,11 @@ Index: nepomuk/services/queryservice/nepomukqueryservice.desktop
  Comment[id]=Layanan Tanya Nepomuk menyediakan antarmuka untuk folder pertanyaan yang kukuh
  Comment[is]=Nepomuk fyrirspurnamiðlarinn er viðmót fyrir viðvarandi fyrirspurnamöppur (persistent query folders)
  Comment[it]=Il servizio di interrogazione di Nepomuk fornisce un'interfaccia per cartelle di interrogazione persistenti
-@@ -135,7 +137,7 @@
++Comment[ja]=Nepomuk クエリサービスは永続クエリフォルダのインターフェースを提供します
+ Comment[kk]=Nepomuk сұраныс қызметі тұрақты сұраныс қапшытарына интерфейсті қамтамасыз етеді
+ Comment[km]=សេវា​សំណួរ Nepomuk ផ្ដល់​នូវ​ចំណុច​ប្រទាក់​សម្រាប់​ថត​សំណួរ​ជាប់លាប់
+ Comment[kn]=ಅವಿಚ್ಛಿನ್ನ ವಿಚಾರಣಾ (ಪರ್ಸಿಸ್ಟೆಂಟ್ ಕ್ವೆರಿ) ಕಡತಕೋಶಗಳಿಗೆ ನೆಪೋಮುಕ್ ವಿಚಾರಣಾ ಸೇವೆ ಒಂದು ಸಂಪರ್ಕತಟವನ್ನು (ಇಂಟರ್ಫೇಸ್) ನೀಡುತ್ತದೆ
+@@ -135,7 +138,7 @@
  Comment[ta]=The Nepomuk Query Service provides an interface for persistent query folders
  Comment[te]=నెపోమక్ క్వరీ సేవ అనునది ఎప్పుడూవుండే క్వరీ ఫోల్డర్సుకు ఇంటర్ఫేస్‌ను అందిస్తుంది
  Comment[th]=บริการสืบค้น Nepomuk เป็นส่วนติดต่อสำหรับโฟลเดอร์สืบค้นข้อมูลถาวร
@@ -2830,9 +5742,70 @@ Index: nepomuk/services/queryservice/searchthread.cpp
 ===================================================================
 --- nepomuk/services/queryservice/searchthread.cpp	(révision 1121160)
 +++ nepomuk/services/queryservice/searchthread.cpp	(copie de travail)
-@@ -142,11 +142,21 @@
+@@ -46,8 +46,9 @@
+ #include <KRandom>
+ 
+ #include <QtCore/QTime>
+-#include <QLatin1String>
+-#include <QStringList>
++#include <QtCore/QRegExp>
++#include <QtCore/QLatin1String>
++#include <QtCore/QStringList>
+ 
+ 
+ 
+@@ -105,19 +106,19 @@
+     // created via the Nepomuk query API.
+     //
+     if ( m_sparqlQuery.endsWith( QLatin1String( "}" ) ) ) {
+-        sparqlQuery( m_sparqlQuery + QLatin1String( " LIMIT 10" ), 1.0 );
++        sparqlQuery( m_sparqlQuery + QLatin1String( " LIMIT 10" ) );
+         if ( !m_canceled && m_resultCnt >= 10 )
+-            sparqlQuery( m_sparqlQuery + QLatin1String( " OFFSET 10" ), 1.0 );
++            sparqlQuery( m_sparqlQuery + QLatin1String( " OFFSET 10" ) );
+     }
+     else {
+-        sparqlQuery( m_sparqlQuery, 1.0 );
++        sparqlQuery( m_sparqlQuery );
+     }
+ 
+     kDebug() << time.elapsed();
+ }
+ 
+ 
+-void Nepomuk::Query::SearchThread::sparqlQuery( const QString& query, double baseScore )
++void Nepomuk::Query::SearchThread::sparqlQuery( const QString& query )
+ {
+     kDebug() << query;
+ 
+@@ -127,26 +128,49 @@
+ 
+         ++m_resultCnt;
+ 
+-        Result result = extractResult( hits );
+-        result.setScore( baseScore );
++        Resource res = Resource::fromResourceUri( hits[0].uri() );
++        if ( !res.hasType( Soprano::Vocabulary::RDFS::Class() ) &&
++             !res.hasType( Soprano::Vocabulary::RDF::Property() ) &&
++             !res.hasType( Soprano::Vocabulary::NRL::Graph() ) ) {
++            Result result = extractResult( res, hits );
+ 
+-        kDebug() << "Found result:" << result.resource().resourceUri();
++            kDebug() << "Found result:" << result.resource().resourceUri() << result.score();
+ 
+-        emit newResult( result );
++            emit newResult( result );
++        }
+     }
+ }
+ 
+ 
+-Nepomuk::Query::Result Nepomuk::Query::SearchThread::extractResult( const Soprano::QueryResultIterator& it ) const
++Nepomuk::Query::Result Nepomuk::Query::SearchThread::extractResult( const Resource& resultResource, const Soprano::QueryResultIterator& it ) const
+ {
      kDebug() << it.binding( 0 ).uri();
-     Result result( it.binding( 0 ).uri() );
+-    Result result( it.binding( 0 ).uri() );
++    Result result( resultResource );
  
 +    // make sure we do not store values twice
 +    QStringList names = it.bindingNames();
@@ -2844,10 +5817,19 @@ Index: nepomuk/services/queryservice/searchthread.cpp
 +        names.removeAll( rpIt.key() );
      }
  
++    static const char* s_scoreVarName = "_n_f_t_m_s_";
++
 +    Soprano::BindingSet set;
-+    foreach( const QString& var, names )
-+        set.insert( var, it[var] );
++    int score = 0;
++    Q_FOREACH( const QString& var, names ) {
++        if ( var == QLatin1String( s_scoreVarName ) )
++            score = it[var].literal().toInt();
++        else
++            set.insert( var, it[var] );
++    }
++
 +    result.setAdditionalBindings( set );
++    result.setScore( ( double )score );
 +
      // score will be set above
      return result;
@@ -2856,7 +5838,7 @@ Index: nepomuk/services/migration1/nepomukmigration1.desktop
 ===================================================================
 --- nepomuk/services/migration1/nepomukmigration1.desktop	(révision 1121160)
 +++ nepomuk/services/migration1/nepomukmigration1.desktop	(copie de travail)
-@@ -32,6 +32,7 @@
+@@ -32,9 +32,11 @@
  Comment[hr]=Nepomuk Seoba Podataka Razina 1
  Comment[hsb]=Nepomuk migracija datow runina 1
  Comment[hu]=Nepomuk adatmigráció 1. szint
@@ -2864,6 +5846,10 @@ Index: nepomuk/services/migration1/nepomukmigration1.desktop
  Comment[id]=Migrasi Data Nepomuk Level 1
  Comment[is]=Nepomuk gagnaflutningur, stig 1
  Comment[it]=Migrazione dei dati di Nepomuk di livello 1
++Comment[ja]=Nepomuk データ移行レベル 1
+ Comment[kk]=Nepomuk деректерді көшіп ауыстыру - 1-деңгей
+ Comment[km]=ការ​ប្ដូរ​ទិន្នន័យ Nepomuk កម្រិត ១
+ Comment[kn]=ನೆಪೋಮುಕ್ ದತ್ತ ವಲಸೆ ಸ್ತರ ೧
 Index: nepomuk/services/CMakeLists.txt
 ===================================================================
 --- nepomuk/services/CMakeLists.txt	(révision 1121160)
@@ -3080,7 +6066,52 @@ Index: nepomuk/server/servicemanager.cpp
 ===================================================================
 --- nepomuk/server/servicemanager.cpp	(révision 1121160)
 +++ nepomuk/server/servicemanager.cpp	(copie de travail)
-@@ -327,39 +327,8 @@
+@@ -155,8 +155,9 @@
+ 
+     /**
+      * Stop a service and all services depending on it.
++     * Return true if it was stopped, false if it was not running.
+      */
+-    void stopService( ServiceController* );
++    bool stopService( ServiceController* );
+ 
+     /**
+      * Start pending services based on the newly initialized service newService
+@@ -244,8 +245,12 @@
+ }
+ 
+ 
+-void Nepomuk::ServiceManager::Private::stopService( ServiceController* sc )
++bool Nepomuk::ServiceManager::Private::stopService( ServiceController* sc )
+ {
++    // make sure the service is not scheduled to be started later anymore
++    pendingServices.remove( sc );
++
++    // stop it if already running
+     if( sc->isRunning() ) {
+         // shut down any service depending of this one first
+         foreach( const QString &dep, dependencyTree.servicesDependingOn( sc->name() ) ) {
+@@ -253,7 +258,11 @@
+         }
+ 
+         sc->stop();
++        return true;
+     }
++    else {
++        return false;
++    }
+ }
+ 
+ 
+@@ -316,6 +325,7 @@
+ 
+ void Nepomuk::ServiceManager::stopAllServices()
+ {
++    d->pendingServices.clear();
+     for( QHash<QString, ServiceController*>::iterator it = d->services.begin();
+          it != d->services.end(); ++it ) {
+         ServiceController* serviceControl = it.value();
+@@ -327,39 +337,8 @@
  bool Nepomuk::ServiceManager::startService( const QString& name )
  {
      if( ServiceController* sc = d->findService( name ) ) {
@@ -3122,6 +6153,20 @@ Index: nepomuk/server/servicemanager.cpp
      }
      else {
          // could not find service
+@@ -371,12 +350,8 @@
+ bool Nepomuk::ServiceManager::stopService( const QString& name )
+ {
+     if( ServiceController* sc = d->findService( name ) ) {
+-        if( sc->isRunning() ) {
+-            d->stopService( sc );
+-            return true;
+-        }
++        return d->stopService( sc );
+     }
+-
+     return false;
+ }
+ 
 Index: nepomuk/server/nepomukserver.desktop
 ===================================================================
 --- nepomuk/server/nepomukserver.desktop	(révision 1121160)
@@ -3418,6 +6463,24 @@ Index: nepomuk/kcm/nepomukconfigwidget.ui
              </property>
             </widget>
            </item>
+@@ -194,7 +194,7 @@
+           <item>
+            <widget class="QLabel" name="label_4">
+             <property name="text">
+-             <string>The maximum amount of memory the Nepomuk database should use. The more memory Nepomuk has the more performant it will be.</string>
++             <string>&lt;p&gt;The maximum amount of main memory the Nepomuk system should use for its database process. The more memory is available to Nepomuk the better will be its performance. (The Nepomuk database process shows up as &lt;command&gt;virtuoso-t&lt;/command&gt; in the process manager.)</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+@@ -222,7 +222,7 @@
+             <item>
+              <widget class="QSpinBox" name="m_editMemoryUsage">
+               <property name="suffix">
+-               <string> MB</string>
++               <string> MiB</string>
+               </property>
+               <property name="minimum">
+                <number>50</number>
 Index: nepomuk/servicestub/main.cpp
 ===================================================================
 --- nepomuk/servicestub/main.cpp	(révision 1121160)
@@ -3468,253 +6531,3 @@ Index: nepomuk/servicestub/main.cpp
  
      return app.exec();
  }
-Index: nepomuk/services/strigi/nepomukstrigiservice.notifyrc
-===================================================================
---- nepomuk/services/strigi/nepomukstrigiservice.notifyrc
-+++ nepomuk/services/strigi/nepomukstrigiservice.notifyrc	2010-05-14 10:17:09.000000000 +0200
-@@ -86,6 +57,7 @@
- Name[hr]=Prvotno indeksiranje je započelo
- Name[hsb]=Prěnje tworjenje indeksa startowane
- Name[hu]=A kezdeti index elkészítése folyik
-+Name[ia]=Il initiava le indicisation initial
- Name[id]=Pengindeksan Awal dimulai
- Name[is]=Gerð upphafsyfirlits er hafin
- Name[it]=Indicizzazione iniziale avviata
-@@ -109,7 +81,7 @@
- Name[pa]=ਸ਼ੁਰੂਆਤੀ ਇੰਡੈਕਸ ਸ਼ੁਰੂ ਕੀਤਾ
- Name[pl]=Rozpoczęto początkowe indeksowanie
- Name[pt]=Início da primeira indexação
--Name[pt_BR]=Iniciada a indexação inicial
-+Name[pt_BR]=A indexação inicial foi iniciada
- Name[ro]=Indexarea inițială a început
- Name[ru]=Начато индексирование
- Name[si]=තනි සූචිකරණය ඇරඹිනි
-@@ -148,7 +120,7 @@
- Comment[gl]=Comezouse a indexación dos ficheiros locais para facer procuras rápidas.
- Comment[he]=אינדוקס של קבצים מקומיים עבור חיפושים מהירים החל
- Comment[hr]=Započelo je indeksiranje lokalnih datoteka za brzu pretragu.
--Comment[hu]=A helyi fájlok indexelése elkezdődött a gyors keresések számára.
-+Comment[ia]=Le indicisation de archivos local pro rapide cercas ha initiate
- Comment[id]=Pengindeksan berkas lokal untuk pencarian desktop secara cepat telah dimulai.
- Comment[is]=Gerð skráayfirlits til að styðja við hraðar skjáborðsleitir er hafin.
- Comment[it]=Indicizzazione dei file locali per le ricerche veloci avviata
-@@ -165,7 +137,6 @@
- Comment[nds]=Dat Indizeren vun lokaal Dateien för gau Söken hett anfungen
- Comment[nl]=Indexering van lokale bestanden voor snelle zoekopdrachten is gestart.
- Comment[nn]=Starta førsteindekseringa av lokale filer for snøgge søk.
--Comment[pa]=ਤੇਜ਼ ਡੈਸਕਟਾਪ ਖੋਜ ਲਈ ਲੋਕਲ ਫਾਇਲਾਂ ਵਾਸਤੇ ਇੰਡੈਕਸ ਬਣਾਉਣਾ ਸ਼ੁਰੂ ਕੀਤਾ
- Comment[pl]=Nastąpiło rozpoczęcie indeksowania plików lokalnych w celu przyspieszenia wyszukiwania.
- Comment[pt]=A indexação dos ficheiros para pesquisas mais rápidas começou agora.
- Comment[pt_BR]=A indexação dos arquivos para pesquisas rápidas foi iniciada.
-@@ -215,6 +186,7 @@
- Name[hr]=Prvotno indeksiranje je završilo
- Name[hsb]=Prěni indeks dotwarjeny
- Name[hu]=A kiindulási index elkészült
-+Name[ia]=Le indicisation Initial finiva
- Name[id]=Pengindeksan Awal selesai
- Name[is]=Gerð upphafsyfirlits er lokið
- Name[it]=Indicizzazione iniziale terminata
-@@ -238,7 +210,7 @@
- Name[pa]=ਸ਼ੁਰੂਆਤੀ ਇੰਡੈਕਸ ਮੁਕੰਮਲ
- Name[pl]=Początkowe indeksowanie zakończone
- Name[pt]=Fim da primeira indexação
--Name[pt_BR]=Concluída a indexação inicial
-+Name[pt_BR]=A indexação inicial foi concluída
- Name[ro]=Indexarea inițială s-a încheiat
- Name[ru]=Индексирование закончено
- Name[si]=තනි සූචිකරණය නිමයි
-@@ -251,7 +223,7 @@
- Name[sv]=Inledande indexering klar
- Name[ta]=Initial Indexing finished
- Name[te]=ప్రాధమిక విషయవర్గీకరణ పూర్తైనది.
--Name[tg]=Создание индекса завершено.
-+Name[tg]=Эҷоди индекс ба итмом расид
- Name[th]=เตรียมการการทำดัชนีเสร็จแล้ว
- Name[tr]=Temel İndeksleme tamamlandı
- Name[uk]=Початкове індексування закінчено
-@@ -276,7 +248,7 @@
- Comment[gl]=Completouse a indexación inicial dos ficheiros locais para facer procuras rápidas no escritorio.
- Comment[he]=אינדוקס ראשוני של קבצים מקומיים עבור חיפושי שולחן מהירים הסתיים
- Comment[hr]=Završilo je prvotno indeksiranje lokalnih datoteka za brzu pretragu računala.
--Comment[hu]=A helyi fájlok indexelése befejeződöttt a gyors asztali keresések számára.
-+Comment[ia]=Le indicisation de archivos local pro rapide cercas de scriptorio ha completate.
- Comment[id]=Pengindeksan awal berkas lokal untuk pencarian desktop secara cepat telah selesai.
- Comment[is]=Gerð skráayfirlits til að styðja við hraðar skjáborðsleitir er lokið.
- Comment[it]=L'indicizzazione iniziale dei file locali per le ricerche desktop veloci è stata completata.
-@@ -293,7 +265,6 @@
- Comment[nds]=Dat eerste Indizeren vun lokaal Dateien för gau Schriefdisch-Söken is afslaten.
- Comment[nl]=De eerste indexering van lokale bestanden voor snelle desktop-zoekopdrachten is gereed.
- Comment[nn]=Starta førsteindekseringa av lokale filer for snøgge søk.
--Comment[pa]=ਤੇਜ਼ ਡੈਸਕਟਾਪ ਖੋਜ ਲਈ ਲੋਕਲ ਫਾਇਲਾਂ ਵਾਸਤੇ ਇੰਡੈਕਸ ਬਣਾਉਣਾ ਪੂਰਾ ਹੋਇਆ।
- Comment[pl]=Nastąpiło zakończenie wstępnego indeksowania plików lokalnych w celu przyspieszenia wyszukiwania.
- Comment[pt]=A primeira indexação dos ficheiros para pesquisas mais rápidas terminou.
- Comment[pt_BR]=A indexação inicial de arquivos locais para pesquisas rápidas foi concluída.
-@@ -343,6 +314,7 @@
- Name[hr]=Indeksiranje je pauzirano
- Name[hsb]=Tworjenje indeksa zastajene
- Name[hu]=Az indexelés felfüggesztve
-+Name[ia]=Il suspendeva le indicisation
- Name[id]=Pengindeksan disuspensi
- Name[is]=Hætt við yfirlitsgerð
- Name[it]=Indicizzazione sospesa
-@@ -401,11 +373,10 @@
- Comment[fi]=Hakupalvelu on keskeyttänyt tiedostoindeksoinnin.
- Comment[fr]=L'indexation de fichiers a été suspendue par le service de recherche.
- Comment[fy]=Triem yndeksearring is ûnderbrútsen troch de syk tsjinst
--Comment[ga]=Chuir an tseirbhís chuardaigh innéacsú comhad ar fionraí.
- Comment[gl]=O servizo de procuras suspendeu a indexación de ficheiros.
- Comment[he]=אינדוקס קובץ הושהה על-ידי שירות החיפוש
- Comment[hr]=Usluga pretrage je pauzirala indeksiranje datoteka.
--Comment[hu]=A fájl indexelést a kereső szolgáltatás felfüggesztette.
-+Comment[ia]=Le indicisation del Archivo ha essite suspendite per le servicio de cerca
- Comment[id]=Pengindeksan berkas telah disuspensi oleh layanan pencarian.
- Comment[is]=Gerð skráayfirlits hefur verið frestað af leitartækinu.
- Comment[it]=L'indicizzazione dei file è stata sospesa dal servizio di ricerca.
-@@ -422,7 +393,6 @@
- Comment[nds]=De Söökdeenst hett dat Indizeren vun Dateien utsett.
- Comment[nl]=Bestandenindexering is onderbroken door de zoekservice.
- Comment[nn]=Filindekseringa med vart stoppa av søkjetenesta.
--Comment[pa]=ਖੋਜ ਸਰਵਿਸ ਨੇ ਫਾਇਲ ਇੰਡੈਕਸ ਨੂੰ ਸਸਪੈਂਡ ਕੀਤਾ
- Comment[pl]=Indeksowanie plików zostało zawieszone przez usługę wyszukiwania.
- Comment[pt]=A indexação de ficheiros foi suspensa pelo serviço de pesquisa.
- Comment[pt_BR]=A indexação de arquivos foi suspensa pelo serviço de pesquisa.
-@@ -472,6 +442,7 @@
- Name[hr]=Indeksiranje nastavljeno
- Name[hsb]=Indeks so dale twari
- Name[hu]=Az indexelés folytatódik
-+Name[ia]=Il resumeva le indicisation
- Name[id]=Pengindeksan dilanjutkan
- Name[is]=Yfirlitsgerð er hafin aftur
- Name[it]=Indicizzazione ripresa
-@@ -530,11 +501,10 @@
- Comment[fi]=Hakupalvelu on käynnistänyt tiedostoindeksoinnin uudelleen
- Comment[fr]=L'indexation des fichiers a été reprise par le service de recherche.
- Comment[fy]=Triem yndeksearring is ferfette troch de syk tsjinst
--Comment[ga]=D'atosaigh an tseirbhís chuardaigh innéacsú comhad.
- Comment[gl]=O servizo de procuras continuou a indexación de ficheiros.
- Comment[he]=אינדוקס קובץ נמשך על-ידי שירות החיפוש
- Comment[hr]=Usluga pretrage je nastavila indeksiranje datoteka.
--Comment[hu]=A fájl indexelést a kereső szolgáltatás folytatta.
-+Comment[ia]=Le indicisation de archivo ha essite resumite per le servicio de cerca
- Comment[id]=Pengindeksan berkas telah dilanjutkan oleh layanan pencarian.
- Comment[is]=Gerð skráayfirlits hefur verið hafin aftur af leitartækinu.
- Comment[it]=L'indicizzazione dei file è stata ripresa dal servizio di ricerca.
-@@ -551,7 +521,6 @@
- Comment[nds]=De Söökdeenst maakt mit dat Indizeren vun Dateien wieder.
- Comment[nl]=Bestandenindexering is hervat door de zoekservice.
- Comment[nn]=Filindekseringa vart starta opp att av søkjetenesta.
--Comment[pa]=ਖੋਜ ਸਰਵਿਸ ਵਲੋਂ ਫਾਇਲ ਇੰਡੈਕਸ ਮੁੜ-ਚਲਾਇਆ ਗਿਆ
- Comment[pl]=Wznowiono indeksowanie plików.
- Comment[pt]=A indexação de ficheiros foi retomada pelo serviço de pesquisa.
- Comment[pt_BR]=A indexação de arquivos foi retomada pelo serviço de pesquisa.
-Index: nepomuk/services/storage/nepomukstorage.notifyrc
-===================================================================
---- nepomuk/services/storage/nepomukstorage.notifyrc
-+++ nepomuk/services/storage/nepomukstorage.notifyrc	2010-05-14 10:17:29.000000000 +0200
-@@ -196,6 +101,7 @@
- Name[sr@ijekavianlatin]=Neuspjelo pokretanje Nepomuka
- Name[sr@latin]=Neuspelo pokretanje Nepomuka
- Name[sv]=Misslyckades starta Nepomuk
-+Name[tg]=Оғози Nepomuk қатъ шуд
- Name[th]=ล้มเหลวในการเริ่มบริการ Nepomuk
- Name[tr]=Nepomuk başlatılamadı
- Name[uk]=Не вдалося запустити Nepomuk
-@@ -216,10 +122,9 @@
- Comment[fi]=Nepomuk semanttista työpöytäjärjestelmää ei voitu käynnistää 
- Comment[fr]=Le système de bureau sémantique Nepomuk ne peut être démarré
- Comment[fy]=De Nepomuk semantic buroblêd systeem koe net úteinsetten wurde
--Comment[ga]=Níorbh fhéidir Deasc Shéimeantach Nepomuk a thosú
- Comment[he]=לא ניתן להפעיל את מערכת שולחן העבודה הסמנטית של Nepomuk 
- Comment[hr]=Sustav semantičke radne površine Nepomuk ne može biti pokrenut
--Comment[hu]=Nem sikerült elindítani a Nepomuk szemantikus asztali rendszert
-+Comment[ia]=Le systema de Scriptorio Semantic de Nepomuk non poteva esser initiate
- Comment[id]=Sistem Desktop Semantik Nepomuk tak dapat dijalankan
- Comment[is]=Ekki var hægt að ræsa Merkingarlega Nemopuk (semantic) Skjáborðskerfið
- Comment[it]=Impossibile avviare il sistema del desktop semantico Nepomuk
-@@ -284,6 +189,7 @@
- Name[hr]=Pretvaram Nepomukove podatke
- Name[hsb]=Konwertěruju Nepomukowe daty
- Name[hu]=Indexadatok konvertálása folyik
-+Name[ia]=Il converte datos de Nepomuk
- Name[id]=Mengonversi data Nepomuk
- Name[is]=Umbreyti Nepomuk gögnum
- Name[it]=Conversione dei dati di Nepomuk
-@@ -354,6 +260,7 @@
- Comment[hr]=Svi Nepomukovi podaci su pretvoreni u format novog načina pohrane
- Comment[hsb]=Wšě Nepomukowe daty buchu za nowy składowanski backend konwertěrowane
- Comment[hu]=Sikerült átkonvertálni minden adatot az új tárolómodul számára
-+Comment[ia]=Tote le datos de Nepomuk es convertite a un nove backend de storage
- Comment[id]=Semua data Nepomuk dikonversi ke ujung belakang penyimpanan baru
- Comment[is]=Öllum Nepomuk er umbreytt fyrir nýja geymslubakendann
- Comment[it]=Tutti i dati di Nepomuk sono convertiti ad un nuovo motore di memorizzazione
-@@ -427,6 +334,7 @@
- Name[hr]=Pretvaranje Nepomukovih podataka nije uspjelo.
- Name[hsb]=Konwertěrowanje Nepomukowych datow zwrěšćene
- Name[hu]=Adatkonvertálási hiba történt a Nepomukban
-+Name[ia]=Il falleva le conversion de datos de Nepomuk
- Name[id]=Mengonversi data Nepomuk telah gagal
- Name[is]=Umbreyting Nepomuk gagna mistókst
- Name[it]=Conversione dei dati di Nepomuk non riuscita
-@@ -497,6 +405,7 @@
- Comment[hr]=Pretvaranje Nepomukovih podataka u novi format nije uspjelo.
- Comment[hsb]=Konwertěrowanje Nepomukowych datow za nowy backend je zwrěšćiło.
- Comment[hu]=Ne sikerült átkonvertálni Nepomuk-adatokat egy új kezelőmodul számára
-+Comment[ia]=Il falleva le conversion de datos de Nepomuk a un nove backend
- Comment[id]=Mengonversi data Nepomuk ke ujung belakang baru gagal
- Comment[is]=Umbreyting Nepomuk gagna fyrir nýjan bakenda mistókst
- Comment[it]=La conversione dei dati di Nepomuk ad un nuovo motore di memorizzazione non è riuscita
-@@ -570,6 +479,7 @@
- Name[hr]=Pretvarane Nepomukovih podataka je završilo.
- Name[hsb]=Konwertěrowanje Nepomukowych datow zakónčene
- Name[hu]=Nepomuk adatkonverzió befejeződött
-+Name[ia]=Facite la conversion de datos de Nepomuk 
- Name[id]=Mengonversi data Nepomuk telah selesai
- Name[is]=Umbreyting Nepomuk gagna er lokið
- Name[it]=Conversione dei dati di Nepomuk completata
-@@ -640,6 +550,7 @@
- Comment[hr]=Nepomukovi podaci su uspješno pretvoreni u novi format.
- Comment[hsb]=Konwertěrowanje Nepomukowych datow za nowy backend wuspěšne.
- Comment[hu]=Sikerült átkonvertálni minden Nepomuk-adatot az új tárolómodulhoz 
-+Comment[ia]=Il converteva con successo datos de Nepomuk a un nove backend
- Comment[id]=Sukses mengonversi data Nepomuk ke ujung belakang baru
- Comment[is]=Umbreyting Nepomuk gagna fyrir nýjan bakenda tókst
- Comment[it]=Conversione dei dati di Nepomuk ad un nuovo motore riuscita
-Index: nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.desktop
-===================================================================
---- nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.desktop
-+++ nepomuk/kioslaves/search/kdedmodule/nepomuksearchmodule.desktop	2010-05-14 10:16:48.000000000 +0200
-@@ -27,7 +27,6 @@
- Name[kk]=Nepomuk іздеу модулі
- Name[km]=ម៉ូឌុល​ស្វែងរក​របស់ Nepomuk
- Name[lt]=Nepomuk paieškos modulis
--Name[lv]=Nepomuk meklēšanas modulis
- Name[mk]=Модул на Непомук за пребарување
- Name[nb]=Nepomuk søkemodul
- Name[nds]=Nepomuk-Söökmoduul
-@@ -44,7 +43,7 @@
- Name[sr@ijekavianlatin]=Pretraživački modul Nepomuka
- Name[sr@latin]=Pretraživački modul Nepomuka
- Name[sv]=Nepomuk-sökmodul
--Name[tg]=Хидматҳои Nepomuk
-+Name[tg]=Хидматҳои ҷустуҷӯии Nepomuk
- Name[th]=มอดูลค้นหาของบริการ Neomuk
- Name[tr]=Nepomuk Arama Modülü
- Name[uk]=Модуль пошуку Nepomuk
-@@ -63,7 +62,7 @@
- Comment[eu]=KIOrentzako modulu laguntzailea nepomuksearch zerrenden eguneraketa automatikoa ziurtatzeko.
- Comment[fr]=Module assistant pour KIO qui assure les mises à jours automatiques des listes de NepomukSearch 
- Comment[hr]=Pomoćni modul za KIO koji osigurava automatsko ažuriranje izlistavanja nepomuk pretraga.
--Comment[hu]=Súgó modul a KIO számára, hogy biztos legyen a nepomuk keresési listázások automatikus frissítése.
-+Comment[ia]=Modulo de Adjuta pro KIO per assecurar actualisationes automatic de listas de nepomuksearch.
- Comment[id]=Modul penolong untuk KIO untuk memastikan pemutakhiran otomatis pengurutan nepomuksearch.
- Comment[it]=Modulo ausiliare per KIO per assicurare gli aggiornamenti automatici delle liste di ricerca di Nepomuk.
- Comment[kk]=nepomuksearch тізімдерін автоматты түрде жаңартуға арналған KIO-нің көмекші модулі
-@@ -84,7 +83,7 @@
- Comment[sr@latin]=Pomoćni modul za K‑U/I koji obezbeđuje automatsko ažuriranje spiskova Nepomukove pretrage.
- Comment[sv]=Hjälpmodul för I/O-slavar för att försäkra att automatisk uppdatering görs av Nepomuk söklistningar.
- Comment[th]=มอดูลช่วยสำหรับ KIO เพื่อให้แน่ใจว่าจะมีการปรับปรุงการทำรายการของ nepomuksearch
--Comment[tr]=KIO'nun, nepomuksearch listelerinin otomatik güncellenmesini sağlaması için yardımcı modül.
-+Comment[tr]=nepomuksearch listelemelerini otomatik güncellemek için KIO yardımcı modülü.
- Comment[uk]=Допоміжний модуль KIO для забезпечення автоматичного оновлення списків nepomuksearch.
- Comment[x-test]=xxHelper module for KIO to ensure automatic updates of nepomuksearch listings.xx
- Comment[zh_CN]=KIO 用于自动更新 Nepomuk 搜索列表的助手模块。

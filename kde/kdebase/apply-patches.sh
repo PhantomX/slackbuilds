@@ -3,6 +3,7 @@ SB_PATCHDIR=${CWD}/patches
 
 set -e -o pipefail
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch 
 zcat ${SB_PATCHDIR}/${NAME}-4.1.80-nsplugins-paths.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.2.1-home-icon-slk.patch.gz | patch -p1 -E --backup --verbose
 

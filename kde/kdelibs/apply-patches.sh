@@ -4,6 +4,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 --verbose --backup -i ${SB_PATCHDIR}/${NAME}.patch 
 # make -devel packages parallel-installable
 zcat ${SB_PATCHDIR}/kdelibs-4.3.85-parallel_devel.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # fix kde#149705
@@ -46,6 +47,7 @@ patch -p0 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-4.4.2-Find
 patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.1-t1098322-fix-kdialog-focus.patch
 patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-use-nepomuk-from-trunk.patch 
 patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-t1130778-nepomuk-fix-crash.patch
+patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-t1112516-add-UDS-Entry.patch
 
 # 4.4 upstream
 

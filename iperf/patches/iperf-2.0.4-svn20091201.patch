@@ -1,0 +1,452 @@
+diff -NarU5 iperf-2.0.4/compat/delay.cpp SVN/iperf/trunk/compat/delay.cpp
+--- iperf-2.0.4/compat/delay.cpp	2007-08-29 18:06:19.000000000 -0400
++++ SVN/iperf/trunk/compat/delay.cpp	2009-12-01 12:28:55.796388586 -0500
+@@ -49,26 +49,28 @@
+  * -------------------------------------------------------------------
+  * accurate microsecond delay
+  * ------------------------------------------------------------------- */
+ 
+ #include "Timestamp.hpp"
+-
++#include "util.h"
+ #include "delay.hpp"
+ 
+ /* -------------------------------------------------------------------
+- * A micro-second delay function. This uses gettimeofday (underneith
+- * the Timestamp) which has a resolution of upto microseconds. I've
+- * found it's good to within about 10 usecs.
+- * I used to do calibration, but iperf automatically adjusts itself
+- * so that isn't necesary, and it causes some problems if the
+- * calibration adjustment is larger than your sleep time.
++ * A micro-second delay function using POSIX nanosleep(). This allows a
++ * higher timing resolution (under Linux e.g. it uses hrtimers), does not
++ * affect any signals, and will use up remaining time when interrupted.
+  * ------------------------------------------------------------------- */
++void delay_loop(unsigned long usec)
++{
++    struct timespec requested, remaining;
+ 
+-void delay_loop( unsigned long usec ) {
+-    Timestamp end;
+-    end.add( usec * 1e-6 );
++    requested.tv_sec  = 0;
++    requested.tv_nsec = usec * 1000L;
+ 
+-    Timestamp now;
+-    while ( now.before( end ) ) {
+-        now.setnow();
+-    }
++    while (nanosleep(&requested, &remaining) == -1)
++        if (errno == EINTR)
++            requested = remaining;
++        else {
++            WARN_errno(1, "nanosleep");
++            break;
++        }
+ }
+diff -NarU5 iperf-2.0.4/include/Timestamp.hpp SVN/iperf/trunk/include/Timestamp.hpp
+--- iperf-2.0.4/include/Timestamp.hpp	2007-08-29 18:06:19.000000000 -0400
++++ SVN/iperf/trunk/include/Timestamp.hpp	2009-12-01 12:28:55.688355114 -0500
+@@ -150,10 +150,20 @@
+         return(mTime.tv_sec  - right.tv_sec) * kMillion +
+         (mTime.tv_usec - right.tv_usec);
+     }
+ 
+     /* -------------------------------------------------------------------
++     * Return the number of microseconds from now to last time of setting.
++     * ------------------------------------------------------------------- */
++    long delta_usec(void) {
++        struct timeval previous = mTime;
++
++        setnow();
++        return subUsec(previous);
++    }
++
++    /* -------------------------------------------------------------------
+      * subtract the right timestamp from my timestamp.
+      * return the difference in seconds as a floating point.
+      * ------------------------------------------------------------------- */
+     double subSec( Timestamp right ) {
+         return(mTime.tv_sec  - right.mTime.tv_sec) +
+@@ -200,33 +210,26 @@
+     }
+ 
+     /* -------------------------------------------------------------------
+      * return true if my timestamp is before the right timestamp.
+      * ------------------------------------------------------------------- */
+-    bool before( Timestamp right ) {
+-        return mTime.tv_sec < right.mTime.tv_sec  ||
+-        (mTime.tv_sec == right.mTime.tv_sec &&
+-         mTime.tv_usec < right.mTime.tv_usec);
+-    }
+-    
+-    /* -------------------------------------------------------------------
+-     * return true if my timestamp is before the right timestamp.
+-     * ------------------------------------------------------------------- */
+     bool before( timeval right ) {
+         return mTime.tv_sec < right.tv_sec  ||
+         (mTime.tv_sec == right.tv_sec &&
+          mTime.tv_usec < right.tv_usec);
+     }
++    bool before( Timestamp right ) { return before(right.mTime); }
+ 
+     /* -------------------------------------------------------------------
+      * return true if my timestamp is after the right timestamp.
+      * ------------------------------------------------------------------- */
+-    bool after( Timestamp right ) {
+-        return mTime.tv_sec > right.mTime.tv_sec  ||
+-        (mTime.tv_sec == right.mTime.tv_sec &&
+-         mTime.tv_usec > right.mTime.tv_usec);
++    bool after( timeval right ) {
++        return mTime.tv_sec > right.tv_sec  ||
++        (mTime.tv_sec == right.tv_sec &&
++         mTime.tv_usec > right.tv_usec);
+     }
++    bool after( Timestamp right ) { return after(right.mTime); }
+ 
+     /**
+      * This function returns the fraction of time elapsed after the beginning 
+      * till the end
+      */
+diff -NarU5 iperf-2.0.4/src/Client.cpp SVN/iperf/trunk/src/Client.cpp
+--- iperf-2.0.4/src/Client.cpp	2008-04-07 22:37:54.000000000 -0400
++++ SVN/iperf/trunk/src/Client.cpp	2009-12-01 12:28:55.922503401 -0500
+@@ -114,11 +114,11 @@
+ 
+ const double kSecs_to_usecs = 1e6; 
+ const int    kBytes_to_Bits = 8; 
+ 
+ void Client::RunTCP( void ) {
+-    long currLen = 0; 
++    unsigned long currLen = 0; 
+     struct itimerval it;
+     max_size_t totLen = 0;
+ 
+     int err;
+ 
+@@ -168,11 +168,16 @@
+             reportstruct->packetLen = currLen;
+             ReportPacket( mSettings->reporthdr, reportstruct );
+         }	
+ 
+         if ( !mMode_Time ) {
+-            mSettings->mAmount -= currLen;
++            /* mAmount may be unsigned, so don't let it underflow! */
++            if( mSettings->mAmount >= currLen ) {
++                mSettings->mAmount -= currLen;
++            } else {
++                mSettings->mAmount = 0;
++            }
+         }
+ 
+     } while ( ! (sInterupted  || 
+                    (!mMode_Time  &&  0 >= mSettings->mAmount)) && canRead ); 
+ 
+@@ -196,11 +201,11 @@
+  * Does not close the socket. 
+  * ------------------------------------------------------------------- */ 
+ 
+ void Client::Run( void ) {
+     struct UDP_datagram* mBuf_UDP = (struct UDP_datagram*) mBuf; 
+-    long currLen = 0; 
++    unsigned long currLen = 0; 
+ 
+     int delay_target = 0; 
+     int delay = 0; 
+     int adjust = 0; 
+ 
+@@ -308,11 +313,16 @@
+         
+         if ( delay > 0 ) {
+             delay_loop( delay ); 
+         }
+         if ( !mMode_Time ) {
+-            mSettings->mAmount -= currLen;
++            /* mAmount may be unsigned, so don't let it underflow! */
++            if( mSettings->mAmount >= currLen ) {
++                mSettings->mAmount -= currLen;
++            } else {
++                mSettings->mAmount = 0;
++            }
+         }
+ 
+     } while ( ! (sInterupted  || 
+                  (mMode_Time   &&  mEndTime.before( reportstruct->packetTime ))  || 
+                  (!mMode_Time  &&  0 >= mSettings->mAmount)) && canRead ); 
+diff -NarU5 iperf-2.0.4/src/main.cpp SVN/iperf/trunk/src/main.cpp
+--- iperf-2.0.4/src/main.cpp	2008-04-07 22:37:54.000000000 -0400
++++ SVN/iperf/trunk/src/main.cpp	2009-12-01 12:28:55.924503012 -0500
+@@ -286,118 +286,10 @@
+ 
+     // shutdown the thread subsystem
+     thread_destroy( );
+ } // end cleanup
+ 
+-#ifdef WIN32
+-/*--------------------------------------------------------------------
+- * ServiceStart
+- *
+- * each time starting the service, this is the entry point of the service.
+- * Start the service, certainly it is on server-mode
+- * 
+- *-------------------------------------------------------------------- */
+-VOID ServiceStart (DWORD dwArgc, LPTSTR *lpszArgv) {
+-    
+-    // report the status to the service control manager.
+-    //
+-    if ( !ReportStatusToSCMgr(
+-                             SERVICE_START_PENDING, // service state
+-                             NO_ERROR,              // exit code
+-                             3000) )                 // wait hint
+-        goto clean;
+-
+-    thread_Settings* ext_gSettings = new thread_Settings;
+-
+-    // Initialize settings to defaults
+-    Settings_Initialize( ext_gSettings );
+-    // read settings from environment variables
+-    Settings_ParseEnvironment( ext_gSettings );
+-    // read settings from command-line parameters
+-    Settings_ParseCommandLine( dwArgc, lpszArgv, ext_gSettings );
+-
+-    // report the status to the service control manager.
+-    //
+-    if ( !ReportStatusToSCMgr(
+-                             SERVICE_START_PENDING, // service state
+-                             NO_ERROR,              // exit code
+-                             3000) )                 // wait hint
+-        goto clean;
+-
+-    // if needed, redirect the output into a specified file
+-    if ( !isSTDOUT( ext_gSettings ) ) {
+-        redirect( ext_gSettings->mOutputFileName );
+-    }
+-
+-    // report the status to the service control manager.
+-    //
+-    if ( !ReportStatusToSCMgr(
+-                             SERVICE_START_PENDING, // service state
+-                             NO_ERROR,              // exit code
+-                             3000) )                 // wait hint
+-        goto clean;
+-    
+-    // initialize client(s)
+-    if ( ext_gSettings->mThreadMode == kMode_Client ) {
+-        client_init( ext_gSettings );
+-    }
+-
+-    // start up the reporter and client(s) or listener
+-    {
+-        thread_Settings *into = NULL;
+-#ifdef HAVE_THREAD
+-        Settings_Copy( ext_gSettings, &into );
+-        into->mThreadMode = kMode_Reporter;
+-        into->runNow = ext_gSettings;
+-#else
+-        into = ext_gSettings;
+-#endif
+-        thread_start( into );
+-    }
+-    
+-    // report the status to the service control manager.
+-    //
+-    if ( !ReportStatusToSCMgr(
+-                             SERVICE_RUNNING,       // service state
+-                             NO_ERROR,              // exit code
+-                             0) )                    // wait hint
+-        goto clean;
+-
+-    clean:
+-    // wait for other (client, server) threads to complete
+-    thread_joinall();
+-}
+-
+-
+-//
+-//  FUNCTION: ServiceStop
+-//
+-//  PURPOSE: Stops the service
+-//
+-//  PARAMETERS:
+-//    none
+-//
+-//  RETURN VALUE:
+-//    none
+-//
+-//  COMMENTS:
+-//    If a ServiceStop procedure is going to
+-//    take longer than 3 seconds to execute,
+-//    it should spawn a thread to execute the
+-//    stop code, and return.  Otherwise, the
+-//    ServiceControlManager will believe that
+-//    the service has stopped responding.
+-//    
+-VOID ServiceStop() {
+-#ifdef HAVE_THREAD
+-    Sig_Interupt( 1 );
+-#else
+-    sig_exit(1);
+-#endif
+-}
+-
+-#endif
+ 
+ 
+ 
+ 
+ 
+diff -NarU5 iperf-2.0.4/src/ReportDefault.c SVN/iperf/trunk/src/ReportDefault.c
+--- iperf-2.0.4/src/ReportDefault.c	2008-04-07 22:37:54.000000000 -0400
++++ SVN/iperf/trunk/src/ReportDefault.c	2009-12-01 12:28:55.923503188 -0500
+@@ -65,26 +65,33 @@
+ 
+ /*
+  * Prints transfer reports in default style
+  */
+ void reporter_printstats( Transfer_Info *stats ) {
++    static char header_printed = 0;
+ 
+     byte_snprintf( buffer, sizeof(buffer)/2, (double) stats->TotalLen,
+                    toupper( stats->mFormat));
+     byte_snprintf( &buffer[sizeof(buffer)/2], sizeof(buffer)/2,
+                    stats->TotalLen / (stats->endTime - stats->startTime), 
+                    stats->mFormat);
+ 
+     if ( stats->mUDP != (char)kMode_Server ) {
+         // TCP Reporting
+-        printf( report_bw_header);
++        if( !header_printed ) {
++            printf( report_bw_header);
++            header_printed = 1;
++        }
+         printf( report_bw_format, stats->transferID, 
+                 stats->startTime, stats->endTime, 
+                 buffer, &buffer[sizeof(buffer)/2] );
+     } else {
+         // UDP Reporting
+-        printf( report_bw_jitter_loss_header);
++        if( !header_printed ) {
++            printf( report_bw_jitter_loss_header);
++            header_printed = 1;
++        }
+         printf( report_bw_jitter_loss_format, stats->transferID, 
+                 stats->startTime, stats->endTime, 
+                 buffer, &buffer[sizeof(buffer)/2],
+                 stats->jitter*1000.0, stats->cntError, stats->cntDatagrams,
+                 (100.0 * stats->cntError) / stats->cntDatagrams );
+diff -NarU5 iperf-2.0.4/src/service.c SVN/iperf/trunk/src/service.c
+--- iperf-2.0.4/src/service.c	2007-08-29 18:06:19.000000000 -0400
++++ SVN/iperf/trunk/src/service.c	2009-12-01 12:28:55.919503097 -0500
+@@ -490,6 +490,112 @@
+         LocalFree((HLOCAL) lpszTemp );
+ 
+     return lpszBuf;
+ }
+ 
++/*--------------------------------------------------------------------
++ * ServiceStart
++ *
++ * each time starting the service, this is the entry point of the service.
++ * Start the service, certainly it is on server-mode
++ * 
++ *-------------------------------------------------------------------- */
++VOID ServiceStart (DWORD dwArgc, LPTSTR *lpszArgv) {
++    
++    // report the status to the service control manager.
++    //
++    if ( !ReportStatusToSCMgr(
++                             SERVICE_START_PENDING, // service state
++                             NO_ERROR,              // exit code
++                             3000) )                 // wait hint
++        goto clean;
++
++    thread_Settings* ext_gSettings = new thread_Settings;
++
++    // Initialize settings to defaults
++    Settings_Initialize( ext_gSettings );
++    // read settings from environment variables
++    Settings_ParseEnvironment( ext_gSettings );
++    // read settings from command-line parameters
++    Settings_ParseCommandLine( dwArgc, lpszArgv, ext_gSettings );
++
++    // report the status to the service control manager.
++    //
++    if ( !ReportStatusToSCMgr(
++                             SERVICE_START_PENDING, // service state
++                             NO_ERROR,              // exit code
++                             3000) )                 // wait hint
++        goto clean;
++
++    // if needed, redirect the output into a specified file
++    if ( !isSTDOUT( ext_gSettings ) ) {
++        redirect( ext_gSettings->mOutputFileName );
++    }
++
++    // report the status to the service control manager.
++    //
++    if ( !ReportStatusToSCMgr(
++                             SERVICE_START_PENDING, // service state
++                             NO_ERROR,              // exit code
++                             3000) )                 // wait hint
++        goto clean;
++    
++    // initialize client(s)
++    if ( ext_gSettings->mThreadMode == kMode_Client ) {
++        client_init( ext_gSettings );
++    }
++
++    // start up the reporter and client(s) or listener
++    {
++        thread_Settings *into = NULL;
++#ifdef HAVE_THREAD
++        Settings_Copy( ext_gSettings, &into );
++        into->mThreadMode = kMode_Reporter;
++        into->runNow = ext_gSettings;
++#else
++        into = ext_gSettings;
++#endif
++        thread_start( into );
++    }
++    
++    // report the status to the service control manager.
++    //
++    if ( !ReportStatusToSCMgr(
++                             SERVICE_RUNNING,       // service state
++                             NO_ERROR,              // exit code
++                             0) )                    // wait hint
++        goto clean;
++
++    clean:
++    // wait for other (client, server) threads to complete
++    thread_joinall();
++}
++
++
++//
++//  FUNCTION: ServiceStop
++//
++//  PURPOSE: Stops the service
++//
++//  PARAMETERS:
++//    none
++//
++//  RETURN VALUE:
++//    none
++//
++//  COMMENTS:
++//    If a ServiceStop procedure is going to
++//    take longer than 3 seconds to execute,
++//    it should spawn a thread to execute the
++//    stop code, and return.  Otherwise, the
++//    ServiceControlManager will believe that
++//    the service has stopped responding.
++//    
++VOID ServiceStop() {
++#ifdef HAVE_THREAD
++    Sig_Interupt( 1 );
++#else
++    sig_exit(1);
++#endif
++}
++
+ #endif

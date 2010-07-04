@@ -40,10 +40,17 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
+SNAPBUILD=${SNAPBUILD:-YES}
+
 NAME=kazehakase
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.5.6}
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+else
+  VERSION=${VERSION:-0.5.8}
+fi
+DL_ID=${DL_ID:-43802}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +62,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -69,15 +76,24 @@ SB_GECKO=${SB_GECKO:-libxul}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  SRCARCHIVE=${SRCDIR}.tar.xz
+else
+  SRCARCHIVE=${SRCDIR}.tar.gz
+fi
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://downloads.sourceforge.jp/${NAME}/33533/${SRCARCHIVE}"
+SFJ_MIRROR=${SFJ_MIRROR:-http://dl.sourceforge.jp}
+DL_URL="${SFJ_MIRROR}/${NAME}/${DL_ID}/${SRCARCHIVE}"
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
+# if source is not present, download in source rootdir if possible
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+else
   test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
 fi
 
@@ -93,6 +109,12 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -102,20 +124,17 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-0.5.4-svn3505_trunk-workaround-rh447444.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
-sed -i -e '/^Icon=/s|-icon.png||g' \
-           data/${NAME}.desktop || exit 1
+sed -i -e "/^Icon=/s|=.*$|=${NAME}|g" \
+  data/${NAME}.desktop || exit 1
 
 for f in README.ja TODO.ja ; do
   iconv -f EUCJP -t UTF8 ${f} > ${f}.tmp && \
@@ -132,30 +151,36 @@ case "${SB_GECKO}" in
     ;;
 esac
 
-#sh autogen.sh || exit 1
+if [ ! -r configure ]; then
+  sh ./autogen.sh || exit $?
+fi
 
-CFLAGS="${SLKCFLAGS}" \
-CXXFLAGS="${SLKCFLAGS}" \
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  RVERSION="SVN-$(head -n1 svnver)"
+else
+  RVERSION="${VERSION}"
+fi
+
+CFLAGS="${SLKCFLAGS} -DVERSION_VENDOR=\\\"${RVERSION}-${BUILD}${PACKAGER_ID}\\\"" \
+CXXFLAGS="${SLKCFLAGS} -DVERSION_VENDOR=\\\"${RVERSION}-${BUILD}${PACKAGER_ID}\\\"" \
 ./configure \
   --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
   --localstatedir=/var/lib \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
+  --disable-silent-rules \
   --enable-migemo \
   --with-gecko-engine=${SB_GECKO} \
   --disable-gtkmozembed \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
-sed -i.bool -e \
-  's|#define \(MOZ_NSIHELPERAPPLAUNCHERDIALOG_NSPRBOOL_\) 1|#undef \1|' \
-  config.h || exit 1
-
-make -j${NJOBS} || make || exit 1
+make -j${NJOBS} -k V=1 || make -k V=1 || exit 1
 make install DESTDIR=${PKG} INSTALL="install -c -p" || exit 1
 
-rm -f ${PKG}/usr/lib/${NAME}/lib*.so
+rm -f ${PKG}/usr/lib*/${NAME}/lib*.so
 find ${PKG}/usr/lib/${NAME} -name \*.la | xargs rm -f
 
 ( cd ${PKG}/etc/${NAME} || exit 1
@@ -168,7 +193,6 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 desktop-file-install --vendor "" \
-  --remove-category Application \
   --delete-original \
   --remove-key="Encoding" \
   --remove-category="Application" \
@@ -190,8 +214,10 @@ mkdir -p ${DOCDIR}
 cp -a \
   AUTHORS COPYING* README* TODO* ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -243,7 +269,8 @@ config() {
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
@@ -252,11 +279,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+                 ${CWD}/${SNAPUPDATE} ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

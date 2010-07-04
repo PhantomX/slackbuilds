@@ -3,6 +3,8 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+
 # Patch in the uname for Linux enhancements
 if [ "${SB_RHUNAME}" = "YES" ] ;then
   # Fedora/Red Hat patch.
@@ -41,7 +43,7 @@ if [ "${SB_PAM}" = "YES" ] ; then
 fi
 
 # getgrouplist() patch from Ulrich Drepper.
-zcat ${SB_PATCHDIR}/${NAME}-getgrouplist.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-getgrouplist.patch
 # Prevent buffer overflow in who(1).
 zcat ${SB_PATCHDIR}/${NAME}-overflow.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-getfacl-exit-code.patch.gz | patch -p1 -E --backup --verbose

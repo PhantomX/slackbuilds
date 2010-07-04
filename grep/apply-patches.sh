@@ -3,6 +3,8 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}.patch
+
 sed -i -e '/^.*dlopen-pcre.*/d' debian/patches/series
 for i in $(<debian/patches/series); do
   patch -p1 --verbose --backup --suffix=".pdeb" -i debian/patches/${i}

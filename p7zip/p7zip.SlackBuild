@@ -55,13 +55,18 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable wxwidgets gui
+SB_GUI=${SB_GUI:-YES}
+# Set to YES to add kde4 service menus (only with gui enabled)
+SB_KDE=${SB_KDE:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -96,6 +101,13 @@ else
   LIBDIRSUFFIX=""
 fi
 
+# Set the config option variables if they are not already set:
+[ -r ../KDE.options ] && source ../KDE.options
+[ -r /etc/profile.d/kde4.sh ] && source /etc/profile.d/kde4.sh
+
+_kde4_datadir=${_kde4_datadir:-/usr/share}
+_kde4_sharedir=${_kde4_sharedir:-/usr/share}
+
 if [ -d ${PKG} ]; then
   # Clean up a previous build
   rm -rf ${PKG}
@@ -119,36 +131,105 @@ else
   cp -f makefile.linux_x86_asm_gcc_4.X makefile.machine || exit 1
 fi
 
+sed -i \
+  -e '/^DEST_HOME=/s|=.*$|=/usr|g' \
+  -e '/^DEST_BIN=/s|=.*$|=/usr/bin|g' \
+  -e "/^DEST_SHARE=/s|=.*$|=/usr/libexec/${NAME}|g" \
+  -e "/^DEST_SHARE_DOC=/s|=.*$|=/usr/doc/${NAME}-${VERSION}|g" \
+  -e '/^DEST_MAN=/s|=.*$|=/usr/man|g' \
+  makefile || exit 1
+
+sed -i \
+  -e 's|cp -r DOCS|cp -r DOCS/*|g' \
+  -e 's|DEST_SHARE_DOC}/DOCS|DEST_SHARE_DOC}|g' \
+  install.sh || exit 1
+
+if [ "${SB_GUI}" = "YES" ] ;then
+  make depend || exit $?
+fi
+
 make -j${NJOBS} all3 \
-  OPTFLAGS="-Wall ${SLKCFLAGS} -fPIC" \
-  DEST_HOME=/usr \
-  DEST_BIN=/usr/bin \
-  DEST_SHARE=/usr/libexec/${NAME} \
-  DEST_MAN=/usr/man || exit 1
+  OPTFLAGS="-Wall ${SLKCFLAGS} -fPIC" || exit $?
+
+if [ "${SB_GUI}" = "YES" ] ;then
+  ( SLKCFLAGS="$( echo ${SLKCFLAGS} | sed -e 's/ -._FORTIFY_SOURCE=.//' ) -D_FORTIFY_SOURCE=0"
+    make -j${NJOBS} 7zG OPTFLAGS="-Wall ${SLKCFLAGS} -fPIC" || exit $?
+    make -j${NJOBS} 7zFM OPTFLAGS="-Wall ${SLKCFLAGS} -fPIC" || exit $?
+  ) || exit $?
+fi
 
 make install \
   DEST_DIR=${PKG} \
-  DEST_HOME=/usr \
-  DEST_BIN=/usr/bin \
-  DEST_SHARE=/usr/libexec/${NAME} \
-  DEST_MAN=/usr/man || exit 1
+ || exit $?
+
+
+if [ "${SB_GUI}" = "YES" ] ;then
+  install -pm0755 bin/7zG ${PKG}/usr/libexec/${NAME}/ || exit 1
+  install -pm0755 bin/7zFM ${PKG}/usr/libexec/${NAME}/ || exit 1
+  install -pm0755 GUI/p7zipForFilemanager ${PKG}/usr/bin/ || exit 1
+ 
+cat >> ${PKG}/usr/bin/7zG <<EOF
+#!/bin/sh
+exec /usr/libexec/${NAME}/7zG "\$@"
+EOF
+cat >> ${PKG}/usr/bin/7zFM <<EOF
+#!/bin/sh
+exec /usr/libexec/${NAME}/7zFM "\$@" 1>/dev/null
+EOF
+  chmod 0755 ${PKG}/usr/bin/7z{G,FM} || exit 1
+  find GUI/{Lang,help} -type d -print0 | xargs -0 chmod 0755
+  find GUI/{Lang,help} -type f -print0 | xargs -0 chmod 0644
+  cp -r GUI/{Lang,help} ${PKG}/usr/libexec/${NAME}/ || exit 1
+
+fi
 
 install -pm0755 contrib/gzip-like_CLI_wrapper_for_7z/p7zip \
-                ${PKG}/usr/bin/7zg || exit 1
+  ${PKG}/usr/bin/7zg || exit 1
 install -m 0644 contrib/gzip-like_CLI_wrapper_for_7z/man1/p7zip.1 \
-                ${PKG}/usr/man/man1/7zg.1 || exit 1
+  ${PKG}/usr/man/man1/7zg.1 || exit 1
 rm -rf contrib/gzip-like_CLI_wrapper_for_7z/{check,p7zip,man1}
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+if [ "${SB_GUI}" = "YES" ] ;then
+
+mkdir -p ${PKG}/usr/share/applications
+cat >> ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
+[Desktop Entry]
+Name=P7ZIP File Manager
+Comment=Archiving tool.
+Exec=7zFM %f
+Icon=${NAME}
+Terminal=false
+Type=Application
+MimeType=application/x-gzip;application/x-tar;application/x-compressed-tar;application/x-bzip-compressed-tar;application/zip;application/x-bzip;application/x-rar;application/x-tarz;application/x-bzip2;application/x-java-archive;application/x-deb;application/x-7z-compressed;application/x-compress;application/x-zip-compressed;application/x-lzma;application/x-servicepack;application/x-xz-compressed-tar;application/x-lzma-compressed-tar;inode/directory;
+Categories=GTK;Utility;Compression;
+X-Desktop-File-Install-Version=0.16
+EOF
+
+for res in 16 32 ;do
+  dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
+  mkdir -p ${dir}
+  install -pm0644 GUI/${NAME}_${res}.png ${dir}/${NAME}.png || exit 1
+done 
+
+  if [ "${SB_KDE}" = "YES" ] ;then
+    mkdir -p ${PKG}/${_kde4_datadir}/kde4/services/ServiceMenus
+    install -pm0644 GUI/kde/*.desktop \
+      ${PKG}/${_kde4_datadir}/kde4/services/ServiceMenus/ || exit 1
+  fi
+fi
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  ChangeLog README TODO DOCS/* contrib/ ${CWD}/ChangeLog.SB \
+  README TODO contrib/ ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then

@@ -110,8 +110,6 @@ ApplyPatch linux-2.6-execshield.patch
 # xfs
 
 # btrfs
-# CVE-2010-2071.
-ApplyPatch btrfs-should-add-permission-check-for-setfacl.patch
 ApplyPatch btrfs-prohibit-a-operation-of-changing-acls-mask-when-noacl-mount-option-is-used.patch
 
 
@@ -203,6 +201,11 @@ ApplyPatch linux-2.6-crash-driver.patch
 # Cantiga chipset b0rkage
 ApplyPatch linux-2.6-cantiga-iommu-gfx.patch
 
+# crypto/
+
+# Add async hash testing (a8f1a05)
+ApplyPatch crypto-add-async-hash-testing.patch
+
 # http://www.lirc.org/
 ApplyPatch lirc-2.6.33.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
@@ -218,8 +221,13 @@ ApplyPatch virt_console-rollup.patch
 ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 ApplyPatch drm-next.patch
+ApplyPatch drm-revert-drm-fbdev-rework-output-polling-to-be-back-in-core.patch
+ApplyPatch revert-drm-kms-toggle-poll-around-switcheroo.patch
+ApplyPatch drm-i915-fix-edp-panels.patch
+ApplyPatch i915-fix-crt-hotplug-regression.patch
 
 # Nouveau DRM + drm fixes
+ApplyPatch drm-nouveau-drm-fixed-header.patch
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch

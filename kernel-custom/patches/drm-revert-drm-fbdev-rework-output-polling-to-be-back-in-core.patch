@@ -1,0 +1,958 @@
+From 5b904034b0ab5195d971b139d0c0b67ab21b063c Mon Sep 17 00:00:00 2001
+From: Kyle McMartin <kyle@dreadnought.i.jkkm.org>
+Date: Mon, 21 Jun 2010 20:33:16 +0100
+Subject: Revert "drm/fbdev: rework output polling to be back in the core. (v4)"
+
+This reverts commit eb1f8e4f3be898df808e2dfc131099f5831d491d.
+
+Conflicts:
+
+	drivers/gpu/drm/drm_crtc_helper.c
+	drivers/gpu/drm/i915/i915_dma.c
+	drivers/gpu/drm/i915/intel_fb.c
+	drivers/gpu/drm/nouveau/nouveau_fbcon.c
+	drivers/gpu/drm/radeon/radeon_fb.c
+	include/drm/drm_crtc_helper.h
+---
+ drivers/gpu/drm/Kconfig                     |    2 +-
+ drivers/gpu/drm/drm_crtc_helper.c           |  111 ------------------------
+ drivers/gpu/drm/drm_fb_helper.c             |  123 +++++++++++++++++++++++----
+ drivers/gpu/drm/i915/i915_dma.c             |    1 -
+ drivers/gpu/drm/i915/i915_irq.c             |    3 +-
+ drivers/gpu/drm/i915/intel_crt.c            |    5 -
+ drivers/gpu/drm/i915/intel_display.c        |    2 -
+ drivers/gpu/drm/i915/intel_dp.c             |    2 -
+ drivers/gpu/drm/i915/intel_drv.h            |    2 +-
+ drivers/gpu/drm/i915/intel_fb.c             |   14 ++--
+ drivers/gpu/drm/i915/intel_hdmi.c           |    1 -
+ drivers/gpu/drm/i915/intel_sdvo.c           |    2 -
+ drivers/gpu/drm/nouveau/nouveau_connector.c |   12 ---
+ drivers/gpu/drm/nouveau/nouveau_display.c   |    1 -
+ drivers/gpu/drm/nouveau/nouveau_fbcon.c     |   13 ++-
+ drivers/gpu/drm/nouveau/nouveau_fbcon.h     |    2 +-
+ drivers/gpu/drm/nouveau/nouveau_state.c     |    5 +-
+ drivers/gpu/drm/nouveau/nv50_display.c      |    2 +-
+ drivers/gpu/drm/radeon/radeon_connectors.c  |   13 ---
+ drivers/gpu/drm/radeon/radeon_display.c     |   10 --
+ drivers/gpu/drm/radeon/radeon_fb.c          |   15 +++-
+ drivers/gpu/drm/radeon/radeon_irq_kms.c     |    5 +-
+ drivers/gpu/drm/radeon/radeon_mode.h        |    3 +-
+ include/drm/drm_crtc.h                      |   17 ----
+ include/drm/drm_crtc_helper.h               |    6 --
+ include/drm/drm_fb_helper.h                 |   13 +++-
+ 26 files changed, 155 insertions(+), 230 deletions(-)
+
+diff --git a/drivers/gpu/drm/Kconfig b/drivers/gpu/drm/Kconfig
+index c2711c6..a51a1e4 100644
+--- a/drivers/gpu/drm/Kconfig
++++ b/drivers/gpu/drm/Kconfig
+@@ -9,7 +9,6 @@ menuconfig DRM
+ 	depends on (AGP || AGP=n) && PCI && !EMULATED_CMPXCHG && MMU
+ 	select I2C
+ 	select I2C_ALGOBIT
+-	select SLOW_WORK
+ 	help
+ 	  Kernel-level support for the Direct Rendering Infrastructure (DRI)
+ 	  introduced in XFree86 4.0. If you say Y here, you need to select
+@@ -24,6 +23,7 @@ config DRM_KMS_HELPER
+ 	depends on DRM
+ 	select FB
+ 	select FRAMEBUFFER_CONSOLE if !EMBEDDED
++	select SLOW_WORK
+ 	help
+ 	  FB and CRTC helpers for KMS drivers.
+ 
+diff --git a/drivers/gpu/drm/drm_crtc_helper.c b/drivers/gpu/drm/drm_crtc_helper.c
+index 9b2a541..b142ac2 100644
+--- a/drivers/gpu/drm/drm_crtc_helper.c
++++ b/drivers/gpu/drm/drm_crtc_helper.c
+@@ -807,114 +807,3 @@ int drm_helper_resume_force_mode(struct drm_device *dev)
+ 	return 0;
+ }
+ EXPORT_SYMBOL(drm_helper_resume_force_mode);
+-
+-static struct slow_work_ops output_poll_ops;
+-
+-#define DRM_OUTPUT_POLL_PERIOD (10*HZ)
+-static void output_poll_execute(struct slow_work *work)
+-{
+-	struct delayed_slow_work *delayed_work = container_of(work, struct delayed_slow_work, work);
+-	struct drm_device *dev = container_of(delayed_work, struct drm_device, mode_config.output_poll_slow_work);
+-	struct drm_connector *connector;
+-	enum drm_connector_status old_status, status;
+-	bool repoll = false, changed = false;
+-	int ret;
+-
+-	mutex_lock(&dev->mode_config.mutex);
+-	list_for_each_entry(connector, &dev->mode_config.connector_list, head) {
+-
+-		/* if this is HPD or polled don't check it -
+-		   TV out for instance */
+-		if (!connector->polled)
+-			continue;
+-
+-		else if (connector->polled & (DRM_CONNECTOR_POLL_CONNECT | DRM_CONNECTOR_POLL_DISCONNECT))
+-			repoll = true;
+-
+-		old_status = connector->status;
+-		/* if we are connected and don't want to poll for disconnect
+-		   skip it */
+-		if (old_status == connector_status_connected &&
+-		    !(connector->polled & DRM_CONNECTOR_POLL_DISCONNECT) &&
+-		    !(connector->polled & DRM_CONNECTOR_POLL_HPD))
+-			continue;
+-
+-		status = connector->funcs->detect(connector);
+-		if (old_status != status)
+-			changed = true;
+-	}
+-
+-	mutex_unlock(&dev->mode_config.mutex);
+-
+-	if (changed) {
+-		/* send a uevent + call fbdev */
+-		drm_sysfs_hotplug_event(dev);
+-		if (dev->mode_config.funcs->output_poll_changed)
+-			dev->mode_config.funcs->output_poll_changed(dev);
+-	}
+-
+-	if (repoll) {
+-		ret = delayed_slow_work_enqueue(delayed_work, DRM_OUTPUT_POLL_PERIOD);
+-		if (ret)
+-			DRM_ERROR("delayed enqueue failed %d\n", ret);
+-	}
+-}
+-
+-void drm_kms_helper_poll_disable(struct drm_device *dev)
+-{
+-	if (!dev->mode_config.poll_enabled)
+-		return;
+-	delayed_slow_work_cancel(&dev->mode_config.output_poll_slow_work);
+-}
+-EXPORT_SYMBOL(drm_kms_helper_poll_disable);
+-
+-void drm_kms_helper_poll_enable(struct drm_device *dev)
+-{
+-	bool poll = false;
+-	struct drm_connector *connector;
+-	int ret;
+-
+-	list_for_each_entry(connector, &dev->mode_config.connector_list, head) {
+-		if (connector->polled)
+-			poll = true;
+-	}
+-
+-	if (poll) {
+-		ret = delayed_slow_work_enqueue(&dev->mode_config.output_poll_slow_work, DRM_OUTPUT_POLL_PERIOD);
+-		if (ret)
+-			DRM_ERROR("delayed enqueue failed %d\n", ret);
+-	}
+-}
+-EXPORT_SYMBOL(drm_kms_helper_poll_enable);
+-
+-void drm_kms_helper_poll_init(struct drm_device *dev)
+-{
+-	slow_work_register_user(THIS_MODULE);
+-	delayed_slow_work_init(&dev->mode_config.output_poll_slow_work,
+-			       &output_poll_ops);
+-	dev->mode_config.poll_enabled = true;
+-
+-	drm_kms_helper_poll_enable(dev);
+-}
+-EXPORT_SYMBOL(drm_kms_helper_poll_init);
+-
+-void drm_kms_helper_poll_fini(struct drm_device *dev)
+-{
+-	drm_kms_helper_poll_disable(dev);
+-	slow_work_unregister_user(THIS_MODULE);
+-}
+-EXPORT_SYMBOL(drm_kms_helper_poll_fini);
+-
+-void drm_helper_hpd_irq_event(struct drm_device *dev)
+-{
+-	if (!dev->mode_config.poll_enabled)
+-		return;
+-	delayed_slow_work_cancel(&dev->mode_config.output_poll_slow_work);
+-	/* schedule a slow work asap */
+-	delayed_slow_work_enqueue(&dev->mode_config.output_poll_slow_work, 0);
+-}
+-EXPORT_SYMBOL(drm_helper_hpd_irq_event);
+-
+-static struct slow_work_ops output_poll_ops = {
+-	.execute = output_poll_execute,
+-};
+diff --git a/drivers/gpu/drm/drm_fb_helper.c b/drivers/gpu/drm/drm_fb_helper.c
+index 08c4c92..dcc6601 100644
+--- a/drivers/gpu/drm/drm_fb_helper.c
++++ b/drivers/gpu/drm/drm_fb_helper.c
+@@ -42,6 +42,8 @@ MODULE_LICENSE("GPL and additional rights");
+ 
+ static LIST_HEAD(kernel_fb_helper_list);
+ 
++static struct slow_work_ops output_status_change_ops;
++
+ /* simple single crtc case helper function */
+ int drm_fb_helper_single_add_all_connectors(struct drm_fb_helper *fb_helper)
+ {
+@@ -423,13 +425,19 @@ static void drm_fb_helper_crtc_free(struct drm_fb_helper *helper)
+ 
+ int drm_fb_helper_init(struct drm_device *dev,
+ 		       struct drm_fb_helper *fb_helper,
+-		       int crtc_count, int max_conn_count)
++		       int crtc_count, int max_conn_count,
++		       bool polled)
+ {
+ 	struct drm_crtc *crtc;
+ 	int ret = 0;
+ 	int i;
+ 
+ 	fb_helper->dev = dev;
++	fb_helper->poll_enabled = polled;
++
++	slow_work_register_user(THIS_MODULE);
++	delayed_slow_work_init(&fb_helper->output_status_change_slow_work,
++			       &output_status_change_ops);
+ 
+ 	INIT_LIST_HEAD(&fb_helper->kernel_fb_list);
+ 
+@@ -486,6 +494,8 @@ void drm_fb_helper_fini(struct drm_fb_helper *fb_helper)
+ 
+ 	drm_fb_helper_crtc_free(fb_helper);
+ 
++	delayed_slow_work_cancel(&fb_helper->output_status_change_slow_work);
++	slow_work_unregister_user(THIS_MODULE);
+ }
+ EXPORT_SYMBOL(drm_fb_helper_fini);
+ 
+@@ -703,7 +713,7 @@ int drm_fb_helper_set_par(struct fb_info *info)
+ 
+ 	if (fb_helper->delayed_hotplug) {
+ 		fb_helper->delayed_hotplug = false;
+-		drm_fb_helper_hotplug_event(fb_helper);
++		delayed_slow_work_enqueue(&fb_helper->output_status_change_slow_work, 0);
+ 	}
+ 	return 0;
+ }
+@@ -816,7 +826,7 @@ int drm_fb_helper_single_fb_probe(struct drm_fb_helper *fb_helper,
+ 	if (crtc_count == 0 || sizes.fb_width == -1 || sizes.fb_height == -1) {
+ 		/* hmm everyone went away - assume VGA cable just fell out
+ 		   and will come back later. */
+-		DRM_INFO("Cannot find any crtc or sizes - going 1024x768\n");
++		DRM_ERROR("Cannot find any crtc or sizes - going 1024x768\n");
+ 		sizes.fb_width = sizes.surface_width = 1024;
+ 		sizes.fb_height = sizes.surface_height = 768;
+ 	}
+@@ -1362,7 +1372,12 @@ bool drm_fb_helper_initial_config(struct drm_fb_helper *fb_helper, int bpp_sel)
+ 	 * we shouldn't end up with no modes here.
+ 	 */
+ 	if (count == 0) {
+-		printk(KERN_INFO "No connectors reported connected with modes\n");
++		if (fb_helper->poll_enabled) {
++			delayed_slow_work_enqueue(&fb_helper->output_status_change_slow_work,
++						  5*HZ);
++			printk(KERN_INFO "No connectors reported connected with modes - started polling\n");
++		} else
++			printk(KERN_INFO "No connectors reported connected with modes\n");
+ 	}
+ 	drm_setup_crtcs(fb_helper);
+ 
+@@ -1370,16 +1385,71 @@ bool drm_fb_helper_initial_config(struct drm_fb_helper *fb_helper, int bpp_sel)
+ }
+ EXPORT_SYMBOL(drm_fb_helper_initial_config);
+ 
+-bool drm_fb_helper_hotplug_event(struct drm_fb_helper *fb_helper)
++/* we got a hotplug irq - need to update fbcon */
++void drm_helper_fb_hpd_irq_event(struct drm_fb_helper *fb_helper)
++{
++	/* if we don't have the fbdev registered yet do nothing */
++	if (!fb_helper->fbdev)
++		return;
++
++	/* schedule a slow work asap */
++	delayed_slow_work_enqueue(&fb_helper->output_status_change_slow_work, 0);
++}
++EXPORT_SYMBOL(drm_helper_fb_hpd_irq_event);
++
++bool drm_helper_fb_hotplug_event(struct drm_fb_helper *fb_helper, bool polled)
+ {
+ 	int count = 0;
++	int ret;
+ 	u32 max_width, max_height, bpp_sel;
+-	bool bound = false, crtcs_bound = false;
+-	struct drm_crtc *crtc;
+ 
+ 	if (!fb_helper->fb)
+ 		return false;
++	DRM_DEBUG_KMS("\n");
++
++	max_width = fb_helper->fb->width;
++	max_height = fb_helper->fb->height;
++	bpp_sel = fb_helper->fb->bits_per_pixel;
++
++	count = drm_fb_helper_probe_connector_modes(fb_helper, max_width,
++						    max_height);
++	if (fb_helper->poll_enabled && !polled) {
++		if (count) {
++			delayed_slow_work_cancel(&fb_helper->output_status_change_slow_work);
++		} else {
++			ret = delayed_slow_work_enqueue(&fb_helper->output_status_change_slow_work, 5*HZ);
++		}
++	}
++	drm_setup_crtcs(fb_helper);
++
++	return drm_fb_helper_single_fb_probe(fb_helper, bpp_sel);
++}
++EXPORT_SYMBOL(drm_helper_fb_hotplug_event);
++
++/*
++ * delayed work queue execution function
++ * - check if fbdev is actually in use on the gpu
++ *   - if not set delayed flag and repoll if necessary
++ * - check for connector status change
++ * - repoll if 0 modes found
++ *- call driver output status changed notifier
++ */
++static void output_status_change_execute(struct slow_work *work)
++{
++	struct delayed_slow_work *delayed_work = container_of(work, struct delayed_slow_work, work);
++	struct drm_fb_helper *fb_helper = container_of(delayed_work, struct drm_fb_helper, output_status_change_slow_work);
++	struct drm_connector *connector;
++	enum drm_connector_status old_status, status;
++	bool repoll, changed = false;
++	int ret;
++	int i;
++	bool bound = false, crtcs_bound = false;
++	struct drm_crtc *crtc;
+ 
++	repoll = fb_helper->poll_enabled;
++
++	/* first of all check the fbcon framebuffer is actually bound to any crtc */
++	/* take into account that no crtc at all maybe bound */
+ 	list_for_each_entry(crtc, &fb_helper->dev->mode_config.crtc_list, head) {
+ 		if (crtc->fb)
+ 			crtcs_bound = true;
+@@ -1387,21 +1457,38 @@ bool drm_fb_helper_hotplug_event(struct drm_fb_helper *fb_helper)
+ 			bound = true;
+ 	}
+ 
+-	if (!bound && crtcs_bound) {
++	if (bound == false && crtcs_bound) {
+ 		fb_helper->delayed_hotplug = true;
+-		return false;
++		goto requeue;
+ 	}
+-	DRM_DEBUG_KMS("\n");
+ 
+-	max_width = fb_helper->fb->width;
+-	max_height = fb_helper->fb->height;
+-	bpp_sel = fb_helper->fb->bits_per_pixel;
++	for (i = 0; i < fb_helper->connector_count; i++) {
++		connector = fb_helper->connector_info[i]->connector;
++		old_status = connector->status;
++		status = connector->funcs->detect(connector);
++		if (old_status != status) {
++			changed = true;
++		}
++		if (status == connector_status_connected && repoll) {
++			DRM_DEBUG("%s is connected - stop polling\n", drm_get_connector_name(connector));
++			repoll = false;
++		}
++	}
+ 
+-	count = drm_fb_helper_probe_connector_modes(fb_helper, max_width,
+-						    max_height);
+-	drm_setup_crtcs(fb_helper);
++	if (changed) {
++		if (fb_helper->funcs->fb_output_status_changed)
++			fb_helper->funcs->fb_output_status_changed(fb_helper);
++	}
+ 
+-	return drm_fb_helper_single_fb_probe(fb_helper, bpp_sel);
++requeue:
++	if (repoll) {
++		ret = delayed_slow_work_enqueue(delayed_work, 5*HZ);
++		if (ret)
++			DRM_ERROR("delayed enqueue failed %d\n", ret);
++	}
+ }
+-EXPORT_SYMBOL(drm_fb_helper_hotplug_event);
++
++static struct slow_work_ops output_status_change_ops = {
++	.execute = output_status_change_execute,
++};
+ 
+diff --git a/drivers/gpu/drm/i915/i915_dma.c b/drivers/gpu/drm/i915/i915_dma.c
+index 59a2bf8..76ace2d 100644
+--- a/drivers/gpu/drm/i915/i915_dma.c
++++ b/drivers/gpu/drm/i915/i915_dma.c
+@@ -1430,7 +1430,6 @@ static int i915_load_modeset_init(struct drm_device *dev,
+ 	if (ret)
+ 		goto cleanup_irq;
+ 
+-	drm_kms_helper_poll_init(dev);
+ 	return 0;
+ 
+ cleanup_irq:
+diff --git a/drivers/gpu/drm/i915/i915_irq.c b/drivers/gpu/drm/i915/i915_irq.c
+index 2479be0..6350bd3 100644
+--- a/drivers/gpu/drm/i915/i915_irq.c
++++ b/drivers/gpu/drm/i915/i915_irq.c
+@@ -271,7 +271,8 @@ static void i915_hotplug_work_func(struct work_struct *work)
+ 		}
+ 	}
+ 	/* Just fire off a uevent and let userspace tell us what to do */
+-	drm_helper_hpd_irq_event(dev);
++	intelfb_hotplug(dev, false);
++	drm_sysfs_hotplug_event(dev);
+ }
+ 
+ static void i915_handle_rps_change(struct drm_device *dev)
+diff --git a/drivers/gpu/drm/i915/intel_crt.c b/drivers/gpu/drm/i915/intel_crt.c
+index 22ff384..125eded 100644
+--- a/drivers/gpu/drm/i915/intel_crt.c
++++ b/drivers/gpu/drm/i915/intel_crt.c
+@@ -584,10 +584,5 @@ void intel_crt_init(struct drm_device *dev)
+ 
+ 	drm_sysfs_connector_add(connector);
+ 
+-	if (I915_HAS_HOTPLUG(dev))
+-		connector->polled = DRM_CONNECTOR_POLL_HPD;
+-	else
+-		connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+-
+ 	dev_priv->hotplug_supported_mask |= CRT_HOTPLUG_INT_STATUS;
+ }
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index d753257..70537cf 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -5036,7 +5036,6 @@ intel_user_framebuffer_create(struct drm_device *dev,
+ 
+ static const struct drm_mode_config_funcs intel_mode_funcs = {
+ 	.fb_create = intel_user_framebuffer_create,
+-	.output_poll_changed = intel_fb_output_poll_changed,
+ };
+ 
+ static struct drm_gem_object *
+@@ -5538,7 +5537,6 @@ void intel_modeset_cleanup(struct drm_device *dev)
+ 
+ 	mutex_lock(&dev->struct_mutex);
+ 
+-	drm_kms_helper_poll_fini(dev);
+ 	intel_fbdev_fini(dev);
+ 
+ 	list_for_each_entry(crtc, &dev->mode_config.crtc_list, head) {
+diff --git a/drivers/gpu/drm/i915/intel_dp.c b/drivers/gpu/drm/i915/intel_dp.c
+index 49b54f0..1815df5 100644
+--- a/drivers/gpu/drm/i915/intel_dp.c
++++ b/drivers/gpu/drm/i915/intel_dp.c
+@@ -1393,8 +1393,6 @@ intel_dp_init(struct drm_device *dev, int output_reg)
+ 			   DRM_MODE_CONNECTOR_DisplayPort);
+ 	drm_connector_helper_add(connector, &intel_dp_connector_helper_funcs);
+ 
+-	connector->polled = DRM_CONNECTOR_POLL_HPD;
+-
+ 	if (output_reg == DP_A)
+ 		intel_encoder->type = INTEL_OUTPUT_EDP;
+ 	else
+diff --git a/drivers/gpu/drm/i915/intel_drv.h b/drivers/gpu/drm/i915/intel_drv.h
+index df931f7..3230e8d 100644
+--- a/drivers/gpu/drm/i915/intel_drv.h
++++ b/drivers/gpu/drm/i915/intel_drv.h
+@@ -235,5 +235,5 @@ extern int intel_overlay_put_image(struct drm_device *dev, void *data,
+ extern int intel_overlay_attrs(struct drm_device *dev, void *data,
+ 			       struct drm_file *file_priv);
+ 
+-extern void intel_fb_output_poll_changed(struct drm_device *dev);
++void intelfb_hotplug(struct drm_device *dev, bool polled);
+ #endif /* __INTEL_DRV_H__ */
+diff --git a/drivers/gpu/drm/i915/intel_fb.c b/drivers/gpu/drm/i915/intel_fb.c
+index c3c5052..79098b3 100644
+--- a/drivers/gpu/drm/i915/intel_fb.c
++++ b/drivers/gpu/drm/i915/intel_fb.c
+@@ -211,6 +211,12 @@ static int intel_fb_find_or_create_single(struct drm_fb_helper *helper,
+ 	return new_fb;
+ }
+ 
++void intelfb_hotplug(struct drm_device *dev, bool polled)
++{
++	drm_i915_private_t *dev_priv = dev->dev_private;
++	drm_helper_fb_hpd_irq_event(&dev_priv->fbdev->helper);
++}
++
+ static struct drm_fb_helper_funcs intel_fb_helper_funcs = {
+ 	.gamma_set = intel_crtc_fb_gamma_set,
+ 	.gamma_get = intel_crtc_fb_gamma_get,
+@@ -256,7 +262,7 @@ int intel_fbdev_init(struct drm_device *dev)
+ 
+ 	ret = drm_fb_helper_init(dev, &ifbdev->helper,
+ 				 dev_priv->num_pipe,
+-				 INTELFB_CONN_LIMIT);
++				 INTELFB_CONN_LIMIT, false);
+ 	if (ret) {
+ 		kfree(ifbdev);
+ 		return ret;
+@@ -278,9 +284,3 @@ void intel_fbdev_fini(struct drm_device *dev)
+ 	dev_priv->fbdev = NULL;
+ }
+ MODULE_LICENSE("GPL and additional rights");
+-
+-void intel_fb_output_poll_changed(struct drm_device *dev)
+-{
+-	drm_i915_private_t *dev_priv = dev->dev_private;
+-	drm_fb_helper_hotplug_event(&dev_priv->fbdev->helper);
+-}
+diff --git a/drivers/gpu/drm/i915/intel_hdmi.c b/drivers/gpu/drm/i915/intel_hdmi.c
+index 83bd764..acaca07 100644
+--- a/drivers/gpu/drm/i915/intel_hdmi.c
++++ b/drivers/gpu/drm/i915/intel_hdmi.c
+@@ -240,7 +240,6 @@ void intel_hdmi_init(struct drm_device *dev, int sdvox_reg)
+ 
+ 	intel_encoder->type = INTEL_OUTPUT_HDMI;
+ 
+-	connector->polled = DRM_CONNECTOR_POLL_HPD;
+ 	connector->interlace_allowed = 0;
+ 	connector->doublescan_allowed = 0;
+ 	intel_encoder->crtc_mask = (1 << 0) | (1 << 1);
+diff --git a/drivers/gpu/drm/i915/intel_sdvo.c b/drivers/gpu/drm/i915/intel_sdvo.c
+index 76993ac..1c716b5 100644
+--- a/drivers/gpu/drm/i915/intel_sdvo.c
++++ b/drivers/gpu/drm/i915/intel_sdvo.c
+@@ -2218,7 +2218,6 @@ intel_sdvo_dvi_init(struct intel_encoder *intel_encoder, int device)
+ 	}
+ 
+ 	connector = &intel_connector->base;
+-	connector->polled = DRM_CONNECTOR_POLL_CONNECT | DRM_CONNECTOR_POLL_DISCONNECT;
+ 	encoder->encoder_type = DRM_MODE_ENCODER_TMDS;
+ 	connector->connector_type = DRM_MODE_CONNECTOR_DVID;
+ 
+@@ -2285,7 +2284,6 @@ intel_sdvo_analog_init(struct intel_encoder *intel_encoder, int device)
+                 return false;
+ 
+         connector = &intel_connector->base;
+-	connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+         encoder->encoder_type = DRM_MODE_ENCODER_DAC;
+         connector->connector_type = DRM_MODE_CONNECTOR_VGA;
+         sdvo_connector = intel_connector->dev_priv;
+diff --git a/drivers/gpu/drm/nouveau/nouveau_connector.c b/drivers/gpu/drm/nouveau/nouveau_connector.c
+index 149ed22..9a61f3c 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_connector.c
++++ b/drivers/gpu/drm/nouveau/nouveau_connector.c
+@@ -846,7 +846,6 @@ nouveau_connector_create(struct drm_device *dev,
+ 
+ 	switch (dcb->type) {
+ 	case DCB_CONNECTOR_VGA:
+-		connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+ 		if (dev_priv->card_type >= NV_50) {
+ 			drm_connector_attach_property(connector,
+ 					dev->mode_config.scaling_mode_property,
+@@ -858,17 +857,6 @@ nouveau_connector_create(struct drm_device *dev,
+ 	case DCB_CONNECTOR_TV_3:
+ 		nv_connector->scaling_mode = DRM_MODE_SCALE_NONE;
+ 		break;
+-	case DCB_CONNECTOR_DP:
+-	case DCB_CONNECTOR_eDP:
+-	case DCB_CONNECTOR_HDMI_0:
+-	case DCB_CONNECTOR_HDMI_1:
+-	case DCB_CONNECTOR_DVI_I:
+-	case DCB_CONNECTOR_DVI_D:
+-		if (dev_priv->card_type >= NV_50)
+-			connector->polled = DRM_CONNECTOR_POLL_HPD;
+-		else
+-			connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+-		/* fall-through */
+ 	default:
+ 		nv_connector->scaling_mode = DRM_MODE_SCALE_FULLSCREEN;
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_display.c b/drivers/gpu/drm/nouveau/nouveau_display.c
+index 74e6b4e..9d7928f 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_display.c
++++ b/drivers/gpu/drm/nouveau/nouveau_display.c
+@@ -101,6 +101,5 @@ nouveau_user_framebuffer_create(struct drm_device *dev,
+ 
+ const struct drm_mode_config_funcs nouveau_mode_config_funcs = {
+ 	.fb_create = nouveau_user_framebuffer_create,
+-	.output_poll_changed = nouveau_fbcon_output_poll_changed,
+ };
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_fbcon.c b/drivers/gpu/drm/nouveau/nouveau_fbcon.c
+index c9a4a0d..0a59f96 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_fbcon.c
++++ b/drivers/gpu/drm/nouveau/nouveau_fbcon.c
+@@ -326,11 +326,15 @@ nouveau_fbcon_find_or_create_single(struct drm_fb_helper *helper,
+ 	return new_fb;
+ }
+ 
+-void
+-nouveau_fbcon_output_poll_changed(struct drm_device *dev)
++void nouveau_fbcon_hotplug(struct drm_device *dev)
+ {
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
+-	drm_fb_helper_hotplug_event(&dev_priv->nfbdev->helper);
++	drm_helper_fb_hpd_irq_event(&dev_priv->nfbdev->helper);
++}
++
++static void nouveau_fbcon_output_status_changed(struct drm_fb_helper *fb_helper)
++{
++	drm_helper_fb_hotplug_event(fb_helper, true);
+ }
+ 
+ int
+@@ -370,6 +374,7 @@ static struct drm_fb_helper_funcs nouveau_fbcon_helper_funcs = {
+ 	.gamma_set = nouveau_fbcon_gamma_set,
+ 	.gamma_get = nouveau_fbcon_gamma_get,
+ 	.fb_probe = nouveau_fbcon_find_or_create_single,
++	.fb_output_status_changed = nouveau_fbcon_output_status_changed,
+ };
+ 
+ 
+@@ -387,7 +392,7 @@ int nouveau_fbcon_init(struct drm_device *dev)
+ 	dev_priv->nfbdev = nfbdev;
+ 	nfbdev->helper.funcs = &nouveau_fbcon_helper_funcs;
+ 
+-	ret = drm_fb_helper_init(dev, &nfbdev->helper, 2, 4);
++	ret = drm_fb_helper_init(dev, &nfbdev->helper, 2, 4, true);
+ 	if (ret) {
+ 		kfree(nfbdev);
+ 		return ret;
+diff --git a/drivers/gpu/drm/nouveau/nouveau_fbcon.h b/drivers/gpu/drm/nouveau/nouveau_fbcon.h
+index e7e1268..bf8e00d 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_fbcon.h
++++ b/drivers/gpu/drm/nouveau/nouveau_fbcon.h
+@@ -58,6 +58,6 @@ void nouveau_fbcon_zfill_all(struct drm_device *dev);
+ void nouveau_fbcon_save_disable_accel(struct drm_device *dev);
+ void nouveau_fbcon_restore_accel(struct drm_device *dev);
+ 
+-void nouveau_fbcon_output_poll_changed(struct drm_device *dev);
++void nouveau_fbcon_hotplug(struct drm_device *dev);
+ #endif /* __NV50_FBCON_H__ */
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_state.c b/drivers/gpu/drm/nouveau/nouveau_state.c
+index b02a231..4dcb976 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_state.c
++++ b/drivers/gpu/drm/nouveau/nouveau_state.c
+@@ -519,10 +519,8 @@ nouveau_card_init(struct drm_device *dev)
+ 
+ 	dev_priv->init_state = NOUVEAU_CARD_INIT_DONE;
+ 
+-	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
++	if (drm_core_check_feature(dev, DRIVER_MODESET))
+ 		nouveau_fbcon_init(dev);
+-		drm_kms_helper_poll_init(dev);
+-	}
+ 
+ 	return 0;
+ 
+@@ -844,7 +842,6 @@ int nouveau_unload(struct drm_device *dev)
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
+ 
+ 	if (drm_core_check_feature(dev, DRIVER_MODESET)) {
+-		drm_kms_helper_poll_fini(dev);
+ 		nouveau_fbcon_fini(dev);
+ 		if (dev_priv->card_type >= NV_50)
+ 			nv50_display_destroy(dev);
+diff --git a/drivers/gpu/drm/nouveau/nv50_display.c b/drivers/gpu/drm/nouveau/nv50_display.c
+index 580a5d1..e6a44af 100644
+--- a/drivers/gpu/drm/nouveau/nv50_display.c
++++ b/drivers/gpu/drm/nouveau/nv50_display.c
+@@ -980,7 +980,7 @@ nv50_display_irq_hotplug_bh(struct work_struct *work)
+ 	if (dev_priv->chipset >= 0x90)
+ 		nv_wr32(dev, 0xe074, nv_rd32(dev, 0xe074));
+ 
+-	drm_helper_hpd_irq_event(dev);
++	nouveau_fbcon_hotplug(dev);
+ }
+ 
+ void
+diff --git a/drivers/gpu/drm/radeon/radeon_connectors.c b/drivers/gpu/drm/radeon/radeon_connectors.c
+index 0c7ccc6..40a24c9 100644
+--- a/drivers/gpu/drm/radeon/radeon_connectors.c
++++ b/drivers/gpu/drm/radeon/radeon_connectors.c
+@@ -1085,7 +1085,6 @@ radeon_add_atom_connector(struct drm_device *dev,
+ 		drm_connector_attach_property(&radeon_connector->base,
+ 					      rdev->mode_info.load_detect_property,
+ 					      1);
+-		connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+ 		break;
+ 	case DRM_MODE_CONNECTOR_DVIA:
+ 		drm_connector_init(dev, &radeon_connector->base, &radeon_vga_connector_funcs, connector_type);
+@@ -1212,12 +1211,6 @@ radeon_add_atom_connector(struct drm_device *dev,
+ 		break;
+ 	}
+ 
+-	if (hpd->hpd == RADEON_HPD_NONE) {
+-		if (i2c_bus->valid)
+-			connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+-	} else
+-		connector->polled = DRM_CONNECTOR_POLL_HPD;
+-
+ 	connector->display_info.subpixel_order = subpixel_order;
+ 	drm_sysfs_connector_add(connector);
+ 	return;
+@@ -1279,7 +1272,6 @@ radeon_add_legacy_connector(struct drm_device *dev,
+ 		drm_connector_attach_property(&radeon_connector->base,
+ 					      rdev->mode_info.load_detect_property,
+ 					      1);
+-		connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+ 		break;
+ 	case DRM_MODE_CONNECTOR_DVIA:
+ 		drm_connector_init(dev, &radeon_connector->base, &radeon_vga_connector_funcs, connector_type);
+@@ -1348,11 +1340,6 @@ radeon_add_legacy_connector(struct drm_device *dev,
+ 		break;
+ 	}
+ 
+-	if (hpd->hpd == RADEON_HPD_NONE) {
+-		if (i2c_bus->valid)
+-			connector->polled = DRM_CONNECTOR_POLL_CONNECT;
+-	} else
+-		connector->polled = DRM_CONNECTOR_POLL_HPD;
+ 	connector->display_info.subpixel_order = subpixel_order;
+ 	drm_sysfs_connector_add(connector);
+ 	return;
+diff --git a/drivers/gpu/drm/radeon/radeon_display.c b/drivers/gpu/drm/radeon/radeon_display.c
+index c73444a..ed756be 100644
+--- a/drivers/gpu/drm/radeon/radeon_display.c
++++ b/drivers/gpu/drm/radeon/radeon_display.c
+@@ -887,15 +887,8 @@ radeon_user_framebuffer_create(struct drm_device *dev,
+ 	return &radeon_fb->base;
+ }
+ 
+-static void radeon_output_poll_changed(struct drm_device *dev)
+-{
+-	struct radeon_device *rdev = dev->dev_private;
+-	radeon_fb_output_poll_changed(rdev);
+-}
+-
+ static const struct drm_mode_config_funcs radeon_mode_funcs = {
+ 	.fb_create = radeon_user_framebuffer_create,
+-	.output_poll_changed = radeon_output_poll_changed
+ };
+ 
+ struct drm_prop_enum_list {
+@@ -1044,8 +1037,6 @@ int radeon_modeset_init(struct radeon_device *rdev)
+ 		radeon_pm_init(rdev);
+ 
+ 	radeon_fbdev_init(rdev);
+-	drm_kms_helper_poll_init(rdev->ddev);
+-
+ 	return 0;
+ }
+ 
+@@ -1058,7 +1049,6 @@ void radeon_modeset_fini(struct radeon_device *rdev)
+ 		radeon_pm_fini(rdev);
+ 
+ 	if (rdev->mode_info.mode_config_initialized) {
+-		drm_kms_helper_poll_fini(rdev->ddev);
+ 		radeon_hpd_fini(rdev);
+ 		drm_mode_config_cleanup(rdev->ddev);
+ 		rdev->mode_info.mode_config_initialized = false;
+diff --git a/drivers/gpu/drm/radeon/radeon_fb.c b/drivers/gpu/drm/radeon/radeon_fb.c
+index dc1634b..7dc38f6 100644
+--- a/drivers/gpu/drm/radeon/radeon_fb.c
++++ b/drivers/gpu/drm/radeon/radeon_fb.c
+@@ -316,9 +316,16 @@ int radeon_parse_options(char *options)
+ 	return 0;
+ }
+ 
+-void radeon_fb_output_poll_changed(struct radeon_device *rdev)
++void radeonfb_hotplug(struct drm_device *dev, bool polled)
+ {
+-	drm_fb_helper_hotplug_event(&rdev->mode_info.rfbdev->helper);
++	struct radeon_device *rdev = dev->dev_private;
++
++	drm_helper_fb_hpd_irq_event(&rdev->mode_info.rfbdev->helper);
++}
++
++static void radeon_fb_output_status_changed(struct drm_fb_helper *fb_helper)
++{
++	drm_helper_fb_hotplug_event(fb_helper, true);
+ }
+ 
+ static int radeon_fbdev_destroy(struct drm_device *dev, struct radeon_fbdev *rfbdev)
+@@ -357,6 +364,7 @@ static struct drm_fb_helper_funcs radeon_fb_helper_funcs = {
+ 	.gamma_set = radeon_crtc_fb_gamma_set,
+ 	.gamma_get = radeon_crtc_fb_gamma_get,
+ 	.fb_probe = radeon_fb_find_or_create_single,
++	.fb_output_status_changed = radeon_fb_output_status_changed,
+ };
+ 
+ int radeon_fbdev_init(struct radeon_device *rdev)
+@@ -379,7 +387,7 @@ int radeon_fbdev_init(struct radeon_device *rdev)
+ 
+ 	ret = drm_fb_helper_init(rdev->ddev, &rfbdev->helper,
+ 				 rdev->num_crtc,
+-				 RADEONFB_CONN_LIMIT);
++				 RADEONFB_CONN_LIMIT, true);
+ 	if (ret) {
+ 		kfree(rfbdev);
+ 		return ret;
+@@ -388,6 +396,7 @@ int radeon_fbdev_init(struct radeon_device *rdev)
+ 	drm_fb_helper_single_add_all_connectors(&rfbdev->helper);
+ 	drm_fb_helper_initial_config(&rfbdev->helper, bpp_sel);
+ 	return 0;
++
+ }
+ 
+ void radeon_fbdev_fini(struct radeon_device *rdev)
+diff --git a/drivers/gpu/drm/radeon/radeon_irq_kms.c b/drivers/gpu/drm/radeon/radeon_irq_kms.c
+index 059bfa4..b0178de 100644
+--- a/drivers/gpu/drm/radeon/radeon_irq_kms.c
++++ b/drivers/gpu/drm/radeon/radeon_irq_kms.c
+@@ -26,7 +26,6 @@
+  *          Jerome Glisse
+  */
+ #include "drmP.h"
+-#include "drm_crtc_helper.h"
+ #include "radeon_drm.h"
+ #include "radeon_reg.h"
+ #include "radeon.h"
+@@ -56,7 +55,9 @@ static void radeon_hotplug_work_func(struct work_struct *work)
+ 			radeon_connector_hotplug(connector);
+ 	}
+ 	/* Just fire off a uevent and let userspace tell us what to do */
+-	drm_helper_hpd_irq_event(dev);
++	radeonfb_hotplug(dev, false);
++
++	drm_sysfs_hotplug_event(dev);
+ }
+ 
+ void radeon_driver_irq_preinstall_kms(struct drm_device *dev)
+diff --git a/drivers/gpu/drm/radeon/radeon_mode.h b/drivers/gpu/drm/radeon/radeon_mode.h
+index 67358ba..fdd1611 100644
+--- a/drivers/gpu/drm/radeon/radeon_mode.h
++++ b/drivers/gpu/drm/radeon/radeon_mode.h
+@@ -588,6 +588,5 @@ void radeon_fbdev_fini(struct radeon_device *rdev);
+ void radeon_fbdev_set_suspend(struct radeon_device *rdev, int state);
+ int radeon_fbdev_total_size(struct radeon_device *rdev);
+ bool radeon_fbdev_robj_is_fb(struct radeon_device *rdev, struct radeon_bo *robj);
+-
+-void radeon_fb_output_poll_changed(struct radeon_device *rdev);
++void radeonfb_hotplug(struct drm_device *dev, bool polled);
+ #endif
+diff --git a/include/drm/drm_crtc.h b/include/drm/drm_crtc.h
+index 93a1a31..a7148d2 100644
+--- a/include/drm/drm_crtc.h
++++ b/include/drm/drm_crtc.h
+@@ -31,7 +31,6 @@
+ #include <linux/idr.h>
+ 
+ #include <linux/fb.h>
+-#include <linux/slow-work.h>
+ 
+ struct drm_device;
+ struct drm_mode_set;
+@@ -461,15 +460,6 @@ enum drm_connector_force {
+ 	DRM_FORCE_ON_DIGITAL, /* for DVI-I use digital connector */
+ };
+ 
+-/* should we poll this connector for connects and disconnects */
+-/* hot plug detectable */
+-#define DRM_CONNECTOR_POLL_HPD (1 << 0)
+-/* poll for connections */
+-#define DRM_CONNECTOR_POLL_CONNECT (1 << 1)
+-/* can cleanly poll for disconnections without flickering the screen */
+-/* DACs should rarely do this without a lot of testing */
+-#define DRM_CONNECTOR_POLL_DISCONNECT (1 << 2)
+-
+ /**
+  * drm_connector - central DRM connector control structure
+  * @crtc: CRTC this connector is currently connected to, NULL if none
+@@ -514,8 +504,6 @@ struct drm_connector {
+ 	u32 property_ids[DRM_CONNECTOR_MAX_PROPERTY];
+ 	uint64_t property_values[DRM_CONNECTOR_MAX_PROPERTY];
+ 
+-	uint8_t polled; /* DRM_CONNECTOR_POLL_* */
+-
+ 	/* requested DPMS state */
+ 	int dpms;
+ 
+@@ -555,7 +543,6 @@ struct drm_mode_set {
+  */
+ struct drm_mode_config_funcs {
+ 	struct drm_framebuffer *(*fb_create)(struct drm_device *dev, struct drm_file *file_priv, struct drm_mode_fb_cmd *mode_cmd);
+-	void (*output_poll_changed)(struct drm_device *dev);
+ };
+ 
+ struct drm_mode_group {
+@@ -593,10 +580,6 @@ struct drm_mode_config {
+ 	struct drm_mode_config_funcs *funcs;
+ 	resource_size_t fb_base;
+ 
+-	/* output poll support */
+-	bool poll_enabled;
+-	struct delayed_slow_work output_poll_slow_work;
+-
+ 	/* pointers to standard properties */
+ 	struct list_head property_blob_list;
+ 	struct drm_property *edid_property;
+diff --git a/include/drm/drm_crtc_helper.h b/include/drm/drm_crtc_helper.h
+index 1121f77..b1fa0f8 100644
+--- a/include/drm/drm_crtc_helper.h
++++ b/include/drm/drm_crtc_helper.h
+@@ -127,10 +127,4 @@ static inline void drm_connector_helper_add(struct drm_connector *connector,
+ }
+ 
+ extern int drm_helper_resume_force_mode(struct drm_device *dev);
+-extern void drm_kms_helper_poll_init(struct drm_device *dev);
+-extern void drm_kms_helper_poll_fini(struct drm_device *dev);
+-extern void drm_helper_hpd_irq_event(struct drm_device *dev);
+-
+-extern void drm_kms_helper_poll_disable(struct drm_device *dev);
+-extern void drm_kms_helper_poll_enable(struct drm_device *dev);
+ #endif
+diff --git a/include/drm/drm_fb_helper.h b/include/drm/drm_fb_helper.h
+index f0a6afc..9b55a94 100644
+--- a/include/drm/drm_fb_helper.h
++++ b/include/drm/drm_fb_helper.h
+@@ -30,6 +30,8 @@
+ #ifndef DRM_FB_HELPER_H
+ #define DRM_FB_HELPER_H
+ 
++#include <linux/slow-work.h>
++
+ struct drm_fb_helper;
+ 
+ struct drm_fb_helper_crtc {
+@@ -69,6 +71,9 @@ struct drm_fb_helper_funcs {
+ 
+ 	int (*fb_probe)(struct drm_fb_helper *helper,
+ 			struct drm_fb_helper_surface_size *sizes);
++
++	void (*fb_output_status_changed)(struct drm_fb_helper *helper);
++
+ };
+ 
+ struct drm_fb_helper_connector {
+@@ -90,6 +95,8 @@ struct drm_fb_helper {
+ 	u32 pseudo_palette[17];
+ 	struct list_head kernel_fb_list;
+ 
++	struct delayed_slow_work output_status_change_slow_work;
++	bool poll_enabled;
+ 	/* we got a hotplug but fbdev wasn't running the console
+ 	   delay until next set_par */
+ 	bool delayed_hotplug;
+@@ -100,7 +107,7 @@ int drm_fb_helper_single_fb_probe(struct drm_fb_helper *helper,
+ 
+ int drm_fb_helper_init(struct drm_device *dev,
+ 		       struct drm_fb_helper *helper, int crtc_count,
+-		       int max_conn);
++		       int max_conn, bool polled);
+ void drm_fb_helper_fini(struct drm_fb_helper *helper);
+ int drm_fb_helper_blank(int blank, struct fb_info *info);
+ int drm_fb_helper_pan_display(struct fb_var_screeninfo *var,
+@@ -123,8 +130,10 @@ void drm_fb_helper_fill_fix(struct fb_info *info, uint32_t pitch,
+ 
+ int drm_fb_helper_setcmap(struct fb_cmap *cmap, struct fb_info *info);
+ 
+-bool drm_fb_helper_hotplug_event(struct drm_fb_helper *fb_helper);
++bool drm_helper_fb_hotplug_event(struct drm_fb_helper *fb_helper,
++				 bool polled);
+ bool drm_fb_helper_initial_config(struct drm_fb_helper *fb_helper, int bpp_sel);
+ int drm_fb_helper_single_add_all_connectors(struct drm_fb_helper *fb_helper);
+ 
++void drm_helper_fb_hpd_irq_event(struct drm_fb_helper *fb_helper);
+ #endif
+-- 
+1.7.0.1
+

@@ -1,7 +1,8 @@
-  
+
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-0.2.2-opt.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-0.2.2-cfg-abs-path.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-0.2.2-pulseaudio.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-0.2.2-bigendian.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+
+set +e +o pipefail

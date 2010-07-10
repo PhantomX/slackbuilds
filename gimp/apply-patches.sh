@@ -16,7 +16,9 @@ zcat ${SB_PATCHDIR}/gimp-2.6.6-minimize-dialogs.patch.gz | patch -p1 -E --backup
 # backport: fix building with "gold" linker
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.8-gold.patch
 
-# backport: GIMP crashes when clicking any scroll bar from combo boxes
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.9-combo-popup.patch
+# https://bugzilla.redhat.com/show_bug.cgi?id=198367
+# https://bugzilla.gnome.org/show_bug.cgi?id=623045
+# make script-fu logging IPv6 aware
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.10-script-fu-ipv6.patch
 
 set +e +o pipefail

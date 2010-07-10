@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # ntpbz #802
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-sleep.patch
 # add support for dropping root to ntpdate
@@ -14,7 +15,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-cmsgalign.patch
 # link ntpd with -ffast-math on ia64
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-linkfastmath.patch
 # ntpbz #1134
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-tentative.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-tentative.patch
 # ntpbz #759
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-retcode.patch
 # ntpbz #992

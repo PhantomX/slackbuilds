@@ -41,12 +41,12 @@ if [ ! -d ${TMP} ]; then
 fi
 
 NAME=gtk-vnc
-NAME2=${NAME}-plugin
+MPNAME=${NAME}-plugin
 PKGF=${PKGF:-${TMP}/package-${NAME}}
 PKG=${PKGF}/${NAME}
-PKG2=${PKGF}/${NAME2}
+MPPKG=${PKGF}/${MPNAME}
 
-VERSION=${VERSION:-0.3.10}
+VERSION=${VERSION:-0.4.0}
 SVER=$(echo ${VERSION} | cut -d . -f1-2)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -66,7 +66,10 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
-PKGNAME2=${NAME2}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+PKGMPNAME=${MPNAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable mozilla plugin
+SB_MOZPLUG=${SB_MOZPLUG:-NO}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -114,9 +117,14 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
+fi
+
+if [ "${SB_MOZPLUG}" = "YES" ] ;then
+  SB_MOZPLUGOPTS='yes'
+else
+  SB_MOZPLUGOPTS='no'
 fi
 
 CFLAGS="${SLKCFLAGS}" \
@@ -130,7 +138,8 @@ CXXFLAGS="${SLKCFLAGS}" \
   --mandir=/usr/man \
   --disable-static \
   --with-python \
-  --enable-plugin=no \
+  --enable-plugin=${SB_MOZPLUGOPTS} \
+  --enable-introspection=no \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
@@ -143,19 +152,30 @@ rm -f ${PKG}/usr/lib*/mozilla/plugins/*.{a,la}
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-if [ -d ${PKG}/usr/lib${LIBDIRSUFFIX}/mozilla ] ;then
-  mkdir -p ${PKG2}/usr/lib${LIBDIRSUFFIX}
-  mv ${PKG}/usr/lib${LIBDIRSUFFIX}/mozilla \
-     ${PKG2}/usr/lib${LIBDIRSUFFIX}/ || exit 1
+# Mozilla plugin
+if [ "${SB_MOZPLUG}" = "YES" ] ;then
+  mkdir -p ${MPPKG}/usr/lib${LIBDIRSUFFIX}
+  mv ${PKG}/usr/lib${LIBDIRSUFFIX}/mozilla ${MPPKG}/usr/lib${LIBDIRSUFFIX}/ || exit 1
+
+  mkdir -p ${MPPKG}/install
+  cat ${CWD}/slack-desc.plugin > ${MPPKG}/install/slack-desc
+  cat ${CWD}/slack-required.plugin | sed -e "s|_VERSION_|${VERSION}|g" \
+    > ${MPPKG}/install/slack-required
+
+else
+  rm -rf ${PKG}/usr/lib${LIBDIRSUFFIX}/mozilla
 fi
+rmdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  AUTHORS ChangeLog NEWS README COPYING.LIB examples/gvncviewer.c ${CWD}/ChangeLog.SB \
+  AUTHORS COPYING.LIB NEWS README examples/gvncviewer.c  ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -204,26 +224,38 @@ set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
-ROOTCOMMANDS2="set -o errexit -o xtrace ; cd ${PKG2} ;
-  /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
-ROOTCOMMANDS2="${ROOTCOMMANDS2}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME2}.${PKGFORMAT} "
   
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
-  eval ${ROOTCOMMANDS2}
   set +o xtrace
 elif test "$(type -t fakeroot)" = 'file'; then
   echo -e "\e[1mEntering fakeroot environment.\e[0m"
   echo ${ROOTCOMMANDS} | fakeroot
-  echo ${ROOTCOMMANDS2} | fakeroot
 else
   echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
   /bin/su -c "${ROOTCOMMANDS}"
-  /bin/su -c "${ROOTCOMMANDS}"
+fi
+
+if [ "${SB_MOZPLUG}" = "YES" ] ;then
+  MPROOTCOMMANDS="set -o errexit -o xtrace ; cd ${MPPKG} ;
+    /bin/chown --recursive root:root .  ;"
+
+  MPROOTCOMMANDS="${MPROOTCOMMANDS}
+    /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGMPNAME}.${PKGFORMAT} "
+
+  if test ${UID} = 0; then
+    eval ${MPROOTCOMMANDS}
+    set +o xtrace
+  elif test "$(type -t fakeroot)" = 'file'; then
+    echo -e "\e[1mEntering fakeroot environment.\e[0m"
+    echo ${MPROOTCOMMANDS} | fakeroot
+  else
+    echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+    /bin/su -c "${MPROOTCOMMANDS}"
+  fi
 fi
 
 # Clean up the extra stuff:

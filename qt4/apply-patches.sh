@@ -102,7 +102,7 @@ ApplyPatch 0ebc9783d8ca0c4b27208bbc002c53c52c19ab4c.patch
 # kde-qt patches
 ( SB_PATCHDIR=patches
   # Ignore list, e.g: ="0003 0010"
-  export IGNORE="0009"
+  export IGNORE=""
   IgnorePatch ${SB_PATCHDIR}/list
   for patch in $(<${SB_PATCHDIR}/list) ;do
     ApplyPatch ${patch}

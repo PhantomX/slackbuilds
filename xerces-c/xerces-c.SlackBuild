@@ -43,7 +43,7 @@ fi
 NAME=xerces-c
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.8.0}
+VERSION=${VERSION:-3.0.1}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -65,13 +65,13 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}-src_$(echo ${VERSION} | tr . _ )
+SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://www.apache.org/dist/xml/${NAME}/source/${SRCARCHIVE}"
+DL_URL="http://archive.apache.org/dist/xml/${NAME}/Xerces-C_$(echo ${VERSION} | tr . _ )/sources/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
@@ -110,42 +110,64 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-rm -rf doc/html/resources/.svn
-find ./doc -type f -perm 755 -exec chmod 644 {} \;
-find ./samples -type f -perm 755 -exec chmod 644 {} \;
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}--CVE-2009-1885.diff.gz | patch -p0 -E --backup --verbose || exit 1
+mkdir -p _docs
+cp -a samples/ _docs/
+sed -i -e 's/\r//' doc/*.xml
 
-export XERCESCROOT="$(pwd)"
-
-# Let Makefiles be verbose
-find -name 'Makefile.*' | while read f; do
-  sed -i -e 's/$Q//g' \
-  -e 's/{MAKE} -s/(MAKE)/g' \
-  -e '/echo \"  (/d' \
-  ${f}
-done
-
-# Remove conflicting flags from runConfigure
-find -name runConfigure | while read f; do
-  sed -i -e 's/-w -O -DNDEBUG/-DNDEBUG/g' ${f}
-done
-
-( cd ${XERCESCROOT}/src/xercesc || exit 1
-
+CFLAGS="${SLKCFLAGS} -fno-strict-aliasing" \
 CXXFLAGS="${SLKCFLAGS}" \
-CFLAGS="${SLKCFLAGS}" \
-./runConfigure -plinux -cgcc -xg++ -minmem \
-  -nsocket -tnative -rpthreads -b${SB_MODE} -P /usr -C --libdir="/usr/lib${LIBDIRSUFFIX}" || exit 1
+./configure \
+  --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --sysconfdir=/etc \
+  --localstatedir=/var/lib \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --docdir=/usr/doc/${NAME}-${VERSION} \
+  --disable-static \
+  --disable-pretty-make \
+  --disable-sse2 \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
 
-make || exit 1
-make install DESTDIR="${PKG}" || exit 1
+make -j${NJOBS} || make || exit $?
+make install DESTDIR=${PKG} || exit $?
 
-) || exit 1
+rm -f ${PKG}/usr/lib*/*.la
 
-if [ -d ${PKG}/usr/lib ] ;then
-  mv ${PKG}/usr/lib ${PKG}/usr/lib${LIBDIRSUFFIX}
+rm -rf ${PKG}/usr/bin
+
+unset MARCH
+case "${ARCH}" in
+  i[3-6]86|s390)  MARCH=32
+             ;;
+    x86_64)  MARCH=64
+             ;;
+esac
+
+if [ -n "${MARCH}" ] ;then
+  mv ${PKG}/usr/include/xercesc/util/Xerces_autoconf_config.hpp \
+    ${PKG}/usr/include/xercesc/util/Xerces_autoconf_config-${MARCH}.hpp || exit 1
+
+cat > ${PKG}/usr/include/xercesc/util/Xerces_autoconf_config.hpp <<'EOF'
+#ifndef XERCES_C_MULTILIB
+#define XERCES_C_MULTILIB
+
+#include <bits/wordsize.h>
+
+#if __WORDSIZE == 32
+# include "Xerces_autoconf_config-32.hpp"
+#elif __WORDSIZE == 64
+# include "Xerces_autoconf_config-64.hpp"
+#else
+# error "unexpected value for __WORDSIZE macro"
+#endif
+
+#endif 
+EOF
 fi
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
@@ -154,8 +176,8 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  LICENSE.txt Readme.html LICENSE NOTICE STATUS credits.txt doc samples \
-  ${CWD}/ChangeLog.SB ${DOCDIR}/
+  README LICENSE NOTICE CREDITS doc _docs/* ${CWD}/ChangeLog.SB \
+  ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
@@ -189,11 +211,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.diff.gz ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

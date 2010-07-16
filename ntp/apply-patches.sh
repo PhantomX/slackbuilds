@@ -15,7 +15,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-cmsgalign.patch
 # link ntpd with -ffast-math on ia64
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-linkfastmath.patch
 # ntpbz #1134
-#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-tentative.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p2-tentative.patch
 # ntpbz #759
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-retcode.patch
 # ntpbz #992
@@ -31,7 +31,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.4p7-getprecision.patch
 # ntpbz #1408
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-logdefault.patch
 # add option -m to lock memory
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-mlock.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p2-mlock.patch
 
 ( cd ntpstat-${NSVER}
   # handle unknown clock types

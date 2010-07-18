@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/ghostscript-8.62-versioned_ijs.patch.gz | patch -p0 --verbose
 
 # Fix ijs-config not to have multilib conflicts
@@ -43,6 +44,9 @@ zcat ${SB_PATCHDIR}/ghostscript-tif-fail-close.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/ghostscript-tiff-default-strip-size.patch.gz | patch -p1 --verbose
 # Backported some more TIFF fixes.
 zcat ${SB_PATCHDIR}/ghostscript-tiff-fixes.patch.gz | patch -p1 --verbose
+# Applied patch to fix CVE-2010-1628 (memory corruption at PS stack
+# overflow, bug #592492).
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-CVE-2010-1628.patch
 
 # libpng 1.4
 zcat ${SB_PATCHDIR}/ghostscript-libpng14.patch.gz | patch -p1 -E --backup --verbose

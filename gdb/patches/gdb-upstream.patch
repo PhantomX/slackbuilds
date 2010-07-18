@@ -801,3 +801,379 @@ http://sourceware.org/ml/gdb-cvs/2010-04/msg00029.html
 +
 +gdb_breakpoint "main"
 +gdb_continue_to_breakpoint "main" "main.*"
+
+
+
+https://bugzilla.redhat.com/show_bug.cgi?id=590648
+Re: [rfc] Work around invalid G++ DWARF for unnamed aggregates
+http://sourceware.org/ml/gdb-patches/2010-03/msg00909.html
+commit 5e40af195bd74a66d300d8f481cab1f2ba533f3a
+
+[ cut only a part of it ]
+
+--- a/gdb/completer.c
++++ b/gdb/completer.c
+@@ -401,7 +401,7 @@ add_struct_fields (struct type *type, int *nextp, char **output,
+ 	      computed_type_name = 1;
+ 	    }
+ 	  /* Omit constructors from the completion list.  */
+-	  if (type_name && strcmp (type_name, name))
++	  if (!type_name || strcmp (type_name, name))
+ 	    {
+ 	      output[*nextp] = xstrdup (name);
+ 	      ++*nextp;
+
+
+
+https://bugzilla.redhat.com/show_bug.cgi?id=578136
+https://bugzilla.redhat.com/show_bug.cgi?id=593926
+http://sourceware.org/ml/gdb-patches/2010-04/msg00820.html
+http://sourceware.org/ml/gdb-cvs/2010-04/msg00240.html
+
+### src/gdb/ChangeLog	2010/04/23 18:09:16	1.11678
+### src/gdb/ChangeLog	2010/04/23 21:44:19	1.11679
+## -1,3 +1,14 @@
++2010-04-23  Daniel Jacobowitz  <dan@codesourcery.com>
++	    Paul Pluzhnikov  <ppluzhnikov@google.com>
++	    Jan Kratochvil  <jan.kratochvil@redhat.com>
++
++	Fix deadlock on looped list of loaded shared objects.
++	* solib-svr4.c (LM_PREV): New function.
++	(IGNORE_FIRST_LINK_MAP_ENTRY): Use it.
++	(svr4_current_sos): Check for correct l_prev.  New variables prev_lm
++	and next_lm.  Clear prev_lm for solib_svr4_r_ldsomap.
++	* config/djgpp/fnchange.lst: Add translation for solib-corrupted.exp.
++
+ 2010-04-23  Doug Evans  <dje@google.com>
+ 
+ 	* configure.ac (CONFIG_SRCS): Add py-auto-load.o even if not using
+--- src/gdb/solib-svr4.c	2010/03/11 22:07:02	1.130
++++ src/gdb/solib-svr4.c	2010/04/23 21:44:19	1.131
+@@ -272,6 +272,16 @@
+ }
+ 
+ static CORE_ADDR
++LM_PREV (struct so_list *so)
++{
++  struct link_map_offsets *lmo = svr4_fetch_link_map_offsets ();
++  struct type *ptr_type = builtin_type (target_gdbarch)->builtin_data_ptr;
++
++  return extract_typed_address (so->lm_info->lm + lmo->l_prev_offset,
++				ptr_type);
++}
++
++static CORE_ADDR
+ LM_NAME (struct so_list *so)
+ {
+   struct link_map_offsets *lmo = svr4_fetch_link_map_offsets ();
+@@ -284,16 +294,12 @@
+ static int
+ IGNORE_FIRST_LINK_MAP_ENTRY (struct so_list *so)
+ {
+-  struct link_map_offsets *lmo = svr4_fetch_link_map_offsets ();
+-  struct type *ptr_type = builtin_type (target_gdbarch)->builtin_data_ptr;
+-
+   /* Assume that everything is a library if the dynamic loader was loaded
+      late by a static executable.  */
+   if (exec_bfd && bfd_get_section_by_name (exec_bfd, ".dynamic") == NULL)
+     return 0;
+ 
+-  return extract_typed_address (so->lm_info->lm + lmo->l_prev_offset,
+-				ptr_type) == 0;
++  return LM_PREV (so) == 0;
+ }
+ 
+ /* Per pspace SVR4 specific data.  */
+@@ -1101,7 +1107,7 @@
+ static struct so_list *
+ svr4_current_sos (void)
+ {
+-  CORE_ADDR lm;
++  CORE_ADDR lm, prev_lm;
+   struct so_list *head = 0;
+   struct so_list **link_ptr = &head;
+   CORE_ADDR ldsomap = 0;
+@@ -1120,6 +1126,7 @@
+ 
+   /* Walk the inferior's link map list, and build our list of
+      `struct so_list' nodes.  */
++  prev_lm = 0;
+   lm = solib_svr4_r_map (info);
+ 
+   while (lm)
+@@ -1127,6 +1134,7 @@
+       struct link_map_offsets *lmo = svr4_fetch_link_map_offsets ();
+       struct so_list *new = XZALLOC (struct so_list);
+       struct cleanup *old_chain = make_cleanup (xfree, new);
++      CORE_ADDR next_lm;
+ 
+       new->lm_info = xmalloc (sizeof (struct lm_info));
+       make_cleanup (xfree, new->lm_info);
+@@ -1138,14 +1146,21 @@
+ 
+       read_memory (lm, new->lm_info->lm, lmo->link_map_size);
+ 
+-      lm = LM_NEXT (new);
++      next_lm = LM_NEXT (new);
++
++      if (LM_PREV (new) != prev_lm)
++	{
++	  warning (_("Corrupted shared library list"));
++	  free_so (new);
++	  next_lm = 0;
++	}
+ 
+       /* For SVR4 versions, the first entry in the link map is for the
+          inferior executable, so we must ignore it.  For some versions of
+          SVR4, it has no name.  For others (Solaris 2.3 for example), it
+          does have a name, so we can no longer use a missing name to
+          decide when to ignore it. */
+-      if (IGNORE_FIRST_LINK_MAP_ENTRY (new) && ldsomap == 0)
++      else if (IGNORE_FIRST_LINK_MAP_ENTRY (new) && ldsomap == 0)
+ 	{
+ 	  info->main_lm_addr = new->lm_info->lm_addr;
+ 	  free_so (new);
+@@ -1182,12 +1197,18 @@
+ 	    }
+ 	}
+ 
++      prev_lm = lm;
++      lm = next_lm;
++
+       /* On Solaris, the dynamic linker is not in the normal list of
+ 	 shared objects, so make sure we pick it up too.  Having
+ 	 symbol information for the dynamic linker is quite crucial
+ 	 for skipping dynamic linker resolver code.  */
+       if (lm == 0 && ldsomap == 0)
+-	lm = ldsomap = solib_svr4_r_ldsomap (info);
++	{
++	  lm = ldsomap = solib_svr4_r_ldsomap (info);
++	  prev_lm = 0;
++	}
+ 
+       discard_cleanups (old_chain);
+     }
+--- src/gdb/config/djgpp/fnchange.lst	2010/04/09 15:15:05	1.112
++++ src/gdb/config/djgpp/fnchange.lst	2010/04/23 21:44:19	1.113
+@@ -397,6 +397,7 @@
+ @V@/gdb/testsuite/gdb.base/siginfo-obj.c @V@/gdb/testsuite/gdb.base/si-obj.c
+ @V@/gdb/testsuite/gdb.base/siginfo-addr.exp @V@/gdb/testsuite/gdb.base/si-addr.exp
+ @V@/gdb/testsuite/gdb.base/siginfo-obj.exp @V@/gdb/testsuite/gdb.base/si-obj.exp
++@V@/gdb/testsuite/gdb.base/solib-corrupted.exp @V@/gdb/testsuite/gdb.base/so-crptd.exp
+ @V@/gdb/testsuite/gdb.base/solib-disc.c @V@/gdb/testsuite/gdb.base/so-disc.c
+ @V@/gdb/testsuite/gdb.base/solib-display-lib.c @V@/gdb/testsuite/gdb.base/so-displib.c
+ @V@/gdb/testsuite/gdb.base/solib-display-main.c @V@/gdb/testsuite/gdb.base/so-dispmain.c
+### src/gdb/testsuite/ChangeLog	2010/04/23 18:03:31	1.2252
+### src/gdb/testsuite/ChangeLog	2010/04/23 21:44:20	1.2253
+## -1,3 +1,8 @@
++2010-04-23  Jan Kratochvil  <jan.kratochvil@redhat.com>
++
++	Fix deadlock on looped list of loaded shared objects.
++	* gdb.base/solib-corrupted.exp: New.
++
+ 2010-04-23  Doug Evans  <dje@google.com>
+ 
+ 	* gdb.python/py-section-script.c: New file.
+--- src/gdb/testsuite/gdb.base/solib-corrupted.exp
++++ src/gdb/testsuite/gdb.base/solib-corrupted.exp	2010-05-24 18:00:52.057995000 +0000
+@@ -0,0 +1,46 @@
++# Copyright 2010 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++set testfile "solib-corrupted"
++set srcfile start.c
++
++if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile}] } {
++    untested ${testfile}.exp
++    return -1
++}
++
++if ![runto_main] {
++    fail "Can't run to main"
++    return
++}
++
++gdb_test "info sharedlibrary" "" "normal list"
++
++# GDB checks there for matching L_PREV.
++set test "make solibs looping"
++gdb_test_multiple "p/x _r_debug->r_map->l_next = _r_debug->r_map" $test {
++    -re "(No symbol \"_r_debug\" in current context\\.|Attempt to extract a component of a value that is not a structure pointer\\.)\r\n$gdb_prompt $" {
++	# glibc debug info is not available and it is too difficult to find and
++	# parse it from this testcase without the gdb supporting functions.
++	verbose -log "no _r_debug symbol has been found"
++	xfail $test
++	untested ${testfile}.exp
++	return
++    }
++    -re " = 0x\[0-9a-f\]+\r\n$gdb_prompt $" {
++	pass $test
++    }
++}
++gdb_test "info sharedlibrary" "warning: Corrupted shared library list\r\n.*" "corrupted list"
+
+
+
+Re: [patch] Fix crash on /proc/PID/stat race
+http://sourceware.org/ml/gdb-patches/2010-05/msg00685.html
+http://sourceware.org/ml/gdb-cvs/2010-05/msg00244.html
+
+### src/gdb/ChangeLog	2010/05/28 18:00:41	1.11855
+### src/gdb/ChangeLog	2010/05/28 18:23:13	1.11856
+## -1,5 +1,10 @@
+ 2010-05-28  Jan Kratochvil  <jan.kratochvil@redhat.com>
+ 
++	* linux-nat.c (linux_nat_core_of_thread_1): Fix crash on invalid
++	CONTENT.
++
++2010-05-28  Jan Kratochvil  <jan.kratochvil@redhat.com>
++
+ 	* linux-nat.c (linux_nat_wait_1): Do not call
+ 	linux_nat_core_of_thread_1 on TARGET_WAITKIND_EXITED or
+ 	TARGET_WAITKIND_SIGNALLED.
+--- src/gdb/linux-nat.c	2010/05/28 18:00:46	1.169
++++ src/gdb/linux-nat.c	2010/05/28 18:23:15	1.170
+@@ -5509,15 +5509,21 @@
+   make_cleanup (xfree, content);
+ 
+   p = strchr (content, '(');
+-  p = strchr (p, ')') + 2; /* skip ")" and a whitespace. */
++
++  /* Skip ")".  */
++  if (p != NULL)
++    p = strchr (p, ')');
++  if (p != NULL)
++    p++;
+ 
+   /* If the first field after program name has index 0, then core number is
+      the field with index 36.  There's no constant for that anywhere.  */
+-  p = strtok_r (p, " ", &ts);
+-  for (i = 0; i != 36; ++i)
++  if (p != NULL)
++    p = strtok_r (p, " ", &ts);
++  for (i = 0; p != NULL && i != 36; ++i)
+     p = strtok_r (NULL, " ", &ts);
+ 
+-  if (sscanf (p, "%d", &core) == 0)
++  if (p == NULL || sscanf (p, "%d", &core) == 0)
+     core = -1;
+ 
+   do_cleanups (back_to);
+### src/gdb/gdbserver/ChangeLog	2010/05/26 22:40:22	1.386
+### src/gdb/gdbserver/ChangeLog	2010/05/28 18:23:15	1.387
+## -1,3 +1,8 @@
++2010-05-28  Jan Kratochvil  <jan.kratochvil@redhat.com>
++
++	* linux-low.c (linux_core_of_thread): Fix crash on invalid CONTENT.
++	New comment.
++
+ 2010-05-26  Ozkan Sezer  <sezeroz@gmail.com>
+ 
+ 	* gdbreplay.c (remote_open): Check error return from socket() call by
+--- src/gdb/gdbserver/linux-low.c	2010/05/03 04:02:20	1.148
++++ src/gdb/gdbserver/linux-low.c	2010/05/28 18:23:15	1.149
+@@ -4346,13 +4346,21 @@
+     }
+ 
+   p = strchr (content, '(');
+-  p = strchr (p, ')') + 2; /* skip ")" and a whitespace. */
+ 
+-  p = strtok_r (p, " ", &ts);
+-  for (i = 0; i != 36; ++i)
++  /* Skip ")".  */
++  if (p != NULL)
++    p = strchr (p, ')');
++  if (p != NULL)
++    p++;
++
++  /* If the first field after program name has index 0, then core number is
++     the field with index 36.  There's no constant for that anywhere.  */
++  if (p != NULL)
++    p = strtok_r (p, " ", &ts);
++  for (i = 0; p != NULL && i != 36; ++i)
+     p = strtok_r (NULL, " ", &ts);
+ 
+-  if (sscanf (p, "%d", &core) == 0)
++  if (p == NULL || sscanf (p, "%d", &core) == 0)
+     core = -1;
+ 
+   free (content);
+
+
+
+Re: [patch] testsuite: watchthreads-reorder: Linux kernel compat.
+http://sourceware.org/ml/gdb-patches/2010-05/msg00696.html
+http://sourceware.org/ml/gdb-cvs/2010-05/msg00255.html
+
+### src/gdb/testsuite/ChangeLog	2010/05/28 23:47:40	1.2293
+### src/gdb/testsuite/ChangeLog	2010/05/31 03:31:16	1.2294
+## -1,3 +1,11 @@
++2010-05-31  Jan Kratochvil  <jan.kratochvil@redhat.com>
++
++	Accept the new Linux kernel "t (tracing stop)" string.
++	* gdb.threads/watchthreads-reorder.c (thread1_func, thread2_func):
++	Update comment.
++	(state_wait) <T (tracing stop)>: New.
++	(main): Update the state_wait expect string.
++
+ 2010-05-28  Pedro Alves  <pedro@codesourcery.com>
+ 
+ 	* limits.c, limits.exp: Delete files.
+--- src/gdb/testsuite/gdb.threads/watchthreads-reorder.c	2010/01/20 21:09:30	1.3
++++ src/gdb/testsuite/gdb.threads/watchthreads-reorder.c	2010/05/31 03:31:17	1.4
+@@ -99,7 +99,7 @@
+ 
+   rwatch_store = thread1_rwatch;
+ 
+-  /* Be sure the "T (tracing stop)" test can proceed for both threads.  */
++  /* Be sure the "t (tracing stop)" test can proceed for both threads.  */
+   timed_mutex_lock (&terminate_mutex);
+   i = pthread_mutex_unlock (&terminate_mutex);
+   assert (i == 0);
+@@ -125,7 +125,7 @@
+ 
+   rwatch_store = thread2_rwatch;
+ 
+-  /* Be sure the "T (tracing stop)" test can proceed for both threads.  */
++  /* Be sure the "t (tracing stop)" test can proceed for both threads.  */
+   timed_mutex_lock (&terminate_mutex);
+   i = pthread_mutex_unlock (&terminate_mutex);
+   assert (i == 0);
+@@ -211,6 +211,13 @@
+   do
+     {
+       state = proc_string (filename, "State:\t");
++
++      /* torvalds/linux-2.6.git 464763cf1c6df632dccc8f2f4c7e50163154a2c0
++	 has changed "T (tracing stop)" to "t (tracing stop)".  Make the GDB
++	 testcase backward compatible with older Linux kernels.  */
++      if (strcmp (state, "T (tracing stop)") == 0)
++	state = "t (tracing stop)";
++
+       if (strcmp (state, wanted) == 0)
+ 	{
+ 	  free (filename);
+@@ -336,9 +343,9 @@
+     {
+       /* s390x-unknown-linux-gnu will fail with "R (running)".  */
+ 
+-      state_wait (thread1_tid, "T (tracing stop)");
++      state_wait (thread1_tid, "t (tracing stop)");
+ 
+-      state_wait (thread2_tid, "T (tracing stop)");
++      state_wait (thread2_tid, "t (tracing stop)");
+     }
+ 
+   cleanup ();

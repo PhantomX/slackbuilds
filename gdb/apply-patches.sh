@@ -34,6 +34,8 @@ ApplyPatch() {
   esac
 }
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+
 ApplyPatch gdb-upstream.patch
 
 # The merged branch `archer' of: http://sourceware.org/gdb/wiki/ProjectArcher
@@ -393,5 +395,66 @@ ApplyPatch gdb-bz570635-prettyprint-doc2.patch
 
 # Fix crash when using GNU IFUNC call from breakpoint condition.
 ApplyPatch gdb-bz539590-gnu-ifunc-fix-cond.patch
+
+
+# Fail gracefully if the _Unwind_DebugHook arg. is optimized out (Tom Tromey).
+# Make _Unwind_DebugHook independent from step-resume breakpoint (Tom Tromey).
+ApplyPatch gdb-unwind-debughook-safe-fail.patch
+ApplyPatch gdb-unwind-debughook-step-independent.patch
+
+# testsuite: Fix gdb.base/vla-overflow.exp FAILing on s390x (BZ 590635).
+ApplyPatch gdb-archer-vla-test-oom.patch
+
+# Workaround non-stop moribund locations exploited by kernel utrace (BZ 590623).
+ApplyPatch gdb-moribund-utrace-workaround.patch
+
+# Fix crash on VLA bound referencing an optimized-out variable (BZ 591879).
+ApplyPatch gdb-archer-vla-ref-optimizedout.patch
+
+# Remove core file when starting a process (BZ 594560).
+ApplyPatch gdb-bz594560-core-vs-process.patch
+
+# Import fix of TUI layout internal error (BZ 595475).
+ApplyPatch gdb-bz595475-tui-layout.patch
+
+# Fix and support DW_OP_*piece (Tom Tromey, BZ 589467).
+ApplyPatch gdb-bz589467-pieces01of4.patch
+ApplyPatch gdb-bz589467-pieces02of4.patch
+ApplyPatch gdb-bz589467-pieces03of4.patch
+ApplyPatch gdb-bz589467-pieces1of4.patch
+ApplyPatch gdb-bz589467-pieces2of4.patch
+ApplyPatch gdb-bz589467-pieces3of4.patch
+ApplyPatch gdb-bz589467-pieces4of4.patch
+ApplyPatch gdb-bz589467-pieces-vla-compat.patch
+
+# Fix follow-exec for C++ programs (bugreported by Martin Stransky).
+ApplyPatch gdb-archer-next-over-throw-cxx-exec.patch
+
+# Fix ADL anonymous type crash (BZ 600746, Sami Wagiaalla).
+ApplyPatch gdb-bz600746-koenig-crash.patch
+
+# Backport DWARF-4 support (BZ 601887, Tom Tromey).
+ApplyPatch gdb-bz601887-dwarf4-1of2.patch
+ApplyPatch gdb-bz601887-dwarf4-2of2.patch
+ApplyPatch gdb-bz601887-dwarf4-rh-test.patch
+
+# Fix obstack corruptions on C++ (BZ 606185, Chris Moller, Jan Kratochvil).
+ApplyPatch gdb-bz606185-obstack-1of5.patch
+ApplyPatch gdb-bz606185-obstack-2of5.patch
+ApplyPatch gdb-bz606185-obstack-3of5.patch
+ApplyPatch gdb-bz606185-obstack-4of5.patch
+ApplyPatch gdb-bz606185-obstack-5of5.patch
+
+# Improve support for typedefs in classes (BZ 602314).
+ApplyPatch gdb-bz602314-ptype-class-typedef-1of3.patch
+ApplyPatch gdb-bz602314-ptype-class-typedef-2of3.patch
+ApplyPatch gdb-bz602314-ptype-class-typedef-3of3.patch
+
+# Fix `set print object on' for some non-dynamic classes (BZ 606660).
+ApplyPatch gdb-bz606660-print-object-nonvirtual.patch
+
+# Print 2D C++ vectors as matrices (BZ 562763, sourceware10659, Chris Moller).
+ApplyPatch gdb-bz562763-pretty-print-2d-vectors-prereq.patch
+ApplyPatch gdb-bz562763-pretty-print-2d-vectors.patch
 
 set +e +o pipefail

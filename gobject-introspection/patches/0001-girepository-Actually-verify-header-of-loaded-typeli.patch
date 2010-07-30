@@ -1,0 +1,409 @@
+From 05ffd85793207a40264a701de609614ba6e32d44 Mon Sep 17 00:00:00 2001
+From: Colin Walters <walters@verbum.org>
+Date: Wed, 14 Jul 2010 11:59:11 -0400
+Subject: [PATCH] [girepository] Actually verify header of loaded typelibs in g_irepository_require
+
+Take a GError * for typelib loading code, validate the header.  This
+fixes bizarre errors from gjs where g_irepository_require would happily
+load old typelibs.
+---
+ girepository/girepository.c |    4 +-
+ girepository/girmodule.c    |    8 +++-
+ girepository/gitypelib.c    |   71 +++++++++++++++++++++++--------
+ girepository/gitypelib.h    |   13 ++++--
+ tools/compiler.c            |    4 +-
+ tools/generate.c            |   96 ++++++-------------------------------------
+ 6 files changed, 87 insertions(+), 109 deletions(-)
+
+diff --git a/girepository/girepository.c b/girepository/girepository.c
+index ba6756e..ef3d6d2 100644
+--- a/girepository/girepository.c
++++ b/girepository/girepository.c
+@@ -1221,7 +1221,9 @@ g_irepository_require (GIRepository  *repository,
+       goto out;
+     }
+ 
+-  typelib = g_typelib_new_from_mapped_file (mfile);
++  typelib = g_typelib_new_from_mapped_file (mfile, error);
++  if (!typelib)
++    goto out;
+   header = (Header *) typelib->data;
+   typelib_namespace = g_typelib_get_string (typelib, header->namespace);
+   typelib_version = g_typelib_get_string (typelib, header->nsversion);
+diff --git a/girepository/girmodule.c b/girepository/girmodule.c
+index 1c62319..066d516 100644
+--- a/girepository/girmodule.c
++++ b/girepository/girmodule.c
+@@ -206,6 +206,7 @@ GTypelib *
+ g_ir_module_build_typelib (GIrModule  *module,
+ 			     GList       *modules)
+ {
++  GError *error = NULL;
+   GTypelib *typelib;
+   gsize length;
+   guint i;
+@@ -434,7 +435,12 @@ g_ir_module_build_typelib (GIrModule  *module,
+   data = g_realloc (data, offset2);
+   header = (Header*) data;
+   length = header->size = offset2;
+-  typelib = g_typelib_new_from_memory (data, length);
++  typelib = g_typelib_new_from_memory (data, length, &error);
++  if (!typelib)
++    {
++      g_error ("error building typelib: %s",
++	       error->message);
++    }
+ 
+   g_hash_table_destroy (strings);
+   g_hash_table_destroy (types);
+diff --git a/girepository/gitypelib.c b/girepository/gitypelib.c
+index 0741bcb..5469e8b 100644
+--- a/girepository/gitypelib.c
++++ b/girepository/gitypelib.c
+@@ -260,30 +260,30 @@ validate_name (GTypelib   *typelib,
+   return TRUE;
+ }
+ 
++/* Fast path sanity check, operates on a memory blob */
+ static gboolean
+-validate_header (ValidateContext  *ctx,
+-		 GError          **error)
++validate_header_basic (const guint8   *memory,
++		       gsize           len,
++		       GError        **error)
+ {
+-  GTypelib *typelib = ctx->typelib;
+-  Header *header;
++  Header *header = (Header *)memory;
+ 
+-  if (typelib->len < sizeof (Header))
++  if (len < sizeof (Header))
+     {
+       g_set_error (error,
+ 		   G_TYPELIB_ERROR,
+ 		   G_TYPELIB_ERROR_INVALID,
+-		   "The buffer is too short");
++		   "The specified typelib length %" G_GSIZE_FORMAT " is too short",
++		   len);
+       return FALSE;
+     }
+ 
+-  header = (Header *)typelib->data;
+-
+   if (strncmp (header->magic, G_IR_MAGIC, 16) != 0)
+     {
+       g_set_error (error,
+ 		   G_TYPELIB_ERROR,
+ 		   G_TYPELIB_ERROR_INVALID_HEADER,
+-		   "Magic string not found");
++		   "Invalid magic header");
+       return FALSE;
+ 
+     }
+@@ -293,7 +293,7 @@ validate_header (ValidateContext  *ctx,
+       g_set_error (error,
+ 		   G_TYPELIB_ERROR,
+ 		   G_TYPELIB_ERROR_INVALID_HEADER,
+-		   "Version mismatch; expected 3, found %d",
++		   "Typelib version mismatch; expected 3, found %d",
+ 		   header->major_version);
+       return FALSE;
+ 
+@@ -308,12 +308,13 @@ validate_header (ValidateContext  *ctx,
+       return FALSE;
+     }
+ 
+-  if (header->size != typelib->len)
++  if (header->size != len)
+     {
+       g_set_error (error,
+ 		   G_TYPELIB_ERROR,
+ 		   G_TYPELIB_ERROR_INVALID_HEADER,
+-		   "Typelib size mismatch");
++		   "Typelib size %" G_GSIZE_FORMAT " does not match %" G_GSIZE_FORMAT,
++		   header->size, len);
+       return FALSE;
+     }
+ 
+@@ -378,9 +379,24 @@ validate_header (ValidateContext  *ctx,
+       return FALSE;
+     }
+ 
+-  if (!validate_name (typelib, "namespace", typelib->data, header->namespace, error))
++  return TRUE;
++}
++
++static gboolean
++validate_header (ValidateContext  *ctx,
++		 GError          **error)
++{
++  GTypelib *typelib = ctx->typelib;
++  
++  if (!validate_header_basic (typelib->data, typelib->len, error))
+     return FALSE;
+ 
++  {
++    Header *header = (Header*)typelib->data;
++    if (!validate_name (typelib, "namespace", typelib->data, header->namespace, error))
++      return FALSE;
++  }
++
+   return TRUE;
+ }
+ 
+@@ -2056,6 +2072,7 @@ _g_typelib_ensure_open (GTypelib *typelib)
+  * g_typelib_new_from_memory:
+  * @memory: address of memory chunk containing the typelib
+  * @len: length of memory chunk containing the typelib
++ * @error: a #GError
+  *
+  * Creates a new #GTypelib from a memory location.  The memory block
+  * pointed to by @typelib will be automatically g_free()d when the
+@@ -2064,10 +2081,15 @@ _g_typelib_ensure_open (GTypelib *typelib)
+  * Return value: the new #GTypelib
+  **/
+ GTypelib *
+-g_typelib_new_from_memory (guchar *memory, gsize len)
++g_typelib_new_from_memory (guint8  *memory, 
++			   gsize    len,
++			   GError **error)
+ {
+   GTypelib *meta;
+ 
++  if (!validate_header_basic (memory, len, error))
++    return NULL;
++
+   meta = g_slice_new0 (GTypelib);
+   meta->data = memory;
+   meta->len = len;
+@@ -2081,16 +2103,22 @@ g_typelib_new_from_memory (guchar *memory, gsize len)
+  * g_typelib_new_from_const_memory:
+  * @memory: address of memory chunk containing the typelib
+  * @len: length of memory chunk containing the typelib
++ * @error: A #GError
+  *
+  * Creates a new #GTypelib from a memory location.
+  *
+  * Return value: the new #GTypelib
+  **/
+ GTypelib *
+-g_typelib_new_from_const_memory (const guchar *memory, gsize len)
++g_typelib_new_from_const_memory (const guchar *memory, 
++				 gsize         len,
++				 GError      **error)
+ {
+   GTypelib *meta;
+ 
++  if (!validate_header_basic (memory, len, error))
++    return NULL;
++
+   meta = g_slice_new0 (GTypelib);
+   meta->data = (guchar *) memory;
+   meta->len = len;
+@@ -2103,21 +2131,28 @@ g_typelib_new_from_const_memory (const guchar *memory, gsize len)
+ /**
+  * g_typelib_new_from_mapped_file:
+  * @mfile: a #GMappedFile, that will be free'd when the repository is destroyed
++ * @error: a #GError
+  *
+  * Creates a new #GTypelib from a #GMappedFile.
+  *
+  * Return value: the new #GTypelib
+  **/
+ GTypelib *
+-g_typelib_new_from_mapped_file (GMappedFile *mfile)
++g_typelib_new_from_mapped_file (GMappedFile  *mfile,
++				GError      **error)
+ {
+   GTypelib *meta;
++  guint8 *data = (guint8 *) g_mapped_file_get_contents (mfile);
++  gsize len = g_mapped_file_get_length (mfile);
++
++  if (!validate_header_basic (data, len, error))
++    return NULL;
+ 
+   meta = g_slice_new0 (GTypelib);
+   meta->mfile = mfile;
+   meta->owns_memory = FALSE;
+-  meta->data = (guchar *) g_mapped_file_get_contents (mfile);
+-  meta->len = g_mapped_file_get_length (mfile);
++  meta->data = data; 
++  meta->len = len;
+ 
+   return meta;
+ }
+diff --git a/girepository/gitypelib.h b/girepository/gitypelib.h
+index 5d5eda5..0a61008 100644
+--- a/girepository/gitypelib.h
++++ b/girepository/gitypelib.h
+@@ -34,11 +34,14 @@ G_BEGIN_DECLS
+ 
+ typedef struct _GTypelib GTypelib;
+ 
+-GTypelib *    g_typelib_new_from_memory       (guchar       *memory,
+-                                               gsize         len);
+-GTypelib *    g_typelib_new_from_const_memory (const guchar *memory,
+-                                               gsize         len);
+-GTypelib *    g_typelib_new_from_mapped_file  (GMappedFile  *mfile);
++GTypelib *    g_typelib_new_from_memory       (guint8        *memory,
++                                               gsize          len,
++					       GError       **error);
++GTypelib *    g_typelib_new_from_const_memory (const guint8  *memory,
++                                               gsize          len,
++					       GError       **error);
++GTypelib *    g_typelib_new_from_mapped_file  (GMappedFile   *mfile,
++					       GError       **error);
+ void          g_typelib_free                  (GTypelib     *typelib);
+ 
+ gboolean      g_typelib_symbol                (GTypelib     *typelib,
+diff --git a/tools/compiler.c b/tools/compiler.c
+index e6cddb8..d066428 100644
+--- a/tools/compiler.c
++++ b/tools/compiler.c
+@@ -54,6 +54,7 @@ format_output (GTypelib *typelib)
+ 
+   result = g_string_sized_new (6 * typelib->len);
+ 
++  g_string_append_printf (result, "/* GENERATED CODE - DO NOT EDIT */\n");
+   g_string_append_printf (result, "#include <stdlib.h>\n");
+   g_string_append_printf (result, "#include <girepository.h>\n\n");
+   
+@@ -84,7 +85,8 @@ format_output (GTypelib *typelib)
+ 			      "register_typelib (void)\n"
+ 			      "{\n"
+ 			      "\tGTypelib *typelib;\n"
+-			      "\ttypelib = g_typelib_new_from_const_memory (_G_TYPELIB, _G_TYPELIB_SIZE);\n"
++			      "\ttypelib = g_typelib_new_from_const_memory (_G_TYPELIB, _G_TYPELIB_SIZE, NULL);\n"
++			      "\tg_assert (typelib != NULL);\n"
+ 			      "\tg_irepository_load_typelib (NULL, typelib, G_IREPOSITORY_LOAD_FLAG_LAZY, NULL);\n"
+ 			      "}\n\n");
+     }
+diff --git a/tools/generate.c b/tools/generate.c
+index cd1fedc..b456901 100644
+--- a/tools/generate.c
++++ b/tools/generate.c
+@@ -29,45 +29,6 @@
+ #include "girepository.h"
+ #include "gitypelib-internal.h"
+ 
+-static const guchar *
+-load_typelib (const gchar  *filename,
+-	      GModule     **dlhandle,
+-	      gsize        *len)
+-{
+-  guchar *typelib;
+-  gsize *typelib_size;
+-  GModule *handle;
+-
+-  handle = g_module_open (filename, G_MODULE_BIND_LOCAL|G_MODULE_BIND_LAZY);
+-  if (handle == NULL)
+-    {
+-      g_printerr ("Could not load typelib from '%s': %s\n",
+-		  filename, g_module_error ());
+-      return NULL;
+-    }
+-
+-  if (!g_module_symbol (handle, "_G_TYPELIB", (gpointer *) &typelib))
+-    {
+-      g_printerr ("Could not load typelib from '%s': %s\n",
+-		  filename, g_module_error ());
+-      return NULL;
+-    }
+-
+-  if (!g_module_symbol (handle, "_G_TYPELIB_SIZE", (gpointer *) &typelib_size))
+-    {
+-      g_printerr ("Could not load typelib from '%s': %s\n",
+-		  filename, g_module_error ());
+-      return NULL;
+-    }
+-
+-  *len = *typelib_size;
+-
+-  if (dlhandle)
+-    *dlhandle = handle;
+-
+-  return typelib;
+-}
+-
+ int
+ main (int argc, char *argv[])
+ {
+@@ -114,62 +75,31 @@ main (int argc, char *argv[])
+ 
+   for (i = 0; input[i]; i++)
+     {
+-      GModule *dlhandle = NULL;
+-      const guchar *typelib;
+-      gsize len;
++      GError *error = NULL;
+       const char *namespace;
++      GMappedFile *mfile;
++      GTypelib *typelib;
+ 
+-      if (!shlib)
+-	{
+-	  if (!g_file_get_contents (input[i], (gchar **)&typelib, &len, &error))
+-	    {
+-	      g_fprintf (stderr, "failed to read '%s': %s\n",
+-			 input[i], error->message);
+-	      g_clear_error (&error);
+-	      continue;
+-	    }
+-	}
+-      else
+-	{
+-	  typelib = load_typelib (input[i], &dlhandle, &len);
+-	  if (!typelib)
+-	    {
+-	      g_fprintf (stderr, "failed to load typelib from '%s'\n",
+-			 input[i]);
+-	      continue;
+-	    }
+-	}
++      mfile = g_mapped_file_new (input[i], FALSE, &error);
++      if (!mfile)
++	g_error ("failed to read '%s': %s", input[i], error->message);
+ 
+       if (input[i + 1] && output)
+ 	needs_prefix = TRUE;
+       else
+ 	needs_prefix = FALSE;
+ 
+-      data = g_typelib_new_from_const_memory (typelib, len);
+-      {
+-        GError *error = NULL;
+-        if (!g_typelib_validate (data, &error)) {
+-          g_printerr ("typelib not valid: %s\n", error->message);
+-          g_clear_error (&error);
+-	  return 1;
+-        }
+-      }
+-      namespace = g_irepository_load_typelib (g_irepository_get_default (), data, 0,
++      typelib = g_typelib_new_from_mapped_file (mfile, &error);
++      if (!typelib)
++	g_error ("failed to create typelib '%s': %s", input[i], error->message);
++
++      namespace = g_irepository_load_typelib (g_irepository_get_default (), typelib, 0,
+ 					      &error);
+       if (namespace == NULL)
+-	{
+-	  g_printerr ("failed to load typelib: %s\n", error->message);
+-	  return 1;
+-	}
+-
++	g_error ("failed to load typelib: %s", error->message);
++      
+       gir_writer_write (output, namespace, needs_prefix, show_all);
+ 
+-      if (dlhandle)
+-	{
+-	  g_module_close (dlhandle);
+-	  dlhandle = NULL;
+-	}
+-
+       /* when writing to stdout, stop after the first module */
+       if (input[i + 1] && !output)
+ 	{
+-- 
+1.7.1.1
+

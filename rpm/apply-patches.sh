@@ -12,6 +12,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.8.0-no-man-dirs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.8.0-pythondeps-parallel.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.8.0-python-bytecompile.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.8.0-findlang-localedirs.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.8.1-eat-stdin.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.8.1-getoutput-emsg.patch
 
 # These are not yet upstream
 zcat ${SB_PATCHDIR}/rpm-4.6.0-niagara.patch.gz | patch -p1 -E --backup --verbose

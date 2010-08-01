@@ -18,7 +18,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-libtool-no-rpath.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-pr38757.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-no-add-needed-slk.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-pr44542.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-pr44942.patch
 
 # From Gentoo
 patch -p0 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_gcc-default-fortify-source.patch

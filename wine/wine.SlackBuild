@@ -41,9 +41,12 @@ if [ ! -d ${TMP} ]; then
 fi
 
 NAME=wine
-PKG=${PKG:-${TMP}/package-${NAME}}
+NAME32=wine-compat32
+PKGF=${PKG:-${TMP}/package-${NAME}}
+PKG=${PKGF}/${NAME}
+PKG32=${PKGF}/${NAME32}
 
-VERSION=${VERSION:-1.2}
+VERSION=${VERSION:-1.3.0}
 # configure.ac
 PPAVER=${PPAVER:-0.35}
 # pulse
@@ -52,14 +55,17 @@ PPAVER2=${PPAVER2:-0.38}
 PPAVER3=${PPAVER3:-0.38}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
+  ARCH32=${ARCH32:-$(linux32 uname -m)}
 else
   ARCH=${ARCH:-i686}
 fi
 if [ "${ARCH}" = "x86_64" ] ;then
+  ARCH32=${ARCH32:-i686}
   SLKTARGET=${SLKTARGET:-x86_64}
 else
   SLKTARGET=${SLKTARGET:-i486}
 fi
+[ "${SLKTARGET}" = "x86_64" ] && SLKTARGET32=${SLKTARGET32:-i486}
 SLKDTARGET=${SLKDTARGET:-slackware}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
@@ -68,6 +74,7 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+PKGNAME32=${NAME32}-$(echo ${VERSION} | tr - . )-${ARCH32}-${BUILD}${PACKAGER_ID}
 
 # Set to YES to enable pulseaudio support
 SB_PA=${SB_PA:-YES}
@@ -82,6 +89,7 @@ SB_WPDIR=${CWD}/patches/winepulse
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.bz2
+SSRCARCHIVE=${SRCARCHIVE}.sign
 # see http://bugs.winehq.org/show_bug.cgi?id=10495
 # and http://art.ified.ca/?page_id=40
 PPASRCARCHIVE=winepulse-${PPAVER}-configure.ac.patch
@@ -92,11 +100,13 @@ DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
-DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+DL_URL="${SF_MIRROR}/${NAME}"
 PDL_URL="http://art.ified.ca/downloads/winepulse"
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+for file in ${SRCARCHIVE} ${SSRCARCHIVE} ;do
+  test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
+done
 mkdir -p ${SB_WPDIR}
 for file in ${PPASRCARCHIVE} ${PPASRCARCHIVE2} ${PPASRCARCHIVE3}; do
   test -r ${SB_WPDIR}/${file} || ${DL_PROG} -P ${SB_WPDIR} ${DL_OPTS} ${PDL_URL}/${file} || exit 1
@@ -108,35 +118,37 @@ else
   case "${ARCH}" in
     i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
                  ;;
-    s390)        SLKCFLAGS="-O2"
-                 ;;
     x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+    s390|*)      SLKCFLAGS="-O2"
                  ;;
   esac
 fi
 if [ "${ARCH}" = "x86_64" ] ;then
   LIBDIRSUFFIX="64"
-  ARCHOPT="--enable-win64"
-  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+  echo "This is a x86_64 build!"
+  echo "Remember to have the needed multilib packages instaled too!"
+  sleep 5
 else
   LIBDIRSUFFIX=""
   [ "${SLKTARGET}" = "x86_64" ] && SLKTARGET=i486
-  ARCHOPT=""
   export CC="gcc -m32"
   export CXX="g++ -m32"
   export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:${PKG_CONFIG_PATH}"
 fi
 
-if [ -d ${PKG} ]; then
+if [ -d ${PKGF} ]; then
   # Clean up a previous build
-  rm -rf ${PKG}
+  rm -rf ${PKGF}
 fi
-mkdir -p ${PKG}
+mkdir -p ${PKG} ${PKG32}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
+
+SB_SROOT="$(pwd)"
 
 chmod -R u+w,go+r-w,a-s .
 
@@ -146,6 +158,7 @@ fi
 
 sed -i.rpath \
   -e '/WINE_TRY_CFLAGS/s| -Wl,--rpath,\\$ORIGIN/../lib||g' \
+  -e '/WINE_TRY_CFLAGS/s| -Wl,-R,\$ORIGIN/../lib/||g' \
   -e '/LDRPATH_INSTALL=/s|=".*RELPATH.*"|=""|g' \
   -e '/LDRPATH_LOCAL=/s|=".*"|=""|g' \
   configure.ac || exit 1
@@ -161,13 +174,11 @@ fi
 
 autoreconf -ivf || exit 1
 
-( unset ARCH
-
+SB_CONFIGURE() {
 CFLAGS="${SLKCFLAGS} -Wno-error" \
 CXXFLAGS="${SLKCFLAGS}" \
-./configure \
+../configure \
   --prefix=/usr \
-  --libdir=/usr/lib${LIBDIRSUFFIX} \
   --datadir=/usr/share \
   --sysconfdir=/etc/wine \
   --localstatedir=/var/lib \
@@ -177,24 +188,75 @@ CXXFLAGS="${SLKCFLAGS}" \
   --disable-tests \
   --with-x \
   --x-includes=/usr/include \
-  --x-libraries=/usr/lib${LIBDIRSUFFIX} \
-  ${SB_PAOPTS} ${ARCHOPT} ${SB_MMOPTS} \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
+  ${SB_PAOPTS} \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux \
+  $@ || return $?
 
-make TARGETFLAGS="" -j${NJOBS} || make TARGETFLAGS="" || exit $?
-make install DESTDIR=${PKG} \
+  make depend || return $?
+  make -j${NJOBS} || make
+
+}
+
+SB_INSTALL() {
+  make install DESTDIR="$1" \
   LDCONFIG=/bin/true \
-  UPDATE_DESKTOP_DATABASE=/bin/true || exit $?
+  UPDATE_DESKTOP_DATABASE=/bin/true
+}
 
-) || exit $?
+if [ "${ARCH}" = "x86_64" ] ;then
+# Multilib build
+  mkdir build64 build32
 
+# 64-bit build
+  ( unset ARCH
+    cd build64 || exit $?
+    SLKCFLAGS="${SLKCFLAGS} -fPIC"
+    SB_CONFIGURE \
+      --libdir=/usr/lib${LIBDIRSUFFIX} \
+      --x-libraries=/usr/lib${LIBDIRSUFFIX} \
+      --enable-win64 ${SB_MMOPTS} \
+      --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
+  ) || exit $?
+
+# 32-bit build
+  ( unset ARCH
+    cd build32 || exit $?
+    export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/pkgconfig:${PKG_CONFIG_PATH}"
+    SB_CONFIGURE \
+      --libdir=/usr/lib \
+      --x-libraries=/usr/lib \
+      --with-wine64="${SB_SROOT}/build64" || exit $?
+    SB_INSTALL ${PKG32} || exit $?
+  ) || exit $?
+
+  ( unset ARCH; cd build64 && SB_INSTALL ${PKG} ) || exit $?
+
+  mkdir -p ${PKG32}/etc/ld.so.conf.d
+  echo "/usr/lib/wine" \
+    > ${PKG32}/etc/ld.so.conf.d/51-wine-${ARCH32}.conf || exit 1
+  rm -rf ${PKG32}/usr/include
+
+else
+
+[ "${ARCH}" = "x86_64" ] && SLKCFLAGS="${SLKCFLAGS} -fPIC"
+
+# Normal build
+  ( unset ARCH
+    SB_CONFIGURE \
+      --libdir=/usr/lib${LIBDIRSUFFIX} \
+      --x-libraries=/usr/lib${LIBDIRSUFFIX} \
+      --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
+    SB_INSTALL ${PKG} || exit $?
+  ) || exit $?
+fi
+  
 mkdir -p ${PKG}/etc/wine
 
 mkdir -p ${PKG}/etc/ld.so.conf.d
 echo "/usr/lib${LIBDIRSUFFIX}/wine" \
   > ${PKG}/etc/ld.so.conf.d/50-wine-${ARCH}.conf || exit 1
 
-find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
+find ${PKGF} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 # add wine dir to desktop
@@ -280,6 +342,11 @@ fi
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
+if [ "${ARCH}" = "x86_64" ] ;then
+  mkdir -p ${PKG32}/install
+  cat ${CWD}/slack-desc-compat32 > ${PKG32}/install/slack-desc
+  cat ${CWD}/slack-required > ${PKG32}/install/slack-required
+fi
 
 cat > ${PKG}/install/doinst.sh <<EOF
 #!/bin/sh
@@ -298,7 +365,8 @@ if [ -x usr/bin/update-desktop-database ]; then
 fi
 EOF
 
-cat >> ${PKG}/install/doinst.sh <<'EOF'
+SB_DOINST() {
+cat >> ${1}/install/doinst.sh <<'EOF'
 # Add ld.so.conf.d directory to /etc/ld.so.conf:
 if fgrep ld.so.conf.d etc/ld.so.conf 1> /dev/null 2> /dev/null ; then
   true
@@ -306,14 +374,17 @@ else
   echo 'include /etc/ld.so.conf.d/*.conf' >> etc/ld.so.conf
 fi
 EOF
+}
+SB_DOINST ${PKG}
+[ "${ARCH}" = "x86_64" ] && SB_DOINST ${PKG32}
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
-       ${PKG}/install/slack-desc
+       ${PKG}/install/slack-desc ${PKG32}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/{desktop,patches}
-  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+  install -m0644 ${CWD}/slack-desc* ${CWD}/slack-required ${CWD}/ChangeLog.SB \
                  ${CWD}/apply-patches.sh ${CWD}/wine*-fedora.gz ${CWD}/README-*.gz \
                  ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
@@ -344,6 +415,25 @@ else
   /bin/su -c "${ROOTCOMMANDS}"
 fi
 
+if [ "${ARCH}" = "x86_64" ] ;then
+  ROOTCOMMANDS32="set -o errexit -o xtrace ; cd ${PKG32} ;
+    /bin/chown --recursive root:root .  ;"
+
+  ROOTCOMMANDS32="${ROOTCOMMANDS32}
+    /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME32}.${PKGFORMAT} "
+
+  if test ${UID} = 0; then
+    eval ${ROOTCOMMANDS32}
+    set +o xtrace
+  elif test "$(type -t fakeroot)" = 'file'; then
+    echo -e "\e[1mEntering fakeroot environment.\e[0m"
+    echo ${ROOTCOMMANDS32} | fakeroot
+  else
+    echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+    /bin/su -c "${ROOTCOMMANDS32}"
+  fi
+fi
+
 # Clean up the extra stuff:
 if [ "$1" = "--cleanup" ]; then
   echo "Cleaning..."
@@ -351,7 +441,7 @@ if [ "$1" = "--cleanup" ]; then
     rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
   fi
   if [ -d ${PKG} ]; then
-    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+    rm -rf ${PKGF} && echo "${PKG} cleanup completed"
   fi
   rmdir ${TMP} && echo "${TMP} cleanup completed"
 fi

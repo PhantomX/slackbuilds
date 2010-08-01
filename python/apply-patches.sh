@@ -1,5 +1,5 @@
 
-set -e -o -x pipefail
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
@@ -18,7 +18,7 @@ done
 
 if [ "${ARCH}" = "x86_64" ]; then
   # Install to lib64 instead of lib:
-  patch -p1 -E --backup -z .lib64 --verbose -i ${SB_PATCHDIR}/python-2.7rc1-lib64.patch
+  patch -p1 -E --backup -z .lib64 --verbose -i ${SB_PATCHDIR}/python-2.7rc1-lib64-slk.patch
   patch -p1 -E --backup -z .lib64 --verbose -i ${SB_PATCHDIR}/python-2.7-lib64-sysconfig.patch
   # Python must report /usr/lib64/python2.6/site-packages as python_lib_dir:
   zcat ${SB_PATCHDIR}/${NAME}.pure64.diff.gz |  patch -p1 --verbose

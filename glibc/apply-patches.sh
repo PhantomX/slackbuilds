@@ -3,7 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-PATCHCOM="patch -p1 -s --verbose"
+PATCHCOM="patch -p1 -s --backup --verbose"
 
 ApplyPatch() {
   local patch=$1
@@ -31,7 +31,17 @@ zcat ${SB_PATCHDIR}/glibc.nis-netgroups.diff.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/glibc.ru_RU.CP1251.diff.gz | patch -p1 --verbose
 # Fix missing MAX macro in getcwd.c:
 zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose
+# Fix build with make 3.82:
+ApplyPatch glibc-new-make.patch
+
+if [ "${SB_BOOTSTRP}" = "YES" ] ;then
+  # Multilib - Disable check for forced unwind (Patch from eglibc) since we
+  # do not have a multilib glibc yet to link to;
+  ApplyPatch glibc.pthread-disable-forced-unwind-check.diff
+fi
+
 # Gentoo patches
+patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cfi.patch
 ( SB_PATCHDIR=patches
 
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch

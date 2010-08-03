@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = chinfo-extramimetypes
-VERSION = 7.0
+VERSION = 7.1
 
 DESTDIR =
 PREFIX = /usr

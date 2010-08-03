@@ -17,9 +17,11 @@ unset CDPATH
 unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
-gittree=master
+gitbranch=${gitbranch:-master}
+gittree=${gittree:-master}
 
 [ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
+[ "${gitbranch}" = "${master}" ] || gitbranch="origin/${gitbranch}"
 
 pushd "${tmp}"
   git clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}

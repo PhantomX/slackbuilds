@@ -50,12 +50,6 @@ ApplyOptionalPatch() {
   fi
 }
 
-# Adds layer 7 iptables support
-#ApplyPatch kernel-2.6.25-layer7-2.20.patch.gz | ${PATCHCOM}
-
-#ApplyPatch acpi-dsdt-initrd-v0.9c-2.6.28.patch.gz
-#ApplyPatch acpi-dsdt-initrd-v0.9c-fixes.patch.gz
-
 ApplyOptionalPatch git-linus.diff
 
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
@@ -73,24 +67,17 @@ ApplyOptionalPatch linux-2.6-compile-fixes.patch.gz
 # revert patches from upstream that conflict or that we get via other means
 ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
-ApplyOptionalPatch git-cpufreq.patch.gz
-#ApplyPatch git-bluetooth.patch
-
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
 # Roland's utrace ptrace replacement.
-ApplyPatch linux-2.6-tracehook.patch
-ApplyPatch linux-2.6-utrace.patch
-ApplyPatch linux-2.6-utrace-ptrace.patch
+ApplyPatch git-utrace.patch
+ApplyPatch utrace-ptrace-fix-build.patch
+ApplyPatch utrace-remove-use-of-kref_set.patch
 
 # vm patches
 
-# enable sysrq-c on all kernels, not only kexec
-#ApplyPatch linux-2.6-sysrq-c.patch.gz
-
 # Architecture patches
 # x86(-64)
-ApplyPatch linux-2.6-x86-cfi_sections.patch
 
 #
 # Intel IOMMU
@@ -99,18 +86,19 @@ ApplyPatch linux-2.6-x86-cfi_sections.patch
 #
 # Exec shield
 #
-ApplyPatch linux-2.6-execshield.patch
+ApplyPatch linux-2.6-i386-nx-emulation.patch
+ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 
 #
 # bugfixes to drivers and filesystems
 #
 
 # ext4
+ApplyPatch linux-2.6-ext4-fix-freeze-deadlock.patch
 
 # xfs
 
 # btrfs
-ApplyPatch btrfs-prohibit-a-operation-of-changing-acls-mask-when-noacl-mount-option-is-used.patch
 
 
 # cifs
@@ -118,20 +106,14 @@ ApplyPatch btrfs-prohibit-a-operation-of-changing-acls-mask-when-noacl-mount-opt
 # NFSv4
 
 # USB
-#ApplyPatch linux-2.6-driver-level-usb-autosuspend.diff
-#ApplyPatch linux-2.6-enable-btusb-autosuspend.patch
-#ApplyPatch linux-2.6-usb-uvc-autosuspend.diff.gz
-ApplyPatch linux-2.6-usb-wwan-update.patch
 
 # WMI
 
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
-ApplyPatch linux-2.6-acpi-video-export-edid.patch
 ApplyPatch acpi-ec-add-delay-before-write.patch
-
-ApplyPatch linux-2.6-acpi-sleep-live-sci-live.patch
+ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
@@ -148,6 +130,10 @@ ApplyPatch linux-2.6-debug-always-inline-kzalloc.patch.gz
 ApplyPatch linux-2.6-defaults-pci_no_msi.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
+# disable aspm if acpi doesn't provide an _OSC method
+ApplyPatch pci-acpi-disable-aspm-if-no-osc.patch
+# allow drivers to disable aspm at load time
+ApplyPatch pci-aspm-dont-enable-too-early.patch
 
 #
 # SCSI Bits.
@@ -168,21 +154,15 @@ ApplyPatch linux-2.6-input-kill-stupid-messages.patch
 # stop floppy.ko from autoloading during udev...
 ApplyPatch die-floppy-die.patch
 
-# Get away from having to poll Toshibas
-#ApplyPatch linux-2.6-input-fix-toshiba-hotkeys.patch.gz
-
 ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch.gz
 
-ApplyPatch linux-2.6-input-hid-quirk-egalax.patch
-ApplyPatch thinkpad-acpi-add-x100e.patch
-ApplyPatch thinkpad-acpi-fix-backlight.patch
+#ApplyPatch thinkpad-acpi-fix-backlight.patch
 
 # Allow to use 480600 baud on 16C950 UARTs
 ApplyPatch linux-2.6-serial-460800.patch
 
 # Silence some useless messages that still get printed with 'quiet'
-ApplyPatch linux-2.6-silence-noise.patch.gz
-ApplyPatch pci-hush-rom-warning.patch
+ApplyPatch linux-2.6-silence-noise.patch
 
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
@@ -198,36 +178,18 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 # /dev/crash driver.
 ApplyPatch linux-2.6-crash-driver.patch
 
-# Cantiga chipset b0rkage
-ApplyPatch linux-2.6-cantiga-iommu-gfx.patch
-
 # crypto/
 
-# Add async hash testing (a8f1a05)
-ApplyPatch crypto-add-async-hash-testing.patch
-
 # http://www.lirc.org/
-ApplyPatch lirc-2.6.33.patch
+ApplyPatch lirc-staging-2.6.36.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
 ApplyPatch hdpvr-ir-enable.patch
 
-# Add kernel KSM support
-# Optimize KVM for KSM support
-#ApplyPatch linux-2.6-ksm-kvm.patch
-
 # Assorted Virt Fixes
-ApplyPatch virtqueue-wrappers.patch
-ApplyPatch virt_console-rollup.patch
 ApplyPatch fix_xen_guest_on_old_EC2.patch
 
-ApplyPatch drm-next.patch
-ApplyPatch drm-revert-drm-fbdev-rework-output-polling-to-be-back-in-core.patch
-ApplyPatch revert-drm-kms-toggle-poll-around-switcheroo.patch
-ApplyPatch drm-i915-fix-edp-panels.patch
-ApplyPatch i915-fix-crt-hotplug-regression.patch
-
 # Nouveau DRM + drm fixes
-ApplyPatch drm-nouveau-drm-fixed-header.patch
+ApplyPatch drm-nouveau-updates.patch
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
@@ -246,26 +208,23 @@ ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
+ApplyPatch linux-2.6-v4l-dvb-uvcvideo-update.patch
 
-ApplyPatch linux-2.6-v4l-dvb-gspca-fixes.patch
-
+ApplyPatch linux-2.6-v4l-dvb-ir-core-update.patch
+ApplyPatch linux-2.6-v4l-dvb-ir-core-memleak-fixes.patch
 ApplyPatch linux-2.6-v4l-dvb-add-lgdt3304-support.patch
 ApplyPatch linux-2.6-v4l-dvb-add-kworld-a340-support.patch
 
-ApplyPatch linux-2.6-phylib-autoload.patch
-
 # Patches headed upstream
-ApplyPatch add-appleir-usb-driver.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
-# Refactor UserModeHelper code & satisfy abrt recursion check request
-#ApplyPatch linux-2.6-umh-refactor.patch
-
 # rhbz#533746
-ApplyPatch ssb_check_for_sprom.patch
+#ApplyPatch ssb_check_for_sprom.patch
 
-ApplyPatch quiet-prove_RCU-in-cgroups.patch
+ApplyPatch only-use-alpha2-regulatory-information-from-country-IE.patch
+
+unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 
 set +e +o pipefail +o xtrace

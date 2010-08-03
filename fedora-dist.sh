@@ -28,8 +28,6 @@ set -e
 
 module="${1}"
 
-[ -n "${3}" ] && sarchive="${3}"
-
 fedoraroot="git://pkgs.fedoraproject.org"
 fedorapkgroot="http://pkgs.fedoraproject.org/repo/pkgs"
 
@@ -65,6 +63,16 @@ case "${2}" in
     ;;
 esac
 
+unset sarchive
+while [ -n "${3}" ] ;do
+  case "$3" in
+    *)
+      sarchive="${sarchive} ${3}"
+      ;;
+  esac
+  shift
+done
+
 echo "Downloading from ${module}/${dist}"
 
 tmp=$(mktemp -d)
@@ -80,22 +88,33 @@ pwd=$(pwd)
 
 pushd "${tmp}"
   git clone --depth 1 ${fedoraroot}/${module}
-  [ "${dist}" = "master" ] || git checkout -q origin/${dist}/master
   cd ${module}
-  if [ -f "${sarchive}" ] ;then
-    mv "${sarchive}" "${pwd}"/
+  [ "${dist}" = "master" ] || git checkout -q origin/${dist}/master
+  if [ -n "${sarchive}" ] ; then
+    mv sources sources.tmp
+    for file in ${sarchive} ;do
+      if [ -f "${file}" ] && [ ! -f "${pwd}/${file}" ] ;then
+        mv "${file}" "${pwd}"/
+      else
+        if grep -Eq "^.*  .*${file}$" sources.tmp ;then
+          grep "${file}" sources.tmp >> sources
+        else
+          echo "File \"${file}\" not found"
+          exit 1
+        fi
+      fi
+    done
   else
-    if [ -n "${sarchive}" ] ;then
-      mv sources sources.tmp
-      grep "${sarchive}" sources.tmp > sources
-    fi
-    sed -e 's/  /__/' -i sources
-    for source in $(< sources) ;do
-      file="$(echo ${source} | awk -F'__' '{print $2}')"
-      md5="$(echo ${source} | awk -F'__' '{print $1}')"
+    echo "Downloading all sources"
+  fi
+  sed -e 's/  /__/' -i sources
+  for source in $(< sources) ;do
+    file="$(echo ${source} | awk -F'__' '{print $2}')"
+    md5="$(echo ${source} | awk -F'__' '{print $1}')"
+    if [ ! -f "${pwd}/${file}" ] ;then
       wget ${fedorapkgroot}/${module}/${file}/${md5}/${file}
       [ "$(md5sum ${file} | awk -F'  ' '{print $1}')" = "${md5}" ]
       mv "${file}" "${pwd}"/
-    done
-  fi
+    fi
+  done
 popd >/dev/null

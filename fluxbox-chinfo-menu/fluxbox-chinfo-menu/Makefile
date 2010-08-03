@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = fluxbox-chinfo-menu
-VERSION = 1.0.3
+VERSION = 1.0.4
 
 DESTDIR =
 PREFIX = /usr
@@ -22,7 +22,7 @@ DATADIR = $(PREFIX)/share/$(PACKAGE)
 MANDIR = $(PREFIX)/man/man1
 DOCDIR = $(PREFIX)/doc/$(PACKAGE)-$(VERSION)
 
-BINFILES = fluxbox-chinfo-menu fluxboxdm-helper
+BINFILES = fluxbox-chinfo-menu fluxbox-dm-helper
 
 DATAFILES = fluxbox-chinfo-xdg-menu fluxbox-chinfo-menuconfig
 

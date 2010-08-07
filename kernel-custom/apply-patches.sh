@@ -50,6 +50,9 @@ ApplyOptionalPatch() {
   fi
 }
 
+# Qt4 xconfig
+ApplyPatch 2900_xconfig-with-qt4.patch
+
 ApplyOptionalPatch git-linus.diff
 
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
@@ -69,15 +72,21 @@ ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
+ApplyPatch linux-2.6-tip.git-396e894d289d69bacf5acd983c97cd6e21a14c08.patch
+
 # Roland's utrace ptrace replacement.
 ApplyPatch git-utrace.patch
 ApplyPatch utrace-ptrace-fix-build.patch
 ApplyPatch utrace-remove-use-of-kref_set.patch
 
 # vm patches
+# https://bugzilla.kernel.org/show_bug.cgi?id=12309
+ApplyPatch linux-2.6-anti-io-stall.patch
 
 # Architecture patches
 # x86(-64)
+# Add K10 and native cpu optimization support
+ApplyPatch linux-2.6-add-cpu-optimizations.patch
 
 #
 # Intel IOMMU
@@ -224,6 +233,11 @@ ApplyPatch neuter_intel_microcode_load.patch
 #ApplyPatch ssb_check_for_sprom.patch
 
 ApplyPatch only-use-alpha2-regulatory-information-from-country-IE.patch
+
+# rhbz #617699
+ApplyPatch direct-io-move-aio_complete-into-end_io.patch
+ApplyPatch ext4-move-aio-completion-after-unwritten-extent-conversion.patch
+ApplyPatch xfs-move-aio-completion-after-unwritten-extent-conversion.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

@@ -7,6 +7,8 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
 zcat ${SB_PATCHDIR}/${NAME}-2007-png14.patch.gz | patch -p0 -E --backup --verbose
+patch -p0 -E --backup -z .newmake --verbose -i ${SB_PATCHDIR}/${NAME}-2007-newmake.patch
+patch -p0 -E --backup -z .rb19 --verbose -i ${SB_PATCHDIR}/${NAME}-2007-ruby19.patch
 
 ######
 # Red Hat-specific TeX configuration patches
@@ -30,7 +32,7 @@ zcat ${SB_PATCHDIR}/${NAME}-more_paths.patch.gz | patch -p1 -E --backup --verbos
 zcat ${SB_PATCHDIR}/${NAME}-CVE-2007-4033.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-dvipsoverflow.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-dviljktemp.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-poppler.patch.gz | patch -p1 -E --backup --verbose
+#zcat ${SB_PATCHDIR}/${NAME}-poppler.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-man-notetex.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-man-context.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-lacheck.patch.gz | patch -p1 -E --backup --verbose
@@ -40,6 +42,7 @@ zcat ${SB_PATCHDIR}/${NAME}-poolfix.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-dvipsconfig.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-CVE-2010-0829-dvipng-multiple-array-indexing-errors.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-CVE-2010-0739_1440-integer-overflows.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-execshield.patch
 
 ######
 # mpeters contributed patches

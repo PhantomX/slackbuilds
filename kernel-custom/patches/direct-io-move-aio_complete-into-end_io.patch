@@ -1,0 +1,204 @@
+From: Christoph Hellwig <hch@infradead.org>
+Date: Sun, 18 Jul 2010 21:17:09 +0000 (+0000)
+Subject: direct-io: move aio_complete into ->end_io
+X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Ftorvalds%2Flinux-2.6.git;a=commitdiff_plain;h=40e2e97316af6e62affab7a392e792494b8d9dde
+
+direct-io: move aio_complete into ->end_io
+
+Filesystems with unwritten extent support must not complete an AIO request
+until the transaction to convert the extent has been commited.  That means
+the aio_complete calls needs to be moved into the ->end_io callback so
+that the filesystem can control when to call it exactly.
+
+This makes a bit of a mess out of dio_complete and the ->end_io callback
+prototype even more complicated.
+
+Signed-off-by: Christoph Hellwig <hch@lst.de>
+Reviewed-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Alex Elder <aelder@sgi.com>
+---
+
+diff --git a/fs/direct-io.c b/fs/direct-io.c
+index 7600aac..a10cb91 100644
+--- a/fs/direct-io.c
++++ b/fs/direct-io.c
+@@ -218,7 +218,7 @@ static struct page *dio_get_page(struct dio *dio)
+  * filesystems can use it to hold additional state between get_block calls and
+  * dio_complete.
+  */
+-static int dio_complete(struct dio *dio, loff_t offset, int ret)
++static int dio_complete(struct dio *dio, loff_t offset, int ret, bool is_async)
+ {
+ 	ssize_t transferred = 0;
+ 
+@@ -239,14 +239,6 @@ static int dio_complete(struct dio *dio, loff_t offset, int ret)
+ 			transferred = dio->i_size - offset;
+ 	}
+ 
+-	if (dio->end_io && dio->result)
+-		dio->end_io(dio->iocb, offset, transferred,
+-			    dio->map_bh.b_private);
+-
+-	if (dio->flags & DIO_LOCKING)
+-		/* lockdep: non-owner release */
+-		up_read_non_owner(&dio->inode->i_alloc_sem);
+-
+ 	if (ret == 0)
+ 		ret = dio->page_errors;
+ 	if (ret == 0)
+@@ -254,6 +246,17 @@ static int dio_complete(struct dio *dio, loff_t offset, int ret)
+ 	if (ret == 0)
+ 		ret = transferred;
+ 
++	if (dio->end_io && dio->result) {
++		dio->end_io(dio->iocb, offset, transferred,
++			    dio->map_bh.b_private, ret, is_async);
++	} else if (is_async) {
++		aio_complete(dio->iocb, ret, 0);
++	}
++
++	if (dio->flags & DIO_LOCKING)
++		/* lockdep: non-owner release */
++		up_read_non_owner(&dio->inode->i_alloc_sem);
++
+ 	return ret;
+ }
+ 
+@@ -277,8 +280,7 @@ static void dio_bio_end_aio(struct bio *bio, int error)
+ 	spin_unlock_irqrestore(&dio->bio_lock, flags);
+ 
+ 	if (remaining == 0) {
+-		int ret = dio_complete(dio, dio->iocb->ki_pos, 0);
+-		aio_complete(dio->iocb, ret, 0);
++		dio_complete(dio, dio->iocb->ki_pos, 0, true);
+ 		kfree(dio);
+ 	}
+ }
+@@ -1126,7 +1128,7 @@ direct_io_worker(int rw, struct kiocb *iocb, struct inode *inode,
+ 	spin_unlock_irqrestore(&dio->bio_lock, flags);
+ 
+ 	if (ret2 == 0) {
+-		ret = dio_complete(dio, offset, ret);
++		ret = dio_complete(dio, offset, ret, false);
+ 		kfree(dio);
+ 	} else
+ 		BUG_ON(ret != -EIOCBQUEUED);
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 42272d6..0afc8c1 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3775,7 +3775,8 @@ static ext4_io_end_t *ext4_init_io_end (struct inode *inode, gfp_t flags)
+ }
+ 
+ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+-			    ssize_t size, void *private)
++			    ssize_t size, void *private, int ret,
++			    bool is_async)
+ {
+         ext4_io_end_t *io_end = iocb->private;
+ 	struct workqueue_struct *wq;
+@@ -3784,7 +3785,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+ 
+ 	/* if not async direct IO or dio with 0 bytes write, just return */
+ 	if (!io_end || !size)
+-		return;
++		goto out;
+ 
+ 	ext_debug("ext4_end_io_dio(): io_end 0x%p"
+ 		  "for inode %lu, iocb 0x%p, offset %llu, size %llu\n",
+@@ -3795,7 +3796,7 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+ 	if (io_end->flag != EXT4_IO_UNWRITTEN){
+ 		ext4_free_io_end(io_end);
+ 		iocb->private = NULL;
+-		return;
++		goto out;
+ 	}
+ 
+ 	io_end->offset = offset;
+@@ -3812,6 +3813,9 @@ static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
+ 	list_add_tail(&io_end->list, &ei->i_completed_io_list);
+ 	spin_unlock_irqrestore(&ei->i_completed_io_lock, flags);
+ 	iocb->private = NULL;
++out:
++	if (is_async)
++		aio_complete(iocb, ret, 0);
+ }
+ 
+ static void ext4_end_io_buffer_write(struct buffer_head *bh, int uptodate)
+diff --git a/fs/ocfs2/aops.c b/fs/ocfs2/aops.c
+index 356e976..96337a4 100644
+--- a/fs/ocfs2/aops.c
++++ b/fs/ocfs2/aops.c
+@@ -578,7 +578,9 @@ bail:
+ static void ocfs2_dio_end_io(struct kiocb *iocb,
+ 			     loff_t offset,
+ 			     ssize_t bytes,
+-			     void *private)
++			     void *private,
++			     int ret,
++			     bool is_async)
+ {
+ 	struct inode *inode = iocb->ki_filp->f_path.dentry->d_inode;
+ 	int level;
+@@ -592,6 +594,9 @@ static void ocfs2_dio_end_io(struct kiocb *iocb,
+ 	if (!level)
+ 		up_read(&inode->i_alloc_sem);
+ 	ocfs2_rw_unlock(inode, level);
++
++	if (is_async)
++		aio_complete(iocb, ret, 0);
+ }
+ 
+ /*
+diff --git a/fs/xfs/linux-2.6/xfs_aops.c b/fs/xfs/linux-2.6/xfs_aops.c
+index 8abbf05..95d1e26 100644
+--- a/fs/xfs/linux-2.6/xfs_aops.c
++++ b/fs/xfs/linux-2.6/xfs_aops.c
+@@ -1406,7 +1406,9 @@ xfs_end_io_direct(
+ 	struct kiocb	*iocb,
+ 	loff_t		offset,
+ 	ssize_t		size,
+-	void		*private)
++	void		*private,
++	int		ret,
++	bool		is_async)
+ {
+ 	xfs_ioend_t	*ioend = iocb->private;
+ 
+@@ -1452,6 +1454,9 @@ xfs_end_io_direct(
+ 	 * against double-freeing.
+ 	 */
+ 	iocb->private = NULL;
++
++	if (is_async)
++		aio_complete(iocb, ret, 0);
+ }
+ 
+ STATIC ssize_t
+diff --git a/fs/xfs/linux-2.6/xfs_aops.h b/fs/xfs/linux-2.6/xfs_aops.h
+index 319da17..c5057fb 100644
+--- a/fs/xfs/linux-2.6/xfs_aops.h
++++ b/fs/xfs/linux-2.6/xfs_aops.h
+@@ -37,6 +37,8 @@ typedef struct xfs_ioend {
+ 	size_t			io_size;	/* size of the extent */
+ 	xfs_off_t		io_offset;	/* offset in the file */
+ 	struct work_struct	io_work;	/* xfsdatad work queue */
++	struct kiocb		*io_iocb;
++	int			io_result;
+ } xfs_ioend_t;
+ 
+ extern const struct address_space_operations xfs_address_space_operations;
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 68ca1b0..f91affb 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -415,7 +415,8 @@ struct buffer_head;
+ typedef int (get_block_t)(struct inode *inode, sector_t iblock,
+ 			struct buffer_head *bh_result, int create);
+ typedef void (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
+-			ssize_t bytes, void *private);
++			ssize_t bytes, void *private, int ret,
++			bool is_async);
+ 
+ /*
+  * Attribute flags.  These should be or-ed together to figure out what

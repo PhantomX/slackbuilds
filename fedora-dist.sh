@@ -93,7 +93,10 @@ pushd "${tmp}"
   if [ -n "${sarchive}" ] ; then
     mv sources sources.tmp
     for file in ${sarchive} ;do
-      if [ -f "${file}" ] && [ ! -f "${pwd}/${file}" ] ;then
+      if [ -f "${pwd}/${file}" ] ;then
+        echo "\"${pwd}/${file}\" already exists."
+      elif [ -f "${file}" ] ;then
+        echo "Moving \"${file}\" to \"${pwd}/${file}\""
         mv "${file}" "${pwd}"/
       else
         if grep -Eq "^.*  .*${file}$" sources.tmp ;then
@@ -104,6 +107,7 @@ pushd "${tmp}"
         fi
       fi
     done
+    [ -f sources ] || exit 0
   else
     echo "Downloading all sources"
   fi

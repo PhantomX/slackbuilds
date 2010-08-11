@@ -6,13 +6,9 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 --verbose --backup -i ${SB_PATCHDIR}/${NAME}.patch 
 # make -devel packages parallel-installable
-zcat ${SB_PATCHDIR}/kdelibs-4.3.85-parallel_devel.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.85-parallel_devel.patch
 # fix kde#149705
 zcat ${SB_PATCHDIR}/kdelibs-4.2.85-kde149705.patch.gz | patch -p1 --verbose --backup --suffix=.orig
-# Hunspell support for K3Spell
-# http://fedoraproject.org/wiki/Releases/FeatureDictionary
-# http://bugs.kde.org/show_bug.cgi?id=154561
-zcat ${SB_PATCHDIR}/kdelibs-4.0.0-k3spell-hunspell.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # install all .css files and Doxyfile.global in kdelibs-common to build
 # kdepimlibs-apidocs against
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.3.90-install_all_css.patch
@@ -22,10 +18,10 @@ zcat ${SB_PATCHDIR}/kdelibs-4.0.2-branding-slk.patch.gz |sed \
   -e "s|_KDELIBS_SLK_DIST|${KDELIBS_SLK_DIST}|g" | patch -p1 -E --backup --verbose
 
 # workaround for policykit
-zcat ${SB_PATCHDIR}/kdelibs-4.3.80-policykit-workaround.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.80-policykit-workaround.patch
 #zcat ${SB_PATCHDIR}/kdelibs-4.1.0-xdg-menu.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # patch KStandardDirs to use /usr/libexec/kde4 instead of /usr/lib${LIBDIRSUFFIX}/kde4/libexec
-zcat ${SB_PATCHDIR}/kdelibs-4.2.85-libexecdir.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.80-libexecdir.patch
 # kstandarddirs changes: search /etc/kde, find /usr/libexec/kde4
 zcat ${SB_PATCHDIR}/kdelibs-4.1.72-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig
@@ -35,19 +31,13 @@ zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup
 # this extra hassle (even though cmake is *supposed* to not add standard
 # paths (like /usr/lib64) already! With this, we can drop
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
-zcat ${SB_PATCHDIR}/kdelibs-4.3.98-no_rpath.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.80-no_rpath.patch
 
 # Mandriva
-patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-4.4.1-add-confirmation-window.patch
-patch -p0 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-4.4.2-FindFFmpeg.cmake.patch 
 
 # official backports
 
 # Trunk patches
-patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.1-t1098322-fix-kdialog-focus.patch
-patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.2-use-nepomuk-from-trunk.patch 
-patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-t1130778-nepomuk-fix-crash.patch
-patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.3-t1112516-add-UDS-Entry.patch
 
 # 4.4 upstream
 

@@ -15,17 +15,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.3-konsole-activeta
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-konqueror-kde\#228593.patch.gz | patch -p1 -E --backup --verbose
 
 # Mandriva
-zcat ${SB_PATCHDIR}/${NAME}-4.3.98-fix-execute-scripts.patch.gz | patch -p0 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-4.4.0-folderview-icon-text.patch.gz | patch -p0 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-configure-trashbin.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-handle-emptytrash.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-konsole-add-debug.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dolphin-icon-text.patch 
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-add-menubar-shortcut.patch 
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-add-kcm-webcam.patch
 
 #trunk patches
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-t1100886-fix-konqueror-crash.patch 
 
 ## upstream patches
 

@@ -197,8 +197,12 @@ ApplyPatch hdpvr-ir-enable.patch
 # Assorted Virt Fixes
 ApplyPatch fix_xen_guest_on_old_EC2.patch
 
+ApplyPatch drm-simplify-i2c-config.patch
+ApplyPatch drm-sil164-module.patch
+ApplyPatch drm-i2c-ch7006-fix.patch
 # Nouveau DRM + drm fixes
 ApplyPatch drm-nouveau-updates.patch
+ApplyPatch drm-nouveau-race-fix.patch
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch

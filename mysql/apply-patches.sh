@@ -16,5 +16,6 @@ zcat ${SB_PATCHDIR}/mysql-expired-certs.patch.gz | patch -p1 -E --backup --verbo
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-missing-string-code.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-lowercase-bug.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-chain-certs.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-abi-check.patch
 
 set +e +o pipefail

@@ -4,6 +4,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.5.28-xdg-open.patch.gz | patch -p1 -E --backup --verbose
 #zcat ${SB_PATCHDIR}/${NAME}-2.5.21-htmlview.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.5.28-mimeopen.patch.gz | patch -p1 -E --backup --verbose

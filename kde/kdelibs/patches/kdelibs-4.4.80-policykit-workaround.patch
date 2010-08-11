@@ -1,0 +1,119 @@
+diff -up kdelibs-4.4.80/solid/solid/backends/hal/halstorageaccess.cpp.policykit-workaround kdelibs-4.4.80/solid/solid/backends/hal/halstorageaccess.cpp
+--- kdelibs-4.4.80/solid/solid/backends/hal/halstorageaccess.cpp.policykit-workaround	2010-04-22 10:04:55.000000000 +0200
++++ kdelibs-4.4.80/solid/solid/backends/hal/halstorageaccess.cpp	2010-05-21 22:07:08.043211300 +0200
+@@ -17,6 +17,8 @@
+ 
+ */
+ 
++#include <config-prefix.h> // for LIBEXEC_INSTALL_DIR
++
+ #include "halstorageaccess.h"
+ 
+ #include "halfstabhandling.h"
+@@ -201,11 +203,21 @@ void StorageAccess::slotDBusError(const 
+ {
+     // TODO: Better error reporting here
+     if (m_setupInProgress) {
++        if (error.name() == "org.freedesktop.Hal.Device.PermissionDeniedByPolicy") {
++            if (callPrivilegedMount())
++                return;
++            // if we fail to run kdesu, fall through and emit the original PermissionDeniedByPolicy error
++        }
+         m_setupInProgress = false;
+         m_device->broadcastActionDone("setupDone", Solid::UnauthorizedOperation,
+                        QString(error.name()+": "+error.message()),
+                        m_device->udi());
+     } else if (m_teardownInProgress) {
++        if (error.name() == "org.freedesktop.Hal.Device.PermissionDeniedByPolicy") {
++            if (callPrivilegedUnmount())
++                return;
++            // if we fail to run kdesu, fall through and emit the original PermissionDeniedByPolicy error
++        }
+         m_teardownInProgress = false;
+         m_device->broadcastActionDone("teardownDone", Solid::UnauthorizedOperation,
+                           QString(error.name()+": "+error.message()),
+@@ -347,8 +359,9 @@ bool StorageAccess::callHalVolumeMount()
+ #else
+     QString uid="uid=";
+ #endif
+-    if (halOptions.contains(uid)) {
+-        options << uid+QString::number(::getuid());
++    if (halOptions.contains(uid) &&
++       (fstype == "vfat" || fstype == "iso9660" || fstype == "hfs" || fstype == "udf")) {
++            options << uid+QString::number(::getuid());
+     }
+ 
+ #ifdef Q_OS_FREEBSD
+@@ -390,6 +403,59 @@ bool StorageAccess::callHalVolumeMount()
+                               SLOT(slotDBusError(const QDBusError &)));
+ }
+ 
++bool Solid::Backends::Hal::StorageAccess::callPrivilegedMount()
++{
++    QString udi = m_device->udi();
++    QString options;
++    QStringList halOptions = m_device->property("volume.mount.valid_options").toStringList();
++    QString fstype = m_device->property("volume.fstype").toString();
++
++    if (halOptions.contains("uid=")
++        && (fstype == "vfat" || fstype == "iso9660" || fstype == "hfs" || fstype == "udf")) {
++        options = "uid="+QString::number(::getuid());
++    }
++
++    m_process = new QProcess(this);
++
++    connect(m_process, SIGNAL(finished(int, QProcess::ExitStatus)),
++            this, SLOT(slotProcessFinished(int, QProcess::ExitStatus)));
++
++    m_process->start(LIBEXEC_INSTALL_DIR "/kdesu", QStringList() << "-d" << "-t"
++        << "--noignorebutton" << "-c"
++        << QString::fromLatin1("dbus-send  --system --print-reply --dest=org.freedesktop.Hal %1 "
++                               "org.freedesktop.Hal.Device.Volume.Mount string: string: "
++                               "array:string:%2").arg(udi).arg(options));
++
++    if (m_process->waitForStarted()) {
++        return true;
++    } else {
++        delete m_process;
++        return false;
++    }
++}
++
++bool Solid::Backends::Hal::StorageAccess::callPrivilegedUnmount()
++{
++    QString udi = m_device->udi();
++
++    m_process = new QProcess(this);
++
++    connect(m_process, SIGNAL(finished(int, QProcess::ExitStatus)),
++            this, SLOT(slotProcessFinished(int, QProcess::ExitStatus)));
++
++    m_process->start(LIBEXEC_INSTALL_DIR "/kdesu", QStringList() << "-d" << "-t"
++        << "--noignorebutton" << "-c"
++        << QString::fromLatin1("dbus-send  --system --print-reply --dest=org.freedesktop.Hal %1 "
++                               "org.freedesktop.Hal.Device.Volume.Unmount array:string:").arg(udi));
++
++    if (m_process->waitForStarted()) {
++        return true;
++    } else {
++        delete m_process;
++        return false;
++    }
++}
++
+ bool StorageAccess::callHalVolumeUnmount()
+ {
+     QDBusConnection c = QDBusConnection::systemBus();
+diff -up kdelibs-4.4.80/solid/solid/backends/hal/halstorageaccess.h.policykit-workaround kdelibs-4.4.80/solid/solid/backends/hal/halstorageaccess.h
+--- kdelibs-4.4.80/solid/solid/backends/hal/halstorageaccess.h.policykit-workaround	2010-04-22 10:04:55.000000000 +0200
++++ kdelibs-4.4.80/solid/solid/backends/hal/halstorageaccess.h	2010-05-21 22:03:25.933210697 +0200
+@@ -78,6 +78,9 @@ private:
+     bool callSystemMount();
+     bool callSystemUnmount();
+ 
++    bool callPrivilegedMount();
++    bool callPrivilegedUnmount();
++
+     bool requestPassphrase();
+     void callCryptoSetup(const QString &passphrase);
+     bool callCryptoTeardown();

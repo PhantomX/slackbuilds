@@ -1,0 +1,141 @@
+From 6b33cff9cd4f6f26df99e1486d53c91698d133b4 Mon Sep 17 00:00:00 2001
+From: Ben Skeggs <bskeggs@redhat.com>
+Date: Fri, 23 Jul 2010 09:06:52 +1000
+Subject: [PATCH 5/5] drm-nouveau-race-fix
+
+drm/nouveau: fix race condition when under memory pressure
+
+rhbz#602663
+
+When VRAM is running out it's possible that the client's push buffers get
+evicted to main memory.  When they're validated back in, the GPU may
+be used for the copy back to VRAM, but the existing synchronisation code
+only deals with inter-channel sync, not sync between PFIFO and PGRAPH on
+the same channel.  This leads to PFIFO fetching from command buffers that
+haven't quite been copied by PGRAPH yet.
+
+This patch marks push buffers as so, and forces any GPU-assisted buffer
+moves to be done on a different channel, which triggers the correct
+synchronisation to happen before we submit them.
+
+After discussion with another nouveau developer, it was agreed that while
+this patch is fine in itself, that we'd prefer to work out a nicer, but
+likely much more invasive, fix upstream.
+
+Signed-off-by: Ben Skeggs <bskeggs@redhat.com>
+---
+ drivers/gpu/drm/nouveau/nouveau_bo.c  |   15 +++++++++++++
+ drivers/gpu/drm/nouveau/nouveau_drv.h |    1 +
+ drivers/gpu/drm/nouveau/nouveau_gem.c |   36 +++++++++++++++++++++++---------
+ 3 files changed, 42 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_bo.c b/drivers/gpu/drm/nouveau/nouveau_bo.c
+index f1357f1..f552c76 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_bo.c
++++ b/drivers/gpu/drm/nouveau/nouveau_bo.c
+@@ -36,6 +36,21 @@
+ #include <linux/log2.h>
+ #include <linux/slab.h>
+ 
++int
++nouveau_bo_sync_gpu(struct nouveau_bo *nvbo, struct nouveau_channel *chan)
++{
++	struct nouveau_fence *prev_fence = nvbo->bo.sync_obj;
++	int ret;
++
++	if (!prev_fence || nouveau_fence_channel(prev_fence) == chan)
++		return 0;
++
++	spin_lock(&nvbo->bo.lock);
++	ret = ttm_bo_wait(&nvbo->bo, false, false, false);
++	spin_unlock(&nvbo->bo.lock);
++	return ret;
++}
++
+ static void
+ nouveau_bo_del_ttm(struct ttm_buffer_object *bo)
+ {
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drv.h b/drivers/gpu/drm/nouveau/nouveau_drv.h
+index c001574..922ef43 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drv.h
++++ b/drivers/gpu/drm/nouveau/nouveau_drv.h
+@@ -1165,6 +1165,7 @@ extern u16 nouveau_bo_rd16(struct nouveau_bo *nvbo, unsigned index);
+ extern void nouveau_bo_wr16(struct nouveau_bo *nvbo, unsigned index, u16 val);
+ extern u32 nouveau_bo_rd32(struct nouveau_bo *nvbo, unsigned index);
+ extern void nouveau_bo_wr32(struct nouveau_bo *nvbo, unsigned index, u32 val);
++extern int nouveau_bo_sync_gpu(struct nouveau_bo *, struct nouveau_channel *);
+ 
+ /* nouveau_fence.c */
+ struct nouveau_fence;
+diff --git a/drivers/gpu/drm/nouveau/nouveau_gem.c b/drivers/gpu/drm/nouveau/nouveau_gem.c
+index 547f2c2..a915dcd 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_gem.c
++++ b/drivers/gpu/drm/nouveau/nouveau_gem.c
+@@ -361,16 +361,11 @@ validate_list(struct nouveau_channel *chan, struct list_head *list,
+ 
+ 	list_for_each_entry(nvbo, list, entry) {
+ 		struct drm_nouveau_gem_pushbuf_bo *b = &pbbo[nvbo->pbbo_index];
+-		struct nouveau_fence *prev_fence = nvbo->bo.sync_obj;
+ 
+-		if (prev_fence && nouveau_fence_channel(prev_fence) != chan) {
+-			spin_lock(&nvbo->bo.lock);
+-			ret = ttm_bo_wait(&nvbo->bo, false, false, false);
+-			spin_unlock(&nvbo->bo.lock);
+-			if (unlikely(ret)) {
+-				NV_ERROR(dev, "fail wait other chan\n");
+-				return ret;
+-			}
++		ret = nouveau_bo_sync_gpu(nvbo, chan);
++		if (unlikely(ret)) {
++			NV_ERROR(dev, "fail pre-validate sync\n");
++			return ret;
+ 		}
+ 
+ 		ret = nouveau_gem_set_domain(nvbo->gem, b->read_domains,
+@@ -381,7 +376,7 @@ validate_list(struct nouveau_channel *chan, struct list_head *list,
+ 			return ret;
+ 		}
+ 
+-		nvbo->channel = chan;
++		nvbo->channel = (b->read_domains & (1 << 31)) ? NULL : chan;
+ 		ret = ttm_bo_validate(&nvbo->bo, &nvbo->placement,
+ 				      false, false, false);
+ 		nvbo->channel = NULL;
+@@ -390,6 +385,12 @@ validate_list(struct nouveau_channel *chan, struct list_head *list,
+ 			return ret;
+ 		}
+ 
++		ret = nouveau_bo_sync_gpu(nvbo, chan);
++		if (unlikely(ret)) {
++			NV_ERROR(dev, "fail post-validate sync\n");
++			return ret;
++		}
++
+ 		if (nvbo->bo.offset == b->presumed.offset &&
+ 		    ((nvbo->bo.mem.mem_type == TTM_PL_VRAM &&
+ 		      b->presumed.domain & NOUVEAU_GEM_DOMAIN_VRAM) ||
+@@ -615,6 +616,21 @@ nouveau_gem_ioctl_pushbuf(struct drm_device *dev, void *data,
+ 
+ 	mutex_lock(&dev->struct_mutex);
+ 
++	/* Mark push buffers as being used on PFIFO, the validation code
++	 * will then make sure that if the pushbuf bo moves, that they
++	 * happen on the kernel channel, which will in turn cause a sync
++	 * to happen before we try and submit the push buffer.
++	 */
++	for (i = 0; i < req->nr_push; i++) {
++		if (push[i].bo_index >= req->nr_buffers) {
++			NV_ERROR(dev, "push %d buffer not in list\n", i);
++			ret = -EINVAL;
++			goto out;
++		}
++
++		bo[push[i].bo_index].read_domains |= (1 << 31);
++	}
++
+ 	/* Validate buffer list */
+ 	ret = nouveau_gem_pushbuf_validate(chan, file_priv, bo, req->buffers,
+ 					   req->nr_buffers, &op, &do_reloc);
+-- 
+1.7.2
+

@@ -8,6 +8,12 @@ SB_PATCHDIR=${CWD}/patches
 # punishment on someone else's distribution.
 zcat ${SB_PATCHDIR}/freetype.illadvisederror.diff.gz | patch -p1 -E --backup --verbose
 
+# Bytecode interpreter
+# Default is enabled, but for now are some bugs to deal
+if [ "${SB_BI}" != "YES" ] ; then
+   patch -p1 -R -E --backup --verbose -i ${SB_PATCHDIR}/freetype.bytecode.interpreter.diff
+fi
+
 # The line below enables code patented by Microsoft, so don't uncomment it
 # unless you have a license to use the code and take all legal responsibility
 # for doing so.

@@ -39,6 +39,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.2-notify_color_cha
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-battery-always-show-percent-left.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-trash-applet-add-confirmation.patch
 
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/malloc_check.patch
+
 # upstream patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup --verbose

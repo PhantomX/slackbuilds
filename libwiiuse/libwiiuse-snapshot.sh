@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="http://dolphin-emu.googlecode.com/svn/trunk/Externals/WiiUseSrc/Src"
+snaproot="http://dolphin-emu.googlecode.com/svn/trunk/Externals/WiiUse/Src"
 
 tmp=$(mktemp -d)
 

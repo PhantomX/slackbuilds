@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = chinfo-extramimetypes
-VERSION = 7.1
+VERSION = 8.0
 
 DESTDIR =
 PREFIX = /usr
@@ -27,28 +27,69 @@ SYSCONFDIR = /etc
 LOCALEDIR = $(KDEPREFIX)/share/locale
 DOCDIR = $(PREFIX)/share/doc/$(PACKAGE)-$(VERSION)
 
-SMIFILES =  chinfo-extramimetypes-cdimage.xml chinfo-extramimetypes-gm.xml \
-            chinfo-extramimetypes-hash.xml
+SMIFILES =  \
+	chinfo-extramimetypes-cdimage.xml \
+	chinfo-extramimetypes-gm.xml \
+	chinfo-extramimetypes-hash.xml \
+	chinfo-extramimetypes-slackbuild.xml
 
-HIDDENFILES = geany-desktop.desktop geany-hash.desktop geany-xgettext.desktop \
-              gimp-ico.desktop gimp-xcf.desktop kwrite-desktop.desktop \
-              kwrite-hash.desktop kwrite-php.desktop kwrite-xgettext.desktop \
-              mozilla-firefox-maf.desktop redhat-audio-player-extra.desktop
+HIDDENFILES = \
+	geany-desktop.desktop \
+	geany-hash.desktop \
+	geany-xgettext.desktop \
+	gimp-ico.desktop \
+	gimp-xcf.desktop \
+	kwrite-desktop.desktop \
+	kwrite-hash.desktop \
+	kwrite-php.desktop \
+	kwrite-xgettext.desktop \
+	mozilla-firefox-maf.desktop \
+	redhat-audio-player-extra.desktop
 
-APPFILES = x-bin.desktop x-c2d.desktop x-cdi.desktop x-img.desktop x-la.desktop \
-           x-lzma.desktop x-maf.desktop x-mdf.desktop x-nrg.desktop x-ofc.desktop \
-           x-ofr.desktop x-ofs.desktop x-shorten.desktop x-tlz.desktop x-txz.desktop \
-           x-xz.desktop x-lzma-compressed-tar.desktop x-xz-compressed-tar.desktop
+APPFILES = \
+	x-bin.desktop x-c2d.desktop \
+	x-cdi.desktop x-img.desktop \
+	x-la.desktop \
+	x-lzma.desktop x-maf.desktop \
+	x-mdf.desktop x-nrg.desktop \
+	x-ofc.desktop \
+	x-ofr.desktop x-ofs.desktop \
+	x-shorten.desktop \
+	x-slackbuild.desktop \
+	x-tlz.desktop x-txz.desktop \
+	x-xz.desktop \
+	x-lzma-compressed-tar.desktop \
+	x-xz-compressed-tar.desktop
 
-AUDIOFILES = x-2sf.desktop x-ape.desktop x-bonk.desktop x-dsf.desktop x-gsf.desktop \
-             x-gym.desktop x-mac.desktop x-nsf.desktop x-pac.desktop x-psf.desktop \
-             x-qsf.desktop x-spc.desktop x-ssf.desktop x-tta.desktop x-usf.desktop \
-             x-wavpack-correction.desktop x-wavpack.desktop
+AUDIOFILES = \
+	x-2sf.desktop \
+	x-ape.desktop \
+	x-bonk.desktop \
+	x-dsf.desktop \
+	x-gsf.desktop \
+	x-gym.desktop \
+	x-mac.desktop \
+	x-nsf.desktop \
+	x-pac.desktop \
+	x-psf.desktop \
+	x-qsf.desktop \
+	x-spc.desktop \
+	x-ssf.desktop \
+	x-tta.desktop \
+	x-usf.desktop \
+	x-wavpack-correction.desktop \
+	x-wavpack.desktop
 
-TEXTFILES = md5.desktop sha1.desktop sha224.desktop sha256.desktop \
-            sha384.desktop sha512.desktop
+TEXTFILES = \
+	md5.desktop \
+	sha1.desktop \
+	sha224.desktop \
+	sha256.desktop \
+	sha384.desktop \
+	sha512.desktop
 
-VIDEOFILES = x-flv.desktop
+VIDEOFILES = \
+	x-flv.desktop
 
 DOCS = README ChangeLog COPYING
 MANPAGE =

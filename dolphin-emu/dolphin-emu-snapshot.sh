@@ -31,6 +31,7 @@ pushd "${tmp}"
     pushd Externals
       svn export ${SNAP_COOPTS} ${snaproot}/Externals/Bochs_disasm
       svn export ${SNAP_COOPTS} ${snaproot}/Externals/Lua
+      svn export ${SNAP_COOPTS} ${snaproot}/Externals/WiiUse
     popd >/dev/null
     SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"
     sed -i -e "/SVN_REV_STR/s|\".*\"|\"${SVNREV}\"|g" Source/Core/Common/Src/svnrev_template.h

@@ -21,14 +21,13 @@ zcat ${SB_PATCHDIR}/php-5.3.0-phpize64.patch.gz | patch -p1 -E --backup --verbos
 zcat ${SB_PATCHDIR}/php-5.2.0-includedir.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.2.4-embed.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.3.0-recode.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/php-5.3.2-aconf26x.patch.gz | patch -p1 -E --backup --verbose
-# http://bugs.php.net/50578
-zcat ${SB_PATCHDIR}/php-5.3.2-phar.patch.gz | patch -p1 -E --backup --verbose
-patch -p4 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.2-gc.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.3-aconf26x.patch
+
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/004_all_strict_aliasing.patch
 
 # Fixes for extension modules
 zcat ${SB_PATCHDIR}/php-4.3.11-shutdown.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/php-5.2.3-macropen.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.3-macropen.patch
 
 # Functional changes
 zcat ${SB_PATCHDIR}/php-5.0.4-dlopen.patch.gz | patch -p1 -E --backup --verbose

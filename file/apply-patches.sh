@@ -3,6 +3,8 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file.etc.file.diff
 zcat ${SB_PATCHDIR}/file.quiet.diff.gz | patch -p0 -E --verbose
 zcat ${SB_PATCHDIR}/file.short.diff.gz | patch -p1 -E --verbose
 if [ "${SB_PYTHON}" = "YES" ] ;then
@@ -20,6 +22,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-separ.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-squashfs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-core-trim.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-retval.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-html-regression.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-zmachine-magic-update.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-core-prpsinfo.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-python-2.7.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose

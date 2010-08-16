@@ -72,8 +72,6 @@ ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
-ApplyPatch linux-2.6-tip.git-396e894d289d69bacf5acd983c97cd6e21a14c08.patch
-
 # Roland's utrace ptrace replacement.
 ApplyPatch git-utrace.patch
 ApplyPatch utrace-ptrace-fix-build.patch
@@ -103,7 +101,6 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 #
 
 # ext4
-ApplyPatch linux-2.6-ext4-fix-freeze-deadlock.patch
 
 # xfs
 

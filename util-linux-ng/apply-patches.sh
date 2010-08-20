@@ -20,8 +20,10 @@ zcat ${SB_PATCHDIR}/util-linux-ng-2.15-ipcs-32bit.patch.gz | patch -p1 -E --back
 
 ### Upstream Patches
 ###
+# 623685 - please extend agetty to not require a baud rate to be specified
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-ng-2.18-agetty-baudrate.patch
 # 598631 - shutdown, reboot, halt and C-A-D don't work
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-ng-2.17-agetty-clocal.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-ng-2.18-agetty-clocal.patch
 # 618957 - ISO images listed in fstab are mounted twice at boot
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-ng-2.17-mount-loopdev.patch
 

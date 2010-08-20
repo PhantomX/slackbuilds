@@ -67,6 +67,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-fix-parallel-make.p
   patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-fix-2to3-itertools-import-star.patch
 )
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_commands-expected-ls-output-issue7108.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/less-verbose-COUNT_ALLOCS.patch
+
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-autotool-intermediates.patch
 
 set +e +o pipefail

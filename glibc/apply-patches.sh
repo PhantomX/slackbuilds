@@ -44,9 +44,12 @@ fi
 #patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cfi.patch
 ( SB_PATCHDIR=patches
 
+  ApplyPatch 0010_all_glibc-locale-output-quote.patch
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
   ApplyPatch 0030_all_glibc-respect-env-CPPFLAGS.patch
   ApplyPatch 0044_all_glibc-2.10-resolv-nameserver-fallback.patch
+  ApplyPatch 0055_all_glibc-2.12-static-shared-getpagesize.patch
+  ApplyPatch 0060_all_glibc-2.12-sse4-x86-static-strspn.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch
   ApplyPatch 1020_all_glibc-longjmp-chk-hidden-fortify.patch

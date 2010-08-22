@@ -1,0 +1,260 @@
+diff -U 3 -dHrN -- deluge-1.2.3/deluge/core/torrent.py deluge-1.2-stable/deluge/core/torrent.py
+--- deluge-1.2.3/deluge/core/torrent.py	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/deluge/core/torrent.py	2010-08-19 12:18:39.000000000 -0300
+@@ -331,6 +331,10 @@
+         LTSTATE = deluge.common.LT_TORRENT_STATE
+         ltstate = int(self.handle.status().state)
+ 
++        # Set self.state to the ltstate right away just incase we don't hit some
++        # of the logic below
++        self.state = str(ltstate)
++
+         log.debug("set_state_based_on_ltstate: %s", deluge.common.LT_TORRENT_STATE[ltstate])
+         log.debug("session.is_paused: %s", component.get("Core").session.is_paused())
+ 
+@@ -736,6 +740,9 @@
+ 
+     def move_storage(self, dest):
+         """Move a torrent's storage location"""
++        if not os.path.exists(dest):
++            log.error("Could not move storage for torrent %s since %s does not exist!", self.torrent_id, dest)
++            return False
+         try:
+             self.handle.move_storage(dest.encode("utf8"))
+         except:
+diff -U 3 -dHrN -- deluge-1.2.3/deluge/main.py deluge-1.2-stable/deluge/main.py
+--- deluge-1.2.3/deluge/main.py	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/deluge/main.py	2010-08-19 12:18:39.000000000 -0300
+@@ -197,6 +197,11 @@
+         write_pidfile()
+ 
+     # Setup the logger
++    try:
++        # Try to make the logfile's directory if it doesn't exist
++        os.makedirs(os.path.abspath(os.path.dirname(options.logfile)))
++    except:
++        pass
+     deluge.log.setupLogger(level=options.loglevel, filename=options.logfile)
+     from deluge.log import LOG as log
+ 
+diff -U 3 -dHrN -- deluge-1.2.3/deluge/ui/client.py deluge-1.2-stable/deluge/ui/client.py
+--- deluge-1.2.3/deluge/ui/client.py	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/deluge/ui/client.py	2010-08-19 12:18:39.000000000 -0300
+@@ -410,7 +410,7 @@
+         self.connected = True
+         self.host = "localhost"
+         self.port = 58846
+-        self.user = "localclient"
++        self.username = "localclient"
+         # Register the event handlers
+         for event in event_handlers:
+             for handler in event_handlers[event]:
+diff -U 3 -dHrN -- deluge-1.2.3/deluge/ui/gtkui/connectionmanager.py deluge-1.2-stable/deluge/ui/gtkui/connectionmanager.py
+--- deluge-1.2.3/deluge/ui/gtkui/connectionmanager.py	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/deluge/ui/gtkui/connectionmanager.py	2010-08-19 12:18:39.000000000 -0300
+@@ -99,12 +99,16 @@
+ 
+         self.config = ConfigManager("hostlist.conf.1.2", DEFAULT_CONFIG)
+ 
++        self.running = False
++
+     # Component overrides
+     def start(self):
+         pass
+ 
+     def stop(self):
+-        pass
++        # Close this dialog when we are shutting down
++        if self.running:
++            self.connection_manager.response(gtk.RESPONSE_CLOSE)
+ 
+     def shutdown(self):
+         pass
+diff -U 3 -dHrN -- deluge-1.2.3/deluge/ui/gtkui/createtorrentdialog.py deluge-1.2-stable/deluge/ui/gtkui/createtorrentdialog.py
+--- deluge-1.2.3/deluge/ui/gtkui/createtorrentdialog.py	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/deluge/ui/gtkui/createtorrentdialog.py	2010-08-19 12:18:39.000000000 -0300
+@@ -210,7 +210,7 @@
+             client.core.get_path_size(result).addCallback(_on_get_path_size)
+             client.force_call(True)
+ 
+-        dialog.destroy()
++        dialog.hide()
+ 
+     def _on_button_cancel_clicked(self, widget):
+         log.debug("_on_button_cancel_clicked")
+@@ -224,11 +224,14 @@
+         is_remote = self.files_treestore[0][1] == gtk.STOCK_NETWORK
+         if is_remote:
+             # This is a remote path
+-            response = self.glade.get_widget("remote_save_dialog").run()
++            dialog = self.glade.get_widget("remote_save_dialog")
++            response = dialog.run()
+             if response == gtk.RESPONSE_OK:
+                 result = self.glade.get_widget("entry_save_path").get_text()
+             else:
++                dialog.hide()
+                 return
++            dialog.hide()
+         else:
+             # Setup the filechooserdialog
+             chooser = gtk.FileChooserDialog(_("Save .torrent file"),
+@@ -340,7 +343,6 @@
+                     trackers,
+                     add_to_session).addCallback(hide_progress)
+ 
+-        chooser.destroy()
+         self.dialog.destroy()
+ 
+     def create_torrent(self, path, tracker, piece_length, progress, comment, target,
+diff -U 3 -dHrN -- deluge-1.2.3/deluge/ui/gtkui/gtkui.py deluge-1.2-stable/deluge/ui/gtkui/gtkui.py
+--- deluge-1.2.3/deluge/ui/gtkui/gtkui.py	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/deluge/ui/gtkui/gtkui.py	2010-08-19 12:18:39.000000000 -0300
+@@ -167,7 +167,7 @@
+             self.gnome_prog = gnome.init("Deluge", deluge.common.get_version())
+             self.gnome_client = gnome.ui.master_client()
+             def on_die(*args):
+-                gtk.main_quit()
++                reactor.stop()
+             self.gnome_client.connect("die", on_die)
+             log.debug("GNOME session 'die' handler registered!")
+         except Exception, e:
+@@ -180,7 +180,7 @@
+             def win_handler(ctrl_type):
+                 log.debug("ctrl_type: %s", ctrl_type)
+                 if ctrl_type in (CTRL_CLOSE_EVENT, CTRL_SHUTDOWN_EVENT):
+-                    gtk.main_quit()
++                    reactor.stop()
+                     return 1
+             SetConsoleCtrlHandler(win_handler)
+ 
+diff -U 3 -dHrN -- deluge-1.2.3/deluge/ui/gtkui/mainwindow.py deluge-1.2-stable/deluge/ui/gtkui/mainwindow.py
+--- deluge-1.2.3/deluge/ui/gtkui/mainwindow.py	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/deluge/ui/gtkui/mainwindow.py	2010-08-19 12:18:39.000000000 -0300
+@@ -46,6 +46,7 @@
+ import deluge.component as component
+ from deluge.configmanager import ConfigManager
+ from deluge.ui.gtkui.ipcinterface import process_args
++from twisted.internet import reactor
+ 
+ import deluge.common
+ import common
+@@ -152,7 +153,10 @@
+         return self.main_glade
+ 
+     def quit(self):
+-        gtk.main_quit()
++        if client.is_classicmode():
++            gtk.main_quit()
++        else:
++            reactor.stop()
+ 
+     def load_window_state(self):
+         x = self.config["window_x_pos"]
+@@ -238,7 +242,6 @@
+ 
+     def on_newversionavailable_event(self, new_version):
+         if self.config["show_new_releases"]:
+-            from twisted.internet import reactor
+             from deluge.ui.gtkui.new_release_dialog import NewReleaseDialog
+             reactor.callLater(5.0, NewReleaseDialog().show, new_version)
+ 
+diff -U 3 -dHrN -- deluge-1.2.3/deluge/ui/gtkui/menubar.py deluge-1.2-stable/deluge/ui/gtkui/menubar.py
+--- deluge-1.2.3/deluge/ui/gtkui/menubar.py	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/deluge/ui/gtkui/menubar.py	2010-08-19 12:18:39.000000000 -0300
+@@ -260,8 +260,6 @@
+ 
+     def on_menuitem_quit_activate(self, data=None):
+         log.debug("on_menuitem_quit_activate")
+-        if self.config["classic_mode"] and client.is_classicmode():
+-            client.daemon.shutdown()
+         self.window.quit()
+ 
+     ## Edit Menu ##
+diff -U 3 -dHrN -- deluge-1.2.3/docs/man/deluged.1 deluge-1.2-stable/docs/man/deluged.1
+--- deluge-1.2.3/docs/man/deluged.1	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/docs/man/deluged.1	2010-08-19 12:18:39.000000000 -0300
+@@ -27,8 +27,10 @@
+ .TP
+ .I -i INTERFACE, --interface=INTERFACE
+ Interface daemon will listen for bittorrent connections on, this should be an IP address
++.TP
+ .I -u UI_INTERFACE, --ui-interface=UI_INTERFACE
+ Interface daemon will listen for UI connections on, this should be an IP address
++.TP
+ .I -d, --do-not-daemonize
+ Do not daemonize
+ .TP
+diff -U 3 -dHrN -- deluge-1.2.3/get_libtorrent.sh deluge-1.2-stable/get_libtorrent.sh
+--- deluge-1.2.3/get_libtorrent.sh	1969-12-31 21:00:00.000000000 -0300
++++ deluge-1.2-stable/get_libtorrent.sh	2010-08-19 12:18:39.000000000 -0300
+@@ -0,0 +1,16 @@
++#!/bin/bash
++#
++# This script checks out libtorrent from subversion
++#
++
++SVN=$(which svn)
++LT_URL=https://libtorrent.svn.sourceforge.net/svnroot/libtorrent
++VERSION=14
++[ "$1" != "" ] && VERSION=$1
++BRANCH=branches/RC_0_$VERSION
++
++if [ -d libtorrent ]; then
++	$SVN up libtorrent
++else
++	$SVN co $LT_URL/$BRANCH libtorrent
++fi
+diff -U 3 -dHrN -- deluge-1.2.3/setup.cfg deluge-1.2-stable/setup.cfg
+--- deluge-1.2.3/setup.cfg	2010-03-27 17:24:20.000000000 -0300
++++ deluge-1.2-stable/setup.cfg	2010-08-19 12:18:39.000000000 -0300
+@@ -1,5 +1,5 @@
+ [egg_info]
+-
++tag_build = -dev
+ tag_svn_revision = false
+ 
+ [build_docs]
+diff -U 3 -dHrN -- deluge-1.2.3/setup.py deluge-1.2-stable/setup.py
+--- deluge-1.2.3/setup.py	2010-03-27 16:37:04.000000000 -0300
++++ deluge-1.2-stable/setup.py	2010-08-19 12:18:39.000000000 -0300
+@@ -211,18 +211,29 @@
+ else:
+     build_libtorrent = False
+ 
+-if build_libtorrent and os.path.exists("libtorrent") and os.listdir("libtorrent"):
+-    # There isn't a system libtorrent library, so let's build the one included with deluge
+-    libtorrent = Extension(
+-        'libtorrent',
+-        extra_compile_args = _extra_compile_args,
+-        include_dirs = _include_dirs,
+-        libraries = _libraries,
+-        library_dirs = _library_dirs,
+-        sources = _sources
+-    )
++if build_libtorrent:
++    got_libtorrent = False
++    if not os.path.exists("libtorrent"):
++        import subprocess
++        if subprocess.call(['./get_libtorrent.sh']) > 0:
++            got_libtorrent = False
++        else:
++            got_libtorrent = True
++    else:
++        got_libtorrent = True
+ 
+-    _ext_modules = [libtorrent]
++    if got_libtorrent:
++        # There isn't a system libtorrent library, so let's build the one included with deluge
++        libtorrent = Extension(
++            'libtorrent',
++            extra_compile_args = _extra_compile_args,
++            include_dirs = _include_dirs,
++            libraries = _libraries,
++            library_dirs = _library_dirs,
++            sources = _sources
++        )
++
++        _ext_modules = [libtorrent]
+ 
+ class build_trans(cmd.Command):
+     description = 'Compile .po files into .mo files'

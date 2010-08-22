@@ -32,7 +32,7 @@ zcat ${SB_PATCHDIR}/${NAME}-more_paths.patch.gz | patch -p1 -E --backup --verbos
 zcat ${SB_PATCHDIR}/${NAME}-CVE-2007-4033.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-dvipsoverflow.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-dviljktemp.patch.gz | patch -p1 -E --backup --verbose
-#zcat ${SB_PATCHDIR}/${NAME}-poppler.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-poppler.patch
 zcat ${SB_PATCHDIR}/${NAME}-man-notetex.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-man-context.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-lacheck.patch.gz | patch -p1 -E --backup --verbose

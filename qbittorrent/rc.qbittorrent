@@ -1,0 +1,133 @@
+#!/bin/bash
+#
+# description: Start up qbittorrent-nox
+#
+# processname: qbittorrent-nox
+# config: /etc/default/qbittorrent
+
+[ "$(id -u)" -eq 0 ] || exit 1
+
+exec="/usr/bin/qbittorrent-nox"
+prog=$(basename ${exec})
+homedir="/var/lib/qbittorrent"
+pidfile=/var/run/${prog}
+lockfile=/var/lock/subsys/${prog}
+
+[ -x "${exec}" ] || exit 0
+
+[ -e /etc/default/qbittorrent ] && . /etc/default/qbittorrent
+DAEMON_USER=${DAEMON_USER:-qbittorrent:qbittorrent}
+DAEMON_PORT=${DAEMON_PORT:-8080}
+
+RETVAL=0
+
+[[ -f "${pidfile}" ]] && PID=$(cat "${pidfile}")
+
+checkconfig() {
+  if [[ "${DAEMON_USER}" == "" ]] ; then
+    echo "Please edit /etc/default/qbittorrent"
+    echo "You have to specify a user to run qbittorrent as, as we will not run it as root!"
+    echo "Modify DAEMON_USER to your needs (you can also add a group, after a colon)"
+    return 1
+  fi
+  if ! $(getent passwd | cut -d ':' -f 1 | grep $( echo "${DAEMON_USER}" | cut -d ':' -f 1 ) -sq) ; then
+    echo "Please edit /etc/default/qbittorrent"
+    echo "Your user has to exist!"
+    return 1
+  fi
+  DAEMON_OUSER=$(echo ${DAEMON_USER} | cut -d ':' -f 1)
+  if [[ "${DAEMON_USER}" == "root" ]] ; then
+    echo "Please edit /etc/default/qbittorrent"
+    echo "Do not use root as user!"
+    return 1
+  fi
+  if ! $(echo "${DAEMON_USER}" | grep ':' -sq) ; then
+    return 0
+  else
+    if ! $(cut -d ':' -f 1 /etc/group | grep $( echo "${DAEMON_USER}" | cut -d ':' -f 2 ) -sq) ; then
+     echo "Please edit /etc/default/qbittorrent"
+     echo "Your group has to exist too!"
+     return 1
+    fi
+  fi
+  DAEMON_USER_HOME=$(getent passwd | grep ^$( echo "${DAEMON_USER}" | cut -d ':' -f 1 ): | cut -d ':' -f 6)
+  return 0
+}
+
+checkconfig || exit 1
+
+if [ -f "${pidfile}" ] && ! pgrep -U "${DAEMON_OUSER}" -f 'qbittorrent-nox|!rc.qbittorrent' &>/dev/null ;then
+  rm -f "${pidfile}"
+fi
+
+start() {
+  echo -n "Starting ${prog}: "
+  if [[ "${DAEMON_OUSER}" == "qbittorrent" ]] && [[ -d "${homedir}" ]];then
+    chown -R qbittorrent.qbittorrent "${homedir}"
+  fi
+  if [ -z "${PID}" ] ;then 
+    su - "${DAEMON_OUSER}" -c "${exec} --webui-port=${DAEMON_PORT} &" &>/dev/null
+    RETVAL=$?
+    if [ ${RETVAL} -eq 0 ] ;then
+      echo $(pgrep -U "${DAEMON_OUSER}" -f 'qbittorrent-nox|!rc.qbittorrent') > "${pidfile}"
+    fi
+  else
+    RETVAL=1
+  fi
+  if [ ${RETVAL} -eq 0 ] && touch ${lockfile} ; then
+    echo -e "\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\t[FAILED]\r"
+  fi
+  return ${RETVAL}
+}
+
+stop() {
+  if [ ${RETVAL} -eq 0 ] ; then
+    echo -n "Stopping ${prog}: "
+    if [ -n "${PID}" ] ;then
+      kill ${PID} &>/dev/null
+      RETVAL=$?
+    else
+      RETVAL=1
+    fi
+    if [ ${RETVAL} -eq 0 ] && rm -f ${lockfile} ; then
+      rm -f ${pidfile}
+      echo -e "\t\t\t\t\t[  OK  ]\r"
+    else
+      echo -e "\t\t\t\t\t[FAILED]\r"
+    fi
+  fi
+  return ${RETVAL}
+}
+
+restart() {
+  stop
+  sleep 1
+  unset PID
+  start
+}
+
+# See how we were called.
+case "$1" in
+  start|stop)
+    $1
+    ;;
+  force-reload|restart|reload)
+    restart
+    ;;
+  status|fdrstatus)
+    if [ -f ${lockfile} ]; then
+      echo "${prog} is running in pid ${PID}."
+    else
+      echo "${prog} is not running."
+    fi
+    ;;
+  condrestart)
+    if  [ ! -f ${lockfile} ]; then restart ;fi
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|status|restart|condrestart|reload|force-reload}"
+    exit 2
+    ;;
+esac

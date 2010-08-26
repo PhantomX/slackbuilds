@@ -11,9 +11,6 @@ if [ "${PVER}" != "0" ] ;then
   done
 fi
 
-# Fix build with external dns support
-patch -p0 --backup -z .ex-dns --verbose -i ${SB_PATCHDIR}/squid-3.1.6-external-dns.patch
-
 zcat ${SB_PATCHDIR}/squid-3.1.0.9-config.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/squid-3.1.0.9-location.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/squid-3.0.STABLE1-perlpath.patch.gz | patch -p1 -E --backup --verbose

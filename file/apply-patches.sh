@@ -26,6 +26,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-html-regression.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-zmachine-magic-update.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-core-prpsinfo.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-python-2.7.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-webm.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose

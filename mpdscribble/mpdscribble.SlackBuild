@@ -55,13 +55,16 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to add libsoup binary too
+SB_SOUP=${SB_SOUP:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -111,20 +114,38 @@ chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
+SB_CONFIGURE(){
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
-./configure \
+../configure \
   --prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
-  --localstatedir=/var/lib \
+  --localstatedir=/var \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
+  --build=${SLKTARGET}-${SLKDTARGET}-linux $@
+}
 
-make -j${NJOBS} || make || exit $?
-make install DESTDIR=${PKG} || exit $?
+mkdir curl-build
+( cd curl-build
+  SB_CONFIGURE \
+    --with-http-client=curl || exit $?
+  make -j${NJOBS} || make || exit $?
+  make install DESTDIR=${PKG} || exit $?
+  mv ${PKG}/usr/bin/${NAME} ${PKG}/usr/bin/${NAME}-curl || exit $?
+) || exit $?
+
+if [ "${SB_SOUP}" = "YES" ] ;then
+mkdir soup-build
+( cd soup-build
+  SB_CONFIGURE \
+    --with-http-client=soup || exit $?
+  make -j${NJOBS} || make || exit $?
+  install -pm0755 src/${NAME} ${PKG}/usr/bin/${NAME}-soup || exit $?
+) || exit $?
+fi
 
 rm -f ${PKG}/etc/*${NAME}.conf 
 install -pm0600 doc/${NAME}.conf ${PKG}/etc/${NAME}.conf.new || exit 1
@@ -141,6 +162,26 @@ install -pm0755 ${CWD}/setup.onlyonce.rc${NAME} \
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+cat > ${PKG}/usr/bin/${NAME} <<EOF
+#!/bin/sh
+# ${NAME} wrapper
+
+[ -e /etc/default/${NAME} ] && . /etc/default/${NAME}
+
+if [ -x /usr/bin/${NAME}-soup ] && [ "\${MPDSCRIBBLE_HTTP}" = "soup" ] ; then
+  exec /usr/bin/${NAME}-soup "\$@"
+else
+  exec /usr/bin/${NAME}-curl "\$@"
+fi
+EOF
+chmod 0755 ${PKG}/usr/bin/${NAME}
+
+mkdir -p ${PKG}/etc/default
+cat > ${PKG}/etc/default/${NAME}.new <<'EOF'
+# Set http client binary type (curl or soup)
+MPDSCRIBBLE_HTTP=curl
+EOF
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}

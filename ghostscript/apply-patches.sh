@@ -22,8 +22,6 @@ zcat ${SB_PATCHDIR}/ghostscript-system-jasper.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/ghostscript-pksmraw.patch.gz | patch -p1 --verbose
 # Applied patch to fix NULL dereference in JBIG2 decoder.
 zcat ${SB_PATCHDIR}/ghostscript-jbig2dec-nullderef.patch.gz | patch -p1 --verbose
-# Fix scripts so they don't get broken on install
-zcat ${SB_PATCHDIR}/ghostscript-gs-executable.patch.gz | patch -p1 --verbose
 # Install CUPS filter convs files in the correct place.
 zcat ${SB_PATCHDIR}/ghostscript-cups-filters.patch.gz | patch -p1 --verbose
 # Fix debugging output from gdevcups.
@@ -47,6 +45,14 @@ zcat ${SB_PATCHDIR}/ghostscript-tiff-fixes.patch.gz | patch -p1 --verbose
 # Applied patch to fix CVE-2010-1628 (memory corruption at PS stack
 # overflow, bug #592492).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-CVE-2010-1628.patch
+# Avoid another NULL pointer dereference in jbig2 code.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-jbig2-image-refcount.patch
+# Change SEARCH_HERE_FIRST default to make -P- default instead of -P
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-SEARCH_HERE_FIRST.patch
+# Use -P- and -dSAFER in scripts.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript--P-.patch
+# Avoid epstopdf failure using upstream patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-epstopdf-failure.patch
 
 # libpng 1.4
 zcat ${SB_PATCHDIR}/ghostscript-libpng14.patch.gz | patch -p1 -E --backup --verbose

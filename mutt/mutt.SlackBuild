@@ -43,7 +43,8 @@ fi
 NAME=mutt
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.4.2.3}
+VERSION=${VERSION:-1.5.20}
+PVER=${PVER:-1.5.20-r11}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -67,15 +68,24 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.gz
+SSRCARCHIVE=${SRCARCHIVE}.asc
+PDIR=${NAME}-gentoo-patches-${PVER}
+PDIR=${NAME}-$(echo ${PVER}|cut -d- -f1)-gentoo-patches-$(echo ${PVER}|cut -d- -f2)
+PSRCARCHIVE=${PDIR}.tar.bz2
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
-DL_URL="ftp://ftp.mutt.org/${NAME}/${SRCARCHIVE}"
+DL_URL="ftp://ftp.mutt.org/${NAME}"
+DL_URLB="ftp://ftp.mutt.org/${NAME}/devel"
+GENTOO_MIRROR=${GENTOO_MIRROR:-ftp://ftp.ussg.iu.edu/pub/linux/gentoo}
+PDL_URL="${GENTOO_MIRROR}/distfiles/${PSRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+for file in ${SRCARCHIVE} ${SSRCARCHIVE} ;do
+  test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URLB}/${file} || exit 1
+done
+test -r ${CWD}/${PSRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${PDL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -106,10 +116,20 @@ cd ${TMP}
 rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
+tar -xvf ${CWD}/${PSRCARCHIVE} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+autoreconf -ivf -I m4 || exit 1
+
+sed -i -e 's/@DOTLOCK_GROUP@//' Makefile.in || exit 1
+
+# don't just build documentation (lengthy process, with big dependencies)
+sed -i -e '/SUBDIRS =/s/doc//' Makefile.in || exit 1
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -121,30 +141,45 @@ CXXFLAGS="${SLKCFLAGS}" \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
+  --with-docdir=/usr/doc/${NAME}-${VERSION} \
   --with-mailpath=/var/spool/mail \
   --enable-pop \
   --enable-imap \
   --with-ssl \
+  --with-sasl \
+  --enable-smtp \
+  --enable-gpgme \
+  --enable-hcache \
   --enable-locales-fix \
   --without-wc-funcs \
+  --enable-compressed \
+  --enable-external-dotlock \
+  --enable-nfs-fix \
+  --without-qdbm \
+  --with-gdbm \
+  --without-bdb \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
 
 make -j${NJOBS} || make || exit $?
 make install DESTDIR=${PKG} || exit $?
 
-mv ${PKG}/etc/mutt/Muttrc ${PKG}/etc/mutt/Muttrc.new
+install -pm0644 doc/Muttrc ${PKG}/etc/mutt/Muttrc.new || exit $?
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-# Add a documentation directory:
-[ -f ${DOCDIR} ] && mv ${DOCDIR} ${PKG}/usr/doc/${NAME}
-ln -s ${NAME} ${DOCDIR}
-rm -rf \
-  ${PKG}/usr/doc/mutt/html \
-  ${PKG}/usr/doc/mutt/ChangeLog
+rm -f ${PKG}/etc/mutt/*.dist
+
+mkdir -p ${DOCDIR}
+cp -a \
+  ABOUT-NLS COPYRIGHT NEWS OPS* PATCHES README* TODO VERSION mutt_ldap_query \
+  ${CWD}/ChangeLog.SB ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
+rm -f ${DOCDIR}/samples/ca-bundle.crt
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
+
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -197,11 +232,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

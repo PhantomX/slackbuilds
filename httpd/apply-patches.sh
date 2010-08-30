@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/config.layout.diff.gz | sed -e "s#lib/httpd#lib${LIBDIRSUFFIX}/httpd#" | patch --verbose -p1
 zcat ${SB_PATCHDIR}/${NAME}-2.2.14-confd.patch.gz | patch -p0 -E --backup --verbose
 

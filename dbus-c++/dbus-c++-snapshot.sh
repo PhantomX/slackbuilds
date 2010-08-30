@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://anongit.freedesktop.org/git/dbus/${module}.git"
+snaproot="git://gitorious.org/dbus-cplusplus/mainline.git"
 
 tmp=$(mktemp -d)
 

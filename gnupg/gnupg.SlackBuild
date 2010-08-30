@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-3}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -67,14 +67,17 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.bz2
+SSRCARCHIVE=${SRCARCHIVE}.sig
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="ftp://ftp.gnupg.org/gcrypt/${NAME}/${SRCARCHIVE}"
+DL_URL="ftp://ftp.gnupg.org/gcrypt/${NAME}"
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+for file in ${SRCARCHIVE} ${SSRCARCHIVE} ;do
+  test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
+done
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -108,10 +111,17 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-1.4.1-gcc.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-1.4.6-dir.patch.gz | patch -p1 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
+cat > gnupg-shm-coprocessing.expect <<'EOF'
+spawn -noecho ./g10/gpg --homedir . --run-as-shm-coprocess 0
+while {1} { expect {
+	"shared memory coprocessing is not available" {exit 1}
+	"Go ahead and type your message" {exit 0}
+} }
+EOF
 autoreconf -ivf || exit 1
 
 CFLAGS="${SLKCFLAGS} -fPIE -DPIC" \
@@ -132,13 +142,11 @@ LDFLAGS="${SLKCFLAGS} ${LDFLAGS} -pie -Wl,-z,relro,-z,now" \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
+env LANG=C expect -f gnupg-shm-coprocessing.expect || exit 1
 make install DESTDIR=${PKG} || exit 1
 
 sed 's^\.\./g[0-9\.]*/^^g' tools/lspgpot > ${PKG}/usr/bin/lspgpot || exit 1
 chmod 0755 ${PKG}/usr/bin/lspgpot || exit 1
-
-# These are on gnupg2 package
-rm -f ${PKG}/usr/bin/gpg{split,-zip}
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -206,11 +214,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+                 ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+                 ${SBDIR}/patches/
 fi
 
 # Build package:

@@ -1,0 +1,138 @@
+#!/bin/bash
+#
+# description: Start up znc
+#
+# processname: znc
+# config: /etc/default/znc
+
+[ "$(id -u)" -eq 0 ] || exit 1
+
+exec="/usr/bin/znc"
+prog=$(basename ${exec})
+homedir="/var/lib/znc"
+pidfile=/var/run/${prog}
+lockfile=/var/lock/subsys/${prog}
+
+[ -x "${exec}" ] || exit 0
+
+[ -e /etc/default/znc ] && . /etc/default/znc
+ZNC_USER=${ZNC_USER:-znc:znc}
+
+RETVAL=0
+
+[[ -f "${pidfile}" ]] && PID=$(cat "${pidfile}")
+
+checkconfig() {
+  if [[ "${ZNC_USER}" == "" ]] ; then
+    echo "Please edit /etc/default/znc"
+    echo "You have to specify a user to run znc as, as we will not run it as root!"
+    echo "Modify ZNC_USER to your needs (you can also add a group, after a colon)"
+    return 1
+  fi
+  if ! $(getent passwd | cut -d ':' -f 1 | grep $( echo "${ZNC_USER}" | cut -d ':' -f 1 ) -sq) ; then
+    echo "Please edit /etc/default/znc"
+    echo "Your user has to exist!"
+    return 1
+  fi
+  ZNC_OUSER=$(echo ${ZNC_USER} | cut -d ':' -f 1)
+  if [[ "${ZNC_USER}" == "root" ]] ; then
+    echo "Please edit /etc/default/znc"
+    echo "Do not use root as user!"
+    return 1
+  fi
+  if ! $(echo "${ZNC_USER}" | grep ':' -sq) ; then
+    return 0
+  else
+    if ! $(cut -d ':' -f 1 /etc/group | grep $( echo "${ZNC_USER}" | cut -d ':' -f 2 ) -sq) ; then
+     echo "Please edit /etc/default/znc"
+     echo "Your group has to exist too!"
+     return 1
+    fi
+  fi
+  ZNC_USER_HOME=$(getent passwd | grep ^$( echo "${ZNC_USER}" | cut -d ':' -f 1 ): | cut -d ':' -f 6)
+  ZNC_USER_CONFIG="${ZNC_USER_HOME}/.znc"
+  if ! [[ -e "${ZNC_USER_CONFIG}/configs/znc.conf" ]] ; then
+    echo "${ZNC_USER_CONFIG}/configs/znc.conf is missing"
+    echo "Run 'su - ${ZNC_OUSER} -c \"${exec} --makeconf\"' and try again"
+    return 2
+  fi
+  return 0
+}
+
+checkconfig || exit 1
+
+if [ -f "${pidfile}" ] && ! pgrep -U "${ZNC_OUSER}" -f 'znc|!rc.znc' &>/dev/null ;then
+  rm -f "${pidfile}"
+fi
+
+start() {
+  echo -n "Starting ${prog}: "
+  if [[ "${ZNC_OUSER}" == "znc" ]] && [[ -d "${homedir}" ]];then
+    chown -R znc.znc "${homedir}"
+  fi
+  if [ -z "${PID}" ] ;then 
+    su - "${ZNC_OUSER}" -c "${exec}" &>/dev/null
+    RETVAL=$?
+    if [ ${RETVAL} -eq 0 ] ;then
+      echo $(pgrep -U "${ZNC_OUSER}" -f 'znc|!rc.znc') > "${pidfile}"
+    fi
+  else
+    RETVAL=1
+  fi
+  if [ ${RETVAL} -eq 0 ] && touch ${lockfile} ; then
+    echo -e "\t\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\t\t[FAILED]\r"
+  fi
+  return ${RETVAL}
+}
+
+stop() {
+  if [ ${RETVAL} -eq 0 ] ; then
+    echo -n "Stopping ${prog}: "
+    if [ -n "${PID}" ] ;then
+      kill ${PID} &>/dev/null
+      RETVAL=$?
+    else
+      RETVAL=1
+    fi
+    if [ ${RETVAL} -eq 0 ] && rm -f ${lockfile} ; then
+      rm -f ${pidfile}
+      echo -e "\t\t\t\t\t\t[  OK  ]\r"
+    else
+      echo -e "\t\t\t\t\t\t[FAILED]\r"
+    fi
+  fi
+  return ${RETVAL}
+}
+
+restart() {
+  stop
+  sleep 1
+  unset PID
+  start
+}
+
+# See how we were called.
+case "$1" in
+  start|stop)
+    $1
+    ;;
+  force-reload|restart|reload)
+    restart
+    ;;
+  status|fdrstatus)
+    if [ -f ${lockfile} ]; then
+      echo "${prog} is running in pid ${PID}."
+    else
+      echo "${prog} is not running."
+    fi
+    ;;
+  condrestart)
+    if  [ ! -f ${lockfile} ]; then restart ;fi
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|status|restart|condrestart|reload|force-reload}"
+    exit 2
+    ;;
+esac

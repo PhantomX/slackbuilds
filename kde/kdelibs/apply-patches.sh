@@ -33,13 +33,16 @@ zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.80-no_rpath.patch
 
+# add gpg2 support to knewstuff, rough first try s/gpg/gpg2/
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patch
+
 # Mandriva
 
 # official backports
 
 # Trunk patches
 
-# 4.4 upstream
+# Branch upstream
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex

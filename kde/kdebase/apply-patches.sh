@@ -19,5 +19,7 @@ zcat ${SB_PATCHDIR}/${NAME}-4.4.0-konqueror-kde\#228593.patch.gz | patch -p1 -E 
 #trunk patches
 
 ## upstream patches
+# backport http://websvn.kde.org/?view=revision&revision=1168744
+patch -p3 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.1-ebrowsing_categories.patch
 
 set +e +o pipefail

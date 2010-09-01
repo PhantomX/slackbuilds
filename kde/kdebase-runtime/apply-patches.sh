@@ -20,8 +20,5 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nepomuk-strigi-smartfi
 # Trunk  patches
 
 ## Branch upstream patches
-# backport of 1160390, fixed: start call to cagibi only in next event loop, could be started
-# in on-demand load by a d-bus call ourself, so d-bus connection has a mutex locked already
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.0-kioslave.patch
 
 set +e +o pipefail

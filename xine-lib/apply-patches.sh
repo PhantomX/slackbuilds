@@ -18,5 +18,7 @@ zcat ${SB_PATCHDIR}/${NAME}-1.1.16.2-multilib.patch.gz | patch -p1 -E --backup -
 
 # http://bugs.gentoo.org/164425
 zcat ${SB_PATCHDIR}/${NAME}-1.1.15-textrel-fix.patch.gz | patch -p1 -E --backup --verbose
+# http://bugs.gentoo.org/332389
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.19-xvmc.patch
 
 set +e +o pipefail

@@ -4,7 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.0-startkde.patch
+patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.1-startkde-slk.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.0-plasma-konsole.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.92-systemsettings_onlyshowin_kde.patch
 # For ck 0.4.1
@@ -39,8 +39,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.2-notify_color_cha
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-battery-always-show-percent-left.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-trash-applet-add-confirmation.patch
 
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/malloc_check.patch
-
 # upstream patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup --verbose
@@ -49,6 +47,9 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup -
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.85-kdebug238325.patch
 # Display Settings are Lost on Logout, http://bugs.kde.org/183143 , http://bugzilla.redhat.com/607180
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.4-kdebug183143.patch
+#  Error in file "/usr/share/applications/kde4/kfontview.desktop":
+# "fonts/package" is an invalid MIME type http://bugzilla.redhat.com/581896
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.1-kfontview_dt_validate.patch
 
 # Branch patches
 

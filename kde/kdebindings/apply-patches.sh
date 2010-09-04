@@ -12,4 +12,8 @@ zcat ${SB_PATCHDIR}/${NAME}-rubyconfig.h.diff.gz | patch -p1 --verbose
 ## upstreamable patches
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.1-RUBY_VERSION.patch
 
+## upstream
+# http://bugs.gentoo.org/332503
+patch -p3 --backup --verbose -i ${SB_PATCHDIR}/pykde4.patch
+
 set +e +o pipefail

@@ -18,6 +18,8 @@ zcat ${SB_PATCHDIR}/ghostscript-fPIC.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/ghostscript-runlibfileifexists.patch.gz | patch -p1 --verbose
 # Use the system jasper library.
 zcat ${SB_PATCHDIR}/ghostscript-system-jasper.patch.gz | patch -p1 --verbose
+# Applied upstream patch to fix iname.c segfault
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-iname-segfault.patch
 # Fix pksmraw output.
 zcat ${SB_PATCHDIR}/ghostscript-pksmraw.patch.gz | patch -p1 --verbose
 # Applied patch to fix NULL dereference in JBIG2 decoder.
@@ -53,6 +55,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-SEARCH_HERE_FIRST.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript--P-.patch
 # Avoid epstopdf failure using upstream patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-epstopdf-failure.patch
+# Applied patch to fix NULL dereference in bbox drive.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-bbox-close.patch
+# Applied patch to let gdevcups use automatic memory allocation.  Use
+# RIPCache=auto in /etc/cups/cupsd.conf to enable.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-gdevcups-ripcache.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patch
 
 # libpng 1.4
 zcat ${SB_PATCHDIR}/ghostscript-libpng14.patch.gz | patch -p1 -E --backup --verbose

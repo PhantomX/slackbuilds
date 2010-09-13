@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}-4.0.3-cfg.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.2.0-noexecstack.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/allegro-4.4.0-multilib.patch.gz | patch -p1 -E --backup --verbose -z .multilib

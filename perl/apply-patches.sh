@@ -19,6 +19,8 @@ ApplyPatch() {
   esac
 }
 
+# patch -p0 -E --backup --verbose ${SB_PATCHDIR}/${NAME}.patch
+
 if [ "$ARCH" = "x86_64" ]; then # adopted from "Cross Linux From Scratch"
   # Configure must be told to also use lib64:
   ApplyPatch perl.configure.multilib.patch.gz
@@ -47,5 +49,8 @@ ApplyPatch perl-5.10.0-x86_64-io-test-failure.patch
 
 # temporarily export debug symbols even though DEBUGGING is not set:
 #ApplyPatch perl-add-symbols.patch
+
+# Do not leak when destroying thread; RT #77352, RHBZ #630667
+ApplyPatch perl-5.12.1-fix_thread_leak.patch
 
 set +e +o pipefail

@@ -28,6 +28,15 @@ zcat ${SB_PATCHDIR}/gtk2-remove-connecting-reason.patch.gz | patch -p1 --verbose
 # https://bugzilla.gnome.org/show_bug.cgi?id=611313
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/window-dragging.patch
 
+# Remove the definition of libpixbufloader_gdip_png_la_*
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk+-2.20.1-libpixbufloader-warning.patch
+# Redraw if GtkRange is a GtkScale and value is drawn.
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk+-2.20.1-gtkrange.patch
+# Fix upstream "table cells do not implement action interface"
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk+-2.20.1-gail_cell_type.patch
+# Upstream bg 608218: GtkOffscreenWindow causes bad window with GtkEntry
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk+-2.20.1-GtkOffscreenWindow.patch
+
 # Revert 64bit fix issue
 patch -p1 -R --backup --verbose -i ${SB_PATCHDIR}/gtk-png-ulong.patch
 

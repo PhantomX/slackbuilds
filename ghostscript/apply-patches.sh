@@ -15,7 +15,7 @@ zcat ${SB_PATCHDIR}/ghostscript-noopt.patch.gz | patch -p1 --verbose
 # Fix shared library build.
 zcat ${SB_PATCHDIR}/ghostscript-fPIC.patch.gz | patch -p1 --verbose
 # Define .runlibfileifexists.
-zcat ${SB_PATCHDIR}/ghostscript-runlibfileifexists.patch.gz | patch -p1 --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-runlibfileifexists.patch
 # Use the system jasper library.
 zcat ${SB_PATCHDIR}/ghostscript-system-jasper.patch.gz | patch -p1 --verbose
 # Applied upstream patch to fix iname.c segfault

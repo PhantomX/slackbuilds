@@ -85,6 +85,9 @@ ApplyPatch linux-2.6-anti-io-stall.patch
 # x86(-64)
 # Add K10 and native cpu optimization support
 ApplyPatch linux-2.6-add-cpu-optimizations.patch
+ApplyPatch 01-compat-make-compat_alloc_user_space-incorporate-the-access_ok-check.patch
+ApplyPatch 02-compat-test-rax-for-the-system-call-number-not-eax.patch
+ApplyPatch 03-compat-retruncate-rax-after-ia32-syscall-entry-tracing.patch
 
 #
 # Intel IOMMU
@@ -99,6 +102,7 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 #
 # bugfixes to drivers and filesystems
 #
+ApplyPatch aio-check-for-multiplication-overflow-in-do_io_submit.patch
 
 # ext4
 
@@ -174,6 +178,7 @@ ApplyPatch linux-2.6-silence-noise.patch
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 
 # Changes to upstream defaults.
+ApplyPatch create-sys-fs-cgroup-to-mount-cgroupfs-on.patch
 
 # libata
 
@@ -193,6 +198,7 @@ ApplyPatch hdpvr-ir-enable.patch
 
 # Assorted Virt Fixes
 ApplyPatch fix_xen_guest_on_old_EC2.patch
+ApplyPatch linux-2.6.35.4-virtio_console-fix-poll.patch
 
 ApplyPatch drm-simplify-i2c-config.patch
 ApplyPatch drm-sil164-module.patch
@@ -200,11 +206,15 @@ ApplyPatch drm-i2c-ch7006-fix.patch
 # Nouveau DRM + drm fixes
 ApplyPatch drm-nouveau-updates.patch
 ApplyPatch drm-nouveau-race-fix.patch
+ApplyPatch drm-nouveau-nva3-noaccel.patch
+ApplyPatch drm-nouveau-acpi-edid-fix.patch
+
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
+ApplyPatch efifb-add-more-models.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -225,6 +235,9 @@ ApplyPatch linux-2.6-v4l-dvb-ir-core-memleak-fixes.patch
 ApplyPatch linux-2.6-v4l-dvb-add-lgdt3304-support.patch
 ApplyPatch linux-2.6-v4l-dvb-add-kworld-a340-support.patch
 
+# Fix DMA bug on via-velocity
+ApplyPatch linux-2.6-via-velocity-dma-fix.patch
+
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
@@ -239,6 +252,30 @@ ApplyPatch only-use-alpha2-regulatory-information-from-country-IE.patch
 ApplyPatch direct-io-move-aio_complete-into-end_io.patch
 ApplyPatch ext4-move-aio-completion-after-unwritten-extent-conversion.patch
 ApplyPatch xfs-move-aio-completion-after-unwritten-extent-conversion.patch
+
+ApplyPatch kprobes-x86-fix-kprobes-to-skip-prefixes-correctly.patch
+
+# rhbz #622149
+ApplyPatch fix-rcu_deref_check-warning.patch
+ApplyPatch linux-2.6-cgroups-rcu.patch
+
+# rhbz #513530
+ApplyPatch dell-wmi-add-support-for-eject-key-studio-1555.patch
+
+ApplyPatch flexcop-fix-xlate_proc_name-warning.patch
+
+# mitigate DOS attack with large argument lists
+ApplyPatch execve-improve-interactivity-with-large-arguments.patch
+ApplyPatch execve-make-responsive-to-sigkill-with-large-arguments.patch
+ApplyPatch setup_arg_pages-diagnose-excessive-argument-size.patch
+
+# CVE-2010-3080
+ApplyPatch alsa-seq-oss-fix-double-free-at-error-path-of-snd_seq_oss_open.patch
+# CVE-2010-2954
+ApplyPatch irda-correctly-clean-up-self-ias_obj-on-irda_bind-failure.patch
+# CVE-2010-2960
+ApplyPatch keys-fix-bug-in-keyctl_session_to_parent-if-parent-has-no-session-keyring.patch
+ApplyPatch keys-fix-rcu-no-lock-warning-in-keyctl_session_to_parent.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

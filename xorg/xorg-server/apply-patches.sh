@@ -41,6 +41,10 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch
 # https://bugs.freedesktop.org/show_bug.cgi?id=28672
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-no-xorg.patch
 
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-tcflush-fix.patch
+# 632805
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-panelid-sanity.patch
+
 # Backports from master
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-force-hal-disable.patch

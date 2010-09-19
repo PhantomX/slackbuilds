@@ -35,6 +35,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-socketmodule-con
 zcat ${SB_PATCHDIR}/${NAME}-2.6-rpath.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/python-2.6.4-distutils-rpath.patch.gz | patch -p1 -E --backup --verbose
 
+# Backported fix from upstream for regression in ConfigParse's handling
+# of None values
+# http://bugs.python.org/issue7005#msg115417
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-r84443-cfgparse.patch
+
 zcat ${SB_PATCHDIR}/python-2.3.4-lib64-regex.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-ctypes-noexecmem.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-no-static-lib.patch

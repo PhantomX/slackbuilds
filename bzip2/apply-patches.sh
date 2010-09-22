@@ -1,6 +1,10 @@
-  
+
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/bzip2-1.0.4.saneso.diff.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/bzip2-1.0.4-cflags.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/bzip2-1.0.4-bzip2recover.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bzip2.saneso.diff
+zcat ${SB_PATCHDIR}/bzip2-1.0.4-bzip2recover.patch.gz | patch -p1 -E --backup --verbose
+
+set +e +o pipefail

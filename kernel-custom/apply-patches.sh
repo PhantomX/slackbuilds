@@ -85,9 +85,6 @@ ApplyPatch linux-2.6-anti-io-stall.patch
 # x86(-64)
 # Add K10 and native cpu optimization support
 ApplyPatch linux-2.6-add-cpu-optimizations.patch
-ApplyPatch 01-compat-make-compat_alloc_user_space-incorporate-the-access_ok-check.patch
-ApplyPatch 02-compat-test-rax-for-the-system-call-number-not-eax.patch
-ApplyPatch 03-compat-retruncate-rax-after-ia32-syscall-entry-tracing.patch
 
 #
 # Intel IOMMU
@@ -248,11 +245,6 @@ ApplyPatch neuter_intel_microcode_load.patch
 
 ApplyPatch only-use-alpha2-regulatory-information-from-country-IE.patch
 
-# rhbz #617699
-ApplyPatch direct-io-move-aio_complete-into-end_io.patch
-ApplyPatch ext4-move-aio-completion-after-unwritten-extent-conversion.patch
-ApplyPatch xfs-move-aio-completion-after-unwritten-extent-conversion.patch
-
 ApplyPatch kprobes-x86-fix-kprobes-to-skip-prefixes-correctly.patch
 
 # rhbz #622149
@@ -269,8 +261,6 @@ ApplyPatch execve-improve-interactivity-with-large-arguments.patch
 ApplyPatch execve-make-responsive-to-sigkill-with-large-arguments.patch
 ApplyPatch setup_arg_pages-diagnose-excessive-argument-size.patch
 
-# CVE-2010-3080
-ApplyPatch alsa-seq-oss-fix-double-free-at-error-path-of-snd_seq_oss_open.patch
 # CVE-2010-2954
 ApplyPatch irda-correctly-clean-up-self-ias_obj-on-irda_bind-failure.patch
 # CVE-2010-2960

@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Stop issuing lone zero block warnings
 zcat ${SB_PATCHDIR}/${NAME}.nolonezero.diff.gz | patch -p1 --verbose
 # Fix extracting sparse files to a filesystem like vfat,
@@ -19,6 +20,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.22-atime-rofs.patch
 zcat ${SB_PATCHDIR}/tar-1.22-fortifysourcessigabrt.patch.gz | patch -p1 -E --backup --verbose
 #oldarchive option was not working(#594044)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-oldarchive.patch
+# fix exclusion of long file names with --xattrs (#634866)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-longnames.patch
+# do not crash with --listed-incremental (#635318)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-listedincremental.patch
 
 # Adds txz support
 zcat ${SB_PATCHDIR}/${NAME}-1.23-support_txz.diff.gz | patch -p1 -E --backup --verbose

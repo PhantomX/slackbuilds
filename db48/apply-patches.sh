@@ -1,7 +1,9 @@
-# The set of patches from hell :)
+
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 if [ "${PATCHLEVEL}" -gt 0 ] ;then
   for i in $( seq -w ${PATCHLEVEL} ) ; do
     patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/patch.${SVER}.${i} || exit 1
@@ -22,3 +24,6 @@ zcat ${SB_PATCHDIR}/db-4.6.21-1.85-compat.patch.gz | patch -p1 -E --backup --ver
   patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/patch.1.1
 )
 
+
+
+set +e +o pipefail

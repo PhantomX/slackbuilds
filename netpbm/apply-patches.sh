@@ -21,7 +21,7 @@ zcat ${SB_PATCHDIR}/${NAME}-svgtopam.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-docfix.patch
 zcat ${SB_PATCHDIR}/netpbm-ppmfadeusage.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/netpbm-fiasco-overflow.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/netpbm-lz.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-lz.patch
 zcat ${SB_PATCHDIR}/netpbm-pnmmontagefix.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-noppmtompeg.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-cmuwtopbm.patch

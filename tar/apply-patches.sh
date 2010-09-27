@@ -24,6 +24,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-oldarchive.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-longnames.patch
 # do not crash with --listed-incremental (#635318)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-listedincremental.patch
+#match non-stripped file names (#637085)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-stripcomponents.patch
 
 # Adds txz support
 zcat ${SB_PATCHDIR}/${NAME}-1.23-support_txz.diff.gz | patch -p1 -E --backup --verbose

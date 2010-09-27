@@ -16,10 +16,9 @@ zcat ${SB_PATCHDIR}/${NAME}.electricsheep.diff.gz | patch -p1 --verbose --backup
 patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-webcollage-default-nonet.patch
 # Remove "AC_PROG_CC' was expanded before it was required" warning
 patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-conf264.patch
-# hacks crash with no window2 when MappingNotify or so is received
-patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-no-window2-MappingNotify-bz587537.patch
-## Patches to be sent to the upsteam
-# xjack crashes with too small window
-patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-xjack-with-small-window.patch
+## Patches which must be discussed with upstream
+# For now set LANG to C for daemon because some garbage character appears
+# on passwd prompt
+patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.12-for-now-set-lang-on-daemon-to-C.patch
 
 set +e +o pipefail

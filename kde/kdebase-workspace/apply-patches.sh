@@ -4,7 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.1-startkde-slk.patch
+patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-startkde-slk.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.0-plasma-konsole.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.92-systemsettings_onlyshowin_kde.patch
 # For ck 0.4.1
@@ -34,7 +34,7 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.98-platformplugin-widgetstyle4.patch.gz | patch 
 #zcat ${SB_PATCHDIR}/${NAME}-4.4.0-classicmenu-games.patch.gz | patch -p1 -E --backup --verbose
 
 # Mandriva
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.1-save_color_scheme_name.patch
+#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.1-save_color_scheme_name.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.2-notify_color_changes.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-battery-always-show-percent-left.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.2-trash-applet-add-confirmation.patch

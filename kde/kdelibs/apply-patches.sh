@@ -40,9 +40,11 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patc
 
 # official backports
 
-# Trunk patches
-
 # Branch upstream
+patch -p4 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.2-comic_applet_kde253387.patch
+
+# Trunk patches
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.2-krun-kde\#253294.patch
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex

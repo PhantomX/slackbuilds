@@ -99,7 +99,6 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 #
 # bugfixes to drivers and filesystems
 #
-ApplyPatch aio-check-for-multiplication-overflow-in-do_io_submit.patch
 
 # ext4
 
@@ -121,6 +120,7 @@ ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch acpi-ec-add-delay-before-write.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
+ApplyPatch linux-2.6-defaults-no-pm-async.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
@@ -135,6 +135,7 @@ ApplyPatch linux-2.6-debug-always-inline-kzalloc.patch.gz
 #
 # disable message signaled interrupts
 ApplyPatch linux-2.6-defaults-pci_no_msi.patch
+ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
 # disable aspm if acpi doesn't provide an _OSC method
@@ -188,14 +189,8 @@ ApplyPatch linux-2.6-crash-driver.patch
 
 # crypto/
 
-# http://www.lirc.org/
-ApplyPatch lirc-staging-2.6.36.patch
-# enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
-ApplyPatch hdpvr-ir-enable.patch
-
 # Assorted Virt Fixes
 ApplyPatch fix_xen_guest_on_old_EC2.patch
-ApplyPatch linux-2.6.35.4-virtio_console-fix-poll.patch
 
 ApplyPatch drm-simplify-i2c-config.patch
 ApplyPatch drm-sil164-module.patch
@@ -204,7 +199,6 @@ ApplyPatch drm-i2c-ch7006-fix.patch
 ApplyPatch drm-nouveau-updates.patch
 ApplyPatch drm-nouveau-race-fix.patch
 ApplyPatch drm-nouveau-nva3-noaccel.patch
-ApplyPatch drm-nouveau-acpi-edid-fix.patch
 
 ApplyPatch drm-intel-big-hammer.patch
 ApplyOptionalPatch drm-intel-next.patch
@@ -212,6 +206,7 @@ ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
 ApplyPatch efifb-add-more-models.patch
+ApplyPatch efifb-check-that-the-base-addr-is-plausible-on-pci-systems.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -232,27 +227,31 @@ ApplyPatch linux-2.6-v4l-dvb-ir-core-memleak-fixes.patch
 ApplyPatch linux-2.6-v4l-dvb-add-lgdt3304-support.patch
 ApplyPatch linux-2.6-v4l-dvb-add-kworld-a340-support.patch
 
+# http://www.lirc.org/
+ApplyPatch lirc-staging-2.6.36.patch
+# enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
+ApplyPatch hdpvr-ir-enable.patch
+
 # Fix DMA bug on via-velocity
 ApplyPatch linux-2.6-via-velocity-dma-fix.patch
+
+# silence another rcu_reference warning
+ApplyPatch linux-2.6-rcu-sched-warning.patch
+ApplyPatch linux-2.6-rcu-netpoll.patch
 
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
-# rhbz#533746
-#ApplyPatch ssb_check_for_sprom.patch
-
 ApplyPatch only-use-alpha2-regulatory-information-from-country-IE.patch
 
+# bz 610941
 ApplyPatch kprobes-x86-fix-kprobes-to-skip-prefixes-correctly.patch
 
 # rhbz #622149
 ApplyPatch fix-rcu_deref_check-warning.patch
 ApplyPatch linux-2.6-cgroups-rcu.patch
-
-# rhbz #513530
-ApplyPatch dell-wmi-add-support-for-eject-key-studio-1555.patch
 
 ApplyPatch flexcop-fix-xlate_proc_name-warning.patch
 
@@ -261,11 +260,14 @@ ApplyPatch execve-improve-interactivity-with-large-arguments.patch
 ApplyPatch execve-make-responsive-to-sigkill-with-large-arguments.patch
 ApplyPatch setup_arg_pages-diagnose-excessive-argument-size.patch
 
-# CVE-2010-2954
-ApplyPatch irda-correctly-clean-up-self-ias_obj-on-irda_bind-failure.patch
-# CVE-2010-2960
-ApplyPatch keys-fix-bug-in-keyctl_session_to_parent-if-parent-has-no-session-keyring.patch
-ApplyPatch keys-fix-rcu-no-lock-warning-in-keyctl_session_to_parent.patch
+# Scheduler fixes (#635813 and #633037)
+ApplyPatch sched-05-avoid-side-effect-of-tickless-idle-on-update_cpu_load.patch
+ApplyPatch sched-10-change-nohz-idle-load-balancing-logic-to-push-model.patch
+ApplyPatch sched-15-update-rq-clock-for-nohz-balanced-cpus.patch
+ApplyPatch sched-20-fix-rq-clock-synchronization-when-migrating-tasks.patch
+ApplyPatch sched-25-move-sched_avg_update-to-update_cpu_load.patch
+ApplyPatch sched-30-sched-fix-nohz-balance-kick.patch
+ApplyPatch sched-35-increment-cache_nice_tries-only-on-periodic-lb.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

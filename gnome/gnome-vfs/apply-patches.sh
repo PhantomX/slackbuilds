@@ -3,7 +3,12 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.9.90-modules-conf.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.24.1-disable-gnome-mime-data.patch
+# CVE-2009-2473 neon, gnome-vfs2 embedded neon: billion laughs DoS attack
+# https://bugzilla.redhat.com/show_bug.cgi?id=518215
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.24.3-CVE-2009-2473.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.15.91-mailto-command.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.8.2-schema_about_for_upstream.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.8.2-browser_default.patch.gz | patch -p1 -E --backup --verbose

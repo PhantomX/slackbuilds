@@ -14,12 +14,13 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.3-konsole-activeta
 # fix disabling automatic spell checking in the Konqueror UI (kde#228593)
 zcat ${SB_PATCHDIR}/${NAME}-4.4.0-konqueror-kde\#228593.patch.gz | patch -p1 -E --backup --verbose
 
+# Password & User account becomes non responding
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.4-bz\#609039-chfn-parse.patch
+
 # Mandriva
 
 #trunk patches
 
 ## upstream patches
-# backport http://websvn.kde.org/?view=revision&revision=1168744
-patch -p3 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.1-ebrowsing_categories.patch
 
 set +e +o pipefail

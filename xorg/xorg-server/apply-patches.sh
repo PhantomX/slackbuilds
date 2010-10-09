@@ -44,12 +44,14 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-no-xorg.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-tcflush-fix.patch
 # 632805
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-panelid-sanity.patch
+# misc
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-insanity.patch
 
 # Backports from master
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then
-  zcat ${SB_PATCHDIR}/xserver-1.7.3.902-zap-warning.patch.gz | patch -p1 --verbose
+  patch -p1 --verbose -z .zap-warning -i ${SB_PATCHDIR}/xserver-zap-warning.patch
 fi
 
 set +e +o pipefail

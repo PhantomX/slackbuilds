@@ -16,7 +16,7 @@ zcat ${SB_PATCHDIR}/preferred-apps.patch.gz | patch -p1 -E --backup --verbose
 # don't pop up an error dialog if an applet from the 
 # default configuration is missing; we don't want to
 # add a hard dependency on e.g. tomboy 
-#zcat ${SB_PATCHDIR}/applet-error.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/applet-error.patch
 
 # http://bugzilla.gnome.org/show_bug.cgi?id=520111
 zcat ${SB_PATCHDIR}/${NAME}-2.21.92-allow-spurious-view-done-signals.patch.gz | patch -p1 -E --backup --verbose
@@ -29,7 +29,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bookmarks-submenu.patch
 # http://bugzilla.gnome.org/show_bug.cgi?id=343436
 zcat ${SB_PATCHDIR}/panel-padding.patch.gz | patch -p1 -E --backup --verbose
 # https://bugzilla.gnome.org/show_bug.cgi?id=583273
-#patch -p1 -E --backup -z .icon-padding --verbose -i ${SB_PATCHDIR}/icon-padding.patch
+patch -p1 -E --backup -z .icon-padding --verbose -i ${SB_PATCHDIR}/icon-padding.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=537798
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-clock-crash.patch
 patch -p1 -E --backup -z .dso --verbose -i ${SB_PATCHDIR}/gnome-panel-libs.patch

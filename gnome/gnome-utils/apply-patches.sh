@@ -1,5 +1,11 @@
-  
+
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-# http://bugzilla.gnome.org/show_bug.cgi?id=592661
-zcat ${SB_PATCHDIR}/dupe-id.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+# https://bugzilla.gnome.org/show_bug.cgi?id=597435
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/selfshot.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-linking.patch
+
+set +e +o pipefail

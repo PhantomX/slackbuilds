@@ -3,15 +3,17 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # bad hack
-#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.4.4-ldap-x86_64-hack.patch
-
-# Move .conduit files from share to lib (for the sake of multilib)
-# This patch effects other parts of evolution.spec and so is necessary
-# for a successful build.
-zcat ${SB_PATCHDIR}/${NAME}-2.5.4-fix-conduit-dir.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.4.4-ldap-x86_64-hack.patch
 
 # RH bug #176400
 zcat ${SB_PATCHDIR}/${NAME}-2.9.1-im-context-reset.patch.gz | patch -p1 -E --backup --verbose
+# RH bug #589555
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.30.1-help-contents.patch
+# GN bug #630700
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.31.92-gn630700.patch
+# GN bug #629972
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.32.0-gn629972.patch
 
 set +e +o pipefail

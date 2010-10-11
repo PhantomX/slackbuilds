@@ -50,6 +50,7 @@ fi
   ApplyPatch 0044_all_glibc-2.10-resolv-nameserver-fallback.patch
   ApplyPatch 0055_all_glibc-2.12-static-shared-getpagesize.patch
   ApplyPatch 0060_all_glibc-2.12-sse4-x86-static-strspn.patch
+  ApplyPatch 0070_all_glibc-2.12-asm-gnu-indirect.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch
   ApplyPatch 1020_all_glibc-longjmp-chk-hidden-fortify.patch
@@ -80,6 +81,7 @@ ApplyPatch glibc-2.9-ldd-non-exec.patch.gz
 ApplyPatch glibc-2.2-nss-upgrade.patch.gz
 ApplyPatch glibc-2.4.90-compat-EUR-currencies.patch.gz
 ApplyPatch glibc-2.9-nscd-no-host-cache.patch.gz
+ApplyPatch glibc-2.12.1-ldconfig-chroot-aux-cache.patch
 ApplyPatch glibc-2.3.2-tcsetattr-kernel-bug-workaround.patch.gz
 ApplyPatch glibc-2.10.1-biarch-cpp-defines.patch.gz
 ApplyPatch glibc-2.6-nice_fix.patch.gz

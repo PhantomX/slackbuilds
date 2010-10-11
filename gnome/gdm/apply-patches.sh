@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gdm-2.20.11-dso.patch
 
 zcat ${SB_PATCHDIR}/gdm-2.20.10-xsession.patch.gz | patch -p0 -E --backup --verbose

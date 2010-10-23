@@ -31,6 +31,9 @@ zcat ${SB_PATCHDIR}/glibc.nis-netgroups.diff.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/glibc.ru_RU.CP1251.diff.gz | patch -p1 --verbose
 # Fix missing MAX macro in getcwd.c:
 zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose
+# This fixes a security issue in glibc 2.12.1 and earlier:
+ApplyPatch glibc.CVE-2010-3847.diff
+
 # Fix build with make 3.82:
 ApplyPatch glibc-new-make.patch
 

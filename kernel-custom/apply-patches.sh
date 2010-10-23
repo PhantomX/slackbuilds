@@ -58,7 +58,7 @@ ApplyOptionalPatch git-linus.diff
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
 # also gives a list of missing options at the end. Useful for automated
 # builds (as used in the buildsystem).
-ApplyPatch linux-2.6-build-nonintconfig.patch
+#ApplyPatch linux-2.6-build-nonintconfig.patch
 
 ApplyPatch linux-2.6-makefile-after_link.patch
 
@@ -73,13 +73,11 @@ ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
 # Roland's utrace ptrace replacement.
-ApplyPatch git-utrace.patch
-ApplyPatch utrace-ptrace-fix-build.patch
-ApplyPatch utrace-remove-use-of-kref_set.patch
+ApplyPatch linux-2.6-tracehook.patch
+ApplyPatch linux-2.6-utrace.patch
+ApplyPatch linux-2.6-utrace-ptrace.patch
 
 # vm patches
-# https://bugzilla.kernel.org/show_bug.cgi?id=12309
-ApplyPatch linux-2.6-anti-io-stall.patch
 
 # Architecture patches
 # x86(-64)
@@ -120,14 +118,14 @@ ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch acpi-ec-add-delay-before-write.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
-ApplyPatch linux-2.6-defaults-no-pm-async.patch
+ApplyPatch acpi-update-battery-information-on-notification-0x81.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
 ApplyPatch linux-2.6-debug-nmi-timeout.patch
 ApplyPatch linux-2.6-debug-taint-vm.patch
 ## try to find out what is breaking acpi-cpufreq
-ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
+#ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
 ApplyPatch linux-2.6-debug-always-inline-kzalloc.patch.gz
 
 #
@@ -138,10 +136,8 @@ ApplyPatch linux-2.6-defaults-pci_no_msi.patch
 ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
-# disable aspm if acpi doesn't provide an _OSC method
-ApplyPatch pci-acpi-disable-aspm-if-no-osc.patch
-# allow drivers to disable aspm at load time
-ApplyPatch pci-aspm-dont-enable-too-early.patch
+
+ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
 
 #
 # SCSI Bits.
@@ -176,7 +172,7 @@ ApplyPatch linux-2.6-silence-noise.patch
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 
 # Changes to upstream defaults.
-ApplyPatch create-sys-fs-cgroup-to-mount-cgroupfs-on.patch
+
 
 # libata
 
@@ -192,21 +188,14 @@ ApplyPatch linux-2.6-crash-driver.patch
 # Assorted Virt Fixes
 ApplyPatch fix_xen_guest_on_old_EC2.patch
 
-ApplyPatch drm-simplify-i2c-config.patch
-ApplyPatch drm-sil164-module.patch
-ApplyPatch drm-i2c-ch7006-fix.patch
-# Nouveau DRM + drm fixes
-ApplyPatch drm-nouveau-updates.patch
-ApplyPatch drm-nouveau-race-fix.patch
-ApplyPatch drm-nouveau-nva3-noaccel.patch
+# Nouveau DRM
+ApplyOptionalPatch drm-nouveau-updates.patch
 
-ApplyPatch drm-intel-big-hammer.patch
+# Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
+ApplyPatch drm-intel-big-hammer.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
-
-ApplyPatch efifb-add-more-models.patch
-ApplyPatch efifb-check-that-the-base-addr-is-plausible-on-pci-systems.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -220,54 +209,45 @@ ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
-ApplyPatch linux-2.6-v4l-dvb-uvcvideo-update.patch
+#ApplyPatch linux-2.6-v4l-dvb-uvcvideo-update.patch
 
-ApplyPatch linux-2.6-v4l-dvb-ir-core-update.patch
-ApplyPatch linux-2.6-v4l-dvb-ir-core-memleak-fixes.patch
-ApplyPatch linux-2.6-v4l-dvb-add-lgdt3304-support.patch
-ApplyPatch linux-2.6-v4l-dvb-add-kworld-a340-support.patch
+#ApplyPatch linux-2.6-v4l-dvb-add-lgdt3304-support.patch
 
 # http://www.lirc.org/
-ApplyPatch lirc-staging-2.6.36.patch
+#ApplyPatch lirc-staging-2.6.36.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
 ApplyPatch hdpvr-ir-enable.patch
 
-# Fix DMA bug on via-velocity
-ApplyPatch linux-2.6-via-velocity-dma-fix.patch
-
 # silence another rcu_reference warning
 ApplyPatch linux-2.6-rcu-sched-warning.patch
-ApplyPatch linux-2.6-rcu-netpoll.patch
 
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
-ApplyPatch only-use-alpha2-regulatory-information-from-country-IE.patch
+# try to fix stalls during boot (#530393)
+ApplyPatch tpm-fix-stall-on-boot.patch
 
-# bz 610941
-ApplyPatch kprobes-x86-fix-kprobes-to-skip-prefixes-correctly.patch
+# Runtime PM
+ApplyPatch linux-2.6-bluetooth-autosuspend.patch
+ApplyPatch linux-2.6-uvc-autosuspend.patch
+ApplyPatch linux-2.6-qcserial-autosuspend.patch
+ApplyPatch linux-2.6-usb-pci-autosuspend.patch
+ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
+ApplyPatch runtime_pm_fixups.patch
 
-# rhbz #622149
-ApplyPatch fix-rcu_deref_check-warning.patch
-ApplyPatch linux-2.6-cgroups-rcu.patch
+# PCI patches to fix problems with _CRS
+# ( from linux-pci list )
+ApplyPatch pci-crs-fixes.patch
 
-ApplyPatch flexcop-fix-xlate_proc_name-warning.patch
+# rhbz#641468
+ApplyPatch pnpacpi-cope-with-invalid-device-ids.patch
 
-# mitigate DOS attack with large argument lists
-ApplyPatch execve-improve-interactivity-with-large-arguments.patch
-ApplyPatch execve-make-responsive-to-sigkill-with-large-arguments.patch
-ApplyPatch setup_arg_pages-diagnose-excessive-argument-size.patch
+# rhbz#605888
+ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
-# Scheduler fixes (#635813 and #633037)
-ApplyPatch sched-05-avoid-side-effect-of-tickless-idle-on-update_cpu_load.patch
-ApplyPatch sched-10-change-nohz-idle-load-balancing-logic-to-push-model.patch
-ApplyPatch sched-15-update-rq-clock-for-nohz-balanced-cpus.patch
-ApplyPatch sched-20-fix-rq-clock-synchronization-when-migrating-tasks.patch
-ApplyPatch sched-25-move-sched_avg_update-to-update_cpu_load.patch
-ApplyPatch sched-30-sched-fix-nohz-balance-kick.patch
-ApplyPatch sched-35-increment-cache_nice_tries-only-on-periodic-lb.patch
+ApplyPatch xhci_hcd-suspend-resume.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

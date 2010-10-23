@@ -6,7 +6,7 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/wine-rpath.patch
 zcat ${SB_PATCHDIR}/wine-1.1.15-winegcc.patch.gz | patch -p1 -E --backup --verbose
-patch -p0 -E --backup -z .gecko --verbose -i ${SB_PATCHDIR}/wine-gecko.patch
+#patch -p0 -E --backup -z .gecko --verbose -i ${SB_PATCHDIR}/wine-gecko.patch
 
 # bugfixes
 # fix for #593140

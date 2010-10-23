@@ -1,0 +1,127 @@
+diff -up ./mozilla/security/nss/lib/ckfw/pem/pinst.c.596783 ./mozilla/security/nss/lib/ckfw/pem/pinst.c
+--- ./mozilla/security/nss/lib/ckfw/pem/pinst.c.596783	2010-06-06 18:27:27.256318318 -0700
++++ ./mozilla/security/nss/lib/ckfw/pem/pinst.c	2010-06-06 20:45:28.158442982 -0700
+@@ -151,7 +151,7 @@ GetCertFields(unsigned char *cert, int c
+     buf = issuer->data + issuer->len;
+ 
+     /* only wanted issuer/SN */
+-    if (valid == NULL) {
++    if (subject == NULL || valid == NULL || subjkey == NULL) {
+         return SECSuccess;
+     }
+     /* validity */
+@@ -219,53 +219,93 @@ CreateObject(CK_OBJECT_CLASS objClass,
+         memset(&o->u.trust, 0, sizeof(o->u.trust));
+         break;
+     }
++
++    o->nickname = (char *) nss_ZAlloc(NULL, strlen(nickname) + 1);
++    if (o->nickname == NULL)
++        goto fail;
++    strcpy(o->nickname, nickname);
++
++    sprintf(id, "%d", objid);
++    len = strlen(id) + 1;       /* zero terminate */
++    o->id.data = (void *) nss_ZAlloc(NULL, len);
++    if (o->id.data == NULL)
++        goto fail;
++    (void) nsslibc_memcpy(o->id.data, id, len);
++    o->id.size = len;
++
+     o->objClass = objClass;
+     o->type = type;
+     o->slotID = slotID;
++
+     o->derCert = nss_ZNEW(NULL, SECItem);
++    if (o->derCert == NULL)
++        goto fail;
+     o->derCert->data = (void *) nss_ZAlloc(NULL, certDER->len);
++    if (o->derCert->data == NULL)
++        goto fail;
+     o->derCert->len = certDER->len;
+     nsslibc_memcpy(o->derCert->data, certDER->data, certDER->len);
+ 
+     switch (objClass) {
+     case CKO_CERTIFICATE:
+     case CKO_NETSCAPE_TRUST:
+-        GetCertFields(o->derCert->data,
+-                      o->derCert->len, &issuer, &serial,
+-                      &derSN, &subject, &valid, &subjkey);
++        if (SECSuccess != GetCertFields(o->derCert->data, o->derCert->len,
++                                        &issuer, &serial, &derSN, &subject,
++                                        &valid, &subjkey))
++            goto fail;
+ 
+         o->u.cert.subject.data = (void *) nss_ZAlloc(NULL, subject.len);
++        if (o->u.cert.subject.data == NULL)
++            goto fail;
+         o->u.cert.subject.size = subject.len;
+         nsslibc_memcpy(o->u.cert.subject.data, subject.data, subject.len);
+ 
+         o->u.cert.issuer.data = (void *) nss_ZAlloc(NULL, issuer.len);
++        if (o->u.cert.issuer.data == NULL) {
++            nss_ZFreeIf(o->u.cert.subject.data);
++            goto fail;
++        }
+         o->u.cert.issuer.size = issuer.len;
+         nsslibc_memcpy(o->u.cert.issuer.data, issuer.data, issuer.len);
+ 
+         o->u.cert.serial.data = (void *) nss_ZAlloc(NULL, serial.len);
++        if (o->u.cert.serial.data == NULL) {
++            nss_ZFreeIf(o->u.cert.issuer.data);
++            nss_ZFreeIf(o->u.cert.subject.data);
++            goto fail;
++        }
+         o->u.cert.serial.size = serial.len;
+         nsslibc_memcpy(o->u.cert.serial.data, serial.data, serial.len);
+         break;
+     case CKO_PRIVATE_KEY:
+         o->u.key.key.privateKey = nss_ZNEW(NULL, SECItem);
++        if (o->u.key.key.privateKey == NULL)
++            goto fail;
+         o->u.key.key.privateKey->data =
+             (void *) nss_ZAlloc(NULL, keyDER->len);
++        if (o->u.key.key.privateKey->data == NULL) {
++            nss_ZFreeIf(o->u.key.key.privateKey);
++            goto fail;
++        }
+         o->u.key.key.privateKey->len = keyDER->len;
+         nsslibc_memcpy(o->u.key.key.privateKey->data, keyDER->data,
+                        keyDER->len);
+     }
+ 
+-    o->nickname = (char *) nss_ZAlloc(NULL, strlen(nickname) + 1);
+-    strcpy(o->nickname, nickname);
+-
+-    sprintf(id, "%d", objid);
+-
+-    len = strlen(id) + 1;       /* zero terminate */
+-    o->id.data = (void *) nss_ZAlloc(NULL, len);
+-    (void) nsslibc_memcpy(o->id.data, id, len);
+-    o->id.size = len;
+ 
+     return o;
++
++fail:
++    if (o) {
++        if (o->derCert) {
++            nss_ZFreeIf(o->derCert->data);
++            nss_ZFreeIf(o->derCert);
++        }
++        nss_ZFreeIf(o->id.data);
++        nss_ZFreeIf(o->nickname);
++        nss_ZFreeIf(o);
++    }
++    return NULL;
+ }
+ 
+ pemInternalObject *
+@@ -306,6 +346,8 @@ AddObjectIfNeeded(CK_OBJECT_CLASS objCla
+     /* object not found, we need to create it */
+     pemInternalObject *io = CreateObject(objClass, type, certDER, keyDER,
+                                          filename, objid, slotID);
++    if (io == NULL)
++        return NULL;
+ 
+     io->gobjIndex = count;
+ 

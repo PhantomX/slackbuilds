@@ -24,13 +24,17 @@ zcat ${SB_PATCHDIR}/${NAME}-6.10-manpages.patch.gz | patch -p1 -E --backup --ver
 zcat ${SB_PATCHDIR}/${NAME}-7.4-sttytcsadrain.patch.gz | patch -p1 -E --backup --verbose
 #df --direct
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-df-direct.patch
+# Fix mkstemp on sparc64
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-mkstemp.patch
+# add jar-like archives to colored ones
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.5-dircolors.patch
 
 # sh-utils
 # add info about TZ envvar to date manpage
 zcat ${SB_PATCHDIR}/sh-utils-2.0.11-dateman.patch.gz | patch -p1 -E --backup --verbose
 # set paths for su explicitly, don't get influenced by paths.h
 zcat ${SB_PATCHDIR}/sh-utils-1.16-paths.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-4.5.3-langinfo.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.3-langinfo.patch
 
 # (sb) lin18nux/lsb compliance
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-i18n.patch
@@ -46,6 +50,5 @@ fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-getgrouplist.patch
 # Prevent buffer overflow in who(1).
 zcat ${SB_PATCHDIR}/${NAME}-overflow.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-getfacl-exit-code.patch.gz | patch -p1 -E --backup --verbose
 
 set +e +o pipefail

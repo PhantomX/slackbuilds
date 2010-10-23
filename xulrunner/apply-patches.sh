@@ -17,7 +17,6 @@ zcat ${SB_PATCHDIR}/mozilla-build-sbrk.patch.gz | patch -p2 -E --backup --verbos
 zcat ${SB_PATCHDIR}/mozilla-192-pkgconfig.patch.gz | patch -p1 -E --backup --verbose
 
 # Upstream patches
-zcat ${SB_PATCHDIR}/mozilla-ps-pdf-simplify-operators.patch.gz | patch -p1 -E --backup --verbose
 
 # From Arch
 zcat ${SB_PATCHDIR}/fix-mozilla-launcher.patch.gz | patch -p0 -E --backup --verbose

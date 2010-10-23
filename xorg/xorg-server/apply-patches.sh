@@ -45,7 +45,10 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-tcflush-fix.patch
 # 632805
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-panelid-sanity.patch
 # misc
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-insanity.patch
+#patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-insanity.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-classic-default-mode.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-qxl-fallback.patch
+
 
 # Backports from master
 

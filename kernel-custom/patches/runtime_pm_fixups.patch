@@ -1,0 +1,114 @@
+Experimental fixes for the interactions between runtime PM and ACPI power
+resources. Needs some work with upstream.
+
+diff --git a/drivers/acpi/bus.c b/drivers/acpi/bus.c
+index 310e3b9..371debe 100644
+--- a/drivers/acpi/bus.c
++++ b/drivers/acpi/bus.c
+@@ -329,7 +329,8 @@ int acpi_bus_set_power(acpi_handle handle, int state)
+ 				goto end;
+ 			}
+ 		}
+-		if (device->power.flags.power_resources) {
++		if (device->power.flags.power_resources &&
++		    !device->wakeup.run_wake_count) {
+ 			result = acpi_power_transition(device, state);
+ 			if (result)
+ 				goto end;
+diff --git a/drivers/acpi/pci_bind.c b/drivers/acpi/pci_bind.c
+index 8b3cc6a..b013174 100644
+--- a/drivers/acpi/pci_bind.c
++++ b/drivers/acpi/pci_bind.c
+@@ -33,6 +33,8 @@
+ #include <acpi/acpi_bus.h>
+ #include <acpi/acpi_drivers.h>
+ 
++#include "internal.h"
++
+ #define _COMPONENT		ACPI_PCI_COMPONENT
+ ACPI_MODULE_NAME("pci_bind");
+ 
+@@ -173,6 +175,8 @@ static int acpi_pci_bind(struct acpi_device *device)
+ 		device->ops.unbind = acpi_pci_unbind;
+ 	}
+ 
++	acpi_power_transition(device, acpi_power_get_inferred_state(device));
++
+ 	/*
+ 	 * Evaluate and parse _PRT, if exists.  This code allows parsing of
+ 	 * _PRT objects within the scope of non-bridge devices.  Note that
+diff --git a/drivers/acpi/power.c b/drivers/acpi/power.c
+index 844c155..8a42ddf 100644
+--- a/drivers/acpi/power.c
++++ b/drivers/acpi/power.c
+@@ -394,7 +394,7 @@ int acpi_enable_wakeup_device_power(struct acpi_device *dev, int sleep_state)
+  *    State Wake) for the device, if present
+  * 2. Shutdown down the power resources
+  */
+-int acpi_disable_wakeup_device_power(struct acpi_device *dev)
++int acpi_disable_wakeup_device_power(struct acpi_device *dev, int sleep_state)
+ {
+ 	int i, err = 0;
+ 
+@@ -417,6 +417,9 @@ int acpi_disable_wakeup_device_power(struct acpi_device *dev)
+ 	if (err)
+ 		goto out;
+ 
++	if (sleep_state == ACPI_STATE_S0)
++		goto out;
++
+ 	/* Close power resource */
+ 	for (i = 0; i < dev->wakeup.resources.count; i++) {
+ 		int ret = acpi_power_off_device(
+diff --git a/drivers/acpi/sleep.c b/drivers/acpi/sleep.c
+index 2c5cd02..6bf016b 100644
+--- a/drivers/acpi/sleep.c
++++ b/drivers/acpi/sleep.c
+@@ -670,7 +670,7 @@ int acpi_pm_device_sleep_wake(struct device *dev, bool enable)
+ 
+ 	error = enable ?
+ 		acpi_enable_wakeup_device_power(adev, acpi_target_sleep_state) :
+-		acpi_disable_wakeup_device_power(adev);
++		acpi_disable_wakeup_device_power(adev, acpi_target_sleep_state);
+ 	if (!error)
+ 		dev_info(dev, "wake-up capability %s by ACPI\n",
+ 				enable ? "enabled" : "disabled");
+diff --git a/drivers/acpi/wakeup.c b/drivers/acpi/wakeup.c
+index f62a50c..ff48a54 100644
+--- a/drivers/acpi/wakeup.c
++++ b/drivers/acpi/wakeup.c
+@@ -71,7 +71,7 @@ void acpi_disable_wakeup_devices(u8 sleep_state)
+ 				ACPI_GPE_DISABLE);
+ 
+ 		if (dev->wakeup.state.enabled)
+-			acpi_disable_wakeup_device_power(dev);
++			acpi_disable_wakeup_device_power(dev, sleep_state);
+ 	}
+ }
+ 
+diff --git a/drivers/pci/pci-acpi.c b/drivers/pci/pci-acpi.c
+index 24e19c5..cd99494 100644
+--- a/drivers/pci/pci-acpi.c
++++ b/drivers/pci/pci-acpi.c
+@@ -302,7 +302,7 @@ static int acpi_dev_run_wake(struct device *phys_dev, bool enable)
+ 		if (!--dev->wakeup.run_wake_count) {
+ 			acpi_disable_gpe(dev->wakeup.gpe_device,
+ 					 dev->wakeup.gpe_number);
+-			acpi_disable_wakeup_device_power(dev);
++			acpi_disable_wakeup_device_power(dev, ACPI_STATE_S0);
+ 		}
+ 	} else {
+ 		error = -EALREADY;
+diff --git a/include/acpi/acpi_bus.h b/include/acpi/acpi_bus.h
+index 4de84ce..284f43c 100644
+--- a/include/acpi/acpi_bus.h
++++ b/include/acpi/acpi_bus.h
+@@ -387,7 +387,7 @@ struct acpi_pci_root *acpi_pci_find_root(acpi_handle handle);
+ #define DEVICE_ACPI_HANDLE(dev) ((acpi_handle)((dev)->archdata.acpi_handle))
+ 
+ int acpi_enable_wakeup_device_power(struct acpi_device *dev, int state);
+-int acpi_disable_wakeup_device_power(struct acpi_device *dev);
++int acpi_disable_wakeup_device_power(struct acpi_device *dev, int state);
+ 
+ #ifdef CONFIG_PM_SLEEP
+ int acpi_pm_device_sleep_state(struct device *, int *);

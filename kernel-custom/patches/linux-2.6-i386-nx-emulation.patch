@@ -107,7 +107,7 @@
 +	 *  If we have either disabled exec-shield on the boot command line,
 +	 *  or we have NX, then we don't need to do this.
 +	 */
-+	if (exec_shield != 0) {
++	if (!disable_nx) {
 +#ifdef CONFIG_X86_PAE
 +		if (!test_cpu_cap(c, X86_FEATURE_NX))
 +#endif
@@ -371,19 +371,20 @@
  #include <linux/spinlock.h>
  #include <linux/errno.h>
  #include <linux/init.h>
-@@ -23,6 +24,7 @@ static int __init noexec_setup(char *str)
- 		disable_nx = 0;
- 	} else if (!strncmp(str, "off", 3)) {
- 		disable_nx = 1;
-+		exec_shield = 0;
- 	}
- 	x86_configure_nx();
- 	return 0;
+@@ -6,7 +6,7 @@
+ #include <asm/pgtable.h>
+ #include <asm/proto.h>
+
+-static int disable_nx __cpuinitdata;
++int disable_nx __cpuinitdata;
+
+ /*
+  * noexec = on|off
 @@ -40,6 +42,10 @@ void __cpuinit x86_configure_nx(void)
  void __init x86_report_nx(void)
  {
  	if (!cpu_has_nx) {
-+		if (exec_shield)
++		if (disable_nx)
 +			printk(KERN_INFO "Using x86 segment limits to approximate NX protection\n");
 +		else
 +
@@ -461,7 +462,7 @@
 +	 * Turn off the CS limit completely if exec-shield disabled or
 +	 * NX active:
 +	 */
-+	if (!exec_shield || executable_stack != EXSTACK_DISABLE_X || (__supported_pte_mask & _PAGE_NX))
++	if (disable_nx || executable_stack != EXSTACK_DISABLE_X || (__supported_pte_mask & _PAGE_NX))
 +		arch_add_exec_range(current->mm, -1);
 +#endif
 +
@@ -474,49 +475,12 @@
  struct fs_struct;
  struct perf_event_context;
  
-+extern int exec_shield;
++extern int disable_nx;
 +extern int print_fatal_signals;
 +
  /*
   * List of flags we want to share for kernel threads,
   * if only because they are not used by them anyway.
---- a/kernel/sysctl.c
-+++ b/kernel/sysctl.c
-@@ -101,6 +101,17 @@ extern int sysctl_nr_open_min, sysctl_nr_open_max;
- #ifndef CONFIG_MMU
- extern int sysctl_nr_trim_pages;
- #endif
-+
-+int exec_shield = 1;
-+
-+static int __init setup_exec_shield(char *str)
-+{
-+	get_option(&str, &exec_shield);
-+
-+	return 1;
-+}
-+__setup("exec-shield=", setup_exec_shield);
-+
- #ifdef CONFIG_BLOCK
- extern int blk_iopoll_enabled;
- #endif
-@@ -428,6 +448,16 @@ static struct ctl_table kern_table[] = {
- 		.mode		= 0644,
- 		.proc_handler	= proc_dointvec,
- 	},
-+#ifdef CONFIG_X86_32
-+	{
-+		.procname	= "exec-shield",
-+		.data		= &exec_shield,
-+		.maxlen		= sizeof(int),
-+		.mode		= 0644,
-+		.proc_handler	= &proc_dointvec,
-+	},
-+#endif
-+
- #ifdef CONFIG_PROC_SYSCTL
- 	{
- 		.procname	= "tainted",
 --- b/mm/mmap.c
 +++ b/mm/mmap.c
 @@ -44,6 +45,18 @@
@@ -627,3 +591,25 @@
  	mmu_notifier_invalidate_range_start(mm, start, end);
  	if (is_vm_hugetlb_page(vma))
  		hugetlb_change_protection(vma, start, end, vma->vm_page_prot);
+diff --git a/arch/x86/kernel/process.c b/arch/x86/kernel/process.c
+index 57d1868..29c0c35 100644
+--- a/arch/x86/kernel/process.c
++++ b/arch/x86/kernel/process.c
+@@ -669,6 +669,16 @@ unsigned long arch_align_stack(unsigned long sp)
+ unsigned long arch_randomize_brk(struct mm_struct *mm)
+ {
+ 	unsigned long range_end = mm->brk + 0x02000000;
+-	return randomize_range(mm->brk, range_end, 0) ? : mm->brk;
++	unsigned long bump = 0;
++#ifdef CONFIG_X86_32
++	/* in the case of NX emulation, shove the brk segment way out of the
++	   way of the exec randomization area, since it can collide with
++	   future allocations if not. */
++	if ( (mm->get_unmapped_exec_area == arch_get_unmapped_exec_area) &&
++	     (mm->brk < 0x08000000) ) {
++		bump = (TASK_SIZE/6);
++	}
++#endif
++	return bump + (randomize_range(mm->brk, range_end, 0) ? : mm->brk);
+ }
+ 

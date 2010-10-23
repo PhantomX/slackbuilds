@@ -18,7 +18,7 @@ EOF
 }
 
 # validate
-if test $# -eq 0; then
+if [ $# -eq 0 ]; then
   usage 1 1>&2
 fi
 
@@ -30,13 +30,18 @@ if [ ! -f $p11conf ]; then
   exit 1
 fi
 
-on="1"
+# check if nsssysinit is currently enabled or disabled
+sysinit_enabled()
+{
+  grep -q '^library=libnsssysinit' ${p11conf}
+}
+
+umask 022
 case "$1" in
   on | ON )
-    if [ `grep '^library=libnsssysinit' ${p11conf}` ]; then 
+    if sysinit_enabled; then 
       exit 0 
     fi
-    umask 022
     cat ${p11conf} | \
     sed -e 's/^library=$/library=libnsssysinit.so/' \
         -e '/^NSS/s/\(Flags=internal\)\(,[^m]\)/\1,moduleDBOnly\2/' > \
@@ -44,10 +49,9 @@ case "$1" in
     mv ${p11conf}.on ${p11conf}
     ;;
   off | OFF )
-    if [ ! `grep "^library=libnsssysinit" ${p11conf}` ]; then
+    if ! sysinit_enabled; then
       exit 0
     fi
-    umask 022
     cat ${p11conf} | \
     sed -e 's/^library=libnsssysinit.so/library=/' \
         -e '/^NSS/s/Flags=internal,moduleDBOnly/Flags=internal/' > \
@@ -55,7 +59,8 @@ case "$1" in
     mv ${p11conf}.off ${p11conf}
     ;;
   status )
-    grep -q '^library=libnsssysinit' ${p11conf} && echo 'ON' || echo OFF
+    echo -n 'NSS sysinit is '
+    sysinit_enabled && echo 'enabled' || echo 'disabled'
     ;;
   * )
     usage 1 1>&2

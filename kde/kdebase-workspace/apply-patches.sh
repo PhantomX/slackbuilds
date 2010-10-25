@@ -32,6 +32,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.92-xsession_errors
 zcat ${SB_PATCHDIR}/${NAME}-4.3.98-platformplugin-widgetstyle4.patch.gz | patch -p1 -E --backup --verbose
 # fix the Games menu in the classic menu mixing up Name and Description
 #zcat ${SB_PATCHDIR}/${NAME}-4.4.0-classicmenu-games.patch.gz | patch -p1 -E --backup --verbose
+# drop hard dep on xorg-x11-apps (for xmessage), http://bugzilla.redhat.com/537609
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-startkde_zenity.patch 
 
 # Mandriva
 #patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.1-save_color_scheme_name.patch
@@ -45,12 +47,17 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup -
 # "Adding "Enable networking" button to knetworkmanager"
 # https://bugzilla.redhat.com/598765 https://bugs.kde.org/238325
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.85-kdebug238325.patch
-# Display Settings are Lost on Logout, http://bugs.kde.org/183143 , http://bugzilla.redhat.com/607180
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.4-kdebug183143.patch
 #  Error in file "/usr/share/applications/kde4/kfontview.desktop":
 # "fonts/package" is an invalid MIME type http://bugzilla.redhat.com/581896
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.1-kfontview_dt_validate.patch
 
 # Branch patches
+
+## trunk patches
+# Display Settings are Lost on Logout, http://bugs.kde.org/183143 , http://bugzilla.redhat.com/607180
+# backport http://websvn.kde.org/?view=revision&revision=1170315
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-krandrtray_backport.patch
+# http://websvn.kde.org/?revision=1176432&view=revision
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-kwin_unredirect_fullscreen_windows_ui.patch
 
 set +e +o pipefail

@@ -25,4 +25,7 @@ patch -p1 --backup --verbose -i ${SB_PATCHDIR}/tooltip-positioning.patch
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/window-dragging.patch
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/goi-build-fix.patch
 
+# https://bugs.archlinux.org/task/21084
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/old-icon-symlinks.patch
+
 set +e +o pipefail

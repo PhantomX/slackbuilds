@@ -33,7 +33,11 @@ zcat ${SB_PATCHDIR}/glibc.ru_RU.CP1251.diff.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose
 # This fixes a security issue in glibc 2.12.1 and earlier:
 ApplyPatch glibc.CVE-2010-3847.diff
+# http://sources.redhat.com/git/?p=glibc.git;a=patch;h=15bac72b
+ApplyPatch glibc-2.12.1-fix-IPTOS_CLASS-definition.patch
 
+# fedora "fix" for excess linker optimization on i686
+ApplyPatch glibc-2.12.1-but-I-am-an-i686.patch
 # Fix build with make 3.82:
 ApplyPatch glibc-new-make.patch
 
@@ -53,6 +57,7 @@ fi
   ApplyPatch 0044_all_glibc-2.10-resolv-nameserver-fallback.patch
   ApplyPatch 0055_all_glibc-2.12-static-shared-getpagesize.patch
   ApplyPatch 0060_all_glibc-2.12-sse4-x86-static-strspn.patch
+  ApplyPatch 0060_all_glibc-ld-audit-setuid.patch
   ApplyPatch 0070_all_glibc-2.12-asm-gnu-indirect.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch

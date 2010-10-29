@@ -1,5 +1,8 @@
-  
+
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-# From upstream
-zcat ${SB_PATCHDIR}/libXext-1.1-event_vec-smash.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+
+set +e +o pipefail

@@ -24,6 +24,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-udev-rules.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-retry-open.patch
 # Fixed hp-setup traceback when discovery page is skipped.
 zcat ${SB_PATCHDIR}/hplip-discovery-method.patch.gz | patch -p1 -E --backup --verbose
+# Fixed bogus low ink warnings from hpijs driver
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpijs-marker-supply.patch
 # Give up trying to print a job to a reconnected device.
 zcat ${SB_PATCHDIR}/hplip-device-reconnected.patch.gz | patch -p1 -E --backup --verbose
 # Clear old printer-state-reasons we used to manage.
@@ -63,5 +65,11 @@ do
 done
 # Increase timeouts for curl, wget, ping for high latency networks
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-network-timeout.patch
+# utils.addgroup() was returning string instead of array
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-addgroup.patch
+# Fixed traceback on error condition in device.py
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-raw_deviceID-traceback.patch
+# Avoid UnicodeDecodeError in printsettingstoolbox.py
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-UnicodeDecodeError.patch
 
 set +e +o pipefail

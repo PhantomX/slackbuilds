@@ -35,6 +35,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-socketmodule-con
 zcat ${SB_PATCHDIR}/${NAME}-2.6-rpath.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/python-2.6.4-distutils-rpath.patch.gz | patch -p1 -E --backup --verbose
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-db51.diff
+
 # Backported fix from upstream for regression in ConfigParse's handling
 # of None values
 # http://bugs.python.org/issue7005#msg115417
@@ -74,6 +76,13 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-fix-parallel-make.p
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_commands-expected-ls-output-issue7108.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/less-verbose-COUNT_ALLOCS.patch
+
+# Fix dbm module on big-endian 64-bit
+# Sent upstream as http://bugs.python.org/issue9687 (rhbz#626756)
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fix-dbm_contains-on-64bit-bigendian.patch
+# Fix test_structmember on big-endian 64-bit
+# Sent upstream as http://bugs.python.org/issue9960
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_structmember-on-64bit-bigendian.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-autotool-intermediates.patch
 

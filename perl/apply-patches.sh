@@ -53,4 +53,7 @@ ApplyPatch perl-5.10.0-x86_64-io-test-failure.patch
 # Do not leak when destroying thread; RT #77352, RHBZ #630667
 ApplyPatch perl-5.12.1-fix_thread_leak.patch
 
+# h2ph produces incorrect code in preamble, based mainly on RT #74614
+ApplyPatch perl-5.12.2-h2ph.patch
+
 set +e +o pipefail

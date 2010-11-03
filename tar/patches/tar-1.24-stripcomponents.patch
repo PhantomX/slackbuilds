@@ -1,0 +1,252 @@
+From 28e91b48f680a6fab90ee39145123647345f385f Mon Sep 17 00:00:00 2001
+From: Sergey Poznyakoff <gray@gnu.org.ua>
+Date: Tue, 26 Oct 2010 14:47:16 +0000
+Subject: Make sure name matching occurs before name transformation.
+
+The commit 9c194c99 altered that order.
+
+* src/list.c (transform_stat_info): New function.  Split off from
+decode_header.
+(read_and): Call transform_stat_info right before do_something,
+and after deciding if we should proceed with this member name,
+so that name matching occurs before name transformation.
+
+* tests/extrac17.at: New file.
+* tests/Makefile.am (TESTSUITE_AT): Add extrac17.at
+* tests/testsuite.at: Include extrac17.at.
+---
+diff --git a/src/list.c b/src/list.c
+index d15653d..e1e06ca 100644
+--- a/src/list.c
++++ b/src/list.c
+@@ -75,6 +75,66 @@ base64_init (void)
+     base64_map[(int) base_64_digits[i]] = i;
+ }
+ 
++static char *
++decode_xform (char *file_name, void *data)
++{
++  int type = *(int*)data;
++
++  switch (type)
++    {
++    case XFORM_SYMLINK:
++      /* FIXME: It is not quite clear how and to which extent are the symbolic
++	 links subject to filename transformation.  In the absence of another
++	 solution, symbolic links are exempt from component stripping and
++	 name suffix normalization, but subject to filename transformation
++	 proper. */
++      return file_name;
++
++    case XFORM_LINK:
++      file_name = safer_name_suffix (file_name, true, absolute_names_option);
++      break;
++
++    case XFORM_REGFILE:
++      file_name = safer_name_suffix (file_name, false, absolute_names_option);
++      break;
++    }
++
++  if (strip_name_components)
++    {
++      size_t prefix_len = stripped_prefix_len (file_name,
++					       strip_name_components);
++      if (prefix_len == (size_t) -1)
++	prefix_len = strlen (file_name);
++      file_name += prefix_len;
++    }
++  return file_name;
++}
++
++static bool
++transform_member_name (char **pinput, int type)
++{
++  return transform_name_fp (pinput, type, decode_xform, &type);
++}
++
++static void
++transform_stat_info (int typeflag, struct tar_stat_info *stat_info)
++{
++  if (typeflag == GNUTYPE_VOLHDR)
++    /* Name transformations don't apply to volume headers. */
++    return;
++  
++  transform_member_name (&stat_info->file_name, XFORM_REGFILE);
++  switch (typeflag)
++    {
++    case SYMTYPE:
++      transform_member_name (&stat_info->link_name, XFORM_SYMLINK);
++      break;
++
++    case LNKTYPE:
++      transform_member_name (&stat_info->link_name, XFORM_LINK);
++    }
++}
++
+ /* Main loop for reading an archive.  */
+ void
+ read_and (void (*do_something) (void))
+@@ -135,7 +195,8 @@ read_and (void (*do_something) (void))
+ 		  continue;
+ 		}
+ 	    }
+-
++	  transform_stat_info (current_header->header.typeflag,
++			       &current_stat_info);
+ 	  (*do_something) ();
+ 	  continue;
+ 
+@@ -495,47 +556,6 @@ read_header (union block **return_block, struct tar_stat_info *info,
+     }
+ }
+ 
+-static char *
+-decode_xform (char *file_name, void *data)
+-{
+-  int type = *(int*)data;
+-
+-  switch (type)
+-    {
+-    case XFORM_SYMLINK:
+-      /* FIXME: It is not quite clear how and to which extent are the symbolic
+-	 links subject to filename transformation.  In the absence of another
+-	 solution, symbolic links are exempt from component stripping and
+-	 name suffix normalization, but subject to filename transformation
+-	 proper. */
+-      return file_name;
+-
+-    case XFORM_LINK:
+-      file_name = safer_name_suffix (file_name, true, absolute_names_option);
+-      break;
+-
+-    case XFORM_REGFILE:
+-      file_name = safer_name_suffix (file_name, false, absolute_names_option);
+-      break;
+-    }
+-
+-  if (strip_name_components)
+-    {
+-      size_t prefix_len = stripped_prefix_len (file_name,
+-					       strip_name_components);
+-      if (prefix_len == (size_t) -1)
+-	prefix_len = strlen (file_name);
+-      file_name += prefix_len;
+-    }
+-  return file_name;
+-}
+-
+-static bool
+-transform_member_name (char **pinput, int type)
+-{
+-  return transform_name_fp (pinput, type, decode_xform, &type);
+-}
+-
+ #define ISOCTAL(c) ((c)>='0'&&(c)<='7')
+ 
+ /* Decode things from a file HEADER block into STAT_INFO, also setting
+@@ -655,23 +675,9 @@ decode_header (union block *header, struct tar_stat_info *stat_info,
+           || stat_info->dumpdir)
+ 	stat_info->is_dumpdir = true;
+     }
+-
+-  if (header->header.typeflag == GNUTYPE_VOLHDR)
+-    /* Name transformations don't apply to volume headers. */
+-    return;
+-  
+-  transform_member_name (&stat_info->file_name, XFORM_REGFILE);
+-  switch (header->header.typeflag)
+-    {
+-    case SYMTYPE:
+-      transform_member_name (&stat_info->link_name, XFORM_SYMLINK);
+-      break;
+-
+-    case LNKTYPE:
+-      transform_member_name (&stat_info->link_name, XFORM_LINK);
+-    }
+ }
+ 
++
+ /* Convert buffer at WHERE0 of size DIGS from external format to
+    uintmax_t.  DIGS must be positive.  If TYPE is nonnull, the data
+    are of type TYPE.  The buffer must represent a value in the range
+diff --git a/tests/Makefile.am b/tests/Makefile.am
+index b71e83c..dd375f3 100644
+--- a/tests/Makefile.am
++++ b/tests/Makefile.am
+@@ -83,6 +83,7 @@ TESTSUITE_AT = \
+  extrac14.at\
+  extrac15.at\
+  extrac16.at\
++ extrac17.at\
+  filerem01.at\
+  filerem02.at\
+  gzip.at\
+diff --git a/tests/extrac17.at b/tests/extrac17.at
+new file mode 100644
+index 0000000..952c073
+--- a/dev/null
++++ b/tests/extrac17.at
+@@ -0,0 +1,49 @@
++# Process this file with autom4te to create testsuite. -*- Autotest -*-
++#
++# Test suite for GNU tar.
++# Copyright (C) 2010 Free Software Foundation, Inc.
++#
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3, or (at your option)
++# any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++AT_SETUP([name matching/transformation ordering])
++AT_KEYWORDS([extract extrac17])
++
++# Description: Tar 1.24 changed the ordering of name matching and
++# name transformation so that the former saw already transformed
++# file names (see commit 9c194c99 and exclude06.at).  This reverted
++# ordering made it impossible to match file names in certain cases.
++# In particular, the testcase below would not extract anything.
++#
++# Reported-by: "Gabor Z. Papp" <gzp@papp.hu>
++# References: <x6r5fd9jye@gzp>, <20101026175126.29028@Pirx.gnu.org.ua>
++#             http://lists.gnu.org/archive/html/bug-tar/2010-10/msg00047.html
++
++AT_TAR_CHECK([
++mkdir dir dir/subdir1 dir/subdir2 out
++genfile --file dir/subdir1/file1
++genfile --file dir/subdir2/file2
++
++tar cf dir.tar dir
++
++tar -x -v -f dir.tar -C out --strip-components=2 dir/subdir1/
++],
++[0],
++[dir/subdir1/file1
++])
++
++AT_CLEANUP
++
++
++
++
+diff --git a/tests/testsuite.at b/tests/testsuite.at
+index 40f0e41..9aaafff 100644
+--- a/tests/testsuite.at
++++ b/tests/testsuite.at
+@@ -155,6 +155,7 @@ m4_include([extrac13.at])
+ m4_include([extrac14.at])
+ m4_include([extrac15.at])
+ m4_include([extrac16.at])
++m4_include([extrac17.at])
+ 
+ m4_include([label01.at])
+ m4_include([label02.at])
+--
+cgit v0.8.3.2

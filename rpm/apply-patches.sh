@@ -4,6 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-db51.patch
 zcat ${SB_PATCHDIR}/rpm-4.7.90-devel-autodep.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/rpm-4.5.90-pkgconfig-path.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/rpm-4.5.90-gstreamer-provides.patch.gz | patch -p1 -E --backup --verbose

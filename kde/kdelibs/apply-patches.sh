@@ -41,12 +41,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patc
 # official backports
 
 # Branch upstream
-patch -p4 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.2-comic_applet_kde253387.patch
-# http://websvn.kde.org/?view=revision&revision=1186278
-patch -p4 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.2-kio_krun_services.patch
 
 # Trunk patches
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.2-krun-kde\#253294.patch
 # http://websvn.kde.org/?view=revision&revision=1185912
 patch -p3 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.2-plasma_wallpaper_configchanged.patch
 

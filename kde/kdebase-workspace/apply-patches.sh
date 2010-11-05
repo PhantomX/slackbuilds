@@ -7,8 +7,6 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-startkde-slk.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.0-plasma-konsole.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.92-systemsettings_onlyshowin_kde.patch
-# For ck 0.4.1
-zcat ${SB_PATCHDIR}/${NAME}-4.3.95-ck-shutdown.patch.gz | patch -p1 -E --backup --verbose
 # 441062: packagekit tools do not show icons correctly on KDE
 zcat ${SB_PATCHDIR}/${NAME}-4.0.3-krdb.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.2.85-klipper-url.patch.gz | patch -p1 -E --backup --verbose
@@ -59,5 +57,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.1-kfontview_dt_val
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-krandrtray_backport.patch
 # http://websvn.kde.org/?revision=1176432&view=revision
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-kwin_unredirect_fullscreen_windows_ui.patch
+# ConsoleKit >= 0.2.4 shutdown/reboot support (needed for GDM >= 2.22, #431817)
+# and support for GDM >= 2.22 session switching (#560511), see kde#186198
+# backport of http://websvn.kde.org/?view=revision&revision=1186881 and the
+# followup http://websvn.kde.org/?view=revision&revision=1190424 (NoDM case)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-ck-shutdown.patch
 
 set +e +o pipefail

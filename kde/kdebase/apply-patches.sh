@@ -22,7 +22,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.4-bz\#609039-chfn-
 #trunk patches
 
 ## upstream patches
-# http://bugs.kde.org/227157
-patch -p4 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-folderview_sorting_kde227157.patch
+
 
 set +e +o pipefail

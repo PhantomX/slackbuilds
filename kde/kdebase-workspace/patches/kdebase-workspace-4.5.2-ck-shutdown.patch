@@ -1,0 +1,310 @@
+diff -ur kdebase-workspace-4.5.2/libs/kworkspace/kdisplaymanager.cpp kdebase-workspace-4.5.2-ck-shutdown/libs/kworkspace/kdisplaymanager.cpp
+--- kdebase-workspace-4.5.2/libs/kworkspace/kdisplaymanager.cpp	2009-04-28 15:46:11.000000000 +0200
++++ kdebase-workspace-4.5.2-ck-shutdown/libs/kworkspace/kdisplaymanager.cpp	2010-10-27 18:43:18.000000000 +0200
+@@ -23,8 +23,9 @@
+ 
+ #include <kapplication.h>
+ #include <klocale.h>
+-#include <QtDBus/QtDBus>
++#include <kuser.h>
+ 
++#include <QtDBus/QtDBus>
+ #include <QRegExp>
+ 
+ #include <X11/Xauth.h>
+@@ -39,7 +40,51 @@
+ #include <errno.h>
+ #include <stdio.h>
+ 
+-static enum { Dunno, NoDM, NewKDM, OldKDM, GDM } DMType = Dunno;
++class CKManager : public QDBusInterface
++{
++public:
++    CKManager() :
++        QDBusInterface(
++                QLatin1String("org.freedesktop.ConsoleKit"),
++                QLatin1String("/org/freedesktop/ConsoleKit/Manager"),
++                QLatin1String("org.freedesktop.ConsoleKit.Manager"),
++                QDBusConnection::systemBus()) {}
++};
++
++class CKSeat : public QDBusInterface
++{
++public:
++    CKSeat(const QDBusObjectPath &path) :
++        QDBusInterface(
++                QLatin1String("org.freedesktop.ConsoleKit"),
++                path.path(),
++                QLatin1String("org.freedesktop.ConsoleKit.Seat"),
++                QDBusConnection::systemBus()) {}
++};
++
++class CKSession : public QDBusInterface
++{
++public:
++    CKSession(const QDBusObjectPath &path) :
++        QDBusInterface(
++                QLatin1String("org.freedesktop.ConsoleKit"),
++            path.path(),
++                QLatin1String("org.freedesktop.ConsoleKit.Session"),
++                QDBusConnection::systemBus()) {}
++};
++
++class GDMFactory : public QDBusInterface
++{
++public:
++    GDMFactory() :
++        QDBusInterface(
++                QLatin1String("org.gnome.DisplayManager"),
++                QLatin1String("/org/gnome/DisplayManager/LocalDisplayFactory"),
++                QLatin1String("org.gnome.DisplayManager.LocalDisplayFactory"),
++                QDBusConnection::systemBus()) {}
++};
++
++static enum { Dunno, NoDM, NewKDM, OldKDM, NewGDM, OldGDM } DMType = Dunno;
+ static const char *ctl, *dpy;
+ 
+ class KDisplayManager::Private
+@@ -67,7 +112,7 @@
+ 		else if ((ctl = ::getenv( "XDM_MANAGED" )) && ctl[0] == '/')
+ 			DMType = OldKDM;
+ 		else if (::getenv( "GDMSESSION" ))
+-			DMType = GDM;
++			DMType = GDMFactory().isValid() ? NewGDM : OldGDM;
+ 		else
+ 			DMType = NoDM;
+ 	}
+@@ -75,11 +120,11 @@
+ 	default:
+ 		return;
+ 	case NewKDM:
+-	case GDM:
++	case OldGDM:
+ 		if ((d->fd = ::socket( PF_UNIX, SOCK_STREAM, 0 )) < 0)
+ 			return;
+ 		sa.sun_family = AF_UNIX;
+-		if (DMType == GDM) {
++		if (DMType == OldGDM) {
+ 			strcpy( sa.sun_path, "/var/run/gdm_socket" );
+ 			if (::connect( d->fd, (struct sockaddr *)&sa, sizeof(sa) )) {
+ 				strcpy( sa.sun_path, "/tmp/.gdm_socket" );
+@@ -182,16 +227,73 @@
+ 	return ret;
+ }
+ 
++static bool getCurrentSeat(QDBusObjectPath *currentSession, QDBusObjectPath *currentSeat)
++{
++    CKManager man;
++    QDBusReply<QDBusObjectPath> r = man.call(QLatin1String("GetCurrentSession"));
++    if (r.isValid()) {
++        CKSession sess(r.value());
++        if (sess.isValid()) {
++            QDBusReply<QDBusObjectPath> r2 = sess.call(QLatin1String("GetSeatId"));
++            if (r2.isValid()) {
++                if (currentSession)
++                    *currentSession = r.value();
++                *currentSeat = r2.value();
++                return true;
++            }
++        }
++    }
++    return false;
++}
++
++static QList<QDBusObjectPath> getSessionsForSeat(const QDBusObjectPath &path)
++{
++    CKSeat seat(path);
++    if (seat.isValid()) {
++        QDBusReply<QList<QDBusObjectPath> > r = seat.call(QLatin1String("GetSessions"));
++        if (r.isValid()) {
++            // This will contain only local sessions:
++            // - this is only ever called when isSwitchable() is true => local seat
++            // - remote logins into the machine are assigned to other seats
++            return r.value();
++        }
++    }
++    return QList<QDBusObjectPath>();
++}
++
++static void getSessionLocation(CKSession &lsess, SessEnt &se)
++{
++    QString tty;
++    QDBusReply<QString> r = lsess.call(QLatin1String("GetX11Display"));
++    if (r.isValid() && !r.value().isEmpty()) {
++        QDBusReply<QString> r2 = lsess.call(QLatin1String("GetX11DisplayDevice"));
++        tty = r2.value();
++        se.display = r.value();
++        se.tty = false;
++    } else {
++        QDBusReply<QString> r2 = lsess.call(QLatin1String("GetDisplayDevice"));
++        tty = r2.value();
++        se.display = tty;
++        se.tty = true;
++    }
++    se.vt = tty.mid(strlen("/dev/tty")).toInt();
++}
++
+ #ifndef KDM_NO_SHUTDOWN
+ bool
+ KDisplayManager::canShutdown()
+ {
++	if (DMType == NewGDM || DMType == NoDM) {
++		QDBusReply<bool> canStop = CKManager().call(QLatin1String("CanStop"));
++		return (canStop.isValid() && canStop.value());
++	}
++
+ 	if (DMType == OldKDM)
+ 		return strstr( ctl, ",maysd" ) != 0;
+ 
+ 	QByteArray re;
+ 
+-	if (DMType == GDM)
++	if (DMType == OldGDM)
+ 		return exec( "QUERY_LOGOUT_ACTION\n", re ) && re.indexOf( "HALT" ) >= 0;
+ 
+ 	return exec( "caps\n", re ) && re.indexOf( "\tshutdown" ) >= 0;
+@@ -212,13 +314,21 @@
+ 	} else {
+ 		if (!bootOption.isEmpty())
+ 			return;
++
++	if (DMType == NewGDM || DMType == NoDM) {
++		// FIXME: entirely ignoring shutdownMode
++		CKManager().call(QLatin1String(
++			shutdownType == KWorkSpace::ShutdownTypeReboot ? "Restart" : "Stop"));
++		return;
++	}
++
+ 		cap_ask = false;
+ 	}
+ 	if (!cap_ask && shutdownMode == KWorkSpace::ShutdownModeInteractive)
+ 		shutdownMode = KWorkSpace::ShutdownModeForceNow;
+ 
+ 	QByteArray cmd;
+-	if (DMType == GDM) {
++	if (DMType == OldGDM) {
+ 		cmd.append( shutdownMode == KWorkSpace::ShutdownModeForceNow ?
+ 		            "SET_LOGOUT_ACTION " : "SET_SAFE_LOGOUT_ACTION " );
+ 		cmd.append( shutdownType == KWorkSpace::ShutdownTypeReboot ?
+@@ -269,20 +379,34 @@
+ }
+ #endif // KDM_NO_SHUTDOWN
+ 
++// This only tells KDM to not auto-re-login upon session crash
+ void
+ KDisplayManager::setLock( bool on )
+ {
+-	if (DMType != GDM)
++	if (DMType == NewKDM || DMType == OldKDM)
+ 		exec( on ? "lock\n" : "unlock\n" );
+ }
+ 
+ bool
+ KDisplayManager::isSwitchable()
+ {
++	if (DMType == NewGDM) {
++		QDBusObjectPath currentSeat;
++		if (getCurrentSeat(0, &currentSeat)) {
++			CKSeat seat(currentSeat);
++			if (seat.isValid()) {
++				QDBusReply<bool> r = seat.call(QLatin1String("CanActivateSessions"));
++				if (r.isValid())
++					return r.value();
++			}
++		}
++		return false;
++	}
++
+ 	if (DMType == OldKDM)
+ 		return dpy[0] == ':';
+ 
+-	if (DMType == GDM)
++	if (DMType == OldGDM)
+ 		return exec( "QUERY_VT\n" );
+ 
+ 	QByteArray re;
+@@ -293,7 +417,7 @@
+ int
+ KDisplayManager::numReserve()
+ {
+-	if (DMType == GDM)
++	if (DMType == NewGDM || DMType == OldGDM)
+ 		return 1; /* Bleh */
+ 
+ 	if (DMType == OldKDM)
+@@ -310,7 +434,9 @@
+ void
+ KDisplayManager::startReserve()
+ {
+-	if (DMType == GDM)
++	if (DMType == NewGDM)
++		GDMFactory().call(QLatin1String("CreateTransientDisplay"));
++	else if (DMType == OldGDM)
+ 		exec("FLEXI_XSERVER\n");
+ 	else
+ 		exec("reserve\n");
+@@ -322,9 +448,34 @@
+ 	if (DMType == OldKDM)
+ 		return false;
+ 
++	if (DMType == NewGDM) {
++		QDBusObjectPath currentSession, currentSeat;
++		if (getCurrentSeat(&currentSession, &currentSeat)) {
++			foreach (const QDBusObjectPath &sp, getSessionsForSeat(currentSeat)) {
++				CKSession lsess(sp);
++				if (lsess.isValid()) {
++					SessEnt se;
++					getSessionLocation(lsess, se);
++					// "Warning: we haven't yet defined the allowed values for this property.
++					// It is probably best to avoid this until we do."
++					QDBusReply<QString> r = lsess.call(QLatin1String("GetSessionType"));
++					if (r.value() != QLatin1String("LoginWindow")) {
++						QDBusReply<unsigned> r2 = lsess.call(QLatin1String("GetUnixUser"));
++						se.user = KUser(K_UID(r2.value())).loginName();
++						se.session = "<unknown>";
++					}
++					se.self = (sp == currentSession);
++					list.append(se);
++				}
++			}
++			return true;
++		}
++		return false;
++	}
++
+ 	QByteArray re;
+ 
+-	if (DMType == GDM) {
++	if (DMType == OldGDM) {
+ 		if (!exec( "CONSOLE_SERVERS\n", re ))
+ 			return false;
+ 		const QStringList sess = QString(re.data() +3).split( QChar(';'), QString::SkipEmptyParts);
+@@ -398,7 +549,27 @@
+ bool
+ KDisplayManager::switchVT( int vt )
+ {
+-	if (DMType == GDM)
++	if (DMType == NewGDM) {
++		QDBusObjectPath currentSeat;
++		if (getCurrentSeat(0, &currentSeat)) {
++			foreach (const QDBusObjectPath &sp, getSessionsForSeat(currentSeat)) {
++				CKSession lsess(sp);
++				if (lsess.isValid()) {
++					SessEnt se;
++					getSessionLocation(lsess, se);
++					if (se.vt == vt) {
++						if (se.tty) // ConsoleKit simply ignores these
++							return false;
++						lsess.call(QLatin1String("Activate"));
++						return true;
++					}
++				}
++			}
++		}
++		return false;
++	}
++
++	if (DMType == OldGDM)
+ 		return exec( QString("SET_VT %1\n").arg(vt).toLatin1() );
+ 
+ 	return exec( QString("activate\tvt%1\n").arg(vt).toLatin1() );

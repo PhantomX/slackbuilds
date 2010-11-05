@@ -59,10 +59,13 @@ ApplyPatch qt-4.6.3-bn-rendering-bz562049.patch
 ApplyPatch qt-4.6.3-bn-rendering-bz562058.patch
 ApplyPatch qt-4.6.3-indic-rendering-bz631732.patch
 ApplyPatch qt-4.6.3-indic-rendering-bz636399.patch
+# fix 24bit color issue
+ApplyPatch qt-everywhere-opensource-src-4.7.0-bpp24.patch
 
 ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 
 # security patches
+ApplyPatch qt-everywhere-opensource-src-4.7.0-CVE-2010-1822-crash-svg-image.patch
 
 ## upstream patches
 ApplyPatch qt-everywhere-opensource-src-4.7.0-QTBUG-13567-QTreeView.patch

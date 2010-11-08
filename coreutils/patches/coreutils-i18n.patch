@@ -1,3 +1,21 @@
+ lib/linebuffer.h         |    8 +
+ src/cut.c                |  420 +++++++++++++++++++++++++--
+ src/expand.c             |  160 ++++++++++-
+ src/fold.c               |  309 ++++++++++++++++++--
+ src/join.c               |  347 +++++++++++++++++++---
+ src/pr.c                 |  431 +++++++++++++++++++++++++---
+ src/sort.c               |  722 +++++++++++++++++++++++++++++++++++++++++++---
+ src/unexpand.c           |  226 ++++++++++++++-
+ src/uniq.c               |  259 ++++++++++++++++-
+ tests/Makefile.am        |    5 +
+ tests/misc/cut           |    4 +-
+ tests/misc/mb1.I         |    4 +
+ tests/misc/mb1.X         |    4 +
+ tests/misc/mb2.I         |    4 +
+ tests/misc/mb2.X         |    4 +
+ tests/misc/sort-mb-tests |   58 ++++
+ 16 files changed, 2783 insertions(+), 182 deletions(-)
+
 diff -urNp coreutils-8.6-orig/lib/linebuffer.h coreutils-8.6/lib/linebuffer.h
 --- coreutils-8.6-orig/lib/linebuffer.h	2010-06-10 18:45:26.000000000 +0200
 +++ coreutils-8.6/lib/linebuffer.h	2010-10-18 15:18:11.932209034 +0200
@@ -2417,9 +2435,10 @@ diff -urNp coreutils-8.6-orig/src/pr.c coreutils-8.6/src/pr.c
  /* We've just printed some files and need to clean up things before
     looking for more options and printing the next batch of files.
  
-diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
---- coreutils-8.6-orig/src/sort.c	2010-10-14 11:39:14.000000000 +0200
-+++ coreutils-8.6/src/sort.c	2010-10-18 15:16:14.976458929 +0200
+diff --git a/src/sort.c b/src/sort.c
+index 7e25f6a..d3f8915 100644
+--- a/src/sort.c
++++ b/src/sort.c
 @@ -22,11 +22,20 @@
  
  #include <config.h>
@@ -2441,12 +2460,8 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  #include "system.h"
  #include "argmatch.h"
  #include "error.h"
-@@ -157,14 +166,38 @@ static int decimal_point;
- /* Thousands separator; if -1, then there isn't one.  */
- static int thousands_sep;
+@@ -159,12 +168,34 @@ static int thousands_sep;
  
-+static int force_general_numcompare = 0;
-+
  /* Nonzero if the corresponding locales are hard.  */
  static bool hard_LC_COLLATE;
 -#if HAVE_NL_LANGINFO
@@ -2481,7 +2496,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  /* The kind of blanks for '-b' to skip in various options. */
  enum blanktype { bl_start, bl_end, bl_both };
  
-@@ -328,13 +361,11 @@ static bool reverse;
+@@ -328,13 +359,11 @@ static bool reverse;
     they were read if all keys compare equal.  */
  static bool stable;
  
@@ -2498,7 +2513,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  
  /* Flag to remove consecutive duplicate lines from the output.
     Only the last of a sequence of equal lines will be output. */
-@@ -782,6 +813,44 @@ reap_some (void)
+@@ -782,6 +811,46 @@ reap_some (void)
      update_proc (pid);
  }
  
@@ -2509,6 +2524,8 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
 +(*begfield) (const struct line*, const struct keyfield *);
 +static char *
 +(*limfield) (const struct line*, const struct keyfield *);
++static void
++(*skipblanks) (char **ptr, char *lim);
 +static int
 +(*getmonth) (char const *, size_t, char **);
 +static int
@@ -2552,7 +2569,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  
  static int
  struct_month_cmp (void const *m1, void const *m2)
-@@ -1220,7 +1289,7 @@ struct_month_cmp (void const *m1, void c
+@@ -1220,7 +1289,7 @@ struct_month_cmp (void const *m1, void const *m2)
  /* Initialize the character class tables. */
  
  static void
@@ -2570,7 +2587,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
    /* If we're not in the "C" locale, read different names for months.  */
    if (hard_LC_TIME)
      {
-@@ -1314,6 +1383,64 @@ specify_nmerge (int oi, char c, char con
+@@ -1314,6 +1383,84 @@ specify_nmerge (int oi, char c, char const *s)
      xstrtol_fatal (e, oi, c, long_options, s);
  }
  
@@ -2579,11 +2596,24 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
 +inittables_mb (void)
 +{
 +  int i, j, k, l;
-+  char *name, *s;
++  char *name, *s, *lc_time, *lc_ctype;
 +  size_t s_len, mblength;
 +  char mbc[MB_LEN_MAX];
 +  wchar_t wc, pwc;
 +  mbstate_t state_mb, state_wc;
++
++  lc_time = setlocale (LC_TIME, "");
++  if (lc_time)
++    lc_time = xstrdup (lc_time);
++
++  lc_ctype = setlocale (LC_CTYPE, "");
++  if (lc_ctype)
++    lc_ctype = xstrdup (lc_ctype);
++
++  if (lc_time && lc_ctype)
++    /* temporarily set LC_CTYPE to match LC_TIME, so that we can convert
++     * the names of months to upper case */
++    setlocale (LC_CTYPE, lc_time);
 +
 +  for (i = 0; i < MONTHS_PER_YEAR; i++)
 +    {
@@ -2629,13 +2659,20 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
 +    }
 +  qsort ((void *) monthtab, MONTHS_PER_YEAR,
 +      sizeof (struct month), struct_month_cmp);
++
++  if (lc_time && lc_ctype)
++    /* restore the original locales */
++    setlocale (LC_CTYPE, lc_ctype);
++
++  free (lc_ctype);
++  free (lc_time);
 +}
 +#endif
 +
  /* Specify the amount of main memory to use when sorting.  */
  static void
  specify_sort_size (int oi, char c, char const *s)
-@@ -1540,7 +1667,7 @@ buffer_linelim (struct buffer const *buf
+@@ -1540,7 +1687,7 @@ buffer_linelim (struct buffer const *buf)
     by KEY in LINE. */
  
  static char *
@@ -2644,7 +2681,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  {
    char *ptr = line->text, *lim = ptr + line->length - 1;
    size_t sword = key->sword;
-@@ -1549,10 +1676,10 @@ begfield (struct line const *line, struc
+@@ -1549,10 +1696,10 @@ begfield (struct line const *line, struct keyfield const *key)
    /* The leading field separator itself is included in a field when -t
       is absent.  */
  
@@ -2657,7 +2694,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
            ++ptr;
          if (ptr < lim)
            ++ptr;
-@@ -1578,11 +1705,70 @@ begfield (struct line const *line, struc
+@@ -1578,11 +1725,70 @@ begfield (struct line const *line, struct keyfield const *key)
    return ptr;
  }
  
@@ -2729,7 +2766,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  {
    char *ptr = line->text, *lim = ptr + line->length - 1;
    size_t eword = key->eword, echar = key->echar;
-@@ -1597,10 +1783,10 @@ limfield (struct line const *line, struc
+@@ -1597,10 +1803,10 @@ limfield (struct line const *line, struct keyfield const *key)
       `beginning' is the first character following the delimiting TAB.
       Otherwise, leave PTR pointing at the first `blank' character after
       the preceding field.  */
@@ -2742,7 +2779,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
            ++ptr;
          if (ptr < lim && (eword || echar))
            ++ptr;
-@@ -1646,10 +1832,10 @@ limfield (struct line const *line, struc
+@@ -1646,10 +1852,10 @@ limfield (struct line const *line, struct keyfield const *key)
       */
  
    /* Make LIM point to the end of (one byte past) the current field.  */
@@ -2755,7 +2792,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
        if (newlim)
          lim = newlim;
      }
-@@ -1680,6 +1866,113 @@ limfield (struct line const *line, struc
+@@ -1680,6 +1886,130 @@ limfield (struct line const *line, struct keyfield const *key)
    return ptr;
  }
  
@@ -2866,10 +2903,27 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
 +}
 +#endif
 +
++static void
++skipblanks_uni (char **ptr, char *lim)
++{
++  while (*ptr < lim && blanks[to_uchar (**ptr)])
++    ++(*ptr);
++}
++
++#if HAVE_MBRTOWC
++static void
++skipblanks_mb (char **ptr, char *lim)
++{
++  size_t mblength;
++  while (*ptr < lim && ismbblank (*ptr, lim - *ptr, &mblength))
++    (*ptr) += mblength;
++}
++#endif
++
  /* Fill BUF reading from FP, moving buf->left bytes from the end
     of buf->buf to the beginning first.  If EOF is reached and the
     file wasn't terminated by a newline, supply one.  Set up BUF's line
-@@ -1766,8 +2059,24 @@ fillbuf (struct buffer *buf, FILE *fp, c
+@@ -1766,8 +2096,22 @@ fillbuf (struct buffer *buf, FILE *fp, char const *file)
                    else
                      {
                        if (key->skipsblanks)
@@ -2880,8 +2934,6 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
 +                          if (MB_CUR_MAX > 1)
 +                            {
 +                              size_t mblength;
-+                              mbstate_t state;
-+                              memset (&state, '\0', sizeof(mbstate_t));
 +                              while (line_start < line->keylim &&
 +                                     ismbblank (line_start,
 +                                                line->keylim - line_start,
@@ -2896,7 +2948,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
                        line->keybeg = line_start;
                      }
                  }
-@@ -1888,7 +2197,7 @@ human_numcompare (char const *a, char co
+@@ -1888,7 +2232,7 @@ human_numcompare (char const *a, char const *b)
     hideously fast. */
  
  static int
@@ -2905,7 +2957,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  {
    while (blanks[to_uchar (*a)])
      a++;
-@@ -1898,6 +2207,25 @@ numcompare (char const *a, char const *b
+@@ -1898,6 +2242,25 @@ numcompare (char const *a, char const *b)
    return strnumcmp (a, b, decimal_point, thousands_sep);
  }
  
@@ -2931,7 +2983,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  static int
  general_numcompare (char const *sa, char const *sb)
  {
-@@ -1930,7 +2258,7 @@ general_numcompare (char const *sa, char
+@@ -1930,7 +2293,7 @@ general_numcompare (char const *sa, char const *sb)
     Return 0 if the name in S is not recognized.  */
  
  static int
@@ -2940,7 +2992,14 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  {
    size_t lo = 0;
    size_t hi = MONTHS_PER_YEAR;
-@@ -2210,7 +2538,7 @@ debug_key (struct line const *line, stru
+@@ -2204,13 +2567,12 @@ debug_key (struct line const *line, struct keyfield const *key)
+         {
+           char saved = *lim; *lim = '\0';
+ 
+-          while (blanks[to_uchar (*beg)])
+-            beg++;
++          skipblanks (&beg, lim);
+ 
            char *tighter_lim = beg;
  
            if (key->month)
@@ -2949,7 +3008,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
            else if (key->general_numeric)
              ignore_value (strtold (beg, &tighter_lim));
            else if (key->numeric || key->human_numeric)
-@@ -2354,7 +2682,7 @@ key_warnings (struct keyfield const *gke
+@@ -2354,7 +2716,7 @@ key_warnings (struct keyfield const *gkey, bool gkey_only)
        bool maybe_space_aligned = !hard_LC_COLLATE && default_key_compare (key)
                                   && !(key->schar || key->echar);
        bool line_offset = key->eword == 0 && key->echar != 0; /* -k1.x,1.y  */
@@ -2958,7 +3017,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
            && ((!key->skipsblanks && !(implicit_skip || maybe_space_aligned))
                || (!key->skipsblanks && key->schar)
                || (!key->skipeblanks && key->echar)))
-@@ -2412,11 +2740,83 @@ key_warnings (struct keyfield const *gke
+@@ -2412,11 +2774,83 @@ key_warnings (struct keyfield const *gkey, bool gkey_only)
      error (0, 0, _("option `-r' only applies to last-resort comparison"));
  }
  
@@ -3043,7 +3102,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  {
    struct keyfield *key = keylist;
  
-@@ -2501,7 +2898,7 @@ keycompare (struct line const *a, struct
+@@ -2501,7 +2935,7 @@ keycompare (struct line const *a, struct line const *b)
            else if (key->human_numeric)
              diff = human_numcompare (ta, tb);
            else if (key->month)
@@ -3052,7 +3111,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
            else if (key->random)
              diff = compare_random (ta, tlena, tb, tlenb);
            else if (key->version)
-@@ -2617,6 +3014,179 @@ keycompare (struct line const *a, struct
+@@ -2617,6 +3051,179 @@ keycompare (struct line const *a, struct line const *b)
    return key->reverse ? -diff : diff;
  }
  
@@ -3232,7 +3291,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
  /* Compare two lines A and B, returning negative, zero, or positive
     depending on whether A compares less than, equal to, or greater than B. */
  
-@@ -4006,7 +4576,7 @@ main (int argc, char **argv)
+@@ -4006,7 +4613,7 @@ main (int argc, char **argv)
    initialize_exit_failure (SORT_FAILURE);
  
    hard_LC_COLLATE = hard_locale (LC_COLLATE);
@@ -3241,7 +3300,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
    hard_LC_TIME = hard_locale (LC_TIME);
  #endif
  
-@@ -4027,6 +4597,27 @@ main (int argc, char **argv)
+@@ -4027,6 +4634,29 @@ main (int argc, char **argv)
        thousands_sep = -1;
    }
  
@@ -3251,6 +3310,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
 +      inittables = inittables_mb;
 +      begfield = begfield_mb;
 +      limfield = limfield_mb;
++      skipblanks = skipblanks_mb;
 +      getmonth = getmonth_mb;
 +      keycompare = keycompare_mb;
 +      numcompare = numcompare_mb;
@@ -3261,6 +3321,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
 +      inittables = inittables_uni;
 +      begfield = begfield_uni;
 +      limfield = limfield_uni;
++      skipblanks = skipblanks_uni;
 +      getmonth = getmonth_uni;
 +      keycompare = keycompare_uni;
 +      numcompare = numcompare_uni;
@@ -3269,7 +3330,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
    have_read_stdin = false;
    inittables ();
  
-@@ -4297,13 +4888,35 @@ main (int argc, char **argv)
+@@ -4297,13 +4927,34 @@ main (int argc, char **argv)
  
          case 't':
            {
@@ -3286,7 +3347,6 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
 +              {
 +                wchar_t wc;
 +                mbstate_t state;
-+                size_t i;
 +
 +                memset (&state, '\0', sizeof (mbstate_t));
 +                newtab_length = mbrtowc (&wc, newtab, strnlen (newtab,
@@ -3309,7 +3369,7 @@ diff -urNp coreutils-8.6-orig/src/sort.c coreutils-8.6/src/sort.c
                  else
                    {
                      /* Provoke with `sort -txx'.  Complain about
-@@ -4314,9 +4927,12 @@ main (int argc, char **argv)
+@@ -4314,9 +4965,12 @@ main (int argc, char **argv)
                             quote (optarg));
                    }
                }
@@ -4086,39 +4146,3 @@ diff -urNp coreutils-8.6-orig/tests/misc/sort-mb-tests coreutils-8.6/tests/misc/
 +fi
 +test $errors = 0 || errors=1
 +exit $errors
-diff -urNp coreutils-8.6-orig/tests/misc/sort-debug-keys coreutils-8.6/tests/misc/sort-debug-keys
---- coreutils-8.6-orig/tests/misc/sort-debug-keys	2010-10-11 19:35:11.000000000 +0200
-+++ coreutils-8.6/tests/misc/sort-debug-keys	2010-10-19 14:55:55.435692063 +0200
-@@ -305,18 +305,19 @@ _____
- ___________________
- EOF
- 
--: ${LOCALE_FR_UTF8=none}
--if test "$LOCALE_FR_UTF8" != "none"; then
--  (
--  echo '   1²---++3   1,234  Mi' |
--    LC_ALL=C sort --debug -k2g -k1b,1
--  echo '   1²---++3   1,234  Mi' |
--    LC_ALL=$LOCALE_FR_UTF8 sort --debug -k2g -k1b,1
--  echo '+1234 1234Gi 1,234M' |
--    LC_ALL=$LOCALE_FR_UTF8 sort --debug -k1,1n -k1,1g \
--    -k1,1h -k2,2n -k2,2g -k2,2h -k3,3n -k3,3g -k3,3h
--  ) > out
--  compare out exp || fail=1
--fi
-+#temporarily disable sort debug-keys test for mbyte locales (doesn't work atm.)
-+#: ${LOCALE_FR_UTF8=none}
-+#if test "$LOCALE_FR_UTF8" != "none"; then
-+#  (
-+#  echo '   1²---++3   1,234  Mi' |
-+#    LC_ALL=C sort --debug -k2g -k1b,1
-+#  echo '   1²---++3   1,234  Mi' |
-+#    LC_ALL=$LOCALE_FR_UTF8 sort --debug -k2g -k1b,1
-+#  echo '+1234 1234Gi 1,234M' |
-+#    LC_ALL=$LOCALE_FR_UTF8 sort --debug -k1,1n -k1,1g \
-+#    -k1,1h -k2,2n -k2,2g -k2,2h -k3,3n -k3,3g -k3,3h
-+#  ) > out
-+#  compare out exp || fail=1
-+#fi
- 
- Exit $fail

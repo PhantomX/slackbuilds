@@ -1,8 +1,10 @@
 
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/oyranos-0.1.9-sw_elektra.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/oyranos-0.1.9-shared_NVCtrl.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/oyranos-0.1.9-default.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/oyranos-0.1.9-man-1_3.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/oyranos-0.1.9-rm_class.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.1.10-shared_NVCtrl.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.1.12-pc_fix.patch
+
+set +e +o pipefail

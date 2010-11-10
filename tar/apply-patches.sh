@@ -19,15 +19,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.24-xattrs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.17-wildcards.patch
 # ignore errors from setting utime() for source file on read-only filesystem
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.22-atime-rofs.patch
-# Do not sigabrt with new gcc/glibc because of writing to
-# struct members of gnutar header at once via strcpy
-zcat ${SB_PATCHDIR}/tar-1.22-fortifysourcessigabrt.patch.gz | patch -p1 -E --backup --verbose
 #oldarchive option was not working(#594044)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-oldarchive.patch
-# fix bug with -C and extracting directories
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.24-extractingdirs.patch
-#match non-stripped file names (#637085)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.24-stripcomponents.patch
 
 # Adds txz support
 zcat ${SB_PATCHDIR}/${NAME}-1.23-support_txz.diff.gz | patch -p1 -E --backup --verbose

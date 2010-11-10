@@ -68,17 +68,14 @@ ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-CVE-2010-1822-crash-svg-image.patch
 
 ## upstream patches
-ApplyPatch qt-everywhere-opensource-src-4.7.0-QTBUG-13567-QTreeView.patch
-# http://bugreports.qt.nokia.com/browse/QTBUG-6185
-# http://qt.gitorious.org/qt/staging/commit/9e9a7bc29319d52c3e563bc2c5282cb7e6890eba
-ApplyPatch qt-everywhere-opensource-src-4.7.0-QTBUG-6185.patch
 
 # kde-qt patches
 ApplyPatch 0004-0005.patch
 ApplyPatch 0012-Add-context-to-tr-calls-in-QShortcut.patch
+ApplyPatch 0014-Revert-unneeded-patch.patch
 ( SB_PATCHDIR=patches
   # Ignore list, e.g: ="0003 0010"
-  export IGNORE="0004 0005 0008"
+  export IGNORE="0004 0005 0008 0014 0015"
   IgnorePatch ${SB_PATCHDIR}/list
   for patch in $(<${SB_PATCHDIR}/list) ;do
     ApplyPatch ${patch}

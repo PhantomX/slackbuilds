@@ -1,0 +1,194 @@
+diff -up cups-1.4.4/scheduler/conf.c.serverbin-compat cups-1.4.4/scheduler/conf.c
+--- cups-1.4.4/scheduler/conf.c.serverbin-compat	2010-04-23 19:56:34.000000000 +0100
++++ cups-1.4.4/scheduler/conf.c	2010-09-15 13:20:41.339960335 +0100
+@@ -488,6 +488,9 @@ cupsdReadConfiguration(void)
+   cupsdClearString(&ServerName);
+   cupsdClearString(&ServerAdmin);
+   cupsdSetString(&ServerBin, CUPS_SERVERBIN);
++#ifdef __x86_64__
++  cupsdSetString(&ServerBin_compat, "/usr/lib64/cups");
++#endif /* __x86_64__ */
+   cupsdSetString(&RequestRoot, CUPS_REQUESTS);
+   cupsdSetString(&CacheDir, CUPS_CACHEDIR);
+   cupsdSetString(&DataDir, CUPS_DATADIR);
+@@ -1318,7 +1321,12 @@ cupsdReadConfiguration(void)
+     * Read the MIME type and conversion database...
+     */
+ 
++#ifdef __x86_64__
++    snprintf(temp, sizeof(temp), "%s/filter:%s/filter", ServerBin,
++	     ServerBin_compat);
++#else
+     snprintf(temp, sizeof(temp), "%s/filter", ServerBin);
++#endif
+     snprintf(mimedir, sizeof(mimedir), "%s/mime", DataDir);
+ 
+     MimeDatabase = mimeLoadTypes(NULL, mimedir);
+diff -up cups-1.4.4/scheduler/conf.h.serverbin-compat cups-1.4.4/scheduler/conf.h
+--- cups-1.4.4/scheduler/conf.h.serverbin-compat	2010-04-23 19:56:34.000000000 +0100
++++ cups-1.4.4/scheduler/conf.h	2010-09-15 13:20:41.340959464 +0100
+@@ -105,6 +105,10 @@ VAR char		*ConfigurationFile	VALUE(NULL)
+ 					/* Root directory for scheduler */
+ 			*ServerBin		VALUE(NULL),
+ 					/* Root directory for binaries */
++#ifdef __x86_64__
++			*ServerBin_compat	VALUE(NULL),
++					/* Compat directory for binaries */
++#endif /* __x86_64__ */
+ 			*StateDir		VALUE(NULL),
+ 					/* Root directory for state data */
+ 			*RequestRoot		VALUE(NULL),
+diff -up cups-1.4.4/scheduler/env.c.serverbin-compat cups-1.4.4/scheduler/env.c
+--- cups-1.4.4/scheduler/env.c.serverbin-compat	2009-06-15 18:13:52.000000000 +0100
++++ cups-1.4.4/scheduler/env.c	2010-09-15 13:20:41.341959587 +0100
+@@ -87,8 +87,13 @@ cupsdInitEnv(void)
+   cupsdSetEnv("LD_LIBRARY_PATH", NULL);
+   cupsdSetEnv("LD_PRELOAD", NULL);
+   cupsdSetEnv("NLSPATH", NULL);
++#ifdef __x86_64__
++  cupsdSetEnvf("PATH", "%s/filter:%s/filter:" CUPS_BINDIR ":" CUPS_SBINDIR
++                       ":/bin:/usr/bin", ServerBin, ServerBin_compat);
++#else /* ! defined(__x86_64__) */
+   cupsdSetEnvf("PATH", "%s/filter:" CUPS_BINDIR ":" CUPS_SBINDIR
+                        ":/bin:/usr/bin", ServerBin);
++#endif
+   cupsdSetEnv("SERVER_ADMIN", ServerAdmin);
+   cupsdSetEnv("SHLIB_PATH", NULL);
+   cupsdSetEnv("SOFTWARE", CUPS_MINIMAL);
+diff -up cups-1.4.4/scheduler/ipp.c.serverbin-compat cups-1.4.4/scheduler/ipp.c
+--- cups-1.4.4/scheduler/ipp.c.serverbin-compat	2010-04-23 19:56:34.000000000 +0100
++++ cups-1.4.4/scheduler/ipp.c	2010-09-15 13:20:41.359835378 +0100
+@@ -2615,9 +2615,18 @@ add_printer(cupsd_client_t  *con,	/* I -
+         * Could not find device in list!
+ 	*/
+ 
++#ifdef __x86_64__
++	snprintf(srcfile, sizeof(srcfile), "%s/backend/%s", ServerBin_compat,
++		 scheme);
++	if (access(srcfile, X_OK))
++	{
++#endif /* __x86_64__ */
+ 	send_ipp_status(con, IPP_NOT_POSSIBLE, _("Bad device-uri scheme \"%s\"!"),
+         	        scheme);
+ 	return;
++#ifdef __x86_64__
++	}
++#endif /* __x86_64__ */
+       }
+     }
+ 
+diff -up cups-1.4.4/scheduler/job.c.serverbin-compat cups-1.4.4/scheduler/job.c
+--- cups-1.4.4/scheduler/job.c.serverbin-compat	2010-03-30 23:07:33.000000000 +0100
++++ cups-1.4.4/scheduler/job.c	2010-09-15 13:20:41.366836134 +0100
+@@ -972,8 +972,32 @@ cupsdContinueJob(cupsd_job_t *job)	/* I 
+        i ++, filter = (mime_filter_t *)cupsArrayNext(filters))
+   {
+     if (filter->filter[0] != '/')
+-      snprintf(command, sizeof(command), "%s/filter/%s", ServerBin,
+-               filter->filter);
++      {
++	snprintf(command, sizeof(command), "%s/filter/%s", ServerBin,
++		 filter->filter);
++#ifdef __x86_64__
++	if (access(command, F_OK))
++	  {
++	    snprintf(command, sizeof(command), "%s/filter/%s",
++		     ServerBin_compat, filter->filter);
++	    if (!access(command, F_OK))
++	      {
++		/* Not in the correct directory, but found it in the compat
++		 * directory.  Issue a warning. */
++		cupsdLogMessage(CUPSD_LOG_INFO,
++				"Filter '%s' not in %s/filter!",
++				filter->filter, ServerBin);
++	      }
++	    else
++	      {
++		/* Not in the compat directory either; make any error
++		 * messages use the correct directory name then. */
++		snprintf(command, sizeof(command), "%s/filter/%s", ServerBin,
++			 filter->filter);
++	      }
++	  }
++#endif /* __x86_64__ */
++      }
+     else
+       strlcpy(command, filter->filter, sizeof(command));
+ 
+@@ -1119,6 +1143,28 @@ cupsdContinueJob(cupsd_job_t *job)	/* I 
+       cupsdClosePipe(job->print_pipes);
+       cupsdClosePipe(job->back_pipes);
+       cupsdClosePipe(job->side_pipes);
++#ifdef __x86_64__
++      if (access(command, F_OK))
++	{
++	  snprintf(command, sizeof(command), "%s/backend/%s", ServerBin_compat,
++		   method);
++	  if (!access(command, F_OK))
++	    {
++	      /* Not in the correct directory, but we found it in the compat
++	       * directory.  Issue a warning. */
++	      cupsdLogMessage(CUPSD_LOG_INFO,
++			      "Backend '%s' not in %s/backend!", method,
++			      ServerBin);
++	    }
++	  else
++	    {
++	      /* Not in the compat directory either; make any error
++		 messages use the correct directory name then. */
++	      snprintf(command, sizeof(command), "%s/backend/%s", ServerBin,
++		       method);
++	    }
++	}
++#endif /* __x86_64__ */
+ 
+       close(job->status_pipes[1]);
+       job->status_pipes[1] = -1;
+diff -up cups-1.4.4/scheduler/printers.c.serverbin-compat cups-1.4.4/scheduler/printers.c
+--- cups-1.4.4/scheduler/printers.c.serverbin-compat	2010-04-23 21:53:38.000000000 +0100
++++ cups-1.4.4/scheduler/printers.c	2010-09-15 13:21:39.627960657 +0100
+@@ -1059,9 +1059,19 @@ cupsdLoadAllPrinters(void)
+ 	    * Backend does not exist, stop printer...
+ 	    */
+ 
++#ifdef __x86_64__
++	    snprintf(line, sizeof(line), "%s/backend/%s", ServerBin_compat,
++		     p->device_uri);
++	    if (access(line, 0))
++	      {
++#endif /* __x86_64__ */
++
+ 	    p->state = IPP_PRINTER_STOPPED;
+ 	    snprintf(p->state_message, sizeof(p->state_message),
+ 	             "Backend %s does not exist!", line);
++#ifdef __x86_64__
++	      }
++#endif /* __x86_64__ */
+ 	  }
+         }
+ 
+@@ -3603,6 +3613,14 @@ add_printer_filter(
+ 
+     if (stat(filename, &fileinfo))
+     {
++#ifdef __x86_64__
++      snprintf(filename, sizeof(filename), "%s/filter/%s", ServerBin_compat,
++	       program);
++      if (stat(filename, &fileinfo))
++      {
++        snprintf(filename, sizeof(filename), "%s/filter/%s", ServerBin,
++                 program);
++#endif /* __x86_64__ */
+       memset(&fileinfo, 0, sizeof(fileinfo));
+ 
+       snprintf(p->state_message, sizeof(p->state_message),
+@@ -3611,6 +3629,9 @@ add_printer_filter(
+       cupsdSetPrinterReasons(p, "+cups-missing-filter-warning");
+ 
+       cupsdLogMessage(CUPSD_LOG_ERROR, "%s", p->state_message);
++#ifdef __x86_64__
++      }
++#endif /* __x86_64__ */
+     }
+ 
+    /*

@@ -17,5 +17,11 @@ ln -s .. xc/lib/Xaw3d/X11
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xaw3d.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Xaw3d-ia64.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Xaw3d-1.5E-warnings.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Xaw3d-1.5E-3Dlabel.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Xaw3d-1.5E-compat.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Xaw3d-1.5E-fontset.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Xaw3d-1.5E-hsbar.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Xaw3d-1.5E-null.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Xaw3d-1.5E-thumb.patch
 
 set +e +o pipefail

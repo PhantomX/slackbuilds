@@ -21,6 +21,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nepomuk-strigi-smartfi
 # pulseaudio speaker setup backport, courtesy of coling/mandriva
 # http://svn.mandriva.com/cgi-bin/viewvc.cgi/packages/cooker/kdebase4-runtime/current/SOURCES/kdebase-runtime-4.5-speakersetup.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5-speakersetup.patch
+# + http://websvn.kde.org/?view=revision&revision=1192292
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5-speakersetup_kde255736.patch
 
 ## Branch upstream patches
 

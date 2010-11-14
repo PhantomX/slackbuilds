@@ -22,6 +22,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.4-bz\#609039-chfn-
 #trunk patches
 
 ## upstream patches
+# https://bugs.kde.org/show_bug.cgi?id=246652
+patch -p3 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.3-kdebug246652.patch
 
 
 set +e +o pipefail

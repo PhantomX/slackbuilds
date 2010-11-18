@@ -22,11 +22,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-0.9.8j-bad-mime.patch
 zcat ${SB_PATCHDIR}/openssl-0.9.6-x509.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/openssl-0.9.8j-version-add-engines.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta5-cipher-change.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta5-ipv6-apps.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0b-ipv6-apps.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-0.9.8j-env-nozlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta4-dtls1-abi.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-version.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta4-aesni.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0b-version.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0b-aesni.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-name-hash.patch
 
 # Upstream

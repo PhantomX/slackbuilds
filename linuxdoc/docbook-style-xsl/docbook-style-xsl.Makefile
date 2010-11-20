@@ -6,11 +6,12 @@ all: install
 install: install-xsl install-img install-extensions install-misc install-epub
 
 install-xsl:
-	mkdir -p $(DESTDIR)/{common,fo,html,htmlhelp/doc,javahelp,lib,template,xhtml,xhtml-1_1,manpages,profiling,highlighting,roundtrip,website}
+	mkdir -p $(DESTDIR)/{common,eclipse,fo,html,htmlhelp/doc,javahelp,lib,template,xhtml,xhtml-1_1,manpages,profiling,highlighting,roundtrip,website}
 	cp common/*.dtd $(DESTDIR)/common
 	cp common/*.ent $(DESTDIR)/common
 	cp common/*.xml $(DESTDIR)/common
 	cp common/*.xsl $(DESTDIR)/common
+	cp eclipse/*.xsl $(DESTDIR)/eclipse
 	cp fo/*.xml $(DESTDIR)/fo
 	cp fo/*.xsl $(DESTDIR)/fo
 	cp html/*.xml $(DESTDIR)/html

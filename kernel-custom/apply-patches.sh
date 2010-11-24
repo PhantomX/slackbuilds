@@ -192,9 +192,9 @@ ApplyPatch fix_xen_guest_on_old_EC2.patch
 ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
-ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-intel-big-hammer.patch
-ApplyPatch drm-intel-make-lvds-work.patch
+#ApplyOptionalPatch drm-intel-next.patch
+#ApplyPatch drm-intel-big-hammer.patch
+#ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
 # linux1394 git patches
@@ -248,6 +248,8 @@ ApplyPatch pnpacpi-cope-with-invalid-device-ids.patch
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
 ApplyPatch xhci_hcd-suspend-resume.patch
+
+ApplyPatch tty-restore-tty_ldisc_wait_idle.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

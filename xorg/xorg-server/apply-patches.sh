@@ -49,6 +49,7 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-panelid-sanity.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-classic-default-mode.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-qxl-fallback.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.1-pxtc-crash.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.2-ddc-crash.patch
 
 # Backports from master
 

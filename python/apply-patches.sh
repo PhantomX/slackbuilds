@@ -37,13 +37,7 @@ zcat ${SB_PATCHDIR}/python-2.6.4-distutils-rpath.patch.gz | patch -p1 -E --backu
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-db51.diff
 
-# Backported fix from upstream for regression in ConfigParse's handling
-# of None values
-# http://bugs.python.org/issue7005#msg115417
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-r84443-cfgparse.patch
-
 zcat ${SB_PATCHDIR}/python-2.3.4-lib64-regex.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-ctypes-noexecmem.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-no-static-lib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.6.5-more-configuration-flags.patch
 # Add flags for statvfs.f_flag to the constant list in posixmodule (i.e. "os")
@@ -54,11 +48,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-statvfs-f_flag-c
 # (rhbz:461419; patch sent upstream as http://bugs.python.org/issue7425 )
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/make-pydoc-more-robust-001.patch
 
-# Fix an incompatibility between pyexpat and the system expat-2.0.1 that led to
-# a segfault running test_pyexpat.py (rhbz:583931)
-# Sent upstream as http://bugs.python.org/issue9054
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.6.5-fix-expat-issue9054.patch
-
 patch -p0 -R -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc2-r79310.patch
 
 # Fix race condition in parallel make that could lead to graminit.c failing
@@ -66,13 +55,6 @@ patch -p0 -R -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc2-r79310.patch
 # `_PyParser_Grammar'":
 # Not yet sent upstream:
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-fix-parallel-make.patch
-
-# Fix traceback in 2to3 on "from itertools import *"
-# This is http://bugs.python.org/issue8892 (see also rhbz#600036)
-# Cherrypicked from r82530 upstream:
-( cd Lib
-  patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-fix-2to3-itertools-import-star.patch
-)
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_commands-expected-ls-output-issue7108.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/less-verbose-COUNT_ALLOCS.patch

@@ -1,15 +1,24 @@
 
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-cachegrind-improvements.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-openat.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-glibc-2.10.1.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-ifunc.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-inotify-init1.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-mmap-mprotect.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-dwarf3.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-pr40659.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-helgrind-race-supp.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-ppc-tests.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-amd64-loopnel.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.5.0-ppc-dwarf3.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-cachegrind-improvements.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-openat.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-glibc-2.10.1.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-helgrind-race-supp.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-amd64-loopnel.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-stat_h.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-config_h.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-capget.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-glibc-2.13.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-s390x-1.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-s390x-2.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-s390x-3.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-s390x-4.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-strcasecmp.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-xlc_dbl_u32-test-patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-helgrind-tests.patch
+
+set +e +o pipefail

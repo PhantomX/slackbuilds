@@ -10,9 +10,6 @@ patch -p0 -E --backup -z .prelink --verbose -i ${SB_PATCHDIR}/nss-softokn-3.12.4
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-softokn-3.12.4-fips-fix.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/renegotiate-transitional.patch
 zcat ${SB_PATCHDIR}/nss-enable-pem.patch.gz | patch -p0 -E --backup --verbose
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nsspem-596674.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Add-support-for-PKCS-8-encoded-private-keys.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Do-not-define-SEC_SkipTemplate.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nss-sysinit-fix-trustorder.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-sysinit-userdb-first.patch
 # Uncomment this if builds stops with -lz error

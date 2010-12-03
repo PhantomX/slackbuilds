@@ -33,5 +33,8 @@ zcat ${SB_PATCHDIR}/${NAME}-tty-tests.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-4.0-nobits.patch.gz | patch -p1 -E --backup --verbose
 # Do the same CFLAGS in generated Makefile in examples
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-examples.patch
+# 618289, don't segfault when trying to bind int variable to array
+# with bad array subsrcipt
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-bind_int_variable.patch
 
 set +e +o pipefail

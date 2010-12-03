@@ -41,8 +41,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patc
 # official backports
 
 # Branch upstream
-# http://websvn.kde.org/?view=revision&revision=1197482
-patch -p4 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.3-kde246652.patch
 
 # Trunk patches
 # http://websvn.kde.org/?view=revision&revision=1185912

@@ -128,6 +128,8 @@ ApplyPatch linux-2.6-debug-taint-vm.patch
 #ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
 ApplyPatch linux-2.6-debug-always-inline-kzalloc.patch.gz
 
+ApplyPatch debug-tty-print-dev-name.patch
+
 #
 # PCI
 #
@@ -193,9 +195,11 @@ ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
 #ApplyOptionalPatch drm-intel-next.patch
-#ApplyPatch drm-intel-big-hammer.patch
-#ApplyPatch drm-intel-make-lvds-work.patch
+ApplyPatch drm-intel-big-hammer.patch
+ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
+
+ApplyPatch radeon-mc-vram-map-needs-to-be-gt-pci-aperture.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -240,6 +244,7 @@ ApplyPatch runtime_pm_fixups.patch
 # PCI patches to fix problems with _CRS
 # ( from linux-pci list )
 ApplyPatch pci-crs-fixes.patch
+ApplyPatch x86-never-alloc-pci-from-the-last-1M-below-4G.patch
 
 # rhbz#641468
 ApplyPatch pnpacpi-cope-with-invalid-device-ids.patch
@@ -250,6 +255,38 @@ ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 ApplyPatch xhci_hcd-suspend-resume.patch
 
 ApplyPatch tty-restore-tty_ldisc_wait_idle.patch
+
+ApplyPatch fix-i8k-inline-asm.patch
+
+# rhbz#648658 (CVE-2010-4073)
+ApplyPatch ipc-zero-struct-memory-for-compat-fns.patch
+
+# rhbz#648656 (CVE-2010-4072)
+ApplyPatch ipc-shm-fix-information-leak-to-user.patch
+
+# rhbz#651264 (CVE-2010-3880)
+ApplyPatch inet_diag-make-sure-we-run-the-same-bytecode-we-audited.patch
+ApplyPatch netlink-make-nlmsg_find_attr-take-a-const-ptr.patch
+
+# rhbz#656264
+ApplyPatch posix-cpu-timers-workaround-to-suppress-problems-with-mt-exec.patch
+
+# rhbz#657388
+ApplyPatch hda_realtek-handle-unset-external-amp-bits.patch
+
+# CVE-2010-4077, CVE-2010-4075 (rhbz#648660, #648663)
+ApplyPatch tty-make-tiocgicount-a-handler.patch
+ApplyPatch tty-icount-changeover-for-other-main-devices.patch
+
+ApplyPatch tpm-autodetect-itpm-devices.patch
+
+ApplyPatch tty-dont-allow-reopen-when-ldisc-is-changing.patch
+ApplyPatch tty-ldisc-fix-open-flag-handling.patch
+ApplyPatch tty-open-hangup-race-fixup.patch
+
+# backport some fixes for kswapd from mmotm, rhbz#649694
+ApplyPatch mm-page-allocator-adjust-the-per-cpu-counter-threshold-when-memory-is-low.patch
+ApplyPatch mm-vmstat-use-a-single-setter-function-and-callback-for-adjusting-percpu-thresholds.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

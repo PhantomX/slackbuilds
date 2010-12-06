@@ -33,10 +33,8 @@ zcat ${SB_PATCHDIR}/xserver-1.6.99-randr-error-debugging.patch.gz | patch -p1 --
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-default-modes.patch
 #zcat ${SB_PATCHDIR}/xserver-1.6.99-hush-prerelease-warning.patch.gz | patch -p1 --verbose
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.0-randr-gamma-restore.patch
 
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.1-multilib.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.7.1-gamma-kdm-fix.patch
 
 # https://bugs.freedesktop.org/show_bug.cgi?id=28672
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.8.0-no-xorg.patch
@@ -48,8 +46,6 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-panelid-sanity.patch
 #patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-insanity.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-classic-default-mode.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-qxl-fallback.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.1-pxtc-crash.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.2-ddc-crash.patch
 
 # Backports from master
 

@@ -1,0 +1,64 @@
+commit 0dda4d7a8d071c58aa22268fd784869b28b5381b
+Author: Bjorn Helgaas <bjorn.helgaas@hp.com>
+Date:   Fri Nov 19 16:25:39 2010 -0700
+
+    x86/PCI: never allocate PCI space from the last 1M below 4G
+    
+    The last 1M before 4G contains the processor restart vector and usually
+    the system ROM.  We don't know the actual ROM size; I chose 1M because
+    that's how much Windows 7 appears to avoid.
+    
+    Without this check, we can allocate PCI space that will never work.  On
+    Matthew's HP 2530p, we put the Intel GTT "Flush Page" at the very last
+    page, which causes a spontaneous power-off:
+    
+      pci_root PNP0A08:00: host bridge window [mem 0xfee01000-0xffffffff]
+      fffff000-ffffffff : Intel Flush Page (assigned by intel-gtt)
+    
+    Reference: https://bugzilla.kernel.org/show_bug.cgi?id=23542
+    Reported-by: Matthew Garrett <mjg@redhat.com>
+    Signed-off-by: Bjorn Helgaas <bjorn.helgaas@hp.com>
+
+diff --git a/arch/x86/include/asm/e820.h b/arch/x86/include/asm/e820.h
+index 5be1542..c1e908f 100644
+--- a/arch/x86/include/asm/e820.h
++++ b/arch/x86/include/asm/e820.h
+@@ -72,6 +72,9 @@ struct e820map {
+ #define BIOS_BEGIN		0x000a0000
+ #define BIOS_END		0x00100000
+ 
++#define BIOS_ROM_BASE		0xfff00000
++#define BIOS_ROM_END		0x100000000ULL
++
+ #ifdef __KERNEL__
+ /* see comment in arch/x86/kernel/e820.c */
+ extern struct e820map e820;
+diff --git a/arch/x86/pci/i386.c b/arch/x86/pci/i386.c
+index c4bb261..6890241 100644
+--- a/arch/x86/pci/i386.c
++++ b/arch/x86/pci/i386.c
+@@ -65,8 +65,14 @@ pcibios_align_resource(void *data, const struct resource *res,
+ 			resource_size_t size, resource_size_t align)
+ {
+ 	struct pci_dev *dev = data;
+-	resource_size_t start = round_down(res->end - size + 1, align);
++	resource_size_t start, end = res->end;
+ 
++	/* Make sure we don't allocate from the last 1M before 4G */
++	if (res->flags & IORESOURCE_MEM) {
++		if (end >= BIOS_ROM_BASE && end < BIOS_ROM_END)
++			end = BIOS_ROM_BASE - 1;
++	}
++	start = round_down(end - size + 1, align);
+ 	if (res->flags & IORESOURCE_IO) {
+ 
+ 		/*
+@@ -80,6 +86,8 @@ pcibios_align_resource(void *data, const struct resource *res,
+ 	} else if (res->flags & IORESOURCE_MEM) {
+ 		if (start < BIOS_END)
+ 			start = res->end;	/* fail; no space */
++		if (start >= BIOS_ROM_BASE && start < BIOS_ROM_END)
++			start = ALIGN(BIOS_ROM_END, align);
+ 	}
+ 	return start;
+ }

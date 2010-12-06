@@ -1,0 +1,274 @@
+diff -up cinepaint-0.22-1/plug-ins/pdf/pdf.cpp.origin cinepaint-0.22-1/plug-ins/pdf/pdf.cpp
+--- cinepaint-0.22-1/plug-ins/pdf/pdf.cpp.origin	2010-08-27 16:15:41.000000000 +0200
++++ cinepaint-0.22-1/plug-ins/pdf/pdf.cpp	2010-08-27 16:22:27.000000000 +0200
+@@ -2,7 +2,7 @@
+  * load of Adobe PDF's;
+  *  plug-in for cinepaint.
+  *
+- * Copyright (C) 2005-2006 Kai-Uwe Behrmann <ku.b@gmx.de>
++ * Copyright (C) 2005-2008 Kai-Uwe Behrmann <ku.b@gmx.de>
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -36,6 +36,7 @@
+ #define PLUG_IN_AUTHOR        "Kai-Uwe Behrmann <ku.b@gmx.de>"
+ #define PLUG_IN_COPYRIGHT     "Copyright 2005-2006 Kai-Uwe Behrmann"
+ 
++
+ #include <cstring>              // strlen strcmp strrchr
+ #include "pdf.h"
+ #include "pdf_dialog.h"
+@@ -51,6 +52,8 @@ extern "C" {
+ #endif
+ }
+ 
++#define WARN_S(text) cout <<__FILE__<<":"<<__LINE__<<" "<< text << endl;
++
+ // Declare some local functions:
+ 
+ void   query		(void);
+@@ -103,21 +106,21 @@ readFilePtrToMem_(FILE *fp, size_t *size
+         /* check again */
+         if (!s)
+         {
+-          printf("no file size %d \n", s);
++          WARN_S("no file size" << s);
+           *size = 0;
+           if (mem) free (mem);
+           mem = 0;
+         } else *size = s;
+       }
+     } else {
+-      printf( "no file provided\n" );
++      WARN_S( "no file provided" );
+     }
+   }
+ 
+   return mem;
+ }
+ 
+-#define GS_VERSION_COMMAND "export PATH=$PATH:/opt/local/bin/usr/local/bin; gs --version"
++#define GS_VERSION_COMMAND "export PATH=$PATH:/opt/local/bin:/usr/local/bin; gs --version"
+ 
+ void
+ query ()
+@@ -140,7 +143,7 @@ query ()
+   #ifndef WIN32
+   dependency_error = system(GS_VERSION_COMMAND);
+   if(dependency_error > 0x200)
+-    printf("The PDF interpreter Ghostscript is not installed.");
++    WARN_S("The PDF interpreter Ghostscript is not installed.");
+   #endif
+ 
+ 
+@@ -193,14 +196,19 @@ run (char    *name,		// I - Name of call
+       char *block = readFilePtrToMem_(fp, &size);
+       if(block && size)
+       {
+-        float v = atof(block);
++        float v = 0;
++
++#ifdef ENABLE_NLS
++        setlocale(LC_NUMERIC, "C");
++#endif
++        v = atof(block);
+         if(v > 8.4)
+         {
+           vals.gs_has_tiff32nc = 1;
+           fprintf( stderr, "gs v%.02f has tiff32nc\n", v);
+         } else
+           fprintf( stderr, "disabling tiff32nc for gs v%.02f\n", v);
+-      } else printf("popen failed with: %s\n", GS_VERSION_COMMAND);
++      } else WARN_S("popen failed with: " << GS_VERSION_COMMAND);
+       if(fp) pclose(fp);
+     }
+ 
+@@ -257,8 +265,6 @@ run (char    *name,		// I - Name of call
+   gimp_set_data ("load_pdf", &vals, sizeof(Vals));
+ }
+ 
+-#define WARN_S(text) cout <<__FILE__<<":"<<__LINE__<<" "<< text << endl;
+-
+ #include <errno.h>
+ #include <sys/stat.h>
+ int
+@@ -366,10 +372,52 @@ load_image(const char* filename)
+ 
+     DBG;
+ 
++  char * profile_name = 0;
++
++    // set a default profile for cmyk
++#ifdef OYRANOS_H
++# if OYRANOS_API > 12
++    using namespace oyranos;
++
++    if( vals.colourspace == PDF_CMYK )
++      profile_name = oyGetDefaultProfileName (oyEDITING_CMYK, myAllocFunc);
++    else
++      profile_name = oyGetDefaultProfileName (oyASSUMED_RGB, myAllocFunc);
++    if(!profile_name)
++      WARN_S( "no profile found" )
++    else
++      WARN_S( "profile found " << profile_name )
++# endif
++#endif 
++
++  {
++    char* prof_mem = 0;
++    size_t size = 0;
++#ifdef OYRANOS_H
++# if OYRANOS_API > 12
++    if(	!oyCheckProfile (profile_name, 0) )
++      prof_mem = (char*)oyGetProfileBlock( profile_name, &size, myAllocFunc );
++# endif
++#endif 
++
++    std::stringstream ss;
++
++    if( vals.interpreter == GHOSTSCRIPT )
++    if( vals.colourspace == PDF_CMYK )
++    {
++#ifdef OYRANOS_H
++      ss << "p=\"" << oyGetPathFromProfileName(profile_name, 0) << "/"
++         << profile_name <<"\"; ";
++      ss << "icc2ps -o \"$p\" -t 3 > " << vals.name << "_crd.ps; ";
++      ss<<"echo \"/Current /ColorRendering findresource setcolorrendering\" >> "
++         << vals.name << "_crd.ps; ";
++#endif
++    }
++
+     int interpreter_ok = -1;
+ 
+-    if( vals.ok ) {
+-      std::stringstream ss;
++    if( vals.ok )
++    {
+       if (strlen(vals.command))
+         ss << vals.command << " ";
+       else if( vals.interpreter == GHOSTSCRIPT )
+@@ -411,9 +459,17 @@ load_image(const char* filename)
+         if( vals.aa_text )
+           ss << "-dTextAlphaBits=4 -dAlignToPixels=1 -dNOPLATFONTS ";
+         ss << "-sOutputFile=" << vals.name << " ";
++#ifdef OYRANOS_H
++        if( vals.colourspace == PDF_CMYK )
++          ss << "-f " << vals.name << "_crd.ps ";
++#endif
+         ss << "'" << filename << "'";
+ 
+-        { const char* c = ss.str().c_str();
++        {
++          std::string str = ss.str();
++          const char* c = str.c_str();
++          fputs (c, stderr);
++          fputs ("  \n", stderr);
+           interpreter_ok = system (c);
+         }
+ 
+@@ -430,6 +486,8 @@ load_image(const char* filename)
+           ss << " ";
+         ss << " " << filename << " " << vals.name;
+ 
++        fputs (ss.str().c_str(), stderr);
++        fputs ("  \n", stderr);
+         interpreter_ok = system (ss.str().c_str());
+       }
+       DBG;
+@@ -437,54 +495,37 @@ load_image(const char* filename)
+       cout << ss.str() << endl;
+       #endif
+     } else
++    {
+       #ifdef DEBUG
+       cout << "vals.ok " << vals.ok << endl;
+       #endif
++    }
+ 
+ 
+-  DBG;
+-  if(interpreter_ok == 0) {
+-  return_vals = gimp_run_procedure ("gimp_file_load",
++    DBG;
++    if(interpreter_ok == 0) {
++    return_vals = gimp_run_procedure ("gimp_file_load",
+                                     &n_retvals,
+                                     GIMP_PDB_INT32, GIMP_RUN_INTERACTIVE,
+                                     GIMP_PDB_STRING, vals.name,
+                                     GIMP_PDB_STRING, vals.name,
+                                     GIMP_PDB_END);
+-  } else
+-    printf("Interpreter daneben.\n");
+-  if (n_retvals) {
+-    if (return_vals[0].data.d_status != GIMP_PDB_SUCCESS)
+-      image_ID = -1;
+-    else
+-      image_ID = return_vals[1].data.d_image;
+-    gimp_destroy_params (return_vals, n_retvals);
+-  }
+-
+-  //erase_file( vals.name );
+-
+-  char * profile_name = 0;
+-
+-    // set a default profile for cmyk
+-#ifdef OYRANOS_H
+-# if OYRANOS_API > 12
+-    using namespace oyranos;
+-
+-    if( vals.colourspace == PDF_CMYK )
+-      profile_name = oyGetDefaultProfileName (oyASSUMED_CMYK, myAllocFunc);
+-    else
+-      profile_name = oyGetDefaultProfileName (oyASSUMED_RGB, myAllocFunc);
+-# endif
+-#endif 
++    } else
++      fputs ("Interpreter failed.\n", stderr);
++    if (n_retvals) {
++      if (return_vals[0].data.d_status != GIMP_PDB_SUCCESS)
++        image_ID = -1;
++      else
++        image_ID = return_vals[1].data.d_image;
++      gimp_destroy_params (return_vals, n_retvals);
++    }
+ 
+-  if( vals.colourspace == PDF_CMYK ) {
+-    char* prof_mem = 0;
+-    size_t size = 0;
++    erase_file( vals.name );
++    ss.str("");
+ #ifdef OYRANOS_H
+-# if OYRANOS_API > 12
+-    if(	!oyCheckProfile (profile_name, "Cmyk") )
+-      prof_mem = (char*)oyGetProfileBlock( profile_name, &size, myAllocFunc );
+-# endif
+-#endif 
++    ss << vals.name << "_crd.ps";
++    erase_file( ss.str().c_str() );
++#endif
+ 
+     if( !prof_mem )
+     {
+@@ -499,6 +540,8 @@ load_image(const char* filename)
+       free ( prof_mem );
+       size = 0;
+     }
++
++    gimp_image_set_filename( image_ID, (char*)filename );
+   }
+ 
+   return image_ID;
+@@ -512,11 +555,10 @@ view_doc ()
+   snprintf(tmp, 1023, vals.filename);
+   snprintf(file, 1023, strrchr(tmp, '/'));
+   char *ptr = strrchr(tmp, '/');
+-  char* viewer = NULL;
++  const char* viewer = NULL;
+   *ptr = 0;
+   snprintf(dir, 1023, tmp);
+-  printf("%s:%d %s()\n",__FILE__,__LINE__,__func__);
+-  cout << dir << file << tmp << endl;
++  WARN_S( dir << file << tmp );
+ 
+   // change the path to the picture
+   ss << "(cd " << dir << "; ";

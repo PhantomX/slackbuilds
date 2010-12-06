@@ -6,16 +6,17 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 patch -p1 -E --backup --verbose -i ${SB_EPDIR}/${PSRCARCHIVE}
 
-
 if [ "${SB_COMPAT}" = "YES" ] ;then
   patch -p1 -E --backup --verbose -i ${SB_EPDIR}/${PSRCARCHIVE2}
   sleep 1
   find . \( -name Makefile.in -o -name aclocal.m4 \) -print | xargs touch
   sleep 1
   find . \( -name configure -o -name config.h.in \) -print | xargs touch
-  autoconf -f || exit 1
+  #autoconf -f || exit 1
 else
   sed -i.scanf-m -e 's/%m/%a/' src/addr2line.c tests/line2addr.c || exit 1
 fi
+
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.150-dwfl_module_relocations-Remove-over-eager-assert.patch
 
 set +e +o pipefail

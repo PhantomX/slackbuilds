@@ -24,6 +24,5 @@ fi
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/freetype-multilib.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/freetype-2.4.2-CVE-2010-3311.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/freetype-2.4.3-CVE-2010-3855.patch
 
 set +e +o pipefail

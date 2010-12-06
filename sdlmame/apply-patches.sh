@@ -10,6 +10,8 @@ if [ "${PATCHLEVEL}" -gt 0 ] ;then
   done
 fi
 
+[ "${SB_HS}" = "YES" ] && patch -p0 -E --backup -z .hiscore --verbose -i ${HSSRCARCHIVE}.diff
+
 if [ "${SB_GCONF}" != "YES" ] ;then
   patch -p0 -E --backup -z .nogconf --verbose -i ${SB_PATCHDIR}/sdlmame-0.139.u4-nogconf.patch
 fi

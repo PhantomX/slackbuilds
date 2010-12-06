@@ -16,9 +16,13 @@ zcat ${SB_PATCHDIR}/cinepaint-0.22-1-underquoted.patch.gz | patch -p1 -E --backu
 zcat ${SB_PATCHDIR}/cinepaint-0.22-gcc44.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/cinepaint-0.22-oyranos19.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.22-1-dso.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.22-upd_pdf.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.22-ENOY.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.25-oyranos_include.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.25-oyranos_cms.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.25-oyranos_header.patch
 
 ( cd ${SRCDIR2}
-  zcat ${SB_PATCHDIR}/icc_examin-0.46-default.patch.gz | patch -p1 -E --backup --verbose
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/icc_examin-0.46-overflow.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/icc_examin-0.46-dso.patch
 )

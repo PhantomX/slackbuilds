@@ -1,0 +1,84 @@
+From jirislaby@gmail.com Thu Nov 25 12:16:42 2010
+From: Jiri Slaby <jslaby@suse.cz>
+Subject: [PATCH 1/1] TTY: don't allow reopen when ldisc is changing
+Date: Thu, 25 Nov 2010 18:16:23 +0100
+
+There are many WARNINGs like the following reported nowadays:
+WARNING: at drivers/tty/tty_io.c:1331 tty_open+0x2a2/0x49a()
+Hardware name: Latitude E6500
+Modules linked in:
+Pid: 1207, comm: plymouthd Not tainted 2.6.37-rc3-mmotm1123 #3
+Call Trace:
+ [<ffffffff8103b189>] warn_slowpath_common+0x80/0x98
+ [<ffffffff8103b1b6>] warn_slowpath_null+0x15/0x17
+ [<ffffffff8128a3ab>] tty_open+0x2a2/0x49a
+ [<ffffffff810fd53f>] chrdev_open+0x11d/0x146
+...
+
+This means tty_reopen is called without TTY_LDISC set. For further
+considerations, note tty_lock is held in tty_open. TTY_LDISC is cleared in:
+1) __tty_hangup from tty_ldisc_hangup to tty_ldisc_enable. During this
+section tty_lock is held.
+
+2) tty_release via tty_ldisc_release till the end of tty existence. If
+tty->count <= 1, tty_lock is taken, TTY_CLOSING bit set and then
+tty_ldisc_release called. tty_reopen checks TTY_CLOSING before checking
+TTY_LDISC.
+
+3) tty_set_ldisc from tty_ldisc_halt to tty_ldisc_enable. We:
+   * take tty_lock, set TTY_LDISC_CHANGING, put tty_lock
+   * call tty_ldisc_halt (clear TTY_LDISC), tty_lock is _not_ held
+   * do some other work
+   * take tty_lock, call tty_ldisc_enable (set TTY_LDISC), put
+     tty_lock
+
+So the only option I see is 3). The solution is to check
+TTY_LDISC_CHANGING along with TTY_CLOSING in tty_reopen.
+
+Nicely reproducible with two processes:
+while (1) {
+	fd = open("/dev/ttyS1", O_RDWR);
+	if (fd < 0) {
+		warn("open");
+		continue;
+	}
+	close(fd);
+}
+--------
+while (1) {
+        fd = open("/dev/ttyS1", O_RDWR);
+        ld1 = 0; ld2 = 2;
+        while (1) {
+                ioctl(fd, TIOCSETD, &ld1);
+                ioctl(fd, TIOCSETD, &ld2);
+        }
+        close(fd);
+}
+
+Signed-off-by: Jiri Slaby <jslaby@suse.cz>
+Reported-by: <Valdis.Kletnieks@vt.edu>
+Cc: Kyle McMartin <kyle@mcmartin.ca>
+Cc: Alan Cox <alan@lxorguk.ukuu.org.uk>
+---
+ drivers/tty/tty_io.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/drivers/tty/tty_io.c b/drivers/tty/tty_io.c
+index c05c5af..878f6d6 100644
+--- a/drivers/char/tty_io.c
++++ b/drivers/char/tty_io.c
+@@ -1310,7 +1310,8 @@ static int tty_reopen(struct tty_struct *tty)
+ {
+ 	struct tty_driver *driver = tty->driver;
+ 
+-	if (test_bit(TTY_CLOSING, &tty->flags))
++	if (test_bit(TTY_CLOSING, &tty->flags) ||
++			test_bit(TTY_LDISC_CHANGING, &tty->flags))
+ 		return -EIO;
+ 
+ 	if (driver->type == TTY_DRIVER_TYPE_PTY &&
+-- 
+1.7.3.1
+
+
+

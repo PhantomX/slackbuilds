@@ -41,6 +41,8 @@ ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch
 # may be upstreamable, not sure yet
 # workaround for gdal/grass crashers wrt glib_eventloop null deref's
 ApplyPatch qt-everywhere-opensource-src-4.6.3-glib_eventloop_nullcheck.patch
+# remove dependency of webkit in assistant
+#ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit.patch
 
 ## upstreamable bits
 # fix invalid inline assembly in qatomic_{i386,x86_64}.h (de)ref implementations
@@ -61,6 +63,8 @@ ApplyPatch qt-4.6.3-indic-rendering-bz631732.patch
 ApplyPatch qt-4.6.3-indic-rendering-bz636399.patch
 # fix 24bit color issue
 ApplyPatch qt-everywhere-opensource-src-4.7.0-bpp24.patch
+# Fails to create debug build of Qt projects on mingw (rhbz#653674)
+ApplyPatch qt-everywhere-opensource-src-4.7.1-QTBUG-14467.patch
 
 ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 
@@ -68,14 +72,18 @@ ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-CVE-2010-1822-crash-svg-image.patch
 
 ## upstream patches
+# Reordering of Malayalam Rakar not working properly
+ApplyPatch qt-everywhere-opensource-src-4.7.1-ml_IN-bz528303.patch
+# fix QTextCursor crash in Lokalize and Psi (QTBUG-15857, kde#249373, #660028)
+# http://qt.gitorious.org/qt/qt/commit/6ae84f1183e91c910ca92a55e37f8254ace805c0
+ApplyPatch qt-everywhere-opensource-src-4.7.1-qtextcursor-crash.patch
 
 # kde-qt patches
 ApplyPatch 0004-0005.patch
 ApplyPatch 0012-Add-context-to-tr-calls-in-QShortcut.patch
-ApplyPatch 0014-Revert-unneeded-patch.patch
 ( SB_PATCHDIR=patches
   # Ignore list, e.g: ="0003 0010"
-  export IGNORE="0004 0005 0008 0014 0015"
+  export IGNORE="0004 0005"
   IgnorePatch ${SB_PATCHDIR}/list
   for patch in $(<${SB_PATCHDIR}/list) ;do
     ApplyPatch ${patch}

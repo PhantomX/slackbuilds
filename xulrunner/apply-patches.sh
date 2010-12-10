@@ -10,7 +10,6 @@ zcat ${SB_PATCHDIR}/mozilla-build.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/mozilla-jemalloc.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/mozilla-about-firefox-version.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/xulrunner-1.9.2.1-build.patch.gz | patch -p2 -E --backup --verbose
-zcat ${SB_PATCHDIR}/mozilla-plugin.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/mozilla-build-sbrk.patch.gz | patch -p2 -E --backup --verbose
 
 # Fedora specific patches

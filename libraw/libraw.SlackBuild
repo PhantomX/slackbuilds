@@ -42,9 +42,14 @@ fi
 
 PNAME=LibRaw
 NAME=libraw
+DPNAME=LibRaw-demosaic-pack
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.11.3}
+VERSION=${VERSION:-0.12.0}
+LRSOFVER=$(echo ${VERSION} | cut -d- -f1)
+LRSOVER=$(echo ${VERSION} | cut -d. -f1)
+DPGPL2VER=${DPGPL2VER:-0.12.0}
+DPGPL3VER=${DPGPL3VER:-0.12.0}
 SOVER=$(echo ${VERSION} | cut -d. -f1)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -68,15 +73,21 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${PNAME}-${VERSION}
+DPGPL2SRCDIR=${DPNAME}-GPL2-${DPGPL2VER}
+DPGPL3SRCDIR=${DPNAME}-GPL3-${DPGPL3VER}
 SRCARCHIVE=${SRCDIR}.tar.gz
+DPGPL2SRCARCHIVE=${DPGPL2SRCDIR}.tar.gz
+DPGPL3SRCARCHIVE=${DPGPL3SRCDIR}.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://www.libraw.org/data/${SRCARCHIVE}"
+DL_URL="http://www.libraw.org/data"
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+for file in ${SRCARCHIVE} ${DPGPL2SRCARCHIVE} ${DPGPL3SRCARCHIVE} ;do
+  test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
+done
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -107,39 +118,67 @@ cd ${TMP}
 rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
+for file in ${DPGPL2SRCARCHIVE} ${DPGPL3SRCARCHIVE} ;do
+  tar -xvf ${CWD}/${file} || exit 1
+done
 
 chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
-install -m0644 ${CWD}/Makefile.shared Makefile || exit 1
 
-export CFLAGS="${SLKCFLAGS}"
-export CXXFLAGS="${SLKCFLAGS}"
-export PREFIX=/usr
-export LIBDIR=/usr/lib${LIBDIRSUFFIX}
+CFLAGS="${SLKCFLAGS}" \
+CXXFLAGS="${SLKCFLAGS}" \
+./configure \
+  --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --sysconfdir=/etc \
+  --localstatedir=/var/lib \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --docdir=/usr/doc/${NAME}-${VERSION} \
+  --enable-lcms \
+  --enable-openmp \
+  --enable-demosaic-pack-gpl2=${DPGPL2SRCDIR} \
+  --enable-demosaic-pack-gpl3=${DPGPL3SRCDIR} \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
 
-make -j${NJOBS} || make || exit $?
+SB_TARGETS="lib/libraw.a lib/libraw_r.a"
+
+# Build shared libraries
+make -j${NJOBS} ${SB_TARGETS} \
+  CFLAGS="${SLKCFLAGS} -fopenmp -fPIC" \
+  CXXFLAGS="${SLKCFLAGS} -fopenmp -fPIC" \
+  || make ${SB_TARGETS} \
+    CFLAGS="${SLKCFLAGS} -fopenmp -fPIC" \
+    CXXFLAGS="${SLKCFLAGS} -fopenmp -fPIC" || exit $?
+
+( set -o xtrace 
+  LIBRAWOBJECTS="internal/lib_libraw_a-dcraw_common.o internal/lib_libraw_a-dcraw_fileio.o \
+    internal/lib_libraw_a-demosaic_packs.o src/lib_libraw_a-libraw_cxx.o \
+    src/lib_libraw_a-libraw_c_api.o"
+  g++ -shared -fopenmp ${LDFLAGS} -Wl,-soname=libraw.so.${LRSOVER} \
+    -o lib/libraw.so.${LRSOFVER} $(pkg-config lcms2 --libs) \
+    ${LIBRAWOBJECTS} || exit $?
+  ln -s libraw.so.${LRSOFVER} lib/libraw.so
+  g++ -shared -fopenmp -pthread ${LDFLAGS} -Wl,-soname=libraw_r.so.${LRSOVER} \
+    -o lib/libraw_r.so.${LRSOFVER} $(pkg-config lcms2 --libs) \
+    ${LIBRAWOBJECTS//_a-/_r_a-} || exit $?
+  ln -s libraw_r.so.${LRSOFVER} lib/libraw_r.so
+) || exit $?
+
+make clean || exit $?
+
+# Everything else
+make -j${NJOBS} || make | exit $?
 make install DESTDIR=${PKG} || exit $?
 
-mkdir -p ${PKG}/usr/bin
-install -pm0755 bin/raw-identify ${PKG}/usr/bin/ || exit 1
+rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/*.a
 
-mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig
-for lib in raw raw_r ;do
-cat > ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig/lib${lib}.pc <<EOF
-prefix=/usr
-exec_prefix=/usr
-libdir=/usr/lib${LIBDIRSUFFIX}
-includedir=/usr/include
-
-Name: lib${lib}
-Description: Raw image decoder library
-Version: ${VERSION}
-URL: http://www.libraw.org/
-Cflags: -I\${includedir}
-Libs: -L\${libdir} -l${lib}
-EOF
+for lib in libraw.so libraw_r.so ;do
+  install -pm0755 lib/${lib}.${LRSOFVER} ${PKG}/usr/lib${LIBDIRSUFFIX}/ || exit 1
+  ln -s ${lib}.${LRSOFVER} ${PKG}/usr/lib${LIBDIRSUFFIX}/${lib}.${LRSOVER}
+  ln -s ${lib}.${LRSOVER} ${PKG}/usr/lib${LIBDIRSUFFIX}/${lib}
 done
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \

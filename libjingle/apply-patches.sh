@@ -36,5 +36,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-system-srtp.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-devicemanager-alsafix.patch
 # Fix v4llookup.cc to compile
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-v4llookup-fix.patch
+# Fix type and definition conflicts with Chromium
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-fixconflict.patch
+# Fix 64bit typedefs to not conflict with Chromium, nspr
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-64bittypes.patch
+# From Chromium, make qname threadsafe
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-qname-threadsafe.patch
 
 set +e +o pipefail

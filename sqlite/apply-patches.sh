@@ -9,6 +9,5 @@ zcat ${SB_PATCHDIR}/sqlite-3.6.6.2-libdl.patch.gz | patch -p1 -E --backup --verb
 # Avoid insecure sprintf(), use a system path for lempar.c, patch from Debian
 zcat ${SB_PATCHDIR}/sqlite-3.6.23-lemon-system-template.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.6.22-interix-fixes.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.7.3-icu_tests.patch
 
 set +e +o pipefail

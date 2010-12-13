@@ -103,7 +103,10 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 # xfs
 
 # btrfs
-
+# rhbz#656465
+ApplyPatch btrfs-fix-error-handling-in-btrfs_get_sb.patch
+ApplyPatch btrfs-fix-race-between-btrfs_get_sb-and-umount.patch
+ApplyPatch btrfs-setup-blank-root-and-fs_info-for-mount-time.patch
 
 # cifs
 
@@ -138,6 +141,7 @@ ApplyPatch linux-2.6-defaults-pci_no_msi.patch
 ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
+ApplyPatch pci-disable-aspm-if-bios-asks-us-to.patch
 
 ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
 
@@ -199,8 +203,6 @@ ApplyPatch drm-intel-big-hammer.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
-ApplyPatch radeon-mc-vram-map-needs-to-be-gt-pci-aperture.patch
-
 # linux1394 git patches
 # apply if non-empty
 #ApplyOptionalPatch linux-2.6-firewire-git-update.patch
@@ -221,9 +223,6 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 #ApplyPatch lirc-staging-2.6.36.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
 ApplyPatch hdpvr-ir-enable.patch
-
-# silence another rcu_reference warning
-ApplyPatch linux-2.6-rcu-sched-warning.patch
 
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
@@ -246,23 +245,12 @@ ApplyPatch runtime_pm_fixups.patch
 ApplyPatch pci-crs-fixes.patch
 ApplyPatch x86-never-alloc-pci-from-the-last-1M-below-4G.patch
 
-# rhbz#641468
-ApplyPatch pnpacpi-cope-with-invalid-device-ids.patch
-
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
 ApplyPatch xhci_hcd-suspend-resume.patch
 
-ApplyPatch tty-restore-tty_ldisc_wait_idle.patch
-
 ApplyPatch fix-i8k-inline-asm.patch
-
-# rhbz#648658 (CVE-2010-4073)
-ApplyPatch ipc-zero-struct-memory-for-compat-fns.patch
-
-# rhbz#648656 (CVE-2010-4072)
-ApplyPatch ipc-shm-fix-information-leak-to-user.patch
 
 # rhbz#651264 (CVE-2010-3880)
 ApplyPatch inet_diag-make-sure-we-run-the-same-bytecode-we-audited.patch
@@ -271,22 +259,21 @@ ApplyPatch netlink-make-nlmsg_find_attr-take-a-const-ptr.patch
 # rhbz#656264
 ApplyPatch posix-cpu-timers-workaround-to-suppress-problems-with-mt-exec.patch
 
-# rhbz#657388
-ApplyPatch hda_realtek-handle-unset-external-amp-bits.patch
-
 # CVE-2010-4077, CVE-2010-4075 (rhbz#648660, #648663)
 ApplyPatch tty-make-tiocgicount-a-handler.patch
 ApplyPatch tty-icount-changeover-for-other-main-devices.patch
 
 ApplyPatch tpm-autodetect-itpm-devices.patch
 
-ApplyPatch tty-dont-allow-reopen-when-ldisc-is-changing.patch
-ApplyPatch tty-ldisc-fix-open-flag-handling.patch
-ApplyPatch tty-open-hangup-race-fixup.patch
-
 # backport some fixes for kswapd from mmotm, rhbz#649694
 ApplyPatch mm-page-allocator-adjust-the-per-cpu-counter-threshold-when-memory-is-low.patch
 ApplyPatch mm-vmstat-use-a-single-setter-function-and-callback-for-adjusting-percpu-thresholds.patch
+
+# rhbz#650934
+ApplyPatch sched-cure-more-NO_HZ-load-average-woes.patch
+
+# rhbz#657864 [229bd792]
+ApplyPatch orinoco-initialise-priv_hw-before-assigning-the-interrupt.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

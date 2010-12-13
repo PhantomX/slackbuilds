@@ -1,0 +1,118 @@
+From 7f9f05e1f4cd9a625bc35b117a239d9b0cbe4a03 Mon Sep 17 00:00:00 2001
+From: Josef Bacik <josef@redhat.com>
+Date: Fri, 19 Nov 2010 14:59:15 -0500
+Subject: [PATCH 3/3] Btrfs: setup blank root and fs_info for mount time
+
+There is a problem with how we use sget, it searches through the list of supers
+attached to the fs_type looking for a super with the same fs_devices as what
+we're trying to mount.  This depends on sb->s_fs_info being filled, but we don't
+fill that in until we get to btrfs_fill_super, so we could hit supers on the
+fs_type super list that have a null s_fs_info.  In order to fix that we need to
+go ahead and setup a blank root with a blank fs_info to hold fs_devices, that
+way our test will work out right and then we can set s_fs_info in
+btrfs_set_super, and then open_ctree will simply use our pre-allocated root and
+fs_info when setting everything up.  Thanks,
+
+Signed-off-by: Josef Bacik <josef@redhat.com>
+Signed-off-by: Chris Mason <chris.mason@oracle.com>
+---
+ fs/btrfs/disk-io.c |    6 ++----
+ fs/btrfs/super.c   |   34 +++++++++++++++++++++++++++++++---
+ 2 files changed, 33 insertions(+), 7 deletions(-)
+
+diff --git a/fs/btrfs/disk-io.c b/fs/btrfs/disk-io.c
+index 64f1008..65efa04 100644
+--- a/fs/btrfs/disk-io.c
++++ b/fs/btrfs/disk-io.c
+@@ -1539,10 +1539,8 @@ struct btrfs_root *open_ctree(struct super_block *sb,
+ 						 GFP_NOFS);
+ 	struct btrfs_root *csum_root = kzalloc(sizeof(struct btrfs_root),
+ 						 GFP_NOFS);
+-	struct btrfs_root *tree_root = kzalloc(sizeof(struct btrfs_root),
+-					       GFP_NOFS);
+-	struct btrfs_fs_info *fs_info = kzalloc(sizeof(*fs_info),
+-						GFP_NOFS);
++	struct btrfs_root *tree_root = btrfs_sb(sb);
++	struct btrfs_fs_info *fs_info = tree_root->fs_info;
+ 	struct btrfs_root *chunk_root = kzalloc(sizeof(struct btrfs_root),
+ 						GFP_NOFS);
+ 	struct btrfs_root *dev_root = kzalloc(sizeof(struct btrfs_root),
+diff --git a/fs/btrfs/super.c b/fs/btrfs/super.c
+index b169698..6479db9 100644
+--- a/fs/btrfs/super.c
++++ b/fs/btrfs/super.c
+@@ -548,7 +548,7 @@ static int btrfs_show_options(struct seq_file *seq, struct vfsmount *vfs)
+ 
+ static int btrfs_test_super(struct super_block *s, void *data)
+ {
+-	struct btrfs_fs_devices *test_fs_devices = data;
++	struct btrfs_root *test_root = data;
+ 	struct btrfs_root *root = btrfs_sb(s);
+ 
+ 	/*
+@@ -557,9 +557,17 @@ static int btrfs_test_super(struct super_block *s, void *data)
+ 	 */
+ 	if (!atomic_read(&s->s_active))
+ 		return 0;
+-	return root->fs_info->fs_devices == test_fs_devices;
++	return root->fs_info->fs_devices == test_root->fs_info->fs_devices;
+ }
+ 
++static int btrfs_set_super(struct super_block *s, void *data)
++{
++	s->s_fs_info = data;
++
++	return set_anon_super(s, data);
++}
++
++
+ /*
+  * Find a superblock for the given device / mount point.
+  *
+@@ -573,6 +581,8 @@ static int btrfs_get_sb(struct file_system_type *fs_type, int flags,
+ 	struct super_block *s;
+ 	struct dentry *root;
+ 	struct btrfs_fs_devices *fs_devices = NULL;
++	struct btrfs_root *tree_root = NULL;
++	struct btrfs_fs_info *fs_info = NULL;
+ 	fmode_t mode = FMODE_READ;
+ 	char *subvol_name = NULL;
+ 	u64 subvol_objectid = 0;
+@@ -601,8 +611,24 @@ static int btrfs_get_sb(struct file_system_type *fs_type, int flags,
+ 		goto error_close_devices;
+ 	}
+ 
++	/*
++	 * Setup a dummy root and fs_info for test/set super.  This is because
++	 * we don't actually fill this stuff out until open_ctree, but we need
++	 * it for searching for existing supers, so this lets us do that and
++	 * then open_ctree will properly initialize everything later.
++	 */
++	fs_info = kzalloc(sizeof(struct btrfs_fs_info), GFP_NOFS);
++	tree_root = kzalloc(sizeof(struct btrfs_root), GFP_NOFS);
++	if (!fs_info || !tree_root) {
++		error = -ENOMEM;
++		goto error_close_devices;
++	}
++	fs_info->tree_root = tree_root;
++	fs_info->fs_devices = fs_devices;
++	tree_root->fs_info = fs_info;
++
+ 	bdev = fs_devices->latest_bdev;
+-	s = sget(fs_type, btrfs_test_super, set_anon_super, fs_devices);
++	s = sget(fs_type, btrfs_test_super, btrfs_set_super, tree_root);
+ 	if (IS_ERR(s))
+ 		goto error_s;
+ 
+@@ -672,6 +698,8 @@ error_s:
+ 	error = PTR_ERR(s);
+ error_close_devices:
+ 	btrfs_close_devices(fs_devices);
++	kfree(fs_info);
++	kfree(tree_root);
+ error_free_subvol_name:
+ 	kfree(subvol_name);
+ 	return error;
+-- 
+1.7.3.3
+

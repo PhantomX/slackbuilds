@@ -21,6 +21,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.17-wildcards.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.22-atime-rofs.patch
 #oldarchive option was not working(#594044)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-oldarchive.patch
+# fix failure with --one-file-system and --listed-incremental when archiving / (#654718)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.25-listedincremental.patch
+# Correctly store long sparse file names in PAX archives (#656834)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.25-sparse-names.patch
 
 # Adds txz support
 zcat ${SB_PATCHDIR}/${NAME}-1.23-support_txz.diff.gz | patch -p1 -E --backup --verbose

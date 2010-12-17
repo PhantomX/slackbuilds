@@ -24,7 +24,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-invalid-dhclient-co
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-missing-ipv6-not-fatal.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-IFNAMSIZ.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-add_timeout_when_NULL.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-64_bit_lease_parse.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-P1-64_bit_lease_parse.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-capability.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-logpid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-UseMulticast.patch
@@ -39,5 +39,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-honor-expired.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-noprefixavail.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp420-rh637017.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp420-sharedlib.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-PPP.patch
 
 set +e +o pipefail

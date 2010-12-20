@@ -45,6 +45,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patc
 # Trunk patches
 # http://websvn.kde.org/?view=revision&revision=1185912
 patch -p3 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.2-plasma_wallpaper_configchanged.patch
+# Build with polkit-qt >= 0.99.0
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.4-auth1206241.patch
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex

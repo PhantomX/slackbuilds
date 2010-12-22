@@ -22,6 +22,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bluez-unbreak_dell_mouse.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Handle-ISO8859-1-device-names.patch
 zcat ${SB_PATCHDIR}/${NAME}-socket-mobile-cf-connection-kit.patch.gz | patch -p1 -E --backup --verbose
 # http://thread.gmane.org/gmane.linux.bluez.kernel/2396
-patch -p1 -E --backup -z .cable-pairing --verbose -i ${SB_PATCHDIR}/0001-Add-sixaxis-cable-pairing-plugin.patch
+#patch -p1 -E --backup -z .cable-pairing --verbose -i ${SB_PATCHDIR}/0001-Add-sixaxis-cable-pairing-plugin.patch
 
 set +e +o pipefail

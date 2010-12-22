@@ -1,0 +1,2084 @@
+diff -up libaesgm-20090429/fileenc.c.BAD libaesgm-20090429/fileenc.c
+--- libaesgm-20090429/fileenc.c.BAD	2010-05-24 09:53:06.255534192 -0400
++++ libaesgm-20090429/fileenc.c	2010-05-24 09:52:55.570387453 -0400
+@@ -0,0 +1,145 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products
++      built using this software without specific written permission.
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness
++ and/or fitness for purpose.
++ -------------------------------------------------------------------------
++ Issue Date: 26/08/2003
++
++ This file implements password based file encryption and authentication 
++ using AES in CTR mode, HMAC-SHA1 authentication and RFC2898 password 
++ based key derivation.
++
++*/
++
++#include <memory.h>
++
++#include "fileenc.h"
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++/* subroutine for data encryption/decryption    */
++/* this could be speeded up a lot by aligning   */
++/* buffers and using 32 bit operations          */
++
++static void encr_data(unsigned char data[], unsigned long d_len, fcrypt_ctx cx[1])
++{   unsigned long i = 0, pos = cx->encr_pos;
++
++    while(i < d_len)
++    {
++        if(pos == BLOCK_SIZE)
++        {   unsigned int j = 0;
++            /* increment encryption nonce   */
++            while(j < 8 && !++cx->nonce[j])
++                ++j;
++            /* encrypt the nonce to form next xor buffer    */
++            aes_encrypt(cx->nonce, cx->encr_bfr, cx->encr_ctx);
++            pos = 0;
++        }
++
++        data[i++] ^= cx->encr_bfr[pos++];
++    }
++
++    cx->encr_pos = pos;
++}
++
++int fcrypt_init(
++    int mode,                               /* the mode to be used (input)          */
++    const unsigned char pwd[],              /* the user specified password (input)  */
++    unsigned int pwd_len,                   /* the length of the password (input)   */
++    const unsigned char salt[],             /* the salt (input)                     */
++#ifdef PASSWORD_VERIFIER
++    unsigned char pwd_ver[PWD_VER_LENGTH],  /* 2 byte password verifier (output)    */
++#endif
++    fcrypt_ctx      cx[1])                  /* the file encryption context (output) */
++{   unsigned char kbuf[2 * MAX_KEY_LENGTH + PWD_VER_LENGTH];
++
++    if(pwd_len > MAX_PWD_LENGTH)
++        return PASSWORD_TOO_LONG;
++
++    if(mode < 1 || mode > 3)
++        return BAD_MODE;
++
++    cx->mode = mode;
++    cx->pwd_len = pwd_len;
++    /* initialise the encryption nonce and buffer pos   */
++    cx->encr_pos = BLOCK_SIZE;
++
++	/* if we need a random component in the encryption  */
++    /* nonce, this is where it would have to be set     */
++    memset(cx->nonce, 0, BLOCK_SIZE * sizeof(unsigned char));
++	/* initialise for authentication			        */
++    hmac_sha_begin(cx->auth_ctx);
++
++	/* derive the encryption and authetication keys and the password verifier   */
++    derive_key(pwd, pwd_len, salt, SALT_LENGTH(mode), KEYING_ITERATIONS,
++                        kbuf, 2 * KEY_LENGTH(mode) + PWD_VER_LENGTH);
++    /* set the encryption key							*/
++    aes_encrypt_key(kbuf, KEY_LENGTH(mode), cx->encr_ctx);
++    /* set the authentication key						*/
++    hmac_sha_key(kbuf + KEY_LENGTH(mode), KEY_LENGTH(mode), cx->auth_ctx);
++#ifdef PASSWORD_VERIFIER
++    memcpy(pwd_ver, kbuf + 2 * KEY_LENGTH(mode), PWD_VER_LENGTH);
++#endif
++	/* clear the buffer holding the derived key values	*/
++	memset(kbuf, 0, 2 * KEY_LENGTH(mode) + PWD_VER_LENGTH);
++
++	return GOOD_RETURN;
++}
++
++/* perform 'in place' encryption and authentication */
++
++void fcrypt_encrypt(unsigned char data[], unsigned int data_len, fcrypt_ctx cx[1])
++{
++    encr_data(data, data_len, cx);
++    hmac_sha_data(data, data_len, cx->auth_ctx);
++}
++
++/* perform 'in place' authentication and decryption */
++
++void fcrypt_decrypt(unsigned char data[], unsigned int data_len, fcrypt_ctx cx[1])
++{
++    hmac_sha_data(data, data_len, cx->auth_ctx);
++    encr_data(data, data_len, cx);
++}
++
++/* close encryption/decryption and return the MAC value */
++
++int fcrypt_end(unsigned char mac[], fcrypt_ctx cx[1])
++{	unsigned int res = cx->mode;
++
++    hmac_sha_end(mac, MAC_LENGTH(cx->mode), cx->auth_ctx);
++	memset(cx, 0, sizeof(fcrypt_ctx));	/* clear the encryption context	*/
++	return MAC_LENGTH(res);				/* return MAC length in bytes   */
++}
++
++#if defined(__cplusplus)
++}
++#endif
+diff -up libaesgm-20090429/fileenc.h.BAD libaesgm-20090429/fileenc.h
+--- libaesgm-20090429/fileenc.h.BAD	2010-05-24 09:53:06.255534192 -0400
++++ libaesgm-20090429/fileenc.h	2010-05-24 09:56:18.801512342 -0400
+@@ -0,0 +1,122 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products
++      built using this software without specific written permission.
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness
++ and/or fitness for purpose.
++ ---------------------------------------------------------------------------
++ Issue Date: 24/01/2003
++
++ This file contains the header file for fileenc.c, which implements password
++ based file encryption and authentication using AES in CTR mode, HMAC-SHA1 
++ authentication and RFC2898 password based key derivation.
++*/
++
++#ifndef _FENC_H
++#define _FENC_H
++
++#include "aes.h"
++#include "hmac.h"
++#include "pwd2key.h"
++
++#define	BLOCK_SIZE AES_BLOCK_SIZE
++#define PASSWORD_VERIFIER
++
++#define MAX_KEY_LENGTH        32
++#define MAX_PWD_LENGTH       128
++#define MAX_SALT_LENGTH       16
++#define KEYING_ITERATIONS   1000
++
++#ifdef  PASSWORD_VERIFIER
++#define PWD_VER_LENGTH         2
++#else
++#define PWD_VER_LENGTH         0
++#endif
++
++#define GOOD_RETURN            0
++#define PASSWORD_TOO_LONG   -100
++#define BAD_MODE            -101
++
++/*
++    Field lengths (in bytes) versus File Encryption Mode (0 < mode < 4)
++
++    Mode Key Salt  MAC Overhead
++       1  16    8   10       18
++       2  24   12   10       22
++       3  32   16   10       26
++
++   The following macros assume that the mode value is correct.
++*/
++
++#define KEY_LENGTH(mode)        (8 * (mode & 3) + 8)
++#define SALT_LENGTH(mode)       (4 * (mode & 3) + 4)
++#define MAC_LENGTH(mode)        (10)
++
++/* the context for file encryption   */
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++typedef struct
++{   unsigned char   nonce[BLOCK_SIZE];          /* the CTR nonce          */
++    unsigned char   encr_bfr[BLOCK_SIZE];       /* encrypt buffer         */
++    aes_encrypt_ctx	encr_ctx[1];                /* encryption context     */
++    hmac_ctx        auth_ctx[1];                /* authentication context */
++    unsigned int    encr_pos;                   /* block position (enc)   */
++    unsigned int    pwd_len;                    /* password length        */
++    unsigned int    mode;                       /* File encryption mode   */
++} fcrypt_ctx;
++
++/* initialise file encryption or decryption */
++
++int fcrypt_init(
++    int mode,                               /* the mode to be used (input)          */
++    const unsigned char pwd[],              /* the user specified password (input)  */
++    unsigned int pwd_len,                   /* the length of the password (input)   */
++    const unsigned char salt[],             /* the salt (input)                     */
++#ifdef PASSWORD_VERIFIER
++    unsigned char pwd_ver[PWD_VER_LENGTH],  /* 2 byte password verifier (output)    */
++#endif
++    fcrypt_ctx      cx[1]);                 /* the file encryption context (output) */
++
++/* perform 'in place' encryption or decryption and authentication               */
++
++void fcrypt_encrypt(unsigned char data[], unsigned int data_len, fcrypt_ctx cx[1]);
++void fcrypt_decrypt(unsigned char data[], unsigned int data_len, fcrypt_ctx cx[1]);
++
++/* close encryption/decryption and return the MAC value */
++/* the return value is the length of the MAC            */
++
++int fcrypt_end(unsigned char mac[],     /* the MAC value (output)   */
++               fcrypt_ctx cx[1]);       /* the context (input)      */
++
++#if defined(__cplusplus)
++}
++#endif
++
++#endif
+diff -up libaesgm-20090429/hmac.c.BAD libaesgm-20090429/hmac.c
+--- libaesgm-20090429/hmac.c.BAD	2010-05-24 09:37:00.605385987 -0400
++++ libaesgm-20090429/hmac.c	2010-05-24 09:36:55.549386057 -0400
+@@ -0,0 +1,145 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products
++      built using this software without specific written permission.
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness
++ and/or fitness for purpose.
++ ---------------------------------------------------------------------------
++ Issue Date: 26/08/2003
++
++ This is an implementation of HMAC, the FIPS standard keyed hash function
++*/
++
++#include "hmac.h"
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++/* initialise the HMAC context to zero */
++void hmac_sha_begin(hmac_ctx cx[1])
++{
++    memset(cx, 0, sizeof(hmac_ctx));
++}
++
++/* input the HMAC key (can be called multiple times)    */
++int hmac_sha_key(const unsigned char key[], unsigned long key_len, hmac_ctx cx[1])
++{
++    if(cx->klen == HMAC_IN_DATA)                /* error if further key input   */
++        return HMAC_BAD_MODE;                   /* is attempted in data mode    */
++
++    if(cx->klen + key_len > HASH_INPUT_SIZE)    /* if the key has to be hashed  */
++    {
++        if(cx->klen <= HASH_INPUT_SIZE)         /* if the hash has not yet been */
++        {                                       /* started, initialise it and   */
++            sha_begin(cx->ctx);                /* hash stored key characters   */
++            sha_hash(cx->key, cx->klen, cx->ctx);
++        }
++
++        sha_hash(key, key_len, cx->ctx);       /* hash long key data into hash */
++    }
++    else                                        /* otherwise store key data     */
++        memcpy(cx->key + cx->klen, key, key_len);
++
++    cx->klen += key_len;                        /* update the key length count  */
++    return HMAC_OK;
++}
++
++/* input the HMAC data (can be called multiple times) - */
++/* note that this call terminates the key input phase   */
++void hmac_sha_data(const unsigned char data[], unsigned long data_len, hmac_ctx cx[1])
++{   unsigned int i;
++
++    if(cx->klen != HMAC_IN_DATA)                /* if not yet in data phase */
++    {
++        if(cx->klen > HASH_INPUT_SIZE)          /* if key is being hashed   */
++        {                                       /* complete the hash and    */
++            sha_end(cx->key, cx->ctx);         /* store the result as the  */
++            cx->klen = HASH_OUTPUT_SIZE;        /* key and set new length   */
++        }
++
++        /* pad the key if necessary */
++        memset(cx->key + cx->klen, 0, HASH_INPUT_SIZE - cx->klen);
++
++        /* xor ipad into key value  */
++        for(i = 0; i < (HASH_INPUT_SIZE >> 2); ++i)
++            ((unsigned long*)cx->key)[i] ^= 0x36363636;
++
++        /* and start hash operation */
++        sha_begin(cx->ctx);
++        sha_hash(cx->key, HASH_INPUT_SIZE, cx->ctx);
++
++        /* mark as now in data mode */
++        cx->klen = HMAC_IN_DATA;
++    }
++
++    /* hash the data (if any)       */
++    if(data_len)
++        sha_hash(data, data_len, cx->ctx);
++}
++
++/* compute and output the MAC value */
++void hmac_sha_end(unsigned char mac[], unsigned long mac_len, hmac_ctx cx[1])
++{   unsigned char dig[HASH_OUTPUT_SIZE];
++    unsigned int i;
++
++    /* if no data has been entered perform a null data phase        */
++    if(cx->klen != HMAC_IN_DATA)
++        hmac_sha_data((const unsigned char*)0, 0, cx);
++
++    sha_end(dig, cx->ctx);         /* complete the inner hash      */
++
++    /* set outer key value using opad and removing ipad */
++    for(i = 0; i < (HASH_INPUT_SIZE >> 2); ++i)
++        ((unsigned long*)cx->key)[i] ^= 0x36363636 ^ 0x5c5c5c5c;
++
++    /* perform the outer hash operation */
++    sha_begin(cx->ctx);
++    sha_hash(cx->key, HASH_INPUT_SIZE, cx->ctx);
++    sha_hash(dig, HASH_OUTPUT_SIZE, cx->ctx);
++    sha_end(dig, cx->ctx);
++
++    /* output the hash value            */
++    for(i = 0; i < mac_len; ++i)
++        mac[i] = dig[i];
++}
++
++/* 'do it all in one go' subroutine     */
++void hmac_sha(const unsigned char key[], unsigned long key_len,
++          const unsigned char data[], unsigned long data_len,
++          unsigned char mac[], unsigned long mac_len)
++{   hmac_ctx    cx[1];
++
++    hmac_sha_begin(cx);
++    hmac_sha_key(key, key_len, cx);
++    hmac_sha_data(data, data_len, cx);
++    hmac_sha_end(mac, mac_len, cx);
++}
++
++#if defined(__cplusplus)
++}
++#endif
+diff -up libaesgm-20090429/hmac.h.BAD libaesgm-20090429/hmac.h
+--- libaesgm-20090429/hmac.h.BAD	2010-05-24 09:34:05.695387664 -0400
++++ libaesgm-20090429/hmac.h	2010-05-24 09:34:01.466510795 -0400
+@@ -0,0 +1,102 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products
++      built using this software without specific written permission.
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness
++ and/or fitness for purpose.
++ ---------------------------------------------------------------------------
++ Issue Date: 26/08/2003
++
++ This is an implementation of HMAC, the FIPS standard keyed hash function
++*/
++
++#ifndef _HMAC_H
++#define _HMAC_H
++
++#include <memory.h>
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++#if !defined(USE_SHA1) && !defined(USE_SHA256)
++#error define USE_SHA1 or USE_SHA256 to set the HMAC hash algorithm
++#endif
++
++#ifdef USE_SHA1
++
++#include "sha1.h"
++
++#define HASH_INPUT_SIZE     SHA1_BLOCK_SIZE
++#define HASH_OUTPUT_SIZE    SHA1_DIGEST_SIZE
++#define sha_ctx             sha1_ctx
++#define sha_begin           sha1_begin
++#define sha_hash            sha1_hash
++#define sha_end             sha1_end
++
++#endif
++
++#ifdef USE_SHA256
++
++#include "sha2.h"
++
++#define HASH_INPUT_SIZE     SHA256_BLOCK_SIZE
++#define HASH_OUTPUT_SIZE    SHA256_DIGEST_SIZE
++#define sha_ctx             sha256_ctx
++#define sha_begin           sha256_begin
++#define sha_hash            sha256_hash
++#define sha_end             sha256_end
++
++#endif
++
++#define HMAC_OK                0
++#define HMAC_BAD_MODE         -1
++#define HMAC_IN_DATA  0xffffffff
++
++typedef struct
++{   unsigned char   key[HASH_INPUT_SIZE];
++    sha_ctx         ctx[1];
++    unsigned long   klen;
++} hmac_ctx;
++
++void hmac_sha_begin(hmac_ctx cx[1]);
++
++int  hmac_sha_key(const unsigned char key[], unsigned long key_len, hmac_ctx cx[1]);
++
++void hmac_sha_data(const unsigned char data[], unsigned long data_len, hmac_ctx cx[1]);
++
++void hmac_sha_end(unsigned char mac[], unsigned long mac_len, hmac_ctx cx[1]);
++
++void hmac_sha(const unsigned char key[], unsigned long key_len,
++          const unsigned char data[], unsigned long data_len,
++          unsigned char mac[], unsigned long mac_len);
++
++#if defined(__cplusplus)
++}
++#endif
++
++#endif
+diff -up libaesgm-20090429/Makefile.BAD libaesgm-20090429/Makefile
+--- libaesgm-20090429/Makefile.BAD	2010-05-24 09:34:28.198386197 -0400
++++ libaesgm-20090429/Makefile	2010-05-24 09:56:55.525397596 -0400
+@@ -8,7 +8,7 @@ VERSION = $(VERSION_MAJOR).$(VERSION_MIN
+ 
+ SHARED_LIB = libaesgm.so
+ 
+-LIBAESGM = aescrypt.o aeskey.o aes_modes.o aestab.o
++LIBAESGM = aescrypt.o aeskey.o aes_modes.o aestab.o fileenc.o hmac.o pwd2key.o sha1.o sha2.o
+ LINKOBJ = $(LIBAESGM)
+ 
+ PREFIX = /usr
+diff -up libaesgm-20090429/pwd2key.c.BAD libaesgm-20090429/pwd2key.c
+--- libaesgm-20090429/pwd2key.c.BAD	2010-05-24 09:56:41.951387734 -0400
++++ libaesgm-20090429/pwd2key.c	2010-05-24 09:56:34.042512473 -0400
+@@ -0,0 +1,194 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products
++      built using this software without specific written permission.
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness
++ and/or fitness for purpose.
++ ---------------------------------------------------------------------------
++ Issue Date: 26/08/2003
++
++ This is an implementation of RFC2898, which specifies key derivation from
++ a password and a salt value.
++*/
++
++#include <memory.h>
++#include "hmac.h"
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++void derive_key(const unsigned char pwd[],  /* the PASSWORD     */
++               unsigned int pwd_len,        /* and its length   */
++               const unsigned char salt[],  /* the SALT and its */
++               unsigned int salt_len,       /* length           */
++               unsigned int iter,   /* the number of iterations */
++               unsigned char key[], /* space for the output key */
++               unsigned int key_len)/* and its required length  */
++{
++    unsigned int    i, j, k, n_blk;
++    unsigned char uu[HASH_OUTPUT_SIZE], ux[HASH_OUTPUT_SIZE];
++    hmac_ctx c1[1], c2[1], c3[1];
++
++    /* set HMAC context (c1) for password               */
++    hmac_sha_begin(c1);
++    hmac_sha_key(pwd, pwd_len, c1);
++
++    /* set HMAC context (c2) for password and salt      */
++    memcpy(c2, c1, sizeof(hmac_ctx));
++    hmac_sha_data(salt, salt_len, c2);
++
++    /* find the number of SHA blocks in the key         */
++    n_blk = 1 + (key_len - 1) / HASH_OUTPUT_SIZE;
++
++    for(i = 0; i < n_blk; ++i) /* for each block in key */
++    {
++        /* ux[] holds the running xor value             */
++        memset(ux, 0, HASH_OUTPUT_SIZE);
++
++        /* set HMAC context (c3) for password and salt  */
++        memcpy(c3, c2, sizeof(hmac_ctx));
++
++        /* enter additional data for 1st block into uu  */
++        uu[0] = (unsigned char)((i + 1) >> 24);
++        uu[1] = (unsigned char)((i + 1) >> 16);
++        uu[2] = (unsigned char)((i + 1) >> 8);
++        uu[3] = (unsigned char)(i + 1);
++
++        /* this is the key mixing iteration         */
++        for(j = 0, k = 4; j < iter; ++j)
++        {
++            /* add previous round data to HMAC      */
++            hmac_sha_data(uu, k, c3);
++
++            /* obtain HMAC for uu[]                 */
++            hmac_sha_end(uu, HASH_OUTPUT_SIZE, c3);
++
++            /* xor into the running xor block       */
++            for(k = 0; k < HASH_OUTPUT_SIZE; ++k)
++                ux[k] ^= uu[k];
++
++            /* set HMAC context (c3) for password   */
++            memcpy(c3, c1, sizeof(hmac_ctx));
++        }
++
++        /* compile key blocks into the key output   */
++        j = 0; k = i * HASH_OUTPUT_SIZE;
++        while(j < HASH_OUTPUT_SIZE && k < key_len)
++            key[k++] = ux[j++];
++    }
++}
++
++#ifdef TEST
++
++#include <stdio.h>
++
++struct
++{   unsigned int    pwd_len;
++    unsigned int    salt_len;
++    unsigned int    it_count;
++    unsigned char   *pwd;
++    unsigned char   salt[32];
++    unsigned char   key[32];
++} tests[] =
++{
++    {   8, 4, 5, (unsigned char*)"password",
++        {   
++            0x12, 0x34, 0x56, 0x78 
++        },
++        {   
++            0x5c, 0x75, 0xce, 0xf0, 0x1a, 0x96, 0x0d, 0xf7,
++            0x4c, 0xb6, 0xb4, 0x9b, 0x9e, 0x38, 0xe6, 0xb5 
++        }
++    },
++    {   8, 8, 5, (unsigned char*)"password",
++        {   
++            0x12, 0x34, 0x56, 0x78, 0x78, 0x56, 0x34, 0x12 
++        },
++        {   
++            0xd1, 0xda, 0xa7, 0x86, 0x15, 0xf2, 0x87, 0xe6,
++            0xa1, 0xc8, 0xb1, 0x20, 0xd7, 0x06, 0x2a, 0x49 
++        }
++    },
++    {   8, 21, 1, (unsigned char*)"password",
++        {
++            "ATHENA.MIT.EDUraeburn"
++        },
++        {
++            0xcd, 0xed, 0xb5, 0x28, 0x1b, 0xb2, 0xf8, 0x01,
++            0x56, 0x5a, 0x11, 0x22, 0xb2, 0x56, 0x35, 0x15
++        }
++    },
++    {   8, 21, 2, (unsigned char*)"password",
++        {
++            "ATHENA.MIT.EDUraeburn"
++        },
++        {
++            0x01, 0xdb, 0xee, 0x7f, 0x4a, 0x9e, 0x24, 0x3e, 
++            0x98, 0x8b, 0x62, 0xc7, 0x3c, 0xda, 0x93, 0x5d
++        }
++    },
++    {   8, 21, 1200, (unsigned char*)"password",
++        {
++            "ATHENA.MIT.EDUraeburn"
++        },
++        {
++            0x5c, 0x08, 0xeb, 0x61, 0xfd, 0xf7, 0x1e, 0x4e, 
++            0x4e, 0xc3, 0xcf, 0x6b, 0xa1, 0xf5, 0x51, 0x2b
++        }
++    }
++};
++
++int main()
++{   unsigned int    i, j, key_len = 256;
++    unsigned char   key[256];
++
++    printf("\nTest of RFC2898 Password Based Key Derivation");
++    for(i = 0; i < 5; ++i)
++    {
++        derive_key(tests[i].pwd, tests[i].pwd_len, tests[i].salt,
++                    tests[i].salt_len, tests[i].it_count, key, key_len);
++
++        printf("\ntest %i: ", i + 1);
++        printf("key %s", memcmp(tests[i].key, key, 16) ? "is bad" : "is good");
++        for(j = 0; j < key_len && j < 64; j += 4)
++        {
++            if(j % 16 == 0)
++                printf("\n");
++            printf("0x%02x%02x%02x%02x ", key[j], key[j + 1], key[j + 2], key[j + 3]);
++        }
++        printf(j < key_len ? " ... \n" : "\n");
++    }
++    printf("\n");
++    return 0;
++}
++
++#if defined(__cplusplus)
++}
++#endif
++
++#endif
+diff -up libaesgm-20090429/pwd2key.h.BAD libaesgm-20090429/pwd2key.h
+--- libaesgm-20090429/pwd2key.h.BAD	2010-05-24 09:56:41.954478668 -0400
++++ libaesgm-20090429/pwd2key.h	2010-05-24 09:56:34.043512682 -0400
+@@ -0,0 +1,58 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary 
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright 
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products 
++      built using this software without specific written permission. 
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++ 
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness 
++ and/or fitness for purpose.
++ ---------------------------------------------------------------------------
++ Issue Date: 26/08/2003
++
++ This is an implementation of RFC2898, which specifies key derivation from
++ a password and a salt value.
++*/
++
++#ifndef PWD2KEY_H
++#define PWD2KEY_H
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++void derive_key(
++        const unsigned char pwd[],   /* the PASSWORD, and   */
++        unsigned int pwd_len,        /*    its length       */ 
++        const unsigned char salt[],  /* the SALT and its    */
++        unsigned int salt_len,       /*    length           */
++        unsigned int iter,      /* the number of iterations */
++        unsigned char key[],    /* space for the output key */
++        unsigned int key_len);  /* and its required length  */
++
++#if defined(__cplusplus)
++}
++#endif
++
++#endif
+diff -up libaesgm-20090429/sha1.c.BAD libaesgm-20090429/sha1.c
+--- libaesgm-20090429/sha1.c.BAD	2010-05-24 09:35:26.415540411 -0400
++++ libaesgm-20090429/sha1.c	2010-05-24 09:35:05.496512680 -0400
+@@ -0,0 +1,323 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary 
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright 
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products 
++      built using this software without specific written permission. 
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++ 
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness 
++ and/or fitness for purpose.
++ ---------------------------------------------------------------------------
++ Issue Date: 26/08/2003
++
++ This is a byte oriented version of SHA1 that operates on arrays of bytes
++ stored in memory. It runs at 22 cycles per byte on a Pentium P4 processor
++*/
++
++#include <string.h>     /* for memcpy() etc.        */
++#include <stdlib.h>     /* for _lrotl with VC++     */
++
++#include "sha1.h"
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++/*
++    To obtain the highest speed on processors with 32-bit words, this code 
++    needs to determine the order in which bytes are packed into such words.
++    The following block of code is an attempt to capture the most obvious 
++    ways in which various environemnts specify their endian definitions. 
++    It may well fail, in which case the definitions will need to be set by 
++    editing at the points marked **** EDIT HERE IF NECESSARY **** below.
++*/
++/*  PLATFORM SPECIFIC INCLUDES */
++
++#if defined( __FreeBSD__ ) || defined( __OpenBSD__ )
++#  include <sys/endian.h>
++#elif defined( BSD ) && ( BSD >= 199103 )
++#  include <machine/endian.h>
++#elif defined( __GNUC__ ) || defined( __GNU_LIBRARY__ )
++#  include <endian.h>
++#  include <byteswap.h>
++#elif defined( linux )
++#  include <endian.h>
++#endif
++
++/*  BYTE ORDER IN 32-BIT WORDS
++
++    To obtain the highest speed on processors with 32-bit words, this code
++    needs to determine the byte order of the target machine. The following 
++    block of code is an attempt to capture the most obvious ways in which 
++    various environemnts define byte order. It may well fail, in which case 
++    the definitions will need to be set by editing at the points marked 
++    **** EDIT HERE IF NECESSARY **** below.  My thanks to Peter Gutmann for 
++    some of these defines (from cryptlib).
++*/
++
++#define BRG_LITTLE_ENDIAN   1234 /* byte 0 is least significant (i386) */
++#define BRG_BIG_ENDIAN      4321 /* byte 0 is most significant (mc68k) */
++
++#if defined( __alpha__ ) || defined( __alpha ) || defined( i386 )       ||   \
++    defined( __i386__ )  || defined( _M_I86 )  || defined( _M_IX86 )    ||   \
++    defined( __OS2__ )   || defined( sun386 )  || defined( __TURBOC__ ) ||   \
++    defined( vax )       || defined( vms )     || defined( VMS )        ||   \
++    defined( __VMS ) 
++
++#define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++
++#endif
++
++#if defined( AMIGA )    || defined( applec )  || defined( __AS400__ )  ||   \
++    defined( _CRAY )    || defined( __hppa )  || defined( __hp9000 )   ||   \
++    defined( ibm370 )   || defined( mc68000 ) || defined( m68k )       ||   \
++    defined( __MRC__ )  || defined( __MVS__ ) || defined( __MWERKS__ ) ||   \
++    defined( sparc )    || defined( __sparc)  || defined( SYMANTEC_C ) ||   \
++    defined( __TANDEM ) || defined( THINK_C ) || defined( __VMCMS__ )
++    
++#define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++
++#endif
++
++/*  if the platform is still not known, try to find its byte order  */
++/*  from commonly used definitions in the headers included earlier  */
++
++#if !defined(PLATFORM_BYTE_ORDER)
++
++#if defined(LITTLE_ENDIAN) || defined(BIG_ENDIAN)
++#  if    defined(LITTLE_ENDIAN) && !defined(BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif !defined(LITTLE_ENDIAN) &&  defined(BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  elif defined(BYTE_ORDER) && (BYTE_ORDER == LITTLE_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif defined(BYTE_ORDER) && (BYTE_ORDER == BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  endif
++
++#elif defined(_LITTLE_ENDIAN) || defined(_BIG_ENDIAN)
++#  if    defined(_LITTLE_ENDIAN) && !defined(_BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif !defined(_LITTLE_ENDIAN) &&  defined(_BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  elif defined(_BYTE_ORDER) && (_BYTE_ORDER == _LITTLE_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif defined(_BYTE_ORDER) && (_BYTE_ORDER == _BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  endif
++
++#elif defined(__LITTLE_ENDIAN__) || defined(__BIG_ENDIAN__)
++#  if    defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif !defined(__LITTLE_ENDIAN__) &&  defined(__BIG_ENDIAN__)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  elif defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __LITTLE_ENDIAN__)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __BIG_ENDIAN__)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  endif
++
++#elif 0     /* **** EDIT HERE IF NECESSARY **** */
++#define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++
++#elif 0     /* **** EDIT HERE IF NECESSARY **** */
++#define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++
++#else
++#error Please edit sha1.c (line 141 or 144) to set the platform byte order
++#endif
++
++#endif
++
++#define rotl32(x,n) (((x) << n) | ((x) >> (32 - n)))
++
++#if (PLATFORM_BYTE_ORDER == BRG_BIG_ENDIAN)
++#define swap_b32(x) (x)
++#elif defined(bswap_32)
++#define swap_b32(x) bswap_32(x)
++#else
++#define swap_b32(x) ((rotl32((x), 8) & 0x00ff00ff) | (rotl32((x), 24) & 0xff00ff00))
++#endif
++
++#define SHA1_MASK   (SHA1_BLOCK_SIZE - 1)
++
++#if 1
++
++#define ch(x,y,z)       (((x) & (y)) ^ (~(x) & (z)))
++#define parity(x,y,z)   ((x) ^ (y) ^ (z))
++#define maj(x,y,z)      (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
++
++#else   /* Discovered Rich Schroeppel and Colin Plumb   */
++
++#define ch(x,y,z)       ((z) ^ ((x) & ((y) ^ (z))))
++#define parity(x,y,z)   ((x) ^ (y) ^ (z))
++#define maj(x,y,z)      (((x) & (y)) | ((z) & ((x) ^ (y))))
++
++#endif
++
++/* A normal version as set out in the FIPS  */
++
++#define rnd(f,k)    \
++    t = a; a = rotl32(a,5) + f(b,c,d) + e + k + w[i]; \
++    e = d; d = c; c = rotl32(b, 30); b = t
++
++void sha1_compile(sha1_ctx ctx[1])
++{   sha1_32t    w[80], i, a, b, c, d, e, t;
++
++    /* note that words are compiled from the buffer into 32-bit */
++    /* words in big-endian order so an order reversal is needed */
++    /* here on little endian machines                           */
++    for(i = 0; i < SHA1_BLOCK_SIZE / 4; ++i)
++        w[i] = swap_b32(ctx->wbuf[i]);
++
++    for(i = SHA1_BLOCK_SIZE / 4; i < 80; ++i)
++        w[i] = rotl32(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
++
++    a = ctx->hash[0];
++    b = ctx->hash[1];
++    c = ctx->hash[2];
++    d = ctx->hash[3];
++    e = ctx->hash[4];
++
++    for(i = 0; i < 20; ++i)
++    {
++        rnd(ch, 0x5a827999);    
++    }
++
++    for(i = 20; i < 40; ++i)
++    {
++        rnd(parity, 0x6ed9eba1);
++    }
++
++    for(i = 40; i < 60; ++i)
++    {
++        rnd(maj, 0x8f1bbcdc);
++    }
++
++    for(i = 60; i < 80; ++i)
++    {
++        rnd(parity, 0xca62c1d6);
++    }
++
++    ctx->hash[0] += a; 
++    ctx->hash[1] += b; 
++    ctx->hash[2] += c; 
++    ctx->hash[3] += d; 
++    ctx->hash[4] += e;
++}
++
++void sha1_begin(sha1_ctx ctx[1])
++{
++    ctx->count[0] = ctx->count[1] = 0;
++    ctx->hash[0] = 0x67452301;
++    ctx->hash[1] = 0xefcdab89;
++    ctx->hash[2] = 0x98badcfe;
++    ctx->hash[3] = 0x10325476;
++    ctx->hash[4] = 0xc3d2e1f0;
++}
++
++/* SHA1 hash data in an array of bytes into hash buffer and */
++/* call the hash_compile function as required.              */
++
++void sha1_hash(const unsigned char data[], unsigned long len, sha1_ctx ctx[1])
++{   sha1_32t pos = (sha1_32t)(ctx->count[0] & SHA1_MASK), 
++             space = SHA1_BLOCK_SIZE - pos;
++    const unsigned char *sp = data;
++
++    if((ctx->count[0] += len) < len)
++        ++(ctx->count[1]);
++
++    while(len >= space)     /* tranfer whole blocks if possible  */
++    {
++        memcpy(((unsigned char*)ctx->wbuf) + pos, sp, space);
++        sp += space; len -= space; space = SHA1_BLOCK_SIZE; pos = 0; 
++        sha1_compile(ctx);
++    }
++
++    /*lint -e{803} conceivable data overrun */
++    memcpy(((unsigned char*)ctx->wbuf) + pos, sp, len);
++}
++
++/* SHA1 final padding and digest calculation  */
++
++#if (PLATFORM_BYTE_ORDER == BRG_LITTLE_ENDIAN)
++static sha1_32t  mask[4] = 
++    {   0x00000000, 0x000000ff, 0x0000ffff, 0x00ffffff };
++static sha1_32t  bits[4] = 
++    {   0x00000080, 0x00008000, 0x00800000, 0x80000000 };
++#else
++static sha1_32t  mask[4] = 
++    {   0x00000000, 0xff000000, 0xffff0000, 0xffffff00 };
++static sha1_32t  bits[4] = 
++    {   0x80000000, 0x00800000, 0x00008000, 0x00000080 };
++#endif
++
++void sha1_end(unsigned char hval[], sha1_ctx ctx[1])
++{   sha1_32t    i = (sha1_32t)(ctx->count[0] & SHA1_MASK);
++
++    /* mask out the rest of any partial 32-bit word and then set    */
++    /* the next byte to 0x80. On big-endian machines any bytes in   */
++    /* the buffer will be at the top end of 32 bit words, on little */
++    /* endian machines they will be at the bottom. Hence the AND    */
++    /* and OR masks above are reversed for little endian systems    */
++    /* Note that we can always add the first padding byte at this   */
++    /* point because the buffer always has at least one empty slot  */ 
++    ctx->wbuf[i >> 2] = (ctx->wbuf[i >> 2] & mask[i & 3]) | bits[i & 3];
++
++    /* we need 9 or more empty positions, one for the padding byte  */
++    /* (above) and eight for the length count.  If there is not     */
++    /* enough space pad and empty the buffer                        */
++    if(i > SHA1_BLOCK_SIZE - 9)
++    {
++        if(i < 60) ctx->wbuf[15] = 0;
++        sha1_compile(ctx);
++        i = 0;
++    }
++    else    /* compute a word index for the empty buffer positions  */
++        i = (i >> 2) + 1;
++
++    while(i < 14) /* and zero pad all but last two positions        */ 
++        ctx->wbuf[i++] = 0;
++    
++    /* assemble the eight byte counter in in big-endian format      */
++    ctx->wbuf[14] = swap_b32((ctx->count[1] << 3) | (ctx->count[0] >> 29));
++    ctx->wbuf[15] = swap_b32(ctx->count[0] << 3);
++
++    sha1_compile(ctx);
++
++    /* extract the hash value as bytes in case the hash buffer is   */
++    /* misaligned for 32-bit words                                  */
++    for(i = 0; i < SHA1_DIGEST_SIZE; ++i)
++        hval[i] = (unsigned char)(ctx->hash[i >> 2] >> (8 * (~i & 3)));
++}
++
++void sha1(unsigned char hval[], const unsigned char data[], unsigned long len)
++{   sha1_ctx    cx[1];
++
++    sha1_begin(cx); sha1_hash(data, len, cx); sha1_end(hval, cx);
++}
++
++#if defined(__cplusplus)
++}
++#endif
+diff -up libaesgm-20090429/sha1.h.BAD libaesgm-20090429/sha1.h
+--- libaesgm-20090429/sha1.h.BAD	2010-05-24 09:35:26.415540411 -0400
++++ libaesgm-20090429/sha1.h	2010-05-24 09:35:05.496512680 -0400
+@@ -0,0 +1,76 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary 
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright 
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products 
++      built using this software without specific written permission. 
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++ 
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness 
++ and/or fitness for purpose.
++ ---------------------------------------------------------------------------
++ Issue Date: 26/08/2003
++*/
++
++#ifndef _SHA1_H
++#define _SHA1_H
++
++#include <limits.h>
++
++#define SHA1_BLOCK_SIZE  64
++#define SHA1_DIGEST_SIZE 20
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++/* define an unsigned 32-bit type */
++
++#if UINT_MAX == 0xffffffff
++  typedef   unsigned int     sha1_32t;
++#elif ULONG_MAX == 0xffffffff
++  typedef   unsigned long    sha1_32t;
++#else
++#error Please define sha1_32t as an unsigned 32 bit type in sha2.h
++#endif
++
++/* type to hold the SHA256 context  */
++
++typedef struct
++{   sha1_32t count[2];
++    sha1_32t hash[5];
++    sha1_32t wbuf[16];
++} sha1_ctx;
++
++void sha1_compile(sha1_ctx ctx[1]);
++
++void sha1_begin(sha1_ctx ctx[1]);
++void sha1_hash(const unsigned char data[], unsigned long len, sha1_ctx ctx[1]);
++void sha1_end(unsigned char hval[], sha1_ctx ctx[1]);
++void sha1(unsigned char hval[], const unsigned char data[], unsigned long len);
++
++#if defined(__cplusplus)
++}
++#endif
++
++#endif
+diff -up libaesgm-20090429/sha2.c.BAD libaesgm-20090429/sha2.c
+--- libaesgm-20090429/sha2.c.BAD	2010-05-24 09:35:26.415540411 -0400
++++ libaesgm-20090429/sha2.c	2010-05-24 09:35:05.496512680 -0400
+@@ -0,0 +1,713 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary 
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright 
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products 
++      built using this software without specific written permission. 
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++ 
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness 
++ and/or fitness for purpose.
++ ---------------------------------------------------------------------------
++ Issue Date: 26/08/2003
++
++ This is a byte oriented version of SHA2 that operates on arrays of bytes
++ stored in memory. This code implements sha256, sha384 and sha512 but the
++ latter two functions rely on efficient 64-bit integer operations that 
++ may not be very efficient on 32-bit machines
++
++ The sha256 functions use a type 'sha256_ctx' to hold details of the 
++ current hash state and uses the following three calls:
++
++       void sha256_begin(sha256_ctx ctx[1])
++       void sha256_hash(const unsigned char data[], 
++                            unsigned long len, sha256_ctx ctx[1])
++       void sha256_end(unsigned char hval[], sha256_ctx ctx[1])
++
++ The first subroutine initialises a hash computation by setting up the 
++ context in the sha256_ctx context. The second subroutine hashes 8-bit 
++ bytes from array data[] into the hash state withinh sha256_ctx context, 
++ the number of bytes to be hashed being given by the the unsigned long 
++ integer len.  The third subroutine completes the hash calculation and 
++ places the resulting digest value in the array of 8-bit bytes hval[].
++
++ The sha384 and sha512 functions are similar and use the interfaces:
++
++       void sha384_begin(sha384_ctx ctx[1]);
++       void sha384_hash(const unsigned char data[], 
++                            unsigned long len, sha384_ctx ctx[1]);
++       void sha384_end(unsigned char hval[], sha384_ctx ctx[1]);
++
++       void sha512_begin(sha512_ctx ctx[1]);
++       void sha512_hash(const unsigned char data[], 
++                            unsigned long len, sha512_ctx ctx[1]);
++       void sha512_end(unsigned char hval[], sha512_ctx ctx[1]);
++
++ In addition there is a function sha2 that can be used to call all these
++ functions using a call with a hash length parameter as follows:
++
++       int sha2_begin(unsigned long len, sha2_ctx ctx[1]);
++       void sha2_hash(const unsigned char data[], 
++                            unsigned long len, sha2_ctx ctx[1]);
++       void sha2_end(unsigned char hval[], sha2_ctx ctx[1]);
++
++ My thanks to Erik Andersen <andersen@codepoet.org> for testing this code 
++ on big-endian systems and for his assistance with corrections
++*/
++
++/* define the hash functions that you need          */
++
++#define SHA_2           /* for dynamic hash length  */
++#define SHA_256
++#define SHA_384
++#define SHA_512
++
++#include <string.h>     /* for memcpy() etc.        */
++#include <stdlib.h>     /* for _lrotr with VC++     */
++
++#include "sha2.h"
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++/*  PLATFORM SPECIFIC INCLUDES */
++
++#if defined( __FreeBSD__ ) || defined( __OpenBSD__ )
++#  include <sys/endian.h>
++#elif defined( BSD ) && ( BSD >= 199103 )
++#  include <machine/endian.h>
++#elif defined( __GNUC__ ) || defined( __GNU_LIBRARY__ )
++#  include <endian.h>
++#  include <byteswap.h>
++#elif defined( linux )
++#  include <endian.h>
++#endif
++
++/*  BYTE ORDER IN 32-BIT WORDS
++
++    To obtain the highest speed on processors with 32-bit words, this code
++    needs to determine the byte order of the target machine. The following 
++    block of code is an attempt to capture the most obvious ways in which 
++    various environemnts define byte order. It may well fail, in which case 
++    the definitions will need to be set by editing at the points marked 
++    **** EDIT HERE IF NECESSARY **** below.  My thanks to Peter Gutmann for 
++    some of these defines (from cryptlib).
++*/
++
++#define BRG_LITTLE_ENDIAN   1234 /* byte 0 is least significant (i386) */
++#define BRG_BIG_ENDIAN      4321 /* byte 0 is most significant (mc68k) */
++
++#if defined( __alpha__ ) || defined( __alpha ) || defined( i386 )       ||   \
++    defined( __i386__ )  || defined( _M_I86 )  || defined( _M_IX86 )    ||   \
++    defined( __OS2__ )   || defined( sun386 )  || defined( __TURBOC__ ) ||   \
++    defined( vax )       || defined( vms )     || defined( VMS )        ||   \
++    defined( __VMS ) 
++
++#define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++
++#endif
++
++#if defined( AMIGA )    || defined( applec )  || defined( __AS400__ )  ||   \
++    defined( _CRAY )    || defined( __hppa )  || defined( __hp9000 )   ||   \
++    defined( ibm370 )   || defined( mc68000 ) || defined( m68k )       ||   \
++    defined( __MRC__ )  || defined( __MVS__ ) || defined( __MWERKS__ ) ||   \
++    defined( sparc )    || defined( __sparc)  || defined( SYMANTEC_C ) ||   \
++    defined( __TANDEM ) || defined( THINK_C ) || defined( __VMCMS__ )
++    
++#define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++
++#endif
++
++/*  if the platform is still not known, try to find its byte order  */
++/*  from commonly used definitions in the headers included earlier  */
++
++#if !defined(PLATFORM_BYTE_ORDER)
++
++#if defined(LITTLE_ENDIAN) || defined(BIG_ENDIAN)
++#  if    defined(LITTLE_ENDIAN) && !defined(BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif !defined(LITTLE_ENDIAN) &&  defined(BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  elif defined(BYTE_ORDER) && (BYTE_ORDER == LITTLE_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif defined(BYTE_ORDER) && (BYTE_ORDER == BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  endif
++
++#elif defined(_LITTLE_ENDIAN) || defined(_BIG_ENDIAN)
++#  if    defined(_LITTLE_ENDIAN) && !defined(_BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif !defined(_LITTLE_ENDIAN) &&  defined(_BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  elif defined(_BYTE_ORDER) && (_BYTE_ORDER == _LITTLE_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif defined(_BYTE_ORDER) && (_BYTE_ORDER == _BIG_ENDIAN)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  endif
++
++#elif defined(__LITTLE_ENDIAN__) || defined(__BIG_ENDIAN__)
++#  if    defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif !defined(__LITTLE_ENDIAN__) &&  defined(__BIG_ENDIAN__)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  elif defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __LITTLE_ENDIAN__)
++#    define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++#  elif defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __BIG_ENDIAN__)
++#    define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++#  endif
++
++#elif 0     /* **** EDIT HERE IF NECESSARY **** */
++#define PLATFORM_BYTE_ORDER BRG_LITTLE_ENDIAN
++
++#elif 0     /* **** EDIT HERE IF NECESSARY **** */
++#define PLATFORM_BYTE_ORDER BRG_BIG_ENDIAN
++
++#else
++#error Please edit sha2.c (line 180 or 183) to set the platform byte order
++#endif
++
++#endif
++
++#ifdef _MSC_VER
++#pragma intrinsic(memcpy)
++#endif
++
++#define rotr32(x,n)   (((x) >> n) | ((x) << (32 - n)))
++
++#if !defined(bswap_32)
++#define bswap_32(x) (rotr32((x), 24) & 0x00ff00ff | rotr32((x), 8) & 0xff00ff00)
++#endif
++
++#if (PLATFORM_BYTE_ORDER == BRG_LITTLE_ENDIAN)
++#define SWAP_BYTES
++#else
++#undef  SWAP_BYTES
++#endif
++
++#if defined(SHA_2) || defined(SHA_256)
++
++#define SHA256_MASK (SHA256_BLOCK_SIZE - 1)
++
++#if defined(SWAP_BYTES)
++#define bsw_32(p,n) { int _i = (n); while(_i--) p[_i] = bswap_32(p[_i]); }
++#else
++#define bsw_32(p,n) 
++#endif
++
++/* SHA256 mixing function definitions   */
++
++#if 0
++
++#define ch(x,y,z)       (((x) & (y)) ^ (~(x) & (z)))
++#define maj(x,y,z)      (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
++
++#else   /* Thanks to Rich Schroeppel and Colin Plumb for the following      */
++
++#define ch(x,y,z)       ((z) ^ ((x) & ((y) ^ (z))))
++#define maj(x,y,z)      (((x) & (y)) | ((z) & ((x) ^ (y))))
++
++#endif
++
++#define s256_0(x) (rotr32((x),  2) ^ rotr32((x), 13) ^ rotr32((x), 22)) 
++#define s256_1(x) (rotr32((x),  6) ^ rotr32((x), 11) ^ rotr32((x), 25)) 
++#define g256_0(x) (rotr32((x),  7) ^ rotr32((x), 18) ^ ((x) >>  3)) 
++#define g256_1(x) (rotr32((x), 17) ^ rotr32((x), 19) ^ ((x) >> 10)) 
++
++/* rotated SHA256 round definition. Rather than swapping variables as in    */
++/* FIPS-180, different variables are 'rotated' on each round, returning     */
++/* to their starting positions every eight rounds                           */
++
++#define h2(i) p[i & 15] += \
++    g256_1(p[(i + 14) & 15]) + p[(i + 9) & 15] + g256_0(p[(i + 1) & 15])
++
++#define h2_cycle(i,j)  \
++    v[(7 - i) & 7] += (j ? h2(i) : p[i & 15]) + k256[i + j] \
++        + s256_1(v[(4 - i) & 7]) + ch(v[(4 - i) & 7], v[(5 - i) & 7], v[(6 - i) & 7]); \
++    v[(3 - i) & 7] += v[(7 - i) & 7]; \
++    v[(7 - i) & 7] += s256_0(v[(0 - i) & 7]) + maj(v[(0 - i) & 7], v[(1 - i) & 7], v[(2 - i) & 7])
++
++/* SHA256 mixing data   */
++
++const sha2_32t k256[64] =
++{   n_u32(428a2f98), n_u32(71374491), n_u32(b5c0fbcf), n_u32(e9b5dba5), 
++    n_u32(3956c25b), n_u32(59f111f1), n_u32(923f82a4), n_u32(ab1c5ed5), 
++    n_u32(d807aa98), n_u32(12835b01), n_u32(243185be), n_u32(550c7dc3), 
++    n_u32(72be5d74), n_u32(80deb1fe), n_u32(9bdc06a7), n_u32(c19bf174), 
++    n_u32(e49b69c1), n_u32(efbe4786), n_u32(0fc19dc6), n_u32(240ca1cc), 
++    n_u32(2de92c6f), n_u32(4a7484aa), n_u32(5cb0a9dc), n_u32(76f988da), 
++    n_u32(983e5152), n_u32(a831c66d), n_u32(b00327c8), n_u32(bf597fc7), 
++    n_u32(c6e00bf3), n_u32(d5a79147), n_u32(06ca6351), n_u32(14292967), 
++    n_u32(27b70a85), n_u32(2e1b2138), n_u32(4d2c6dfc), n_u32(53380d13), 
++    n_u32(650a7354), n_u32(766a0abb), n_u32(81c2c92e), n_u32(92722c85),
++    n_u32(a2bfe8a1), n_u32(a81a664b), n_u32(c24b8b70), n_u32(c76c51a3), 
++    n_u32(d192e819), n_u32(d6990624), n_u32(f40e3585), n_u32(106aa070), 
++    n_u32(19a4c116), n_u32(1e376c08), n_u32(2748774c), n_u32(34b0bcb5), 
++    n_u32(391c0cb3), n_u32(4ed8aa4a), n_u32(5b9cca4f), n_u32(682e6ff3), 
++    n_u32(748f82ee), n_u32(78a5636f), n_u32(84c87814), n_u32(8cc70208), 
++    n_u32(90befffa), n_u32(a4506ceb), n_u32(bef9a3f7), n_u32(c67178f2),
++};
++
++/* SHA256 initialisation data */
++
++const sha2_32t i256[8] =
++{
++    n_u32(6a09e667), n_u32(bb67ae85), n_u32(3c6ef372), n_u32(a54ff53a),
++    n_u32(510e527f), n_u32(9b05688c), n_u32(1f83d9ab), n_u32(5be0cd19)
++};
++
++sha2_void sha256_begin(sha256_ctx ctx[1])
++{
++    ctx->count[0] = ctx->count[1] = 0;
++    memcpy(ctx->hash, i256, 8 * sizeof(sha2_32t));
++}
++
++/* Compile 64 bytes of hash data into SHA256 digest value   */
++/* NOTE: this routine assumes that the byte order in the    */
++/* ctx->wbuf[] at this point is in such an order that low   */
++/* address bytes in the ORIGINAL byte stream placed in this */
++/* buffer will now go to the high end of words on BOTH big  */
++/* and little endian systems                                */
++
++sha2_void sha256_compile(sha256_ctx ctx[1])
++{   sha2_32t    v[8], j, *p = ctx->wbuf;
++
++    memcpy(v, ctx->hash, 8 * sizeof(sha2_32t));
++
++    for(j = 0; j < 64; j += 16)
++    {
++        h2_cycle( 0, j); h2_cycle( 1, j); h2_cycle( 2, j); h2_cycle( 3, j);
++        h2_cycle( 4, j); h2_cycle( 5, j); h2_cycle( 6, j); h2_cycle( 7, j);
++        h2_cycle( 8, j); h2_cycle( 9, j); h2_cycle(10, j); h2_cycle(11, j);
++        h2_cycle(12, j); h2_cycle(13, j); h2_cycle(14, j); h2_cycle(15, j);
++    }
++
++    ctx->hash[0] += v[0]; ctx->hash[1] += v[1]; ctx->hash[2] += v[2]; ctx->hash[3] += v[3];
++    ctx->hash[4] += v[4]; ctx->hash[5] += v[5]; ctx->hash[6] += v[6]; ctx->hash[7] += v[7];
++}
++
++/* SHA256 hash data in an array of bytes into hash buffer   */
++/* and call the hash_compile function as required.          */
++
++sha2_void sha256_hash(const unsigned char data[], unsigned long len, sha256_ctx ctx[1])
++{   sha2_32t pos = (sha2_32t)(ctx->count[0] & SHA256_MASK), 
++             space = SHA256_BLOCK_SIZE - pos;
++    const unsigned char *sp = data;
++
++    if((ctx->count[0] += len) < len)
++        ++(ctx->count[1]);
++
++    while(len >= space)     /* tranfer whole blocks while possible  */
++    {
++        memcpy(((unsigned char*)ctx->wbuf) + pos, sp, space);
++        sp += space; len -= space; space = SHA256_BLOCK_SIZE; pos = 0; 
++        bsw_32(ctx->wbuf, SHA256_BLOCK_SIZE >> 2)
++        sha256_compile(ctx);
++    }
++
++    memcpy(((unsigned char*)ctx->wbuf) + pos, sp, len);
++}
++
++/* SHA256 Final padding and digest calculation  */
++
++static sha2_32t  m1[4] =
++{
++    n_u32(00000000), n_u32(ff000000), n_u32(ffff0000), n_u32(ffffff00)
++};
++
++static sha2_32t  b1[4] =
++{
++    n_u32(80000000), n_u32(00800000), n_u32(00008000), n_u32(00000080)
++};
++
++sha2_void sha256_end(unsigned char hval[], sha256_ctx ctx[1])
++{   sha2_32t    i = (sha2_32t)(ctx->count[0] & SHA256_MASK);
++
++    bsw_32(ctx->wbuf, (i + 3) >> 2)
++    /* bytes in the buffer are now in an order in which references  */
++    /* to 32-bit words will put bytes with lower addresses into the */
++    /* top of 32 bit words on BOTH big and little endian machines   */
++    
++    /* we now need to mask valid bytes and add the padding which is */
++    /* a single 1 bit and as many zero bits as necessary.           */
++    ctx->wbuf[i >> 2] = (ctx->wbuf[i >> 2] & m1[i & 3]) | b1[i & 3];
++
++    /* we need 9 or more empty positions, one for the padding byte  */
++    /* (above) and eight for the length count.  If there is not     */
++    /* enough space pad and empty the buffer                        */
++    if(i > SHA256_BLOCK_SIZE - 9)
++    {
++        if(i < 60) ctx->wbuf[15] = 0;
++        sha256_compile(ctx);
++        i = 0;
++    }
++    else    /* compute a word index for the empty buffer positions  */
++        i = (i >> 2) + 1;
++
++    while(i < 14) /* and zero pad all but last two positions      */ 
++        ctx->wbuf[i++] = 0;
++    
++    /* the following 32-bit length fields are assembled in the      */
++    /* wrong byte order on little endian machines but this is       */
++    /* corrected later since they are only ever used as 32-bit      */
++    /* word values.                                                 */
++
++    ctx->wbuf[14] = (ctx->count[1] << 3) | (ctx->count[0] >> 29);
++    ctx->wbuf[15] = ctx->count[0] << 3;
++
++    sha256_compile(ctx);
++
++    /* extract the hash value as bytes in case the hash buffer is   */
++    /* mislaigned for 32-bit words                                  */
++    for(i = 0; i < SHA256_DIGEST_SIZE; ++i)
++        hval[i] = (unsigned char)(ctx->hash[i >> 2] >> (8 * (~i & 3)));
++}
++
++sha2_void sha256(unsigned char hval[], const unsigned char data[], unsigned long len) 
++{   sha256_ctx  cx[1];
++    
++    sha256_begin(cx); sha256_hash(data, len, cx); sha256_end(hval, cx);
++}
++
++#endif
++
++#if defined(SHA_2) || defined(SHA_384) || defined(SHA_512)
++
++#define SHA512_MASK (SHA512_BLOCK_SIZE - 1)
++
++#define rotr64(x,n)   (((x) >> n) | ((x) << (64 - n)))
++
++#if !defined(bswap_64)
++#define bswap_64(x) (((sha2_64t)(bswap_32((sha2_32t)(x)))) << 32 | bswap_32((sha2_32t)((x) >> 32)))
++#endif
++
++#if defined(SWAP_BYTES)
++#define bsw_64(p,n) { int _i = (n); while(_i--) p[_i] = bswap_64(p[_i]); }
++#else
++#define bsw_64(p,n) 
++#endif
++
++/* SHA512 mixing function definitions   */
++
++#define s512_0(x) (rotr64((x), 28) ^ rotr64((x), 34) ^ rotr64((x), 39)) 
++#define s512_1(x) (rotr64((x), 14) ^ rotr64((x), 18) ^ rotr64((x), 41)) 
++#define g512_0(x) (rotr64((x),  1) ^ rotr64((x),  8) ^ ((x) >>  7)) 
++#define g512_1(x) (rotr64((x), 19) ^ rotr64((x), 61) ^ ((x) >>  6)) 
++
++/* rotated SHA512 round definition. Rather than swapping variables as in    */
++/* FIPS-180, different variables are 'rotated' on each round, returning     */
++/* to their starting positions every eight rounds                           */
++
++#define h5(i) ctx->wbuf[i & 15] += \
++    g512_1(ctx->wbuf[(i + 14) & 15]) + ctx->wbuf[(i + 9) & 15] + g512_0(ctx->wbuf[(i + 1) & 15])
++
++#define h5_cycle(i,j)  \
++    v[(7 - i) & 7] += (j ? h5(i) : ctx->wbuf[i & 15]) + k512[i + j] \
++        + s512_1(v[(4 - i) & 7]) + ch(v[(4 - i) & 7], v[(5 - i) & 7], v[(6 - i) & 7]); \
++    v[(3 - i) & 7] += v[(7 - i) & 7]; \
++    v[(7 - i) & 7] += s512_0(v[(0 - i) & 7]) + maj(v[(0 - i) & 7], v[(1 - i) & 7], v[(2 - i) & 7])
++
++/* SHA384/SHA512 mixing data    */
++
++const sha2_64t  k512[80] = 
++{
++    n_u64(428a2f98d728ae22), n_u64(7137449123ef65cd), 
++    n_u64(b5c0fbcfec4d3b2f), n_u64(e9b5dba58189dbbc),
++    n_u64(3956c25bf348b538), n_u64(59f111f1b605d019),
++    n_u64(923f82a4af194f9b), n_u64(ab1c5ed5da6d8118),
++    n_u64(d807aa98a3030242), n_u64(12835b0145706fbe),
++    n_u64(243185be4ee4b28c), n_u64(550c7dc3d5ffb4e2),
++    n_u64(72be5d74f27b896f), n_u64(80deb1fe3b1696b1),
++    n_u64(9bdc06a725c71235), n_u64(c19bf174cf692694),
++    n_u64(e49b69c19ef14ad2), n_u64(efbe4786384f25e3),
++    n_u64(0fc19dc68b8cd5b5), n_u64(240ca1cc77ac9c65),
++    n_u64(2de92c6f592b0275), n_u64(4a7484aa6ea6e483),
++    n_u64(5cb0a9dcbd41fbd4), n_u64(76f988da831153b5),
++    n_u64(983e5152ee66dfab), n_u64(a831c66d2db43210),
++    n_u64(b00327c898fb213f), n_u64(bf597fc7beef0ee4),
++    n_u64(c6e00bf33da88fc2), n_u64(d5a79147930aa725),
++    n_u64(06ca6351e003826f), n_u64(142929670a0e6e70),
++    n_u64(27b70a8546d22ffc), n_u64(2e1b21385c26c926),
++    n_u64(4d2c6dfc5ac42aed), n_u64(53380d139d95b3df),
++    n_u64(650a73548baf63de), n_u64(766a0abb3c77b2a8),
++    n_u64(81c2c92e47edaee6), n_u64(92722c851482353b),
++    n_u64(a2bfe8a14cf10364), n_u64(a81a664bbc423001),
++    n_u64(c24b8b70d0f89791), n_u64(c76c51a30654be30),
++    n_u64(d192e819d6ef5218), n_u64(d69906245565a910),
++    n_u64(f40e35855771202a), n_u64(106aa07032bbd1b8),
++    n_u64(19a4c116b8d2d0c8), n_u64(1e376c085141ab53),
++    n_u64(2748774cdf8eeb99), n_u64(34b0bcb5e19b48a8),
++    n_u64(391c0cb3c5c95a63), n_u64(4ed8aa4ae3418acb),
++    n_u64(5b9cca4f7763e373), n_u64(682e6ff3d6b2b8a3),
++    n_u64(748f82ee5defb2fc), n_u64(78a5636f43172f60),
++    n_u64(84c87814a1f0ab72), n_u64(8cc702081a6439ec),
++    n_u64(90befffa23631e28), n_u64(a4506cebde82bde9),
++    n_u64(bef9a3f7b2c67915), n_u64(c67178f2e372532b),
++    n_u64(ca273eceea26619c), n_u64(d186b8c721c0c207),
++    n_u64(eada7dd6cde0eb1e), n_u64(f57d4f7fee6ed178),
++    n_u64(06f067aa72176fba), n_u64(0a637dc5a2c898a6),
++    n_u64(113f9804bef90dae), n_u64(1b710b35131c471b),
++    n_u64(28db77f523047d84), n_u64(32caab7b40c72493),
++    n_u64(3c9ebe0a15c9bebc), n_u64(431d67c49c100d4c),
++    n_u64(4cc5d4becb3e42b6), n_u64(597f299cfc657e2a),
++    n_u64(5fcb6fab3ad6faec), n_u64(6c44198c4a475817)
++};
++
++/* Compile 64 bytes of hash data into SHA384/SHA512 digest value  */
++
++sha2_void sha512_compile(sha512_ctx ctx[1])
++{   sha2_64t    v[8];
++    sha2_32t    j;
++
++    memcpy(v, ctx->hash, 8 * sizeof(sha2_64t));
++
++    for(j = 0; j < 80; j += 16)
++    {
++        h5_cycle( 0, j); h5_cycle( 1, j); h5_cycle( 2, j); h5_cycle( 3, j);
++        h5_cycle( 4, j); h5_cycle( 5, j); h5_cycle( 6, j); h5_cycle( 7, j);
++        h5_cycle( 8, j); h5_cycle( 9, j); h5_cycle(10, j); h5_cycle(11, j);
++        h5_cycle(12, j); h5_cycle(13, j); h5_cycle(14, j); h5_cycle(15, j);
++    }
++
++    ctx->hash[0] += v[0]; ctx->hash[1] += v[1]; ctx->hash[2] += v[2]; ctx->hash[3] += v[3];
++    ctx->hash[4] += v[4]; ctx->hash[5] += v[5]; ctx->hash[6] += v[6]; ctx->hash[7] += v[7];
++}
++
++/* Compile 128 bytes of hash data into SHA256 digest value  */
++/* NOTE: this routine assumes that the byte order in the    */
++/* ctx->wbuf[] at this point is in such an order that low   */
++/* address bytes in the ORIGINAL byte stream placed in this */
++/* buffer will now go to the high end of words on BOTH big  */
++/* and little endian systems                                */
++
++sha2_void sha512_hash(const unsigned char data[], unsigned long len, sha512_ctx ctx[1])
++{   sha2_32t pos = (sha2_32t)(ctx->count[0] & SHA512_MASK), 
++             space = SHA512_BLOCK_SIZE - pos;
++    const unsigned char *sp = data;
++
++    if((ctx->count[0] += len) < len)
++        ++(ctx->count[1]);
++
++    while(len >= space)     /* tranfer whole blocks while possible  */
++    {
++        memcpy(((unsigned char*)ctx->wbuf) + pos, sp, space);
++        sp += space; len -= space; space = SHA512_BLOCK_SIZE; pos = 0; 
++        bsw_64(ctx->wbuf, SHA512_BLOCK_SIZE >> 3);        
++        sha512_compile(ctx);
++    }
++
++    memcpy(((unsigned char*)ctx->wbuf) + pos, sp, len);
++}
++
++/* SHA384/512 Final padding and digest calculation  */
++
++static sha2_64t  m2[8] =
++{
++    n_u64(0000000000000000), n_u64(ff00000000000000), 
++    n_u64(ffff000000000000), n_u64(ffffff0000000000),
++    n_u64(ffffffff00000000), n_u64(ffffffffff000000),
++    n_u64(ffffffffffff0000), n_u64(ffffffffffffff00)
++};
++
++static sha2_64t  b2[8] =
++{
++    n_u64(8000000000000000), n_u64(0080000000000000), 
++    n_u64(0000800000000000), n_u64(0000008000000000),
++    n_u64(0000000080000000), n_u64(0000000000800000), 
++    n_u64(0000000000008000), n_u64(0000000000000080)
++};
++
++static void sha_end(unsigned char hval[], sha512_ctx ctx[1], const unsigned int hlen)
++{   sha2_32t    i = (sha2_32t)(ctx->count[0] & SHA512_MASK);
++
++    bsw_64(ctx->wbuf, (i + 7) >> 3);
++
++    /* bytes in the buffer are now in an order in which references  */
++    /* to 64-bit words will put bytes with lower addresses into the */
++    /* top of 64 bit words on BOTH big and little endian machines   */
++    
++    /* we now need to mask valid bytes and add the padding which is */
++    /* a single 1 bit and as many zero bits as necessary.           */
++    ctx->wbuf[i >> 3] = (ctx->wbuf[i >> 3] & m2[i & 7]) | b2[i & 7];
++
++    /* we need 17 or more empty byte positions, one for the padding */
++    /* byte (above) and sixteen for the length count.  If there is  */
++    /* not enough space pad and empty the buffer                    */
++    if(i > SHA512_BLOCK_SIZE - 17)
++    {
++        if(i < 120) ctx->wbuf[15] = 0;
++        sha512_compile(ctx);
++        i = 0;
++    }
++    else
++        i = (i >> 3) + 1;
++
++    while(i < 14)
++        ctx->wbuf[i++] = 0;
++    
++    /* the following 64-bit length fields are assembled in the      */
++    /* wrong byte order on little endian machines but this is       */
++    /* corrected later since they are only ever used as 64-bit      */
++    /* word values.                                                 */
++
++    ctx->wbuf[14] = (ctx->count[1] << 3) | (ctx->count[0] >> 61);
++    ctx->wbuf[15] = ctx->count[0] << 3;
++
++    sha512_compile(ctx);
++
++    /* extract the hash value as bytes in case the hash buffer is   */
++    /* misaligned for 32-bit words                                  */
++    for(i = 0; i < hlen; ++i)
++        hval[i] = (unsigned char)(ctx->hash[i >> 3] >> (8 * (~i & 7)));
++}
++
++#endif
++
++#if defined(SHA_2) || defined(SHA_384)
++
++/* SHA384 initialisation data   */
++
++const sha2_64t  i384[80] = 
++{
++    n_u64(cbbb9d5dc1059ed8), n_u64(629a292a367cd507),
++    n_u64(9159015a3070dd17), n_u64(152fecd8f70e5939),
++    n_u64(67332667ffc00b31), n_u64(8eb44a8768581511),
++    n_u64(db0c2e0d64f98fa7), n_u64(47b5481dbefa4fa4)
++};
++
++sha2_void sha384_begin(sha384_ctx ctx[1])
++{
++    ctx->count[0] = ctx->count[1] = 0;
++    memcpy(ctx->hash, i384, 8 * sizeof(sha2_64t));
++}
++
++sha2_void sha384_end(unsigned char hval[], sha384_ctx ctx[1])
++{
++    sha_end(hval, ctx, SHA384_DIGEST_SIZE);
++}
++
++sha2_void sha384(unsigned char hval[], const unsigned char data[], unsigned long len)
++{   sha384_ctx  cx[1];
++    
++    sha384_begin(cx); sha384_hash(data, len, cx); sha384_end(hval, cx);
++}
++
++#endif
++
++#if defined(SHA_2) || defined(SHA_512)
++
++/* SHA512 initialisation data   */
++
++const sha2_64t  i512[80] = 
++{
++    n_u64(6a09e667f3bcc908), n_u64(bb67ae8584caa73b),
++    n_u64(3c6ef372fe94f82b), n_u64(a54ff53a5f1d36f1),
++    n_u64(510e527fade682d1), n_u64(9b05688c2b3e6c1f),
++    n_u64(1f83d9abfb41bd6b), n_u64(5be0cd19137e2179)
++};
++
++sha2_void sha512_begin(sha512_ctx ctx[1])
++{
++    ctx->count[0] = ctx->count[1] = 0;
++    memcpy(ctx->hash, i512, 8 * sizeof(sha2_64t));
++}
++
++sha2_void sha512_end(unsigned char hval[], sha512_ctx ctx[1])
++{
++    sha_end(hval, ctx, SHA512_DIGEST_SIZE);
++}
++
++sha2_void sha512(unsigned char hval[], const unsigned char data[], unsigned long len) 
++{   sha512_ctx  cx[1];
++    
++    sha512_begin(cx); sha512_hash(data, len, cx); sha512_end(hval, cx);
++}
++
++#endif
++
++#if defined(SHA_2)
++
++#define CTX_256(x)  ((x)->uu->ctx256)
++#define CTX_384(x)  ((x)->uu->ctx512)
++#define CTX_512(x)  ((x)->uu->ctx512)
++
++/* SHA2 initialisation */
++
++sha2_int sha2_begin(unsigned long len, sha2_ctx ctx[1])
++{   unsigned long   l = len;
++    switch(len)
++    {
++        case 256:   l = len >> 3;
++        case  32:   CTX_256(ctx)->count[0] = CTX_256(ctx)->count[1] = 0;
++                    memcpy(CTX_256(ctx)->hash, i256, 32); break;
++        case 384:   l = len >> 3;
++        case  48:   CTX_384(ctx)->count[0] = CTX_384(ctx)->count[1] = 0;
++                    memcpy(CTX_384(ctx)->hash, i384, 64); break;
++        case 512:   l = len >> 3;
++        case  64:   CTX_512(ctx)->count[0] = CTX_512(ctx)->count[1] = 0;
++                    memcpy(CTX_512(ctx)->hash, i512, 64); break;
++        default:    return SHA2_BAD;
++    }
++    
++    ctx->sha2_len = l; return SHA2_GOOD;
++}
++
++sha2_void sha2_hash(const unsigned char data[], unsigned long len, sha2_ctx ctx[1])
++{
++    switch(ctx->sha2_len)
++    {
++        case 32: sha256_hash(data, len, CTX_256(ctx)); return;
++        case 48: sha384_hash(data, len, CTX_384(ctx)); return;
++        case 64: sha512_hash(data, len, CTX_512(ctx)); return;
++    }
++}
++
++sha2_void sha2_end(unsigned char hval[], sha2_ctx ctx[1])
++{
++    switch(ctx->sha2_len)
++    {
++        case 32: sha256_end(hval, CTX_256(ctx)); return;
++        case 48: sha_end(hval, CTX_384(ctx), SHA384_DIGEST_SIZE); return;
++        case 64: sha_end(hval, CTX_512(ctx), SHA512_DIGEST_SIZE); return;
++    }
++}
++
++sha2_int sha2(unsigned char hval[], unsigned long size,
++                                const unsigned char data[], unsigned long len)
++{   sha2_ctx    cx[1];
++
++    if(sha2_begin(size, cx) == SHA2_GOOD)
++    {
++        sha2_hash(data, len, cx); sha2_end(hval, cx); return SHA2_GOOD;
++    }
++    else
++        return SHA2_BAD;
++}
++
++#endif
++
++#if defined(__cplusplus)
++}
++#endif
++
++
+diff -up libaesgm-20090429/sha2.h.BAD libaesgm-20090429/sha2.h
+--- libaesgm-20090429/sha2.h.BAD	2010-05-24 09:35:26.416537685 -0400
++++ libaesgm-20090429/sha2.h	2010-05-24 09:50:47.186423842 -0400
+@@ -0,0 +1,154 @@
++/*
++ ---------------------------------------------------------------------------
++ Copyright (c) 2002, Dr Brian Gladman <                 >, Worcester, UK.
++ All rights reserved.
++
++ LICENSE TERMS
++
++ The free distribution and use of this software in both source and binary 
++ form is allowed (with or without changes) provided that:
++
++   1. distributions of this source code include the above copyright 
++      notice, this list of conditions and the following disclaimer;
++
++   2. distributions in binary form include the above copyright
++      notice, this list of conditions and the following disclaimer
++      in the documentation and/or other associated materials;
++
++   3. the copyright holder's name is not used to endorse products 
++      built using this software without specific written permission. 
++
++ ALTERNATIVELY, provided that this notice is retained in full, this product
++ may be distributed under the terms of the GNU General Public License (GPL),
++ in which case the provisions of the GPL apply INSTEAD OF those given above.
++ 
++ DISCLAIMER
++
++ This software is provided 'as is' with no explicit or implied warranties
++ in respect of its properties, including, but not limited to, correctness 
++ and/or fitness for purpose.
++ ---------------------------------------------------------------------------
++ Issue Date: 26/08/2003
++*/
++
++#ifndef _SHA2_H
++#define _SHA2_H
++
++#include <limits.h>
++
++/*  Defines for suffixes to 32 and 64 bit unsigned numeric values   */
++
++#define sfx_lo(x,y) x##y
++#define sfx_hi(x,y) sfx_lo(x,y)
++#define n_u32(p)    sfx_hi(0x##p,s_u32)
++#define n_u64(p)    sfx_hi(0x##p,s_u64)
++
++/* define an unsigned 32-bit type */
++
++#if UINT_MAX == 0xffffffff
++  typedef   unsigned int     sha2_32t;
++  #define s_u32    u
++#elif ULONG_MAX == 0xffffffff
++  typedef   unsigned long    sha2_32t;
++  #define s_u32   ul
++#else
++#error Please define sha2_32t as an unsigned 32 bit type in sha2.h
++#endif
++
++/* define an unsigned 64-bit type */
++
++#if defined(_MSC_VER) && (_MSC_VER < 1300)
++  typedef unsigned __int64   sha2_64t;
++  #define s_u64 ui64
++#elif ULONG_MAX == 0xffffffffffffffff
++  typedef unsigned long      sha2_64t;
++  #define s_u64   ul
++#elif ULONG_MAX == 0xffffffff
++  typedef unsigned long long sha2_64t;   /* a somewhat dangerous guess */
++  #define s_u64  ull
++#else
++#error Please define sha2_64t as an unsigned 64 bit type in sha2.h
++#endif
++
++#if defined(__cplusplus)
++extern "C"
++{
++#endif
++
++#define SHA256_DIGEST_SIZE  32
++#define SHA384_DIGEST_SIZE  48
++#define SHA512_DIGEST_SIZE  64
++
++#define SHA256_BLOCK_SIZE   64
++#define SHA384_BLOCK_SIZE  128
++#define SHA512_BLOCK_SIZE  128
++
++#define SHA2_MAX_DIGEST_SIZE    SHA512_DIGEST_SIZE
++
++#define SHA2_GOOD   0
++#define SHA2_BAD    1
++
++/* type to hold the SHA256 context              */
++
++typedef struct
++{   sha2_32t count[2];
++    sha2_32t hash[8];
++    sha2_32t wbuf[16];
++} sha256_ctx;
++
++/* type to hold the SHA384/512 context          */
++
++typedef struct
++{   sha2_64t count[2];
++    sha2_64t hash[8];
++    sha2_64t wbuf[16];
++} sha512_ctx;
++
++typedef sha512_ctx  sha384_ctx;
++
++/* type to hold a SHA2 context (256/384/512)  */
++
++typedef struct
++{   union
++    {   sha256_ctx  ctx256[1];
++        sha512_ctx  ctx512[1];
++    } uu[1];
++    sha2_32t    sha2_len;
++} sha2_ctx;
++
++#ifndef SHA2_DLL                  /* implement normal or DLL functions   */
++#define sha2_void   void
++#define sha2_int    int
++#else
++#define sha2_void   void __declspec(dllexport) _stdcall
++#define sha2_int    int  __declspec(dllexport) _stdcall
++#endif
++
++sha2_void sha256_compile(sha256_ctx ctx[1]);
++sha2_void sha512_compile(sha512_ctx ctx[1]);
++
++sha2_void sha256_begin(sha256_ctx ctx[1]);
++sha2_void sha256_hash(const unsigned char data[], unsigned long len, sha256_ctx ctx[1]);
++sha2_void sha256_end(unsigned char hval[], sha256_ctx ctx[1]);
++sha2_void sha256(unsigned char hval[], const unsigned char data[], unsigned long len); 
++
++sha2_void sha384_begin(sha384_ctx ctx[1]);
++#define sha384_hash sha512_hash
++sha2_void sha384_end(unsigned char hval[], sha384_ctx ctx[1]);
++sha2_void sha384(unsigned char hval[], const unsigned char data[], unsigned long len); 
++
++sha2_void sha512_begin(sha512_ctx ctx[1]);
++sha2_void sha512_hash(const unsigned char data[], unsigned long len, sha512_ctx ctx[1]);
++sha2_void sha512_end(unsigned char hval[], sha512_ctx ctx[1]);
++sha2_void sha512(unsigned char hval[], const unsigned char data[], unsigned long len); 
++
++sha2_int  sha2_begin(unsigned long size, sha2_ctx ctx[1]);
++sha2_void sha2_hash(const unsigned char data[], unsigned long len, sha2_ctx ctx[1]);
++sha2_void sha2_end(unsigned char hval[], sha2_ctx ctx[1]);
++sha2_int  sha2(unsigned char hval[], unsigned long size, const unsigned char data[], unsigned long len); 
++
++#if defined(__cplusplus)
++}
++#endif
++
++#endif

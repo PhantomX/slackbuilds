@@ -8,7 +8,7 @@ SB_PATCHDIR=${CWD}/patches
 # Patch in the uname for Linux enhancements
 if [ "${SB_RHUNAME}" = "YES" ] ;then
   # Fedora/Red Hat patch.
-  zcat ${SB_PATCHDIR}/${NAME}-4.5.3-sysinfo.patch.gz | patch -p1 -E --backup --verbose
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.2-uname-processortype.patch
 else
   # Slackware patch
   zcat ${SB_PATCHDIR}/${NAME}.uname.diff.gz | patch -p1 --verbose --backup --suffix=.orig
@@ -40,10 +40,13 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.3-langinfo.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-i18n.patch
 
 if [ "${SB_PAM}" = "YES" ] ; then
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-pam.patch
-  zcat ${SB_PATCHDIR}/${NAME}-setsid.patch.gz | patch -p1 -E --backup --verbose
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.2.1-runuser.patch
-  zcat ${SB_PATCHDIR}/${NAME}-split-pam.patch.gz | patch -p1 -E --backup --verbose
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.5-pam.patch
+  # Call setsid() in su under some circumstances
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-setsid.patch
+  # make runuser binary based on su.c
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.7-runuser.patch
+  # compile su with pie flag and RELRO protection
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.4-su-pie.patch
 fi
 
 # getgrouplist() patch from Ulrich Drepper.

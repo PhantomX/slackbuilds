@@ -1,0 +1,167 @@
+diff -up Linux-PAM-1.1.3/modules/pam_faillock/faillock.c.screensaver Linux-PAM-1.1.3/modules/pam_faillock/faillock.c
+--- Linux-PAM-1.1.3/modules/pam_faillock/faillock.c.screensaver	2010-11-10 11:46:07.000000000 +0100
++++ Linux-PAM-1.1.3/modules/pam_faillock/faillock.c	2010-11-10 11:46:07.000000000 +0100
+@@ -41,13 +41,14 @@
+ #include <sys/types.h>
+ #include <sys/stat.h>
+ #include <sys/file.h>
++#include <sys/stat.h>
+ #include <fcntl.h>
+ #include <security/pam_modutil.h>
+ 
+ #include "faillock.h"
+ 
+ int
+-open_tally (const char *dir, const char *user, int create)
++open_tally (const char *dir, const char *user, uid_t uid, int create)
+ {
+ 	char *path;
+ 	int flags = O_RDWR;
+@@ -69,8 +70,18 @@ open_tally (const char *dir, const char 
+ 
+ 	fd = open(path, flags, 0600);
+ 
+-	if (fd != -1)
++	free(path);
++
++	if (fd != -1) {
++		struct stat st;
++
+ 		while (flock(fd, LOCK_EX) == -1 && errno == EINTR);
++		if (fstat(fd, &st) == 0) {
++			if (st.st_uid != uid) {
++				fchown(fd, uid, -1);
++			}
++		}
++	}
+ 
+ 	return fd;
+ }
+diff -up Linux-PAM-1.1.3/modules/pam_faillock/faillock.h.screensaver Linux-PAM-1.1.3/modules/pam_faillock/faillock.h
+--- Linux-PAM-1.1.3/modules/pam_faillock/faillock.h.screensaver	2010-11-10 11:46:07.000000000 +0100
++++ Linux-PAM-1.1.3/modules/pam_faillock/faillock.h	2010-11-10 11:46:07.000000000 +0100
+@@ -45,6 +45,7 @@
+ #define _FAILLOCK_H
+ 
+ #include <stdint.h>
++#include <sys/types.h>
+ 
+ #define TALLY_STATUS_VALID     0x1       /* the tally file entry is valid */
+ #define TALLY_STATUS_RHOST     0x2       /* the source is rhost */
+@@ -65,7 +66,7 @@ struct tally_data {
+ 
+ #define FAILLOCK_DEFAULT_TALLYDIR "/var/run/faillock"
+ 
+-int open_tally(const char *dir, const char *user, int create);
++int open_tally(const char *dir, const char *user, uid_t uid, int create);
+ int read_tally(int fd, struct tally_data *tallies);
+ int update_tally(int fd, struct tally_data *tallies);
+ #endif
+diff -up Linux-PAM-1.1.3/modules/pam_faillock/main.c.screensaver Linux-PAM-1.1.3/modules/pam_faillock/main.c
+--- Linux-PAM-1.1.3/modules/pam_faillock/main.c.screensaver	2010-11-10 11:46:07.000000000 +0100
++++ Linux-PAM-1.1.3/modules/pam_faillock/main.c	2010-11-10 11:46:07.000000000 +0100
+@@ -106,8 +106,11 @@ do_user(struct options *opts, const char
+ 	int fd;
+ 	int rv;
+ 	struct tally_data tallies;
++	struct passwd *pwd;
+ 
+-	fd = open_tally(opts->dir, user, 0);
++	pwd = getpwnam(user);
++
++	fd = open_tally(opts->dir, user, pwd != NULL ? pwd->pw_uid : 0, 0);
+ 
+ 	if (fd == -1) {
+ 		if (errno == ENOENT) {
+@@ -134,9 +137,8 @@ do_user(struct options *opts, const char
+ #ifdef HAVE_LIBAUDIT
+ 		}
+ 		if ((audit_fd=audit_open()) >= 0) {
+-			struct passwd *pwd;
+ 
+-			if ((pwd=getpwnam(user)) != NULL) {
++			if (pwd != NULL) {
+ 				snprintf(buf, sizeof(buf), "faillock reset uid=%u",
+ 					pwd->pw_uid);
+ 				audit_log_user_message(audit_fd, AUDIT_USER_ACCT,
+diff -up Linux-PAM-1.1.3/modules/pam_faillock/pam_faillock.c.screensaver Linux-PAM-1.1.3/modules/pam_faillock/pam_faillock.c
+--- Linux-PAM-1.1.3/modules/pam_faillock/pam_faillock.c.screensaver	2010-11-10 11:46:07.000000000 +0100
++++ Linux-PAM-1.1.3/modules/pam_faillock/pam_faillock.c	2010-11-10 11:46:07.000000000 +0100
+@@ -213,7 +213,7 @@ check_tally(pam_handle_t *pamh, struct o
+ 
+ 	opts->now = time(NULL);
+ 
+-	tfd = open_tally(opts->dir, opts->user, 0);
++	tfd = open_tally(opts->dir, opts->user, opts->uid, 0);
+ 
+ 	*fd = tfd;
+ 
+@@ -289,9 +289,14 @@ reset_tally(pam_handle_t *pamh, struct o
+ {
+ 	int rv;
+ 
+-	while ((rv=ftruncate(*fd, 0)) == -1 && errno == EINTR);
+-	if (rv == -1) {
+-		pam_syslog(pamh, LOG_ERR, "Error clearing the tally file for %s: %m", opts->user);
++	if (*fd == -1) {
++		*fd = open_tally(opts->dir, opts->user, opts->uid, 1);
++	}
++	else {
++		while ((rv=ftruncate(*fd, 0)) == -1 && errno == EINTR);
++		if (rv == -1) {
++			pam_syslog(pamh, LOG_ERR, "Error clearing the tally file for %s: %m", opts->user);
++		}
+ 	}
+ }
+ 
+@@ -306,7 +311,7 @@ write_tally(pam_handle_t *pamh, struct o
+ 	const void *source = NULL;
+ 
+ 	if (*fd == -1) {
+-		*fd = open_tally(opts->dir, opts->user, 1);
++		*fd = open_tally(opts->dir, opts->user, opts->uid, 1);
+ 	}
+ 	if (*fd == -1) {
+ 		if (errno == EACCES) {
+@@ -463,7 +468,7 @@ pam_sm_authenticate(pam_handle_t *pamh, 
+ 
+ 		case FAILLOCK_ACTION_AUTHSUCC:
+ 			rv = check_tally(pamh, &opts, &tallies, &fd);
+-			if (rv == PAM_SUCCESS && fd != -1) {
++			if (rv == PAM_SUCCESS) {
+ 				reset_tally(pamh, &opts, &fd);
+ 			}
+                         break;
+@@ -511,10 +516,8 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int
+ 		return rv;
+ 	}
+ 
+-	check_tally(pamh, &opts, &tallies, &fd);
+-	if (fd != -1) {
+-		reset_tally(pamh, &opts, &fd);
+-	}
++	check_tally(pamh, &opts, &tallies, &fd); /* for auditing */
++	reset_tally(pamh, &opts, &fd);
+ 
+ 	tally_cleanup(&tallies, fd);
+ 
+diff -up Linux-PAM-1.1.3/modules/pam_faillock/pam_faillock.8.xml.screensaver Linux-PAM-1.1.3/modules/pam_faillock/pam_faillock.8.xml
+--- Linux-PAM-1.1.3/modules/pam_faillock/pam_faillock.8.xml.screensaver	2010-11-10 11:46:07.000000000 +0100
++++ Linux-PAM-1.1.3/modules/pam_faillock/pam_faillock.8.xml	2010-11-10 11:47:14.000000000 +0100
+@@ -277,13 +277,9 @@
+       from the <emphasis>pam_tally2</emphasis> module setup.
+     </para>
+     <para>
+-      There is no setuid wrapper for access to the data file such as when the
+-      <emphasis remap='B'>pam_faillock.so</emphasis> module is called from
+-      a screensaver. As this would make it impossible to share PAM configuration
+-      with such services the following workaround is used: If the data file
+-      cannot be opened because of insufficient permissions
+-      (<errorcode>EACCES</errorcode>) the module returns
+-      <errorcode>PAM_SUCCESS</errorcode>.
++      The individual files with the failure records are created as owned by
++      the user. This allows <emphasis remap='B'>pam_faillock.so</emphasis> module
++      to work correctly when it is called from a screensaver.
+     </para>
+     <para>
+       Note that using the module in <option>preauth</option> without the

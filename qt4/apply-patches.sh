@@ -65,6 +65,8 @@ ApplyPatch qt-4.6.3-indic-rendering-bz636399.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.0-bpp24.patch
 # Fails to create debug build of Qt projects on mingw (rhbz#653674)
 ApplyPatch qt-everywhere-opensource-src-4.7.1-QTBUG-14467.patch
+# fix QTreeView crash triggered by KPackageKit (patch by David Faure)
+ApplyPatch qt-everywhere-opensource-src-4.7.1-qtreeview-kpackagekit-crash.patch
 
 ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 

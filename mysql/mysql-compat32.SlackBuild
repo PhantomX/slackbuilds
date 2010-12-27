@@ -45,7 +45,7 @@ PNAME=mysql
 NAME=mysql-compat32
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-5.1.53}
+VERSION=${VERSION:-5.5.8}
 SVER=$(echo ${VERSION} | cut -d . -f1-2)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH32=${ARCH32:-$(linux32 uname -m)}
@@ -108,77 +108,102 @@ chmod -R u+w,go+r-w,a-s .
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
-zcat ${SB_PATCHDIR}/mysql-strmov.patch.gz | patch -p1 -R --verbose || exit 1
 
-SLKCFLAGS="${SLKCFLAGS} -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -fno-strict-aliasing -fwrapv -fPIC"
+# workaround for upstream bug #56342
+rm -f mysql-test/t/ssl_8k_key-master.opt
 
-sed -i -e 's|-E -nostdinc -dI|\0 -I/usr/include -I/usr/include/linux|g' Makefile.*
+# upstream has fallen down badly on symbol versioning, do it ourselves
+[ -s libmysql.version ] || cat ${CWD}/libmysql.version > libmysql/libmysql.version
 
-libtoolize --force || exit 1
-aclocal || exit 1
-automake --add-missing -Wno-portability || exit 1
-autoconf || exit 1
-autoheader || exit 1
+export CFLAGS="${SLKCFLAGS} -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -fno-strict-aliasing -fwrapv -fPIC"
+export CXXFLAGS="${SLKCFLAGS} -felide-constructors -fno-exceptions -fno-rtti"
+export FFLAGS="${SLKCFLAGS}"
 
-CFLAGS="${SLKCFLAGS}" \
-CXXFLAGS="${SLKCFLAGS} -felide-constructors -fno-exceptions -fno-rtti" \
-./configure \
-  --prefix=/usr \
-  --libdir=/usr/lib${LIBDIRSUFFIX} \
-  --sysconfdir=/etc \
-  --localstatedir=/var/lib/mysql \
-  --infodir=/usr/info \
-  --mandir=/usr/man \
-  --with-embedded-server \
-  --with-mysqld-user=mysql \
-  --with-unix-socket-path=/var/run/mysql/mysql.sock \
-  --localstatedir=/var/lib/mysql \
-  --enable-assembler \
-  --with-raid \
-  --without-debug \
-  --enable-thread-safe-client \
-  --without-bench \
-  --with-extra-charsets=complex \
-  --with-vio \
-  --with-innodb \
-  --with-ssl=/usr \
-  --without-docs \
-  --without-man \
-  --without-server \
-  --build=${SLKTARGET32}-${SLKDTARGET}-linux || exit 1
+cmake . \
+  -DBUILD_CONFIG=mysql_release \
+  -DFEATURE_SET="community" \
+  -DINSTALL_LAYOUT=RPM \
+  -DCMAKE_INSTALL_PREFIX="/usr" \
+  -DINSTALL_INCLUDEDIR=include/mysql \
+  -DINSTALL_INFODIR=info \
+  -DINSTALL_LIBDIR="lib${LIBDIRSUFFIX}/mysql" \
+  -DINSTALL_MANDIR=share/man \
+  -DINSTALL_MYSQLSHAREDIR=share/mysql \
+  -DINSTALL_MYSQLTESTDIR=share/mysql-test \
+  -DINSTALL_PLUGINDIR="lib${LIBDIRSUFFIX}/mysql/plugin" \
+  -DINSTALL_SBINDIR=libexec \
+  -DINSTALL_SCRIPTDIR=bin \
+  -DINSTALL_SQLBENCHDIR=share \
+  -DINSTALL_SUPPORTFILESDIR=share/mysql \
+  -DMYSQL_DATADIR="/var/lib/mysql" \
+  -DMYSQL_UNIX_ADDR="/var/run/mysql/mysql.sock" \
+  -DENABLED_LOCAL_INFILE=ON \
+  -DENABLE_DTRACE=OFF \
+  -DWITH_EMBEDDED_SERVER=ON \
+  -DWITH_READLINE=ON \
+  -DWITH_SSL=system \
+  -DWITH_ZLIB=system \
+  || exit $?
 
 ( set -o xtrace
-  ${CC} ${SLKCFLAGS} ${LDFLAGS} -o scriptstub "-DLIBDIR=\"/usr/lib${LIBDIRSUFFIX}/mysql\"" \
+  gcc ${CFLAGS} ${LDFLAGS} -o scriptstub "-DLIBDIR=\"/usr/lib${LIBDIRSUFFIX}/mysql\"" \
   ${CWD}/scriptstub.c || exit 1
 ) || exit 1
 
-make -j${NJOBS} || make || exit 1
+make -j${NJOBS} VERBOSE=1 || make VERBOSE=1 || exit $?
 
 # regular build will make libmysqld.a but not libmysqld.so :-(
 mkdir libmysqld/work
 ( cd libmysqld/work
   ar -x ../libmysqld.a
+  rm -f sql_binlog.cc.o rpl_utility.cc.o
   ( set -o xtrace
     ${CC} ${SLKCFLAGS} ${LDFLAGS} -shared -Wl,-soname,libmysqld.so.0 -o libmysqld.so.0.0.1 \
     *.o \
-    -lpthread -lcrypt -lnsl -lssl -lcrypto -lz -lrt -lstdc++ -lm -lc || exit 1
+    -lpthread -laio -lcrypt -lssl -lcrypto -lz -lrt -lstdc++ -ldl -lm -lc || exit 1
   ) || exit 1
 
   # this is to check that we built a complete library
   cat ${CWD}/mysql-embedded-check.c > mysql-embedded-check.c
   ln -s libmysqld.so.0.0.1 libmysqld.so.0
-  ${CC} -I../../include ${SLKCFLAGS} mysql-embedded-check.c libmysqld.so.0 || exit 1
+  ${CC} -I../../include ${CFLAGS} mysql-embedded-check.c libmysqld.so.0 || exit 1
   LD_LIBRARY_PATH=. ldd ./a.out || exit 1
 ) || exit 1
 
-make install DESTDIR=${PKG} || exit 1
+make install DESTDIR=${PKG} || exit $?
 
+sed -e 's/-lprobes_mysql//' -e 's/-lmysqlclient_r/-lmysqlclient/' \
+  ${PKG}/usr/bin/mysql_config >mysql_config.tmp
+cp -f mysql_config.tmp ${PKG}/usr/bin/mysql_config || exit 1
+chmod 755 ${PKG}/usr/bin/mysql_config
+
+rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.a
 install -m 0755 libmysqld/work/libmysqld.so.0.0.1 \
   ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.so.0.0.1 || exit 1
 ln -s libmysqld.so.0.0.1 ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.so.0
 ln -s libmysqld.so.0 ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.so
 
 [ "${SB_RMLA}" = "YES" ] && rm -f ${PKG}/usr/lib*/mysql/*.*a ${PKG}/usr/lib*/*/plugin/*.*a
+
+rm -f ${PKG}/usr/{COPYING,README}
+# Remove files we don't want installed at all
+rm -f ${PKG}/usr/INSTALL-BINARY
+rm -f ${PKG}/usr/docs/ChangeLog
+rm -f ${PKG}/usr/data/mysql/.empty
+rm -f ${PKG}/usr/data/test/.empty
+rm -f ${PKG}/usr/bin/mysqlaccess.conf
+rm -f ${PKG}/usr/share/mysql/binary-configure
+rm -f ${PKG}/usr/share/mysql/magic
+rm -f ${PKG}/usr/share/mysql/ndb-config-2-node.ini
+rm -f ${PKG}/usr/share/mysql/mysql.server
+rm -f ${PKG}/usr/share/mysql/mysqld_multi.server
+rm -f ${PKG}/usr/share/mysql/mysql-log-rotate
+rm -f ${PKG}/usr/man/man1/comp_err.1*
+rm -f ${PKG}/usr/man/man1/mysql-stress-test.pl.1*
+rm -f ${PKG}/usr/man/man1/mysql-test-run.pl.1*
+
+rmdir -p ${PKG}/usr/docs
+rmdir -p ${PKG}/usr/data/*
 
 mkdir -p ${PKG}/etc/ld.so.conf.d
 echo "/usr/lib${LIBDIRSUFFIX}/mysql" \
@@ -208,11 +233,16 @@ if [ -f ${PKG}/usr/include/mysql/storage/ndb/ndb_types.h ] ;then
 fi
 
 rm -f ${PKG}/usr/lib*/libmysqlclient.so*
-for libname in libmysqlclient libmysqlclient_r libmysqld ;do
+for libname in libmysqlclient libmysqld ;do
   reldir=mysql
   oldlink=$(readlink ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/${libname}.so)
   ln -sf ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so || exit 1
 done
+
+rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient_r.so*
+ln -s libmysqlclient.so ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient_r.so
+oldlink=$(readlink ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient.so)
+ln -s ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/libmysqlclient_r.so
 
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc-compat32 > ${PKG}/install/slack-desc

@@ -29,5 +29,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-jbig2-image-refcou
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patch
 # Don't assume %rom% device is available for initial ICC profile dir.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-iccprofiles-initdir.patch
+# gdevcups: don't use uninitialized variables in debugging output.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-gdevcups-debug-uninit.patch
+# Bugfix (retrieved from Slackware stock)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript.rev11948.diff
 
 set +e +o pipefail

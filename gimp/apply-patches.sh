@@ -20,5 +20,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.8-gold.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=623045
 # make script-fu logging IPv6 aware
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.10-script-fu-ipv6.patch
+# https://bugzilla.redhat.com/show_bug.cgi?id=651002
+# avoid traceback in colorxhtml plugin, upstreamed
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.11-colorxhtml.patch
 
 set +e +o pipefail

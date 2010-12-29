@@ -214,6 +214,7 @@ if [ "${SB_REP}" = "YES" ] ;then
                  ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
                  ${SBDIR}/patches/
+  rmdir ${CWD}/patches
 fi
 
 # Build package:

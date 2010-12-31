@@ -4,6 +4,7 @@ set -e
 
 module=$(basename $0 -snapshot.sh)
 snaproot="http://dolphin-emu.googlecode.com/svn/trunk"
+snaprootclrun="http://opencl-utils.googlecode.com/svn/trunk"
 
 tmp=$(mktemp -d)
 
@@ -25,16 +26,20 @@ pushd "${tmp}"
   pushd ${module}-${snap}
     svn export ${SNAP_COOPTS} ${snaproot}/Source
     svn export ${SNAP_COOPTS} ${snaproot}/Data
+    svn export ${SNAP_COOPTS} ${snaproot}/CMakeTests
     svn export ${SNAP_COOPTS} ${snaproot}/SconsTests
     svn export ${SNAP_COOPTS} ${snaproot}/docs
     mkdir Externals
     pushd Externals
       svn export ${SNAP_COOPTS} ${snaproot}/Externals/Bochs_disasm
       svn export ${SNAP_COOPTS} ${snaproot}/Externals/Lua
-      svn export ${SNAP_COOPTS} ${snaproot}/Externals/WiiUse
+      svn export ${SNAP_COOPTS} ${snaproot}/Externals/CLRun
+      svn export --force ${SNAP_COOPTS} ${snaprootclrun}/src/clrun CLRun/clrun
+      svn export --force ${SNAP_COOPTS} ${snaprootclrun}/src/include CLRun/include
     popd >/dev/null
     SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"
     sed -i -e "/SVN_REV_STR/s|\".*\"|\"${SVNREV}\"|g" Source/Core/Common/Src/svnrev_template.h
+    echo "${SVNREV}" > svnrev
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}

@@ -4,7 +4,6 @@ set -e
 
 module=$(basename $0 -snapshot.sh)
 snaproot="http://dolphin-emu.googlecode.com/svn/trunk"
-snaprootclrun="http://opencl-utils.googlecode.com/svn/trunk"
 
 tmp=$(mktemp -d)
 
@@ -34,8 +33,6 @@ pushd "${tmp}"
       svn export ${SNAP_COOPTS} ${snaproot}/Externals/Bochs_disasm
       svn export ${SNAP_COOPTS} ${snaproot}/Externals/Lua
       svn export ${SNAP_COOPTS} ${snaproot}/Externals/CLRun
-      svn export --force ${SNAP_COOPTS} ${snaprootclrun}/src/clrun CLRun/clrun
-      svn export --force ${SNAP_COOPTS} ${snaprootclrun}/src/include CLRun/include
     popd >/dev/null
     SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"
     sed -i -e "/SVN_REV_STR/s|\".*\"|\"${SVNREV}\"|g" Source/Core/Common/Src/svnrev_template.h

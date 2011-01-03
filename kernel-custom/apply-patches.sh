@@ -52,6 +52,7 @@ ApplyOptionalPatch() {
 
 # Qt4 xconfig
 ApplyPatch 2900_xconfig-with-qt4.patch
+ApplyPatch 2905_proper-qt4-detection.patch
 
 ApplyOptionalPatch git-linus.diff
 
@@ -97,6 +98,8 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 #
 # bugfixes to drivers and filesystems
 #
+#rhbz#662344
+ApplyPatch fs-call-security_d_instantiate-in-d_obtain_alias.patch
 
 # ext4
 
@@ -142,6 +145,9 @@ ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
 ApplyPatch pci-disable-aspm-if-bios-asks-us-to.patch
+
+# helps debug resource conflicts [c1f3f281]
+ApplyPatch pnp-log-pnp-resources-as-we-do-for-pci.patch
 
 ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
 
@@ -274,6 +280,9 @@ ApplyPatch sched-cure-more-NO_HZ-load-average-woes.patch
 
 # rhbz#657864 [229bd792]
 ApplyPatch orinoco-initialise-priv_hw-before-assigning-the-interrupt.patch
+
+# rhbz#637619
+ApplyPatch net-AF_PACKET-vmalloc.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

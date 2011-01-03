@@ -1,0 +1,254 @@
+Author: Neil Horman <nhorman@tuxdriver.com>
+Date:   Fri Dec 17 13:35:36 2010 -0500
+
+Enhance AF_PACKET to support using non-contiguous memory when allocating ring
+buffer space.  This is a combined backport of the following commits from
+net-next-2.6:
+0e3125c755445664f00ad036e4fc2cd32fd52877
+bbce5a59e4e0e6e1dbc85492caaf310ff6611309
+0af55bb58f8fa7865004ac48d16affe125ac1b7f
+920b8d913bd3d963d5c88bca160a272b71e0c95a
+
+diff -up linux-2.6.34.x86_64/net/packet/af_packet.c.orig linux-2.6.34.x86_64/net/packet/af_packet.c
+--- linux-2.6.34.x86_64/net/packet/af_packet.c.orig	2010-12-17 12:16:58.000000000 -0500
++++ linux-2.6.34.x86_64/net/packet/af_packet.c	2010-12-17 12:30:14.000000000 -0500
+@@ -61,6 +61,7 @@
+ #include <linux/kernel.h>
+ #include <linux/kmod.h>
+ #include <linux/slab.h>
++#include <linux/vmalloc.h>
+ #include <net/net_namespace.h>
+ #include <net/ip.h>
+ #include <net/protocol.h>
+@@ -161,8 +162,14 @@ struct packet_mreq_max {
+ static int packet_set_ring(struct sock *sk, struct tpacket_req *req,
+ 		int closing, int tx_ring);
+ 
++#define PGV_FROM_VMALLOC 1
++struct pgv {
++	char *buffer;
++	unsigned char flags;
++};
++
+ struct packet_ring_buffer {
+-	char			**pg_vec;
++	struct pgv		*pg_vec;
+ 	unsigned int		head;
+ 	unsigned int		frames_per_block;
+ 	unsigned int		frame_size;
+@@ -214,6 +221,13 @@ struct packet_skb_cb {
+ 
+ #define PACKET_SKB_CB(__skb)	((struct packet_skb_cb *)((__skb)->cb))
+ 
++static inline struct page *pgv_to_page(void *addr)
++{
++	if (is_vmalloc_addr(addr))
++		return vmalloc_to_page(addr);
++	return virt_to_page(addr);
++}
++
+ static void __packet_set_status(struct packet_sock *po, void *frame, int status)
+ {
+ 	union {
+@@ -226,11 +240,11 @@ static void __packet_set_status(struct p
+ 	switch (po->tp_version) {
+ 	case TPACKET_V1:
+ 		h.h1->tp_status = status;
+-		flush_dcache_page(virt_to_page(&h.h1->tp_status));
++		flush_dcache_page(pgv_to_page(&h.h1->tp_status));
+ 		break;
+ 	case TPACKET_V2:
+ 		h.h2->tp_status = status;
+-		flush_dcache_page(virt_to_page(&h.h2->tp_status));
++		flush_dcache_page(pgv_to_page(&h.h2->tp_status));
+ 		break;
+ 	default:
+ 		pr_err("TPACKET version not supported\n");
+@@ -253,10 +267,10 @@ static int __packet_get_status(struct pa
+ 	h.raw = frame;
+ 	switch (po->tp_version) {
+ 	case TPACKET_V1:
+-		flush_dcache_page(virt_to_page(&h.h1->tp_status));
++		flush_dcache_page(pgv_to_page(&h.h1->tp_status));
+ 		return h.h1->tp_status;
+ 	case TPACKET_V2:
+-		flush_dcache_page(virt_to_page(&h.h2->tp_status));
++		flush_dcache_page(pgv_to_page(&h.h2->tp_status));
+ 		return h.h2->tp_status;
+ 	default:
+ 		pr_err("TPACKET version not supported\n");
+@@ -280,7 +294,8 @@ static void *packet_lookup_frame(struct 
+ 	pg_vec_pos = position / rb->frames_per_block;
+ 	frame_offset = position % rb->frames_per_block;
+ 
+-	h.raw = rb->pg_vec[pg_vec_pos] + (frame_offset * rb->frame_size);
++	h.raw = rb->pg_vec[pg_vec_pos].buffer +
++		(frame_offset * rb->frame_size);
+ 
+ 	if (status != __packet_get_status(po, h.raw))
+ 		return NULL;
+@@ -771,15 +786,11 @@ static int tpacket_rcv(struct sk_buff *s
+ 	__packet_set_status(po, h.raw, status);
+ 	smp_mb();
+ 	{
+-		struct page *p_start, *p_end;
+-		u8 *h_end = h.raw + macoff + snaplen - 1;
++		u8 *start, *end;
+ 
+-		p_start = virt_to_page(h.raw);
+-		p_end = virt_to_page(h_end);
+-		while (p_start <= p_end) {
+-			flush_dcache_page(p_start);
+-			p_start++;
+-		}
++		end = (u8 *)PAGE_ALIGN((unsigned long)h.raw + macoff + snaplen);
++		for (start = h.raw; start < end; start += PAGE_SIZE)
++			flush_dcache_page(pgv_to_page(start));
+ 	}
+ 
+ 	sk->sk_data_ready(sk, 0);
+@@ -886,7 +897,6 @@ static int tpacket_fill_skb(struct packe
+ 	}
+ 
+ 	err = -EFAULT;
+-	page = virt_to_page(data);
+ 	offset = offset_in_page(data);
+ 	len_max = PAGE_SIZE - offset;
+ 	len = ((to_write > len_max) ? len_max : to_write);
+@@ -905,11 +915,11 @@ static int tpacket_fill_skb(struct packe
+ 			return -EFAULT;
+ 		}
+ 
++		page = pgv_to_page(data);
++		data += len;
+ 		flush_dcache_page(page);
+ 		get_page(page);
+-		skb_fill_page_desc(skb,
+-				nr_frags,
+-				page++, offset, len);
++		skb_fill_page_desc(skb, nr_frags, page, offset, len);
+ 		to_write -= len;
+ 		offset = 0;
+ 		len_max = PAGE_SIZE;
+@@ -2230,37 +2240,76 @@ static const struct vm_operations_struct
+ 	.close	=	packet_mm_close,
+ };
+ 
+-static void free_pg_vec(char **pg_vec, unsigned int order, unsigned int len)
++static void free_pg_vec(struct pgv *pg_vec, unsigned int order,
++			unsigned int len)
+ {
+ 	int i;
+ 
+ 	for (i = 0; i < len; i++) {
+-		if (likely(pg_vec[i]))
+-			free_pages((unsigned long) pg_vec[i], order);
++		if (likely(pg_vec[i].buffer)) {
++			if (pg_vec[i].flags & PGV_FROM_VMALLOC)
++				vfree(pg_vec[i].buffer);
++			else
++				free_pages((unsigned long)pg_vec[i].buffer,
++					   order);
++			pg_vec[i].buffer = NULL;
++		}
+ 	}
+ 	kfree(pg_vec);
+ }
+ 
+-static inline char *alloc_one_pg_vec_page(unsigned long order)
++static inline char *alloc_one_pg_vec_page(unsigned long order,
++					  unsigned char *flags)
+ {
+-	gfp_t gfp_flags = GFP_KERNEL | __GFP_COMP | __GFP_ZERO | __GFP_NOWARN;
++	char *buffer = NULL;
++	gfp_t gfp_flags = GFP_KERNEL | __GFP_COMP |
++			  __GFP_ZERO | __GFP_NOWARN | __GFP_NORETRY;
++
++	buffer = (char *) __get_free_pages(gfp_flags, order);
+ 
+-	return (char *) __get_free_pages(gfp_flags, order);
++	if (buffer)
++		return buffer;
++
++	/*
++	 * __get_free_pages failed, fall back to vmalloc
++	 */
++	*flags |= PGV_FROM_VMALLOC;
++	buffer = vmalloc((1 << order) * PAGE_SIZE);
++
++	if (buffer) {
++		memset(buffer, 0, (1 << order) * PAGE_SIZE);
++		return buffer;
++	}
++
++	/*
++	 * vmalloc failed, lets dig into swap here
++	 */
++	*flags = 0;
++	gfp_flags &= ~__GFP_NORETRY;
++	buffer = (char *)__get_free_pages(gfp_flags, order);
++	if (buffer)
++		return buffer;
++
++	/*
++	 * complete and utter failure
++	 */
++	return NULL;
+ }
+ 
+-static char **alloc_pg_vec(struct tpacket_req *req, int order)
++static struct pgv *alloc_pg_vec(struct tpacket_req *req, int order)
+ {
+ 	unsigned int block_nr = req->tp_block_nr;
+-	char **pg_vec;
++	struct pgv *pg_vec;
+ 	int i;
+ 
+-	pg_vec = kzalloc(block_nr * sizeof(char *), GFP_KERNEL);
++	pg_vec = kcalloc(block_nr, sizeof(struct pgv), GFP_KERNEL);
+ 	if (unlikely(!pg_vec))
+ 		goto out;
+ 
+ 	for (i = 0; i < block_nr; i++) {
+-		pg_vec[i] = alloc_one_pg_vec_page(order);
+-		if (unlikely(!pg_vec[i]))
++		pg_vec[i].buffer = alloc_one_pg_vec_page(order,
++							 &pg_vec[i].flags);
++		if (unlikely(!pg_vec[i].buffer))
+ 			goto out_free_pgvec;
+ 	}
+ 
+@@ -2276,7 +2325,7 @@ out_free_pgvec:
+ static int packet_set_ring(struct sock *sk, struct tpacket_req *req,
+ 		int closing, int tx_ring)
+ {
+-	char **pg_vec = NULL;
++	struct pgv *pg_vec = NULL;
+ 	struct packet_sock *po = pkt_sk(sk);
+ 	int was_running, order = 0;
+ 	struct packet_ring_buffer *rb;
+@@ -2438,15 +2487,22 @@ static int packet_mmap(struct file *file
+ 			continue;
+ 
+ 		for (i = 0; i < rb->pg_vec_len; i++) {
+-			struct page *page = virt_to_page(rb->pg_vec[i]);
++			struct page *page;
++			void *kaddr = rb->pg_vec[i].buffer;
+ 			int pg_num;
+ 
+ 			for (pg_num = 0; pg_num < rb->pg_vec_pages;
+-					pg_num++, page++) {
++					pg_num++) {
++				if (rb->pg_vec[i].flags & PGV_FROM_VMALLOC)
++					page = vmalloc_to_page(kaddr);
++				else
++					page = virt_to_page(kaddr);
++
+ 				err = vm_insert_page(vma, start, page);
+ 				if (unlikely(err))
+ 					goto out;
+ 				start += PAGE_SIZE;
++				kaddr += PAGE_SIZE;
+ 			}
+ 		}
+ 	}

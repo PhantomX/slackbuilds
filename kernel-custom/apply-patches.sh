@@ -50,10 +50,6 @@ ApplyOptionalPatch() {
   fi
 }
 
-# Qt4 xconfig
-ApplyPatch 2900_xconfig-with-qt4.patch
-ApplyPatch 2905_proper-qt4-detection.patch
-
 ApplyOptionalPatch git-linus.diff
 
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
@@ -106,10 +102,6 @@ ApplyPatch fs-call-security_d_instantiate-in-d_obtain_alias.patch
 # xfs
 
 # btrfs
-# rhbz#656465
-ApplyPatch btrfs-fix-error-handling-in-btrfs_get_sb.patch
-ApplyPatch btrfs-fix-race-between-btrfs_get_sb-and-umount.patch
-ApplyPatch btrfs-setup-blank-root-and-fs_info-for-mount-time.patch
 
 # cifs
 
@@ -134,6 +126,7 @@ ApplyPatch linux-2.6-debug-taint-vm.patch
 #ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
 ApplyPatch linux-2.6-debug-always-inline-kzalloc.patch.gz
 
+# rhbz#630464
 ApplyPatch debug-tty-print-dev-name.patch
 
 #
@@ -145,11 +138,10 @@ ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
 ApplyPatch pci-disable-aspm-if-bios-asks-us-to.patch
+# rhbz#638912
+ApplyPatch pci-_osc-supported-field-should-contain-supported-features-not-enabled-ones.patch
 
-# helps debug resource conflicts [c1f3f281]
-ApplyPatch pnp-log-pnp-resources-as-we-do-for-pci.patch
-
-ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
+#ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
 
 #
 # SCSI Bits.
@@ -208,6 +200,7 @@ ApplyOptionalPatch drm-nouveau-updates.patch
 ApplyPatch drm-intel-big-hammer.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
+ApplyPatch drm-intel-edp-fixes.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -230,6 +223,9 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
 ApplyPatch hdpvr-ir-enable.patch
 
+# rhbz#664852
+ApplyPatch flexcop-fix-xlate_proc_name-warning.patch
+
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
@@ -239,47 +235,16 @@ ApplyPatch neuter_intel_microcode_load.patch
 ApplyPatch tpm-fix-stall-on-boot.patch
 
 # Runtime PM
-ApplyPatch linux-2.6-bluetooth-autosuspend.patch
-ApplyPatch linux-2.6-uvc-autosuspend.patch
-ApplyPatch linux-2.6-qcserial-autosuspend.patch
 ApplyPatch linux-2.6-usb-pci-autosuspend.patch
 ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
 ApplyPatch runtime_pm_fixups.patch
 
-# PCI patches to fix problems with _CRS
-# ( from linux-pci list )
-ApplyPatch pci-crs-fixes.patch
-ApplyPatch x86-never-alloc-pci-from-the-last-1M-below-4G.patch
-
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
-
-ApplyPatch xhci_hcd-suspend-resume.patch
-
-ApplyPatch fix-i8k-inline-asm.patch
-
-# rhbz#651264 (CVE-2010-3880)
-ApplyPatch inet_diag-make-sure-we-run-the-same-bytecode-we-audited.patch
-ApplyPatch netlink-make-nlmsg_find_attr-take-a-const-ptr.patch
-
-# rhbz#656264
-ApplyPatch posix-cpu-timers-workaround-to-suppress-problems-with-mt-exec.patch
-
-# CVE-2010-4077, CVE-2010-4075 (rhbz#648660, #648663)
-ApplyPatch tty-make-tiocgicount-a-handler.patch
-ApplyPatch tty-icount-changeover-for-other-main-devices.patch
-
-ApplyPatch tpm-autodetect-itpm-devices.patch
 
 # backport some fixes for kswapd from mmotm, rhbz#649694
 ApplyPatch mm-page-allocator-adjust-the-per-cpu-counter-threshold-when-memory-is-low.patch
 ApplyPatch mm-vmstat-use-a-single-setter-function-and-callback-for-adjusting-percpu-thresholds.patch
-
-# rhbz#650934
-ApplyPatch sched-cure-more-NO_HZ-load-average-woes.patch
-
-# rhbz#657864 [229bd792]
-ApplyPatch orinoco-initialise-priv_hw-before-assigning-the-interrupt.patch
 
 # rhbz#637619
 ApplyPatch net-AF_PACKET-vmalloc.patch

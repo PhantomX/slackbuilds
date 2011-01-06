@@ -19,7 +19,7 @@ fi
 # Fedora patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch
 # add note about no difference between binary/text mode on Linux - md5sum manpage
-zcat ${SB_PATCHDIR}/${NAME}-6.10-manpages.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-manpages.patch
 # temporarily workaround probable kernel issue with TCSADRAIN
 zcat ${SB_PATCHDIR}/${NAME}-7.4-sttytcsadrain.patch.gz | patch -p1 -E --backup --verbose
 #df --direct

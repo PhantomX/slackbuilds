@@ -21,9 +21,8 @@ zcat ${SB_PATCHDIR}/cups-usb-paperout.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-res_init.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-uri-compat-slk.patch
 zcat ${SB_PATCHDIR}/cups-get-classes.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-str3382.patch
-zcat ${SB_PATCHDIR}/cups-0755.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-0755.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-EAI_AGAIN.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-snmp-quirks.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-hostnamelookups.patch
@@ -32,9 +31,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-dnssd-deviceid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-ricoh-deviceid-oid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-texttops-rotate-page.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-autotype-crash.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-str3754.patch
+# Avahi support in the dnssd backend.
+patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi.patch
 
 # Fix crashes with gecko apps
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-1.4.4-str3461-1.4.reverted.patch
+patch -p1 -E --backup -z .revert --verbose -i ${SB_PATCHDIR}/cups-1.4.4-str3461-1.4.reverted.patch
 
 ## SECURITY PATCHES:
 

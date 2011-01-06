@@ -35,6 +35,17 @@ zcat ${SB_PATCHDIR}/glibc.getcwd.max.macro.diff.gz | patch -p1 --verbose
 ApplyPatch glibc.CVE-2010-3847.diff
 # fedora "fix" for excess linker optimization on i686
 ApplyPatch glibc-2.12.1-but-I-am-an-i686.patch
+# http://sources.redhat.com/bugzilla/show_bug.cgi?id=411
+# http://sourceware.org/ml/libc-alpha/2009-07/msg00072.html
+ApplyPatch glibc-__i686.patch
+# http://sourceware.org/bugzilla/show_bug.cgi?id=11929
+# using Fedora "fix" as patch in that bug report causes breakages...
+ApplyPatch glibc-2.12.1-static-shared-getpagesize.patch
+# http://www.exploit-db.com/exploits/15274/
+# http://sourceware.org/git/?p=glibc.git;a=patch;h=d14e6b09 (only fedora branch...)
+ApplyPatch glibc-2.12.2-ignore-origin-of-privileged-program.patch
+# http://sourceware.org/bugzilla/show_bug.cgi?id=12343
+ApplyPatch glibc-2.12.2-remove-ctors-dtors-output-sections.patch
 
 if [ "${SB_BOOTSTRP}" = "YES" ] ;then
   # Multilib - Disable check for forced unwind (Patch from eglibc) since we
@@ -43,13 +54,12 @@ if [ "${SB_BOOTSTRP}" = "YES" ] ;then
 fi
 
 # Gentoo patches
-#patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cfi.patch
+patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cfi.patch
 ( SB_PATCHDIR=patches
 
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
   ApplyPatch 0030_all_glibc-respect-env-CPPFLAGS.patch
   ApplyPatch 0044_all_glibc-2.10-resolv-nameserver-fallback.patch
-  ApplyPatch 0055_all_glibc-2.12-static-shared-getpagesize.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch
   ApplyPatch 1020_all_glibc-longjmp-chk-hidden-fortify.patch

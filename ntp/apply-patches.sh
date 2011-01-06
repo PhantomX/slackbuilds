@@ -13,7 +13,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-bcast.patch
 # align buffer for control messages
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-cmsgalign.patch
 # link ntpd with -ffast-math on ia64
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-linkfastmath.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-linkfastmath.patch
 # ntpbz #1134
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p2-tentative.patch
 # ntpbz #759
@@ -32,6 +32,16 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.4p7-getprecision.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-logdefault.patch
 # add option -m to lock memory
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p2-mlock.patch
+# allow -u and -p options to be used twice (#639101)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p2-multiopts.patch
+# ntpbz #1554
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p3-nosyspeer.patch
+# ntpbz #1670
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p3-broadcastdelay.patch
+# ntpbz #1671
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p3-delaycalib.patch
+# ntpbz #1695
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p3-ntpdaterecv.patch
 
 ( cd ntpstat-${NSVER}
   # handle unknown clock types

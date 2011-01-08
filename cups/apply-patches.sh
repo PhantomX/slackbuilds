@@ -15,6 +15,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-no-export-ssllibs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-direct-usb-slk.patch
 zcat ${SB_PATCHDIR}/cups-lpr-help.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/cups-pid.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-page-label.patch
 zcat ${SB_PATCHDIR}/cups-eggcups.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/cups-driverd-timeout.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/cups-usb-paperout.patch.gz | patch -p1 -E --backup --verbose

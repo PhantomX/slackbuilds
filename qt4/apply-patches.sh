@@ -79,6 +79,8 @@ ApplyPatch qt-everywhere-opensource-src-4.7.1-ml_IN-bz528303.patch
 # fix QTextCursor crash in Lokalize and Psi (QTBUG-15857, kde#249373, #660028)
 # http://qt.gitorious.org/qt/qt/commit/6ae84f1183e91c910ca92a55e37f8254ace805c0
 ApplyPatch qt-everywhere-opensource-src-4.7.1-qtextcursor-crash.patch
+# qsortfilterproxymodel merge, http://qt.gitorious.org/qt/qt/merge_requests/934
+ApplyPatch qt-everywhere-opensource-src-4.7.1-qsortfilterproxymodel_merge934.patch
 
 # kde-qt patches
 ApplyPatch 0004-0005.patch

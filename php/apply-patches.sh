@@ -21,7 +21,7 @@ zcat ${SB_PATCHDIR}/php-5.3.0-phpize64.patch.gz | patch -p1 -E --backup --verbos
 zcat ${SB_PATCHDIR}/php-5.2.0-includedir.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.2.4-embed.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.3.0-recode.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.4-aconf26x.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.5-aconf26x.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/004_all_strict_aliasing.patch
 

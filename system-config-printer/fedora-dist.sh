@@ -1,1 +1,1 @@
-../../fedora-dist.sh
+../fedora-dist.sh

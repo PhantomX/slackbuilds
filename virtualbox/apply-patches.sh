@@ -7,9 +7,12 @@ SB_PATCHDIR=${CWD}/patches
 
 ## from Gentoo
 # unset useless/problematic mesa checks in configure
-#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ose-3.2.8-mesa-check.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ose-3.2.8-mesa-check.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-asneeded.patch
 # add the --enable-vnc option to configure script
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ose-vnc.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-vnc.patch
+# Mantain ~/.Virtualbox
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-restore_old_machines_dir.patch
 
 # from Mandriva
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-1.5.6_OSE-kernelrelease.patch

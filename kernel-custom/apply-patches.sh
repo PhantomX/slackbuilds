@@ -97,6 +97,11 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 #rhbz#662344
 ApplyPatch fs-call-security_d_instantiate-in-d_obtain_alias.patch
 
+ApplyPatch remount-no-shrink-dcache.patch
+
+# reisefs
+ApplyPatch reiserfs-xattr-crash-fix.patch
+
 # ext4
 
 # xfs
@@ -176,7 +181,9 @@ ApplyPatch linux-2.6-silence-noise.patch
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 
 # Changes to upstream defaults.
-
+# Turns pnpbios off by default, useful, since pnpbios
+# is know to cause problems (TTL: forever)
+ApplyPatch pnp-pnpbios-off-by-default.patch 
 
 # libata
 

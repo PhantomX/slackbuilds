@@ -20,5 +20,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.88-ipv6.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.88-omit.patch
 # Fix counting MAXLINES in wall
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.88-wall-maxlines.patch
+# Raise limit for broadcast message
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.88-wall-broadcast-message.patch
 
 set +e +o pipefail

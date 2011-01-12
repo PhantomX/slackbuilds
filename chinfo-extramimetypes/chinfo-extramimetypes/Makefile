@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = chinfo-extramimetypes
-VERSION = 8.0
+VERSION = 8.1
 
 DESTDIR =
 PREFIX = /usr
@@ -82,6 +82,7 @@ AUDIOFILES = \
 
 TEXTFILES = \
 	md5.desktop \
+	md6.desktop \
 	sha1.desktop \
 	sha224.desktop \
 	sha256.desktop \

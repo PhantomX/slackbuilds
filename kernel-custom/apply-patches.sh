@@ -242,6 +242,8 @@ ApplyPatch neuter_intel_microcode_load.patch
 ApplyPatch tpm-fix-stall-on-boot.patch
 
 # Runtime PM
+ApplyPatch linux-2.6-ehci-check-port-status.patch
+ApplyPatch linux-2.6-ehci-fix-dma-deallocation.patch
 ApplyPatch linux-2.6-usb-pci-autosuspend.patch
 ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
 ApplyPatch runtime_pm_fixups.patch

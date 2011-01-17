@@ -12,6 +12,7 @@ zcat ${SB_PATCHDIR}/ghostscript-multilib.patch.gz | patch -p1 --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-scripts.patch
 # Build igcref.c with -O0 to work around bug #150771.
 zcat ${SB_PATCHDIR}/ghostscript-noopt.patch.gz | patch -p1 --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-scan_token.patch
 # Define .runlibfileifexists.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-runlibfileifexists.patch
 # Use the system jasper library.
@@ -31,10 +32,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-iccprofiles-initdir.patch
 # gdevcups: don't use uninitialized variables in debugging output.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-gdevcups-debug-uninit.patch
-# gdevcups: use correct width and height values when allocating memory
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-width-height.patch
 # Applied upstream ICC fix
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-icc-fix.patch
+# gdevcups: use correct width and height values when allocating memory
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-gdevcups-691733.patch
 # Bugfix (retrieved from Slackware stock)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript.rev11948.diff
 

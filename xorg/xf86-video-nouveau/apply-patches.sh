@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nouveau-bgnr.patch
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nouveau-nva3-noaccel-info.patch
 
 set +e +o pipefail

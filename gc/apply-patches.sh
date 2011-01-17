@@ -1,13 +1,14 @@
-  
+
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # To be more backward-compatible abi-wise, TODO: upstream ml reference
-#zcat ${SB_PATCHDIR}/gc-7.1-gcinit.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/gc-7.1-sparc.patch.gz | patch -p1 -E --backup --verbose || exit 1
-
 ## upstreamable patches
-zcat ${SB_PATCHDIR}/gc-7.1-dup_cpp_headers.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/gc-7.1-dup_cpp_headers.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gc-7.2alpha4-install_dups.patch
 
 ## upstream patches
-# http://www.hpl.hp.com/hosted/linux/mail-archives/gc/2008-May/002206.html
-zcat ${SB_PATCHDIR}/gc-7.1-dont_add_byte.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+set +e +o pipefail

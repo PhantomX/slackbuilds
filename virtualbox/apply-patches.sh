@@ -12,7 +12,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-asneeded.patch
 # add the --enable-vnc option to configure script
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-vnc.patch
 # Mantain ~/.Virtualbox
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-restore_old_machines_dir.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.2-restore_old_machines_dir.patch
 
 # from Mandriva
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-1.5.6_OSE-kernelrelease.patch

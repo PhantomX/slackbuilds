@@ -15,6 +15,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/wine-fonts.patch
 # Pulseaudio patches from http://art.ified.ca/downloads
 patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE}
 patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE2}
-patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE3}
+#patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE3}
+# filterdiff from patchutils package
+filterdiff -p1 -x "programs/winecfg/*.rc" ${SB_WPDIR}/${PPASRCARCHIVE3} | patch -p1 -E --backup --verbose
 
 set +e +o pipefail

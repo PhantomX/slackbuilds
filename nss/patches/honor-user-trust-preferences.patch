@@ -1,0 +1,133 @@
+Index: ./mozilla/security/nss/lib/pk11wrap/pk11load.c
+===================================================================
+RCS file: /cvsroot/mozilla/security/nss/lib/pk11wrap/pk11load.c,v
+retrieving revision 1.30
+diff -u -p -r1.30 pk11load.c
+--- ./mozilla/security/nss/lib/pk11wrap/pk11load.c	30 Apr 2010 07:22:54 -0000	1.30
++++ ./mozilla/security/nss/lib/pk11wrap/pk11load.c	22 Jan 2011 05:39:07 -0000
+@@ -178,8 +178,8 @@ secmod_handleReload(SECMODModule *oldMod
+ 	char *oldModuleSpec;
+ 
+ 	if (secmod_IsInternalKeySlot(newModule)) {
+-	    pk11_SetInternalKeySlot(slot);
+-	}
++	    pk11_FirstInternalKeySlot(slot);
++	} 
+ 	newID = slot->slotID;
+ 	PK11_FreeSlot(slot);
+ 	for (thisChild=children, thisID=ids; thisChild && *thisChild; 
+@@ -550,6 +550,11 @@ secmod_LoadPKCS11Module(SECMODModule *mo
+ 	    /* look down the slot info table */
+ 	    PK11_LoadSlotList(mod->slots[i],mod->slotInfo,mod->slotInfoCount);
+ 	    SECMOD_SetRootCerts(mod->slots[i],mod);
++	    /* explicitly mark the internal slot as such if IsInternalKeySlot()
++	     * is set */
++	    if (secmod_IsInternalKeySlot(mod) && (i == (mod->isFIPS ? 0 : 1))) {
++		pk11_FirstInternalKeySlot(mod->slots[i]);
++	    } 
+ 	}
+ 	mod->slotCount = slotCount;
+ 	mod->slotInfoCount = 0;
+Index: ./mozilla/security/nss/lib/pk11wrap/pk11priv.h
+===================================================================
+RCS file: /cvsroot/mozilla/security/nss/lib/pk11wrap/pk11priv.h,v
+retrieving revision 1.13
+diff -u -p -r1.13 pk11priv.h
+--- ./mozilla/security/nss/lib/pk11wrap/pk11priv.h	27 Oct 2009 23:04:46 -0000	1.13
++++ ./mozilla/security/nss/lib/pk11wrap/pk11priv.h	22 Jan 2011 05:39:07 -0000
+@@ -115,6 +115,7 @@ void PK11_InitSlot(SECMODModule *mod,CK_
+ PRBool PK11_NeedPWInitForSlot(PK11SlotInfo *slot);
+ SECStatus PK11_ReadSlotCerts(PK11SlotInfo *slot);
+ void pk11_SetInternalKeySlot(PK11SlotInfo *slot);
++void pk11_FirstInternalKeySlot(PK11SlotInfo *slot);
+ 
+ /*********************************************************************
+  *       Mechanism Mapping functions
+Index: ./mozilla/security/nss/lib/pk11wrap/pk11slot.c
+===================================================================
+RCS file: /cvsroot/mozilla/security/nss/lib/pk11wrap/pk11slot.c,v
+retrieving revision 1.101
+diff -u -p -r1.101 pk11slot.c
+--- ./mozilla/security/nss/lib/pk11wrap/pk11slot.c	3 Apr 2010 18:27:31 -0000	1.101
++++ ./mozilla/security/nss/lib/pk11wrap/pk11slot.c	22 Jan 2011 05:39:08 -0000
+@@ -1735,6 +1735,15 @@ pk11_SetInternalKeySlot(PK11SlotInfo *sl
+    pk11InternalKeySlot = slot ? PK11_ReferenceSlot(slot) : NULL;
+ }
+ 
++void
++pk11_FirstInternalKeySlot(PK11SlotInfo *slot)
++{
++   if (pk11InternalKeySlot) {
++	return;
++   }
++   pk11InternalKeySlot = slot ? PK11_ReferenceSlot(slot) : NULL;
++}
++
+ 
+ /* get the internal key slot. FIPS has only one slot for both key slots and
+  * default slots */
+Index: ./mozilla/security/nss/lib/sysinit/nsssysinit.c
+===================================================================
+RCS file: /cvsroot/mozilla/security/nss/lib/sysinit/nsssysinit.c,v
+retrieving revision 1.2
+diff -u -p -r1.2 nsssysinit.c
+--- ./mozilla/security/nss/lib/sysinit/nsssysinit.c	6 Feb 2010 04:56:37 -0000	1.2
++++ ./mozilla/security/nss/lib/sysinit/nsssysinit.c	22 Jan 2011 05:39:08 -0000
+@@ -221,7 +221,7 @@ getFIPSMode(void)
+  * 2 for the key slot, and
+  * 3 for the crypto operations slot fips
+  */
+-#define ORDER_FLAGS "trustOrder=75 cipherOrder=100"
++#define ORDER_FLAGS "cipherOrder=100"
+ #define SLOT_FLAGS \
+ 	"[slotFlags=RSA,RC4,RC2,DES,DH,SHA1,MD5,MD2,SSL,TLS,AES,RANDOM" \
+ 	" askpw=any timeout=30 ]"
+@@ -270,7 +270,7 @@ get_list(char *filename, char *stripped_
+ 	    "library= "
+ 	    "module=\"NSS User database\" "
+ 	    "parameters=\"configdir='sql:%s' %s tokenDescription='NSS user database'\" "
+-        "NSS=\"%sflags=internal%s\"",
++        "NSS=\"trustOrder=75 %sflags=internal%s\"",
+         userdb, stripped_parameters, nssflags,
+         isFIPS ? ",FIPS" : "");
+ 
+@@ -284,30 +284,6 @@ get_list(char *filename, char *stripped_
+ 		userdb, stripped_parameters);
+ 	}
+ 
+-#if 0
+-	/* This doesn't actually work. If we register
+-		both this and the sysdb (in either order)
+-		then only one of them actually shows up */
+-
+-    /* Using a NULL filename as a Boolean flag to
+-     * prevent registering both an application-defined
+-     * db and the system db. rhbz #546211.
+-     */
+-    PORT_Assert(filename);
+-    if (sysdb && PL_CompareStrings(filename, sysdb))
+-	    filename = NULL;
+-    else if (userdb && PL_CompareStrings(filename, userdb))
+-	    filename = NULL;
+-
+-    if (filename && !userIsRoot()) {
+-	    module_list[next++] = PR_smprintf(
+-	      "library= "
+-	      "module=\"NSS database\" "
+-	      "parameters=\"configdir='sql:%s' tokenDescription='NSS database sql:%s'\" "
+-	      "NSS=\"%sflags=internal\"",filename, filename, nssflags);
+-    }
+-#endif
+-
+     /* now the system database (always read only unless it's root) */
+     if (sysdb) {
+ 	    const char *readonly = userCanModifySystemDB() ? "" : "flags=readonly";
+@@ -315,7 +291,7 @@ get_list(char *filename, char *stripped_
+ 	      "library= "
+ 	      "module=\"NSS system database\" "
+ 	      "parameters=\"configdir='sql:%s' tokenDescription='NSS system database' %s\" "
+-	      "NSS=\"%sflags=internal,critical\"",sysdb, readonly, nssflags);
++	      "NSS=\"trustOrder=80 %sflags=internal,critical\"",sysdb, readonly, nssflags);
+     }
+ 
+     /* that was the last module */

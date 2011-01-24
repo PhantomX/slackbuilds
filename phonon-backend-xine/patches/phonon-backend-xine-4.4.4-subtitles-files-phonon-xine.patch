@@ -1,0 +1,283 @@
+diff -up phonon-4.4.3/xine/mediaobject.cpp.subtitles phonon-4.4.3/xine/mediaobject.cpp
+--- phonon-4.4.3/xine/mediaobject.cpp.subtitles	2010-11-24 16:26:19.000000000 -0200
++++ phonon-4.4.3/xine/mediaobject.cpp	2010-11-24 21:38:57.497314016 -0200
+@@ -32,6 +32,7 @@
+ #include <QMultiMap>
+ #include <QtDebug>
+ #include <QMetaType>
++#include <QtGlobal>
+ #include <QTextCodec>
+ #include <QUrl>
+ 
+@@ -59,6 +60,7 @@ MediaObject::MediaObject(QObject *parent
+     m_currentTitle(1),
+     m_transitionTime(0),
+     m_autoplayTitles(true),
++    m_autoDetectSubtitles(true),
+     m_waitingForNextSource(false)
+ {
+     m_stream->setMediaObject(this);
+@@ -617,6 +619,51 @@ QVariant MediaObject::interfaceCall(Inte
+                 }
+                 m_stream->setCurrentSubtitle(arguments.first().value<SubtitleDescription>());
+                 return true;
++            case AddonInterface::setAutoDetectSubtitles:
++                {
++	            //FIXME: this code can be factorized
++	            if (arguments.isEmpty() || !arguments.first().canConvert(QVariant::Bool)) {
++                        debug() << Q_FUNC_INFO << "arguments invalid";
++                        return false;
++                    }
++                    bool b = arguments.first().toBool();
++                    if (b == m_autoDetectSubtitles) {
++                        debug() << Q_FUNC_INFO << "setAutoDetectSubtitles: no change";
++                        return false;
++                    }
++                    m_autoDetectSubtitles = b;
++                    if (b) {
++                        debug() << Q_FUNC_INFO << "setAutoDetectSubtitles: enable autodetect";
++                        m_stream->setAutoDetectSubtitles(true);
++                    }
++                    else {
++                        debug() << Q_FUNC_INFO << "setAutoDetectSubtitles: disable autodetect";
++                        m_stream->setAutoDetectSubtitles(false);
++                    }
++                    return true;
++                }
++            case AddonInterface::setFileSubtitle:
++                {
++                    if (arguments.isEmpty() || !arguments.first().canConvert<MediaSource>()) {
++                        debug() << Q_FUNC_INFO << "arguments invalid";
++                        return false;
++                    }
++                    MediaSource m = arguments.first().value<MediaSource>();
++                    debug() << Q_FUNC_INFO << "setFileSubtitle: mrl subtitle =" << qPrintable(m.fileName());
++                    m_stream->setFileSubtitle(m);
++                    return true;
++                }
++            case AddonInterface::setSubtitleEncoding:
++	        {
++		    if (arguments.isEmpty() || !arguments.first().canConvert(QVariant::String)) {
++                        debug() << Q_FUNC_INFO << "arguments invalid";
++                        return false;
++                    }
++                    QString str = arguments.first().toString();
++                    debug() << Q_FUNC_INFO << "setSubtitleEncoding: encoding =" << qPrintable(str);
++                    m_stream->setSubtitleEncoding(str);
++		    return true;
++                }
+         }
+         break;
+     case AddonInterface::AudioChannelInterface:
+diff -up phonon-4.4.3/xine/mediaobject.h.subtitles phonon-4.4.3/xine/mediaobject.h
+--- phonon-4.4.3/xine/mediaobject.h.subtitles	2010-11-24 16:26:19.000000000 -0200
++++ phonon-4.4.3/xine/mediaobject.h	2010-11-24 21:37:50.773105576 -0200
+@@ -146,6 +146,7 @@ class MediaObject : public QObject, publ
+         qint32 m_prefinishMark;
+         qint32 m_transitionTime;
+         bool m_autoplayTitles : 1;
++        bool m_autoDetectSubtitles : 1;
+         bool m_waitingForNextSource : 1;
+ };
+ }} //namespace Phonon::Xine
+diff -up phonon-4.4.3/xine/xinestream.cpp.subtitles phonon-4.4.3/xine/xinestream.cpp
+--- phonon-4.4.3/xine/xinestream.cpp.subtitles	2010-11-24 16:26:19.000000000 -0200
++++ phonon-4.4.3/xine/xinestream.cpp	2010-11-24 21:37:50.774105369 -0200
+@@ -23,6 +23,7 @@
+ 
+ #include <QMutexLocker>
+ #include <QtCore/QTextCodec>
++#include <QtCore/QFile>
+ #include <QEvent>
+ #include <QCoreApplication>
+ #include <QTimer>
+@@ -168,6 +169,7 @@ XineStream::XineStream()
+     m_hasVideo(false),
+     m_isSeekable(false),
+     m_useGaplessPlayback(false),
++    m_autoDetectSubtitles(true),
+     m_prefinishMarkReachedNotEmitted(true),
+     m_ticking(false),
+     m_closing(false),
+@@ -240,7 +242,7 @@ XineEngine XineStream::xine() const
+ 
+ // xine thread
+ bool XineStream::xineOpen(Phonon::State newstate)
+-{
++{   
+     Q_ASSERT(QThread::currentThread() == XineThread::instance());
+     Q_ASSERT(m_stream);
+     if (m_mrl.isEmpty() || m_closing) {
+@@ -1235,7 +1237,13 @@ bool XineStream::event(QEvent *ev)
+                 return true;
+             } */
+             State previousState = m_state;
+-            setMrlInternal(e->mrl);
++
++            if (m_autoDetectSubtitles)
++	        autoDetectSubtitles(e->mrl);
++            if (!m_mrl_sub.isEmpty())
++	        setMrlInternal(QByteArray(e->mrl).append(m_mrl_sub));
++            else
++	        setMrlInternal(e->mrl);
+             m_errorType = Phonon::NoError;
+             m_errorString.clear();
+             if (!m_stream) {
+@@ -1451,6 +1459,8 @@ bool XineStream::event(QEvent *ev)
+             xine_close_video_driver(m_xine, m_nullVideoPort);
+             m_nullVideoPort = 0;
+         }
++        if (!m_mrl_sub.isEmpty())
++            m_mrl_sub.clear();
+         return true;
+     case Event::SetTickInterval:
+         ev->accept();
+@@ -1657,6 +1667,72 @@ void XineStream::setCurrentSubtitle(cons
+     xine_set_param(m_stream, XINE_PARAM_SPU_CHANNEL, streamDesc.index() - streamHash());
+ }
+ 
++void XineStream::setAutoDetectSubtitles(bool state)
++{
++    if (state == m_autoDetectSubtitles)
++        return;
++    m_autoDetectSubtitles = state;
++}
++
++// setFileSubtitle is able to overwrite all subtitles (set manually or automatically),
++// usually this method is called explicitly so the developer is supposed know what he's doing.
++// (the subtitle set manually has a higher priority than the auto-detected)
++void XineStream::setFileSubtitle(const MediaSource& subtitle)
++{
++    MediaSource::Type mrl_type = m_mediaObject->source().type();
++
++    if (m_closing) {
++        debug() << Q_FUNC_INFO << "Unable to add a subtitle to a closing MRL";
++        return;
++    }
++    if (subtitle.type() == MediaSource::Url &&
++        subtitle.url().scheme() != QLatin1String("file")) {
++        qWarning() << "Only the scheme \"file\" is allowed for a subtitle";
++        return;
++    }
++    if (mrl_type == MediaSource::Disc || mrl_type == MediaSource::Stream) {
++        qWarning() << "A subtitle file can not be set for a Disc or a Stream";
++        return;
++    }
++    switch(subtitle.type()) {
++        case MediaSource::Invalid:
++            qWarning() << "Invalid or empty location for the given subtitle";
++            return;
++        case MediaSource::Empty:
++            debug() << Q_FUNC_INFO << "Erase the current subtitle";
++            m_mrl.replace(m_mrl_sub, "");
++            m_mrl_sub = "";
++            break;
++        case MediaSource::LocalFile:
++        case MediaSource::Url:
++            debug() << "Setting up the current m_mrl_sub to " << subtitle.url().toLocalFile();
++            if (!m_mrl_sub.isEmpty())
++                m_mrl.replace(m_mrl_sub, "");
++            m_mrl_sub = "#subtitle:";
++            m_mrl_sub += subtitle.url().toLocalFile();
++            break;
++    }
++    if (!m_mrl.isEmpty())
++        setMrl(m_mrl, XineStream::PlayingState);
++}
++
++void XineStream::setSubtitleEncoding(const QString &encoding)
++{
++    xine_cfg_entry_t entry;
++
++    if (encoding.isEmpty()) {
++        debug() << Q_FUNC_INFO << "encoding is empty..Skipping";
++        return;
++    }
++    if (xine_config_lookup_entry(m_xine, "subtitles.separate.src_encoding", &entry)) {
++        // The encoding name needs to be in lower cases (however I'm not 100% sure)
++        QByteArray enc = encoding.toLower().toUtf8();
++        entry.str_value = enc.data();
++        debug() << Q_FUNC_INFO << "subtitles.separate.src_encoding =" << entry.str_value;
++        xine_config_update_entry(m_xine, &entry);
++    }
++}
++
+ uint XineStream::streamHash() const
+ {
+     return qHash(m_mrl);
+@@ -1968,6 +2044,38 @@ void XineStream::setMrlInternal(const QB
+         }
+     }
+ }
++// An auto-detection does not overwrite a subtitle set manually (by setFileSubtitle)
++// because auto-detection can be set accidentaly (if it's not unset for example).
++// Note: @mrl is required, because when MrlChangedEvent is received (::event) for the first time,
++// m_mrl is empty... so instead of have to call setMrlInternal two times (ugly) it's better
++// to define an argument for this method, imho.
++void XineStream::autoDetectSubtitles(const QByteArray &mrl)
++{
++    MediaSource::Type mrl_type = m_mediaObject->source().type();
++
++    debug() << Q_FUNC_INFO << "mrl =" << mrl.constData() << ", mrl_type =" << mrl_type;
++
++    if ((mrl_type == MediaSource::LocalFile || 
++	 m_mediaObject->source().url().scheme() == QLatin1String("file")) && m_mrl_sub.isEmpty()) {
++
++        // Supported xine extensions
++        const char *subext[] = { "sub", "smi", "srt", "asc", "ssa", "txt", NULL };
++        int i, index;
++        QString sub;
++
++        sub += mrl.startsWith("file:/") ? QUrl(mrl.data()).toLocalFile() : mrl.data();
++        index = sub.lastIndexOf('.') + 1;
++        for (i = 0; subext[i] != NULL; i++) {
++            QString subfile = sub.left(index).append(subext[i]);
++            if (QFile::exists(subfile)) {
++                m_mrl_sub  = "#subtitle:";
++                m_mrl_sub += subfile;
++                debug() << Q_FUNC_INFO << "1 subtitle found, m_mrl_sub =" << m_mrl_sub.constData();
++                break;
++            }
++        }
++    }
++}
+ 
+ void XineStream::handleDownstreamEvent(Event *e)
+ {
+diff -up phonon-4.4.3/xine/xinestream.h.subtitles phonon-4.4.3/xine/xinestream.h
+--- phonon-4.4.3/xine/xinestream.h.subtitles	2010-11-24 16:26:19.000000000 -0200
++++ phonon-4.4.3/xine/xinestream.h	2010-11-24 21:37:50.774105369 -0200
+@@ -117,6 +117,9 @@ class XineStream : public QObject, publi
+ 
+         void setCurrentAudioChannel(const AudioChannelDescription& streamDesc);
+         void setCurrentSubtitle(const SubtitleDescription& streamDesc);
++        void setAutoDetectSubtitles(bool state);
++        void setFileSubtitle(const MediaSource& subtitle);
++        void setSubtitleEncoding(const QString& encoding);
+ 
+         int subtitlesSize() const;
+         int audioChannelsSize() const;
+@@ -201,6 +204,7 @@ class XineStream : public QObject, publi
+         void internalPause();
+         void internalPlay();
+         void setMrlInternal(const QByteArray &newMrl);
++        void autoDetectSubtitles(const QByteArray &mrl);
+         template<class S>
+         S streamDescription(int index, uint hash, ObjectDescriptionType type, int(*get_xine_stream_text)(xine_stream_t *stream, int channel, char *lang)) const;
+         uint streamHash() const;
+@@ -224,6 +228,7 @@ class XineStream : public QObject, publi
+         QWaitCondition m_waitingForRewire;
+         QMultiMap<QString, QString> m_metaDataMap;
+         QByteArray m_mrl;
++        QByteArray m_mrl_sub;
+         MySharedDataPointer<ByteStream> m_byteStream;
+         QTimer *m_prefinishMarkTimer;
+         struct timeval m_lastTimeUpdate;
+@@ -256,6 +261,7 @@ class XineStream : public QObject, publi
+         bool m_ticking : 1;
+         bool m_closing : 1;
+         bool m_eventLoopReady : 1;
++        bool m_autoDetectSubtitles : 1;
+         QTimer m_tickTimer;
+ };
+ 

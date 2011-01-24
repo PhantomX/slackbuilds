@@ -1,0 +1,92 @@
+diff -paur oprofile/ChangeLog op-debuginfo-fix/ChangeLog
+--- oprofile/libutil++/bfd_support.cpp	2009-10-26 08:01:08.000000000 -0500
++++ op-debuginfo-fix/libutil++/bfd_support.cpp	2010-04-13 16:15:58.000000000 -0500
+@@ -20,7 +20,7 @@
+ 
+ #include <cstdlib>
+ #include <cstring>
+-
++#include <cassert>
+ #include <iostream>
+ #include <fstream>
+ #include <sstream>
+@@ -432,13 +432,28 @@ void bfd_info::close()
+ 		bfd_close(abfd);
+ }
+ 
++/**
++ * This function is only called when processing symbols retrieved from a
++ * debuginfo file that is separate from the actual runtime binary image.
++ * Separate debuginfo files may be needed in two different cases:
++ *   1) the real image is completely stripped, where there is no symbol
++	information at all
++ *   2) the real image has debuginfo stripped, and the user is requesting "-g"
++ *   (src file/line num info)
++ * After all symbols are gathered up, there will be some filtering/removal of
++ * unnecessary symbols.  In particular, the bfd_info::interesting_symbol()
++ * function filters out symbols whose section's flag value does not include
++ * SEC_LOAD.  This filtering is required, so it must be retained.  However,
++ * we run into a problem with symbols from debuginfo files, since the
++ * section flag does NOT include SEC_LOAD.  To solve this problem, the
++ * translate_debuginfo_syms function maps the debuginfo symbol's sections to
++ * that of their corresponding real image.
++*/
+ void bfd_info::translate_debuginfo_syms(asymbol ** dbg_syms, long nr_dbg_syms)
+ {
+-	bfd_section ** image_sect;
+ 	unsigned int img_sect_cnt = 0;
+ 	bfd * image_bfd = image_bfd_info->abfd;
+-
+-	image_sect = (bfd_section **) malloc(image_bfd->section_count * (sizeof(bfd_section *)));
++	multimap<string, bfd_section *> image_sections;
+ 
+ 	for (bfd_section * sect = image_bfd->sections;
+ 	     sect && img_sect_cnt < image_bfd->section_count;
+@@ -446,20 +461,43 @@ void bfd_info::translate_debuginfo_syms(
+ 		// A comment section marks the end of the needed sections
+ 		if (strstr(sect->name, ".comment") == sect->name)
+ 			break;
+-		image_sect[sect->index] = sect;
++		image_sections.insert(pair<string, bfd_section *>(sect->name, sect));
+ 		img_sect_cnt++;
+ 	}
+ 
+ 	asymbol * sym = dbg_syms[0];
++	string prev_sect_name = "";
++	bfd_section * matched_section = NULL;
+ 	for (int i = 0; i < nr_dbg_syms; sym = dbg_syms[++i]) {
++		bool section_switch;
++
++		if (strcmp(prev_sect_name.c_str(), sym->section->name)) {
++			section_switch = true;
++			prev_sect_name = sym->section->name;
++		} else {
++			section_switch = false;
++		}
+ 		if (sym->section->owner && sym->section->owner == abfd) {
+-			if ((unsigned int)sym->section->index < img_sect_cnt) {
+-				sym->section = image_sect[sym->section->index];
++			if (section_switch ) {
++				matched_section = NULL;
++				multimap<string, bfd_section *>::iterator it;
++				pair<multimap<string, bfd_section *>::iterator,
++				     multimap<string, bfd_section *>::iterator> range;
++
++				range = image_sections.equal_range(sym->section->name);
++				for (it = range.first; it != range.second; it++) {
++					if ((*it).second->vma == sym->section->vma) {
++						matched_section = (*it).second;
++						break;
++					}
++				}
++			}
++			if (matched_section) {
++				sym->section = matched_section;
+ 				sym->the_bfd = image_bfd;
+ 			}
+ 		}
+ 	}
+-	free(image_sect);
+ }
+ 
+ #if SYNTHESIZE_SYMBOLS

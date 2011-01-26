@@ -22,16 +22,20 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-mucks-with-spooldir.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-udev-rules.patch
 # Retry when connecting to device fails.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-retry-open.patch
+# Mark SNMP quirks in PPD for HP OfficeJet Pro 8500.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-snmp-quirks.patch
 # Fixed hp-setup traceback when discovery page is skipped.
 zcat ${SB_PATCHDIR}/hplip-discovery-method.patch.gz | patch -p1 -E --backup --verbose
 # Fixed bogus low ink warnings from hpijs driver
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpijs-marker-supply.patch
-# Give up trying to print a job to a reconnected device.
-zcat ${SB_PATCHDIR}/hplip-device-reconnected.patch.gz | patch -p1 -E --backup --verbose
 # Clear old printer-state-reasons we used to manage.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-clear-old-state-reasons.patch
+# Change shebang /usr/bin/env python -> /usr/bin/python
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-env-python.patch
 # Avoid busy loop in hpcups when backend has exited.
 zcat ${SB_PATCHDIR}/hplip-hpcups-sigpipe.patch.gz | patch -p1 -E --backup --verbose
+# Use correct fax PPD name for Qt3 UI.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-fax-ppd.patch
 # Fixed Device ID parsing code in hpijs's dj9xxvip.c.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-bad-low-ink-warning.patch
 
@@ -51,8 +55,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-skip-blank-lines.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbglog-newline.patch
 # Wait longer to see if a system tray becomes available.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-no-system-tray.patch
-# Prevent segfault in cupsext when opening PPD file.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-openPPD.patch
 # Fix ImageableArea for Laserjet 8150/9000 (bug #596298).
 for ppd_file in $(grep '^diff' ${SB_PATCHDIR}/hplip-ppd-ImageableArea.patch | cut -d " " -f 4);
 do
@@ -65,11 +67,28 @@ do
 done
 # Increase timeouts for curl, wget, ping for high latency networks
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-network-timeout.patch
-# utils.addgroup() was returning string instead of array
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-addgroup.patch
 # Fixed traceback on error condition in device.py
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-raw_deviceID-traceback.patch
 # Avoid UnicodeDecodeError in printsettingstoolbox.py
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-UnicodeDecodeError.patch
+# Don't emit SIGNALs in ui4.setupdialog.SetupDialog the PyQt3 way.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-emit-SIGNAL.patch
+# Prevent hp-fab traceback when run as root.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-fab-root-crash.patch
+# Call cupsSetUser in cupsext's addPrinter method before connecting so
+# that we can get an authentication callback.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-addprinter.patch
+# Catch D-Bus exceptions in fax dialog.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbus-exception.patch
+# Prevent hpaio segfaulting on invalid URIs.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpaio-segfault.patch
+# Another missing newline in filter output.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-newline.patch
+# Enable D-Bus threading (and require pygobject2).
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbus-threads.patch
+# Catch GError exception when notification showing failed.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-notification-exception.patch
+# Applied patch to fix CVE-2010-4267, remote stack overflow vulnerability.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-CVE-2010-4267.patch
 
 set +e +o pipefail

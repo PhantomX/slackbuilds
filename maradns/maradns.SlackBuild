@@ -43,7 +43,8 @@ fi
 NAME=maradns
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.4.03}
+VERSION=${VERSION:-2.0.01}
+SVER=$(echo ${VERSION} | cut -d. -f1-2)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -70,15 +71,17 @@ grep --quiet '^maradns:' /etc/passwd && SB_HUSER=1
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.bz2
+SSRCARCHIVE=${SRCARCHIVE}.asc
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
-DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+DL_URL="http://www.maradns.org/download/${SVER}/${VERSION}"
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+for file in ${SRCARCHIVE} ${SSRCARCHIVE} ;do
+  test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
+done
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -106,7 +109,6 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
@@ -116,8 +118,15 @@ fi
   sed -i 's/\r//' compile.ej authoritative.ej dangling.ej zoneserver.ej csv2.ej
 )
 
+export CFLAGS="${SLKCFLAGS}"
+
+sed -i \
+  -e "s:-O2:\$(CFLAGS) \$(LDFLAGS):" \
+  -e "s:make:\$(MAKE):g" \
+  build/Makefile.linux || exit 1
+
 ./configure || exit 1
-make -j${NJOBS} FLAGS="${SLKCFLAGS} -DSELECT_PROBLEM" || exit 1
+make -j${NJOBS} || make || exit $?
 
 # create /etc/maradns and /etc/mararc first
 mkdir -p ${PKG}/etc/maradns/logger/
@@ -151,16 +160,29 @@ install -m 0644 -t ${PKG}/usr/man/man8/ \
 
 # Startup scripts.
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.${NAME}.gz > \
-     ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
-zcat ${CWD}/rc.zoneserver.gz > \
-     ${PKG}/etc/rc.d/rc.zoneserver.new || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.*.new
+install -pm0755 ${CWD}/rc.${NAME} \
+  ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
+install -pm0755 ${CWD}/rc.zoneserver \
+  ${PKG}/etc/rc.d/rc.zoneserver.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
-zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
-    ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
+zcat ${CWD}/setup.onlyonce.rc${NAME}.gz \
+  > ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}
+
+mkdir -p ${PKG}/etc/default
+cat > ${PKG}/etc/default/${NAME}.new <<EOF
+# /etc/default/maradns
+# The following is a list of all mararc files which we will load or
+# unload;
+# Simple case: Only one MaraDNS process, using the /etc/mararc file
+MARARCS="/etc/maradns/mararc"
+# Case two: Three MaraDNS processes, one using /etc/maradns/mararc.1, the second one
+# using /etc/maradns/mararc.2, and the third one using /etc/maradns/mararc.3
+# (this is not as essential as it was in the 1.0 days; MaraDNS can now bind
+#  to multiple IPs)
+#MARARCS="/etc/maradns/mararc.1 /etc/maradns/mararc.2 /etc/maradns/mararc.3"
+EOF
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -319,11 +341,12 @@ if [ "${SB_REP}" = "YES" ] ;then
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
                  ${CWD}/apply-patches.sh ${CWD}/setup.*.rc${NAME}.gz \
-                 ${CWD}/rc.*.gz ${SBDIR}/
+                 ${CWD}/rc.* ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
                  ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:

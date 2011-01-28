@@ -11,18 +11,16 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.1-manpath.patch.gz | patch -p1 -E --backup --ver
 # add OnlyShowIn=KDE  to Desktop/Home.desktop (like trash.desktop)
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-home_onlyshowin_kde.patch.gz | patch -p1 -E --backup --verbose
 
+# Launch compiz via compiz-manager so we get window decorations and
+# other such decadent luxuries (AdamW 2011/01)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.95-compiz.patch
+
 # Mandriva
 zcat ${SB_PATCHDIR}/${NAME}-4.3.2-knotify-fix-cpu-charge.patch.gz | patch -p1 -E --backup --verbose
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nepomuk-strigi-smartfile.patch
 
 # Branch patches
 
 # Trunk  patches
-# pulseaudio speaker setup backport, courtesy of coling/mandriva
-# http://svn.mandriva.com/cgi-bin/viewvc.cgi/packages/cooker/kdebase4-runtime/current/SOURCES/kdebase-runtime-4.5-speakersetup.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5-speakersetup.patch
-# + http://websvn.kde.org/?view=revision&revision=1192292
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5-speakersetup_kde255736.patch
 
 ## Branch upstream patches
 

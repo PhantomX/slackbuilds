@@ -6,7 +6,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 --verbose --backup -i ${SB_PATCHDIR}/${NAME}.patch 
 # make -devel packages parallel-installable
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.85-parallel_devel.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-parallel_devel.patch
 # fix kde#149705
 zcat ${SB_PATCHDIR}/kdelibs-4.2.85-kde149705.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # install all .css files and Doxyfile.global in kdelibs-common to build
@@ -14,16 +14,14 @@ zcat ${SB_PATCHDIR}/kdelibs-4.2.85-kde149705.patch.gz | patch -p1 --verbose --ba
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.3.90-install_all_css.patch
 
 # Add "(Slackware)" to khtml user agent
-zcat ${SB_PATCHDIR}/kdelibs-4.0.2-branding-slk.patch.gz |sed \
-  -e "s|_KDELIBS_SLK_DIST|${KDELIBS_SLK_DIST}|g" | patch -p1 -E --backup --verbose
+sed -e "s|_KDELIBS_SLK_DIST|${KDELIBS_SLK_DIST}|g" \
+  ${SB_PATCHDIR}/kdelibs-4.5.80-branding-slk.patch | patch -p1 -E --backup --verbose
 
-# workaround for policykit
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.80-policykit-workaround.patch
 #zcat ${SB_PATCHDIR}/kdelibs-4.1.0-xdg-menu.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # patch KStandardDirs to use /usr/libexec/kde4 instead of /usr/lib${LIBDIRSUFFIX}/kde4/libexec
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.80-libexecdir.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-libexecdir.patch
 # kstandarddirs changes: search /etc/kde, find /usr/libexec/kde4
-zcat ${SB_PATCHDIR}/kdelibs-4.1.72-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-kstandarddirs.patch
 zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 #zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 
@@ -31,10 +29,13 @@ zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup
 # this extra hassle (even though cmake is *supposed* to not add standard
 # paths (like /usr/lib64) already! With this, we can drop
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.4.80-no_rpath.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-no_rpath.patch
 
 # add gpg2 support to knewstuff, rough first try s/gpg/gpg2/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patch
+
+# make forcefully hal-free build
+patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.90-halectomy.patch
 
 # Mandriva
 
@@ -43,10 +44,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patc
 # Branch upstream
 
 # Trunk patches
-# http://websvn.kde.org/?view=revision&revision=1185912
-patch -p3 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.2-plasma_wallpaper_configchanged.patch
-# Build with polkit-qt >= 0.99.0
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.4-auth1206241.patch
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex

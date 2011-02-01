@@ -46,6 +46,7 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-panelid-sanity.patch
 #patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-vbe-insanity.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-classic-default-mode.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-qxl-fallback.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.99.901-xkb-repeat-issues.patch
 
 # Backports from master
 

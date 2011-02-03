@@ -10,5 +10,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/020_all_check_headers_regexps.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/300_all_pic.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/320_all_cachegen.patch
 sed -i.dmo_pic -e 's/fno-PIC/fPIC/' libs/loader/Makefile.in
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/vlc-1.1.7-removed-mkv-header.patch
 
 set +e +o pipefail

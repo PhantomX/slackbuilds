@@ -20,5 +20,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-s390x-4.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-strcasecmp.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-xlc_dbl_u32-test-patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-helgrind-tests.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-ppc64-pwrite64.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-pie.patch
 
 set +e +o pipefail

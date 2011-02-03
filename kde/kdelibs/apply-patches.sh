@@ -42,6 +42,7 @@ patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.90-halectomy.patch
 # official backports
 
 # Branch upstream
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.0-logoutcrash.patch
 
 # Trunk patches
 

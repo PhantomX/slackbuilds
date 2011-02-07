@@ -43,7 +43,7 @@ fi
 NAME=kid3
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.5}
+VERSION=${VERSION:-1.6}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -62,6 +62,10 @@ SBDIR=${PKG}/usr/src/slackbuilds/kde-apps/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable qt-only/kde versions
+SB_KDE=${SB_KDE:-YES}
+SB_QT=${SB_QT:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -133,12 +137,25 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+[ "${SB_KDE}" != "YES" -a "${SB_QT}" != "YES" ] && SB_QT=YES
+
+mkdir -p ${PKG}/usr/man/man1
+
+for filepro in $(find . -type f -name "*.pro") ; do
+  echo "QMAKE_CFLAGS_RELEASE = ${SLKCFLAGS}" >> "${filepro}"
+  echo "QMAKE_CXXFLAGS_RELEASE = ${SLKCFLAGS}" >> "${filepro}"
+  echo "QMAKE_LFLAGS_RELEASE = ${LDFLAGS}" >> "${filepro}"
+done
 
 export CFLAGS="${SLKCFLAGS}"
 export CXXFLAGS="${SLKCFLAGS}"
 export FFLAGS="${SLKCFLAGS}"
 
+if [ "${SB_KDE}" = "YES" ] ;then
 mkdir -p build
 ( cd build || exit 1
 
@@ -162,24 +179,61 @@ mkdir -p build
 
 ) || exit 1
 
-mkdir -p ${PKG}/usr/man/man1
-install -pm 644 deb/${NAME}.1 \
-  ${PKG}/usr/man/man1/${NAME}.1 || exit 1
+  install -pm 644 deb/${NAME}.1 \
+    ${PKG}/usr/man/man1/${NAME}.1 || exit 1
+
+fi
+
+if [ "${SB_QT}" = "YES" ] ;then
+mkdir -p qt-build
+( cd qt-build || exit 1
+
+../kid3-qt/configure \
+  --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --sysconfdir=/etc \
+  --localstatedir=/var/lib \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --with-docdir=/usr/doc/${NAME}-${VERSION} \
+  --without-kde \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
+
+  make -j${NJOBS} || make || exit $?
+  make install INSTALL_ROOT=${PKG} || exit $?
+
+) || exit $?
+
+  install -pm 644 deb/kid3-qt.1 \
+    ${PKG}/usr/man/man1/kid3-qt.1 || exit 1
+
+fi
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+SB_DFI(){
 desktop-file-install --vendor ""   \
-  --dir ${PKG}/usr/share/applications/kde4  \
   --delete-original \
   --add-mime-type="audio/mpeg" \
   --add-mime-type="audio/mp3" \
-  --add-mime-type="audio/ogg" \
   --add-mime-type="audio/mp2" \
   --add-mime-type="audio/x-mp2" \
-  --add-mime-type="audio/flac"  \
-  --add-mime-type="audio/mp4" \
+  --add-mime-type="audio/flac" \
+   $@
+}
+
+if [ "${SB_KDE}" = "YES" ] ;then
+SB_DFI \
+  --dir ${PKG}/usr/share/applications/kde4 \
   ${PKG}/usr/share/applications/kde4/${NAME}.desktop || exit 1
+fi
+
+if [ "${SB_KDE}" = "YES" ] ;then
+SB_DFI \
+  --dir ${PKG}/usr/share/applications \
+  ${PKG}/usr/share/applications/${NAME}-qt.desktop || exit 1
+fi
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -229,20 +283,35 @@ if [ -x usr/bin/update-desktop-database ]; then
   \${CHROOT} /usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1
 fi
 if [ -x usr/bin/gtk-update-icon-cache ]; then
-  \${CHROOT} /usr/bin/gtk-update-icon-cache ${_kde4_iconsdir}/hicolor >/dev/null 2>&1
-fi
 EOF
+
+if [ "${SB_KDE}" = "YES" ] && [ "${_kde4_iconsdir}" != "/usr/share/icons" ] ;then
+cat >> ${PKG}/install/doinst.sh <<EOF
+  \${CHROOT} /usr/bin/touch --no-create ${_kde4_iconsdir}/hicolor >/dev/null 2>&1
+  \${CHROOT} /usr/bin/gtk-update-icon-cache ${_kde4_iconsdir}/hicolor >/dev/null 2>&1
+EOF
+fi
+if [ "${SB_QT}" = "YES" ] ;then
+cat >> ${PKG}/install/doinst.sh <<EOF
+  \${CHROOT} /usr/bin/touch --no-create /usr/share/icons/hicolor >/dev/null 2>&1
+  \${CHROOT} /usr/bin/gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1
+EOF
+fi
+echo 'fi' >> ${PKG}/install/doinst.sh
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+    ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:

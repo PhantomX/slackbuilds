@@ -24,8 +24,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-manpages.patch
 zcat ${SB_PATCHDIR}/${NAME}-7.4-sttytcsadrain.patch.gz | patch -p1 -E --backup --verbose
 #df --direct
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-df-direct.patch
-# Fix mkstemp on sparc64
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-mkstemp.patch
 # add jar-like archives to colored ones
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.5-dircolors.patch
 

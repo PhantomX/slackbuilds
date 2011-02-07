@@ -1,0 +1,221 @@
+From a4d5bf861af058b02e9ebf97136126643da0b738 Mon Sep 17 00:00:00 2001
+From: Milan Crha <mcrha@redhat.com>
+Date: Wed, 13 Oct 2010 12:22:21 +0200
+Subject: [PATCH] Bug #630358 - Google contacts doesn't sync birthday and URL
+
+---
+ .../backends/google/e-book-backend-google.c        |   20 ++++-
+ addressbook/backends/google/util.c                 |   82 ++++++++++++++++++++
+ configure.ac                                       |    8 +-
+ 3 files changed, 105 insertions(+), 5 deletions(-)
+
+diff --git a/addressbook/backends/google/e-book-backend-google.c b/addressbook/backends/google/e-book-backend-google.c
+index 58302e3..2498f67 100644
+--- a/addressbook/backends/google/e-book-backend-google.c
++++ b/addressbook/backends/google/e-book-backend-google.c
+@@ -511,7 +511,11 @@ get_new_contacts_in_chunks (EBookBackend *backend, gint chunk_size, GError **err
+ 		GTimeVal updated;
+ 
+ 		g_assert (g_time_val_from_iso8601 (last_updated, &updated) == TRUE);
++		#ifdef HAVE_GDATA_07
++		gdata_query_set_updated_min (query, updated.tv_sec);
++		#else
+ 		gdata_query_set_updated_min (query, &updated);
++		#endif
+ 		gdata_contacts_query_set_show_deleted (GDATA_CONTACTS_QUERY (query), TRUE);
+ 	}
+ 
+@@ -788,11 +792,18 @@ e_book_backend_google_modify_contact (EBookBackendSync *backend, EDataBook *book
+ 	g_free (xml);
+ 
+ 	/* Update the contact on the server */
++	#ifdef HAVE_GDATA_07
++	new_entry = gdata_service_update_entry (
++			GDATA_SERVICE (priv->service),
++			entry,
++			NULL, &error);
++	#else
+ 	new_entry = GDATA_ENTRY (
+ 		gdata_contacts_service_update_contact (
+ 			GDATA_CONTACTS_SERVICE (priv->service),
+ 			GDATA_CONTACTS_CONTACT (entry),
+ 			NULL, &error));
++	#endif
+ 	g_object_unref (entry);
+ 
+ 	if (!new_entry) {
+@@ -1189,6 +1200,11 @@ e_book_backend_google_get_supported_fields (EBookBackendSync *backend, EDataBook
+ 		E_CONTACT_ORG_UNIT,
+ 		E_CONTACT_TITLE,
+ 		E_CONTACT_ROLE,
++		#ifdef HAVE_GDATA_07
++		E_CONTACT_HOMEPAGE_URL,
++		E_CONTACT_BLOG_URL,
++		E_CONTACT_BIRTH_DATE,
++		#endif
+ 		E_CONTACT_NOTE
+ 	};
+ 
+@@ -1470,7 +1486,7 @@ data_book_error_from_gdata_error (GError **dest_err, GError *error)
+ 			g_propagate_error (dest_err, EDB_ERROR (REPOSITORY_OFFLINE));
+ 			return;
+ 		case GDATA_SERVICE_ERROR_PROTOCOL_ERROR:
+-			g_propagate_error (dest_err, EDB_ERROR (INVALID_QUERY));
++			g_propagate_error (dest_err, e_data_book_create_error (E_DATA_BOOK_STATUS_INVALID_QUERY, error->message));
+ 			return;
+ 		case GDATA_SERVICE_ERROR_ENTRY_ALREADY_INSERTED:
+ 			g_propagate_error (dest_err, EDB_ERROR (CONTACTID_ALREADY_EXISTS));
+@@ -1488,7 +1504,7 @@ data_book_error_from_gdata_error (GError **dest_err, GError *error)
+ 			g_propagate_error (dest_err, EDB_ERROR (QUERY_REFUSED));
+ 			return;
+ 		case GDATA_SERVICE_ERROR_BAD_QUERY_PARAMETER:
+-			g_propagate_error (dest_err, EDB_ERROR (INVALID_QUERY));
++			g_propagate_error (dest_err, e_data_book_create_error (E_DATA_BOOK_STATUS_INVALID_QUERY, error->message));
+ 			return;
+ 		default:
+ 			break;
+diff --git a/addressbook/backends/google/util.c b/addressbook/backends/google/util.c
+index e3e7166..56c5367 100644
+--- a/addressbook/backends/google/util.c
++++ b/addressbook/backends/google/util.c
+@@ -20,6 +20,7 @@
+  * Author: Joergen Scheibengruber <joergen.scheibengruber AT googlemail.com>
+  */
+ 
++#include <config.h>
+ #include <string.h>
+ #include <libsoup/soup.h>
+ #include <gdata/gdata.h>
+@@ -69,6 +70,10 @@ _gdata_entry_update_from_e_contact (GDataEntry *entry, EContact *contact)
+ 	gboolean have_postal_primary = FALSE;
+ 	gboolean have_org_primary = FALSE;
+ 	const gchar *title, *role, *note;
++	#ifdef HAVE_GDATA_07
++	EContactDate *bdate;
++	const gchar *url;
++	#endif
+ 
+ 	attributes = e_vcard_get_attributes (E_VCARD (contact));
+ 
+@@ -214,6 +219,40 @@ _gdata_entry_update_from_e_contact (GDataEntry *entry, EContact *contact)
+ 			gdata_gd_organization_set_job_description (org, role);
+ 	}
+ 
++	#ifdef HAVE_GDATA_07
++	gdata_contacts_contact_remove_all_websites (GDATA_CONTACTS_CONTACT (entry));
++
++	url = e_contact_get_const (contact, E_CONTACT_HOMEPAGE_URL);
++	if (url && *url) {
++		GDataGContactWebsite *website = gdata_gcontact_website_new (url, GDATA_GCONTACT_WEBSITE_HOME_PAGE, NULL, FALSE);
++		if (website) {
++			gdata_contacts_contact_add_website (GDATA_CONTACTS_CONTACT (entry), website);
++			g_object_unref (website);
++		}
++	}
++
++	url = e_contact_get_const (contact, E_CONTACT_BLOG_URL);
++	if (url && *url) {
++		GDataGContactWebsite *website = gdata_gcontact_website_new (url, GDATA_GCONTACT_WEBSITE_BLOG, NULL, FALSE);
++		if (website) {
++			gdata_contacts_contact_add_website (GDATA_CONTACTS_CONTACT (entry), website);
++			g_object_unref (website);
++		}
++	}
++
++	gdata_contacts_contact_set_birthday (GDATA_CONTACTS_CONTACT (entry), NULL, TRUE);
++	bdate = e_contact_get (contact, E_CONTACT_BIRTH_DATE);
++	if (bdate) {
++		GDate *gdate = g_date_new_dmy (bdate->day, bdate->month, bdate->year);
++
++		if (gdate) {
++			gdata_contacts_contact_set_birthday (GDATA_CONTACTS_CONTACT (entry), gdate, TRUE);
++			g_date_free (gdate);
++		}
++		e_contact_date_free (bdate);
++	}
++	#endif
++
+ 	return TRUE;
+ }
+ 
+@@ -241,6 +280,11 @@ _e_contact_new_from_gdata_entry (GDataEntry *entry)
+ 	GDataGDPostalAddress *postal_address;
+ 	GDataGDOrganization *org;
+ 	GHashTable *extended_props;
++	#ifdef HAVE_GDATA_07
++	GList *websites;
++	GDate bdate;
++	gboolean bdate_has_year;
++	#endif
+ 
+ 	uid = gdata_entry_get_id (entry);
+ 	if (NULL == uid)
+@@ -352,6 +396,44 @@ _e_contact_new_from_gdata_entry (GDataEntry *entry)
+ 	extended_props = gdata_contacts_contact_get_extended_properties (GDATA_CONTACTS_CONTACT (entry));
+ 	g_hash_table_foreach (extended_props, (GHFunc) foreach_extended_props_cb, vcard);
+ 
++	#ifdef HAVE_GDATA_07
++	websites = gdata_contacts_contact_get_websites (GDATA_CONTACTS_CONTACT (entry));
++	for (itr = websites; itr != NULL; itr = itr->next) {
++		GDataGContactWebsite *website = itr->data;
++		const gchar *uri, *reltype;
++
++		if (!website)
++			continue;
++
++		uri = gdata_gcontact_website_get_uri (website);
++		reltype = gdata_gcontact_website_get_relation_type (website);
++
++		if (!uri || !*uri || !reltype)
++			continue;
++
++		if (g_str_equal (reltype, GDATA_GCONTACT_WEBSITE_HOME_PAGE))
++			e_contact_set (E_CONTACT (vcard), E_CONTACT_HOMEPAGE_URL, uri);
++		else if (g_str_equal (reltype, GDATA_GCONTACT_WEBSITE_BLOG))
++			e_contact_set (E_CONTACT (vcard), E_CONTACT_BLOG_URL, uri);
++	}
++
++	g_date_clear (&bdate, 1);
++	bdate_has_year = gdata_contacts_contact_get_birthday (GDATA_CONTACTS_CONTACT (entry), &bdate);
++	/* ignore birthdays without year */
++	if (g_date_valid (&bdate) && bdate_has_year) {
++		EContactDate *date = e_contact_date_new ();
++
++		if (date) {
++			date->day = g_date_get_day (&bdate);
++			date->month =  g_date_get_month (&bdate);
++			date->year = g_date_get_year (&bdate);
++
++			e_contact_set (E_CONTACT (vcard), E_CONTACT_BIRTH_DATE, date);
++			e_contact_date_free (date);
++		}
++	}
++	#endif
++
+ 	return E_CONTACT (vcard);
+ }
+ 
+diff --git a/configure.ac b/configure.ac
+index 88b6811..b41fbcc 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -325,11 +325,13 @@ PKG_CHECK_MODULES(GNOME_PLATFORM,
+ 	libsoup-2.4 >= libsoup_minimum_version
+ 	libgdata >= libgdata_minimum_version])
+ 
+-dnl libgdata 0.7 will break API.  We're not going to deal with
+-dnl that on a stable branch, so cap the supported version.
++ac_cv_have_gdata_07=no
++dnl libgdata 0.7 breaks API, thus deal with it.
+ if $PKG_CONFIG --atleast-version=0.7 libgdata; then
+-	AC_MSG_ERROR([libgdata 0.7 is not supported, use 0.6 instead])
++	ac_cv_have_gdata_07=yes
++	AC_DEFINE(HAVE_GDATA_07, 1, [libgdata is 0.7 or higher])
+ fi
++AC_MSG_RESULT([$ac_cv_have_gdata_07])
+ 
+ LIBICAL_REQUIRED=libical_minimum_version
+ AC_SUBST(LIBICAL_REQUIRED)
+-- 
+1.7.3.4
+

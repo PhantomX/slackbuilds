@@ -26,7 +26,5 @@ zcat ${SB_PATCHDIR}/netpbm-pnmmontagefix.patch.gz | patch -p1 -E --backup --verb
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-noppmtompeg.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-cmuwtopbm.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pamtojpeg2k.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-asciitopgm.patch
-zcat ${SB_PATCHDIR}/netpbm-libpng14.patch.gz | patch -p0 -E --backup -z .png14 --verbose
 
 set +e +o pipefail

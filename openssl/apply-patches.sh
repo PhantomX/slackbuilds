@@ -3,6 +3,8 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+
 # Use .so.${SSLSOVER}, not .so.${VERSION}:
 sed -e "s|_SB_SOVER_|${SSLSOVER}|g" ${SB_PATCHDIR}/openssl.soname.diff \
   | patch -p1 --backup --verbose --suffix=.orig
@@ -28,6 +30,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta4-dtls1-abi.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0c-version.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0b-aesni.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-name-hash.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0c-apps-ipv6listen.patch
 
 # Upstream
 

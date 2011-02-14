@@ -23,5 +23,6 @@ fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/stickynotes-null.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=609945
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gnome-applets-libs.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.32.1.1-libnotify-0.7.patch
 
 set +e +o pipefail

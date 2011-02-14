@@ -7,5 +7,6 @@ SB_PATCHDIR=${CWD}/patches
 if [ "${SB_ALSA}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/${NAME}-0.18-alsa-default.patch.gz | patch -p0 -E --backup --verbose
 fi
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-quit-add.patch
 
 set +e +o pipefail

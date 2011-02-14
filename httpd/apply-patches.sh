@@ -6,6 +6,8 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/config.layout.diff.gz | sed -e "s#lib/httpd#lib${LIBDIRSUFFIX}/httpd#" | patch --verbose -p1
 zcat ${SB_PATCHDIR}/${NAME}-2.2.14-confd.patch.gz | patch -p0 -E --backup --verbose
+# Fix aliasing issue exposed by gcc-4.5.1:
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd.brigade_move.__noinline__.gcc451.diff
 
 # build/scripts patches
 zcat ${SB_PATCHDIR}/${NAME}-2.1.10-apctl-l.patch.gz | patch -p1 -E --backup --verbose

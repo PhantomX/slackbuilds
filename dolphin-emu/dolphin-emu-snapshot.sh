@@ -25,6 +25,7 @@ pushd "${tmp}"
   pushd ${module}-${snap}
     svn export ${SNAP_COOPTS} ${snaproot}/Source
     svn export ${SNAP_COOPTS} ${snaproot}/Data
+    svn export ${SNAP_COOPTS} ${snaproot}/Languages
     svn export ${SNAP_COOPTS} ${snaproot}/CMakeTests
     svn export ${SNAP_COOPTS} ${snaproot}/SconsTests
     svn export ${SNAP_COOPTS} ${snaproot}/docs

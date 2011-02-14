@@ -14,4 +14,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.30.1-help-contents.p
 # Fix build with gtk+ 2.24.0
 patch -p1 -E --backup -z .workaround --verbose -i ${SB_PATCHDIR}/${NAME}-2.32.2-workaround.patch
 
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.32.1-libnotify-0.7.patch
+
 set +e +o pipefail

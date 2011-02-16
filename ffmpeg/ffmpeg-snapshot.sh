@@ -36,15 +36,3 @@ pushd "${tmp}"
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null
-
-pushd "${tmp}"
-  svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
-  svn co --depth=files --force ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
-  pushd ${module}-${snap}
-    SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"
-    sed -i -e "/^revision=/s|=.*|=${SVNREV}|g" ./version.sh
-    find . -type d -name .svn -print0 | xargs -0r rm -rf
-    sed -i -e '/^\.PHONY: version\.h$/d' Makefile
-  popd
-  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
-popd >/dev/null

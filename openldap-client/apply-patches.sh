@@ -15,8 +15,4 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-smbk5pwd-overlay.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-ldaprc-currentdir.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-userconfig-setgid.patch
 
-# already merged upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-nss-ca-selfsigned.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-nss-delay-token-auth.patch
-
 set +e +o pipefail

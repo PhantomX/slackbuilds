@@ -1,7 +1,10 @@
-  
+
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-3.3.6-redhat.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.3-syntax.patch.gz | patch -p1 -E --backup --verbose || exit 1
-#zcat ${SB_PATCHDIR}/${NAME}-3.3-encoding.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-3.3.6-resize.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/x3270-3.3.10-paths.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/x3270-3.3.10-ibmhostpath.patch
+
+set +e +o pipefail

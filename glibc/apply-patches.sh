@@ -57,6 +57,8 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
 
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
   ApplyPatch 0030_all_glibc-respect-env-CPPFLAGS.patch
+  ApplyPatch 0050_all_glibc-2.13-ldso-prelink-segv.patch
+  ApplyPatch 0060_all_glibc-2.13-static-memmove-ssse3.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch
   ApplyPatch 1020_all_glibc-longjmp-chk-hidden-fortify.patch

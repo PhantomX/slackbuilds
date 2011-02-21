@@ -12,6 +12,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4.3-adplug-invalid.p
 # post-2.4.3
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4.3-psf-AUD-289.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4.3-mtp-AUDPLUG-323.patch
+# C++ static init order mess (bz 669889), reported as AUDPLUG-331
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4.3-adplug-static-init-mess.patch
 #
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4.2-libnotify07.patch
 

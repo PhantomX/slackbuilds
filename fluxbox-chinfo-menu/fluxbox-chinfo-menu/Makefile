@@ -37,7 +37,7 @@ subdir = .
 am__cd = CDPATH="$${ZSH_VERSION+.}$(PATH_SEPARATOR)" && cd
 GZIP_ENV = --best
 AMTAR = tar
-am__tar = ${AMTAR} chof - "$$tardir"
+am__tar = ${AMTAR} chf - "$$tardir"
 am__untar = ${AMTAR} xf -
 
 mkdir_p = mkdir -p --

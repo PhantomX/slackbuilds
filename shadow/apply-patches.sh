@@ -12,12 +12,13 @@ if [ "${SB_RH}" = "YES" ]; then
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.4.2-uflg.patch
 fi
 
-zcat ${SB_PATCHDIR}/${NAME}-4.1.4.1-goodname.patch.gz | patch -p1 --verbose --backup
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-4.1.4.3-goodname.patch
 zcat ${SB_PATCHDIR}/${NAME}-4.1.4.2-leak.patch.gz | patch -p1 --verbose --backup
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.4.2-fixes.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.4.2-infoParentDir.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.4.2-semange.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.4.2-acl.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.4.2-underflow.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.4.2-gshadow.patch
 
 set +e +o pipefail

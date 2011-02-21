@@ -1,0 +1,167 @@
+diff -up openssh-5.8p1/auth-krb5.c.kuserok openssh-5.8p1/auth-krb5.c
+--- openssh-5.8p1/auth-krb5.c.kuserok	2009-12-21 00:49:22.000000000 +0100
++++ openssh-5.8p1/auth-krb5.c	2011-02-14 09:15:12.000000000 +0100
+@@ -54,6 +54,20 @@
+ 
+ extern ServerOptions	 options;
+ 
++int
++ssh_krb5_kuserok(krb5_context krb5_ctx, krb5_principal krb5_user, const char *client)
++{
++	if (options.use_kuserok)
++		return krb5_kuserok(krb5_ctx, krb5_user, client);
++	else {
++		char kuser[65];
++
++		if (krb5_aname_to_localname(krb5_ctx, krb5_user, sizeof(kuser), kuser))
++			return 0;
++		return strcmp(kuser, client) == 0;
++	}
++}
++
+ static int
+ krb5_init(void *context)
+ {
+@@ -146,7 +160,7 @@ auth_krb5_password(Authctxt *authctxt, c
+ 	if (problem)
+ 		goto out;
+ 
+-	if (!krb5_kuserok(authctxt->krb5_ctx, authctxt->krb5_user, client)) {
++	if (!ssh_krb5_kuserok(authctxt->krb5_ctx, authctxt->krb5_user, client)) {
+ 		problem = -1;
+ 		goto out;
+ 	}
+diff -up openssh-5.8p1/gss-serv-krb5.c.kuserok openssh-5.8p1/gss-serv-krb5.c
+--- openssh-5.8p1/gss-serv-krb5.c.kuserok	2006-09-01 07:38:36.000000000 +0200
++++ openssh-5.8p1/gss-serv-krb5.c	2011-02-14 09:15:12.000000000 +0100
+@@ -57,6 +57,7 @@ extern ServerOptions options;
+ #endif
+ 
+ static krb5_context krb_context = NULL;
++extern int ssh_krb5_kuserok(krb5_context, krb5_principal, const char *);
+ 
+ /* Initialise the krb5 library, for the stuff that GSSAPI won't do */
+ 
+@@ -97,7 +98,7 @@ ssh_gssapi_krb5_userok(ssh_gssapi_client
+ 		    krb5_get_err_text(krb_context, retval));
+ 		return 0;
+ 	}
+-	if (krb5_kuserok(krb_context, princ, name)) {
++	if (ssh_krb5_kuserok(krb_context, princ, name)) {
+ 		retval = 1;
+ 		logit("Authorized to %s, krb5 principal %s (krb5_kuserok)",
+ 		    name, (char *)client->displayname.value);
+diff -up openssh-5.8p1/servconf.c.kuserok openssh-5.8p1/servconf.c
+--- openssh-5.8p1/servconf.c.kuserok	2011-02-14 09:15:12.000000000 +0100
++++ openssh-5.8p1/servconf.c	2011-02-14 09:20:22.000000000 +0100
+@@ -142,6 +142,7 @@ initialize_server_options(ServerOptions 
+ 	options->authorized_principals_file = NULL;
+ 	options->ip_qos_interactive = -1;
+ 	options->ip_qos_bulk = -1;
++	options->use_kuserok = -1;
+ }
+ 
+ void
+@@ -291,6 +292,8 @@ fill_default_server_options(ServerOption
+ 	if (use_privsep == -1)
+ 		use_privsep = 1;
+ 
++	if (options->use_kuserok == -1)
++		options->use_kuserok = 1;
+ #ifndef HAVE_MMAP
+ 	if (use_privsep && options->compression == 1) {
+ 		error("This platform does not support both privilege "
+@@ -312,7 +315,7 @@ typedef enum {
+ 	sPermitRootLogin, sLogFacility, sLogLevel,
+ 	sRhostsRSAAuthentication, sRSAAuthentication,
+ 	sKerberosAuthentication, sKerberosOrLocalPasswd, sKerberosTicketCleanup,
+-	sKerberosGetAFSToken,
++	sKerberosGetAFSToken, sKerberosUseKuserok,
+ 	sKerberosTgtPassing, sChallengeResponseAuthentication,
+ 	sPasswordAuthentication, sKbdInteractiveAuthentication,
+ 	sListenAddress, sAddressFamily,
+@@ -381,11 +384,13 @@ static struct {
+ #else
+ 	{ "kerberosgetafstoken", sUnsupported, SSHCFG_GLOBAL },
+ #endif
++	{ "kerberosusekuserok", sKerberosUseKuserok, SSHCFG_ALL },
+ #else
+ 	{ "kerberosauthentication", sUnsupported, SSHCFG_ALL },
+ 	{ "kerberosorlocalpasswd", sUnsupported, SSHCFG_GLOBAL },
+ 	{ "kerberosticketcleanup", sUnsupported, SSHCFG_GLOBAL },
+ 	{ "kerberosgetafstoken", sUnsupported, SSHCFG_GLOBAL },
++	{ "kerberosusekuserok", sUnsupported, SSHCFG_ALL },
+ #endif
+ 	{ "kerberostgtpassing", sUnsupported, SSHCFG_GLOBAL },
+ 	{ "afstokenpassing", sUnsupported, SSHCFG_GLOBAL },
+@@ -1341,6 +1346,10 @@ process_server_config_line(ServerOptions
+ 		*activep = value;
+ 		break;
+ 
++	case sKerberosUseKuserok:
++		intptr = &options->use_kuserok;
++		goto parse_flag;
++
+ 	case sPermitOpen:
+ 		arg = strdelim(&cp);
+ 		if (!arg || *arg == '\0')
+@@ -1544,6 +1553,7 @@ copy_set_server_options(ServerOptions *d
+ 	M_CP_INTOPT(max_authtries);
+ 	M_CP_INTOPT(ip_qos_interactive);
+ 	M_CP_INTOPT(ip_qos_bulk);
++	M_CP_INTOPT(use_kuserok);
+ 
+ 	M_CP_STROPT(banner);
+ 	if (preauth)
+@@ -1764,6 +1774,7 @@ dump_config(ServerOptions *o)
+ 	dump_cfg_fmtint(sUseDNS, o->use_dns);
+ 	dump_cfg_fmtint(sAllowTcpForwarding, o->allow_tcp_forwarding);
+ 	dump_cfg_fmtint(sUsePrivilegeSeparation, use_privsep);
++	dump_cfg_fmtint(sKerberosUseKuserok, o->use_kuserok);
+ 
+ 	/* string arguments */
+ 	dump_cfg_string(sPidFile, o->pid_file);
+diff -up openssh-5.8p1/servconf.h.kuserok openssh-5.8p1/servconf.h
+--- openssh-5.8p1/servconf.h.kuserok	2011-02-14 09:15:12.000000000 +0100
++++ openssh-5.8p1/servconf.h	2011-02-14 09:15:12.000000000 +0100
+@@ -157,6 +157,7 @@ typedef struct {
+ 
+ 	int	num_permitted_opens;
+ 
++	int	use_kuserok;
+ 	char   *chroot_directory;
+ 	char   *revoked_keys_file;
+ 	char   *trusted_user_ca_keys;
+diff -up openssh-5.8p1/sshd_config.5.kuserok openssh-5.8p1/sshd_config.5
+--- openssh-5.8p1/sshd_config.5.kuserok	2011-02-14 09:15:12.000000000 +0100
++++ openssh-5.8p1/sshd_config.5	2011-02-14 09:17:11.000000000 +0100
+@@ -574,6 +574,10 @@ Specifies whether to automatically destr
+ file on logout.
+ The default is
+ .Dq yes .
++.It Cm KerberosUseKuserok
++Specifies whether to look at .k5login file for user's aliases.
++The default is
++.Dq yes .
+ .It Cm KexAlgorithms
+ Specifies the available KEX (Key Exchange) algorithms.
+ Multiple algorithms must be comma-separated.
+@@ -715,6 +719,7 @@ Available keywords are
+ .Cm HostbasedUsesNameFromPacketOnly ,
+ .Cm KbdInteractiveAuthentication ,
+ .Cm KerberosAuthentication ,
++.Cm KerberosUseKuserok ,
+ .Cm MaxAuthTries ,
+ .Cm MaxSessions ,
+ .Cm PubkeyAuthentication ,
+diff -up openssh-5.8p1/sshd_config.kuserok openssh-5.8p1/sshd_config
+--- openssh-5.8p1/sshd_config.kuserok	2011-02-14 09:15:12.000000000 +0100
++++ openssh-5.8p1/sshd_config	2011-02-14 09:15:12.000000000 +0100
+@@ -73,6 +73,7 @@ ChallengeResponseAuthentication no
+ #KerberosOrLocalPasswd yes
+ #KerberosTicketCleanup yes
+ #KerberosGetAFSToken no
++#KerberosUseKuserok yes
+ 
+ # GSSAPI options
+ #GSSAPIAuthentication no

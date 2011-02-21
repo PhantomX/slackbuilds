@@ -4,8 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-# Avoid buffer overflow report from glibc with FORTIFY_SOURCE
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0005-curl-7.21.3-tftpd-buffer-overflow.patch
+# avoid memory leak on SSL connection failure
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-curl-7.21.4-a40f58d.patch
 # patch making libcurl multilib ready
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0101-curl-7.21.1-multilib.patch
 # prevent configure script from discarding -g in CFLAGS
@@ -17,5 +17,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0105-curl-7.21.3-disable-test1
 rm -f tests/data/test1112
 # disable valgrind for certain test-cases (libssh2 problem)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0106-curl-7.21.0-libssh2-valgrind.patch
+# work around valgrind bug (#678518)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0107-curl-7.21.4-libidn-valgrind.patch
 
 set +e +o pipefail

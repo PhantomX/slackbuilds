@@ -238,12 +238,8 @@ ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
-# try to fix stalls during boot (#530393)
-ApplyPatch tpm-fix-stall-on-boot.patch
-
 # Runtime PM
 ApplyPatch linux-2.6-ehci-check-port-status.patch
-ApplyPatch linux-2.6-ehci-fix-dma-deallocation.patch
 ApplyPatch linux-2.6-usb-pci-autosuspend.patch
 ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
 ApplyPatch runtime_pm_fixups.patch
@@ -252,7 +248,6 @@ ApplyPatch runtime_pm_fixups.patch
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
 # backport some fixes for kswapd from mmotm, rhbz#649694
-ApplyPatch mm-page-allocator-adjust-the-per-cpu-counter-threshold-when-memory-is-low.patch
 ApplyPatch mm-vmstat-use-a-single-setter-function-and-callback-for-adjusting-percpu-thresholds.patch
 
 # rhbz#637619

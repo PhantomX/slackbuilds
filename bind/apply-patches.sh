@@ -25,6 +25,9 @@ zcat ${SB_PATCHDIR}/bind97-rh478718.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh570851.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-exportlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh645544.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh674334.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh665971.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-cleanup.patch
 
 # needs inpection
 zcat ${SB_PATCHDIR}/bind-96-dyndb.patch.gz | patch -p1 -E --backup --verbose

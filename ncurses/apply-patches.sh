@@ -3,11 +3,10 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-# patch -p0 -E --backup --verbose -it ${SB_PATCHDIR}/${NAME}.patch
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
 if [ "${PVER}" -ne 0 ] ; then
   bzcat ${SB_PATCHDIR}/updates/${PSRCARCHIVE} | patch -p1 --verbose
-fi
 
 C=$(wc -l ${CWD}/${PSRCARCHIVES} | awk '{print $1}')
 if [ "$C" -gt 0 ]; then
@@ -17,6 +16,7 @@ if [ "$C" -gt 0 ]; then
       zcat ${SB_PATCHDIR}/updates/${file} | patch -p1 --verbose
     fi
   done
+fi
 fi
 
 zcat ${SB_PATCHDIR}/ncurses.mkhashsize.diff.gz | patch -p1 --verbose

@@ -74,16 +74,9 @@ ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-CVE-2010-1822-crash-svg-image.patch
 
 ## upstream patches
-# Reordering of Malayalam Rakar not working properly
-ApplyPatch qt-everywhere-opensource-src-4.7.1-ml_IN-bz528303.patch
-# fix QTextCursor crash in Lokalize and Psi (QTBUG-15857, kde#249373, #660028)
-# http://qt.gitorious.org/qt/qt/commit/6ae84f1183e91c910ca92a55e37f8254ace805c0
-ApplyPatch qt-everywhere-opensource-src-4.7.1-qtextcursor-crash.patch
-# followup for regressions
-# http://qt.gitorious.org/qt/qt/commit/34c297faca93e1286573b2a01127e4e7af00aff2.patch
-ApplyPatch qt-everywhere-opensource-4.7.1-QTBUG-15857-2.patch
-# qsortfilterproxymodel merge, http://qt.gitorious.org/qt/qt/merge_requests/934
-ApplyPatch qt-everywhere-opensource-src-4.7.1-qsortfilterproxymodel_merge934.patch
+# adds debug support to webkit/JavaScriptCore
+# UPSTREAM ME
+ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 
 # kde-qt patches
 ApplyPatch 0004-0005.patch

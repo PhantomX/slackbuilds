@@ -11,9 +11,12 @@ zcat ${SB_PATCHDIR}/mozilla-jemalloc.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/mozilla-about-firefox-version.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/xulrunner-1.9.2.1-build.patch.gz | patch -p2 -E --backup --verbose
 zcat ${SB_PATCHDIR}/mozilla-build-sbrk.patch.gz | patch -p2 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-gdk-pixbuf.patch
 
 # Fedora specific patches
 zcat ${SB_PATCHDIR}/mozilla-192-pkgconfig.patch.gz | patch -p1 -E --backup --verbose
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-libjpeg-turbo.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-crashreporter-static.patch
 
 # Upstream patches
 

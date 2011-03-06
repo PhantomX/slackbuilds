@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Use libdir properly
 zcat ${SB_PATCHDIR}/xmms2-0.7-use-libdir.patch.gz | patch -p1 -E --backup -z .libdir --verbose
 

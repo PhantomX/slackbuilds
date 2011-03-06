@@ -42,8 +42,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.71-notify_color_ch
 # upstream patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.0-startkde_no_malloc_check.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.0-plasma-crash-on-exit.patch
 
 # Branch patches
 

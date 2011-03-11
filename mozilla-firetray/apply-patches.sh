@@ -21,6 +21,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.2.8-use-our-icons.pa
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.2.8-add-chatzilla-support.patch
 #Patch5:   fix for the new way of registering xpcom components
 #          http://code.google.com/p/firetray/issues/detail?id=127
-#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.2.8-fix-xpcom-registration.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.2.8-fix-xpcom-registration.patch
 
 set +e +o pipefail

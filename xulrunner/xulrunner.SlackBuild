@@ -44,14 +44,14 @@ PNAME=firefox
 NAME=xulrunner
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.9.2.15}
-FFVER="3.6"
+VERSION=${VERSION:-2.0rc1}
+FFVER="4.0rc1"
 if [ "$(echo ${VERSION} | cut -d . -f4)" ] ;then
   PVER="${FFVER}.$(echo ${VERSION} | cut -d . -f4)"
 else
   PVER="${FFVER}"
 fi
-VERSION_INTERNAL="$(echo ${VERSION} | cut -d . -f1-3)"
+GECKO_DIR_VER="$(echo ${VERSION} | cut -d . -f1)"
 SLKDIST=${SLKDIST:-Slackware}
 SLKVER=${SLKVER:-$(awk '{print $2}' /etc/slackware-version)}
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -81,7 +81,7 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 # Set default mail application
 SB_DMAIL=${SB_DMAIL:-/usr/bin/thunderbird}
 
-SRCDIR=mozilla-${VERSION_INTERNAL}
+SRCDIR=mozilla-2.0
 SRCARCHIVE=${PNAME}-${PVER}.source.tar.bz2
 SSRCARCHIVE=${SRCARCHIVE}.asc
 
@@ -138,10 +138,7 @@ fi
 rm -f .mozconfig
 cat ${CWD}/${NAME}-mozconfig > .mozconfig || exit 1
 
-if [ "${SB_GNOME}" = "YES" ] ;then
-  # This needs gnome support
-  echo "ac_add_options --enable-libnotify" >> .mozconfig || exit 1
-else
+if [ "${SB_GNOME}" != "YES" ] ;then
   echo "ac_add_options --disable-gnomeui" >> .mozconfig || exit 1
   echo "ac_add_options --disable-gnomevfs" >> .mozconfig || exit 1
   sed -i \
@@ -155,17 +152,15 @@ echo "ac_add_options --build=${SLKTARGET}-${SLKDTARGET}-linux" >> .mozconfig || 
 echo "ac_add_options --host=${SLKTARGET}-${SLKDTARGET}-linux" >> .mozconfig || exit 1
 echo "ac_add_options --target=${SLKTARGET}-${SLKDTARGET}-linux" >> .mozconfig || exit 1
 
-INTERNAL_GECKO=${VERSION_INTERNAL}
+INTERNAL_APP_NAME=${NAME}-${GECKO_DIR_VER}
+mozappdir=/usr/lib${LIBDIRSUFFIX}/${INTERNAL_APP_NAME}
 
-INTERNAL_APP_NAME=${NAME}-${INTERNAL_GECKO}
-MOZ_APP_DIR=/usr/lib${LIBDIRSUFFIX}/${INTERNAL_APP_NAME}
-
-INTERNAL_APP_SDK_NAME=${NAME}-sdk-${INTERNAL_GECKO}
+INTERNAL_APP_SDK_NAME=${NAME}-sdk-${GECKO_DIR_VER}
 MOZ_APP_SDK_DIR=/usr/lib${LIBDIRSUFFIX}/${INTERNAL_APP_SDK_NAME}
 
 # Mozilla builds with -Wall with exception of a few warnings which show up
 # everywhere in the code; so, don't override that.
-MOZ_OPT_FLAGS="$(echo ${SLKCFLAGS} | sed -e 's/-O./-Os/;s/-Wall//') -D_FORTIFY_SOURCE=2"
+MOZ_OPT_FLAGS="$(echo ${SLKCFLAGS} | sed -e 's/-O./-Os/;s/-Wall//' -e 's/-fexceptions/-fno-exceptions/g') -fpermissive"
 
 export CFLAGS="${MOZ_OPT_FLAGS}"
 export CXXFLAGS="${MOZ_OPT_FLAGS}"
@@ -173,17 +168,8 @@ export CXXFLAGS="${MOZ_OPT_FLAGS}"
 export PREFIX='/usr'
 export LIBDIR="/usr/lib${LIBDIRSUFFIX}"
 
-export LDFLAGS="-Wl,-rpath,${MOZ_APP_DIR} ${LDFLAGS}"
-make -f client.mk build STRIP="/bin/true" MOZ_MAKE_FLAGS="-j${NJOBS}" || exit 1
-
-DESTDIR=${PKG} make install || exit 1
-
-mkdir -p ${PKG}/${MOZ_APP_DIR} \
-         ${PKG}/usr/share/idl/${INTERNAL_APP_SDK_NAME} \
-         ${PKG}/usr/include/${INTERNAL_APP_SDK_NAME}
-install -p dist/sdk/bin/regxpcom ${PKG}/${MOZ_APP_DIR}/ || exit 1
-
-mkdir -p ${PKG}{/usr/lib${LIBDIRSUFFIX},/usr/bin,/usr/share/applications}
+export LDFLAGS="-Wl,-rpath,${mozappdir} ${LDFLAGS}"
+make -f client.mk build STRIP="/bin/true" MOZ_MAKE_FLAGS="-j${NJOBS}" MOZ_SERVICES_SYNC="1" || exit 1
 
 # set up our default preferences
 sed \
@@ -194,23 +180,25 @@ sed \
 cat >> slk-default-prefs << EOF
 pref("network.protocol-handler.app.mailto", "${SB_DMAIL}");
 EOF
-mkdir -p ${PKG}/${MOZ_APP_DIR}/defaults/pref
-install -m0644 slk-default-prefs \
-               ${PKG}/${MOZ_APP_DIR}/defaults/pref/all-slackware.js || exit 1
-rm -f slk-default-prefs
+mv slk-default-prefs dist/bin/defaults/pref/all-slackware.js || exit 1
+
+DESTDIR=${PKG} make install || exit 1
+
+mkdir -p ${PKG}/${mozappdir} \
+         ${PKG}/usr/share/idl/${INTERNAL_APP_SDK_NAME} \
+         ${PKG}/usr/include/${INTERNAL_APP_SDK_NAME}
+
+mkdir -p ${PKG}{/usr/lib${LIBDIRSUFFIX},/usr/bin,/usr/share/applications}
 
 # Start script install
 rm -f ${PKG}/usr/bin/${NAME}
-zcat ${CWD}/${NAME}.sh.in.gz | sed \
-    -e "s,XULRUNNER_VERSION,${VERSION_INTERNAL},g" > \
-     ${PKG}/usr/bin/${NAME} || exit 1
+sed \
+  -e "s,XULRUNNER_VERSION,${GECKO_DIR_VER},g" \
+  ${CWD}/${NAME}.sh.in \
+  > ${PKG}/usr/bin/${NAME} || exit 1
 chmod 0755 ${PKG}/usr/bin/${NAME}
 
-rm -f ${PKG}${MOZ_APP_DIR}/${NAME}-config
-
-( cd ${PKG}${MOZ_APP_DIR}/chrome
-  find . -name "*" -type d -maxdepth 1 -exec rm -rf {} \;
-)
+rm -f ${PKG}${mozappdir}/${NAME}-config
 
 # Prepare devel
 mkdir -p ${PKG}/usr/include/${INTERNAL_APP_SDK_NAME}
@@ -239,7 +227,7 @@ genheader=$*
 mv ${genheader}.h ${genheader}${mozbits}.h
 cat > ${genheader}.h << EOF
 // This file exists to fix multilib conflicts
-#if defined(__x86_64__) || defined(__ia64__) || defined(__s390x__) || defined(__powerpc64__)
+#if defined(__x86_64__) || defined(__ia64__) || defined(__s390x__) || defined(__powerpc64__) || (defined(__sparc__) && defined(__arch64__))
 #include "${genheader}64.h"
 #else
 #include "${genheader}32.h"
@@ -247,25 +235,17 @@ cat > ${genheader}.h << EOF
 EOF
 }
 
-if [ "${mozbits}" ] ;then
 ( cd ${PKG}/usr/include/${INTERNAL_APP_SDK_NAME}
   install_file "mozilla-config"
-)
-
-( cd ${PKG}/usr/include/${INTERNAL_APP_SDK_NAME}
   install_file "jsautocfg"
-)
-
-( cd ${PKG}/usr/include/${INTERNAL_APP_SDK_NAME}
   install_file "js-config"
 )
-fi
 
 install -p -c -m 755 dist/bin/xpcshell \
   dist/bin/xpidl \
   dist/bin/xpt_dump \
   dist/bin/xpt_link \
-  ${PKG}/${MOZ_APP_DIR}/
+  ${PKG}/${mozappdir}/
 
 rm -rf ${PKG}/usr/include/${INTERNAL_APP_NAME}
 rm -rf ${PKG}/usr/share/idl/${INTERNAL_APP_NAME}
@@ -298,7 +278,7 @@ ln -s  sdk/lib \
        ${PKG}${MOZ_APP_SDK_DIR}/lib
 
 rm -rf ${PKG}${MOZ_APP_SDK_DIR}/sdk/lib/*.so
-( cd ${PKG}${MOZ_APP_DIR} 
+( cd ${PKG}${mozappdir} 
   for i in *.so; do
     ln -s ../../../${INTERNAL_APP_NAME}/${i} ${PKG}${MOZ_APP_SDK_DIR}/sdk/lib/${i}
   done
@@ -314,12 +294,12 @@ chmod 644 ${PKG}/etc/gre.d/gre${GREARCH}.conf
 
 mkdir -p ${PKG}/etc/ld.so.conf.d
 cat > ${PKG}/etc/ld.so.conf.d/${NAME}-${ARCH}.conf <<EOF
-${MOZ_APP_DIR}
+${mozappdir}
 EOF
 
 # Use the system hunspell dictionaries
-rm -rf ${PKG}${MOZ_APP_DIR}/dictionaries
-ln -s ../../share/myspell ${PKG}${MOZ_APP_DIR}/dictionaries
+rm -rf ${PKG}${mozappdir}/dictionaries
+ln -s ../../share/myspell ${PKG}${mozappdir}/dictionaries
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -329,11 +309,11 @@ zcat ${CWD}/${NAME}.1.gz > \
      ${PKG}/usr/man/man1/${NAME}.1 || exit 1
 
 # Copy over the LICENSE
-install -p -c -m 644 LICENSE ${PKG}/${MOZ_APP_DIR}/
+install -p -c -m 644 LICENSE ${PKG}/${mozappdir}/
 
 # ghost files
-touch ${PKG}/${MOZ_APP_DIR}/components/compreg.dat
-touch ${PKG}/${MOZ_APP_DIR}/components/xpti.dat
+touch ${PKG}/${mozappdir}/components/compreg.dat
+touch ${PKG}/${mozappdir}/components/xpti.dat
 
 rmdir -p ${PKG}/usr/share/applications
 
@@ -395,7 +375,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
                  ${CWD}/apply-patches.sh ${CWD}/${NAME}*mozconfig*  \
-                 ${CWD}/{*.sh.in,*.1,}.gz ${CWD}/*.js ${CWD}/${NAME}.spec \
+                 ${CWD}/*.sh.in ${CWD}/*.js ${CWD}/${NAME}.spec \
                  ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
                  ${SBDIR}/${NAME}.SlackBuild

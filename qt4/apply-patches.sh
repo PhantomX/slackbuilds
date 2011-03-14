@@ -42,7 +42,7 @@ ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch
 # workaround for gdal/grass crashers wrt glib_eventloop null deref's
 ApplyPatch qt-everywhere-opensource-src-4.6.3-glib_eventloop_nullcheck.patch
 # remove dependency of webkit in assistant
-#ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit.patch
+#ApplyPatch qt-everywhere-opensource-src-4.7.1-assistant_no_webkit.patch.patch
 
 ## upstreamable bits
 # fix invalid inline assembly in qatomic_{i386,x86_64}.h (de)ref implementations
@@ -77,6 +77,8 @@ ApplyPatch qt-everywhere-opensource-src-4.7.0-CVE-2010-1822-crash-svg-image.patc
 # adds debug support to webkit/JavaScriptCore
 # UPSTREAM ME
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
+# Fix QNetworkConfigurationManager crash due to null private pointer. (QTBUG-17305, rhbz#682656)
+ApplyPatch 4d3b9aa83cf7f6d9f9b88d9936e5980629daac2a.patch
 
 # kde-qt patches
 ApplyPatch 0004-0005.patch

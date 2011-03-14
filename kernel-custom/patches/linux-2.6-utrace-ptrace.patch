@@ -12,28 +12,27 @@ change to userland when CONFIG_UTRACE is enabled.
 Signed-off-by: Roland McGrath <roland@redhat.com>
 Signed-off-by: Oleg Nesterov <oleg@redhat.com>
 ---
- include/linux/ptrace.h |    2 +-
+ include/linux/ptrace.h |    1 +
  kernel/Makefile        |    1 +
- kernel/ptrace-utrace.c | 1138 ++++++++++++++++++++++++++++++++++++++++++++++++
- kernel/ptrace.c        |  688 ++++++++++++++---------------
+ kernel/ptrace-utrace.c | 1187 ++++++++++++++++++++++++++++++++++++++++++++++++
+ kernel/ptrace.c        |  690 ++++++++++++++--------------
  kernel/utrace.c        |   16 +
- 5 files changed, 1494 insertions(+), 351 deletions(-)
+ 5 files changed, 1544 insertions(+), 351 deletions(-)
 
 diff --git a/include/linux/ptrace.h b/include/linux/ptrace.h
-index a85fb41..235c1b0 100644  
+index 619cdf0..e391bdb 100644  
 --- a/include/linux/ptrace.h
 +++ b/include/linux/ptrace.h
-@@ -99,7 +99,7 @@
- #include <linux/compiler.h>		/* For unlikely.  */
+@@ -100,6 +100,7 @@
  #include <linux/sched.h>		/* For struct task_struct.  */
  
--
+ 
 +extern void ptrace_notify_stop(struct task_struct *tracee);
  extern long arch_ptrace(struct task_struct *child, long request,
  			unsigned long addr, unsigned long data);
  extern int ptrace_traceme(void);
 diff --git a/kernel/Makefile b/kernel/Makefile
-index 6004913..b09c9a5 100644  
+index 1172528..9a815a5 100644  
 --- a/kernel/Makefile
 +++ b/kernel/Makefile
 @@ -71,6 +71,7 @@ obj-$(CONFIG_RESOURCE_COUNTERS) += res_c
@@ -46,10 +45,10 @@ index 6004913..b09c9a5 100644
  obj-$(CONFIG_AUDIT_WATCH) += audit_watch.o
 diff --git a/kernel/ptrace-utrace.c b/kernel/ptrace-utrace.c
 new file mode 100644
-index ...a90078d 100644  
+index ...a5bcb9e 100644  
 --- /dev/null
 +++ b/kernel/ptrace-utrace.c
-@@ -0,0 +1,1138 @@
+@@ -0,0 +1,1187 @@
 +/*
 + * linux/kernel/ptrace.c
 + *
@@ -119,6 +118,7 @@ index ...a90078d 100644
 +#define PT_UTRACED			0x00001000
 +
 +#define PTRACE_O_SYSEMU			0x100
++#define PTRACE_O_DETACHED		0x200
 +
 +#define PTRACE_EVENT_SYSCALL		(1 << 16)
 +#define PTRACE_EVENT_SIGTRAP		(2 << 16)
@@ -155,6 +155,19 @@ index ...a90078d 100644
 +					&ptrace_utrace_ops, NULL);
 +}
 +
++static int utrace_barrier_uninterruptible(struct task_struct *target,
++					struct utrace_engine *engine)
++{
++	for (;;) {
++		int err = utrace_barrier(target, engine);
++
++		if (err != -ERESTARTSYS)
++			return err;
++
++		schedule_timeout_uninterruptible(1);
++	}
++}
++
 +static struct utrace_engine *
 +ptrace_reuse_engine(struct task_struct *tracee)
 +{
@@ -167,7 +180,7 @@ index ...a90078d 100644
 +		return engine;
 +
 +	ctx = ptrace_context(engine);
-+	if (unlikely(ctx->resume == UTRACE_DETACH)) {
++	if (unlikely(ctx->options == PTRACE_O_DETACHED)) {
 +		/*
 +		 * Try to reuse this self-detaching engine.
 +		 * The only caller which can hit this case is ptrace_attach(),
@@ -181,12 +194,16 @@ index ...a90078d 100644
 +		if (!err || err == -EINPROGRESS) {
 +			ctx->resume = UTRACE_RESUME;
 +			/* synchronize with ptrace_report_signal() */
-+			err = utrace_barrier(tracee, engine);
++			err = utrace_barrier_uninterruptible(tracee, engine);
 +		}
-+		WARN_ON(!err != (engine->ops == &ptrace_utrace_ops));
 +
-+		if (!err)
++		if (!err) {
++			WARN_ON(engine->ops != &ptrace_utrace_ops &&
++				!tracee->exit_state);
 +			return engine;
++		}
++
++		WARN_ON(engine->ops == &ptrace_utrace_ops);
 +	}
 +
 +	utrace_engine_put(engine);
@@ -296,32 +313,60 @@ index ...a90078d 100644
 +	 * If true, the caller is PTRACE_DETACH, otherwise
 +	 * the tracer detaches implicitly during exit.
 +	 */
-+	bool voluntary = (sig >= 0);
++	bool explicit = (sig >= 0);
 +	struct utrace_engine *engine = ptrace_lookup_engine(tracee);
 +	enum utrace_resume_action action = UTRACE_DETACH;
++	struct ptrace_context *ctx;
 +
 +	if (unlikely(IS_ERR(engine)))
 +		return;
 +
-+	if (sig) {
-+		struct ptrace_context *ctx = ptrace_context(engine);
++	ctx = ptrace_context(engine);
 +
++	if (!explicit) {
++		int err;
++
++		/*
++		 * We are going to detach, the tracee can be running.
++		 * Ensure ptrace_report_signal() won't report a signal.
++		 */
++		ctx->resume = UTRACE_DETACH;
++		err = utrace_barrier_uninterruptible(tracee, engine);
++
++		if (!err && ctx->siginfo) {
++			/*
++			 * The tracee has already reported a signal
++			 * before utrace_barrier().
++			 *
++			 * Resume it like we do in PTRACE_EVENT_SIGNAL
++			 * case below. The difference is that we can race
++			 * with ptrace_report_signal() if the tracee is
++			 * running but this doesn't matter. In any case
++			 * UTRACE_SIGNAL_REPORT must be pending and it
++			 * can return nothing but UTRACE_DETACH.
++			 */
++			action = UTRACE_RESUME;
++		}
++
++	} else if (sig) {
 +		switch (get_stop_event(ctx)) {
 +		case PTRACE_EVENT_SYSCALL:
-+			if (voluntary)
-+				send_sig_info(sig, SEND_SIG_PRIV, tracee);
++			send_sig_info(sig, SEND_SIG_PRIV, tracee);
 +			break;
 +
 +		case PTRACE_EVENT_SIGNAL:
-+			if (voluntary)
-+				ctx->signr = sig;
++			ctx->signr = sig;
 +			ctx->resume = UTRACE_DETACH;
 +			action = UTRACE_RESUME;
 +			break;
 +		}
 +	}
 +
-+	ptrace_wake_up(tracee, engine, action, voluntary);
++	ptrace_wake_up(tracee, engine, action, explicit);
++
++	if (action != UTRACE_DETACH)
++		ctx->options = PTRACE_O_DETACHED;
++
 +	utrace_engine_put(engine);
 +}
 +
@@ -453,6 +498,11 @@ index ...a90078d 100644
 +	return UTRACE_SYSCALL_RUN | UTRACE_STOP;
 +}
 +
++static inline bool is_step_resume(enum utrace_resume_action resume)
++{
++	return resume == UTRACE_BLOCKSTEP || resume == UTRACE_SINGLESTEP;
++}
++
 +static u32 ptrace_report_syscall_exit(u32 action, struct utrace_engine *engine,
 +				      struct pt_regs *regs)
 +{
@@ -461,11 +511,7 @@ index ...a90078d 100644
 +	if (ptrace_event_pending(ctx))
 +		return UTRACE_STOP;
 +
-+	if (ctx->resume != UTRACE_RESUME) {
-+		WARN_ON(ctx->resume != UTRACE_BLOCKSTEP &&
-+			ctx->resume != UTRACE_SINGLESTEP);
-+		ctx->resume = UTRACE_RESUME;
-+
++	if (is_step_resume(ctx->resume)) {
 +		ctx->signr = SIGTRAP;
 +		return UTRACE_INTERRUPT;
 +	}
@@ -553,10 +599,7 @@ index ...a90078d 100644
 +		if (WARN_ON(ctx->siginfo))
 +			ctx->siginfo = NULL;
 +
-+		if (resume != UTRACE_RESUME) {
-+			WARN_ON(resume != UTRACE_BLOCKSTEP &&
-+				resume != UTRACE_SINGLESTEP);
-+
++		if (is_step_resume(resume)) {
 +			set_stop_code(ctx, PTRACE_EVENT_SIGTRAP);
 +			return UTRACE_STOP | UTRACE_SIGNAL_IGN;
 +		}
@@ -583,6 +626,11 @@ index ...a90078d 100644
 +	}
 +
 +	WARN_ON(ctx->siginfo);
++
++	/* Raced with the exiting tracer ? */
++	if (resume == UTRACE_DETACH)
++		return action;
++
 +	ctx->siginfo = info;
 +	/*
 +	 * ctx->siginfo points to the caller's stack.
@@ -811,7 +859,7 @@ index ...a90078d 100644
 +static int ptrace_set_options(struct task_struct *tracee,
 +				struct utrace_engine *engine, long data)
 +{
-+	BUILD_BUG_ON(PTRACE_O_MASK & PTRACE_O_SYSEMU);
++	BUILD_BUG_ON(PTRACE_O_MASK & (PTRACE_O_SYSEMU | PTRACE_O_DETACHED));
 +
 +	ptrace_set_events(tracee, engine, data & PTRACE_O_MASK);
 +	return (data & ~PTRACE_O_MASK) ? -EINVAL : 0;
@@ -1189,7 +1237,7 @@ index ...a90078d 100644
 +}
 +#endif	/* CONFIG_COMPAT */
 diff --git a/kernel/ptrace.c b/kernel/ptrace.c
-index 23bde94..daed9e8 100644  
+index e275608..72ea65c 100644  
 --- a/kernel/ptrace.c
 +++ b/kernel/ptrace.c
 @@ -15,7 +15,6 @@
@@ -1200,7 +1248,7 @@ index 23bde94..daed9e8 100644
  #include <linux/security.h>
  #include <linux/signal.h>
  #include <linux/audit.h>
-@@ -24,7 +23,317 @@
+@@ -24,7 +23,320 @@
  #include <linux/uaccess.h>
  #include <linux/regset.h>
  
@@ -1412,7 +1460,8 @@ index 23bde94..daed9e8 100644
 +#define arch_ptrace_attach(child)	do { } while (0)
 +#endif
 +
-+SYSCALL_DEFINE4(ptrace, long, request, long, pid, unsigned long, addr, unsigned long, data)
++SYSCALL_DEFINE4(ptrace, long, request, long, pid, unsigned long, addr,
++		unsigned long, data)
 +{
 +	struct task_struct *child;
 +	long ret;
@@ -1423,13 +1472,13 @@ index 23bde94..daed9e8 100644
 +			arch_ptrace_attach(current);
 +		goto out;
 +	}
-+
+ 
 +	child = ptrace_get_task_struct(pid);
 +	if (IS_ERR(child)) {
 +		ret = PTR_ERR(child);
 +		goto out;
 +	}
- 
++
 +	if (request == PTRACE_ATTACH) {
 +		ret = ptrace_attach(child);
 +		/*
@@ -1453,7 +1502,8 @@ index 23bde94..daed9e8 100644
 +	return ret;
 +}
 +
-+int generic_ptrace_peekdata(struct task_struct *tsk, unsigned long addr, unsigned long data)
++int generic_ptrace_peekdata(struct task_struct *tsk, unsigned long addr,
++			    unsigned long data)
 +{
 +	unsigned long tmp;
 +	int copied;
@@ -1464,7 +1514,8 @@ index 23bde94..daed9e8 100644
 +	return put_user(tmp, (unsigned long __user *)data);
 +}
 +
-+int generic_ptrace_pokedata(struct task_struct *tsk, unsigned long addr, unsigned long data)
++int generic_ptrace_pokedata(struct task_struct *tsk, unsigned long addr,
++			    unsigned long data)
 +{
 +	int copied;
 +
@@ -1518,7 +1569,7 @@ index 23bde94..daed9e8 100644
  /*
   * ptrace a task: make the debugger its new parent and
   * move it to the ptrace list.
-@@ -117,61 +426,6 @@ int ptrace_check_attach(struct task_stru
+@@ -117,61 +429,6 @@ int ptrace_check_attach(struct task_stru
  	return ret;
  }
  
@@ -1580,7 +1631,7 @@ index 23bde94..daed9e8 100644
  int ptrace_attach(struct task_struct *task)
  {
  	int retval;
-@@ -195,8 +449,6 @@ int ptrace_attach(struct task_struct *ta
+@@ -195,8 +452,6 @@ int ptrace_attach(struct task_struct *ta
  
  	task_lock(task);
  	retval = __ptrace_may_access(task, PTRACE_MODE_ATTACH);
@@ -1589,13 +1640,10 @@ index 23bde94..daed9e8 100644
  	task_unlock(task);
  	if (retval)
  		goto unlock_creds;
-@@ -217,94 +469,40 @@ int ptrace_attach(struct task_struct *ta
- 
- 	retval = 0;
- unlock_tasklist:
--	write_unlock_irq(&tasklist_lock);
--unlock_creds:
--	mutex_unlock(&task->signal->cred_guard_mutex);
+@@ -220,91 +475,37 @@ unlock_tasklist:
+ 	write_unlock_irq(&tasklist_lock);
+ unlock_creds:
+ 	mutex_unlock(&task->signal->cred_guard_mutex);
 -out:
 -	return retval;
 -}
@@ -1654,9 +1702,6 @@ index 23bde94..daed9e8 100644
 - * If it's a zombie, our attachedness prevented normal parent notification
 - * or self-reaping.  Do notification now if it would have happened earlier.
 - * If it should reap itself, return true.
-+	write_unlock_irq(&tasklist_lock);
-+unlock_creds:
-+	mutex_unlock(&task->signal->cred_guard_mutex);
 +out:
 +	return retval;
 +}
@@ -1711,7 +1756,7 @@ index 23bde94..daed9e8 100644
  }
  
  int ptrace_detach(struct task_struct *child, unsigned int data)
-@@ -366,56 +564,6 @@ void exit_ptrace(struct task_struct *tra
+@@ -368,57 +569,7 @@ void exit_ptrace(struct task_struct *tra
  	write_lock_irq(&tasklist_lock);
  }
  
@@ -1765,10 +1810,12 @@ index 23bde94..daed9e8 100644
 -	return copied;
 -}
 -
- static int ptrace_setoptions(struct task_struct *child, unsigned long data)
+-static int ptrace_setoptions(struct task_struct *child, unsigned long data)
++static int ptrace_setoptions(struct task_struct *child, long data)
  {
  	child->ptrace &= ~PT_TRACE_MASK;
-@@ -530,47 +677,6 @@ static int ptrace_resume(struct task_str
+ 
+@@ -533,47 +683,6 @@ static int ptrace_resume(struct task_str
  	return 0;
  }
  
@@ -1816,7 +1863,7 @@ index 23bde94..daed9e8 100644
  int ptrace_request(struct task_struct *child, long request,
  		   unsigned long addr, unsigned long data)
  {
-@@ -686,91 +792,7 @@ int ptrace_request(struct task_struct *c
+@@ -689,91 +798,7 @@ int ptrace_request(struct task_struct *c
  	return ret;
  }
  
@@ -1908,7 +1955,7 @@ index 23bde94..daed9e8 100644
  int compat_ptrace_request(struct task_struct *child, compat_long_t request,
  			  compat_ulong_t addr, compat_ulong_t data)
  {
-@@ -845,42 +870,5 @@ int compat_ptrace_request(struct task_st
+@@ -851,42 +876,5 @@ int compat_ptrace_request(struct task_st
  
  	return ret;
  }
@@ -1953,10 +2000,10 @@ index 23bde94..daed9e8 100644
  #endif	/* CONFIG_COMPAT */
 +#endif	/* CONFIG_UTRACE */
 diff --git a/kernel/utrace.c b/kernel/utrace.c
-index 43f38b7..fd21b7b 100644  
+index 26d6faf..37dce16 100644  
 --- a/kernel/utrace.c
 +++ b/kernel/utrace.c
-@@ -809,6 +809,22 @@ relock:
+@@ -816,6 +816,22 @@ relock:
  	spin_unlock_irq(&task->sighand->siglock);
  	spin_unlock(&utrace->lock);
  

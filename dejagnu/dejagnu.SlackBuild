@@ -28,9 +28,6 @@
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
-# Set YES for native build with gcc >= 4.2
-SB_NATIVE=${SB_NATIVE:-NO}
-
 # Set to YES to replicate slackbuild and patches
 SB_REP=${SB_REP:-YES}
 
@@ -43,11 +40,11 @@ fi
 NAME=dejagnu
 PKG=${TMP}/package-${NAME}
 
-VERSION=${VERSION:-1.4.4}
+VERSION=${VERSION:-1.5}
 ARCH=noarch
 SLKTARGET=${SLKTARGET:-i486}
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -59,15 +56,18 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.gz
+SSRCARCHIVE=${SRCARCHIVE}.sig
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 GNU_MIRROR=${GNU_MIRROR:-http://ftp.gnu.org/gnu}
-DL_URL="${GNU_MIRROR}/${NAME}/${SRCARCHIVE}"
+DL_URL="${GNU_MIRROR}/${NAME}"
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+for file in ${SRCARCHIVE} ${SSRCARCHIVE} ;do
+  test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
+done
 
 if [ "${SLKTARGET}" = "x86_64" ] ;then
   LIBDIRSUFFIX="64"
@@ -88,14 +88,15 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-1.4.4-smp-1.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-1.4.4-no-info.patch.gz | patch -p1 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure -v \
   --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
   --localstatedir=/var/lib \
   --infodir=/usr/info \
@@ -119,10 +120,12 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  COPYING NEWS README AUTHORS ChangeLog doc/overview.pdf ${CWD}/ChangeLog.SB \
+  COPYING NEWS README AUTHORS doc/overview.pdf ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -145,20 +148,46 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
+# Compress info pages, if any:
+if [ -d ${PKG}/usr/info ]; then
+  ( cd ${PKG}/usr/info
+    rm -f dir
+    gzip -9 *.info*
+  )
+fi
+
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
+
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+# Install the info files for this package
+if [ -x usr/bin/install-info ] ; then
+  \${CHROOT} /usr/bin/install-info --info-dir=/usr/info usr/info/${NAME}.info.gz 2>/dev/null
+fi
+EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}-*.patch.gz ${SBDIR}/
+    ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:

@@ -247,9 +247,6 @@ ApplyPatch runtime_pm_fixups.patch
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
-# backport some fixes for kswapd from mmotm, rhbz#649694
-ApplyPatch mm-vmstat-use-a-single-setter-function-and-callback-for-adjusting-percpu-thresholds.patch
-
 # rhbz#637619
 ApplyPatch net-AF_PACKET-vmalloc.patch
 

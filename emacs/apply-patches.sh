@@ -3,8 +3,10 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/glibc-open-macro.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/emacs-23.1-xdg.patch.gz | patch -p1 -E --backup --verbose
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/emacs-23.2-hideshow-comment.patch
 
 ( cd site-lisp
   # rpm-spec-mode can use compilation-mode

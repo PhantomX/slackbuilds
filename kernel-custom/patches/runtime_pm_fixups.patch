@@ -1,14 +1,26 @@
-Experimental fixes for the interactions between runtime PM and ACPI power
-resources. Needs some work with upstream.
+From 141d0d01ab292d4ea3a6d5e96b4048e10e68c1d3 Mon Sep 17 00:00:00 2001
+From: Kyle McMartin <kyle@mcmartin.ca>
+Date: Mon, 24 Jan 2011 13:01:57 -0500
+Subject: [PATCH] runtime_pm_fixups
+
+---
+ drivers/acpi/bus.c      |    3 ++-
+ drivers/acpi/pci_bind.c |    6 ++++++
+ drivers/acpi/power.c    |    5 ++++-
+ drivers/acpi/sleep.c    |    2 +-
+ drivers/acpi/wakeup.c   |    2 +-
+ drivers/pci/pci-acpi.c  |    2 +-
+ include/acpi/acpi_bus.h |    2 +-
+ 7 files changed, 16 insertions(+), 6 deletions(-)
 
 diff --git a/drivers/acpi/bus.c b/drivers/acpi/bus.c
-index 310e3b9..371debe 100644
+index 7ced61f..e4e0114 100644
 --- a/drivers/acpi/bus.c
 +++ b/drivers/acpi/bus.c
-@@ -329,7 +329,8 @@ int acpi_bus_set_power(acpi_handle handle, int state)
- 				goto end;
- 			}
- 		}
+@@ -256,7 +256,8 @@ static int __acpi_bus_set_power(struct acpi_device *device, int state)
+ 	 * a lower-powered state.
+ 	 */
+ 	if (state < device->power.state) {
 -		if (device->power.flags.power_resources) {
 +		if (device->power.flags.power_resources &&
 +		    !device->wakeup.run_wake_count) {
@@ -16,10 +28,10 @@ index 310e3b9..371debe 100644
  			if (result)
  				goto end;
 diff --git a/drivers/acpi/pci_bind.c b/drivers/acpi/pci_bind.c
-index 8b3cc6a..b013174 100644
+index 2ef0409..4b0bb68 100644
 --- a/drivers/acpi/pci_bind.c
 +++ b/drivers/acpi/pci_bind.c
-@@ -33,6 +33,8 @@
+@@ -32,6 +32,8 @@
  #include <acpi/acpi_bus.h>
  #include <acpi/acpi_drivers.h>
  
@@ -28,20 +40,29 @@ index 8b3cc6a..b013174 100644
  #define _COMPONENT		ACPI_PCI_COMPONENT
  ACPI_MODULE_NAME("pci_bind");
  
-@@ -173,6 +175,8 @@ static int acpi_pci_bind(struct acpi_device *device)
+@@ -65,6 +67,7 @@ static int acpi_pci_bind(struct acpi_device *device)
+ 	acpi_handle handle;
+ 	struct pci_bus *bus;
+ 	struct pci_dev *dev;
++	int state;
+ 
+ 	dev = acpi_get_pci_dev(device->handle);
+ 	if (!dev)
+@@ -87,6 +90,9 @@ static int acpi_pci_bind(struct acpi_device *device)
  		device->ops.unbind = acpi_pci_unbind;
  	}
  
-+	acpi_power_transition(device, acpi_power_get_inferred_state(device));
++	acpi_power_get_inferred_state(device, &state);
++	acpi_power_transition(device, state);
 +
  	/*
  	 * Evaluate and parse _PRT, if exists.  This code allows parsing of
  	 * _PRT objects within the scope of non-bridge devices.  Note that
 diff --git a/drivers/acpi/power.c b/drivers/acpi/power.c
-index 844c155..8a42ddf 100644
+index 9ac2a9f..cd6a8df 100644
 --- a/drivers/acpi/power.c
 +++ b/drivers/acpi/power.c
-@@ -394,7 +394,7 @@ int acpi_enable_wakeup_device_power(struct acpi_device *dev, int sleep_state)
+@@ -412,7 +412,7 @@ int acpi_enable_wakeup_device_power(struct acpi_device *dev, int sleep_state)
   *    State Wake) for the device, if present
   * 2. Shutdown down the power resources
   */
@@ -50,7 +71,7 @@ index 844c155..8a42ddf 100644
  {
  	int i, err = 0;
  
-@@ -417,6 +417,9 @@ int acpi_disable_wakeup_device_power(struct acpi_device *dev)
+@@ -435,6 +435,9 @@ int acpi_disable_wakeup_device_power(struct acpi_device *dev)
  	if (err)
  		goto out;
  
@@ -59,12 +80,12 @@ index 844c155..8a42ddf 100644
 +
  	/* Close power resource */
  	for (i = 0; i < dev->wakeup.resources.count; i++) {
- 		int ret = acpi_power_off_device(
+ 		int ret = acpi_power_off(dev->wakeup.resources.handles[i]);
 diff --git a/drivers/acpi/sleep.c b/drivers/acpi/sleep.c
-index 2c5cd02..6bf016b 100644
+index d6a8cd1..5d68dc0 100644
 --- a/drivers/acpi/sleep.c
 +++ b/drivers/acpi/sleep.c
-@@ -670,7 +670,7 @@ int acpi_pm_device_sleep_wake(struct device *dev, bool enable)
+@@ -697,7 +697,7 @@ int acpi_pm_device_sleep_wake(struct device *dev, bool enable)
  
  	error = enable ?
  		acpi_enable_wakeup_device_power(adev, acpi_target_sleep_state) :
@@ -74,20 +95,20 @@ index 2c5cd02..6bf016b 100644
  		dev_info(dev, "wake-up capability %s by ACPI\n",
  				enable ? "enabled" : "disabled");
 diff --git a/drivers/acpi/wakeup.c b/drivers/acpi/wakeup.c
-index f62a50c..ff48a54 100644
+index ed65014..a0cabc3 100644
 --- a/drivers/acpi/wakeup.c
 +++ b/drivers/acpi/wakeup.c
-@@ -71,7 +71,7 @@ void acpi_disable_wakeup_devices(u8 sleep_state)
+@@ -73,7 +73,7 @@ void acpi_disable_wakeup_devices(u8 sleep_state)
  				ACPI_GPE_DISABLE);
  
- 		if (dev->wakeup.state.enabled)
+ 		if (device_may_wakeup(&dev->dev))
 -			acpi_disable_wakeup_device_power(dev);
 +			acpi_disable_wakeup_device_power(dev, sleep_state);
  	}
  }
  
 diff --git a/drivers/pci/pci-acpi.c b/drivers/pci/pci-acpi.c
-index 24e19c5..cd99494 100644
+index 6fe0772..819fa7a 100644
 --- a/drivers/pci/pci-acpi.c
 +++ b/drivers/pci/pci-acpi.c
 @@ -302,7 +302,7 @@ static int acpi_dev_run_wake(struct device *phys_dev, bool enable)
@@ -100,10 +121,10 @@ index 24e19c5..cd99494 100644
  	} else {
  		error = -EALREADY;
 diff --git a/include/acpi/acpi_bus.h b/include/acpi/acpi_bus.h
-index 4de84ce..284f43c 100644
+index 78ca429..92d6e86 100644
 --- a/include/acpi/acpi_bus.h
 +++ b/include/acpi/acpi_bus.h
-@@ -387,7 +387,7 @@ struct acpi_pci_root *acpi_pci_find_root(acpi_handle handle);
+@@ -379,7 +379,7 @@ struct acpi_pci_root *acpi_pci_find_root(acpi_handle handle);
  #define DEVICE_ACPI_HANDLE(dev) ((acpi_handle)((dev)->archdata.acpi_handle))
  
  int acpi_enable_wakeup_device_power(struct acpi_device *dev, int state);
@@ -112,3 +133,6 @@ index 4de84ce..284f43c 100644
  
  #ifdef CONFIG_PM_OPS
  int acpi_pm_device_sleep_state(struct device *, int *);
+-- 
+1.7.3.5
+

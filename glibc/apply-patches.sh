@@ -1,5 +1,5 @@
 
-set -e -o pipefail -o xtrace
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
@@ -99,8 +99,13 @@ ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
 ApplyPatch glibc-2.10.1-multiarch.patch.gz
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
+# master
+ApplyPatch 0001-Fix-decoding-of-canonical-name-in-getaddrinfo.patch
+ApplyPatch 0001-Fix-range-error-handling-in-sgetspent.patch
+ApplyPatch 0001-Synchronize-generic-bits-sched.h-cpu_set_t-with-Linu.patch
+ApplyPatch 0001-Don-t-crash-when-dependencies-are-missing.patch
+
 [ "${ARCH}" = "x86_64" ] && sed -i '/__ASSUME_PRIVATE_FUTEX/d' \
   sysdeps/unix/sysv/linux/kernel-features.h
-
 
 set +e +o pipefail

@@ -1,1 +1,1875 @@
-nil
+ drivers/gpu/drm/nouveau/nouveau_bios.c    |   25 +--
+ drivers/gpu/drm/nouveau/nouveau_bo.c      |    6 +-
+ drivers/gpu/drm/nouveau/nouveau_channel.c |    2 +-
+ drivers/gpu/drm/nouveau/nouveau_display.c |    2 +-
+ drivers/gpu/drm/nouveau/nouveau_dp.c      |    2 -
+ drivers/gpu/drm/nouveau/nouveau_drv.h     |   15 +-
+ drivers/gpu/drm/nouveau/nouveau_fence.c   |  190 ++++++++++------
+ drivers/gpu/drm/nouveau/nouveau_mem.c     |   50 +++-
+ drivers/gpu/drm/nouveau/nouveau_object.c  |   22 ++-
+ drivers/gpu/drm/nouveau/nouveau_sgdma.c   |  341 +++++++++++++++++++++++++----
+ drivers/gpu/drm/nouveau/nouveau_state.c   |   10 +-
+ drivers/gpu/drm/nouveau/nouveau_temp.c    |    4 +-
+ drivers/gpu/drm/nouveau/nouveau_util.c    |   23 ++-
+ drivers/gpu/drm/nouveau/nouveau_util.h    |    4 +
+ drivers/gpu/drm/nouveau/nouveau_vm.c      |   13 +-
+ drivers/gpu/drm/nouveau/nv04_fifo.c       |   19 ++-
+ drivers/gpu/drm/nouveau/nv40_fb.c         |   59 +++++-
+ drivers/gpu/drm/nouveau/nv50_display.c    |    7 +-
+ drivers/gpu/drm/nouveau/nv50_fb.c         |  150 ++++++++++++-
+ drivers/gpu/drm/nouveau/nv50_fifo.c       |    3 +-
+ drivers/gpu/drm/nouveau/nv50_gpio.c       |   13 +-
+ drivers/gpu/drm/nouveau/nv50_graph.c      |  142 +++++++-----
+ drivers/gpu/drm/nouveau/nv50_vm.c         |    1 -
+ drivers/gpu/drm/nouveau/nv84_crypt.c      |    2 +-
+ drivers/gpu/drm/nouveau/nvc0_fifo.c       |   15 +-
+ drivers/gpu/drm/nouveau/nvc0_graph.c      |    2 -
+ 26 files changed, 841 insertions(+), 281 deletions(-)
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_bios.c b/drivers/gpu/drm/nouveau/nouveau_bios.c
+index 6bdab89..b8ff1e7 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_bios.c
++++ b/drivers/gpu/drm/nouveau/nouveau_bios.c
+@@ -5950,6 +5950,11 @@ apply_dcb_connector_quirks(struct nvbios *bios, int idx)
+ 	}
+ }
+ 
++static const u8 hpd_gpio[16] = {
++	0xff, 0x07, 0x08, 0xff, 0xff, 0x51, 0x52, 0xff,
++	0xff, 0xff, 0xff, 0xff, 0xff, 0x5e, 0x5f, 0x60,
++};
++
+ static void
+ parse_dcb_connector_table(struct nvbios *bios)
+ {
+@@ -5986,23 +5991,9 @@ parse_dcb_connector_table(struct nvbios *bios)
+ 
+ 		cte->type  = (cte->entry & 0x000000ff) >> 0;
+ 		cte->index2 = (cte->entry & 0x00000f00) >> 8;
+-		switch (cte->entry & 0x00033000) {
+-		case 0x00001000:
+-			cte->gpio_tag = 0x07;
+-			break;
+-		case 0x00002000:
+-			cte->gpio_tag = 0x08;
+-			break;
+-		case 0x00010000:
+-			cte->gpio_tag = 0x51;
+-			break;
+-		case 0x00020000:
+-			cte->gpio_tag = 0x52;
+-			break;
+-		default:
+-			cte->gpio_tag = 0xff;
+-			break;
+-		}
++
++		cte->gpio_tag = ffs((cte->entry & 0x07033000) >> 12);
++		cte->gpio_tag = hpd_gpio[cte->gpio_tag];
+ 
+ 		if (cte->type == 0xff)
+ 			continue;
+diff --git a/drivers/gpu/drm/nouveau/nouveau_bo.c b/drivers/gpu/drm/nouveau/nouveau_bo.c
+index a521840..53a8000 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_bo.c
++++ b/drivers/gpu/drm/nouveau/nouveau_bo.c
+@@ -385,7 +385,8 @@ nouveau_bo_create_ttm_backend_entry(struct ttm_bo_device *bdev)
+ 	case NOUVEAU_GART_AGP:
+ 		return ttm_agp_backend_init(bdev, dev->agp->bridge);
+ #endif
+-	case NOUVEAU_GART_SGDMA:
++	case NOUVEAU_GART_PDMA:
++	case NOUVEAU_GART_HW:
+ 		return nouveau_sgdma_init_ttm(dev);
+ 	default:
+ 		NV_ERROR(dev, "Unknown GART type %d\n",
+@@ -439,7 +440,8 @@ nouveau_bo_init_mem_type(struct ttm_bo_device *bdev, uint32_t type,
+ 				TTM_PL_FLAG_WC;
+ 			man->default_caching = TTM_PL_FLAG_WC;
+ 			break;
+-		case NOUVEAU_GART_SGDMA:
++		case NOUVEAU_GART_PDMA:
++		case NOUVEAU_GART_HW:
+ 			man->flags = TTM_MEMTYPE_FLAG_MAPPABLE |
+ 				     TTM_MEMTYPE_FLAG_CMA;
+ 			man->available_caching = TTM_PL_MASK_CACHING;
+diff --git a/drivers/gpu/drm/nouveau/nouveau_channel.c b/drivers/gpu/drm/nouveau/nouveau_channel.c
+index 3960d66..3d7b316 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_channel.c
++++ b/drivers/gpu/drm/nouveau/nouveau_channel.c
+@@ -35,7 +35,7 @@ nouveau_channel_pushbuf_ctxdma_init(struct nouveau_channel *chan)
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
+ 	struct nouveau_bo *pb = chan->pushbuf_bo;
+ 	struct nouveau_gpuobj *pushbuf = NULL;
+-	int ret;
++	int ret = 0;
+ 
+ 	if (dev_priv->card_type >= NV_50) {
+ 		if (dev_priv->card_type < NV_C0) {
+diff --git a/drivers/gpu/drm/nouveau/nouveau_display.c b/drivers/gpu/drm/nouveau/nouveau_display.c
+index 505c6bf..566466b 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_display.c
++++ b/drivers/gpu/drm/nouveau/nouveau_display.c
+@@ -244,7 +244,7 @@ nouveau_crtc_page_flip(struct drm_crtc *crtc, struct drm_framebuffer *fb,
+ 
+ 	/* Initialize a page flip struct */
+ 	*s = (struct nouveau_page_flip_state)
+-		{ { }, s->event, nouveau_crtc(crtc)->index,
++		{ { }, event, nouveau_crtc(crtc)->index,
+ 		  fb->bits_per_pixel, fb->pitch, crtc->x, crtc->y,
+ 		  new_bo->bo.offset };
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_dp.c b/drivers/gpu/drm/nouveau/nouveau_dp.c
+index 38d5995..7beb82a 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_dp.c
++++ b/drivers/gpu/drm/nouveau/nouveau_dp.c
+@@ -175,7 +175,6 @@ nouveau_dp_link_train_adjust(struct drm_encoder *encoder, uint8_t *config)
+ {
+ 	struct nouveau_encoder *nv_encoder = nouveau_encoder(encoder);
+ 	struct drm_device *dev = encoder->dev;
+-	struct bit_displayport_encoder_table_entry *dpse;
+ 	struct bit_displayport_encoder_table *dpe;
+ 	int ret, i, dpe_headerlen, vs = 0, pre = 0;
+ 	uint8_t request[2];
+@@ -183,7 +182,6 @@ nouveau_dp_link_train_adjust(struct drm_encoder *encoder, uint8_t *config)
+ 	dpe = nouveau_bios_dp_table(dev, nv_encoder->dcb, &dpe_headerlen);
+ 	if (!dpe)
+ 		return false;
+-	dpse = (void *)((char *)dpe + dpe_headerlen);
+ 
+ 	ret = auxch_rd(encoder, DP_ADJUST_REQUEST_LANE0_1, request, 2);
+ 	if (ret)
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drv.h b/drivers/gpu/drm/nouveau/nouveau_drv.h
+index 982d70b..2cae8e7 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drv.h
++++ b/drivers/gpu/drm/nouveau/nouveau_drv.h
+@@ -652,7 +652,6 @@ struct drm_nouveau_private {
+ 	/* interrupt handling */
+ 	void (*irq_handler[32])(struct drm_device *);
+ 	bool msi_enabled;
+-	struct workqueue_struct *wq;
+ 	struct work_struct irq_work;
+ 
+ 	struct list_head vbl_waiting;
+@@ -691,13 +690,21 @@ struct drm_nouveau_private {
+ 	struct {
+ 		enum {
+ 			NOUVEAU_GART_NONE = 0,
+-			NOUVEAU_GART_AGP,
+-			NOUVEAU_GART_SGDMA
++			NOUVEAU_GART_AGP,	/* AGP */
++			NOUVEAU_GART_PDMA,	/* paged dma object */
++			NOUVEAU_GART_HW		/* on-chip gart/vm */
+ 		} type;
+ 		uint64_t aper_base;
+ 		uint64_t aper_size;
+ 		uint64_t aper_free;
+ 
++		struct ttm_backend_func *func;
++
++		struct {
++			struct page *page;
++			dma_addr_t   addr;
++		} dummy;
++
+ 		struct nouveau_gpuobj *sg_ctxdma;
+ 		struct nouveau_vma vma;
+ 	} gart_info;
+@@ -1076,7 +1083,7 @@ extern void nv40_fb_set_tile_region(struct drm_device *dev, int i);
+ /* nv50_fb.c */
+ extern int  nv50_fb_init(struct drm_device *);
+ extern void nv50_fb_takedown(struct drm_device *);
+-extern void nv50_fb_vm_trap(struct drm_device *, int display, const char *);
++extern void nv50_fb_vm_trap(struct drm_device *, int display);
+ 
+ /* nvc0_fb.c */
+ extern int  nvc0_fb_init(struct drm_device *);
+diff --git a/drivers/gpu/drm/nouveau/nouveau_fence.c b/drivers/gpu/drm/nouveau/nouveau_fence.c
+index 221b846..8b46392 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_fence.c
++++ b/drivers/gpu/drm/nouveau/nouveau_fence.c
+@@ -32,8 +32,7 @@
+ #include "nouveau_dma.h"
+ 
+ #define USE_REFCNT(dev) (nouveau_private(dev)->chipset >= 0x10)
+-#define USE_SEMA(dev) (nouveau_private(dev)->chipset >= 0x17 && \
+-		       nouveau_private(dev)->card_type < NV_C0)
++#define USE_SEMA(dev) (nouveau_private(dev)->chipset >= 0x17)
+ 
+ struct nouveau_fence {
+ 	struct nouveau_channel *channel;
+@@ -259,11 +258,12 @@ __nouveau_fence_wait(void *sync_obj, void *sync_arg, bool lazy, bool intr)
+ }
+ 
+ static struct nouveau_semaphore *
+-alloc_semaphore(struct drm_device *dev)
++semaphore_alloc(struct drm_device *dev)
+ {
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
+ 	struct nouveau_semaphore *sema;
+-	int ret;
++	int size = (dev_priv->chipset < 0x84) ? 4 : 16;
++	int ret, i;
+ 
+ 	if (!USE_SEMA(dev))
+ 		return NULL;
+@@ -277,9 +277,9 @@ alloc_semaphore(struct drm_device *dev)
+ 		goto fail;
+ 
+ 	spin_lock(&dev_priv->fence.lock);
+-	sema->mem = drm_mm_search_free(&dev_priv->fence.heap, 4, 0, 0);
++	sema->mem = drm_mm_search_free(&dev_priv->fence.heap, size, 0, 0);
+ 	if (sema->mem)
+-		sema->mem = drm_mm_get_block_atomic(sema->mem, 4, 0);
++		sema->mem = drm_mm_get_block_atomic(sema->mem, size, 0);
+ 	spin_unlock(&dev_priv->fence.lock);
+ 
+ 	if (!sema->mem)
+@@ -287,7 +287,8 @@ alloc_semaphore(struct drm_device *dev)
+ 
+ 	kref_init(&sema->ref);
+ 	sema->dev = dev;
+-	nouveau_bo_wr32(dev_priv->fence.bo, sema->mem->start / 4, 0);
++	for (i = sema->mem->start; i < sema->mem->start + size; i += 4)
++		nouveau_bo_wr32(dev_priv->fence.bo, i / 4, 0);
+ 
+ 	return sema;
+ fail:
+@@ -296,7 +297,7 @@ fail:
+ }
+ 
+ static void
+-free_semaphore(struct kref *ref)
++semaphore_free(struct kref *ref)
+ {
+ 	struct nouveau_semaphore *sema =
+ 		container_of(ref, struct nouveau_semaphore, ref);
+@@ -318,61 +319,107 @@ semaphore_work(void *priv, bool signalled)
+ 	if (unlikely(!signalled))
+ 		nouveau_bo_wr32(dev_priv->fence.bo, sema->mem->start / 4, 1);
+ 
+-	kref_put(&sema->ref, free_semaphore);
++	kref_put(&sema->ref, semaphore_free);
+ }
+ 
+ static int
+-emit_semaphore(struct nouveau_channel *chan, int method,
+-	       struct nouveau_semaphore *sema)
++semaphore_acquire(struct nouveau_channel *chan, struct nouveau_semaphore *sema)
+ {
+-	struct drm_nouveau_private *dev_priv = sema->dev->dev_private;
+-	struct nouveau_fence *fence;
+-	bool smart = (dev_priv->card_type >= NV_50);
++	struct drm_nouveau_private *dev_priv = chan->dev->dev_private;
++	struct nouveau_fence *fence = NULL;
+ 	int ret;
+ 
+-	ret = RING_SPACE(chan, smart ? 8 : 4);
++	if (dev_priv->chipset < 0x84) {
++		ret = RING_SPACE(chan, 3);
++		if (ret)
++			return ret;
++
++		BEGIN_RING(chan, NvSubSw, NV_SW_SEMAPHORE_OFFSET, 2);
++		OUT_RING  (chan, sema->mem->start);
++		OUT_RING  (chan, 1);
++	} else
++	if (dev_priv->chipset < 0xc0) {
++		struct nouveau_vma *vma = &dev_priv->fence.bo->vma;
++		u64 offset = vma->offset + sema->mem->start;
++
++		ret = RING_SPACE(chan, 5);
++		if (ret)
++			return ret;
++
++		BEGIN_RING(chan, NvSubSw, 0x0010, 4);
++		OUT_RING  (chan, upper_32_bits(offset));
++		OUT_RING  (chan, lower_32_bits(offset));
++		OUT_RING  (chan, 1);
++		OUT_RING  (chan, 1); /* ACQUIRE_EQ */
++	} else {
++		struct nouveau_vma *vma = &dev_priv->fence.bo->vma;
++		u64 offset = vma->offset + sema->mem->start;
++
++		ret = RING_SPACE(chan, 5);
++		if (ret)
++			return ret;
++
++		BEGIN_NVC0(chan, 2, NvSubM2MF, 0x0010, 4);
++		OUT_RING  (chan, upper_32_bits(offset));
++		OUT_RING  (chan, lower_32_bits(offset));
++		OUT_RING  (chan, 1);
++		OUT_RING  (chan, 0x1001); /* ACQUIRE_EQ */
++	}
++
++	/* Delay semaphore destruction until its work is done */
++	ret = nouveau_fence_new(chan, &fence, true);
+ 	if (ret)
+ 		return ret;
+ 
+-	if (smart) {
+-		BEGIN_RING(chan, NvSubSw, NV_SW_DMA_SEMAPHORE, 1);
+-		OUT_RING(chan, NvSema);
+-	}
+-	BEGIN_RING(chan, NvSubSw, NV_SW_SEMAPHORE_OFFSET, 1);
+-	OUT_RING(chan, sema->mem->start);
+-
+-	if (smart && method == NV_SW_SEMAPHORE_ACQUIRE) {
+-		/*
+-		 * NV50 tries to be too smart and context-switch
+-		 * between semaphores instead of doing a "first come,
+-		 * first served" strategy like previous cards
+-		 * do.
+-		 *
+-		 * That's bad because the ACQUIRE latency can get as
+-		 * large as the PFIFO context time slice in the
+-		 * typical DRI2 case where you have several
+-		 * outstanding semaphores at the same moment.
+-		 *
+-		 * If we're going to ACQUIRE, force the card to
+-		 * context switch before, just in case the matching
+-		 * RELEASE is already scheduled to be executed in
+-		 * another channel.
+-		 */
+-		BEGIN_RING(chan, NvSubSw, NV_SW_YIELD, 1);
+-		OUT_RING(chan, 0);
+-	}
++	kref_get(&sema->ref);
++	nouveau_fence_work(fence, semaphore_work, sema);
++	nouveau_fence_unref(&fence);
++	return 0;
++}
++
++static int
++semaphore_release(struct nouveau_channel *chan, struct nouveau_semaphore *sema)
++{
++	struct drm_nouveau_private *dev_priv = chan->dev->dev_private;
++	struct nouveau_fence *fence = NULL;
++	int ret;
++
++	if (dev_priv->chipset < 0x84) {
++		ret = RING_SPACE(chan, 4);
++		if (ret)
++			return ret;
++
++		BEGIN_RING(chan, NvSubSw, NV_SW_SEMAPHORE_OFFSET, 1);
++		OUT_RING  (chan, sema->mem->start);
++		BEGIN_RING(chan, NvSubSw, NV_SW_SEMAPHORE_RELEASE, 1);
++		OUT_RING  (chan, 1);
++	} else
++	if (dev_priv->chipset < 0xc0) {
++		struct nouveau_vma *vma = &dev_priv->fence.bo->vma;
++		u64 offset = vma->offset + sema->mem->start;
+ 
+-	BEGIN_RING(chan, NvSubSw, method, 1);
+-	OUT_RING(chan, 1);
+-
+-	if (smart && method == NV_SW_SEMAPHORE_RELEASE) {
+-		/*
+-		 * Force the card to context switch, there may be
+-		 * another channel waiting for the semaphore we just
+-		 * released.
+-		 */
+-		BEGIN_RING(chan, NvSubSw, NV_SW_YIELD, 1);
+-		OUT_RING(chan, 0);
++		ret = RING_SPACE(chan, 5);
++		if (ret)
++			return ret;
++
++		BEGIN_RING(chan, NvSubSw, 0x0010, 4);
++		OUT_RING  (chan, upper_32_bits(offset));
++		OUT_RING  (chan, lower_32_bits(offset));
++		OUT_RING  (chan, 1);
++		OUT_RING  (chan, 2); /* RELEASE */
++	} else {
++		struct nouveau_vma *vma = &dev_priv->fence.bo->vma;
++		u64 offset = vma->offset + sema->mem->start;
++
++		ret = RING_SPACE(chan, 5);
++		if (ret)
++			return ret;
++
++		BEGIN_NVC0(chan, 2, NvSubM2MF, 0x0010, 4);
++		OUT_RING  (chan, upper_32_bits(offset));
++		OUT_RING  (chan, lower_32_bits(offset));
++		OUT_RING  (chan, 1);
++		OUT_RING  (chan, 0x1002); /* RELEASE */
+ 	}
+ 
+ 	/* Delay semaphore destruction until its work is done */
+@@ -383,7 +430,6 @@ emit_semaphore(struct nouveau_channel *chan, int method,
+ 	kref_get(&sema->ref);
+ 	nouveau_fence_work(fence, semaphore_work, sema);
+ 	nouveau_fence_unref(&fence);
+-
+ 	return 0;
+ }
+ 
+@@ -400,7 +446,7 @@ nouveau_fence_sync(struct nouveau_fence *fence,
+ 		   nouveau_fence_signalled(fence)))
+ 		goto out;
+ 
+-	sema = alloc_semaphore(dev);
++	sema = semaphore_alloc(dev);
+ 	if (!sema) {
+ 		/* Early card or broken userspace, fall back to
+ 		 * software sync. */
+@@ -418,17 +464,17 @@ nouveau_fence_sync(struct nouveau_fence *fence,
+ 	}
+ 
+ 	/* Make wchan wait until it gets signalled */
+-	ret = emit_semaphore(wchan, NV_SW_SEMAPHORE_ACQUIRE, sema);
++	ret = semaphore_acquire(wchan, sema);
+ 	if (ret)
+ 		goto out_unlock;
+ 
+ 	/* Signal the semaphore from chan */
+-	ret = emit_semaphore(chan, NV_SW_SEMAPHORE_RELEASE, sema);
++	ret = semaphore_release(chan, sema);
+ 
+ out_unlock:
+ 	mutex_unlock(&chan->mutex);
+ out_unref:
+-	kref_put(&sema->ref, free_semaphore);
++	kref_put(&sema->ref, semaphore_free);
+ out:
+ 	if (chan)
+ 		nouveau_channel_put_unlocked(&chan);
+@@ -449,22 +495,23 @@ nouveau_fence_channel_init(struct nouveau_channel *chan)
+ 	struct nouveau_gpuobj *obj = NULL;
+ 	int ret;
+ 
++	if (dev_priv->card_type >= NV_C0)
++		goto out_initialised;
++
+ 	/* Create an NV_SW object for various sync purposes */
+ 	ret = nouveau_gpuobj_gr_new(chan, NvSw, NV_SW);
+ 	if (ret)
+ 		return ret;
+ 
+ 	/* we leave subchannel empty for nvc0 */
+-	if (dev_priv->card_type < NV_C0) {
+-		ret = RING_SPACE(chan, 2);
+-		if (ret)
+-			return ret;
+-		BEGIN_RING(chan, NvSubSw, 0, 1);
+-		OUT_RING(chan, NvSw);
+-	}
++	ret = RING_SPACE(chan, 2);
++	if (ret)
++		return ret;
++	BEGIN_RING(chan, NvSubSw, 0, 1);
++	OUT_RING(chan, NvSw);
+ 
+ 	/* Create a DMA object for the shared cross-channel sync area. */
+-	if (USE_SEMA(dev)) {
++	if (USE_SEMA(dev) && dev_priv->chipset < 0x84) {
+ 		struct ttm_mem_reg *mem = &dev_priv->fence.bo->bo.mem;
+ 
+ 		ret = nouveau_gpuobj_dma_new(chan, NV_CLASS_DMA_IN_MEMORY,
+@@ -484,14 +531,20 @@ nouveau_fence_channel_init(struct nouveau_channel *chan)
+ 			return ret;
+ 		BEGIN_RING(chan, NvSubSw, NV_SW_DMA_SEMAPHORE, 1);
+ 		OUT_RING(chan, NvSema);
++	} else {
++		ret = RING_SPACE(chan, 2);
++		if (ret)
++			return ret;
++		BEGIN_RING(chan, NvSubSw, NV_SW_DMA_SEMAPHORE, 1);
++		OUT_RING  (chan, chan->vram_handle); /* whole VM */
+ 	}
+ 
+ 	FIRE_RING(chan);
+ 
++out_initialised:
+ 	INIT_LIST_HEAD(&chan->fence.pending);
+ 	spin_lock_init(&chan->fence.lock);
+ 	atomic_set(&chan->fence.last_sequence_irq, 0);
+-
+ 	return 0;
+ }
+ 
+@@ -519,11 +572,12 @@ int
+ nouveau_fence_init(struct drm_device *dev)
+ {
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	int size = (dev_priv->chipset < 0x84) ? 4096 : 16384;
+ 	int ret;
+ 
+ 	/* Create a shared VRAM heap for cross-channel sync. */
+ 	if (USE_SEMA(dev)) {
+-		ret = nouveau_bo_new(dev, NULL, 4096, 0, TTM_PL_FLAG_VRAM,
++		ret = nouveau_bo_new(dev, NULL, size, 0, TTM_PL_FLAG_VRAM,
+ 				     0, 0, false, true, &dev_priv->fence.bo);
+ 		if (ret)
+ 			return ret;
+diff --git a/drivers/gpu/drm/nouveau/nouveau_mem.c b/drivers/gpu/drm/nouveau/nouveau_mem.c
+index b0fb9bd..5b769eb 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_mem.c
++++ b/drivers/gpu/drm/nouveau/nouveau_mem.c
+@@ -393,11 +393,17 @@ nouveau_mem_vram_init(struct drm_device *dev)
+ 	struct ttm_bo_device *bdev = &dev_priv->ttm.bdev;
+ 	int ret, dma_bits;
+ 
+-	if (dev_priv->card_type >= NV_50 &&
+-	    pci_dma_supported(dev->pdev, DMA_BIT_MASK(40)))
+-		dma_bits = 40;
+-	else
+-		dma_bits = 32;
++	dma_bits = 32;
++	if (dev_priv->card_type >= NV_50) {
++		if (pci_dma_supported(dev->pdev, DMA_BIT_MASK(40)))
++			dma_bits = 40;
++	} else
++	if (drm_device_is_pcie(dev) &&
++	    dev_priv->chipset != 0x40 &&
++	    dev_priv->chipset != 0x45) {
++		if (pci_dma_supported(dev->pdev, DMA_BIT_MASK(39)))
++			dma_bits = 39;
++	}
+ 
+ 	ret = pci_set_dma_mask(dev->pdev, DMA_BIT_MASK(dma_bits));
+ 	if (ret)
+@@ -419,14 +425,32 @@ nouveau_mem_vram_init(struct drm_device *dev)
+ 	}
+ 
+ 	/* reserve space at end of VRAM for PRAMIN */
+-	if (dev_priv->chipset == 0x40 || dev_priv->chipset == 0x47 ||
+-	    dev_priv->chipset == 0x49 || dev_priv->chipset == 0x4b)
+-		dev_priv->ramin_rsvd_vram = (2 * 1024 * 1024);
+-	else
+-	if (dev_priv->card_type >= NV_40)
+-		dev_priv->ramin_rsvd_vram = (1 * 1024 * 1024);
+-	else
+-		dev_priv->ramin_rsvd_vram = (512 * 1024);
++	if (dev_priv->card_type >= NV_50) {
++		dev_priv->ramin_rsvd_vram = 1 * 1024 * 1024;
++	} else
++	if (dev_priv->card_type >= NV_40) {
++		u32 vs = hweight8((nv_rd32(dev, 0x001540) & 0x0000ff00) >> 8);
++		u32 rsvd;
++
++		/* estimate grctx size, the magics come from nv40_grctx.c */
++		if      (dev_priv->chipset == 0x40) rsvd = 0x6aa0 * vs;
++		else if (dev_priv->chipset  < 0x43) rsvd = 0x4f00 * vs;
++		else if (nv44_graph_class(dev))	    rsvd = 0x4980 * vs;
++		else				    rsvd = 0x4a40 * vs;
++		rsvd += 16 * 1024;
++		rsvd *= dev_priv->engine.fifo.channels;
++
++		/* pciegart table */
++		if (drm_device_is_pcie(dev))
++			rsvd += 512 * 1024;
++
++		/* object storage */
++		rsvd += 512 * 1024;
++
++		dev_priv->ramin_rsvd_vram = round_up(rsvd, 4096);
++	} else {
++		dev_priv->ramin_rsvd_vram = 512 * 1024;
++	}
+ 
+ 	ret = dev_priv->engine.vram.init(dev);
+ 	if (ret)
+diff --git a/drivers/gpu/drm/nouveau/nouveau_object.c b/drivers/gpu/drm/nouveau/nouveau_object.c
+index 30b6544..3c12461 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_object.c
++++ b/drivers/gpu/drm/nouveau/nouveau_object.c
+@@ -490,16 +490,22 @@ nouveau_gpuobj_dma_new(struct nouveau_channel *chan, int class, u64 base,
+ 	}
+ 
+ 	if (target == NV_MEM_TARGET_GART) {
+-		if (dev_priv->gart_info.type == NOUVEAU_GART_AGP) {
+-			target = NV_MEM_TARGET_PCI_NOSNOOP;
+-			base  += dev_priv->gart_info.aper_base;
+-		} else
+-		if (base != 0) {
+-			base = nouveau_sgdma_get_physical(dev, base);
++		struct nouveau_gpuobj *gart = dev_priv->gart_info.sg_ctxdma;
++
++		if (dev_priv->gart_info.type == NOUVEAU_GART_PDMA) {
++			if (base == 0) {
++				nouveau_gpuobj_ref(gart, pobj);
++				return 0;
++			}
++
++			base   = nouveau_sgdma_get_physical(dev, base);
+ 			target = NV_MEM_TARGET_PCI;
+ 		} else {
+-			nouveau_gpuobj_ref(dev_priv->gart_info.sg_ctxdma, pobj);
+-			return 0;
++			base += dev_priv->gart_info.aper_base;
++			if (dev_priv->gart_info.type == NOUVEAU_GART_AGP)
++				target = NV_MEM_TARGET_PCI_NOSNOOP;
++			else
++				target = NV_MEM_TARGET_PCI;
+ 		}
+ 	}
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_sgdma.c b/drivers/gpu/drm/nouveau/nouveau_sgdma.c
+index 9a250eb..a26383b 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_sgdma.c
++++ b/drivers/gpu/drm/nouveau/nouveau_sgdma.c
+@@ -74,8 +74,24 @@ nouveau_sgdma_clear(struct ttm_backend *be)
+ 	}
+ }
+ 
++static void
++nouveau_sgdma_destroy(struct ttm_backend *be)
++{
++	struct nouveau_sgdma_be *nvbe = (struct nouveau_sgdma_be *)be;
++
++	if (be) {
++		NV_DEBUG(nvbe->dev, "\n");
++
++		if (nvbe) {
++			if (nvbe->pages)
++				be->func->clear(be);
++			kfree(nvbe);
++		}
++	}
++}
++
+ static int
+-nouveau_sgdma_bind(struct ttm_backend *be, struct ttm_mem_reg *mem)
++nv04_sgdma_bind(struct ttm_backend *be, struct ttm_mem_reg *mem)
+ {
+ 	struct nouveau_sgdma_be *nvbe = (struct nouveau_sgdma_be *)be;
+ 	struct drm_device *dev = nvbe->dev;
+@@ -102,7 +118,7 @@ nouveau_sgdma_bind(struct ttm_backend *be, struct ttm_mem_reg *mem)
+ }
+ 
+ static int
+-nouveau_sgdma_unbind(struct ttm_backend *be)
++nv04_sgdma_unbind(struct ttm_backend *be)
+ {
+ 	struct nouveau_sgdma_be *nvbe = (struct nouveau_sgdma_be *)be;
+ 	struct drm_device *dev = nvbe->dev;
+@@ -125,23 +141,222 @@ nouveau_sgdma_unbind(struct ttm_backend *be)
+ 	return 0;
+ }
+ 
++static struct ttm_backend_func nv04_sgdma_backend = {
++	.populate		= nouveau_sgdma_populate,
++	.clear			= nouveau_sgdma_clear,
++	.bind			= nv04_sgdma_bind,
++	.unbind			= nv04_sgdma_unbind,
++	.destroy		= nouveau_sgdma_destroy
++};
++
+ static void
+-nouveau_sgdma_destroy(struct ttm_backend *be)
++nv41_sgdma_flush(struct nouveau_sgdma_be *nvbe)
++{
++	struct drm_device *dev = nvbe->dev;
++
++	nv_wr32(dev, 0x100810, 0x00000022);
++	if (!nv_wait(dev, 0x100810, 0x00000100, 0x00000100))
++		NV_ERROR(dev, "vm flush timeout: 0x%08x\n",
++			 nv_rd32(dev, 0x100810));
++	nv_wr32(dev, 0x100810, 0x00000000);
++}
++
++static int
++nv41_sgdma_bind(struct ttm_backend *be, struct ttm_mem_reg *mem)
+ {
+ 	struct nouveau_sgdma_be *nvbe = (struct nouveau_sgdma_be *)be;
++	struct drm_nouveau_private *dev_priv = nvbe->dev->dev_private;
++	struct nouveau_gpuobj *pgt = dev_priv->gart_info.sg_ctxdma;
++	dma_addr_t *list = nvbe->pages;
++	u32 pte = mem->start << 2;
++	u32 cnt = nvbe->nr_pages;
+ 
+-	if (be) {
+-		NV_DEBUG(nvbe->dev, "\n");
++	nvbe->offset = mem->start << PAGE_SHIFT;
+ 
+-		if (nvbe) {
+-			if (nvbe->pages)
+-				be->func->clear(be);
+-			kfree(nvbe);
++	while (cnt--) {
++		nv_wo32(pgt, pte, (*list++ >> 7) | 1);
++		pte += 4;
++	}
++
++	nv41_sgdma_flush(nvbe);
++	nvbe->bound = true;
++	return 0;
++}
++
++static int
++nv41_sgdma_unbind(struct ttm_backend *be)
++{
++	struct nouveau_sgdma_be *nvbe = (struct nouveau_sgdma_be *)be;
++	struct drm_nouveau_private *dev_priv = nvbe->dev->dev_private;
++	struct nouveau_gpuobj *pgt = dev_priv->gart_info.sg_ctxdma;
++	u32 pte = (nvbe->offset >> 12) << 2;
++	u32 cnt = nvbe->nr_pages;
++
++	while (cnt--) {
++		nv_wo32(pgt, pte, 0x00000000);
++		pte += 4;
++	}
++
++	nv41_sgdma_flush(nvbe);
++	nvbe->bound = false;
++	return 0;
++}
++
++static struct ttm_backend_func nv41_sgdma_backend = {
++	.populate		= nouveau_sgdma_populate,
++	.clear			= nouveau_sgdma_clear,
++	.bind			= nv41_sgdma_bind,
++	.unbind			= nv41_sgdma_unbind,
++	.destroy		= nouveau_sgdma_destroy
++};
++
++static void
++nv44_sgdma_flush(struct nouveau_sgdma_be *nvbe)
++{
++	struct drm_device *dev = nvbe->dev;
++
++	nv_wr32(dev, 0x100814, (nvbe->nr_pages - 1) << 12);
++	nv_wr32(dev, 0x100808, nvbe->offset | 0x20);
++	if (!nv_wait(dev, 0x100808, 0x00000001, 0x00000001))
++		NV_ERROR(dev, "gart flush timeout: 0x%08x\n",
++			 nv_rd32(dev, 0x100808));
++	nv_wr32(dev, 0x100808, 0x00000000);
++}
++
++static void
++nv44_sgdma_fill(struct nouveau_gpuobj *pgt, dma_addr_t *list, u32 base, u32 cnt)
++{
++	struct drm_nouveau_private *dev_priv = pgt->dev->dev_private;
++	dma_addr_t dummy = dev_priv->gart_info.dummy.addr;
++	u32 pte, tmp[4];
++
++	pte   = base >> 2;
++	base &= ~0x0000000f;
++
++	tmp[0] = nv_ro32(pgt, base + 0x0);
++	tmp[1] = nv_ro32(pgt, base + 0x4);
++	tmp[2] = nv_ro32(pgt, base + 0x8);
++	tmp[3] = nv_ro32(pgt, base + 0xc);
++	while (cnt--) {
++		u32 addr = list ? (*list++ >> 12) : (dummy >> 12);
++		switch (pte++ & 0x3) {
++		case 0:
++			tmp[0] &= ~0x07ffffff;
++			tmp[0] |= addr;
++			break;
++		case 1:
++			tmp[0] &= ~0xf8000000;
++			tmp[0] |= addr << 27;
++			tmp[1] &= ~0x003fffff;
++			tmp[1] |= addr >> 5;
++			break;
++		case 2:
++			tmp[1] &= ~0xffc00000;
++			tmp[1] |= addr << 22;
++			tmp[2] &= ~0x0001ffff;
++			tmp[2] |= addr >> 10;
++			break;
++		case 3:
++			tmp[2] &= ~0xfffe0000;
++			tmp[2] |= addr << 17;
++			tmp[3] &= ~0x00000fff;
++			tmp[3] |= addr >> 15;
++			break;
+ 		}
+ 	}
++
++	tmp[3] |= 0x40000000;
++
++	nv_wo32(pgt, base + 0x0, tmp[0]);
++	nv_wo32(pgt, base + 0x4, tmp[1]);
++	nv_wo32(pgt, base + 0x8, tmp[2]);
++	nv_wo32(pgt, base + 0xc, tmp[3]);
+ }
+ 
+ static int
++nv44_sgdma_bind(struct ttm_backend *be, struct ttm_mem_reg *mem)
++{
++	struct nouveau_sgdma_be *nvbe = (struct nouveau_sgdma_be *)be;
++	struct drm_nouveau_private *dev_priv = nvbe->dev->dev_private;
++	struct nouveau_gpuobj *pgt = dev_priv->gart_info.sg_ctxdma;
++	dma_addr_t *list = nvbe->pages;
++	u32 pte = mem->start << 2, tmp[4];
++	u32 cnt = nvbe->nr_pages;
++	int i;
++
++	nvbe->offset = mem->start << PAGE_SHIFT;
++
++	if (pte & 0x0000000c) {
++		u32  max = 4 - ((pte >> 2) & 0x3);
++		u32 part = (cnt > max) ? max : cnt;
++		nv44_sgdma_fill(pgt, list, pte, part);
++		pte  += (part << 2);
++		list += part;
++		cnt  -= part;
++	}
++
++	while (cnt >= 4) {
++		for (i = 0; i < 4; i++)
++			tmp[i] = *list++ >> 12;
++		nv_wo32(pgt, pte + 0x0, tmp[0] >>  0 | tmp[1] << 27);
++		nv_wo32(pgt, pte + 0x4, tmp[1] >>  5 | tmp[2] << 22);
++		nv_wo32(pgt, pte + 0x8, tmp[2] >> 10 | tmp[3] << 17);
++		nv_wo32(pgt, pte + 0xc, tmp[3] >> 15 | 0x40000000);
++		pte  += 0x10;
++		cnt  -= 4;
++	}
++
++	if (cnt)
++		nv44_sgdma_fill(pgt, list, pte, cnt);
++
++	nv44_sgdma_flush(nvbe);
++	nvbe->bound = true;
++	return 0;
++}
++
++static int
++nv44_sgdma_unbind(struct ttm_backend *be)
++{
++	struct nouveau_sgdma_be *nvbe = (struct nouveau_sgdma_be *)be;
++	struct drm_nouveau_private *dev_priv = nvbe->dev->dev_private;
++	struct nouveau_gpuobj *pgt = dev_priv->gart_info.sg_ctxdma;
++	u32 pte = (nvbe->offset >> 12) << 2;
++	u32 cnt = nvbe->nr_pages;
++
++	if (pte & 0x0000000c) {
++		u32  max = 4 - ((pte >> 2) & 0x3);
++		u32 part = (cnt > max) ? max : cnt;
++		nv44_sgdma_fill(pgt, NULL, pte, part);
++		pte  += (part << 2);
++		cnt  -= part;
++	}
++
++	while (cnt >= 4) {
++		nv_wo32(pgt, pte + 0x0, 0x00000000);
++		nv_wo32(pgt, pte + 0x4, 0x00000000);
++		nv_wo32(pgt, pte + 0x8, 0x00000000);
++		nv_wo32(pgt, pte + 0xc, 0x00000000);
++		pte  += 0x10;
++		cnt  -= 4;
++	}
++
++	if (cnt)
++		nv44_sgdma_fill(pgt, NULL, pte, cnt);
++
++	nv44_sgdma_flush(nvbe);
++	nvbe->bound = false;
++	return 0;
++}
++
++static struct ttm_backend_func nv44_sgdma_backend = {
++	.populate		= nouveau_sgdma_populate,
++	.clear			= nouveau_sgdma_clear,
++	.bind			= nv44_sgdma_bind,
++	.unbind			= nv44_sgdma_unbind,
++	.destroy		= nouveau_sgdma_destroy
++};
++
++static int
+ nv50_sgdma_bind(struct ttm_backend *be, struct ttm_mem_reg *mem)
+ {
+ 	struct nouveau_sgdma_be *nvbe = (struct nouveau_sgdma_be *)be;
+@@ -170,14 +385,6 @@ nv50_sgdma_unbind(struct ttm_backend *be)
+ 	return 0;
+ }
+ 
+-static struct ttm_backend_func nouveau_sgdma_backend = {
+-	.populate		= nouveau_sgdma_populate,
+-	.clear			= nouveau_sgdma_clear,
+-	.bind			= nouveau_sgdma_bind,
+-	.unbind			= nouveau_sgdma_unbind,
+-	.destroy		= nouveau_sgdma_destroy
+-};
+-
+ static struct ttm_backend_func nv50_sgdma_backend = {
+ 	.populate		= nouveau_sgdma_populate,
+ 	.clear			= nouveau_sgdma_clear,
+@@ -198,10 +405,7 @@ nouveau_sgdma_init_ttm(struct drm_device *dev)
+ 
+ 	nvbe->dev = dev;
+ 
+-	if (dev_priv->card_type < NV_50)
+-		nvbe->backend.func = &nouveau_sgdma_backend;
+-	else
+-		nvbe->backend.func = &nv50_sgdma_backend;
++	nvbe->backend.func = dev_priv->gart_info.func;
+ 	return &nvbe->backend;
+ }
+ 
+@@ -210,21 +414,70 @@ nouveau_sgdma_init(struct drm_device *dev)
+ {
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
+ 	struct nouveau_gpuobj *gpuobj = NULL;
+-	uint32_t aper_size, obj_size;
+-	int i, ret;
++	u32 aper_size, align;
++	int ret;
++
++	if (dev_priv->card_type >= NV_50 || drm_device_is_pcie(dev))
++		aper_size = 512 * 1024 * 1024;
++	else
++		aper_size = 64 * 1024 * 1024;
++
++	/* Dear NVIDIA, NV44+ would like proper present bits in PTEs for
++	 * christmas.  The cards before it have them, the cards after
++	 * it have them, why is NV44 so unloved?
++	 */
++	dev_priv->gart_info.dummy.page = alloc_page(GFP_DMA32 | GFP_KERNEL);
++	if (!dev_priv->gart_info.dummy.page)
++		return -ENOMEM;
++
++	dev_priv->gart_info.dummy.addr =
++		pci_map_page(dev->pdev, dev_priv->gart_info.dummy.page,
++			     0, PAGE_SIZE, PCI_DMA_BIDIRECTIONAL);
++	if (pci_dma_mapping_error(dev->pdev, dev_priv->gart_info.dummy.addr)) {
++		NV_ERROR(dev, "error mapping dummy page\n");
++		__free_page(dev_priv->gart_info.dummy.page);
++		dev_priv->gart_info.dummy.page = NULL;
++		return -ENOMEM;
++	}
+ 
+-	if (dev_priv->card_type < NV_50) {
+-		if(dev_priv->ramin_rsvd_vram < 2 * 1024 * 1024)
+-			aper_size = 64 * 1024 * 1024;
+-		else
+-			aper_size = 512 * 1024 * 1024;
++	if (dev_priv->card_type >= NV_50) {
++		ret = nouveau_vm_get(dev_priv->chan_vm, aper_size,
++				     12, NV_MEM_ACCESS_RW,
++				     &dev_priv->gart_info.vma);
++		if (ret)
++			return ret;
++
++		dev_priv->gart_info.aper_base = dev_priv->gart_info.vma.offset;
++		dev_priv->gart_info.aper_size = aper_size;
++		dev_priv->gart_info.type = NOUVEAU_GART_HW;
++		dev_priv->gart_info.func = &nv50_sgdma_backend;
++	} else
++	if (0 && drm_device_is_pcie(dev) &&
++	    dev_priv->chipset != 0x40 && dev_priv->chipset != 0x45) {
++		if (nv44_graph_class(dev)) {
++			dev_priv->gart_info.func = &nv44_sgdma_backend;
++			align = 512 * 1024;
++		} else {
++			dev_priv->gart_info.func = &nv41_sgdma_backend;
++			align = 16;
++		}
+ 
+-		obj_size  = (aper_size >> NV_CTXDMA_PAGE_SHIFT) * 4;
+-		obj_size += 8; /* ctxdma header */
++		ret = nouveau_gpuobj_new(dev, NULL, aper_size / 1024, align,
++					 NVOBJ_FLAG_ZERO_ALLOC |
++					 NVOBJ_FLAG_ZERO_FREE, &gpuobj);
++		if (ret) {
++			NV_ERROR(dev, "Error creating sgdma object: %d\n", ret);
++			return ret;
++		}
+ 
+-		ret = nouveau_gpuobj_new(dev, NULL, obj_size, 16,
+-					      NVOBJ_FLAG_ZERO_ALLOC |
+-					      NVOBJ_FLAG_ZERO_FREE, &gpuobj);
++		dev_priv->gart_info.sg_ctxdma = gpuobj;
++		dev_priv->gart_info.aper_base = 0;
++		dev_priv->gart_info.aper_size = aper_size;
++		dev_priv->gart_info.type = NOUVEAU_GART_HW;
++	} else {
++		ret = nouveau_gpuobj_new(dev, NULL, (aper_size / 1024) + 8, 16,
++					 NVOBJ_FLAG_ZERO_ALLOC |
++					 NVOBJ_FLAG_ZERO_FREE, &gpuobj);
+ 		if (ret) {
+ 			NV_ERROR(dev, "Error creating sgdma object: %d\n", ret);
+ 			return ret;
+@@ -236,25 +489,14 @@ nouveau_sgdma_init(struct drm_device *dev)
+ 				   (0 << 14) /* RW */ |
+ 				   (2 << 16) /* PCI */);
+ 		nv_wo32(gpuobj, 4, aper_size - 1);
+-		for (i = 2; i < 2 + (aper_size >> 12); i++)
+-			nv_wo32(gpuobj, i * 4, 0x00000000);
+ 
+ 		dev_priv->gart_info.sg_ctxdma = gpuobj;
+ 		dev_priv->gart_info.aper_base = 0;
+ 		dev_priv->gart_info.aper_size = aper_size;
+-	} else
+-	if (dev_priv->chan_vm) {
+-		ret = nouveau_vm_get(dev_priv->chan_vm, 512 * 1024 * 1024,
+-				     12, NV_MEM_ACCESS_RW,
+-				     &dev_priv->gart_info.vma);
+-		if (ret)
+-			return ret;
+-
+-		dev_priv->gart_info.aper_base = dev_priv->gart_info.vma.offset;
+-		dev_priv->gart_info.aper_size = 512 * 1024 * 1024;
++		dev_priv->gart_info.type = NOUVEAU_GART_PDMA;
++		dev_priv->gart_info.func = &nv04_sgdma_backend;
+ 	}
+ 
+-	dev_priv->gart_info.type      = NOUVEAU_GART_SGDMA;
+ 	return 0;
+ }
+ 
+@@ -265,6 +507,13 @@ nouveau_sgdma_takedown(struct drm_device *dev)
+ 
+ 	nouveau_gpuobj_ref(NULL, &dev_priv->gart_info.sg_ctxdma);
+ 	nouveau_vm_put(&dev_priv->gart_info.vma);
++
++	if (dev_priv->gart_info.dummy.page) {
++		pci_unmap_page(dev->pdev, dev_priv->gart_info.dummy.addr,
++			       PAGE_SIZE, PCI_DMA_BIDIRECTIONAL);
++		__free_page(dev_priv->gart_info.dummy.page);
++		dev_priv->gart_info.dummy.page = NULL;
++	}
+ }
+ 
+ uint32_t
+diff --git a/drivers/gpu/drm/nouveau/nouveau_state.c b/drivers/gpu/drm/nouveau/nouveau_state.c
+index a54fc43..916505d 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_state.c
++++ b/drivers/gpu/drm/nouveau/nouveau_state.c
+@@ -929,12 +929,6 @@ int nouveau_load(struct drm_device *dev, unsigned long flags)
+ 	NV_DEBUG(dev, "vendor: 0x%X device: 0x%X class: 0x%X\n",
+ 		 dev->pci_vendor, dev->pci_device, dev->pdev->class);
+ 
+-	dev_priv->wq = create_workqueue("nouveau");
+-	if (!dev_priv->wq) {
+-		ret = -EINVAL;
+-		goto err_priv;
+-	}
+-
+ 	/* resource 0 is mmio regs */
+ 	/* resource 1 is linear FB */
+ 	/* resource 2 is RAMIN (mmio regs + 0x1000000) */
+@@ -947,7 +941,7 @@ int nouveau_load(struct drm_device *dev, unsigned long flags)
+ 		NV_ERROR(dev, "Unable to initialize the mmio mapping. "
+ 			 "Please report your setup to " DRIVER_EMAIL "\n");
+ 		ret = -EINVAL;
+-		goto err_wq;
++		goto err_priv;
+ 	}
+ 	NV_DEBUG(dev, "regs mapped ok at 0x%llx\n",
+ 					(unsigned long long)mmio_start_offs);
+@@ -1054,8 +1048,6 @@ err_ramin:
+ 	iounmap(dev_priv->ramin);
+ err_mmio:
+ 	iounmap(dev_priv->mmio);
+-err_wq:
+-	destroy_workqueue(dev_priv->wq);
+ err_priv:
+ 	kfree(dev_priv);
+ 	dev->dev_private = NULL;
+diff --git a/drivers/gpu/drm/nouveau/nouveau_temp.c b/drivers/gpu/drm/nouveau/nouveau_temp.c
+index 8d9968e..649b041 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_temp.c
++++ b/drivers/gpu/drm/nouveau/nouveau_temp.c
+@@ -239,11 +239,9 @@ static bool
+ probe_monitoring_device(struct nouveau_i2c_chan *i2c,
+ 			struct i2c_board_info *info)
+ {
+-	char modalias[16] = "i2c:";
+ 	struct i2c_client *client;
+ 
+-	strlcat(modalias, info->type, sizeof(modalias));
+-	request_module(modalias);
++	request_module("%s%s", I2C_MODULE_PREFIX, info->type);
+ 
+ 	client = i2c_new_device(&i2c->adapter, info);
+ 	if (!client)
+diff --git a/drivers/gpu/drm/nouveau/nouveau_util.c b/drivers/gpu/drm/nouveau/nouveau_util.c
+index fbe0fb1..e51b515 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_util.c
++++ b/drivers/gpu/drm/nouveau/nouveau_util.c
+@@ -47,18 +47,27 @@ nouveau_bitfield_print(const struct nouveau_bitfield *bf, u32 value)
+ 		printk(" (unknown bits 0x%08x)", value);
+ }
+ 
+-void
+-nouveau_enum_print(const struct nouveau_enum *en, u32 value)
++const struct nouveau_enum *
++nouveau_enum_find(const struct nouveau_enum *en, u32 value)
+ {
+ 	while (en->name) {
+-		if (value == en->value) {
+-			printk("%s", en->name);
+-			return;
+-		}
+-
++		if (en->value == value)
++			return en;
+ 		en++;
+ 	}
+ 
++	return NULL;
++}
++
++void
++nouveau_enum_print(const struct nouveau_enum *en, u32 value)
++{
++	en = nouveau_enum_find(en, value);
++	if (en) {
++		printk("%s", en->name);
++		return;
++	}
++
+ 	printk("(unknown enum 0x%08x)", value);
+ }
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_util.h b/drivers/gpu/drm/nouveau/nouveau_util.h
+index d9ceaea..b97719f 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_util.h
++++ b/drivers/gpu/drm/nouveau/nouveau_util.h
+@@ -36,10 +36,14 @@ struct nouveau_bitfield {
+ struct nouveau_enum {
+ 	u32 value;
+ 	const char *name;
++	void *data;
+ };
+ 
+ void nouveau_bitfield_print(const struct nouveau_bitfield *, u32 value);
+ void nouveau_enum_print(const struct nouveau_enum *, u32 value);
++const struct nouveau_enum *
++nouveau_enum_find(const struct nouveau_enum *, u32 value);
++
+ int nouveau_ratelimit(void);
+ 
+ #endif
+diff --git a/drivers/gpu/drm/nouveau/nouveau_vm.c b/drivers/gpu/drm/nouveau/nouveau_vm.c
+index 97d82ae..b4658f7 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_vm.c
++++ b/drivers/gpu/drm/nouveau/nouveau_vm.c
+@@ -311,18 +311,7 @@ nouveau_vm_new(struct drm_device *dev, u64 offset, u64 length, u64 mm_offset,
+ 		vm->spg_shift = 12;
+ 		vm->lpg_shift = 17;
+ 		pgt_bits = 27;
+-
+-		/* Should be 4096 everywhere, this is a hack that's
+-		 * currently necessary to avoid an elusive bug that
+-		 * causes corruption when mixing small/large pages
+-		 */
+-		if (length < (1ULL << 40))
+-			block = 4096;
+-		else {
+-			block = (1 << pgt_bits);
+-			if (length < block)
+-				block = length;
+-		}
++		block = 4096;
+ 	} else {
+ 		kfree(vm);
+ 		return -ENOSYS;
+diff --git a/drivers/gpu/drm/nouveau/nv04_fifo.c b/drivers/gpu/drm/nouveau/nv04_fifo.c
+index f89d104..db465a3 100644
+--- a/drivers/gpu/drm/nouveau/nv04_fifo.c
++++ b/drivers/gpu/drm/nouveau/nv04_fifo.c
+@@ -379,6 +379,15 @@ out:
+ 	return handled;
+ }
+ 
++static const char *nv_dma_state_err(u32 state)
++{
++	static const char * const desc[] = {
++		"NONE", "CALL_SUBR_ACTIVE", "INVALID_MTHD", "RET_SUBR_INACTIVE",
++		"INVALID_CMD", "IB_EMPTY"/* NV50+ */, "MEM_FAULT", "UNK"
++	};
++	return desc[(state >> 29) & 0x7];
++}
++
+ void
+ nv04_fifo_isr(struct drm_device *dev)
+ {
+@@ -460,9 +469,10 @@ nv04_fifo_isr(struct drm_device *dev)
+ 				if (nouveau_ratelimit())
+ 					NV_INFO(dev, "PFIFO_DMA_PUSHER - Ch %d Get 0x%02x%08x "
+ 					     "Put 0x%02x%08x IbGet 0x%08x IbPut 0x%08x "
+-					     "State 0x%08x Push 0x%08x\n",
++					     "State 0x%08x (err: %s) Push 0x%08x\n",
+ 						chid, ho_get, dma_get, ho_put,
+ 						dma_put, ib_get, ib_put, state,
++						nv_dma_state_err(state),
+ 						push);
+ 
+ 				/* METHOD_COUNT, in DMA_STATE on earlier chipsets */
+@@ -476,8 +486,9 @@ nv04_fifo_isr(struct drm_device *dev)
+ 				}
+ 			} else {
+ 				NV_INFO(dev, "PFIFO_DMA_PUSHER - Ch %d Get 0x%08x "
+-					     "Put 0x%08x State 0x%08x Push 0x%08x\n",
+-					chid, dma_get, dma_put, state, push);
++					     "Put 0x%08x State 0x%08x (err: %s) Push 0x%08x\n",
++					chid, dma_get, dma_put, state,
++					nv_dma_state_err(state), push);
+ 
+ 				if (dma_get != dma_put)
+ 					nv_wr32(dev, 0x003244, dma_put);
+@@ -505,7 +516,7 @@ nv04_fifo_isr(struct drm_device *dev)
+ 
+ 		if (dev_priv->card_type == NV_50) {
+ 			if (status & 0x00000010) {
+-				nv50_fb_vm_trap(dev, 1, "PFIFO_BAR_FAULT");
++				nv50_fb_vm_trap(dev, nouveau_ratelimit());
+ 				status &= ~0x00000010;
+ 				nv_wr32(dev, 0x002100, 0x00000010);
+ 			}
+diff --git a/drivers/gpu/drm/nouveau/nv40_fb.c b/drivers/gpu/drm/nouveau/nv40_fb.c
+index f3d9c05..f0ac2a7 100644
+--- a/drivers/gpu/drm/nouveau/nv40_fb.c
++++ b/drivers/gpu/drm/nouveau/nv40_fb.c
+@@ -24,6 +24,53 @@ nv40_fb_set_tile_region(struct drm_device *dev, int i)
+ 	}
+ }
+ 
++static void
++nv40_fb_init_gart(struct drm_device *dev)
++{
++	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	struct nouveau_gpuobj *gart = dev_priv->gart_info.sg_ctxdma;
++
++	if (dev_priv->gart_info.type != NOUVEAU_GART_HW) {
++		nv_wr32(dev, 0x100800, 0x00000001);
++		return;
++	}
++
++	nv_wr32(dev, 0x100800, gart->pinst | 0x00000002);
++	nv_mask(dev, 0x10008c, 0x00000100, 0x00000100);
++	nv_wr32(dev, 0x100820, 0x00000000);
++}
++
++static void
++nv44_fb_init_gart(struct drm_device *dev)
++{
++	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	struct nouveau_gpuobj *gart = dev_priv->gart_info.sg_ctxdma;
++	u32 vinst;
++
++	if (dev_priv->gart_info.type != NOUVEAU_GART_HW) {
++		nv_wr32(dev, 0x100850, 0x80000000);
++		nv_wr32(dev, 0x100800, 0x00000001);
++		return;
++	}
++
++	/* calculate vram address of this PRAMIN block, object
++	 * must be allocated on 512KiB alignment, and not exceed
++	 * a total size of 512KiB for this to work correctly
++	 */
++	vinst  = nv_rd32(dev, 0x10020c);
++	vinst -= ((gart->pinst >> 19) + 1) << 19;
++
++	nv_wr32(dev, 0x100850, 0x80000000);
++	nv_wr32(dev, 0x100818, dev_priv->gart_info.dummy.addr);
++
++	nv_wr32(dev, 0x100804, dev_priv->gart_info.aper_size);
++	nv_wr32(dev, 0x100850, 0x00008000);
++	nv_mask(dev, 0x10008c, 0x00000200, 0x00000200);
++	nv_wr32(dev, 0x100820, 0x00000000);
++	nv_wr32(dev, 0x10082c, 0x00000001);
++	nv_wr32(dev, 0x100800, vinst | 0x00000010);
++}
++
+ int
+ nv40_fb_init(struct drm_device *dev)
+ {
+@@ -32,12 +79,12 @@ nv40_fb_init(struct drm_device *dev)
+ 	uint32_t tmp;
+ 	int i;
+ 
+-	/* This is strictly a NV4x register (don't know about NV5x). */
+-	/* The blob sets these to all kinds of values, and they mess up our setup. */
+-	/* I got value 0x52802 instead. For some cards the blob even sets it back to 0x1. */
+-	/* Note: the blob doesn't read this value, so i'm pretty sure this is safe for all cards. */
+-	/* Any idea what this is? */
+-	nv_wr32(dev, NV40_PFB_UNK_800, 0x1);
++	if (dev_priv->chipset != 0x40 && dev_priv->chipset != 0x45) {
++		if (nv44_graph_class(dev))
++			nv44_fb_init_gart(dev);
++		else
++			nv40_fb_init_gart(dev);
++	}
+ 
+ 	switch (dev_priv->chipset) {
+ 	case 0x40:
+diff --git a/drivers/gpu/drm/nouveau/nv50_display.c b/drivers/gpu/drm/nouveau/nv50_display.c
+index 7cc94ed..a804a35 100644
+--- a/drivers/gpu/drm/nouveau/nv50_display.c
++++ b/drivers/gpu/drm/nouveau/nv50_display.c
+@@ -345,12 +345,15 @@ int nv50_display_create(struct drm_device *dev)
+ void
+ nv50_display_destroy(struct drm_device *dev)
+ {
++	struct drm_nouveau_private *dev_priv = dev->dev_private;
++
+ 	NV_DEBUG_KMS(dev, "\n");
+ 
+ 	drm_mode_config_cleanup(dev);
+ 
+ 	nv50_display_disable(dev);
+ 	nouveau_irq_unregister(dev, 26);
++	flush_work_sync(&dev_priv->irq_work);
+ }
+ 
+ static u16
+@@ -587,7 +590,7 @@ static void
+ nv50_display_unk20_handler(struct drm_device *dev)
+ {
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
+-	u32 unk30 = nv_rd32(dev, 0x610030), tmp, pclk, script, mc;
++	u32 unk30 = nv_rd32(dev, 0x610030), tmp, pclk, script, mc = 0;
+ 	struct dcb_entry *dcb;
+ 	int i, crtc, or, type = OUTPUT_ANY;
+ 
+@@ -836,7 +839,7 @@ nv50_display_isr(struct drm_device *dev)
+ 		if (clock) {
+ 			nv_wr32(dev, NV03_PMC_INTR_EN_0, 0);
+ 			if (!work_pending(&dev_priv->irq_work))
+-				queue_work(dev_priv->wq, &dev_priv->irq_work);
++				schedule_work(&dev_priv->irq_work);
+ 			delayed |= clock;
+ 			intr1 &= ~clock;
+ 		}
+diff --git a/drivers/gpu/drm/nouveau/nv50_fb.c b/drivers/gpu/drm/nouveau/nv50_fb.c
+index 50290de..efc8cd4 100644
+--- a/drivers/gpu/drm/nouveau/nv50_fb.c
++++ b/drivers/gpu/drm/nouveau/nv50_fb.c
+@@ -95,12 +95,109 @@ nv50_fb_takedown(struct drm_device *dev)
+ 	kfree(priv);
+ }
+ 
++static struct nouveau_enum vm_dispatch_subclients[] = {
++	{ 0x00000000, "GRCTX", NULL },
++	{ 0x00000001, "NOTIFY", NULL },
++	{ 0x00000002, "QUERY", NULL },
++	{ 0x00000003, "COND", NULL },
++	{ 0x00000004, "M2M_IN", NULL },
++	{ 0x00000005, "M2M_OUT", NULL },
++	{ 0x00000006, "M2M_NOTIFY", NULL },
++	{}
++};
++
++static struct nouveau_enum vm_ccache_subclients[] = {
++	{ 0x00000000, "CB", NULL },
++	{ 0x00000001, "TIC", NULL },
++	{ 0x00000002, "TSC", NULL },
++	{}
++};
++
++static struct nouveau_enum vm_prop_subclients[] = {
++	{ 0x00000000, "RT0", NULL },
++	{ 0x00000001, "RT1", NULL },
++	{ 0x00000002, "RT2", NULL },
++	{ 0x00000003, "RT3", NULL },
++	{ 0x00000004, "RT4", NULL },
++	{ 0x00000005, "RT5", NULL },
++	{ 0x00000006, "RT6", NULL },
++	{ 0x00000007, "RT7", NULL },
++	{ 0x00000008, "ZETA", NULL },
++	{ 0x00000009, "LOCAL", NULL },
++	{ 0x0000000a, "GLOBAL", NULL },
++	{ 0x0000000b, "STACK", NULL },
++	{ 0x0000000c, "DST2D", NULL },
++	{}
++};
++
++static struct nouveau_enum vm_pfifo_subclients[] = {
++	{ 0x00000000, "PUSHBUF", NULL },
++	{ 0x00000001, "SEMAPHORE", NULL },
++	{}
++};
++
++static struct nouveau_enum vm_bar_subclients[] = {
++	{ 0x00000000, "FB", NULL },
++	{ 0x00000001, "IN", NULL },
++	{}
++};
++
++static struct nouveau_enum vm_client[] = {
++	{ 0x00000000, "STRMOUT", NULL },
++	{ 0x00000003, "DISPATCH", vm_dispatch_subclients },
++	{ 0x00000004, "PFIFO_WRITE", NULL },
++	{ 0x00000005, "CCACHE", vm_ccache_subclients },
++	{ 0x00000006, "PPPP", NULL },
++	{ 0x00000007, "CLIPID", NULL },
++	{ 0x00000008, "PFIFO_READ", NULL },
++	{ 0x00000009, "VFETCH", NULL },
++	{ 0x0000000a, "TEXTURE", NULL },
++	{ 0x0000000b, "PROP", vm_prop_subclients },
++	{ 0x0000000c, "PVP", NULL },
++	{ 0x0000000d, "PBSP", NULL },
++	{ 0x0000000e, "PCRYPT", NULL },
++	{ 0x0000000f, "PCOUNTER", NULL },
++	{ 0x00000011, "PDAEMON", NULL },
++	{}
++};
++
++static struct nouveau_enum vm_engine[] = {
++	{ 0x00000000, "PGRAPH", NULL },
++	{ 0x00000001, "PVP", NULL },
++	{ 0x00000004, "PEEPHOLE", NULL },
++	{ 0x00000005, "PFIFO", vm_pfifo_subclients },
++	{ 0x00000006, "BAR", vm_bar_subclients },
++	{ 0x00000008, "PPPP", NULL },
++	{ 0x00000009, "PBSP", NULL },
++	{ 0x0000000a, "PCRYPT", NULL },
++	{ 0x0000000b, "PCOUNTER", NULL },
++	{ 0x0000000c, "SEMAPHORE_BG", NULL },
++	{ 0x0000000d, "PCOPY", NULL },
++	{ 0x0000000e, "PDAEMON", NULL },
++	{}
++};
++
++static struct nouveau_enum vm_fault[] = {
++	{ 0x00000000, "PT_NOT_PRESENT", NULL },
++	{ 0x00000001, "PT_TOO_SHORT", NULL },
++	{ 0x00000002, "PAGE_NOT_PRESENT", NULL },
++	{ 0x00000003, "PAGE_SYSTEM_ONLY", NULL },
++	{ 0x00000004, "PAGE_READ_ONLY", NULL },
++	{ 0x00000006, "NULL_DMAOBJ", NULL },
++	{ 0x00000007, "WRONG_MEMTYPE", NULL },
++	{ 0x0000000b, "VRAM_LIMIT", NULL },
++	{ 0x0000000f, "DMAOBJ_LIMIT", NULL },
++	{}
++};
++
+ void
+-nv50_fb_vm_trap(struct drm_device *dev, int display, const char *name)
++nv50_fb_vm_trap(struct drm_device *dev, int display)
+ {
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	const struct nouveau_enum *en, *cl;
+ 	unsigned long flags;
+ 	u32 trap[6], idx, chinst;
++	u8 st0, st1, st2, st3;
+ 	int i, ch;
+ 
+ 	idx = nv_rd32(dev, 0x100c90);
+@@ -117,8 +214,8 @@ nv50_fb_vm_trap(struct drm_device *dev, int display, const char *name)
+ 	if (!display)
+ 		return;
+ 
++	/* lookup channel id */
+ 	chinst = (trap[2] << 16) | trap[1];
+-
+ 	spin_lock_irqsave(&dev_priv->channels.lock, flags);
+ 	for (ch = 0; ch < dev_priv->engine.fifo.channels; ch++) {
+ 		struct nouveau_channel *chan = dev_priv->channels.ptr[ch];
+@@ -131,9 +228,48 @@ nv50_fb_vm_trap(struct drm_device *dev, int display, const char *name)
+ 	}
+ 	spin_unlock_irqrestore(&dev_priv->channels.lock, flags);
+ 
+-	NV_INFO(dev, "%s - VM: Trapped %s at %02x%04x%04x status %08x "
+-		     "channel %d (0x%08x)\n",
+-		name, (trap[5] & 0x100 ? "read" : "write"),
+-		trap[5] & 0xff, trap[4] & 0xffff, trap[3] & 0xffff,
+-		trap[0], ch, chinst);
++	/* decode status bits into something more useful */
++	if (dev_priv->chipset  < 0xa3 ||
++	    dev_priv->chipset == 0xaa || dev_priv->chipset == 0xac) {
++		st0 = (trap[0] & 0x0000000f) >> 0;
++		st1 = (trap[0] & 0x000000f0) >> 4;
++		st2 = (trap[0] & 0x00000f00) >> 8;
++		st3 = (trap[0] & 0x0000f000) >> 12;
++	} else {
++		st0 = (trap[0] & 0x000000ff) >> 0;
++		st1 = (trap[0] & 0x0000ff00) >> 8;
++		st2 = (trap[0] & 0x00ff0000) >> 16;
++		st3 = (trap[0] & 0xff000000) >> 24;
++	}
++
++	NV_INFO(dev, "VM: trapped %s at 0x%02x%04x%04x on ch %d [0x%08x] ",
++		(trap[5] & 0x00000100) ? "read" : "write",
++		trap[5] & 0xff, trap[4] & 0xffff, trap[3] & 0xffff, ch, chinst);
++
++	en = nouveau_enum_find(vm_engine, st0);
++	if (en)
++		printk("%s/", en->name);
++	else
++		printk("%02x/", st0);
++
++	cl = nouveau_enum_find(vm_client, st2);
++	if (cl)
++		printk("%s/", cl->name);
++	else
++		printk("%02x/", st2);
++
++	if      (cl && cl->data) cl = nouveau_enum_find(cl->data, st3);
++	else if (en && en->data) cl = nouveau_enum_find(en->data, st3);
++	else                     cl = NULL;
++	if (cl)
++		printk("%s", cl->name);
++	else
++		printk("%02x", st3);
++
++	printk(" reason: ");
++	en = nouveau_enum_find(vm_fault, st1);
++	if (en)
++		printk("%s\n", en->name);
++	else
++		printk("0x%08x\n", st1);
+ }
+diff --git a/drivers/gpu/drm/nouveau/nv50_fifo.c b/drivers/gpu/drm/nouveau/nv50_fifo.c
+index 8dd04c5..c34a074 100644
+--- a/drivers/gpu/drm/nouveau/nv50_fifo.c
++++ b/drivers/gpu/drm/nouveau/nv50_fifo.c
+@@ -149,6 +149,7 @@ nv50_fifo_init_regs(struct drm_device *dev)
+ 	nv_wr32(dev, 0x3204, 0);
+ 	nv_wr32(dev, 0x3210, 0);
+ 	nv_wr32(dev, 0x3270, 0);
++	nv_wr32(dev, 0x2044, 0x01003fff);
+ 
+ 	/* Enable dummy channels setup by nv50_instmem.c */
+ 	nv50_fifo_channel_enable(dev, 0);
+@@ -273,7 +274,7 @@ nv50_fifo_create_context(struct nouveau_channel *chan)
+ 	nv_wo32(ramfc, 0x80, ((chan->ramht->bits - 9) << 27) |
+ 			     (4 << 24) /* SEARCH_FULL */ |
+ 			     (chan->ramht->gpuobj->cinst >> 4));
+-	nv_wo32(ramfc, 0x44, 0x2101ffff);
++	nv_wo32(ramfc, 0x44, 0x01003fff);
+ 	nv_wo32(ramfc, 0x60, 0x7fffffff);
+ 	nv_wo32(ramfc, 0x40, 0x00000000);
+ 	nv_wo32(ramfc, 0x7c, 0x30000001);
+diff --git a/drivers/gpu/drm/nouveau/nv50_gpio.c b/drivers/gpu/drm/nouveau/nv50_gpio.c
+index 6b149c0..d4f4206 100644
+--- a/drivers/gpu/drm/nouveau/nv50_gpio.c
++++ b/drivers/gpu/drm/nouveau/nv50_gpio.c
+@@ -137,6 +137,7 @@ nv50_gpio_irq_unregister(struct drm_device *dev, enum dcb_gpio_tag tag,
+ 	struct nv50_gpio_priv *priv = pgpio->priv;
+ 	struct nv50_gpio_handler *gpioh, *tmp;
+ 	struct dcb_gpio_entry *gpio;
++	LIST_HEAD(tofree);
+ 	unsigned long flags;
+ 
+ 	gpio = nouveau_bios_gpio_entry(dev, tag);
+@@ -149,10 +150,14 @@ nv50_gpio_irq_unregister(struct drm_device *dev, enum dcb_gpio_tag tag,
+ 		    gpioh->handler != handler ||
+ 		    gpioh->data != data)
+ 			continue;
+-		list_del(&gpioh->head);
+-		kfree(gpioh);
++		list_move(&gpioh->head, &tofree);
+ 	}
+ 	spin_unlock_irqrestore(&priv->lock, flags);
++
++	list_for_each_entry_safe(gpioh, tmp, &tofree, head) {
++		flush_work_sync(&gpioh->work);
++		kfree(gpioh);
++	}
+ }
+ 
+ bool
+@@ -205,7 +210,6 @@ nv50_gpio_init(struct drm_device *dev)
+ {
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
+ 	struct nouveau_gpio_engine *pgpio = &dev_priv->engine.gpio;
+-	struct nv50_gpio_priv *priv;
+ 	int ret;
+ 
+ 	if (!pgpio->priv) {
+@@ -213,7 +217,6 @@ nv50_gpio_init(struct drm_device *dev)
+ 		if (ret)
+ 			return ret;
+ 	}
+-	priv = pgpio->priv;
+ 
+ 	/* disable, and ack any pending gpio interrupts */
+ 	nv_wr32(dev, 0xe050, 0x00000000);
+@@ -293,7 +296,7 @@ nv50_gpio_isr(struct drm_device *dev)
+ 			continue;
+ 		gpioh->inhibit = true;
+ 
+-		queue_work(dev_priv->wq, &gpioh->work);
++		schedule_work(&gpioh->work);
+ 	}
+ 	spin_unlock(&priv->lock);
+ }
+diff --git a/drivers/gpu/drm/nouveau/nv50_graph.c b/drivers/gpu/drm/nouveau/nv50_graph.c
+index 37e21d2..a32b301 100644
+--- a/drivers/gpu/drm/nouveau/nv50_graph.c
++++ b/drivers/gpu/drm/nouveau/nv50_graph.c
+@@ -95,13 +95,41 @@ nv50_graph_init_regs__nv(struct drm_device *dev)
+ }
+ 
+ static void
+-nv50_graph_init_regs(struct drm_device *dev)
++nv50_graph_init_zcull(struct drm_device *dev)
+ {
++	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	int i;
++
+ 	NV_DEBUG(dev, "\n");
+ 
+-	nv_wr32(dev, NV04_PGRAPH_DEBUG_3,
+-				(1 << 2) /* HW_CONTEXT_SWITCH_ENABLED */);
+-	nv_wr32(dev, 0x402ca8, 0x800);
++	switch (dev_priv->chipset & 0xf0) {
++	case 0x50:
++	case 0x80:
++	case 0x90:
++		nv_wr32(dev, 0x402ca8, 0x00000800);
++		break;
++	case 0xa0:
++	default:
++		nv_wr32(dev, 0x402cc0, 0x00000000);
++		if (dev_priv->chipset == 0xa0 ||
++		    dev_priv->chipset == 0xaa ||
++		    dev_priv->chipset == 0xac) {
++			nv_wr32(dev, 0x402ca8, 0x00000802);
++		} else {
++			nv_wr32(dev, 0x402cc0, 0x00000000);
++			nv_wr32(dev, 0x402ca8, 0x00000002);
++		}
++
++		break;
++	}
++
++	/* zero out zcull regions */
++	for (i = 0; i < 8; i++) {
++		nv_wr32(dev, 0x402c20 + (i * 8), 0x00000000);
++		nv_wr32(dev, 0x402c24 + (i * 8), 0x00000000);
++		nv_wr32(dev, 0x402c28 + (i * 8), 0x00000000);
++		nv_wr32(dev, 0x402c2c + (i * 8), 0x00000000);
++	}
+ }
+ 
+ static int
+@@ -136,6 +164,7 @@ nv50_graph_init_ctxctl(struct drm_device *dev)
+ 	}
+ 	kfree(cp);
+ 
++	nv_wr32(dev, 0x40008c, 0x00000004); /* HW_CTX_SWITCH_ENABLED */
+ 	nv_wr32(dev, 0x400320, 4);
+ 	nv_wr32(dev, NV40_PGRAPH_CTXCTL_CUR, 0);
+ 	nv_wr32(dev, NV20_PGRAPH_CHANNEL_CTX_POINTER, 0);
+@@ -151,7 +180,7 @@ nv50_graph_init(struct drm_device *dev)
+ 
+ 	nv50_graph_init_reset(dev);
+ 	nv50_graph_init_regs__nv(dev);
+-	nv50_graph_init_regs(dev);
++	nv50_graph_init_zcull(dev);
+ 
+ 	ret = nv50_graph_init_ctxctl(dev);
+ 	if (ret)
+@@ -526,11 +555,11 @@ nv86_graph_tlb_flush(struct drm_device *dev)
+ 
+ static struct nouveau_enum nv50_mp_exec_error_names[] =
+ {
+-	{ 3, "STACK_UNDERFLOW" },
+-	{ 4, "QUADON_ACTIVE" },
+-	{ 8, "TIMEOUT" },
+-	{ 0x10, "INVALID_OPCODE" },
+-	{ 0x40, "BREAKPOINT" },
++	{ 3, "STACK_UNDERFLOW", NULL },
++	{ 4, "QUADON_ACTIVE", NULL },
++	{ 8, "TIMEOUT", NULL },
++	{ 0x10, "INVALID_OPCODE", NULL },
++	{ 0x40, "BREAKPOINT", NULL },
+ 	{}
+ };
+ 
+@@ -558,47 +587,47 @@ static struct nouveau_bitfield nv50_graph_trap_ccache[] = {
+ 
+ /* There must be a *lot* of these. Will take some time to gather them up. */
+ struct nouveau_enum nv50_data_error_names[] = {
+-	{ 0x00000003, "INVALID_QUERY_OR_TEXTURE" },
+-	{ 0x00000004, "INVALID_VALUE" },
+-	{ 0x00000005, "INVALID_ENUM" },
+-	{ 0x00000008, "INVALID_OBJECT" },
+-	{ 0x00000009, "READ_ONLY_OBJECT" },
+-	{ 0x0000000a, "SUPERVISOR_OBJECT" },
+-	{ 0x0000000b, "INVALID_ADDRESS_ALIGNMENT" },
+-	{ 0x0000000c, "INVALID_BITFIELD" },
+-	{ 0x0000000d, "BEGIN_END_ACTIVE" },
+-	{ 0x0000000e, "SEMANTIC_COLOR_BACK_OVER_LIMIT" },
+-	{ 0x0000000f, "VIEWPORT_ID_NEEDS_GP" },
+-	{ 0x00000010, "RT_DOUBLE_BIND" },
+-	{ 0x00000011, "RT_TYPES_MISMATCH" },
+-	{ 0x00000012, "RT_LINEAR_WITH_ZETA" },
+-	{ 0x00000015, "FP_TOO_FEW_REGS" },
+-	{ 0x00000016, "ZETA_FORMAT_CSAA_MISMATCH" },
+-	{ 0x00000017, "RT_LINEAR_WITH_MSAA" },
+-	{ 0x00000018, "FP_INTERPOLANT_START_OVER_LIMIT" },
+-	{ 0x00000019, "SEMANTIC_LAYER_OVER_LIMIT" },
+-	{ 0x0000001a, "RT_INVALID_ALIGNMENT" },
+-	{ 0x0000001b, "SAMPLER_OVER_LIMIT" },
+-	{ 0x0000001c, "TEXTURE_OVER_LIMIT" },
+-	{ 0x0000001e, "GP_TOO_MANY_OUTPUTS" },
+-	{ 0x0000001f, "RT_BPP128_WITH_MS8" },
+-	{ 0x00000021, "Z_OUT_OF_BOUNDS" },
+-	{ 0x00000023, "XY_OUT_OF_BOUNDS" },
+-	{ 0x00000027, "CP_MORE_PARAMS_THAN_SHARED" },
+-	{ 0x00000028, "CP_NO_REG_SPACE_STRIPED" },
+-	{ 0x00000029, "CP_NO_REG_SPACE_PACKED" },
+-	{ 0x0000002a, "CP_NOT_ENOUGH_WARPS" },
+-	{ 0x0000002b, "CP_BLOCK_SIZE_MISMATCH" },
+-	{ 0x0000002c, "CP_NOT_ENOUGH_LOCAL_WARPS" },
+-	{ 0x0000002d, "CP_NOT_ENOUGH_STACK_WARPS" },
+-	{ 0x0000002e, "CP_NO_BLOCKDIM_LATCH" },
+-	{ 0x00000031, "ENG2D_FORMAT_MISMATCH" },
+-	{ 0x0000003f, "PRIMITIVE_ID_NEEDS_GP" },
+-	{ 0x00000044, "SEMANTIC_VIEWPORT_OVER_LIMIT" },
+-	{ 0x00000045, "SEMANTIC_COLOR_FRONT_OVER_LIMIT" },
+-	{ 0x00000046, "LAYER_ID_NEEDS_GP" },
+-	{ 0x00000047, "SEMANTIC_CLIP_OVER_LIMIT" },
+-	{ 0x00000048, "SEMANTIC_PTSZ_OVER_LIMIT" },
++	{ 0x00000003, "INVALID_QUERY_OR_TEXTURE", NULL },
++	{ 0x00000004, "INVALID_VALUE", NULL },
++	{ 0x00000005, "INVALID_ENUM", NULL },
++	{ 0x00000008, "INVALID_OBJECT", NULL },
++	{ 0x00000009, "READ_ONLY_OBJECT", NULL },
++	{ 0x0000000a, "SUPERVISOR_OBJECT", NULL },
++	{ 0x0000000b, "INVALID_ADDRESS_ALIGNMENT", NULL },
++	{ 0x0000000c, "INVALID_BITFIELD", NULL },
++	{ 0x0000000d, "BEGIN_END_ACTIVE", NULL },
++	{ 0x0000000e, "SEMANTIC_COLOR_BACK_OVER_LIMIT", NULL },
++	{ 0x0000000f, "VIEWPORT_ID_NEEDS_GP", NULL },
++	{ 0x00000010, "RT_DOUBLE_BIND", NULL },
++	{ 0x00000011, "RT_TYPES_MISMATCH", NULL },
++	{ 0x00000012, "RT_LINEAR_WITH_ZETA", NULL },
++	{ 0x00000015, "FP_TOO_FEW_REGS", NULL },
++	{ 0x00000016, "ZETA_FORMAT_CSAA_MISMATCH", NULL },
++	{ 0x00000017, "RT_LINEAR_WITH_MSAA", NULL },
++	{ 0x00000018, "FP_INTERPOLANT_START_OVER_LIMIT", NULL },
++	{ 0x00000019, "SEMANTIC_LAYER_OVER_LIMIT", NULL },
++	{ 0x0000001a, "RT_INVALID_ALIGNMENT", NULL },
++	{ 0x0000001b, "SAMPLER_OVER_LIMIT", NULL },
++	{ 0x0000001c, "TEXTURE_OVER_LIMIT", NULL },
++	{ 0x0000001e, "GP_TOO_MANY_OUTPUTS", NULL },
++	{ 0x0000001f, "RT_BPP128_WITH_MS8", NULL },
++	{ 0x00000021, "Z_OUT_OF_BOUNDS", NULL },
++	{ 0x00000023, "XY_OUT_OF_BOUNDS", NULL },
++	{ 0x00000027, "CP_MORE_PARAMS_THAN_SHARED", NULL },
++	{ 0x00000028, "CP_NO_REG_SPACE_STRIPED", NULL },
++	{ 0x00000029, "CP_NO_REG_SPACE_PACKED", NULL },
++	{ 0x0000002a, "CP_NOT_ENOUGH_WARPS", NULL },
++	{ 0x0000002b, "CP_BLOCK_SIZE_MISMATCH", NULL },
++	{ 0x0000002c, "CP_NOT_ENOUGH_LOCAL_WARPS", NULL },
++	{ 0x0000002d, "CP_NOT_ENOUGH_STACK_WARPS", NULL },
++	{ 0x0000002e, "CP_NO_BLOCKDIM_LATCH", NULL },
++	{ 0x00000031, "ENG2D_FORMAT_MISMATCH", NULL },
++	{ 0x0000003f, "PRIMITIVE_ID_NEEDS_GP", NULL },
++	{ 0x00000044, "SEMANTIC_VIEWPORT_OVER_LIMIT", NULL },
++	{ 0x00000045, "SEMANTIC_COLOR_FRONT_OVER_LIMIT", NULL },
++	{ 0x00000046, "LAYER_ID_NEEDS_GP", NULL },
++	{ 0x00000047, "SEMANTIC_CLIP_OVER_LIMIT", NULL },
++	{ 0x00000048, "SEMANTIC_PTSZ_OVER_LIMIT", NULL },
+ 	{}
+ };
+ 
+@@ -678,7 +707,6 @@ nv50_pgraph_tp_trap(struct drm_device *dev, int type, uint32_t ustatus_old,
+ 		tps++;
+ 		switch (type) {
+ 		case 6: /* texture error... unknown for now */
+-			nv50_fb_vm_trap(dev, display, name);
+ 			if (display) {
+ 				NV_ERROR(dev, "magic set %d:\n", i);
+ 				for (r = ustatus_addr + 4; r <= ustatus_addr + 0x10; r += 4)
+@@ -701,7 +729,6 @@ nv50_pgraph_tp_trap(struct drm_device *dev, int type, uint32_t ustatus_old,
+ 			uint32_t e1c = nv_rd32(dev, ustatus_addr + 0x14);
+ 			uint32_t e20 = nv_rd32(dev, ustatus_addr + 0x18);
+ 			uint32_t e24 = nv_rd32(dev, ustatus_addr + 0x1c);
+-			nv50_fb_vm_trap(dev, display, name);
+ 			/* 2d engine destination */
+ 			if (ustatus & 0x00000010) {
+ 				if (display) {
+@@ -912,10 +939,10 @@ nv50_pgraph_trap_handler(struct drm_device *dev, u32 display, u64 inst, u32 chid
+ 			printk("\n");
+ 			NV_INFO(dev, "PGRAPH - TRAP_CCACHE %08x %08x %08x %08x"
+ 				     " %08x %08x %08x\n",
+-				nv_rd32(dev, 0x405800), nv_rd32(dev, 0x405804),
+-				nv_rd32(dev, 0x405808), nv_rd32(dev, 0x40580c),
+-				nv_rd32(dev, 0x405810), nv_rd32(dev, 0x405814),
+-				nv_rd32(dev, 0x40581c));
++				nv_rd32(dev, 0x405000), nv_rd32(dev, 0x405004),
++				nv_rd32(dev, 0x405008), nv_rd32(dev, 0x40500c),
++				nv_rd32(dev, 0x405010), nv_rd32(dev, 0x405014),
++				nv_rd32(dev, 0x40501c));
+ 
+ 		}
+ 
+@@ -1044,6 +1071,7 @@ nv50_graph_isr(struct drm_device *dev)
+ 			NV_INFO(dev, "PGRAPH - ch %d (0x%010llx) subc %d "
+ 				     "class 0x%04x mthd 0x%04x data 0x%08x\n",
+ 				chid, inst, subc, class, mthd, data);
++			nv50_fb_vm_trap(dev, 1);
+ 		}
+ 	}
+ 
+diff --git a/drivers/gpu/drm/nouveau/nv50_vm.c b/drivers/gpu/drm/nouveau/nv50_vm.c
+index 6144156..1f47c75 100644
+--- a/drivers/gpu/drm/nouveau/nv50_vm.c
++++ b/drivers/gpu/drm/nouveau/nv50_vm.c
+@@ -31,7 +31,6 @@ void
+ nv50_vm_map_pgt(struct nouveau_gpuobj *pgd, u32 pde,
+ 		struct nouveau_gpuobj *pgt[2])
+ {
+-	struct drm_nouveau_private *dev_priv = pgd->dev->dev_private;
+ 	u64 phys = 0xdeadcafe00000000ULL;
+ 	u32 coverage = 0;
+ 
+diff --git a/drivers/gpu/drm/nouveau/nv84_crypt.c b/drivers/gpu/drm/nouveau/nv84_crypt.c
+index ec18ae1..fabc7fd 100644
+--- a/drivers/gpu/drm/nouveau/nv84_crypt.c
++++ b/drivers/gpu/drm/nouveau/nv84_crypt.c
+@@ -136,5 +136,5 @@ nv84_crypt_isr(struct drm_device *dev)
+ 	nv_wr32(dev, 0x102130, stat);
+ 	nv_wr32(dev, 0x10200c, 0x10);
+ 
+-	nv50_fb_vm_trap(dev, show, "PCRYPT");
++	nv50_fb_vm_trap(dev, show);
+ }
+diff --git a/drivers/gpu/drm/nouveau/nvc0_fifo.c b/drivers/gpu/drm/nouveau/nvc0_fifo.c
+index e6f92c5..e9f8643 100644
+--- a/drivers/gpu/drm/nouveau/nvc0_fifo.c
++++ b/drivers/gpu/drm/nouveau/nvc0_fifo.c
+@@ -418,6 +418,12 @@ nvc0_fifo_isr(struct drm_device *dev)
+ {
+ 	u32 stat = nv_rd32(dev, 0x002100);
+ 
++	if (stat & 0x00000100) {
++		NV_INFO(dev, "PFIFO: unknown status 0x00000100\n");
++		nv_wr32(dev, 0x002100, 0x00000100);
++		stat &= ~0x00000100;
++	}
++
+ 	if (stat & 0x10000000) {
+ 		u32 units = nv_rd32(dev, 0x00259c);
+ 		u32 u = units;
+@@ -446,10 +452,15 @@ nvc0_fifo_isr(struct drm_device *dev)
+ 		stat &= ~0x20000000;
+ 	}
+ 
++	if (stat & 0x40000000) {
++		NV_INFO(dev, "PFIFO: unknown status 0x40000000\n");
++		nv_mask(dev, 0x002a00, 0x00000000, 0x00000000);
++		stat &= ~0x40000000;
++	}
++
+ 	if (stat) {
+ 		NV_INFO(dev, "PFIFO: unhandled status 0x%08x\n", stat);
+ 		nv_wr32(dev, 0x002100, stat);
++		nv_wr32(dev, 0x002140, 0);
+ 	}
+-
+-	nv_wr32(dev, 0x2140, 0);
+ }
+diff --git a/drivers/gpu/drm/nouveau/nvc0_graph.c b/drivers/gpu/drm/nouveau/nvc0_graph.c
+index eb18a7e..afa7afe 100644
+--- a/drivers/gpu/drm/nouveau/nvc0_graph.c
++++ b/drivers/gpu/drm/nouveau/nvc0_graph.c
+@@ -640,7 +640,6 @@ nvc0_graph_init(struct drm_device *dev)
+ {
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
+ 	struct nouveau_pgraph_engine *pgraph = &dev_priv->engine.graph;
+-	struct nvc0_graph_priv *priv;
+ 	int ret;
+ 
+ 	dev_priv->engine.graph.accel_blocked = true;
+@@ -665,7 +664,6 @@ nvc0_graph_init(struct drm_device *dev)
+ 		if (ret)
+ 			return ret;
+ 	}
+-	priv = pgraph->priv;
+ 
+ 	nvc0_graph_init_obj418880(dev);
+ 	nvc0_graph_init_regs(dev);

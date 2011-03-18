@@ -70,6 +70,7 @@ ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
 # Roland's utrace ptrace replacement.
+ApplyPatch linux-2.6-utrace-revert-make-ptrace-functions-static.patch
 ApplyPatch linux-2.6-tracehook.patch
 ApplyPatch linux-2.6-utrace.patch
 ApplyPatch linux-2.6-utrace-ptrace.patch
@@ -100,7 +101,7 @@ ApplyPatch fs-call-security_d_instantiate-in-d_obtain_alias.patch
 ApplyPatch remount-no-shrink-dcache.patch
 
 # reisefs
-ApplyPatch reiserfs-xattr-crash-fix.patch
+#ApplyPatch reiserfs-xattr-crash-fix.patch
 
 # ext4
 
@@ -121,18 +122,13 @@ ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch acpi-ec-add-delay-before-write.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
-ApplyPatch acpi-update-battery-information-on-notification-0x81.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
-ApplyPatch linux-2.6-debug-nmi-timeout.patch
 ApplyPatch linux-2.6-debug-taint-vm.patch
 ## try to find out what is breaking acpi-cpufreq
-#ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
+ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
 ApplyPatch linux-2.6-debug-always-inline-kzalloc.patch.gz
-
-# rhbz#630464
-ApplyPatch debug-tty-print-dev-name.patch
 
 #
 # PCI
@@ -142,9 +138,8 @@ ApplyPatch linux-2.6-defaults-pci_no_msi.patch
 ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
-ApplyPatch pci-disable-aspm-if-bios-asks-us-to.patch
 # rhbz#638912
-ApplyPatch pci-_osc-supported-field-should-contain-supported-features-not-enabled-ones.patch
+#ApplyPatch pci-_osc-supported-field-should-contain-supported-features-not-enabled-ones.patch
 
 #ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
 
@@ -203,8 +198,7 @@ ApplyPatch fix_xen_guest_on_old_EC2.patch
 ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
-#ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-intel-big-hammer.patch
+ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 ApplyPatch drm-intel-edp-fixes.patch
@@ -228,27 +222,25 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 # http://www.lirc.org/
 #ApplyPatch lirc-staging-2.6.36.patch
 # enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
-ApplyPatch hdpvr-ir-enable.patch
+#ApplyPatch hdpvr-ir-enable.patch
 
 # rhbz#664852
 ApplyPatch flexcop-fix-xlate_proc_name-warning.patch
 
 # Patches headed upstream
+ApplyPatch perf-gcc460-build-fixes.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
 # Runtime PM
 ApplyPatch linux-2.6-ehci-check-port-status.patch
-ApplyPatch linux-2.6-usb-pci-autosuspend.patch
-ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
-ApplyPatch runtime_pm_fixups.patch
+#ApplyPatch linux-2.6-usb-pci-autosuspend.patch
+#ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
+#ApplyPatch runtime_pm_fixups.patch
 
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
-
-# rhbz#637619
-ApplyPatch net-AF_PACKET-vmalloc.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

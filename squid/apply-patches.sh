@@ -14,8 +14,8 @@ fi
 zcat ${SB_PATCHDIR}/squid-3.1.0.9-config.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/squid-3.1.0.9-location.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/squid-3.0.STABLE1-perlpath.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 --backup --verbose -i ${SB_PATCHDIR}/squid-3.1.0.15-smb-path.patch
 zcat ${SB_PATCHDIR}/squid-3.0.STABLE7-from_manpg.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/squid-3.1.9-ltdl.patch
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/squid-3.1.11-unused.patch
 
 set +e +o pipefail

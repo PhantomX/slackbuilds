@@ -42,6 +42,11 @@ patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.90-halectomy.patch
 # official backports
 
 # Branch upstream
+# https://projects.kde.org/projects/kde/kdelibs/repository/revisions/51707e7154082b549216b8a8ecde73505302fadc
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.1-dirlister.patch
+# set the plugin path in kdelibs, don't rely on QT_PLUGIN_PATH being set
+# fixes kpackagekitsmarticon not getting themed (#682300, kde#267770)
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.1-kde\#267770.patch
 
 # Trunk patches
 

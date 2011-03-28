@@ -96,7 +96,7 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 # bugfixes to drivers and filesystems
 #
 #rhbz#662344
-ApplyPatch fs-call-security_d_instantiate-in-d_obtain_alias.patch
+#ApplyPatch fs-call-security_d_instantiate-in-d_obtain_alias.patch
 
 ApplyPatch remount-no-shrink-dcache.patch
 
@@ -122,6 +122,7 @@ ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch acpi-ec-add-delay-before-write.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
+ApplyPatch acpi_battery-fribble-sysfs-files-from-a-resume-notifier.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
@@ -164,8 +165,6 @@ ApplyPatch die-floppy-die.patch
 
 ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch.gz
 
-#ApplyPatch thinkpad-acpi-fix-backlight.patch
-
 # Allow to use 480600 baud on 16C950 UARTs
 ApplyPatch linux-2.6-serial-460800.patch
 
@@ -202,6 +201,7 @@ ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 ApplyPatch drm-intel-edp-fixes.patch
+ApplyPatch drm-i915-fix-pipelined-fencing.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -221,8 +221,6 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
 # http://www.lirc.org/
 #ApplyPatch lirc-staging-2.6.36.patch
-# enable IR receiver on Hauppauge HD PVR (v4l-dvb merge pending)
-#ApplyPatch hdpvr-ir-enable.patch
 
 # rhbz#664852
 ApplyPatch flexcop-fix-xlate_proc_name-warning.patch
@@ -233,8 +231,12 @@ ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
+# various fixes for Apple and EFI
+ApplyPatch apple_backlight.patch
+ApplyPatch efifb_update.patch
+ApplyPatch acpi_reboot.patch
+
 # Runtime PM
-ApplyPatch linux-2.6-ehci-check-port-status.patch
 #ApplyPatch linux-2.6-usb-pci-autosuspend.patch
 #ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
 #ApplyPatch runtime_pm_fixups.patch

@@ -33,6 +33,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-no_rpath.patch
 
 # add gpg2 support to knewstuff, rough first try s/gpg/gpg2/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patch
+# https://bugs.kde.org/show_bug.cgi?id=264487#c2
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.1-kde264487.patch
 
 # make forcefully hal-free build
 patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.90-halectomy.patch
@@ -47,6 +49,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.1-dirlister.patch
 # set the plugin path in kdelibs, don't rely on QT_PLUGIN_PATH being set
 # fixes kpackagekitsmarticon not getting themed (#682300, kde#267770)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.1-kde\#267770.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.1-sslproxy.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.1-cve20111168.patch
 
 # Trunk patches
 

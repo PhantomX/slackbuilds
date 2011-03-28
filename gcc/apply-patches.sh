@@ -6,17 +6,19 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-zcat ${SB_PATCHDIR}/gcc44-hash-style-both.patch.gz | patch -p0 -E --backup -z .hash-style --verbose
+patch -p0 -E --backup -z .hash-style --verbose -i ${SB_PATCHDIR}/gcc46-hash-style-both.patch
 
 # From Fedora
-patch -p0 -E --backup -z .hack --verbose -i ${SB_PATCHDIR}/gcc45-hack.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-c++-builtin-redecl.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-pr33763.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-rh330771.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-libgomp-omp_h-multilib.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-libtool-no-rpath.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-pr38757.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc45-no-add-needed-slk.patch
+patch -p0 -E --backup -z .hack --verbose -i ${SB_PATCHDIR}/gcc46-hack.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-c++-builtin-redecl.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-pr33763.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-rh330771.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-libgomp-omp_h-multilib.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-libtool-no-rpath.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-pr38757.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-no-add-needed.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-Woverlength-string.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-Woverlength-string-asm.patch
 
 # From Gentoo
 patch -p0 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_gcc-default-fortify-source.patch

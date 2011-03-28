@@ -1,7 +1,11 @@
 
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-configure.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-menu.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-toolbar.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-keys.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+zcat ${SB_PATCHDIR}/${NAME}-menu.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-toolbar.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-keys.patch.gz | patch -p1 -E --backup --verbose
+
+set +e +o pipefail

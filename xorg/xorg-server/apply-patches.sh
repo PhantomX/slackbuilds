@@ -31,6 +31,9 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
 # misc
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-qxl-fallback.patch
 
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-pointer-barriers.patch
+#patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-vbe-malloc.patch
+
 # Backports from master
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-force-hal-disable.patch

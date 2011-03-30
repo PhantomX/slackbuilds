@@ -1,5 +1,10 @@
-  
+
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-2.2.4-samplecfg_32and64bit.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-2.2.4-stackexecute.patch.gz | patch -p0 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fpc-2.4.2-samplecfg_32and64bit.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fpc-2.4.2-r15671.patch
+
+set +e +o pipefail

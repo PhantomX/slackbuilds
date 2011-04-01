@@ -19,7 +19,7 @@ zcat ${SB_PATCHDIR}/ghostscript-pksmraw.patch.gz | patch -p1 --verbose
 # Applied patch to fix NULL dereference in JBIG2 decoder.
 zcat ${SB_PATCHDIR}/ghostscript-jbig2dec-nullderef.patch.gz | patch -p1 --verbose
 # Install CUPS filter convs files in the correct place.
-zcat ${SB_PATCHDIR}/ghostscript-cups-filters.patch.gz | patch -p1 --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-cups-filters.patch
 # Harden ghostscript's debugging output functions.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-vsnprintf.patch
 # Avoid another NULL pointer dereference in jbig2 code.
@@ -28,6 +28,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patc
 # Don't assume %rom% device is available for initial ICC profile dir.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-iccprofiles-initdir.patch
 # gdevcups: don't use uninitialized variables in debugging output.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-gdevcups-debug-uninit.patch
+patch -p1 -E --backup -z .gdevcups-debug-uninit --verbose -i ${SB_PATCHDIR}/ghostscript-gdevcups-debug-uninit.patch
 
 set +e +o pipefail

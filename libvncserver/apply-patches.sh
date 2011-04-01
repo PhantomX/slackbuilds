@@ -1,11 +1,15 @@
-  
+
+set -e -o pipefail
+
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-0.9.7-system_minilzo.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup -z .system_minilzo --verbose -i ${SB_PATCHDIR}/${NAME}-0.9.8-system_minilzo.patch
 find . -name minilzo\* -exec rm -f {} \;
-zcat ${SB_PATCHDIR}/${NAME}-0.9.1-multilib.patch.gz | patch -p1 -E --backup --verbose || exit 1
+zcat ${SB_PATCHDIR}/${NAME}-0.9.1-multilib.patch.gz | patch -p1 -E --backup --verbose
 # safer LINUX platform detection (from opensuse)
-zcat ${SB_PATCHDIR}/${NAME}-LINUX.patch.gz | patch -p0 -E --backup --verbose || exit 1
+#zcat ${SB_PATCHDIR}/${NAME}-LINUX.patch.gz | patch -p0 -E --backup --verbose
 
 ## upstream patches
-zcat ${SB_PATCHDIR}/${NAME}-0.9.1-close_server_socket.patch.gz | patch -p1 -E --backup --verbose || exit 1
+
+set +e +o pipefail

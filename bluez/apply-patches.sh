@@ -23,5 +23,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Handle-ISO8859-1-device-n
 zcat ${SB_PATCHDIR}/${NAME}-socket-mobile-cf-connection-kit.patch.gz | patch -p1 -E --backup --verbose
 # http://thread.gmane.org/gmane.linux.bluez.kernel/2396
 patch -p1 -E --backup -z .cable-pairing --verbose -i ${SB_PATCHDIR}/0001-Add-sixaxis-cable-pairing-plugin.patch
+# http://thread.gmane.org/gmane.linux.bluez.kernel/8645
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-systemd-install-systemd-unit-files.patch
 
 set +e +o pipefail

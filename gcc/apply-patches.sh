@@ -17,8 +17,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-libgomp-omp_h-multilib.p
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-libtool-no-rpath.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-pr38757.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-no-add-needed.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-Woverlength-string.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-Woverlength-string-asm.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-pr47858.patch
 
 # From Gentoo
 patch -p0 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_gcc-default-fortify-source.patch

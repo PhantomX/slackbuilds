@@ -33,6 +33,8 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-qxl-fallback.patch
 
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-pointer-barriers.patch
 #patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-vbe-malloc.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-glx-pixmap-crash.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-bg-none-revert.patch
 
 # Backports from master
 

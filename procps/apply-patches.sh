@@ -76,6 +76,7 @@ zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-timestamp.patch.gz | patch -p1 -E --bac
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-timestamp-manpage.patch.gz | patch -p1 -E --backup --verbose
 #added cgroup display to ps
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.2.7-ps-cgroup.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/procps-3.2.8-ps-cgroup-suppress-root-group.patch
 # 'requested writes' display in partition statistics
 zcat ${SB_PATCHDIR}/${NAME}-3.2.7-vmstat-partstats-reqwrites.patch.gz | patch -p1 -E --backup --verbose
 # '-l' option of 'free' documented
@@ -89,6 +90,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/procps-3.2.8-setlocale.patch
 # debian bug #505571 pmap -x should show more information
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/procps-pmap-smaps.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/procps-3.2.8-vmstat-getopt.patch
-
+# From Gentoo
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/procps-3.2.8+gmake-3.82.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/procps-3.2.8-linux-ver-init.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/procps-3.2.8-forest-prefix.patch
 
 set +e +o pipefail

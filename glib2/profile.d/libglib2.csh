@@ -18,7 +18,7 @@
 # using a UTF-8 locale.  Hopefully we're correct.
 echo $LANG | grep -iq UTF
 if ($status == 0) then
-  export G_FILENAME_ENCODING="@locale"
+  setenv G_FILENAME_ENCODING "@locale"
 endif
 
 # It doesn't hurt to export this since G_FILENAME_ENCODING takes priority

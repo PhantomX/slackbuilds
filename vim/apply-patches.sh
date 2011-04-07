@@ -18,7 +18,6 @@ fi
 zcat ${SB_PATCHDIR}/vim-7.0-fixkeys.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-6.2-specsyntax.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-7.0-crv.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/xxd-locale.patch.gz | patch -p1 --verbose
 if [ "${SB_HUNSPELL}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/vim-7.0-hunspell.patch.gz | patch -p1 --verbose
 fi
@@ -31,12 +30,13 @@ if [ "${SB_SYNUP}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/updates/vim-runtime-syntax-${SYNUPVER}.patch.gz | patch -p0 --verbose
 fi
 
+patch -p1 -E --verbose -i ${SB_PATCHDIR}/xxd-locale.patch
 patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim-7.3-syntax.patch
 zcat ${SB_PATCHDIR}/vim-7.1-nowarnings.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-6.1-rh3.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-7.0-rclocation.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-6.4-checkhl.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/vim-7.2-fstabsyntax.patch.gz | patch -p1 --verbose
+patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim-7.3-fstabsyntax.patch
 zcat ${SB_PATCHDIR}/vim-7.0-warning.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-7.0-syncolor.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-7.0-specedit.patch.gz | patch -p1 --verbose

@@ -4,7 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.80-redhat_startkde.patch
+patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.1-redhat_startkde.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.0-plasma-konsole.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.92-systemsettings_onlyshowin_kde.patch
 # 441062: packagekit tools do not show icons correctly on KDE

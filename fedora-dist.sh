@@ -2,7 +2,7 @@
 # -- fedora-dist.sh --
 # Retrieve sources from Fedora VCS.
 #
-# Script by Phantom X <megaphantomx@bol.com.br>
+# Script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ fedora-dist package dist
 #
 # Copyright 2008, 2010, 2011 Phantom X, Goiania, Brazil.

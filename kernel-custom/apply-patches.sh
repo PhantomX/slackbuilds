@@ -139,8 +139,9 @@ ApplyPatch linux-2.6-defaults-pci_no_msi.patch
 ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
-# rhbz#638912
-#ApplyPatch pci-_osc-supported-field-should-contain-supported-features-not-enabled-ones.patch
+# rhbz #683156
+ApplyPatch pci-acpi-report-aspm-support-to-bios-if-not-disabled-from-command-line.patch
+ApplyPatch pci-pcie-links-may-not-get-configured-for-aspm-under-powersave-mode.patch
 
 #ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
 
@@ -194,6 +195,7 @@ ApplyPatch linux-2.6-crash-driver.patch
 ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 # Nouveau DRM
+ApplyPatch drm-ttm-move-notify.patch
 ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
@@ -243,6 +245,11 @@ ApplyPatch acpi_reboot.patch
 
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
+
+# rhbz#691888
+ApplyPatch printk-do-not-mangle-valid-userspace-syslog-prefixes.patch
+
+ApplyPatch scsi-sd-downgrade-caching-printk-from-error-to-notice.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

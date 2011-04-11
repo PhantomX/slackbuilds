@@ -37,5 +37,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-noprefixavail.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp420-rh637017.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp420-sharedlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-PPP.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.1-P1-CVE-2011-0997.patch
 
 set +e +o pipefail

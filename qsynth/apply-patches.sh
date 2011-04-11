@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Tweak the defaults to make things work properly
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qsynth-fedora-defaults.patch
 # Fix DSO linking error

@@ -23,5 +23,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.10-script-fu-ipv6.pat
 # https://bugzilla.redhat.com/show_bug.cgi?id=651002
 # avoid traceback in colorxhtml plugin, upstreamed
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.11-colorxhtml.patch
+# avoid traceback in pyslice plugin, upstreamed
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.11-pyslice.patch
 
 set +e +o pipefail

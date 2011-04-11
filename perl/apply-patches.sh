@@ -56,4 +56,10 @@ ApplyPatch perl-5.12.1-fix_thread_leak.patch
 # h2ph produces incorrect code in preamble, based mainly on RT #74614
 ApplyPatch perl-5.12.2-h2ph.patch
 
+# Update ExtUtils::ParseXS to 2.2206
+ApplyPatch perl-ExtUtils-ParseXS-2.2206.patch
+
+# 692900 - lc launders tainted flag, RT #87336
+ApplyPatch perl-87336-lc-uc-first-fail-to-taint-the-returned-st.patch
+
 set +e +o pipefail

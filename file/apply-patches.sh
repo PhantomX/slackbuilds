@@ -10,7 +10,7 @@ zcat ${SB_PATCHDIR}/file.short.diff.gz | patch -p1 -E --verbose
 
 # Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-zip64.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.05-python-magic.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.05-rpm-archs.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose

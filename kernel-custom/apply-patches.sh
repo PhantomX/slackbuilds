@@ -95,13 +95,11 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 #
 # bugfixes to drivers and filesystems
 #
-#rhbz#662344
-#ApplyPatch fs-call-security_d_instantiate-in-d_obtain_alias.patch
 
 ApplyPatch remount-no-shrink-dcache.patch
 
 # reisefs
-#ApplyPatch reiserfs-xattr-crash-fix.patch
+ApplyPatch reiserfs-force-inode-evictions-before-umount-to-avoid-crash.patch
 
 # ext4
 
@@ -123,6 +121,8 @@ ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch acpi-ec-add-delay-before-write.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
 ApplyPatch acpi_battery-fribble-sysfs-files-from-a-resume-notifier.patch
+# list acpi fixed events at /proc/acpi/fixed_events
+ApplyPatch acpi-add-proc-event-regs.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-sizeof-structs.patch
@@ -139,8 +139,6 @@ ApplyPatch linux-2.6-defaults-pci_no_msi.patch
 ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
-# rhbz #683156
-ApplyPatch pci-acpi-report-aspm-support-to-bios-if-not-disabled-from-command-line.patch
 ApplyPatch pci-pcie-links-may-not-get-configured-for-aspm-under-powersave-mode.patch
 
 #ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
@@ -178,7 +176,9 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 # Changes to upstream defaults.
 # Turns pnpbios off by default, useful, since pnpbios
 # is know to cause problems (TTL: forever)
-ApplyPatch pnp-pnpbios-off-by-default.patch 
+ApplyPatch pnp-pnpbios-off-by-default.patch
+
+ApplyPatch pnp-isapnp-async-init.patch
 
 # libata
 
@@ -241,7 +241,6 @@ ApplyPatch acpi_reboot.patch
 # Runtime PM
 #ApplyPatch linux-2.6-usb-pci-autosuspend.patch
 #ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
-#ApplyPatch runtime_pm_fixups.patch
 
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch

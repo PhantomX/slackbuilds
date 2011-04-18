@@ -1,0 +1,138 @@
+Description: Add configure option to disable dynamic loading of FFmpeg.
+Author: Benjamin Drung <bdrung@debian.org>
+Bug: http://bugzilla.audacityteam.org/show_bug.cgi?id=233
+
+--- a/configure.in
++++ b/configure.in
+@@ -173,6 +173,12 @@
+             lib_preference=$withval,
+             lib_preference="system local")
+ 
++AC_ARG_ENABLE(dynamic-loading,
++            [AS_HELP_STRING([--enable-dynamic-loading],
++                            [enable dynamic loading of lame and FFmpeg [default=yes]])],
++            [dynamic_loading="$enableval"],
++            [dynamic_loading="yes"])
++
+ dnl AC_ARG_WITH(wx-version,
+ dnl            [AS_HELP_STRING([--with-wx-version],
+ dnl                            [select wxWidgets version (if both installed) [2.8,]])],
+--- a/m4/audacity_checklib_ffmpeg.m4
++++ b/m4/audacity_checklib_ffmpeg.m4
+@@ -35,6 +35,10 @@
+       FFMPEG_SYSTEM_AVAILABLE="yes"
+       FFMPEG_SYSTEM_CXXFLAGS="$AVCODEC_CFLAGS $AVFORMAT_CFLAGS $AVUTIL_CFLAGS"
+       FFMPEG_SYSTEM_CPPSYMBOLS="USE_FFMPEG"
++      if test "x$dynamic_loading" = "xno"; then
++         FFMPEG_SYSTEM_LIBS="$AVCODEC_LIBS $AVFORMAT_LIBS $AVUTIL_LIBS"
++         AC_DEFINE(DISABLE_DYNAMIC_LOADING_FFMPEG, 1, [Use system FFmpeg library and disable dynamic loading of it.])
++      fi
+       dnl build the extra object files needed to use FFmpeg. Paths inside
+       dnl the audacity src/ dir, as this is subsitiuted into src/Makefile.in
+       FFMPEG_SYSTEM_OPTOBJS="import/ImportFFmpeg.o export/ExportFFmpeg.o \
+--- a/src/FFmpeg.cpp
++++ b/src/FFmpeg.cpp
+@@ -611,6 +611,10 @@
+ 
+ bool FFmpegLibs::LoadLibs(wxWindow *parent, bool showerr)
+ {
++#if defined(DISABLE_DYNAMIC_LOADING_FFMPEG)
++   mLibsLoaded = InitLibs(wxEmptyString, showerr);
++   return mLibsLoaded;
++#endif
+ 
+    wxLogMessage(wxT("Trying to load FFmpeg libraries..."));
+    if (ValidLibsLoaded()) {
+@@ -681,6 +685,7 @@
+ 
+ bool FFmpegLibs::InitLibs(wxString libpath_format, bool showerr)
+ {
++#if !defined(DISABLE_DYNAMIC_LOADING_FFMPEG)
+    FreeLibs();
+ 
+ #if defined(__WXMSW__)
+@@ -881,8 +886,10 @@
+    FFMPEG_INITDYN(util, av_rescale_q);
+    FFMPEG_INITDYN(util, avutil_version);
+ 
+-   //FFmpeg initialization
+    wxLogMessage(wxT("All symbols loaded successfully. Initializing the library."));
++#endif
++
++   //FFmpeg initialization
+    avcodec_init();
+    avcodec_register_all();
+    av_register_all();
+@@ -921,7 +928,11 @@
+       return false;
+    }
+ 
++#if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(52, 69, 0)
++   av_register_protocol(&ufile_protocol);
++#else
+    av_register_protocol2(&ufile_protocol, sizeof(ufile_protocol));
++#endif
+ 
+    return true;
+ }
+--- a/src/FFmpeg.h
++++ b/src/FFmpeg.h
+@@ -47,6 +47,19 @@
+    #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(52, 94, 1)
+    #define AVSampleFormat SampleFormat
+    #endif
++
++   #if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(52, 64, 0)
++   #define av_guess_format guess_format
++   #endif
++
++   #if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(52, 60, 0)
++   #define av_match_ext match_ext
++   #endif
++
++   #define avio_read get_buffer
++   #define avio_seek url_fseek
++   #define avio_close url_fclose
++   #define av_get_bits_per_sample_fmt av_get_bits_per_sample_format
+ }
+ #endif
+ 
+@@ -335,6 +348,7 @@
+ } streamContext;
+ #endif
+ 
++#if !defined(DISABLE_DYNAMIC_LOADING_FFMPEG)
+ extern "C" {
+    // A little explanation of what's going on here.
+    //
+@@ -827,6 +841,7 @@
+       (protocol, size)
+    );
+ };
++#endif
+ 
+ #endif // USE_FFMPEG
+ #endif // __AUDACITY_FFMPEG__
+--- a/src/configtemplate.h
++++ b/src/configtemplate.h
+@@ -84,6 +84,9 @@
+    */
+ #undef USE_FFMPEG
+ 
++/* Use system FFmpeg library and disable dynamic loading of it. */
++#undef DISABLE_DYNAMIC_LOADING_FFMPEG
++
+ /* Define if LADSPA plug-ins are enabled */
+ #undef USE_LADSPA
+ 
+--- a/src/prefs/LibraryPrefs.cpp
++++ b/src/prefs/LibraryPrefs.cpp
+@@ -129,7 +129,7 @@
+          S.Id(ID_FFMPEG_DOWN_BUTTON);
+          wxButton *bdwn = S.AddButton(_("Dow&nload"),
+                                       wxALL | wxALIGN_LEFT | wxALIGN_CENTRE_VERTICAL);
+-#if !defined(USE_FFMPEG)
++#if !defined(USE_FFMPEG) || defined(DISABLE_DYNAMIC_LOADING_FFMPEG)
+          bdwn->Enable(FALSE);
+          bfnd->Enable(FALSE);
+ #endif

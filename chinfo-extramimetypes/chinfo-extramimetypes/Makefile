@@ -13,7 +13,7 @@
 SHELL=/bin/sh
 
 PACKAGE = chinfo-extramimetypes
-VERSION = 8.1
+VERSION = 8.2
 
 DESTDIR =
 PREFIX = /usr
@@ -31,6 +31,7 @@ SMIFILES =  \
 	chinfo-extramimetypes-cdimage.xml \
 	chinfo-extramimetypes-gm.xml \
 	chinfo-extramimetypes-hash.xml \
+	chinfo-extramimetypes-maf.xml \
 	chinfo-extramimetypes-slackbuild.xml
 
 HIDDENFILES = \

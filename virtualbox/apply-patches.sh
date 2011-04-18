@@ -27,5 +27,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.0-user-courier-ins
 # mkisofs: we're not going to build the additions .iso file
 # makeself: we're not going to create the stanalone .run installers
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.0-dont-check-for-mkisofs-or-makeself.patch
+# Set linux 2.6 as default on new machines selector
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-default-to-linux26.patch
 
 set +e +o pipefail

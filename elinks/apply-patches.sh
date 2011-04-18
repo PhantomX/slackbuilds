@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Prevent crash when HOME is unset (bug #90663).
 zcat ${SB_PATCHDIR}/${NAME}-0.11.0-ssl-noegd.patch.gz | patch -p1 -E --backup --verbose
 # UTF-8 by default
@@ -33,4 +34,4 @@ if [ "$(echo ${RUBYVER} | cut -d. -f1)" -ge 1 ] && [ "$(echo ${RUBYVER} | cut -d
   zcat ${SB_PATCHDIR}/elinks-0.12pre5-ruby1.9.patch.gz | patch -p0 -E --backup --verbose
 fi
 
-set -e -o pipefail
+set +e +o pipefail

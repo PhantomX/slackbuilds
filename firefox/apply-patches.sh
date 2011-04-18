@@ -9,6 +9,8 @@ sed \
   -e "s/__RPM_VERSION_INTERNAL__/${FF_DIR_VER}/" \
   ${SB_PATCHDIR}/firefox-version.patch | patch -p1 -E --backup --verbose
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-default.patch
+# Upstream patches
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-4.0-moz-app-launcher.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-4.0-gnome3.patch
 
 set +e +o pipefail

@@ -26,6 +26,8 @@ zcat ${SB_PATCHDIR}/${NAME}-7.4-sttytcsadrain.patch.gz | patch -p1 -E --backup -
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-df-direct.patch
 # add jar-like archives to colored ones
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.5-dircolors.patch
+#add note about mkdir --mode behaviour into info documentation(#610559)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.4-mkdir-modenote.patch
 
 # sh-utils
 # add info about TZ envvar to date manpage

@@ -1,0 +1,375 @@
+From 6bf5e24d48077db58b389e90558100fc121b8134 Mon Sep 17 00:00:00 2001
+From: Kamil Dudka <kdudka@redhat.com>
+Date: Mon, 4 Apr 2011 12:43:39 +0200
+Subject: [PATCH 1/2] libacl: Add acl_extended_file_nofollow()
+
+This function calls lgetxattr() instead of getxattr(), which helps ls(1)
+to prevent unnecessary automatic mounts, which acl_extended_file()
+triggers.  See the following bug report for more details:
+https://bugzilla.redhat.com/692982
+---
+ exports                             |    1 +
+ include/libacl.h                    |    1 +
+ libacl/Makefile                     |    3 +-
+ libacl/__acl_extended_file.c        |   49 +++++++++++++++++++++++++++++++++++
+ libacl/__acl_extended_file.h        |    4 +++
+ libacl/acl_extended_file.c          |   20 ++------------
+ libacl/acl_extended_file_nofollow.c |   34 ++++++++++++++++++++++++
+ man/man3/acl_extended_file.3        |   11 +++++++-
+ man/man5/acl.5                      |    1 +
+ 9 files changed, 105 insertions(+), 19 deletions(-)
+ create mode 100644 libacl/__acl_extended_file.c
+ create mode 100644 libacl/__acl_extended_file.h
+ create mode 100644 libacl/acl_extended_file_nofollow.c
+
+diff --git a/exports b/exports
+index ef02842..b368c22 100644
+--- a/exports
++++ b/exports
+@@ -82,4 +82,5 @@ ACL_1.1 {
+ 	# Linux specific extensions
+ 	perm_copy_fd;
+ 	perm_copy_file;
++	acl_extended_file_nofollow;
+ } ACL_1.0;
+diff --git a/include/libacl.h b/include/libacl.h
+index 41ec48e..d6a6650 100644
+--- a/include/libacl.h
++++ b/include/libacl.h
+@@ -59,6 +59,7 @@ extern int acl_check(acl_t acl, int *last);
+ extern acl_t acl_from_mode(mode_t mode);
+ extern int acl_equiv_mode(acl_t acl, mode_t *mode_p);
+ int acl_extended_file(const char *path_p);
++int acl_extended_file_nofollow(const char *path_p);
+ int acl_extended_fd(int fd);
+ extern int acl_entries(acl_t acl);
+ extern const char *acl_error(int code);
+diff --git a/libacl/Makefile b/libacl/Makefile
+index 1224b65..cfe3d3a 100644
+--- a/libacl/Makefile
++++ b/libacl/Makefile
+@@ -47,7 +47,8 @@ POSIX_CFILES = \
+ 
+ LIBACL_CFILES = \
+ 	acl_to_any_text.c acl_entries.c acl_check.c acl_error.c acl_cmp.c \
+-	acl_extended_fd.c acl_extended_file.c acl_equiv_mode.c acl_from_mode.c
++	acl_extended_fd.c acl_extended_file.c acl_equiv_mode.c acl_from_mode.c \
++	acl_extended_file_nofollow.c __acl_extended_file.c
+ 
+ INTERNAL_CFILES = \
+ 	__acl_to_any_text.c __acl_to_xattr.c __acl_from_xattr.c \
+diff --git a/libacl/__acl_extended_file.c b/libacl/__acl_extended_file.c
+new file mode 100644
+index 0000000..629afe9
+--- /dev/null
++++ b/libacl/__acl_extended_file.c
+@@ -0,0 +1,49 @@
++/*
++  File: acl_extended_file.c
++
++  Copyright (C) 2000, 2011
++  Andreas Gruenbacher, <a.gruenbacher@bestbits.at>
++
++  This program is free software; you can redistribute it and/or
++  modify it under the terms of the GNU Lesser General Public
++  License as published by the Free Software Foundation; either
++  version 2.1 of the License, or (at your option) any later version.
++
++  This program is distributed in the hope that it will be useful,
++  but WITHOUT ANY WARRANTY; without even the implied warranty of
++  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++  Lesser General Public License for more details.
++
++  You should have received a copy of the GNU Lesser General Public
++  License along with this library; if not, write to the Free Software
++  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++*/
++
++#include <unistd.h>
++#include <attr/xattr.h>
++#include "libacl.h"
++
++#include "byteorder.h"
++#include "acl_ea.h"
++#include "__acl_extended_file.h"
++
++
++int
++__acl_extended_file(const char *path_p, getxattr_t fun)
++{
++	int base_size = sizeof(acl_ea_header) + 3 * sizeof(acl_ea_entry);
++	int retval;
++
++	retval = fun(path_p, ACL_EA_ACCESS, NULL, 0);
++	if (retval < 0 && errno != ENOATTR && errno != ENODATA)
++		return -1;
++	if (retval > base_size)
++		return 1;
++	retval = fun(path_p, ACL_EA_DEFAULT, NULL, 0);
++	if (retval < 0 && errno != ENOATTR && errno != ENODATA)
++		return -1;
++	if (retval >= base_size)
++		return 1;
++	return 0;
++}
++
+diff --git a/libacl/__acl_extended_file.h b/libacl/__acl_extended_file.h
+new file mode 100644
+index 0000000..f8881a1
+--- /dev/null
++++ b/libacl/__acl_extended_file.h
+@@ -0,0 +1,4 @@
++typedef ssize_t (*getxattr_t)(const char *, const char *, void *value,
++        size_t size);
++
++int __acl_extended_file(const char *path_p, getxattr_t fun);
+diff --git a/libacl/acl_extended_file.c b/libacl/acl_extended_file.c
+index d1cb85d..f417784 100644
+--- a/libacl/acl_extended_file.c
++++ b/libacl/acl_extended_file.c
+@@ -1,7 +1,7 @@
+ /*
+   File: acl_extended_file.c
+ 
+-  Copyright (C) 2000
++  Copyright (C) 2011
+   Andreas Gruenbacher, <a.gruenbacher@bestbits.at>
+ 
+   This program is free software; you can redistribute it and/or
+@@ -23,26 +23,12 @@
+ #include <attr/xattr.h>
+ #include "libacl.h"
+ 
+-#include "byteorder.h"
+-#include "acl_ea.h"
++#include "__acl_extended_file.h"
+ 
+ 
+ int
+ acl_extended_file(const char *path_p)
+ {
+-	int base_size = sizeof(acl_ea_header) + 3 * sizeof(acl_ea_entry);
+-	int retval;
+-
+-	retval = getxattr(path_p, ACL_EA_ACCESS, NULL, 0);
+-	if (retval < 0 && errno != ENOATTR && errno != ENODATA)
+-		return -1;
+-	if (retval > base_size)
+-		return 1;
+-	retval = getxattr(path_p, ACL_EA_DEFAULT, NULL, 0);
+-	if (retval < 0 && errno != ENOATTR && errno != ENODATA)
+-		return -1;
+-	if (retval >= base_size)
+-		return 1;
+-	return 0;
++	return __acl_extended_file(path_p, getxattr);
+ }
+ 
+diff --git a/libacl/acl_extended_file_nofollow.c b/libacl/acl_extended_file_nofollow.c
+new file mode 100644
+index 0000000..8f4711f
+--- /dev/null
++++ b/libacl/acl_extended_file_nofollow.c
+@@ -0,0 +1,34 @@
++/*
++  File: acl_extended_file.c
++
++  Copyright (C) 2011
++  Andreas Gruenbacher, <a.gruenbacher@bestbits.at>
++
++  This program is free software; you can redistribute it and/or
++  modify it under the terms of the GNU Lesser General Public
++  License as published by the Free Software Foundation; either
++  version 2.1 of the License, or (at your option) any later version.
++
++  This program is distributed in the hope that it will be useful,
++  but WITHOUT ANY WARRANTY; without even the implied warranty of
++  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++  Lesser General Public License for more details.
++
++  You should have received a copy of the GNU Lesser General Public
++  License along with this library; if not, write to the Free Software
++  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++*/
++
++#include <unistd.h>
++#include <attr/xattr.h>
++#include "libacl.h"
++
++#include "__acl_extended_file.h"
++
++
++int
++acl_extended_file_nofollow(const char *path_p)
++{
++	return __acl_extended_file(path_p, lgetxattr);
++}
++
+diff --git a/man/man3/acl_extended_file.3 b/man/man3/acl_extended_file.3
+index 0ca7e0f..1f04331 100644
+--- a/man/man3/acl_extended_file.3
++++ b/man/man3/acl_extended_file.3
+@@ -25,7 +25,7 @@
+ .Dt ACL_EXTENDED_FILE 3
+ .Os "Linux ACL"
+ .Sh NAME
+-.Nm acl_extended_file
++.Nm acl_extended_file, acl_extended_file_nofollow
+ .Nd test for information in ACLs by file name
+ .Sh LIBRARY
+ Linux Access Control Lists library (libacl, \-lacl).
+@@ -34,6 +34,8 @@ Linux Access Control Lists library (libacl, \-lacl).
+ .In acl/libacl.h
+ .Ft int
+ .Fn acl_extended_file "const char *path_p"
++.Ft int
++.Fn acl_extended_file_nofollow "const char *path_p"
+ .Sh DESCRIPTION
+ The
+ .Fn acl_extended_file
+@@ -61,6 +63,13 @@ mechanisms, such as Mandatory Access Control schemes. The
+ .Xr access 2
+ system call can be used to check whether a given type of access to a file
+ object would be granted.
++.Pp
++.Fn acl_extended_file_nofollow
++is identical to 
++.Fn acl_extended_file ,
++except in the case of a symbolic link, where the link itself is interrogated,
++not the file that it refers to.  Since symbolic links have no ACL themselves,
++the operation is supposed to fail on them.
+ .Sh RETURN VALUE
+ If successful, the
+ .Fn acl_extended_file
+diff --git a/man/man5/acl.5 b/man/man5/acl.5
+index 6b0f468..aec58aa 100644
+--- a/man/man5/acl.5
++++ b/man/man5/acl.5
+@@ -497,6 +497,7 @@ These non-portable extensions are available on Linux systems.
+ .Xr acl_error 3 ,
+ .Xr acl_extended_fd 3 ,
+ .Xr acl_extended_file 3 ,
++.Xr acl_extended_file_nofollow 3 ,
+ .Xr acl_from_mode 3 ,
+ .Xr acl_get_perm 3 ,
+ .Xr acl_to_any_text 3
+-- 
+1.7.4
+
+
+From ad4ca5aaee96e98b2e8e8a4351fa5e6c58d65216 Mon Sep 17 00:00:00 2001
+From: Andreas Gruenbacher <agruen@linbit.com>
+Date: Mon, 4 Apr 2011 17:18:38 +0200
+Subject: [PATCH 2/2] Minor fixes to the previous commit
+
+* Assign the new libacl version ACL_1.2 to acl_extended_file_nofollow
+  so that package managers will end up with the appropriate
+  dependencies.
+* Add a manpage entry for acl_extended_file_nofollow which sources
+  ("links to") the acl_extended_file manpage.
+* Remove the prototype for getxattr/lgetxattr.
+* Whitespace cleanups.
+---
+ exports                               |    7 ++++++-
+ libacl/__acl_extended_file.c          |    7 ++++---
+ libacl/__acl_extended_file.h          |    7 +++----
+ libacl/acl_extended_file_nofollow.c   |    3 +--
+ man/man3/acl_extended_file.3          |    2 +-
+ man/man3/acl_extended_file_nofollow.3 |    1 +
+ 6 files changed, 16 insertions(+), 11 deletions(-)
+ create mode 100644 man/man3/acl_extended_file_nofollow.3
+
+diff --git a/exports b/exports
+index b368c22..7d8e69e 100644
+--- a/exports
++++ b/exports
+@@ -82,5 +82,10 @@ ACL_1.1 {
+ 	# Linux specific extensions
+ 	perm_copy_fd;
+ 	perm_copy_file;
+-	acl_extended_file_nofollow;
+ } ACL_1.0;
++
++ACL_1.2 {
++    global:
++	# Linux specific extensions
++	acl_extended_file_nofollow;
++} ACL_1.1;
+diff --git a/libacl/__acl_extended_file.c b/libacl/__acl_extended_file.c
+index 629afe9..3e45abd 100644
+--- a/libacl/__acl_extended_file.c
++++ b/libacl/__acl_extended_file.c
+@@ -1,5 +1,5 @@
+ /*
+-  File: acl_extended_file.c
++  File: __acl_extended_file.c
+ 
+   Copyright (C) 2000, 2011
+   Andreas Gruenbacher, <a.gruenbacher@bestbits.at>
+@@ -29,7 +29,9 @@
+ 
+ 
+ int
+-__acl_extended_file(const char *path_p, getxattr_t fun)
++__acl_extended_file(const char *path_p,
++		    ssize_t (*fun)(const char *, const char *,
++				   void *, size_t))
+ {
+ 	int base_size = sizeof(acl_ea_header) + 3 * sizeof(acl_ea_entry);
+ 	int retval;
+@@ -46,4 +48,3 @@ __acl_extended_file(const char *path_p, getxattr_t fun)
+ 		return 1;
+ 	return 0;
+ }
+-
+diff --git a/libacl/__acl_extended_file.h b/libacl/__acl_extended_file.h
+index f8881a1..0b0da9e 100644
+--- a/libacl/__acl_extended_file.h
++++ b/libacl/__acl_extended_file.h
+@@ -1,4 +1,3 @@
+-typedef ssize_t (*getxattr_t)(const char *, const char *, void *value,
+-        size_t size);
+-
+-int __acl_extended_file(const char *path_p, getxattr_t fun);
++int __acl_extended_file(const char *path_p,
++			ssize_t (*)(const char *, const char *,
++				    void *, size_t));
+diff --git a/libacl/acl_extended_file_nofollow.c b/libacl/acl_extended_file_nofollow.c
+index 8f4711f..c253e4d 100644
+--- a/libacl/acl_extended_file_nofollow.c
++++ b/libacl/acl_extended_file_nofollow.c
+@@ -1,5 +1,5 @@
+ /*
+-  File: acl_extended_file.c
++  File: acl_extended_file_nofollow.c
+ 
+   Copyright (C) 2011
+   Andreas Gruenbacher, <a.gruenbacher@bestbits.at>
+@@ -31,4 +31,3 @@ acl_extended_file_nofollow(const char *path_p)
+ {
+ 	return __acl_extended_file(path_p, lgetxattr);
+ }
+-
+diff --git a/man/man3/acl_extended_file.3 b/man/man3/acl_extended_file.3
+index 1f04331..fdeef86 100644
+--- a/man/man3/acl_extended_file.3
++++ b/man/man3/acl_extended_file.3
+@@ -65,7 +65,7 @@ system call can be used to check whether a given type of access to a file
+ object would be granted.
+ .Pp
+ .Fn acl_extended_file_nofollow
+-is identical to 
++is identical to
+ .Fn acl_extended_file ,
+ except in the case of a symbolic link, where the link itself is interrogated,
+ not the file that it refers to.  Since symbolic links have no ACL themselves,
+diff --git a/man/man3/acl_extended_file_nofollow.3 b/man/man3/acl_extended_file_nofollow.3
+new file mode 100644
+index 0000000..44fc24f
+--- /dev/null
++++ b/man/man3/acl_extended_file_nofollow.3
+@@ -0,0 +1 @@
++.so man3/acl_extended_file.3
+-- 
+1.7.4
+

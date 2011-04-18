@@ -4,10 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-zcat ${SB_PATCHDIR}/${NAME}-2.0.1-xmms-skindir.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5-alpha1-xmms-skindir.patch
 # fix hardcoded libdir replacement
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4-libdir.patch
-# reported upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4.4-adplug-vfs_close.patch
 
 set +e +o pipefail

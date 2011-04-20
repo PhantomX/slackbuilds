@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # avoid memory leak on SSL connection failure
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-curl-7.21.4-a40f58d.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-curl-7.21.5-82ecc85.patch
 # patch making libcurl multilib ready
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0101-curl-7.21.1-multilib.patch
 # prevent configure script from discarding -g in CFLAGS

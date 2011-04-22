@@ -1,0 +1,168 @@
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drv.h b/drivers/gpu/drm/nouveau/nouveau_drv.h
+index 982d70b..c01e43f 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drv.h
++++ b/drivers/gpu/drm/nouveau/nouveau_drv.h
+@@ -681,6 +681,9 @@ struct drm_nouveau_private {
+	/* For PFIFO and PGRAPH. */
+	spinlock_t context_switch_lock;
+
++	/* VM/PRAMIN flush, legacy PRAMIN aperture */
++	spinlock_t vm_lock;
++
+	/* RAMIN configuration, RAMFC, RAMHT and RAMRO offsets */
+	struct nouveau_ramht  *ramht;
+	struct nouveau_gpuobj *ramfc;
+diff --git a/drivers/gpu/drm/nouveau/nouveau_object.c b/drivers/gpu/drm/nouveau/nouveau_object.c
+index 30b6544..2002a43 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_object.c
++++ b/drivers/gpu/drm/nouveau/nouveau_object.c
+@@ -1013,19 +1013,20 @@ nv_ro32(struct nouveau_gpuobj *gpuobj, u32 offset)
+ {
+	struct drm_nouveau_private *dev_priv = gpuobj->dev->dev_private;
+	struct drm_device *dev = gpuobj->dev;
++	unsigned long flags;
+
+	if (gpuobj->pinst == ~0 || !dev_priv->ramin_available) {
+		u64  ptr = gpuobj->vinst + offset;
+		u32 base = ptr >> 16;
+		u32  val;
+
+-		spin_lock(&dev_priv->ramin_lock);
++		spin_lock_irqsave(&dev_priv->vm_lock, flags);
+		if (dev_priv->ramin_base != base) {
+			dev_priv->ramin_base = base;
+			nv_wr32(dev, 0x001700, dev_priv->ramin_base);
+		}
+		val = nv_rd32(dev, 0x700000 + (ptr & 0xffff));
+-		spin_unlock(&dev_priv->ramin_lock);
++		spin_unlock_irqrestore(&dev_priv->vm_lock, flags);
+		return val;
+	}
+
+@@ -1037,18 +1038,19 @@ nv_wo32(struct nouveau_gpuobj *gpuobj, u32 offset, u32 val)
+ {
+	struct drm_nouveau_private *dev_priv = gpuobj->dev->dev_private;
+	struct drm_device *dev = gpuobj->dev;
++	unsigned long flags;
+
+	if (gpuobj->pinst == ~0 || !dev_priv->ramin_available) {
+		u64  ptr = gpuobj->vinst + offset;
+		u32 base = ptr >> 16;
+
+-		spin_lock(&dev_priv->ramin_lock);
++		spin_lock_irqsave(&dev_priv->vm_lock, flags);
+		if (dev_priv->ramin_base != base) {
+			dev_priv->ramin_base = base;
+			nv_wr32(dev, 0x001700, dev_priv->ramin_base);
+		}
+		nv_wr32(dev, 0x700000 + (ptr & 0xffff), val);
+-		spin_unlock(&dev_priv->ramin_lock);
++		spin_unlock_irqrestore(&dev_priv->vm_lock, flags);
+		return;
+	}
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_state.c b/drivers/gpu/drm/nouveau/nouveau_state.c
+index a54fc43..a358dc5 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_state.c
++++ b/drivers/gpu/drm/nouveau/nouveau_state.c
+@@ -646,6 +646,7 @@ nouveau_card_init(struct drm_device *dev)
+	spin_lock_init(&dev_priv->channels.lock);
+	spin_lock_init(&dev_priv->tile.lock);
+	spin_lock_init(&dev_priv->context_switch_lock);
++	spin_lock_init(&dev_priv->vm_lock);
+
+	/* Make the CRTCs and I2C buses accessible */
+	ret = engine->display.early_init(dev);
+diff --git a/drivers/gpu/drm/nouveau/nv50_instmem.c b/drivers/gpu/drm/nouveau/nv50_instmem.c
+index e57caa2..53a4b40 100644
+--- a/drivers/gpu/drm/nouveau/nv50_instmem.c
++++ b/drivers/gpu/drm/nouveau/nv50_instmem.c
+@@ -404,23 +404,25 @@ void
+ nv50_instmem_flush(struct drm_device *dev)
+ {
+	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	unsigned long flags;
+
+-	spin_lock(&dev_priv->ramin_lock);
++	spin_lock_irqsave(&dev_priv->vm_lock, flags);
+	nv_wr32(dev, 0x00330c, 0x00000001);
+	if (!nv_wait(dev, 0x00330c, 0x00000002, 0x00000000))
+		NV_ERROR(dev, "PRAMIN flush timeout\n");
+-	spin_unlock(&dev_priv->ramin_lock);
++	spin_unlock_irqrestore(&dev_priv->vm_lock, flags);
+ }
+
+ void
+ nv84_instmem_flush(struct drm_device *dev)
+ {
+	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	unsigned long flags;
+
+-	spin_lock(&dev_priv->ramin_lock);
++	spin_lock_irqsave(&dev_priv->vm_lock, flags);
+	nv_wr32(dev, 0x070000, 0x00000001);
+	if (!nv_wait(dev, 0x070000, 0x00000002, 0x00000000))
+		NV_ERROR(dev, "PRAMIN flush timeout\n");
+-	spin_unlock(&dev_priv->ramin_lock);
++	spin_unlock_irqrestore(&dev_priv->vm_lock, flags);
+ }
+
+diff --git a/drivers/gpu/drm/nouveau/nv50_vm.c b/drivers/gpu/drm/nouveau/nv50_vm.c
+index 6144156..248496f 100644
+--- a/drivers/gpu/drm/nouveau/nv50_vm.c
++++ b/drivers/gpu/drm/nouveau/nv50_vm.c
+@@ -170,10 +170,11 @@ void
+ nv50_vm_flush_engine(struct drm_device *dev, int engine)
+ {
+	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	unsigned long flags;
+
+-	spin_lock(&dev_priv->ramin_lock);
++	spin_lock_irqsave(&dev_priv->vm_lock, flags);
+	nv_wr32(dev, 0x100c80, (engine << 16) | 1);
+	if (!nv_wait(dev, 0x100c80, 0x00000001, 0x00000000))
+		NV_ERROR(dev, "vm flush timeout: engine %d\n", engine);
+-	spin_unlock(&dev_priv->ramin_lock);
++	spin_unlock_irqrestore(&dev_priv->vm_lock, flags);
+ }
+diff --git a/drivers/gpu/drm/nouveau/nvc0_vm.c b/drivers/gpu/drm/nouveau/nvc0_vm.c
+index e4e83c2..10a5a99 100644
+--- a/drivers/gpu/drm/nouveau/nvc0_vm.c
++++ b/drivers/gpu/drm/nouveau/nvc0_vm.c
+@@ -104,20 +104,27 @@ nvc0_vm_flush(struct nouveau_vm *vm)
+	struct nouveau_instmem_engine *pinstmem = &dev_priv->engine.instmem;
+	struct drm_device *dev = vm->dev;
+	struct nouveau_vm_pgd *vpgd;
+-	u32 r100c80, engine;
++	unsigned long flags;
++	u32 engine = (dev_priv->chan_vm == vm) ? 1 : 5;
+
+	pinstmem->flush(vm->dev);
+
+-	if (vm == dev_priv->chan_vm)
+-		engine = 1;
+-	else
+-		engine = 5;
+-
++	spin_lock_irqsave(&dev_priv->vm_lock, flags);
+	list_for_each_entry(vpgd, &vm->pgd_list, head) {
+-		r100c80 = nv_rd32(dev, 0x100c80);
++		/* looks like maybe a "free flush slots" counter, the
++		 * faster you write to 0x100cbc to more it decreases
++		 */
++		if (!nv_wait_ne(dev, 0x100c80, 0x00ff0000, 0x00000000)) {
++			NV_ERROR(dev, "vm timeout 0: 0x%08x %d\n",
++				 nv_rd32(dev, 0x100c80), engine);
++		}
+		nv_wr32(dev, 0x100cb8, vpgd->obj->vinst >> 8);
+		nv_wr32(dev, 0x100cbc, 0x80000000 | engine);
+-		if (!nv_wait(dev, 0x100c80, 0xffffffff, r100c80))
+-			NV_ERROR(dev, "vm flush timeout eng %d\n", engine);
++		/* wait for flush to be queued? */
++		if (!nv_wait(dev, 0x100c80, 0x00008000, 0x00008000)) {
++			NV_ERROR(dev, "vm timeout 1: 0x%08x %d\n",
++				 nv_rd32(dev, 0x100c80), engine);
++		}
+	}
++	spin_unlock_irqrestore(&dev_priv->vm_lock, flags);
+ }

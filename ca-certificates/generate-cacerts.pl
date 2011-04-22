@@ -231,6 +231,10 @@ foreach $cert (@certs)
         {
             $cert_alias = "extra-elektronikkas2005";
         }
+        elsif ($cert =~ /Muntaner 244 Barcelona.*Firmaprofesional/)
+        {
+            $cert_alias = "extra-oldfirmaprofesional";
+        }
         # Mozilla does not provide these certificates:
         #   baltimorecodesigningca
         #   gtecybertrust5ca
@@ -278,16 +282,16 @@ foreach $cert (@certs)
     {
         if ($in_cert_block != 0)
         {
-            die "$file is malformed.";
+            die "FAIL: $file is malformed.";
         }
         $in_cert_block = 1;
         if ($write_current_cert == 1)
         {
             $pem_file_count++;
             sysopen(PEM, "$cert_alias.pem", O_WRONLY|O_CREAT|O_EXCL)
-                || die("could not write file");
+                || die("FAIL: could not open file for $cert_alias.pem: $!");
             print PEM $cert;
-            print " => written $cert_alias.pem\n";
+            print " => writing $cert_alias.pem...\n";
         }
     }
     elsif ($cert eq "-----END CERTIFICATE-----\n")
@@ -314,7 +318,7 @@ foreach $cert (@certs)
 if (@pem_files != $pem_file_count)
 {
     print "$pem_file_count != ".@pem_files."\n";
-    die "Number of .pem files produced does not match".
+    die "FAIL: Number of .pem files produced does not match".
         " number of certs read from $file.";
 }
 
@@ -335,6 +339,6 @@ foreach $pem_file (@pem_files)
 # Check that the correct number of certs were added to the keystore.
 if ($certs_written_count != $pem_file_count)
 {
-    die "Number of certs added to keystore does not match".
+    die "FAIL: Number of certs added to keystore does not match".
         " number of certs read from $file.";
 }

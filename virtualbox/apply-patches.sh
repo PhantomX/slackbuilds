@@ -10,12 +10,14 @@ SB_PATCHDIR=${CWD}/patches
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ose-3.2.8-mesa-check.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-asneeded.patch
 # add the --enable-vnc option to configure script
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-vnc.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-vnc.patch
 # Mantain ~/.Virtualbox
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.2-restore_old_machines_dir.patch
+# http://bugs.gentoo.org/show_bug.cgi?id=362861
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.4-gcc46.patch 
 
 # from Mandriva
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-1.5.6_OSE-kernelrelease.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.6-kernelrelease.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-1.6.0_OSE-futex.patch
 # (fc) 2.2.0-1mdv disable update notification (Debian)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/16-no-update.patch
@@ -29,5 +31,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.0-user-courier-ins
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.0-dont-check-for-mkisofs-or-makeself.patch
 # Set linux 2.6 as default on new machines selector
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-default-to-linux26.patch
+
+
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-strings.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-libcxx.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-3.2.10-noansi.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-3.2.6-vboxkeyboard.patch
 
 set +e +o pipefail

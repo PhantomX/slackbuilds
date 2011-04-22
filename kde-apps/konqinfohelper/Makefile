@@ -1,6 +1,6 @@
 # konqinfohelper Makefile
 
-# Copyright (C) 2010 Phantom X, Goiania, Brazil.
+# Copyright (C) 2010-2011 Phantom X, Goiania, Brazil.
 # This Makefile.in is free software; the author
 # gives unlimited permission to copy and/or distribute it,
 # with or without modifications, as long as this notice is preserved.
@@ -19,7 +19,6 @@ top_srcdir = .
 subdir = .
 
 all:
-	make dist -C $(srcdir)/konqinfohelper
-	mv $(PACKAGE)/$(PACKAGE)*.tar.xz .
+	$(SHELL) $(srcdir)/$(PACKAGE)-tarball.sh
 
 .NOEXPORT:

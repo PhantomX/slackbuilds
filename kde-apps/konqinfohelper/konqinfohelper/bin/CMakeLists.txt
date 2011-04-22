@@ -1,0 +1,4 @@
+
+set(BINFILES konqinfohelper )
+
+install(PROGRAMS ${BINFILES} DESTINATION "${DATA_INSTALL_DIR}/${PACKAGE}" )

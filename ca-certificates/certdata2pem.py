@@ -93,13 +93,14 @@ if os.path.exists('blacklist.txt'):
 trust = dict()
 trustmap = dict()
 for obj in objects:
-    if obj['CKA_CLASS'] != 'CKO_NETSCAPE_TRUST':
+
+    if obj['CKA_CLASS'] != 'CKO_NSS_TRUST':
         continue
     if obj['CKA_LABEL'] in blacklist:
         print "Certificate %s blacklisted, ignoring." % obj['CKA_LABEL']
-    elif obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NETSCAPE_TRUSTED_DELEGATOR':
+    elif obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_TRUSTED_DELEGATOR':
         trust[obj['CKA_LABEL']] = True
-    elif obj['CKA_TRUST_EMAIL_PROTECTION'] == 'CKT_NETSCAPE_TRUSTED_DELEGATOR':
+    elif obj['CKA_TRUST_EMAIL_PROTECTION'] == 'CKT_NSS_TRUSTED_DELEGATOR':
         trust[obj['CKA_LABEL']] = True
     elif obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NETSCAPE_UNTRUSTED':
         print '!'*74
@@ -110,7 +111,9 @@ for obj in objects:
         print "Ignoring certificate %s.  SAUTH=%s, EPROT=%s" % \
               (obj['CKA_LABEL'], obj['CKA_TRUST_SERVER_AUTH'],
                obj['CKA_TRUST_EMAIL_PROTECTION'])
-    trustmap[obj['CKA_LABEL']] = obj
+    label = obj['CKA_LABEL']
+    trustmap[label] = obj
+    print " added cert", label
 
 def label_to_filename(label):
     label = label.replace('/', '_')\
@@ -156,7 +159,7 @@ for obj in objects:
         openssl_trustflags = []
         tobj = trustmap[obj['CKA_LABEL']]
         for t in trust_types.keys():
-            if tobj.has_key(t) and tobj[t] == 'CKT_NETSCAPE_TRUSTED_DELEGATOR':
+            if tobj.has_key(t) and tobj[t] == 'CKT_NSS_TRUSTED_DELEGATOR':
                 trustbits.append(t)
                 if t in openssl_trust:
                     openssl_trustflags.append(openssl_trust[t])

@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action WAVInfo]
 Name=WAVE information
 Name[pt_BR]=Informação WAVE
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --wav "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --wav "%f"
 Icon=audio-x-generic

@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action PDFInfo]
 Name=PDF information
 Name[pt_BR]=Informação PDF
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --pdf "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --pdf "%f"
 Icon=application-pdf

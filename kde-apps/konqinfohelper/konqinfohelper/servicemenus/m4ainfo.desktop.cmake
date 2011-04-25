@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action M4AInfo]
 Name=MP4 information
 Name[pt_BR]=Informação MP4
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --m4a "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --m4a "%f"
 Icon=audio-x-generic

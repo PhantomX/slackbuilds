@@ -1,0 +1,255 @@
+diff -ruNp elinks-0.12pre3.orig/configure.in elinks-0.12pre3/configure.in
+--- elinks-0.12pre3.orig/configure.in	2009-04-28 12:19:38.816628000 +0200
++++ elinks-0.12pre3/configure.in	2009-04-28 12:56:07.343999815 +0200
+@@ -1020,6 +1020,37 @@ AC_ARG_WITH(openssl, [[  --with-openssl[=DIR]    enable OpenSSL support (default
+ 		*)	chosen_ssl_library="OpenSSL" ;;
+ 	     esac])
+ 
++AC_ARG_WITH(nss_compat_ossl, [[  --with-nss_compat_ossl[=DIR]
++                          NSS compatibility SSL libraries/include files]])
++
++# nss_compat_ossl
++if test -n "$with_nss_compat_ossl" && test "$with_nss_compat_ossl" != "no"; then
++	EL_SAVE_FLAGS
++	if test "$with_nss_compat_ossl" = yes; then
++		if pkg-config nss; then
++			CFLAGS="$CFLAGS_X `pkg-config --cflags nss`"
++			LIBS="$LIBS_X `pkg-config --libs nss`"
++		else
++			with_nss_compat_ossl=no
++		fi
++	else
++		# Without pkg-config, we'll kludge in some defaults
++		CFLAGS="$CFLAGS_X -I$with_nss_compat_ossl/include -I/usr/include/nss3 -I/usr/include/nspr4"
++		LIBS="$LIBS_X -L$with_nss_compat_ossl/lib -lssl3 -lsmime3 -lnss3 -lplds4 -lplc4 -lnspr4 -lpthread -ldl"
++	fi
++	AC_CHECK_HEADERS(nss_compat_ossl/nss_compat_ossl.h,, [with_nss_compat_ossl=no], [#define NSS_COMPAT_OSSL_H])
++	AC_CHECK_LIB(nss_compat_ossl, X509_free,, [with_nss_compat_ossl=no])
++
++	if test "$with_nss_compat_ossl" = "no"; then
++		EL_RESTORE_FLAGS
++	else
++		LIBS="$LIBS -lnss_compat_ossl"
++		EL_CONFIG(CONFIG_NSS_COMPAT_OSSL, [nss_compat_ossl])
++		disable_openssl="yes"
++		disable_gnutls="yes"
++	fi
++fi
++
+ # ---- OpenSSL
+ 
+ AC_MSG_CHECKING([for OpenSSL])
+@@ -1142,10 +1173,11 @@ fi
+ 
+ # Final SSL setup
+ 
+-EL_CONFIG_DEPENDS(CONFIG_SSL, [CONFIG_OPENSSL CONFIG_GNUTLS], [SSL])
++EL_CONFIG_DEPENDS(CONFIG_SSL, [CONFIG_OPENSSL CONFIG_GNUTLS CONFIG_NSS_COMPAT_OSSL], [SSL])
+ AC_SUBST(CONFIG_GNUTLS_OPENSSL_COMPAT)
+ AC_SUBST(CONFIG_OPENSSL)
+ AC_SUBST(CONFIG_GNUTLS)
++AC_SUBST(CONFIG_NSS_COMPAT_OSSL)
+ 
+ #endif
+ 
+diff -ruNp elinks-0.12pre3.orig/src/network/ssl/socket.c elinks-0.12pre3/src/network/ssl/socket.c
+--- elinks-0.12pre3.orig/src/network/ssl/socket.c	2009-03-29 00:14:03.000000000 +0100
++++ elinks-0.12pre3/src/network/ssl/socket.c	2009-04-28 13:01:02.116180177 +0200
+@@ -6,6 +6,10 @@
+ 
+ #ifdef CONFIG_OPENSSL
+ #include <openssl/ssl.h>
++#define USE_OPENSSL
++#elif defined(CONFIG_NSS_COMPAT_OSSL)
++#include <nss_compat_ossl/nss_compat_ossl.h>
++#define USE_OPENSSL
+ #elif defined(CONFIG_GNUTLS)
+ #include <gnutls/gnutls.h>
+ #else
+@@ -26,7 +30,7 @@
+ 
+ 
+ /* SSL errors */
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ #define	SSL_ERROR_WANT_READ2	9999 /* XXX */
+ #define	SSL_ERROR_WANT_WRITE2	SSL_ERROR_WANT_WRITE
+ #define	SSL_ERROR_SYSCALL2	SSL_ERROR_SYSCALL
+@@ -40,7 +44,7 @@
+ #define	SSL_ERROR_SYSCALL2	GNUTLS_E_PULL_ERROR
+ #endif
+ 
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ 
+ #define ssl_do_connect(socket)		SSL_get_error(socket->ssl, SSL_connect(socket->ssl))
+ #define ssl_do_write(socket, data, len)	SSL_write(socket->ssl, data, len)
+@@ -126,7 +130,7 @@ ssl_connect(struct socket *socket)
+ 	if (socket->no_tls)
+ 		ssl_set_no_tls(socket);
+ 
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ 	SSL_set_fd(socket->ssl, socket->fd);
+ 
+ 	if (get_opt_bool("connection.ssl.cert_verify"))
+@@ -137,7 +141,13 @@ ssl_connect(struct socket *socket)
+ 	if (get_opt_bool("connection.ssl.client_cert.enable")) {
+ 		unsigned char *client_cert;
+ 
+-		client_cert = get_opt_str("connection.ssl.client_cert.file");
++#ifdef CONFIG_NSS_COMPAT_OSSL
++		client_cert = get_opt_str(
++				"connection.ssl.client_cert.nickname");
++#else
++		client_cert = get_opt_str(
++				"connection.ssl.client_cert.file");
++#endif
+ 		if (!*client_cert) {
+ 			client_cert = getenv("X509_CLIENT_CERT");
+ 			if (client_cert && !*client_cert)
+@@ -145,11 +155,17 @@ ssl_connect(struct socket *socket)
+ 		}
+ 
+ 		if (client_cert) {
++#ifdef CONFIG_NSS_COMPAT_OSSL
++			SSL_CTX_use_certificate_chain_file(
++					(SSL *) socket->ssl,
++					client_cert);
++#else
+ 			SSL_CTX *ctx = ((SSL *) socket->ssl)->ctx;
+ 
+ 			SSL_CTX_use_certificate_chain_file(ctx, client_cert);
+ 			SSL_CTX_use_PrivateKey_file(ctx, client_cert,
+ 						    SSL_FILETYPE_PEM);
++#endif
+ 		}
+ 	}
+ 
+@@ -206,7 +222,7 @@ ssl_write(struct socket *socket, unsigne
+ 	ssize_t wr = ssl_do_write(socket, data, len);
+ 
+ 	if (wr <= 0) {
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ 		int err = SSL_get_error(socket->ssl, wr);
+ #elif defined(CONFIG_GNUTLS)
+ 		int err = wr;
+@@ -235,7 +251,7 @@ ssl_read(struct socket *socket, unsigned
+ 	ssize_t rd = ssl_do_read(socket, data, len);
+ 
+ 	if (rd <= 0) {
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ 		int err = SSL_get_error(socket->ssl, rd);
+ #elif defined(CONFIG_GNUTLS)
+ 		int err = rd;
+diff -ruNp elinks-0.12pre3.orig/src/network/ssl/ssl.c elinks-0.12pre3/src/network/ssl/ssl.c
+--- elinks-0.12pre3.orig/src/network/ssl/ssl.c	2009-04-28 12:19:38.782627000 +0200
++++ elinks-0.12pre3/src/network/ssl/ssl.c	2009-04-28 12:59:09.000000000 +0200
+@@ -7,6 +7,10 @@
+ #ifdef CONFIG_OPENSSL
+ #include <openssl/ssl.h>
+ #include <openssl/rand.h>
++#define USE_OPENSSL
++#elif defined(CONFIG_NSS_COMPAT_OSSL)
++#include <nss_compat_ossl/nss_compat_ossl.h>
++#define USE_OPENSSL
+ #elif defined(CONFIG_GNUTLS)
+ #include <gnutls/gnutls.h>
+ #include <gnutls/x509.h>
+@@ -33,7 +37,7 @@
+ /* FIXME: As you can see, SSL is currently implemented in very, erm,
+  * decentralized manner. */
+ 
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ 
+ #ifndef PATH_MAX
+ #define	PATH_MAX	256 /* according to my /usr/include/bits/posix1_lim.h */
+@@ -71,12 +75,28 @@ static struct option_info openssl_option
+ 		N_("Enable or not the sending of X509 client certificates "
+ 		"to servers which request them.")),
+ 
++#ifdef CONFIG_NSS_COMPAT_OSSL
++	INIT_OPT_STRING("connection.ssl.client_cert", N_("Certificate nickname"),
++		"nickname", 0, "",
++		N_("The nickname of the client certificate stored in NSS "
++		"database. If this value is unset, the nickname from "
++		"the X509_CLIENT_CERT variable is used instead. If you "
++		"have a PKCS#12 file containing client certificate, you "
++		"can import it into your NSS database with:\n"
++		"\n"
++		"$ pk12util -i mycert.p12 -d /path/to/database\n"
++		"\n"
++		"The NSS database location can be changed by SSL_DIR "
++		"environment variable. The database can be also shared "
++		"with Mozilla browsers.")),
++#else
+ 	INIT_OPT_STRING("connection.ssl.client_cert", N_("Certificate File"),
+ 		"file", 0, "",
+ 		N_("The location of a file containing the client certificate "
+ 		"and unencrypted private key in PEM format. If unset, the "
+ 		"file pointed to by the X509_CLIENT_CERT variable is used "
+ 		"instead.")),
++#endif
+ 
+ 	NULL_OPTION_INFO,
+ };
+@@ -182,7 +202,7 @@ static struct module gnutls_module = str
+ 	/* done: */		done_gnutls
+ );
+ 
+-#endif /* CONFIG_OPENSSL or CONFIG_GNUTLS */
++#endif /* USE_OPENSSL or CONFIG_GNUTLS */
+ 
+ static struct option_info ssl_options[] = {
+ 	INIT_OPT_TREE("connection", N_("SSL"),
+@@ -193,7 +213,7 @@ static struct option_info ssl_options[] 
+ };
+ 
+ static struct module *ssl_modules[] = {
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ 	&openssl_module,
+ #elif defined(CONFIG_GNUTLS)
+ 	&gnutls_module,
+@@ -214,7 +234,7 @@ struct module ssl_module = struct_module
+ int
+ init_ssl_connection(struct socket *socket)
+ {
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ 	socket->ssl = SSL_new(context);
+ 	if (!socket->ssl) return S_SSL_ERROR;
+ #elif defined(CONFIG_GNUTLS)
+@@ -271,7 +291,7 @@ done_ssl_connection(struct socket *socket)
+ 	ssl_t *ssl = socket->ssl;
+ 
+ 	if (!ssl) return;
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ 	SSL_free(ssl);
+ #elif defined(CONFIG_GNUTLS)
+ 	gnutls_deinit(*ssl);
+@@ -288,7 +308,7 @@ get_ssl_connection_cipher(struct socket *socket)
+ 
+ 	if (!init_string(&str)) return NULL;
+ 
+-#ifdef CONFIG_OPENSSL
++#ifdef USE_OPENSSL
+ 	add_format_to_string(&str, "%ld-bit %s %s",
+ 		SSL_get_cipher_bits(ssl, NULL),
+ 		SSL_get_cipher_version(ssl),
+diff -ruNp elinks-0.12pre3.orig/src/network/ssl/ssl.h elinks-0.12pre3/src/network/ssl/ssl.h
+--- elinks-0.12pre3.orig/src/network/ssl/ssl.h	2009-03-29 00:14:03.000000000 +0100
++++ elinks-0.12pre3/src/network/ssl/ssl.h	2009-04-28 12:56:59.000000000 +0200
+@@ -22,7 +22,7 @@ unsigned char *get_ssl_connection_cipher
+ 
+ /* Internal type used in ssl module. */
+ 
+-#ifdef CONFIG_OPENSSL
++#if defined(CONFIG_OPENSSL) || defined(CONFIG_NSS_COMPAT_OSSL)
+ #define	ssl_t	SSL
+ #elif defined(CONFIG_GNUTLS)
+ #define	ssl_t	gnutls_session_t

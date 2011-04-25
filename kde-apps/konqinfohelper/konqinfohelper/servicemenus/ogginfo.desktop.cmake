@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action OGGInfo]
 Name=Ogg information
 Name[pt_BR]=Informação OGG
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --ogg "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --ogg "%f"
 Icon=audio-x-generic

@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action MP3Info]
 Name=MP3 information
 Name[pt_BR]=Informação MP3
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --mp3 "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --mp3 "%f"
 Icon=audio-x-generic

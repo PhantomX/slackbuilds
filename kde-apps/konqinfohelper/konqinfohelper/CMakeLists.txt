@@ -12,5 +12,7 @@ if(NOT DEFINED SHARE_INSTALL_PREFIX)
   set(SHARE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}/share" )
 endif()
 
+set(HELPER_INSTALL_DIR "${DATA_INSTALL_DIR}/${PACKAGE}" )
+
 add_subdirectory(bin)
 add_subdirectory(servicemenus)

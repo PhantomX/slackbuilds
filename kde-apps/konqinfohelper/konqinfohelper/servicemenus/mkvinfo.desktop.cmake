@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action MKVInfo]
 Name=Matroska information
 Name[pt_BR]=Informação Matroska
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --mkv "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --mkv "%f"
 Icon=video-x-generic

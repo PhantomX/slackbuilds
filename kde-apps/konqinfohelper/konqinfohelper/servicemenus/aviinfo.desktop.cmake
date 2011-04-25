@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action AVIInfo]
 Name=AVI information
 Name[pt_BR]=Informação AVI
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --avi "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --avi "%f"
 Icon=video-x-generic

@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action TorrentInfo]
 Name=Torrent information
 Name[pt_BR]=Informação Torrent
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --torrent "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --torrent "%f"
 Icon=application-x-bittorrent

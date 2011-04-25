@@ -44,7 +44,7 @@ NAME=manaworld
 PNAME=tmw
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.0.29.1}
+VERSION=${VERSION:-0.5.2}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -67,7 +67,7 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${PNAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+SRCARCHIVE=${SRCDIR}.tar.bz2
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
@@ -105,51 +105,68 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
+mkdir -p ${SRCDIR}
 cd ${SRCDIR} || exit 1
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
-sed -i -e '/^Icon=/s|\.png||g' ${PNAME}.desktop || exit 1
+sed -i -e "/CMAKE_CXX_FLAGS/s|-Wall|${SLKCFLAGS} \0|g" src/CMakeLists.txt || exit 1
 
-CFLAGS="${SLKCFLAGS}" \
-CXXFLAGS="${SLKCFLAGS}" \
-./configure \
-  --prefix=/usr \
-  --sysconfdir=/etc \
-  --localstatedir=/var/lib \
-  --infodir=/usr/info \
-  --mandir=/usr/man \
-  --docdir=/usr/doc/${NAME}-${VERSION} \
-  --disable-dependency-tracking \
-  --with-opengl \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+export CFLAGS="${SLKCFLAGS}"
+export CXXFLAGS="${SLKCFLAGS}"
+export FFLAGS="${SLKCFLAGS}"
 
-make -j${NJOBS} || make || exit 1
-make install DESTDIR=${PKG} || exit 1
+mkdir -p build
+( cd build || exit $?
+
+  cmake .. \
+    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DINCLUDE_INSTALL_DIR:PATH=/usr/include \
+    -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSHARE_INSTALL_PREFIX:PATH=/usr/share \
+    -DMAN_INSTALL_DIR:PATH=/usr/man \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS:BOOL=ON \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+    -DWITH_OPENGL:BOOL=ON \
+    || exit $?
+
+  make -j${NJOBS} || make || exit $?
+  make install/fast DESTDIR=${PKG} || exit $?
+
+) || exit $?
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-rm -f ${PKG}/usr/share/tmw/data/fonts/dejavusans.ttf
+rm -f ${PKG}/usr/share/mana/data/fonts/dejavusans*.ttf
 ln -sf ../../../fonts/TTF/DejaVuSans.ttf \
-  ${PKG}/usr/share/tmw/data/fonts/dejavusans.ttf || exit 1
-
+  ${PKG}/usr/share/mana/data/fonts/dejavusans.ttf || exit 1
+ln -sf ../../../fonts/TTF/DejaVuSans-Bold.ttf \
+  ${PKG}/usr/share/mana/data/fonts/dejavusans-bold.ttf || exit 1
+  
 desktop-file-install --vendor "" --delete-original \
   --dir ${PKG}/usr/share/applications \
   --remove-key=Encoding \
   --add-category=RolePlaying \
   --remove-category Application \
-  ${PKG}/usr/share/applications/${PNAME}.desktop || exit 1
+  ${PKG}/usr/share/applications/mana.desktop || exit 1
 
 rm -rf ${PKG}/usr/share/pixmaps
 for res in 16 20 22 24 32 36 48 64 72 96 ;do
   dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
   mkdir -p ${dir}
-  convert data/icons/${PNAME}.png -depth 8 -filter Lanczos \
-          -resize ${res}x${res} ${dir}/${PNAME}.png
+  convert data/icons/mana.png -depth 8 -filter Lanczos \
+          -resize ${res}x${res} ${dir}/mana.png
 done
 
 # Add a documentation directory:
@@ -157,8 +174,10 @@ mkdir -p ${DOCDIR}
 cp -a \
   AUTHORS COPYING README NEWS ${CWD}/ChangeLog.SB \
    docs/*.txt ${DOCDIR}/
-find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 755
-find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 644
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
+find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
+find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -190,11 +209,14 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${PNAME}*.patch.gz ${SBDIR}/
+    ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:

@@ -4,13 +4,17 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-genkernel.patch
 patch -p0 -E --backup -z .chinfo --verbose -i ${SB_PATCHDIR}/grub-1.99-chinfo.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-slknew.patch
 
 # From Fedora
 
-zcat ${CWD}/${PSRCARCHIVE} | patch -p1 -E --verbose
+filterdiff -p1 -x configure.ac -x ChangeLog -x "po/*" -x "debian/po/*" \
+  -z ${CWD}/${PSRCARCHIVE} | patch -p1 -E --verbose
+
+cat ${SB_PATCHDIR}/gfxpayload_keep_default.patch \
+  > debian/patches/gfxpayload_keep_default.patch
+
 for patch in \
   core_in_fs.patch \
   boot_blocklist_hack.patch \
@@ -19,14 +23,11 @@ for patch in \
   gfxpayload_keep_default.patch \
   mkrescue_diet.patch \
   mkconfig_skip_dmcrypt.patch \
-  branch_butter.patch \
   branch_devmapper.patch \
   branch_squash.patch \
   branch_longlinuxcmd.patch \
-  branch_parse-color.patch \
-  branch_embed-sectors.patch \
   ; do
-  patch -p1 -E --backup --verbose -i debian/patches/${patch}
+  patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done
 
 set +e +o pipefail

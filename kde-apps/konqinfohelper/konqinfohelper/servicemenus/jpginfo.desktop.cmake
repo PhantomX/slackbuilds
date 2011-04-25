@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action JPEGInfo]
 Name=JPEG information
 Name[pt_BR]=Informação JPEG
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --jpg "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --jpg "%f"
 Icon=image

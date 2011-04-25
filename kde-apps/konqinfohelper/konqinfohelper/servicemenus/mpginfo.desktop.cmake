@@ -8,5 +8,5 @@ X-KDE-Priority=TopLevel
 [Desktop Action MPGInfo]
 Name=MPEG information
 Name[pt_BR]=Informação MPEG
-Exec=@SRV_INSTALL_DIR@/konqinfohelper --mpg "%f"
+Exec=@HELPER_INSTALL_DIR@/konqinfohelper --mpg "%f"
 Icon=video-x-generic

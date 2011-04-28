@@ -24,8 +24,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-manpages.patch
 zcat ${SB_PATCHDIR}/${NAME}-7.4-sttytcsadrain.patch.gz | patch -p1 -E --backup --verbose
 #df --direct
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-df-direct.patch
-# add jar-like archives to colored ones
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.5-dircolors.patch
 #add note about mkdir --mode behaviour into info documentation(#610559)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.4-mkdir-modenote.patch
 

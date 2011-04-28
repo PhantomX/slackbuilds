@@ -34,8 +34,6 @@ zcat ${SB_PATCHDIR}/kdelibs-3.5.9-KDE3.patch.gz | patch -p1 --verbose --backup -
 zcat ${SB_PATCHDIR}/kdelibs-3.5.9-fix-flock-redefinition.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # update the KatePart latex.xml syntax definition to the version from Kile 2.0.3
 zcat ${SB_PATCHDIR}/kdelibs-3.5.10-latex-syntax-kile-2.0.3.patch.gz | patch -p1 --verbose --backup --suffix=.orig
-# fix ftbfs (#631195)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.5.10-qcolor_gcc_ftbfs.patch
 
 # use /etc/kde in addition to /usr/share/config, borrowed from debian
 zcat ${SB_PATCHDIR}/kdelibs-3.5.5-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig

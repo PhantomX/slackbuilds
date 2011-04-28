@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 #zcat ${SB_PATCHDIR}/kdebase.startkde.xdg.diff.gz | patch -p1 --verbose --suffix=.orig --backup
 zcat ${SB_PATCHDIR}/kdebase-3.5.0_beta2-noimake.patch.gz | patch -p1 --verbose --suffix=.orig --backup
 

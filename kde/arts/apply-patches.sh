@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}.tmpdir.diff.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-1.1.4-debug.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-1.3.92-glib2.patch.gz | patch -p1 -E --backup --verbose

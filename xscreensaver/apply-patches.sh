@@ -17,8 +17,9 @@ patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-webco
 # Remove "AC_PROG_CC' was expanded before it was required" warning
 patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-conf264.patch
 ## Patches which must be discussed with upstream
-# For now set LANG to C for daemon because some garbage character appears
-# on passwd prompt
-patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.12-for-now-set-lang-on-daemon-to-C.patch
+# driver/test-passwd tty segfaults
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.12-test-passwd-segv-tty.patch
+# patch to compile driver/test-xdpms
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.12-tests-miscfix.patch
 
 set +e +o pipefail

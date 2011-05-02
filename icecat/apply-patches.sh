@@ -9,6 +9,4 @@ sed \
   -e "s/__RPM_VERSION_INTERNAL__/${IC_DIR_VER}/" \
   ${SB_PATCHDIR}/firefox-version.patch | patch -p1 -E --backup --verbose
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-default.patch
-
 set +e +o pipefail

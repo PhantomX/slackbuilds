@@ -19,8 +19,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wmclass.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-crashreporter-static.patch
 
 # Upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-zip-deadlocks.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-baddevice.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-4.0-moz-app-launcher.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-4.0-gnome3.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-network-link-service.patch

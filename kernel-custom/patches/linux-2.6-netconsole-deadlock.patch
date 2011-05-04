@@ -1,0 +1,56 @@
+commit 13f172ff26563995049abe73f6eeba828de3c09d
+Author: Neil Horman <nhorman@tuxdriver.com>
+Date:   Fri Apr 22 08:10:59 2011 +0000
+
+    netconsole: fix deadlock when removing net driver that netconsole is using (v2)
+    
+    A deadlock was reported to me recently that occured when netconsole was being
+    used in a virtual guest.  If the virtio_net driver was removed while netconsole
+    was setup to use an interface that was driven by that driver, the guest
+    deadlocked.  No backtrace was provided because netconsole was the only console
+    configured, but it became clear pretty quickly what the problem was.  In
+    netconsole_netdev_event, if we get an unregister event, we call
+    __netpoll_cleanup with the target_list_lock held and irqs disabled.
+    __netpoll_cleanup can, if pending netpoll packets are waiting call
+    cancel_delayed_work_sync, which is a sleeping path.  the might_sleep call in
+    that path gets triggered, causing a console warning to be issued.  The
+    netconsole write handler of course tries to take the target_list_lock again,
+    which we already hold, causing deadlock.
+    
+    The fix is pretty striaghtforward.  Simply drop the target_list_lock and
+    re-enable irqs prior to calling __netpoll_cleanup, the re-acquire the lock, and
+    restart the loop.  Confirmed by myself to fix the problem reported.
+    
+    Signed-off-by: Neil Horman <nhorman@tuxdriver.com>
+    CC: "David S. Miller" <davem@davemloft.net>
+    Signed-off-by: David S. Miller <davem@davemloft.net>
+
+diff --git a/drivers/net/netconsole.c b/drivers/net/netconsole.c
+index dfb67eb..eb41e44 100644
+--- a/drivers/net/netconsole.c
++++ b/drivers/net/netconsole.c
+@@ -671,6 +671,7 @@ static int netconsole_netdev_event(struct notifier_block *this,
+ 		goto done;
+ 
+ 	spin_lock_irqsave(&target_list_lock, flags);
++restart:
+ 	list_for_each_entry(nt, &target_list, list) {
+ 		netconsole_target_get(nt);
+ 		if (nt->np.dev == dev) {
+@@ -683,9 +684,16 @@ static int netconsole_netdev_event(struct notifier_block *this,
+ 				 * rtnl_lock already held
+ 				 */
+ 				if (nt->np.dev) {
++					spin_unlock_irqrestore(
++							      &target_list_lock,
++							      flags);
+ 					__netpoll_cleanup(&nt->np);
++					spin_lock_irqsave(&target_list_lock,
++							  flags);
+ 					dev_put(nt->np.dev);
+ 					nt->np.dev = NULL;
++					netconsole_target_put(nt);
++					goto restart;
+ 				}
+ 				/* Fall through */
+ 			case NETDEV_GOING_DOWN:

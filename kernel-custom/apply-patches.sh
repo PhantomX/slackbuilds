@@ -120,7 +120,6 @@ ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch acpi-ec-add-delay-before-write.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
-ApplyPatch acpi_battery-fribble-sysfs-files-from-a-resume-notifier.patch
 # list acpi fixed events at /proc/acpi/fixed_events
 ApplyPatch acpi-add-proc-event-regs.patch
 
@@ -140,6 +139,7 @@ ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
 ApplyPatch pci-pcie-links-may-not-get-configured-for-aspm-under-powersave-mode.patch
+ApplyPatch pci-enable-aspm-state-clearing-regardless-of-policy.patch
 
 #ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
 
@@ -220,9 +220,6 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
-# rhbz#664852
-ApplyPatch flexcop-fix-xlate_proc_name-warning.patch
-
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
@@ -244,6 +241,9 @@ ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 ApplyPatch printk-do-not-mangle-valid-userspace-syslog-prefixes.patch
 
 ApplyPatch scsi-sd-downgrade-caching-printk-from-error-to-notice.patch
+
+#rhbz 668231
+ApplyPatch linux-2.6-netconsole-deadlock.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

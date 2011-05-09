@@ -72,10 +72,6 @@ ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 
 # security patches
 ApplyPatch qt-everywhere-opensource-src-4.7.0-CVE-2010-1822-crash-svg-image.patch
-ApplyPatch qt-ssl-QTBUG-18338.patch
-# http://qt.gitorious.org/+qt-developers/qt/staging/commit/b87528a71b66e786c11804d7b79e408aae612748
-# followup to 301
-ApplyPatch qt-ssl-QTBUG-18338-2.patch
 
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore

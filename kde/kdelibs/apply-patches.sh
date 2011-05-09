@@ -17,7 +17,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.3.90-install_all_css.pa
 sed -e "s|_KDELIBS_SLK_DIST|${KDELIBS_SLK_DIST}|g" \
   ${SB_PATCHDIR}/kdelibs-4.5.80-branding-slk.patch | patch -p1 -E --backup --verbose
 
-#zcat ${SB_PATCHDIR}/kdelibs-4.1.0-xdg-menu.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # patch KStandardDirs to use /usr/libexec/kde4 instead of /usr/lib${LIBDIRSUFFIX}/kde4/libexec
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-libexecdir.patch
 # kstandarddirs changes: search /etc/kde, find /usr/libexec/kde4
@@ -33,6 +32,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-no_rpath.patch
 
 # add gpg2 support to knewstuff, rough first try s/gpg/gpg2/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patch
+# https://bugs.kde.org/show_bug.cgi?id=269045
+# https://git.reviewboard.kde.org/r/101231/
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
 
 # make forcefully hal-free build
 patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.90-halectomy.patch
@@ -42,8 +44,6 @@ patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.90-halectomy.patch
 # official backports
 
 # Branch upstream
-# https://projects.kde.org/projects/kde/kdelibs/repository/revisions/72cbad117d0abb4b47a5d00754ea465eda6c06b5
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-kde270538.patch
 
 # Trunk patches
 

@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -113,9 +113,9 @@ chmod -R u+w,go+r-w,a-s .
 # disable device creation during build/install
 sed -i 's|mknod|echo Disabled: mknod |g' util/Makefile.in || exit 1
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-udev_rules.patch.gz | patch -p0 -E --backup --verbose || exit 1
-zcat ${CWD}/${NAME}-openfix.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
 #autoreconf -ivf || exit 1
 
@@ -176,22 +176,24 @@ if [ -d ${PKG}/etc/init.d ] ; then
   chmod 0755 ${PKG}/etc/rc.d/rc.fuse.new
 fi
 
-mkdir -p ${PKG}/var/log/setup
-zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
-     ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
-chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
-
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/fuse.service ${PKG}/lib/systemd/system/ || exit 1
+
+mkdir -p ${PKG}/etc/systemd/system/sysinit.target.wants
+touch ${PKG}/etc/systemd/system/sysinit.target.wants/fuse.service
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  AUTHORS ChangeLog COPYING* FAQ Filesystems NEWS README README.NFS \
+  AUTHORS COPYING* FAQ Filesystems NEWS README README.NFS \
   doc/how-fuse-works ${CWD}/ChangeLog.SB ${DOCDIR}/
-zcat ${CWD}/${NAME}-README.fedora.gz > ${DOCDIR}/README.security
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -218,33 +220,23 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<'EOF'
-function free_group_id {
-  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
-  local FREE_GROUP_ID=120
-  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
-    let FREE_GROUP_ID++
-  done
-  echo ${FREE_GROUP_ID}
-}
-
-# Figure out our root directory
-ROOTDIR=$(pwd)
-unset CHROOT
-if test "${ROOTDIR}" != "/"; then
-  CHROOT="chroot ${ROOTDIR} "
-  ROOTDIR="${ROOTDIR}/"
-fi
-
-# Set up group.
-if ! grep --quiet '^fuse:' etc/group ;then
-  ${CHROOT} /usr/sbin/groupadd \
-            -g $(free_group_id) \
-            fuse 2> /dev/null
-fi
-EOF
-
 cat >> ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+
+if [ -e etc/systemd/system/sysinit.target.wants/${NAME}.service ] ; then
+  \${CHROOT} /bin/rm -f /etc/systemd/system/sysinit.target.wants/${NAME}.service
+fi
+if [ -x bin/systemctl ] ; then
+  \${CHROOT} /bin/systemctl enable ${NAME}.service >/dev/null 2>&1
+fi
+
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -269,9 +261,6 @@ EOF
 ( cd ${PKG}
   find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
-  echo '# Fix permissions' >> ${PKG}/install/doinst.sh
-  echo '${CHROOT} /bin/chown root.fuse /bin/fusermount' >> ${PKG}/install/doinst.sh
-  echo '${CHROOT} /bin/chmod 4754 /bin/fusermount' >> ${PKG}/install/doinst.sh
 )
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -279,19 +268,22 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}*.patch.gz ${CWD}/${NAME}-README.*.gz \
-                 ${CWD}/setup.onlyonce.rc*.gz ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${NAME}.service ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  /bin/chmod 4755 ./bin/fusermount  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

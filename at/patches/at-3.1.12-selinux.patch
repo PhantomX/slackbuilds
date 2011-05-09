@@ -1,0 +1,152 @@
+diff -up at-3.1.12/config.h.in.selinux at-3.1.12/config.h.in
+--- at-3.1.12/config.h.in.selinux	2009-12-02 16:32:19.469228959 +0100
++++ at-3.1.12/config.h.in	2009-12-02 16:32:57.706966488 +0100
+@@ -71,6 +71,9 @@
+ /* Define if you are building with_pam */
+ #undef WITH_PAM
+ 
++/* Define if you are building with_selinux  */
++#undef WITH_SELINUX
++
+ /* Define to 1 if you have the `pstat_getdynamic' function. */
+ #undef HAVE_PSTAT_GETDYNAMIC
+ 
+diff -up at-3.1.12/configure.ac.selinux at-3.1.12/configure.ac
+--- at-3.1.12/configure.ac.selinux	2009-12-02 16:31:15.323246019 +0100
++++ at-3.1.12/configure.ac	2009-12-02 16:32:01.425966844 +0100
+@@ -266,5 +266,13 @@ AC_ARG_WITH(daemon_groupname,
+ )
+ AC_SUBST(DAEMON_GROUPNAME)
+ 
++AC_ARG_WITH(selinux,
++[ --with-selinux       Define to run with selinux],
++AC_DEFINE(WITH_SELINUX),
++)
++AC_CHECK_LIB(selinux, is_selinux_enabled, SELINUXLIB=-lselinux)
++AC_SUBST(SELINUXLIB)
++AC_SUBST(WITH_SELINUX)
++
+ AC_CONFIG_FILES(Makefile atrun atd.8 atrun.8 at.1 batch)
+ AC_OUTPUT
+diff -up at-3.1.12/Makefile.in.selinux at-3.1.12/Makefile.in
+--- at-3.1.12/Makefile.in.selinux	2009-12-02 16:30:11.923216529 +0100
++++ at-3.1.12/Makefile.in	2009-12-02 16:30:57.949215706 +0100
+@@ -39,6 +39,7 @@ LIBS		= @LIBS@
+ LIBOBJS		= @LIBOBJS@
+ INSTALL		= @INSTALL@
+ PAMLIB          = @PAMLIB@
++SELINUXLIB      = @SELINUXLIB@
+ 
+ CLONES		= atq atrm 
+ ATOBJECTS	= at.o panic.o perm.o posixtm.o y.tab.o lex.yy.o
+diff -up at-3.1.12/atd.c.selinux at-3.1.12/atd.c
+--- at-3.1.12/atd.c.selinux	2009-12-03 13:03:57.182284669 +0100
++++ at-3.1.12/atd.c	2009-12-03 13:07:20.542272874 +0100
+@@ -83,6 +83,14 @@
+ #include "getloadavg.h"
+ #endif
+ 
++#ifdef WITH_SELINUX
++#include <selinux/selinux.h>
++#include <selinux/get_context_list.h>
++int selinux_enabled=0;
++#include <selinux/flask.h>
++#include <selinux/av_permissions.h>
++#endif
++
+ #ifndef LOG_ATD
+ #define LOG_ATD        LOG_DAEMON
+ #endif
+@@ -202,6 +210,68 @@ myfork()
+ #define ATD_MAIL_NAME    "mailx"
+ #endif
+ 
++#ifdef WITH_SELINUX
++static int set_selinux_context(const char *name, const char *filename) {
++       security_context_t user_context=NULL;
++       security_context_t  file_context=NULL;
++       struct av_decision avd;
++       int retval=-1;
++       char *seuser=NULL;
++       char *level=NULL;
++
++       if (getseuserbyname(name, &seuser, &level) == 0) {
++               retval=get_default_context_with_level(seuser, level, NULL, &user_context);
++               free(seuser);
++               free(level);
++               if (retval) {
++                       if (security_getenforce()==1) {
++                               perr("execle: couldn't get security context for user %s\n", name);
++                       } else {
++                               syslog(LOG_ERR, "execle: couldn't get security context for user %s\n", name);
++                               return -1;
++                       }
++               }
++       }
++
++       /*
++       * Since crontab files are not directly executed,
++       * crond must ensure that the crontab file has
++       * a context that is appropriate for the context of
++       * the user cron job.  It performs an entrypoint
++       * permission check for this purpose.
++       */
++       if (fgetfilecon(STDIN_FILENO, &file_context) < 0)
++               perr("fgetfilecon FAILED %s", filename);
++
++       retval = security_compute_av(user_context,
++                                    file_context,
++                                    SECCLASS_FILE,
++                                    FILE__ENTRYPOINT,
++                                    &avd);
++       freecon(file_context);
++       if (retval || ((FILE__ENTRYPOINT & avd.allowed) != FILE__ENTRYPOINT)) {
++               if (security_getenforce()==1) {
++                       perr("Not allowed to set exec context to %s for user  %s\n", user_context,name);
++               } else {
++                       syslog(LOG_ERR, "Not allowed to set exec context to %s for user  %s\n", user_context,name);
++                       retval = -1;
++                       goto err;
++               }
++       }
++       if (setexeccon(user_context) < 0) {
++               if (security_getenforce()==1) {
++                       perr("Could not set exec context to %s for user  %s\n", user_context,name);
++                       retval = -1;
++               } else {
++                       syslog(LOG_ERR, "Could not set exec context to %s for user  %s\n", user_context,name);
++               }
++       }
++  err:
++       freecon(user_context);
++       return 0;
++}
++#endif
++
+ static void
+ run_file(const char *filename, uid_t uid, gid_t gid)
+ {
+@@ -452,6 +522,12 @@ run_file(const char *filename, uid_t uid
+                 perr("Cannot reset signal handler to default");
+ 
+ 	    chdir("/");
++#ifdef WITH_SELINUX
++            if (selinux_enabled > 0) {
++                if (set_selinux_context(pentry->pw_name, filename) < 0)
++                       perr("SELinux Failed to set context\n");
++            }
++#endif
+ 
+ 	    if (execle("/bin/sh", "sh", (char *) NULL, nenvp) != 0)
+ 		perr("Exec failed for /bin/sh");
+@@ -774,6 +850,10 @@ main(int argc, char *argv[])
+     struct passwd *pwe;
+     struct group *ge;
+ 
++#ifdef WITH_SELINUX
++    selinux_enabled=is_selinux_enabled();
++#endif
++
+ /* We don't need root privileges all the time; running under uid and gid
+  * daemon is fine.
+  */

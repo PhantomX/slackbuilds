@@ -35,6 +35,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-startkde_zenity.
 # HALsectomy
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.85-no_HAL.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.90-no_HAL2.patch
+# fix kde#270942 (direct rendering disabled on Intel graphics since mesa 7.10.1)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.2-kwin-opengltest-kde\#270942.patch
 
 # Mandriva
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.71-notify_color_changes.patch
@@ -44,15 +46,10 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.71-notify_color_ch
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup --verbose
 
 # Branch patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.2-nvbacklight.patch
-# (regression) missing include caused the temperature plasmoids and ksysguard
-# temperature sensors to no longer work, commit 0e151ea2ab1663f3649688139739712060ae3259
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.1-ksysguard-add-missing-module.patch
 
 ## trunk patches
 
 # Arch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/terminate-server.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/shutdown-fix.patch
 
 set +e +o pipefail

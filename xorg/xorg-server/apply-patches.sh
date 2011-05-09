@@ -32,11 +32,18 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-qxl-fallback.patch
 
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-pointer-barriers.patch
-#patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-vbe-malloc.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-glx-pixmap-crash.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-bg-none-revert.patch
 
+# not like the upstream patch due to refactoring
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-swrastg.patch
+
+# sent upstream, should be in soon
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-dix-only-transform-valuators-when-we-need-them.patch
+# ditto
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.1-memcpy-abuse.patch
+
 # Backports from master
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.1-dri2-fixes.patch
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.9.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then

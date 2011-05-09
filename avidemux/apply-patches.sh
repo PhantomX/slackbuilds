@@ -8,5 +8,9 @@ zcat ${SB_PATCHDIR}/2.5.1-coreImage-parallel-build.patch.gz | patch -p1 -E --bac
 zcat ${SB_PATCHDIR}/${NAME}-2.5.1-build-plugins-fix.patch.gz | patch -p1 -E --backup --verbose
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.3-fontconfig.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.4-x264.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.4-x264-build115.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.4-x264-config.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.4-xvid.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/2.5.4_audioDevice.patch
 
 set +e +o pipefail

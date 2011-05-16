@@ -9,7 +9,7 @@ zcat ${SB_PATCHDIR}/wine-1.1.15-winegcc.patch.gz | patch -p1 -E --backup --verbo
 # bugfixes
 
 # Pulseaudio patches from http://art.ified.ca/downloads
-patch -p1 -E --backup -z .winepulse --verbose -i ${SB_PATCHDIR}/winepulse-configure.ac-1.3.19.patch
+patch -p1 -E --backup -z .winepulse --verbose -i ${SB_PATCHDIR}/winepulse-configure.ac-1.3.20.patch
 #patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE}
 patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE2}
 patch -p1 -E --backup --verbose -i ${SB_WPDIR}/${PPASRCARCHIVE3}

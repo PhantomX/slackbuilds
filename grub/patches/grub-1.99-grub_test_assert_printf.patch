@@ -1,0 +1,167 @@
+From e51968bcd089db5efd5e33043e6e23592f696371 Mon Sep 17 00:00:00 2001
+From: Peter Jones <pjones@redhat.com>
+Date: Wed, 2 Mar 2011 13:13:44 -0500
+Subject: [PATCH] Make get_test_assert() correctly format its output.
+
+The old code gives arguments to a printf function which can't work
+correctly, and the compiler complains.
+---
+ grub-core/tests/example_functional_test.c |    2 +-
+ grub-core/tests/lib/test.c                |   88 +++++++++++++++++++++++++++--
+ include/grub/test.h                       |   10 ++-
+ 3 files changed, 90 insertions(+), 10 deletions(-)
+
+diff --git a/grub-core/tests/example_functional_test.c b/grub-core/tests/example_functional_test.c
+index 5259881..0c69749 100644
+--- a/grub-core/tests/example_functional_test.c
++++ b/grub-core/tests/example_functional_test.c
+@@ -24,7 +24,7 @@ static void
+ example_test (void)
+ {
+   /* Check if 1st argument is true and report with default error message.  */
+-  grub_test_assert (1 == 1);
++  grub_test_assert (1 == 1, "1 equal 1 expected");
+ 
+   /* Check if 1st argument is true and report with custom error message.  */
+   grub_test_assert (2 == 2, "2 equal 2 expected");
+diff --git a/grub-core/tests/lib/test.c b/grub-core/tests/lib/test.c
+index 06d78b7..8453d5b 100644
+--- a/grub-core/tests/lib/test.c
++++ b/grub-core/tests/lib/test.c
+@@ -42,22 +42,75 @@ typedef struct grub_test_failure *grub_test_failure_t;
+ grub_test_t grub_test_list;
+ static grub_test_failure_t failure_list;
+ 
+-static void
+-add_failure (const char *file,
+-	     const char *funp,
+-	     grub_uint32_t line, const char *fmt, va_list args)
++static grub_test_failure_t
++failure_start(const char *file, const char *funp, grub_uint32_t line);
++static grub_test_failure_t
++failure_start(const char *file, const char *funp, grub_uint32_t line)
+ {
+   grub_test_failure_t failure;
+ 
+   failure = (grub_test_failure_t) grub_malloc (sizeof (*failure));
+   if (!failure)
+-    return;
++    return NULL;
+ 
+   failure->file = grub_strdup (file ? : "<unknown_file>");
++  if (!failure->file)
++    {
++      grub_free(failure);
++      return NULL;
++    }
++
+   failure->funp = grub_strdup (funp ? : "<unknown_function>");
++  if (!failure->funp)
++    {
++      grub_free(failure->file);
++      grub_free(failure);
++      return NULL;
++    }
++
+   failure->line = line;
+-  failure->message = grub_xvasprintf (fmt, args);
+ 
++  failure->message = NULL;
++
++  return failure;
++}
++
++static void
++failure_append_vtext(grub_test_failure_t failure, const char *fmt, va_list args);
++static void
++failure_append_vtext(grub_test_failure_t failure, const char *fmt, va_list args)
++{
++  char *msg = grub_xvasprintf(fmt, args);
++  if (failure->message)
++    {
++      char *oldmsg = failure->message;
++
++      failure->message = grub_xasprintf("%s%s", oldmsg, msg);
++      grub_free(oldmsg);
++    }
++  else
++    {
++      failure->message = msg;
++    }
++}
++
++static void
++failure_append_text(grub_test_failure_t failure, const char *fmt, ...)
++{
++  va_list args;
++
++  va_start(args, fmt);
++  failure_append_vtext(failure, fmt, args);
++  va_end(args);
++}
++
++static void
++add_failure (const char *file,
++	     const char *funp,
++	     grub_uint32_t line, const char *fmt, va_list args)
++{
++  grub_test_failure_t failure = failure_start(file, funp, line);
++  failure_append_text(failure, fmt, args);
+   grub_list_push (GRUB_AS_LIST_P (&failure_list), GRUB_AS_LIST (failure));
+ }
+ 
+@@ -100,6 +153,29 @@ grub_test_nonzero (int cond,
+ }
+ 
+ void
++grub_test_assert_helper (int cond, const char *file, const char *funp,
++			 grub_uint32_t line, const char *condstr,
++			 const char *fmt, ...)
++{
++  va_list ap;
++  grub_test_failure_t failure;
++
++  if (cond)
++    return;
++
++  failure = failure_start(file, funp, line);
++  failure_append_text(failure, "assert failed: %s ", condstr);
++
++  va_start(ap, fmt);
++
++  failure_append_vtext(failure, fmt, ap);
++
++  va_end(ap);
++
++  grub_list_push (GRUB_AS_LIST_P (&failure_list), GRUB_AS_LIST (failure));
++}
++
++void
+ grub_test_register (const char *name, void (*test_main) (void))
+ {
+   grub_test_t test;
+diff --git a/include/grub/test.h b/include/grub/test.h
+index 336d3b6..77a7598 100644
+--- a/include/grub/test.h
++++ b/include/grub/test.h
+@@ -53,10 +53,14 @@ void grub_test_nonzero (int cond, const char *file,
+   __attribute__ ((format (printf, 5, 6)));
+ 
+ /* Macro to fill in location details and an optional error message.  */
++void grub_test_assert_helper (int cond, const char *file,
++			     const char *func, grub_uint32_t line,
++			     const char *condstr, const char *fmt, ...)
++  __attribute__ ((format (printf, 6, 7)));
++
+ #define grub_test_assert(cond, ...)				\
+-  grub_test_nonzero(cond, GRUB_FILE, __FUNCTION__, __LINE__,	\
+-		    ## __VA_ARGS__,				\
+-		    "assert failed: %s", #cond)
++  grub_test_assert_helper(cond, GRUB_FILE, __FUNCTION__, __LINE__,	\
++			  #cond, ## __VA_ARGS__);
+ 
+ /* Macro to define a unit test.  */
+ #define GRUB_UNIT_TEST(name, funp)		\
+-- 
+1.7.3.1
+

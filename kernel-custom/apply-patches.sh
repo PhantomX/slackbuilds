@@ -81,6 +81,8 @@ ApplyPatch linux-2.6-utrace-ptrace.patch
 # x86(-64)
 # Add K10 and native cpu optimization support
 ApplyPatch linux-2.6-add-cpu-optimizations.patch
+# Restore reliable stack backtraces
+ApplyPatch x86-dumpstack-correct-stack-dump-info-when-frame-pointer-is-available.patch
 
 #
 # Intel IOMMU
@@ -140,6 +142,8 @@ ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
 ApplyPatch pci-pcie-links-may-not-get-configured-for-aspm-under-powersave-mode.patch
 ApplyPatch pci-enable-aspm-state-clearing-regardless-of-policy.patch
+# Fix breakage of PCI network adapter names on older Dell systems
+ApplyPatch x86-pci-preserve-existing-pci-bfsort-whitelist-for-dell-systems.patch
 
 #ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
 
@@ -194,6 +198,9 @@ ApplyPatch linux-2.6-crash-driver.patch
 # Assorted Virt Fixes
 ApplyPatch fix_xen_guest_on_old_EC2.patch
 
+# DRM core
+ApplyPatch drm-vblank-events-fix-hangs.patch
+
 # Nouveau DRM
 ApplyPatch drm-ttm-move-notify.patch
 ApplyOptionalPatch drm-nouveau-fixes.patch
@@ -206,6 +213,8 @@ ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 ApplyPatch drm-intel-edp-fixes.patch
 ApplyPatch drm-i915-fix-pipelined-fencing.patch
+ApplyPatch drm-intel-eeebox-eb1007-quirk.patch
+ApplyPatch drm-intel-restore-mode.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -216,6 +225,7 @@ ApplyPatch drm-i915-fix-pipelined-fencing.patch
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 
 # V4L/DVB updates/fixes/experimental drivers
+ApplyPatch cx88-Fix-HVR4000-IR-keymap.patch -R
 ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
@@ -244,6 +254,9 @@ ApplyPatch scsi-sd-downgrade-caching-printk-from-error-to-notice.patch
 
 #rhbz 668231
 ApplyPatch linux-2.6-netconsole-deadlock.patch
+
+# CVE-2011-1581
+ApplyPatch bonding-incorrect-tx-queue-offset.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

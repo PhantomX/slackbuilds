@@ -4,10 +4,11 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p0 -E --backup -z .chinfo --verbose -i ${SB_PATCHDIR}/grub-1.99-chinfo.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-slknew.patch
 
 # From Fedora
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-handle-fwrite-return.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-grub_test_assert_printf.patch
 
 filterdiff -p1 -x configure.ac -x ChangeLog -x "po/*" -x "debian/po/*" \
   -z ${CWD}/${PSRCARCHIVE} | patch -p1 -E --verbose

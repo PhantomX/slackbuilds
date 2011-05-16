@@ -65,8 +65,6 @@ for ppd_file in $(grep '^diff' ${SB_PATCHDIR}/hplip-ppd-ImageableArea.patch | cu
 do
   gzip -n ${ppd_file#*/}
 done
-# Increase timeouts for curl, wget, ping for high latency networks
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-network-timeout.patch
 # Fixed traceback on error condition in device.py
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-raw_deviceID-traceback.patch
 # Avoid UnicodeDecodeError in printsettingstoolbox.py

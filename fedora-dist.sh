@@ -89,7 +89,7 @@ pwd=$(pwd)
 pushd "${tmp}"
   git clone --depth 1 ${fedoraroot}/${module}
   cd ${module}
-  [ "${dist}" = "master" ] || git checkout -q origin/${dist}/master
+  [ "${dist}" = "master" ] || git checkout -q origin/${dist}
   if [ -n "${sarchive}" ] ; then
     mv sources sources.tmp
     for file in ${sarchive} ;do

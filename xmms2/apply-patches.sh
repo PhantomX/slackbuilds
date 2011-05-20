@@ -16,5 +16,6 @@ fi
 zcat ${SB_PATCHDIR}/xmms2-0.7-no-O0.patch.gz | patch -p1 -E --backup --verbose
 # More sane versioning
 zcat ${SB_PATCHDIR}/xmms2-0.7-moresaneversioning.patch.gz | patch -p1 -E --backup --verbose
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/xmms2-0.7-ffmpeg.patch
 
 set +e +o pipefail

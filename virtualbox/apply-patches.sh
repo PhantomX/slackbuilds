@@ -13,8 +13,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-asneeded.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-vnc.patch
 # Mantain ~/.Virtualbox
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.2-restore_old_machines_dir.patch
-# http://bugs.gentoo.org/show_bug.cgi?id=362861
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.4-gcc46.patch 
 
 # from Mandriva
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.6-kernelrelease.patch

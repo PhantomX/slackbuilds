@@ -69,20 +69,12 @@ ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
-# Roland's utrace ptrace replacement.
-ApplyPatch linux-2.6-utrace-revert-make-ptrace-functions-static.patch
-ApplyPatch linux-2.6-tracehook.patch
-ApplyPatch linux-2.6-utrace.patch
-ApplyPatch linux-2.6-utrace-ptrace.patch
-
 # vm patches
 
 # Architecture patches
 # x86(-64)
 # Add K10 and native cpu optimization support
 ApplyPatch linux-2.6-add-cpu-optimizations.patch
-# Restore reliable stack backtraces
-ApplyPatch x86-dumpstack-correct-stack-dump-info-when-frame-pointer-is-available.patch
 
 #
 # Intel IOMMU
@@ -140,12 +132,6 @@ ApplyPatch linux-2.6-defaults-pci_no_msi.patch
 ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
-ApplyPatch pci-pcie-links-may-not-get-configured-for-aspm-under-powersave-mode.patch
-ApplyPatch pci-enable-aspm-state-clearing-regardless-of-policy.patch
-# Fix breakage of PCI network adapter names on older Dell systems
-ApplyPatch x86-pci-preserve-existing-pci-bfsort-whitelist-for-dell-systems.patch
-
-#ApplyPatch ima-allow-it-to-be-completely-disabled-and-default-off.patch
 
 #
 # SCSI Bits.
@@ -199,22 +185,16 @@ ApplyPatch linux-2.6-crash-driver.patch
 ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 # DRM core
-ApplyPatch drm-vblank-events-fix-hangs.patch
 
 # Nouveau DRM
-ApplyPatch drm-ttm-move-notify.patch
-ApplyOptionalPatch drm-nouveau-fixes.patch
 ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-intel-big-hammer.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
-ApplyPatch drm-intel-edp-fixes.patch
-ApplyPatch drm-i915-fix-pipelined-fencing.patch
+#ApplyPatch drm-intel-edp-fixes.patch
 ApplyPatch drm-intel-eeebox-eb1007-quirk.patch
-ApplyPatch drm-intel-restore-mode.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -225,7 +205,6 @@ ApplyPatch drm-intel-restore-mode.patch
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 
 # V4L/DVB updates/fixes/experimental drivers
-ApplyPatch cx88-Fix-HVR4000-IR-keymap.patch -R
 ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
@@ -236,8 +215,6 @@ ApplyPatch disable-i8042-check-on-apple-mac.patch
 ApplyPatch neuter_intel_microcode_load.patch
 
 # various fixes for Apple and EFI
-ApplyPatch apple_backlight.patch
-ApplyPatch efifb_update.patch
 ApplyPatch acpi_reboot.patch
 
 # Runtime PM
@@ -247,16 +224,12 @@ ApplyPatch acpi_reboot.patch
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
-# rhbz#691888
-ApplyPatch printk-do-not-mangle-valid-userspace-syslog-prefixes.patch
+ApplyPatch mm-vmscan-correct-use-pgdat_balanced-in-sleeping_prematurely.patch
+ApplyPatch mm-slub-do-not-wake-kswapd-for-slubs-speculative-high-order-allocations.patch
+ApplyPatch mm-slub-do-not-take-expensive-steps-for-slubs-speculative-high-order-allocations.patch
+ApplyPatch mm-vmscan-if-kswapd-has-been-running-too-long-allow-it-to-sleep.patch
 
-ApplyPatch scsi-sd-downgrade-caching-printk-from-error-to-notice.patch
-
-#rhbz 668231
-ApplyPatch linux-2.6-netconsole-deadlock.patch
-
-# CVE-2011-1581
-ApplyPatch bonding-incorrect-tx-queue-offset.patch
+ApplyPatch x86-amd-fix-another-erratum-400-bug.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

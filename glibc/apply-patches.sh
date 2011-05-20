@@ -44,6 +44,8 @@ ApplyPatch glibc-2.12.1-static-shared-getpagesize.patch
 # http://www.exploit-db.com/exploits/15274/
 # http://sourceware.org/git/?p=glibc.git;a=patch;h=d14e6b09 (only fedora branch...)
 ApplyPatch glibc-2.12.2-ignore-origin-of-privileged-program.patch
+# http://sourceware.org/bugzilla/show_bug.cgi?id=12403
+ApplyPatch glibc-2.13-futex.patch
 
 if [ "${SB_BOOTSTRP}" = "YES" ] ;then
   # Multilib - Disable check for forced unwind (Patch from eglibc) since we
@@ -104,8 +106,5 @@ ApplyPatch 0001-Fix-decoding-of-canonical-name-in-getaddrinfo.patch
 ApplyPatch 0001-Fix-range-error-handling-in-sgetspent.patch
 ApplyPatch 0001-Synchronize-generic-bits-sched.h-cpu_set_t-with-Linu.patch
 ApplyPatch 0001-Don-t-crash-when-dependencies-are-missing.patch
-
-[ "${ARCH}" = "x86_64" ] && sed -i '/__ASSUME_PRIVATE_FUTEX/d' \
-  sysdeps/unix/sysv/linux/kernel-features.h
 
 set +e +o pipefail

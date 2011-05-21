@@ -4,7 +4,7 @@ set -e
 
 module=$(basename $0 -snapshot.sh)
 snaproot="svn://svn.mplayerhq.hu/${module}/trunk"
-ffsnaproot="git://git.ffmpeg.org/ffmpeg.git"
+ffsnaproot="git://git.videolan.org/ffmpeg.git"
 
 tmp=$(mktemp -d)
 

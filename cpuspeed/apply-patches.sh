@@ -1,6 +1,10 @@
-# The set of patches from hell :)
+
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-zcat ${SB_PATCHDIR}/${NAME}-1.5-Makefile.patch.gz | patch -p1 -E --backup --verbose || exit 1
-zcat ${SB_PATCHDIR}/${NAME}-1.5-no-affected_cpus-fallback.patch.gz | patch -p1 -E --backup --verbose || exit 1
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+zcat ${SB_PATCHDIR}/${NAME}-1.5-Makefile.patch.gz | patch -p1 -E --backup --verbose
+zcat ${SB_PATCHDIR}/${NAME}-1.5-no-affected_cpus-fallback.patch.gz | patch -p1 -E --backup --verbose
+
+set +e +o pipefail

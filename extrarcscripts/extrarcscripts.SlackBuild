@@ -40,7 +40,7 @@ fi
 NAME=extrarcscripts
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-5.0}
+VERSION=${VERSION:-6.0}
 ARCH=noarch
 BUILD=${BUILD:-1}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -84,6 +84,7 @@ mkdir -p build
     -DCMAKE_INSTALL_PREFIX:PATH=/usr \
     -DSYSCONF_INSTALL_DIR:PATH=/etc \
     -DVAR_INSTALL_DIR:PATH=/var \
+    -DSYSTEMD_INSTALL_DIR:PATH=/lib/systemd/system \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
     || exit $?
@@ -97,6 +98,15 @@ mv ${PKG}/etc/rc.d/rc.firewall \
 
 mv ${PKG}/etc/rc.d/rc.setleds \
    ${PKG}/etc/rc.d/rc.setleds.new || exit 1
+
+mv ${PKG}/etc/default/setleds \
+   ${PKG}/etc/default/setleds.new || exit 1
+
+mkdir -p ${PKG}/etc/systemd/system/multi-user.target.wants
+touch ${PKG}/etc/systemd/system/multi-user.target.wants/firewall.service
+
+mkdir -p ${PKG}/etc/systemd/system/basic.target.wants
+touch ${PKG}/etc/systemd/system/basic.target.wants/setleds.service
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -134,7 +144,13 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -147,6 +163,17 @@ config() {
   fi
   # Otherwise, we leave the .new copy for the admin to consider...
 }
+
+if [ -e etc/systemd/system/multi-user.target.wants/firewall.service ] ; then
+  \${CHROOT} /bin/rm -f /etc/systemd/system/multi-user.target.wants/firewall.service
+fi
+if [ -e etc/systemd/system/basic.target.wants/setleds.service ] ; then
+  \${CHROOT} /bin/rm -f /etc/systemd/system/basic.target.wants/setleds.service
+fi
+if [ -x bin/systemctl ] ; then
+  \${CHROOT} /bin/systemctl enable firewall.service >/dev/null 2>&1
+  \${CHROOT} /bin/systemctl enable setleds.service >/dev/null 2>&1
+fi
 
 # Keep same perms on rc scripts:
 for rcscript in firewall setleds
@@ -163,6 +190,12 @@ EOF
   find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
+EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
@@ -183,7 +216,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

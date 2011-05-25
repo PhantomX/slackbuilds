@@ -13,12 +13,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-grub_test_assert_pri
 filterdiff -p1 -x configure.ac -x ChangeLog -x "po/*" -x "debian/po/*" \
   -z ${CWD}/${PSRCARCHIVE} | patch -p1 -E --verbose
 
-cat ${SB_PATCHDIR}/gfxpayload_keep_default.patch \
-  > debian/patches/gfxpayload_keep_default.patch
-
 for patch in \
   core_in_fs.patch \
-  boot_blocklist_hack.patch \
   disable_floppies.patch \
   grub.cfg_400.patch \
   gfxpayload_keep_default.patch \
@@ -27,6 +23,11 @@ for patch in \
   branch_devmapper.patch \
   branch_squash.patch \
   branch_longlinuxcmd.patch \
+  branch_parse-color.patch \
+  branch_embed-sectors.patch \
+  branch_fuse.patch \
+  mkrescue_efi_modules.patch \
+  mkconfig_loopback.patch \
   ; do
   patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done

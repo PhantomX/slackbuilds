@@ -43,7 +43,7 @@ fi
 NAME=systemd
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-27}
+VERSION=${VERSION:-28}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -63,6 +63,9 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set systemd as default init
+SB_DEF=${SB_DEF:-NO}
 
 grep --quiet '^lock:' /etc/group && SB_HGROUP=1
 
@@ -165,8 +168,24 @@ install -pm0644 units/fedora/rc-local.service \
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+if [ "${SB_DEF}" = "YES" ] ;then
+  mkdir -p ${PKG}/sbin
+  ln -s ../bin/systemd ${PKG}/sbin/init
+  ln -s ../bin/systemctl ${PKG}/sbin/reboot
+  ln -s ../bin/systemctl ${PKG}/sbin/halt
+  ln -s ../bin/systemctl ${PKG}/sbin/poweroff
+  ln -s ../bin/systemctl ${PKG}/sbin/shutdown
+  ln -s ../bin/systemctl ${PKG}/sbin/telinit
+  ln -s ../bin/systemctl ${PKG}/sbin/runlevel
+else
+  for manpage in telinit halt reboot poweroff runlevel shutdown; do
+    mv ${PKG}/usr/man/man8/{,systemd.}"${manpage}.8" || exit 1
+  done
+fi
+rm -f ${PKG}/usr/man/man8/pam*
+
 if [ -f "${CWD}/${SLKDIST}" ] ; then
-  cat ${CWD}/${SLKDIST} > ${PKG}/etc/os-release || exit 1
+  cat ${CWD}/${SLKDIST} > ${PKG}/etc/os-release.new || exit 1
 fi
 
 # We create all wants links manually at installation time to make sure
@@ -174,7 +193,11 @@ fi
 # them.
 #rm -rf ${PKG}/etc/systemd/system/*.target.wants
 
+touch ${PKG}/etc/hostname.new
+touch ${PKG}/etc/vconsole.conf.new
+touch ${PKG}/etc/locale.conf.new
 touch ${PKG}/etc/machine-id.new
+touch ${PKG}/etc/machine-info.new
 touch ${PKG}/etc/systemd/system/default.target
 
 # Make sure these directories are properly owned
@@ -190,12 +213,12 @@ ln -s rescue.service ${PKG}/lib/systemd/system/single.service
 
 echo 'd /var/run/console 755 root root' > ${PKG}/etc/tmpfiles.d/console.conf || exit 1
 
-rm -f ${PKG}/usr/man/man8/pam*
-for manpage in telinit halt reboot poweroff runlevel shutdown; do
-  mv ${PKG}/usr/man/man8/{,systemd.}"${manpage}.8" || exit 1
-done
-
 mv ${PKG}/etc/systemd/system.conf ${PKG}/etc/systemd/system.conf.new || exit 1
+
+mkdir -p ${PKG}/etc/rpm
+cat > ${PKG}/etc/rpm/macros.${NAME} <<'EOF'
+%_unitdir /lib/systemd/system
+EOF
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -278,9 +301,6 @@ if ! grep --quiet '^lock:' etc/group ;then
             lock 2> /dev/null
 fi
 
-${CHROOT} /bin/systemd-machine-id-setup > /dev/null 2>&1
-${CHROOT} /bin/systemctl daemon-reexec > /dev/null 2>&1
-
 # Try to read default runlevel from the old inittab if it exists
 runlevel=$(/bin/awk -F':' '$3 == "initdefault" && $1 !~ "^#" { print $2 }' /etc/inittab 2> /dev/null)
 if [ -z "${runlevel}" ]; then
@@ -296,8 +316,10 @@ ${CHROOT} /bin/systemctl enable \
   getty@.service \
   remote-fs.target \
   systemd-readahead-replay.service \
-  systemd-readahead-collect.service \
-  hwclock-load.service > /dev/null 2>&1 || :
+  systemd-readahead-collect.service 2>&1 || :
+
+${CHROOT} /bin/systemd-machine-id-setup > /dev/null 2>&1
+${CHROOT} /bin/systemctl daemon-reexec > /dev/null 2>&1
 
 EOF
 

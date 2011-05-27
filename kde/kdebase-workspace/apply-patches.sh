@@ -31,7 +31,9 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.98-platformplugin-widgetstyle4.patch.gz | patch 
 # fix the Games menu in the classic menu mixing up Name and Description
 #zcat ${SB_PATCHDIR}/${NAME}-4.4.0-classicmenu-games.patch.gz | patch -p1 -E --backup --verbose
 # drop hard dep on xorg-x11-apps (for xmessage), http://bugzilla.redhat.com/537609
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-startkde_zenity.patch 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.2-startkde_zenity.patch
+# multilib QT_PLUGIN_PATH, http://bugzilla.redhat.com/704840
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.3-multilib_qt_plugin_path.patch
 # HALsectomy
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.85-no_HAL.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.90-no_HAL2.patch
@@ -46,6 +48,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.71-notify_color_ch
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup --verbose
 
 # Branch patches
+# https://projects.kde.org/projects/kde/kdebase/kde-workspace/repository/revisions/a2d4c3ebdf7137f3543c88245f0bfd3dba308ebf
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.3-kde272666.patch
 
 ## trunk patches
 

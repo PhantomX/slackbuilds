@@ -25,6 +25,7 @@ pushd "${tmp}"
   svn co --depth=files --force ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
     SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"
+    sed -i 's/\r//' gui/AboutDlg.c
     sed -i -e "/^#define ABOUT_VERSION/s|\"svn\"$|\"SVN-r${SVNREV}\"|g" gui/AboutDlg.c
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd

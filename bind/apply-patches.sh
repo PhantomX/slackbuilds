@@ -28,6 +28,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh645544.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh674334.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-cleanup.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind98-includes.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind98-libdns-export.patch
 
 # needs inpection
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-96-dyndb.patch

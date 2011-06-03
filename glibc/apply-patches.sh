@@ -46,6 +46,8 @@ ApplyPatch glibc-2.12.1-static-shared-getpagesize.patch
 ApplyPatch glibc-2.12.2-ignore-origin-of-privileged-program.patch
 # http://sourceware.org/bugzilla/show_bug.cgi?id=12403
 ApplyPatch glibc-2.13-futex.patch
+# Fixes segfaults with nvidia blob
+ApplyPatch glibc-2.14-free-initfini.patch
 
 if [ "${SB_BOOTSTRP}" = "YES" ] ;then
   # Multilib - Disable check for forced unwind (Patch from eglibc) since we
@@ -59,8 +61,6 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
 
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
   ApplyPatch 0030_all_glibc-respect-env-CPPFLAGS.patch
-  ApplyPatch 0050_all_glibc-2.13-ldso-prelink-segv.patch
-  ApplyPatch 0060_all_glibc-2.13-static-memmove-ssse3.patch
   ApplyPatch 0061_all_glibc-2.13-static-memset.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
@@ -75,7 +75,7 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
   ApplyPatch 1080_all_glibc-no-inline-gmon.patch
   ApplyPatch 1085_all_glibc-2.9-check_native-headers.patch
   ApplyPatch 1090_all_glibc-2.3.6-fix-pr631.patch
-  ApplyPatch 1095_all_glibc-2.9-assume-pipe2.patch
+  ApplyPatch 1095_all_glibc-2.14-assume-pipe2-dup3.patch
   ApplyPatch 1100_all_glibc-2.3.3-china.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1103_all_glibc-new-valencian-locale.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1120_all_glibc-2.11-longjmp-chk-fallback.patch
@@ -102,9 +102,5 @@ ApplyPatch glibc-2.10.1-multiarch.patch.gz
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 # master
-ApplyPatch 0001-Fix-decoding-of-canonical-name-in-getaddrinfo.patch
-ApplyPatch 0001-Fix-range-error-handling-in-sgetspent.patch
-ApplyPatch 0001-Synchronize-generic-bits-sched.h-cpu_set_t-with-Linu.patch
-ApplyPatch 0001-Don-t-crash-when-dependencies-are-missing.patch
 
 set +e +o pipefail

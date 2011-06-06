@@ -3,7 +3,8 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="anoncvs@anoncvs.freedesktop.org:/cvs/gstreamer"
+snaproot="git://anongit.freedesktop.org/gstreamer/${module}"
+snaproot2="git://anongit.freedesktop.org/gstreamer/common"
 
 tmp=$(mktemp -d)
 
@@ -17,13 +18,29 @@ unset CDPATH
 unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
+gitbranch=${gitbranch:-master}
+gittree=${gittree:-master}
 
-[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-D${snap}"
+[ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
+[ "${gitbranch}" = "${master}" ] || gitbranch="origin/${gitbranch}"
 
 pushd "${tmp}"
-  cvs -d:pserver:${snaproot} co ${SNAP_COOPTS} -d${module}-${snap} ${module}
+  git clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    find . -type d -name CVS -print0 | xargs -0r rm -rf
+    if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+      gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
+      git checkout $(git rev-list -n 1 --before="${gitdate}" ${gitbranch})
+    fi
+    ( git clone ${SNAP_COOPTS} ${snaproot2} common
+      cd common
+      if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+        gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
+        git checkout $(git rev-list -n 1 --before="${gitdate}" master)
+      fi
+      rm -f .gitignore config.git-hash
+    )
+  find . -type d -name .git -print0 | xargs -0r rm -rf
+  rm -f .gitignore config.git-hash
   popd
-  tar Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
+  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

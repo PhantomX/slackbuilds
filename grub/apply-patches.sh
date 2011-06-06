@@ -28,6 +28,7 @@ for patch in \
   branch_fuse.patch \
   mkrescue_efi_modules.patch \
   mkconfig_loopback.patch \
+  lazy_stat.patch \
   ; do
   patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done

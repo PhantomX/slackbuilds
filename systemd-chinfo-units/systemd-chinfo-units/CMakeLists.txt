@@ -14,11 +14,23 @@ if(NOT DEFINED SYSTEMD_SERVICES_INSTALL_DIR)
   set(SYSTEMD_SERVICES_INSTALL_DIR "/lib/systemd/system" CACHE PATH "Where systemd unit files are located")
 endif()
 
-set(SYSTEMDFILES slackware-lvm-init )
+set(SYSTEMDFILES    slackware-motd
+                    slackware-lvm-init )
+
+set(SYSTEMDSRVSLKFILES slackware-motd.service
+                       slackware-lvm-init.service )
 
 set(SYSTEMDSRVFILES display-manager.service
-                    network.service
-                    slackware-lvm-init.service )
+                    network.service )
 
 install(PROGRAMS ${SYSTEMDFILES} DESTINATION "${SYSTEMD_INSTALL_DIR}" )
+
+foreach (SYSTEMDSRVSLKFILE ${SYSTEMDSRVSLKFILES})
+  CONFIGURE_FILE( ${SYSTEMDSRVSLKFILE}.cmake ${SYSTEMDSRVSLKFILE} )
+endforeach(SYSTEMDSRVSLKFILE)
+
+foreach (SYSTEMDSRVSLKFILE ${SYSTEMDSRVSLKFILES})
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${SYSTEMDSRVSLKFILE} DESTINATION "${SYSTEMD_SERVICES_INSTALL_DIR}" )
+endforeach(SYSTEMDSRVSLKFILE)
+
 install(FILES ${SYSTEMDSRVFILES} DESTINATION "${SYSTEMD_SERVICES_INSTALL_DIR}" )

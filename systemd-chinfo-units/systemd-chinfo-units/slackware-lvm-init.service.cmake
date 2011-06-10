@@ -5,7 +5,7 @@ Conflicts=shutdown.target
 Before=cryptsetup.target local-fs.target shutdown.target
 
 [Service]
-ExecStart=/lib/systemd/slackware-storage-init
+ExecStart=@SYSTEMD_INSTALL_DIR@/slackware-storage-init
 Type=oneshot
 TimeoutSec=0
 RemainAfterExit=yes

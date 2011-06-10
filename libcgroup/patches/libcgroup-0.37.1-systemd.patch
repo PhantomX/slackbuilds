@@ -1,0 +1,194 @@
+702111 - Starting LSB: start and stop the WLM configuration failed
+
+ - cgconfigparser should not unmount stuff it did not mounted
+ - cgconfigparser should accept empty config file
+ - rename the service
+
+Backported these 3 pacthes:
+
+commit 7155cc27430619be5ffcf1ddc2b6bd8cf7d6d7e0
+Author: Dhaval Giani <dhaval.giani@gmail.com>
+Date:   Fri May 27 10:36:19 2011 +0200
+
+    cgconfig: Do not touch subsystems not mounted by cgconfig
+    
+    cgconfig: Do not touch subsystems not mounted by cgconfig
+    
+    In its failure path, cgconfig should only touch the subsystems
+    it had something to do with. Currently, it unmounts all the
+    subsystems in the config file. Correct this.
+    
+    Signed-off-by: Dhaval Giani <dhaval.giani@gmail.com>
+    Signed-off-by: Jan Safranek <jsafrane@redhat.com>
+
+commit 431587f4e21b36a3f08bc595d716a70d70314e70
+Author: Jan Safranek <jsafrane@redhat.com>
+Date:   Fri May 20 15:53:05 2011 +0200
+
+    Updated cgconfig service descriptions
+    
+    Signed-off-by: Jan Safranek <jsafrane@redhat.com>
+
+commit 74e1b1e3d04c2f7999e367a20bf73396b61f9b64
+Author: Jan Safranek <jsafrane@redhat.com>
+Date:   Fri May 20 15:52:58 2011 +0200
+
+    Fixed cgconfigparser to allow configs with no 'mount' section
+    
+    cgconfig service fails when something else mounts cgroup hierarchies during
+    boot (e.g. systemd). Therefore we should allow cgconfig.conf to have no
+    'mount' section -> it's up to admin to ensure that controllers are mounted as
+    needed.
+    
+    Because 'group' section is already optional, with this patch cgconfigparser
+    will accept empty configuration file. This is probably the best default
+    config for distros with systemd.
+    
+    Changelog:
+      - fixed case with empty config file and no mounted controllers
+      - reworked the if conditions to be more clear
+    
+    Signed-off-by: Jan Safranek <jsafrane@redhat.com>
+
+diff -up libcgroup-0.37.1/doc/man/cgconfig.conf.5.systemd2 libcgroup-0.37.1/doc/man/cgconfig.conf.5
+--- libcgroup-0.37.1/doc/man/cgconfig.conf.5.systemd2	2011-03-03 09:29:41.000000000 +0100
++++ libcgroup-0.37.1/doc/man/cgconfig.conf.5	2011-05-30 15:06:45.083249011 +0200
+@@ -12,8 +12,8 @@ The file consists of
+ .I mount
+ and
+ .I group
+-sections. These sections can be in arbitrary order. Any line starting with
+-'#' is considered as a comment line and is ignored.
++sections. These sections can be in arbitrary order and both are optional.
++Any line starting with '#' is considered as a comment line and is ignored.
+ .LP
+ .I mount
+ section has this form:
+@@ -50,6 +50,11 @@ controller, shall be mounted. The direct
+ automatically on cgconfig service startup if it does not exist and
+ is deleted on service shutdown.
+ .LP
++
++If no
++.I mount
++section is specified, no controllers are mounted.
++
+ .I group
+ section has this form:
+ .RS
+@@ -171,6 +176,10 @@ created. Optionally it can be enclosed i
+ contain spaces then.
+ .RE
+ 
++If no
++.I group
++section is specified, no groups are created.
++
+ .\"********************************************"
+ .SH EXAMPLES
+ .LP
+diff -up libcgroup-0.37.1/scripts/init.d/cgconfig.in.systemd2 libcgroup-0.37.1/scripts/init.d/cgconfig.in
+--- libcgroup-0.37.1/scripts/init.d/cgconfig.in.systemd2	2011-05-30 15:00:36.269947252 +0200
++++ libcgroup-0.37.1/scripts/init.d/cgconfig.in	2011-05-30 15:00:36.284946695 +0200
+@@ -25,8 +25,8 @@
+ # Required-Stop:
+ # Should-Start:
+ # Should-Stop:
+-# Short-Description:    start and stop the WLM configuration
+-# Description:          This script allows us to create a default configuration
++# Short-Description:    Create and setup control group filesystem(s)
++# Description:          Create and setup control group filesystem(s)
+ ### END INIT INFO
+ 
+ # get correct location of binaries from configure
+diff -up libcgroup-0.37.1/src/config.c.systemd2 libcgroup-0.37.1/src/config.c
+--- libcgroup-0.37.1/src/config.c.systemd2	2011-03-03 09:29:41.000000000 +0100
++++ libcgroup-0.37.1/src/config.c	2011-05-30 15:17:08.317101247 +0200
+@@ -394,6 +394,7 @@ static int cgroup_config_mount_fs(void)
+ 	int ret;
+ 	struct stat buff;
+ 	int i;
++	int error;
+ 
+ 	for (i = 0; i < config_table_index; i++) {
+ 		struct cg_mount_table_s *curr =	&(config_mount_table[i]);
+@@ -402,26 +403,39 @@ static int cgroup_config_mount_fs(void)
+ 
+ 		if (ret < 0 && errno != ENOENT) {
+ 			last_errno = errno;
+-			return ECGOTHER;
++			error = ECGOTHER;
++			goto out_err;
+ 		}
+ 
+ 		if (errno == ENOENT) {
+ 			ret = cg_mkdir_p(curr->path);
+-			if (ret)
+-				return ret;
++			if (ret) {
++				error = ret;
++				goto out_err;
++			}
+ 		} else if (!S_ISDIR(buff.st_mode)) {
+ 			errno = ENOTDIR;
+ 			last_errno = errno;
+-			return ECGOTHER;
++			error = ECGOTHER;
++			goto out_err;
+ 		}
+ 
+ 		ret = mount(CGROUP_FILESYSTEM, curr->path, CGROUP_FILESYSTEM,
+ 								0, curr->name);
+ 
+-		if (ret < 0)
+-			return ECGMOUNTFAIL;
++		if (ret < 0) {
++			error = ECGMOUNTFAIL;
++			goto out_err;
++		}
+ 	}
+ 	return 0;
++out_err:
++	/*
++	 * If we come here, we have failed. Since we have touched only
++	 * mountpoints prior to i, we shall operate on only them now.
++	 */
++	config_table_index = 1;
++	return error;
+ }
+ 
+ /*
+@@ -681,24 +695,25 @@ int cgroup_config_load_config(const char
+ 	mount_enabled = (config_mount_table[0].name[0] != '\0');
+ 
+ 	/*
+-	 * The configuration should have either namespace or mount.
+-	 * Not both and not none.
++	 * The configuration should have namespace or mount, not both.
+ 	 */
+-	if (namespace_enabled == mount_enabled) {
++	if (namespace_enabled && mount_enabled) {
+ 		free(config_cgroup_table);
+ 		return ECGMOUNTNAMESPACE;
+ 	}
+ 
+-	/*
+-	 * We do not allow both mount and namespace sections in the
+-	 * same configuration file. So test for that
+-	 */
+-
+ 	error = cgroup_config_mount_fs();
+ 	if (error)
+ 		goto err_mnt;
+ 
+ 	error = cgroup_init();
++	if (error == ECGROUPNOTMOUNTED && cgroup_table_index == 0) {
++		/*
++		 * The config file seems to be empty.
++		 */
++		error = 0;
++		goto err_mnt;
++	}
+ 	if (error)
+ 		goto err_mnt;
+ 

@@ -48,8 +48,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.71-notify_color_ch
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-kde\#171685.patch.gz | patch -p1 -E --backup --verbose
 
 # Branch patches
-# https://projects.kde.org/projects/kde/kdebase/kde-workspace/repository/revisions/a2d4c3ebdf7137f3543c88245f0bfd3dba308ebf
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.3-kde272666.patch
 
 ## trunk patches
 

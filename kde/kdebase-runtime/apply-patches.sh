@@ -14,6 +14,8 @@ zcat ${SB_PATCHDIR}/${NAME}-4.3.3-home_onlyshowin_kde.patch.gz | patch -p1 -E --
 # Launch compiz via compiz-manager so we get window decorations and
 # other such decadent luxuries (AdamW 2011/01)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.95-compiz.patch
+# tirpc support
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.4-tirpc.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/${NAME}-4.3.2-knotify-fix-cpu-charge.patch.gz | patch -p1 -E --backup --verbose

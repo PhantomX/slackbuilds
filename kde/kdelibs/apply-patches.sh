@@ -44,10 +44,6 @@ patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.90-halectomy.patch
 # official backports
 
 # Branch upstream
-# https://projects.kde.org/projects/kde/kdelibs/repository/revisions/a8d16682c31ef523ffebba6e19283a19cd5f5627/diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-kde258706.patch
-# https://projects.kde.org/projects/kde/kdelibs/repository/revisions/92db24adfa941003db1d885df01157056617f30b/diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-kio-double-requests-kde\#272466.patch
 
 # Trunk patches
 

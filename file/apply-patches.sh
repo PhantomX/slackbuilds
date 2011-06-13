@@ -13,6 +13,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-zip64.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.05-rpm-archs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.0.7-zip.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.0.7-dos.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-dell-bios.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-postscript.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose

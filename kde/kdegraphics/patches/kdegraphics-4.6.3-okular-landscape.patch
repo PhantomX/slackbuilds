@@ -1,0 +1,427 @@
+diff -ur kdegraphics-4.6.3/okular/core/document.cpp kdegraphics-4.6.3-okular-landscape/okular/core/document.cpp
+--- kdegraphics-4.6.3/okular/core/document.cpp	2011-02-12 15:48:53.000000000 +0100
++++ kdegraphics-4.6.3-okular-landscape/okular/core/document.cpp	2011-06-06 01:07:43.000000000 +0200
+@@ -3456,6 +3456,28 @@
+     return true;
+ }
+ 
++QPrinter::Orientation Document::orientation() const
++{
++    double width, height;
++    int landscape, portrait;
++    const Okular::Page *currentPage;
++
++    // if some pages are landscape and others are not, the most common wins, as
++    // QPrinter does not accept a per-page setting
++    landscape = 0;
++    portrait = 0;
++    for (uint i = 0; i < pages(); i++)
++    {
++        currentPage = page(i);
++        width = currentPage->width();
++        height = currentPage->height();
++        if (currentPage->orientation() == Okular::Rotation90 || currentPage->orientation() == Okular::Rotation270) qSwap(width, height);
++        if (width > height) landscape++;
++        else portrait++;
++    }
++    return (landscape > portrait) ? QPrinter::Landscape : QPrinter::Portrait;
++}
++
+ void DocumentPrivate::requestDone( PixmapRequest * req )
+ {
+     if ( !req )
+diff -ur kdegraphics-4.6.3/okular/core/document.h kdegraphics-4.6.3-okular-landscape/okular/core/document.h
+--- kdegraphics-4.6.3/okular/core/document.h	2010-08-11 23:01:33.000000000 +0200
++++ kdegraphics-4.6.3-okular-landscape/okular/core/document.h	2011-06-06 01:07:43.000000000 +0200
+@@ -19,11 +19,11 @@
+ #include <QtCore/QObject>
+ #include <QtCore/QStringList>
+ #include <QtCore/QVector>
++#include <QtGui/QPrinter>
+ #include <QtXml/QDomDocument>
+ 
+ #include <kmimetype.h>
+ 
+-class QPrinter;
+ class QPrintDialog;
+ class KComponentData;
+ class KBookmark;
+@@ -604,6 +604,15 @@
+         */
+         const SourceReference * dynamicSourceReference( int pageNr, double absX, double absY );
+ 
++        /**
++         * Returns the orientation of the document (for printing purposes). This
++         * is used in the KPart to initialize the print dialog and in the
++         * generators to check whether the document needs to be rotated or not.
++         *
++         * @since 0.13 (KDE 4.7)
++        */
++        QPrinter::Orientation orientation() const;
++
+ 
+     public Q_SLOTS:
+         /**
+diff -ur kdegraphics-4.6.3/okular/core/fileprinter.cpp kdegraphics-4.6.3-okular-landscape/okular/core/fileprinter.cpp
+--- kdegraphics-4.6.3/okular/core/fileprinter.cpp	2010-06-04 21:04:05.000000000 +0200
++++ kdegraphics-4.6.3-okular-landscape/okular/core/fileprinter.cpp	2011-06-06 01:07:43.000000000 +0200
+@@ -34,20 +34,26 @@
+ using namespace Okular;
+ 
+ int FilePrinter::printFile( QPrinter &printer, const QString file, FileDeletePolicy fileDeletePolicy,
+-                            PageSelectPolicy pageSelectPolicy, const QString &pageRange )
++                            PageSelectPolicy pageSelectPolicy, const QString &pageRange,  
++                            QPrinter::Orientation documentOrientation )
+ {
+     FilePrinter fp;
+-    return fp.doPrintFiles( printer, QStringList( file ), fileDeletePolicy, pageSelectPolicy, pageRange );
++    return fp.doPrintFiles( printer, QStringList( file ), fileDeletePolicy, pageSelectPolicy, pageRange, 
++                            documentOrientation );
+ }
+ 
+ int FilePrinter::printFiles( QPrinter &printer, const QStringList &fileList, FileDeletePolicy fileDeletePolicy )
+ {
+     FilePrinter fp;
+-    return fp.doPrintFiles( printer, fileList, fileDeletePolicy, FilePrinter::ApplicationSelectsPages, QString() );
++    // FIXME: Does anything actually use this function? If so, we need to fix it
++    //        to support a list of orientations for each document.
++    return fp.doPrintFiles( printer, fileList, fileDeletePolicy, FilePrinter::ApplicationSelectsPages, QString(),
++                            QPrinter::Portrait );
+ }
+ 
+ int FilePrinter::doPrintFiles( QPrinter &printer, QStringList fileList, FileDeletePolicy fileDeletePolicy,
+-                               PageSelectPolicy pageSelectPolicy, const QString &pageRange )
++                               PageSelectPolicy pageSelectPolicy, const QString &pageRange,
++                               QPrinter::Orientation documentOrientation )
+ {
+ 
+     if ( fileList.size() < 1 ) {
+@@ -135,7 +141,7 @@
+ 
+         bool useCupsOptions = cupsAvailable();
+         argList = printArguments( printer, fileDeletePolicy, pageSelectPolicy, 
+-                                  useCupsOptions, pageRange, exe ) << fileList;
++                                  useCupsOptions, pageRange, exe, documentOrientation ) << fileList;
+         kDebug(OkularDebug) << "Executing" << exe << "with arguments" << argList;
+ 
+         ret = KProcess::execute( exe, argList );
+@@ -360,7 +366,8 @@
+ 
+ QStringList FilePrinter::printArguments( QPrinter &printer, FileDeletePolicy fileDeletePolicy,
+                                          PageSelectPolicy pageSelectPolicy, bool useCupsOptions,
+-                                         const QString &pageRange, const QString &version )
++                                         const QString &pageRange, const QString &version, 
++                                         QPrinter::Orientation documentOrientation )
+ {
+     QStringList argList;
+ 
+@@ -380,8 +387,8 @@
+         argList << pages( printer, pageSelectPolicy, pageRange, useCupsOptions, version );
+     }
+ 
+-    if ( useCupsOptions && ! cupsOptions( printer ).isEmpty() ) {
+-        argList << cupsOptions( printer );
++    if ( useCupsOptions && ! cupsOptions( printer, documentOrientation ).isEmpty() ) {
++        argList << cupsOptions( printer, documentOrientation);
+     }
+ 
+     if ( ! deleteFile( printer, fileDeletePolicy, version ).isEmpty() ) {
+@@ -484,7 +491,7 @@
+     return QStringList(); // AllPages
+ }
+ 
+-QStringList FilePrinter::cupsOptions( QPrinter &printer )
++QStringList FilePrinter::cupsOptions( QPrinter &printer, QPrinter::Orientation documentOrientation )
+ {
+     QStringList optionList;
+ 
+@@ -492,8 +499,8 @@
+         optionList << optionMedia( printer );
+     }
+ 
+-    if ( ! optionOrientation( printer ).isEmpty() ) {
+-        optionList << optionOrientation( printer );
++    if ( ! optionOrientation( printer, documentOrientation ).isEmpty() ) {
++        optionList << optionOrientation( printer, documentOrientation );
+     }
+ 
+     if ( ! optionDoubleSidedPrinting( printer ).isEmpty() ) {
+@@ -597,12 +604,17 @@
+     }
+ }
+ 
+-QStringList FilePrinter::optionOrientation( QPrinter &printer )
++QStringList FilePrinter::optionOrientation( QPrinter &printer, QPrinter::Orientation documentOrientation )
+ {
+-    switch ( printer.orientation() ) {
+-    case QPrinter::Portrait:   return QStringList("-o") << "portrait";
+-    case QPrinter::Landscape:  return QStringList("-o") << "landscape";
+-    default:                   return QStringList();
++    // portrait and landscape options rotate the document according to the document orientation
++    // If we want to print a landscape document as one would expect it, we have to pass the
++    // portrait option so that the document is not rotated additionaly
++    if ( printer.orientation() == documentOrientation ) {
++        // the user wants the document printed as is
++        return QStringList("-o") << "portrait";
++    } else {
++        // the user expects the document being rotated by 90 degrees
++        return QStringList("-o") << "landscape";
+     }
+ }
+ 
+diff -ur kdegraphics-4.6.3/okular/core/fileprinter.h kdegraphics-4.6.3-okular-landscape/okular/core/fileprinter.h
+--- kdegraphics-4.6.3/okular/core/fileprinter.h	2010-06-04 21:04:05.000000000 +0200
++++ kdegraphics-4.6.3-okular-landscape/okular/core/fileprinter.h	2011-06-06 01:08:32.000000000 +0200
+@@ -16,11 +16,11 @@
+ 
+ #include <QtCore/QList>
+ #include <QtCore/QString>
++#include <QtGui/QPrinter>
+ 
+ #include <okular/core/okular_export.h>
+ #include <okular/core/generator.h>
+ 
+-class QPrinter;
+ class QSize;
+ 
+ namespace Okular {
+@@ -58,6 +58,7 @@
+      * @param fileDeletePolicy if the application or system deletes the file
+      * @param pageSelectPolicy if the application or system selects the pages to print
+      * @param pageRange page range to print if SystemSlectsPages and user chooses Selection in Print Dialog
++     * @param documentOrientation the orientation stored in the document itself (Default is Portrait)
+      *
+      * @returns Returns exit code:
+      *          -9 if lpr not found
+@@ -73,7 +74,9 @@
+     static int printFile( QPrinter &printer, const QString file,
+                           FileDeletePolicy fileDeletePolicy = FilePrinter::ApplicationDeletesFiles,
+                           PageSelectPolicy pageSelectPolicy = FilePrinter::ApplicationSelectsPages,
+-                          const QString &pageRange = QString() );
++                          const QString &pageRange = QString(),
++                          QPrinter::Orientation documentOrientation = QPrinter::Portrait
++                        );
+ 
+     /** Print a list of files using the settings in QPrinter
+      *
+@@ -171,11 +174,13 @@
+ 
+     int doPrintFiles( QPrinter &printer, const QStringList fileList,
+                              FileDeletePolicy fileDeletePolicy, PageSelectPolicy pageSelectPolicy,
+-                             const QString &pageRange );
++                             const QString &pageRange,
++                             QPrinter::Orientation documentOrientation);
+ 
+     QStringList printArguments( QPrinter &printer,
+                                        FileDeletePolicy fileDeletePolicy, PageSelectPolicy pageSelectPolicy,
+-                                       bool useCupsOptions, const QString &pageRange, const QString &version );
++                                       bool useCupsOptions, const QString &pageRange, const QString &version,
++                                       QPrinter::Orientation documentOrientation);
+ 
+     QStringList destination( QPrinter &printer, const QString &version );
+     QStringList copies( QPrinter &printer, const QString &version );
+@@ -185,11 +190,11 @@
+     QStringList pages( QPrinter &printer, PageSelectPolicy pageSelectPolicy,
+                               const QString &pageRange, bool useCupsOptions, const QString &version );
+ 
+-    QStringList cupsOptions( QPrinter &printer );
++    QStringList cupsOptions( QPrinter &printer, QPrinter::Orientation documentOrientation );
+     QStringList optionMedia( QPrinter &printer );
+     QString mediaPageSize( QPrinter &printer );
+     QString mediaPaperSource( QPrinter &printer );
+-    QStringList optionOrientation( QPrinter &printer );
++    QStringList optionOrientation( QPrinter &printer, QPrinter::Orientation documentOrientation );
+     QStringList optionDoubleSidedPrinting( QPrinter &printer );
+     QStringList optionPageOrder( QPrinter &printer );
+     QStringList optionCollateCopies( QPrinter &printer );
+diff -ur kdegraphics-4.6.3/okular/generators/djvu/generator_djvu.cpp kdegraphics-4.6.3-okular-landscape/okular/generators/djvu/generator_djvu.cpp
+--- kdegraphics-4.6.3/okular/generators/djvu/generator_djvu.cpp	2011-01-06 00:46:08.000000000 +0100
++++ kdegraphics-4.6.3-okular-landscape/okular/generators/djvu/generator_djvu.cpp	2011-06-06 01:07:43.000000000 +0200
+@@ -220,7 +220,8 @@
+         int ret = Okular::FilePrinter::printFile( printer, fileName,
+                                                   Okular::FilePrinter::SystemDeletesFiles,
+                                                   Okular::FilePrinter::ApplicationSelectsPages,
+-                                                  document()->bookmarkedPageRange() );
++                                                  document()->bookmarkedPageRange(),
++                                                  document()->orientation() );
+         result = ( ret >=0 );
+     }
+ 
+diff -ur kdegraphics-4.6.3/okular/generators/dvi/dviexport.cpp kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/dviexport.cpp
+--- kdegraphics-4.6.3/okular/generators/dvi/dviexport.cpp	2009-10-08 23:55:51.000000000 +0200
++++ kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/dviexport.cpp	2011-06-06 01:52:08.000000000 +0200
+@@ -288,9 +288,11 @@
+                              const QString& output_name,
+                              const QStringList& options,
+                              QPrinter* printer,
+-                             bool useFontHinting)
++                             bool useFontHinting,
++                             QPrinter::Orientation orientation)
+   : DVIExport(parent, parent_widget),
+-    printer_(printer)
++    printer_(printer),
++    orientation_(orientation)
+ {
+   // None of these should happen. Paranoia checks.
+   if (!parent.dviFile)
+@@ -460,7 +462,8 @@
+         Okular::FilePrinter::printFile( (*printer_), output_name_,
+                                 Okular::FilePrinter::ApplicationDeletesFiles,
+                                 Okular::FilePrinter::ApplicationSelectsPages,
+-                                QString() );
++                                QString(),
++                                orientation_ );
+     }
+   }
+ 
+diff -ur kdegraphics-4.6.3/okular/generators/dvi/dviexport.h kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/dviexport.h
+--- kdegraphics-4.6.3/okular/generators/dvi/dviexport.h	2009-10-08 23:55:51.000000000 +0200
++++ kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/dviexport.h	2011-06-06 01:52:08.000000000 +0200
+@@ -22,11 +22,11 @@
+ #include <ksharedptr.h>
+ 
+ #include <QObject>
++#include <QtGui/QPrinter>
+ 
+ 
+ class dviRenderer;
+ class fontProgressDialog;
+-class QPrinter;
+ class KProcess;
+ class QStringList;
+ 
+@@ -124,13 +124,15 @@
+    *  passed to the external process's argv command line.
+    *  @param printer having generated the PostScript file, it is passed
+    *  to @c printer (if not null).
++   *  @param orientation the original orientation of the document
+    */
+   DVIExportToPS(dviRenderer& parent,
+                 QWidget* parent_widget,
+                 const QString& output_name,
+                 const QStringList& options,
+                 QPrinter* printer,
+-                bool useFontHinting);
++                bool useFontHinting,
++                QPrinter::Orientation orientation = QPrinter::Portrait);
+ 
+ private:
+   virtual void abort_process_impl();
+@@ -139,6 +141,7 @@
+   QPrinter* printer_;
+   QString output_name_;
+   QString tmpfile_name_;
++  QPrinter::Orientation orientation_;
+ };
+ 
+ #endif
+diff -ur kdegraphics-4.6.3/okular/generators/dvi/dviRenderer.cpp kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/dviRenderer.cpp
+--- kdegraphics-4.6.3/okular/generators/dvi/dviRenderer.cpp	2009-10-08 23:55:51.000000000 +0200
++++ kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/dviRenderer.cpp	2011-06-06 01:52:08.000000000 +0200
+@@ -767,9 +767,9 @@
+ }
+ 
+ 
+-void dviRenderer::exportPS(const QString& fname, const QStringList& options, QPrinter* printer)
++void dviRenderer::exportPS(const QString& fname, const QStringList& options, QPrinter* printer, QPrinter::Orientation orientation)
+ {
+-  KSharedPtr<DVIExport> exporter(new DVIExportToPS(*this, parentWidget, fname, options, printer, font_pool.getUseFontHints()));
++  KSharedPtr<DVIExport> exporter(new DVIExportToPS(*this, parentWidget, fname, options, printer, font_pool.getUseFontHints(), orientation));
+   if (exporter->started())
+     all_exports_[exporter.data()] = exporter;
+ }
+diff -ur kdegraphics-4.6.3/okular/generators/dvi/dviRenderer.h kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/dviRenderer.h
+--- kdegraphics-4.6.3/okular/generators/dvi/dviRenderer.h	2010-01-20 23:42:01.000000000 +0100
++++ kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/dviRenderer.h	2011-06-06 01:52:08.000000000 +0200
+@@ -29,6 +29,7 @@
+ #include <QVector>
+ #include <QTimer>
+ #include <QMutex>
++#include <QtGui/QPrinter>
+ 
+ class Anchor;
+ class DocumentWidget;
+@@ -37,7 +38,6 @@
+ class ghostscript_interface;
+ //class infoDialog;
+ class QEventLoop;
+-class QPrinter;
+ class KProgressDialog;
+ class PreBookmark;
+ class TeXFontDefinition;
+@@ -154,7 +154,7 @@
+ //void          editor_finished(const DVISourceEditor*);
+ 
+ public slots:
+-  void          exportPS(const QString& fname = QString(), const QStringList& options = QStringList(), QPrinter* printer = 0);
++  void          exportPS(const QString& fname = QString(), const QStringList& options = QStringList(), QPrinter* printer = 0, QPrinter::Orientation orientation = QPrinter::Portrait);
+   void          exportPDF();
+ 
+ //void          showInfo();
+diff -ur kdegraphics-4.6.3/okular/generators/dvi/generator_dvi.cpp kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/generator_dvi.cpp
+--- kdegraphics-4.6.3/okular/generators/dvi/generator_dvi.cpp	2010-07-28 17:00:52.000000000 +0200
++++ kdegraphics-4.6.3-okular-landscape/okular/generators/dvi/generator_dvi.cpp	2011-06-06 01:52:08.000000000 +0200
+@@ -567,7 +567,7 @@
+ 
+     QEventLoop el;
+     m_dviRenderer->setEventLoop( &el );
+-    m_dviRenderer->exportPS( tf.fileName(), printOptions, &printer );
++    m_dviRenderer->exportPS( tf.fileName(), printOptions, &printer, document()->orientation() );
+ 
+     tf.close();
+ 
+diff -ur kdegraphics-4.6.3/okular/generators/poppler/generator_pdf.cpp kdegraphics-4.6.3-okular-landscape/okular/generators/poppler/generator_pdf.cpp
+--- kdegraphics-4.6.3/okular/generators/poppler/generator_pdf.cpp	2011-03-31 22:02:04.000000000 +0200
++++ kdegraphics-4.6.3-okular-landscape/okular/generators/poppler/generator_pdf.cpp	2011-06-06 01:07:43.000000000 +0200
+@@ -964,7 +964,8 @@
+         int ret = Okular::FilePrinter::printFile( printer, tempfilename,
+                                                   Okular::FilePrinter::SystemDeletesFiles,
+                                                   Okular::FilePrinter::ApplicationSelectsPages,
+-                                                  document()->bookmarkedPageRange() );
++                                                  document()->bookmarkedPageRange(),
++                                                  document()->orientation() );
+ 
+         lastPrintError = Okular::FilePrinter::printError( ret );
+ 
+diff -ur kdegraphics-4.6.3/okular/generators/spectre/generator_ghostview.cpp kdegraphics-4.6.3-okular-landscape/okular/generators/spectre/generator_ghostview.cpp
+--- kdegraphics-4.6.3/okular/generators/spectre/generator_ghostview.cpp	2010-06-04 10:25:25.000000000 +0200
++++ kdegraphics-4.6.3-okular-landscape/okular/generators/spectre/generator_ghostview.cpp	2011-06-06 01:07:43.000000000 +0200
+@@ -148,7 +148,8 @@
+         int ret = Okular::FilePrinter::printFile( printer, fileName,
+                                                   Okular::FilePrinter::SystemDeletesFiles,
+                                                   Okular::FilePrinter::ApplicationSelectsPages,
+-                                                  document()->bookmarkedPageRange() );
++                                                  document()->bookmarkedPageRange(),
++                                                  document()->orientation() );
+         if ( ret >= 0 ) result = true;
+     }
+ 
+diff -ur kdegraphics-4.6.3/okular/part.cpp kdegraphics-4.6.3-okular-landscape/okular/part.cpp
+--- kdegraphics-4.6.3/okular/part.cpp	2011-03-20 14:47:58.000000000 +0100
++++ kdegraphics-4.6.3-okular-landscape/okular/part.cpp	2011-06-06 01:07:43.000000000 +0200
+@@ -2057,24 +2057,7 @@
+ 
+ void Part::setupPrint( QPrinter &printer )
+ {
+-    double width, height;
+-    int landscape, portrait;
+-    const Okular::Page *page;
+-
+-    // if some pages are landscape and others are not the most common win as QPrinter does
+-    // not accept a per page setting
+-    landscape = 0;
+-    portrait = 0;
+-    for (uint i = 0; i < m_document->pages(); i++)
+-    {
+-        page = m_document->page(i);
+-        width = page->width();
+-        height = page->height();
+-        if (page->orientation() == Okular::Rotation90 || page->orientation() == Okular::Rotation270) qSwap(width, height);
+-        if (width > height) landscape++;
+-        else portrait++;
+-    }
+-    if (landscape > portrait) printer.setOrientation(QPrinter::Landscape);
++    printer.setOrientation(m_document->orientation());
+ 
+     // title
+     QString title = m_document->metaData( "DocumentTitle" ).toString();

@@ -43,7 +43,7 @@ fi
 NAME=smartmontools
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-5.40}
+VERSION=${VERSION:-5.41}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -136,23 +136,29 @@ CXXFLAGS="${SLKCFLAGS}" \
   --with-libcap-ng=yes \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
-make CXXFLAGS="${SLKCFLAGS} -fpie" LDFLAGS="${LDFLAGS} -fpie -Wl,-z,relro,-z,now" || exit 1
+make CXXFLAGS="${SLKCFLAGS} -fpie" LDFLAGS="${LDFLAGS} -pie -Wl,-z,relro,-z,now" || exit 1
 make install DESTDIR=${PKG} || exit 1
+
+mkdir -p ${PKG}/usr/libexec/${NAME}
+install -p -m 755 ${CWD}/smartdnotify ${PKG}/usr/libexec/${NAME}/smartdnotify || exit 1
 
 mv ${PKG}/etc/smartd.conf ${PKG}/etc/smartd.conf.new || exit 1
 
-rm -rf ${PKG}/etc/rc.d/*
+mkdir -p ${PKG}/etc/rc.d
 zcat ${CWD}/rc.smartd.gz \
-  > ${PKG}/etc/rc.d/rc.smartd || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.smartd || exit 1
+  > ${PKG}/etc/rc.d/rc.smartd.new || exit 1
+chmod 0755 ${PKG}/etc/rc.d/rc.smartd.new || exit 1
 mkdir -p ${PKG}/etc/default
 zcat ${CWD}/${NAME}opts.conf.gz \
-  > ${PKG}/etc/default/${NAME}.new || exit 1
+  > ${PKG}/etc/default/smartd.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
 zcat ${CWD}/setup.onlyonce.rcsmartd.gz \
   > ${PKG}/var/log/setup/setup.onlyonce.rcsmartd || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rcsmartd || exit 1
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/smartd.service ${PKG}/lib/systemd/system/ || exit 1
 
 rm -f examplescripts/Makefile*
 
@@ -193,7 +199,13 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -220,6 +232,12 @@ EOF
   echo >> ${PKG}/install/doinst.sh
 )
 
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -227,13 +245,12 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/${NAME}.conf.gz \
-                 ${CWD}/{rc.,setup.onlyonce.rc}*.gz \
-                 ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${NAME}.conf.gz ${CWD}/smartd.service \
+    ${CWD}/{rc.,setup.onlyonce.rc}*.gz ${CWD}/smartdnotify ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
   rmdir ${SBDIR}/patches
 fi
 
@@ -244,7 +261,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

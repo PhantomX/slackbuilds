@@ -7,7 +7,5 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/${NAME}-1.0pre8-config.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-ivtv.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-fix-mkv.patch.gz | patch -p0 -E --backup --verbose
-# Workarounfd for gcc 4.6
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-fix-mp3lib.patch
 
 set +e +o pipefail

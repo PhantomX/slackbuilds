@@ -14,5 +14,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.2-libjpeg_version.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.3-okular-landscape.patch
 
 ## upstream patches
+# From gentoo
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/okular-4.6.4-update.patch
 
 set +e +o pipefail

@@ -22,15 +22,21 @@ if [ "${SB_HUNSPELL}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/vim-7.0-hunspell.patch.gz | patch -p1 --verbose
 fi
 
-for i in $( seq -w ${PATCHLEVEL} ) ; do
-  patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${SVER}.${i}
-done
+mkdir -p patches
+cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
+
+patch -p1 -E --verbose -d patches -i ${SB_PATCHDIR}/7.3.202-fix.patch
+patch -p1 -E --verbose -d patches -i ${SB_PATCHDIR}/7.3.203-fix.patch
+( SB_PATCHDIR=patches
+  for i in $( seq -w ${PATCHLEVEL} ) ; do
+    patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${SVER}.${i}
+  done
+)
 
 if [ "${SB_SYNUP}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/updates/vim-runtime-syntax-${SYNUPVER}.patch.gz | patch -p0 --verbose
 fi
 
-patch -p1 -E --verbose -i ${SB_PATCHDIR}/xxd-locale.patch
 patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim-7.3-syntax.patch
 zcat ${SB_PATCHDIR}/vim-7.1-nowarnings.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-6.1-rh3.patch.gz | patch -p1 --verbose
@@ -40,5 +46,6 @@ patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim-7.3-fstabsyntax.patch
 zcat ${SB_PATCHDIR}/vim-7.0-warning.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-7.0-syncolor.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-7.0-specedit.patch.gz | patch -p1 --verbose
+patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim72-rh514717.patch
 
 set +e +o pipefail

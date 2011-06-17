@@ -11,7 +11,6 @@ for patches in \
   05_all_verbose_building_of_extensions.patch \
   06_all_non-zero_exit_status_on_failure.patch \
   21_all_distutils_c++.patch \
-  22_all_turkish_locale.patch \
   ;do
   patch -p0 --backup --verbose -i ${PDIR}/${patches}
 done
@@ -50,13 +49,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/make-pydoc-more-robust-001.pat
 
 patch -p0 -R -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc2-r79310.patch
 
-# Fix race condition in parallel make that could lead to graminit.c failing
-# to compile, or linker errors with "undefined reference to
-# `_PyParser_Grammar'":
-# Not yet sent upstream:
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-fix-parallel-make.patch
-
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_commands-expected-ls-output-issue7108.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/less-verbose-COUNT_ALLOCS.patch
 
 # Fix dbm module on big-endian 64-bit
@@ -65,6 +57,11 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fix-dbm_contains-on-64bit-bige
 # Fix test_structmember on big-endian 64-bit
 # Sent upstream as http://bugs.python.org/issue9960
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_structmember-on-64bit-bigendian.patch
+# 2.7.1 (in r84230) added a test to test_abc which fails if python is
+# configured with COUNT_ALLOCS, which is the case for our debug build
+# (the COUNT_ALLOCS instrumentation keeps "C" alive).
+# Not yet sent upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7.1-fix_test_abc_with_COUNT_ALLOCS.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-autotool-intermediates.patch
 

@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="https://qbittorrent.svn.sourceforge.net/svnroot/${module}/trunk"
+snaproot="git://gitorious.org/qbittorrent/${module}.git"
 
 tmp=$(mktemp -d)
 
@@ -17,13 +17,20 @@ unset CDPATH
 unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
+gitbranch=${gitbranch:-master}
+gittree=${gittree:-master}
 
-[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+[ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
+[ "${gitbranch}" = "${master}" ] || gitbranch="origin/${gitbranch}"
 
 pushd "${tmp}"
-  svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
+  git clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    find . -type d -name .svn -print0 | xargs -0r rm -rf
+    if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+      gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
+      git checkout $(git rev-list -n 1 --before="${gitdate}" master)
+      gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
+    fi
+    git archive --format=tar --prefix=${module}-${snap}/ ${gittree} | xz -9 > "${pwd}"/${module}-${snap}.tar.xz
   popd
-  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

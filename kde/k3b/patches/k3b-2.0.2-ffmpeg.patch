@@ -1,0 +1,157 @@
+--- k3b-2.0.2/plugins/decoder/ffmpeg/k3bffmpegwrapper.cpp.orig	2011-06-19 18:08:24.752078281 -0300
++++ k3b-2.0.2/plugins/decoder/ffmpeg/k3bffmpegwrapper.cpp	2011-06-19 18:19:05.033628854 -0300
+@@ -60,8 +60,10 @@ public:
+     char* outputBufferPos;
+     int outputBufferSize;
+     ::AVPacket packet;
++#if LIBAVCODEC_VERSION_MAJOR < 53
+     quint8* packetData;
+     int packetSize;
++#endif
+ };
+ 
+ 
+@@ -109,7 +111,7 @@ bool K3bFFMpegFile::open()
+ #else
+     ::AVCodecContext* codecContext =  d->formatContext->streams[0]->codec;
+ #endif
+-    if( codecContext->codec_type != CODEC_TYPE_AUDIO ) {
++    if( codecContext->codec_type != AVMEDIA_TYPE_AUDIO ) {
+         kDebug() << "(K3bFFMpegFile) not a simple audio stream: " << m_filename;
+         return false;
+     }
+@@ -146,8 +148,10 @@ bool K3bFFMpegFile::open()
+ void K3bFFMpegFile::close()
+ {
+     d->outputBufferSize = 0;
++#if LIBAVCODEC_VERSION_MAJOR < 53
+     d->packetSize = 0;
+     d->packetData = 0;
++#endif
+ 
+     if( d->codec ) {
+ #ifdef FFMPEG_BUILD_PRE_4629
+@@ -224,31 +228,25 @@ QString K3bFFMpegFile::typeComment() con
+ 
+ QString K3bFFMpegFile::title() const
+ {
+-    // FIXME: is this UTF8 or something??
+-    if( d->formatContext->title[0] != '\0' )
+-        return QString::fromLocal8Bit( d->formatContext->title );
+-    else
+-        return QString();
++    AVMetadataTag *t = av_metadata_get(d->formatContext->metadata,
++                            "title", 0,0);
++    return ( t ) ? QString::fromLocal8Bit( t->value ) : QString();
+ }
+ 
+ 
+ QString K3bFFMpegFile::author() const
+ {
+-    // FIXME: is this UTF8 or something??
+-    if( d->formatContext->author[0] != '\0' )
+-        return QString::fromLocal8Bit( d->formatContext->author );
+-    else
+-        return QString();
++    AVMetadataTag *t = av_metadata_get(d->formatContext->metadata,
++                            "author", 0,0);
++    return ( t ) ? QString::fromLocal8Bit( t->value ) : QString();
+ }
+ 
+ 
+ QString K3bFFMpegFile::comment() const
+ {
+-    // FIXME: is this UTF8 or something??
+-    if( d->formatContext->comment[0] != '\0' )
+-        return QString::fromLocal8Bit( d->formatContext->comment );
+-    else
+-        return QString();
++    AVMetadataTag *t = av_metadata_get(d->formatContext->metadata,
++                            "comment", 0,0);
++    return ( t ) ? QString::fromLocal8Bit( t->value ) : QString();
+ }
+ 
+ 
+@@ -278,6 +276,7 @@ int K3bFFMpegFile::read( char* buf, int
+ // fill d->packetData with data to decode
+ int K3bFFMpegFile::readPacket()
+ {
++#if LIBAVCODEC_VERSION_MAJOR < 53
+     if( d->packetSize <= 0 ) {
+         ::av_init_packet( &d->packet );
+ 
+@@ -289,6 +288,17 @@ int K3bFFMpegFile::readPacket()
+     }
+ 
+     return d->packetSize;
++#else
++    if( d->packet.size <= 0 ) {
++        ::av_init_packet( &d->packet );
++
++        if( ::av_read_frame( d->formatContext, &d->packet ) < 0 ) {
++            return 0;
++        }
++    }
++
++    return d->packet.size;
++#endif
+ }
+ 
+ 
+@@ -309,26 +319,43 @@ int K3bFFMpegFile::fillOutputBuffer()
+ #if LIBAVCODEC_VERSION_MAJOR < 52
+         int len = ::avcodec_decode_audio(
+ #else
++#if LIBAVCODEC_VERSION_MAJOR < 53
+         int len = ::avcodec_decode_audio2(
++#else
++        int len = ::avcodec_decode_audio3(
++#endif
+ #endif
+ #ifdef FFMPEG_BUILD_PRE_4629
+             &d->formatContext->streams[0]->codec,
+ #else
+             d->formatContext->streams[0]->codec,
+ #endif
+-            (short*)d->alignedOutputBuffer,
++            (int16_t*)d->alignedOutputBuffer,
+             &d->outputBufferSize,
++#if LIBAVCODEC_VERSION_MAJOR < 53
+             d->packetData, d->packetSize );
+ 
+         if( d->packetSize <= 0 || len < 0 )
+             ::av_free_packet( &d->packet );
++#else
++ &d->packet );
++
++        if( d->packet.size <= 0 || len < 0 )
++            ::av_free_packet( &d->packet );
++#endif
++
+         if( len < 0 ) {
+             kDebug() << "(K3bFFMpegFile) decoding failed for " << m_filename;
+             return -1;
+         }
+ 
++#if LIBAVCODEC_VERSION_MAJOR < 53
+         d->packetSize -= len;
+         d->packetData += len;
++#else
++        d->packet.size -= len;
++        d->packet.data += len;
++#endif
+     }
+ 
+     // if it is still empty try again
+@@ -342,7 +369,11 @@ int K3bFFMpegFile::fillOutputBuffer()
+ bool K3bFFMpegFile::seek( const K3b::Msf& msf )
+ {
+     d->outputBufferSize = 0;
++#if LIBAVCODEC_VERSION_MAJOR < 53
+     d->packetSize = 0;
++#else
++    d->packet.size = 0;
++#endif
+ 
+     double seconds = (double)msf.totalFrames()/75.0;
+     quint64 timestamp = (quint64)(seconds * (double)AV_TIME_BASE);

@@ -24,4 +24,7 @@ patch -p1 --backup --verbose -i ${SB_PATCHDIR}/tooltip-positioning.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=611313
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/window-dragging.patch
 
+# Revert this commit as it causes gnome-panel problems
+patch -p1 -R --backup --verbose -i ${SB_PATCHDIR}/gtk+-2.24.5-background-repaint.patch
+
 set +e +o pipefail

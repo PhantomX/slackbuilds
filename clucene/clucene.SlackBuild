@@ -45,7 +45,7 @@ PNAME=clucene-core
 NAME=clucene
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.9.21b}
+VERSION=${VERSION:-2.3.3.4}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -57,7 +57,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -68,7 +68,7 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${PNAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.bz2
+SRCARCHIVE=${SRCDIR}.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
@@ -111,36 +111,48 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
-CFLAGS="${SLKCFLAGS}" \
-CXXFLAGS="${SLKCFLAGS}" \
-./configure \
-  --prefix=/usr \
-  --libdir=/usr/lib${LIBDIRSUFFIX} \
-  --sysconfdir=/etc \
-  --localstatedir=/var/lib \
-  --infodir=/usr/info \
-  --mandir=/usr/man \
-  --disable-static \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+sed -i \
+  -e '/^includedir=/s|=.*|=${prefix}/include|g' \
+  -e '/^Libs/s|${prefix}/@LIB_DESTINATION@/|${libdir}|g' \
+  -e '/^Cflags/s|${prefix}/include|${includedir}|g' \
+  -e '/^~/d' \
+  src/core/libclucene-core.pc.cmake || exit 1
 
-make -j${NJOBS} || make || exit 1
-make install DESTDIR=${PKG} || exit 1
+export CFLAGS="${SLKCFLAGS}"
+export CXXFLAGS="${SLKCFLAGS}"
+export FFLAGS="${SLKCFLAGS}"
 
-#Hope upstream will correct this problem in the next release
-mv ${PKG}/usr/lib${LIBDIRSUFFIX}/CLucene/clucene-config.h ${PKG}/usr/include/CLucene/ || exit 1
-rm -rf ${PKG}/usr/lib*/CLucene
+mkdir -p build
+( cd build || exit $?
 
-#Package the docs
-mkdir -p ${PKG}/usr/share/${NAME}/doc || exit 1
-cp -pr doc/*.htm doc/*.jpg ${PKG}/usr/share/${NAME}/doc/ || exit 1
+  cmake .. \
+    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DINCLUDE_INSTALL_DIR:PATH=/usr/include \
+    -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLUCENE_SYS_INCLUDES:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSHARE_INSTALL_PREFIX:PATH=/usr/share \
+    -DMAN_INSTALL_DIR:PATH=/usr/man \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS:BOOL=ON \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+    || exit $?
+
+  make -j${NJOBS} || make || exit $?
+  make install/fast DESTDIR=${PKG} || exit $?
+
+) || exit $?
 
 [ "${SB_RMLA}" = "YES" ] && rm -f ${PKG}/usr/lib*/*.la
 
-# These are from the contrib package
-rm -f ${PKG}/usr/include/CuTest.h || exit 1
-rm -f ${PKG}/usr/include/test.h || exit 1
+rm -rf ${PKG}/usr/lib${LIBDIRSUFFIX}/CLuceneConfig.cmake
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -148,10 +160,12 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  AUTHORS COPYING HACKING README REQUESTS ${CWD}/ChangeLog.SB \
+  APACHE.license AUTHORS COPYING LGPL.license README ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -183,11 +197,14 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${SBDIR}/
+    ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:

@@ -3,7 +3,8 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/waf-1.5.17-libdir.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/waf-1.5.17-install_3rdparty.patch
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/waf-1.6.2-libdir.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/waf-1.6.6-syntax.patch
 
 set +e +o pipefail

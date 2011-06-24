@@ -17,7 +17,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p1-entropy.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1640
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p1-vendor.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p1-authorized-keys-command.patch
-sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-5.8p1-ldap.patch | patch -p1 -E --backup --verbose
+#sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-5.8p1-ldap.patch | patch -p1 -E --backup --verbose
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1668
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.6p1-keygen.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1644
@@ -40,6 +40,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-4.3p2-askpass-grab-inf
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.1p1-scp-manpage.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.2p1-edns.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p1-localdomain.patch
+#https://bugzilla.mindrot.org/show_bug.cgi?id=1329 (WONTFIX)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p2-remove-stale-control-socket.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p2-ipv6man.patch
 
 set +e +o pipefail
 

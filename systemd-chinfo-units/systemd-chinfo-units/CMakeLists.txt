@@ -15,10 +15,12 @@ if(NOT DEFINED SYSTEMD_SERVICES_INSTALL_DIR)
 endif()
 
 set(SYSTEMDFILES    slackware-motd
-                    slackware-lvm-init )
+                    slackware-lvm-init 
+                    systemd-clean-dead-links )
 
 set(SYSTEMDSRVSLKFILES slackware-motd.service
-                       slackware-lvm-init.service )
+                       slackware-lvm-init.service 
+                       systemd-clean-dead-links.service )
 
 set(SYSTEMDSRVFILES display-manager.service
                     network.service )

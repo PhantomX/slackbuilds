@@ -10,6 +10,8 @@ patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-build.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-build-sbrk.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.0-secondary-jit.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.0-chromium-types.patch
+patch -p1 -R -E --backup --verbose -i ${SB_PATCHDIR}/firefox-5.0-xulstub.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/add-gtkmozembed.patch
 
 # Fedora specific patches
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
@@ -20,7 +22,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-crashreporter-static.p
 # Upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-4.0-moz-app-launcher.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-4.0-gnome3.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-network-link-service.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-network-link-service.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-NetworkManager09.patch
 patch -p1 -E --backup -z .omnijar --verbose -i ${SB_PATCHDIR}/${NAME}-5.0-omnijar.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-system-bzip2.patch

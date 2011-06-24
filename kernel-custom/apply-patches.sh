@@ -195,7 +195,6 @@ ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 #ApplyPatch drm-intel-edp-fixes.patch
-ApplyPatch drm-intel-eeebox-eb1007-quirk.patch
 
 # linux1394 git patches
 # apply if non-empty

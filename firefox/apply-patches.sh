@@ -12,6 +12,7 @@ sed \
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-5.0-cache-build.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-stub.patch
 patch -p1 -R -E --backup --verbose -i ${SB_PATCHDIR}/firefox-5.0-xulstub.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-5.0-asciidel.patch
 
 # Upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-4.0-moz-app-launcher.patch

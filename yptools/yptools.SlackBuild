@@ -48,9 +48,9 @@ YPBNAME=ypbind-mt
 YPSNAME=ypserv
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.9}
-YPBVER=${YPBVER:-1.20.4}
-YPSVER=${YPSVER:-2.19}
+VERSION=${VERSION:-2.12}
+YPBVER=${YPBVER:-1.33}
+YPSVER=${YPSVER:-2.26}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -78,19 +78,22 @@ SRCDIR=${PNAME}-${VERSION}
 YPBSRCDIR=${YPBNAME}-${YPBVER}
 YPSSRCDIR=${YPSNAME}-${YPSVER}
 SRCARCHIVE=${SRCDIR}.tar.bz2
+SSRCARCHIVE=${SRCARCHIVE}.sign
 YPBSRCARCHIVE=${YPBSRCDIR}.tar.bz2
+SYPBSRCARCHIVE=${YPBSRCARCHIVE}.sign
 YPSSRCARCHIVE=${YPSSRCDIR}.tar.bz2
+SYPSSRCARCHIVE=${YPSSRCARCHIVE}.sign
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="ftp://ftp.kernel.org/pub/linux/utils/net/NIS"
+KERNEL_MIRROR=${KERNEL_MIRROR:-http://www.kernel.org/pub}
+DL_URL="${KERNEL_MIRROR}/linux/utils/net/NIS"
 
-# if source is not present, download in source rootdir if possible, or in /tmp
-for file in ${SRCARCHIVE} ${YPBSRCARCHIVE} ${YPBSRCARCHIVE} ;do
-  if ! test -r ${file}; then
-    test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
-  fi
+# if source is not present, download in source rootdir if possible
+for file in ${SRCARCHIVE} ${SSRCARCHIVE} ${YPBSRCARCHIVE} \
+  ${SYPBSRCARCHIVE} ${YPSSRCARCHIVE} ${SYPSSRCARCHIVE} ;do
+  test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
 done
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -105,6 +108,12 @@ else
                  ;;
   esac
 fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
+fi
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -114,23 +123,14 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-if $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": bzip2"); then
-  tar -xjvf ${CWD}/${SRCARCHIVE} || exit 1
-elif $(file -L ${CWD}/${SRCARCHIVE} | grep -q ": gzip"); then
-  tar -xzvf ${CWD}/${SRCARCHIVE} || exit 1
-fi
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 for file in ${YPBSRCARCHIVE} ${YPSSRCARCHIVE} ;do
-  if $(file -L ${CWD}/${file} | grep -q ": bzip2"); then
-    tar -xjvf ${CWD}/${file} || exit 1
-  elif $(file -L ${CWD}/${file} | grep -q ": gzip"); then
-    tar -xzvf ${CWD}/${file} || exit 1
-  fi
+  tar -xvf ${CWD}/${file} || exit 1
 done
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
@@ -149,7 +149,6 @@ SB_CONFIGURE() {
   --build=${SLKTARGET}-${SLKDTARGET}-linux $@
 }
 
-autoconf || exit 1
 SB_CONFIGURE --disable-domainname || exit 1
 
 make -j${NJOBS} || make || exit 1
@@ -166,28 +165,34 @@ mkdir -p ${PKG}/etc
 zcat ${CWD}/nsswitch.conf-nis.gz > ${PKG}/etc/nsswitch.conf-nis.new || exit 1
 
 ( cd ${YPBSRCDIR} || exit 1
-  autoreconf || exit 1
   SB_CONFIGURE || exit 1
   make  || exit 1
   make install DESTDIR=${PKG} INSTALL_PROGRAM=install || exit 1
   
   install -m 644 etc/yp.conf ${PKG}/etc/yp.conf.new || exit 1
   mv ${PKG}/var/yp/nicknames ${PKG}/var/yp/nicknames.new || exit 1
-  
+
+  mkdir -p ${PKG}/usr/share/ypbind
+  install -pm0755 ${CWD}/ypbind-pre-setdomain \
+    ${PKG}/usr/share/ypbind/ypbind-pre-setdomain || exit 1
+  install -pm0755 ${CWD}/ypbind-post-waitbind \
+    ${PKG}/usr/share/ypbind/ypbind-post-waitbind || exit 1
+
   mkdir -p ${YPBDOCDIR}
   cp -a \
-    ABOUT-NLS AUTHORS COPYING ChangeLog NEWS README THANKS TODO \
+    ABOUT-NLS AUTHORS COPYING NEWS README THANKS TODO \
     ${YPBDOCDIR}/
+  [ -r ChangeLog ] && head -n 1000 ChangeLog > ${YPBDOCDIR}/ChangeLog
   ln -sf ../${NAME}-${VERSION}/ChangeLog.SB ${YPBDOCDIR}/ChangeLog.SB
 ) || exit 1
 
 ( cd ${YPSSRCDIR} || exit 1
   export CFLAGS="${SLKCFLAGS} -fpic"
-  autoconf || exit 1
+  autoreconf -ivf || exit 1
   SB_CONFIGURE \
-    --libexecdir=/usr/lib/yp \
+    --libexecdir=/usr/lib${LIBDIRSUFFIX}/yp \
     --enable-fqdn \
-    --enable-yppasswd || exit 1
+    --enable-checkroot || exit 1
 
   make || exit 1
   make install DESTDIR=${PKG} INSTALL_PROGRAM=install || exit 1
@@ -201,27 +206,52 @@ zcat ${CWD}/nsswitch.conf-nis.gz > ${PKG}/etc/nsswitch.conf-nis.new || exit 1
   
   mkdir -p ${YPSDOCDIR}
   cp -a \
-    AUTHORS COPYING ChangeLog NEWS README THANKS TODO \
+    AUTHORS COPYING NEWS README THANKS TODO \
     ${YPSDOCDIR}/
+  [ -r ChangeLog ] && head -n 1000 ChangeLog > ${YPSDOCDIR}/ChangeLog
   ln -sf ../${NAME}-${VERSION}/ChangeLog.SB ${YPSDOCDIR}/ChangeLog.SB
 ) || exit 1
 
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.yp.gz > \
-     ${PKG}/etc/rc.d/rc.yp.new || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.yp.new
+zcat ${CWD}/rc.yp.gz \
+  > ${PKG}/etc/rc.d/rc.yp.new || exit 1
+chmod 0644 ${PKG}/etc/rc.d/rc.yp.new
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/systemd/*.service ${PKG}/lib/systemd/system/ || exit 1
 
 rmdir ${PKG}/bin
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+mkdir -p ${PKG}/etc/default
+cat >${PKG}/etc/default/yppasswdd.new <<'EOF'
+# The passwd and shadow files are located under the specified
+# directory path. rpc.yppasswdd will use these files, not /etc/passwd
+# and /etc/shadow.
+#ETCDIR=/etc
+
+# This option tells rpc.yppasswdd to use a different source file
+# instead of /etc/passwd
+# You can't mix usage of this with ETCDIR
+#PASSWDFILE=/etc/passwd
+
+# This option tells rpc.yppasswdd to use a different source file
+# instead of /etc/passwd.
+# You can't mix usage of this with ETCDIR
+#SHADOWFILE=/etc/shadow
+
+# Additional arguments passed to yppasswd
+YPPASSWDD_ARGS=
+EOF
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-   AUTHORS COPYING README ChangeLog NEWS HANKS TODO ${CWD}/ChangeLog.SB \
+   AUTHORS COPYING README NEWS HANKS TODO ${CWD}/ChangeLog.SB \
    ${DOCDIR}/
-find ${PKG}/usr/doc/ -type d -print0 | xargs -0 chmod 0755
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${PKG}/usr/doc/ -type f -print0 | xargs -0 chmod 0644
 
 # Compress and link manpages, if any:
@@ -245,20 +275,18 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-    rm -f dir
-    gzip -9 *
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -272,34 +300,41 @@ config() {
   # Otherwise, we leave the .new copy for the admin to consider...
 }
 # Keep same perms on rc.yp.new:
-if [ -e etc/rc.d/rc.yp ]; then
-  cp -a etc/rc.d/rc.yp etc/rc.d/rc.yp.new.incoming
-  cat etc/rc.d/rc.yp.new > etc/rc.d/rc.yp.new.incoming
-  mv etc/rc.d/rc.yp.new.incoming etc/rc.d/rc.yp.new
+if [ -r etc/rc.d/rc.yp -a -r etc/rc.d/rc.yp.new ]; then
+  chmod --reference=etc/rc.d/rc.yp etc/rc.d/rc.yp.new
 fi
 
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  find var/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
+EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/patches
+  mkdir -p ${SBDIR}/{patches,systemd}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/rc.*.gz ${CWD}/*.conf-nis.gz \
-                 ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/rc.*.gz ${CWD}/*.conf-nis.gz ${CWD}/ypbind-{pre,post}-* \
+    ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
-  install -m0644 ${CWD}/patches/*.gz \
-                 ${SBDIR}/patches/
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  install -m0644 ${CWD}/systemd/*.* \
+    ${SBDIR}/systemd/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:

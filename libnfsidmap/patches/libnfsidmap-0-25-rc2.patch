@@ -1,0 +1,160 @@
+diff --git a/.gitignore b/.gitignore
+index 5454bef..6244609 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -28,4 +28,8 @@ umich_ldap.la
+ umich_ldap.lo
+ configure.in~
+ m4/
+-
++*.o
++cscope.*
++config.h
++config.h.in
++stamp-h1
+diff --git a/Makefile.am b/Makefile.am
+index 296e277..0832c1c 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -26,7 +26,6 @@ pkglib_LTLIBRARIES = nsswitch.la static.la $(UMICH_LDAP_LIB) $(GUMS_MAPPING_LIB)
+ #  		by this library.
+ 
+ libnfsidmap_la_SOURCES = libnfsidmap.c cfg.c strlcpy.c cfg.h nfsidmap_internal.h queue.h
+-libnfsidmap_la_CPPFLAGS = -DPATH_PLUGINS=\"$(pkglibdir)\"
+ libnfsidmap_la_LDFLAGS = -version-info 3:0:3
+ libnfsidmap_la_LIBADD = -ldl
+ 
+diff --git a/configure.in b/configure.in
+index c105988..7ad3e5f 100644
+--- a/configure.in
++++ b/configure.in
+@@ -36,7 +36,20 @@ if test "x$enable_gums" = "xyes" ; then
+ fi
+ AM_CONDITIONAL(ENABLE_GUMS, test "x$enable_gums" = "xyes")
+ 
++#Where do the Plugins live
++AC_ARG_WITH(pluginpath,
++    [AS_HELP_STRING([--with-pluginpath=/foo],[Causes the library to look in /foo instead of /usr/lib/libnfsidmap for plugins
++    ])],
++    path_plugins=$withval,
++    path_plugins=""
++    )
++if test -n "$path_plugins" ; then
++	AC_DEFINE_UNQUOTED(PATH_PLUGINS, "$path_plugins",
++		[Define this to change the plugins path])
++fi
++AM_CONDITIONAL(PATH_PLUGINS, test -n "$path_plugins")
+ 
++AC_CONFIG_HEADERS([./config.h])
+ # Checks for header files.
+ AC_HEADER_STDC
+ AC_CHECK_HEADERS([stdlib.h string.h unistd.h errno.h])
+diff --git a/libnfsidmap.c b/libnfsidmap.c
+index 5dc2652..57bb6c3 100644
+--- a/libnfsidmap.c
++++ b/libnfsidmap.c
+@@ -36,6 +36,8 @@
+  *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
++#include "config.h"
++
+ #include <sys/types.h>
+ #include <errno.h>
+ #include <unistd.h>
+@@ -50,6 +52,7 @@
+ #include <syslog.h>
+ #include <stdarg.h>
+ #include <dlfcn.h>
++#include <ctype.h>
+ #include "nfsidmap.h"
+ #include "nfsidmap_internal.h"
+ #include "cfg.h"
+@@ -207,7 +210,7 @@ out:
+ 		unload_plugins(plgns);
+ 	return ret;
+ }
+-int nfs4_cleanup_name_mapping()
++void nfs4_cleanup_name_mapping()
+ {
+ 	if (nfs4_plugins)
+ 		unload_plugins(nfs4_plugins);
+@@ -219,7 +222,6 @@ int nfs4_cleanup_name_mapping()
+ int nfs4_init_name_mapping(char *conffile)
+ {
+ 	int ret = -ENOENT;
+-	char *method;
+ 	int dflt = 0;
+ 	struct conf_list *nfs4_methods, *gss_methods;
+ 
+@@ -244,7 +246,7 @@ int nfs4_init_name_mapping(char *conffile)
+ 			default_domain = IDMAPD_DEFAULT_DOMAIN;
+ 		}
+ 	}
+-	IDMAP_LOG(1, ("libnfsidmap: using%s domain: %s\n",
++	IDMAP_LOG(1, ("libnfsidmap: using%s domain: %s",
+ 		(dflt ? " (default)" : ""), default_domain));
+ 
+ 	/* Get list of "local equivalent" realms.  Meaning the list of realms
+@@ -272,9 +274,30 @@ int nfs4_init_name_mapping(char *conffile)
+ 		local_realms->cnt++;
+ 	}
+ 
++	if (idmap_verbosity >= 1) {
++		struct conf_list_node *r;
++		char *buf = NULL;
++		int siz=0;
++
++		if (local_realms) {
++			TAILQ_FOREACH(r, &local_realms->fields, link) {
++				siz += (strlen(r->field)+4);
++			}
++			buf = malloc(siz);
++			if (buf) {
++				TAILQ_FOREACH(r, &local_realms->fields, link) {
++					sprintf(buf, "'%s' ", r->field);
++				}
++				IDMAP_LOG(1, ("libnfsidmap: Realms list: %s", buf));
++				free(buf);
++			}
++		} else 
++			IDMAP_LOG(1, ("libnfsidmap: Realms list: <NULL> "));
++	}
++
+ 	nfs4_methods = conf_get_list("Translation", "Method");
+ 	if (nfs4_methods) {
+-		IDMAP_LOG(1, ("libnfsidmap: processing 'Method' list\n"));
++		IDMAP_LOG(1, ("libnfsidmap: processing 'Method' list"));
+ 		if (load_plugins(nfs4_methods, &nfs4_plugins) == -1)
+ 			return -ENOENT;
+ 	} else {
+@@ -292,7 +315,7 @@ int nfs4_init_name_mapping(char *conffile)
+ 
+ 	gss_methods = conf_get_list("Translation", "GSS-Methods");
+ 	if (gss_methods) {
+-		IDMAP_LOG(1, ("libnfsidmap: processing 'GSS-Methods' list\n"));
++		IDMAP_LOG(1, ("libnfsidmap: processing 'GSS-Methods' list"));
+ 		if (load_plugins(gss_methods, &gss_plugins) == -1)
+ 			goto out;
+ 	}
+diff --git a/umich_ldap.c b/umich_ldap.c
+index f6204c3..f482b0a 100644
+--- a/umich_ldap.c
++++ b/umich_ldap.c
+@@ -1084,7 +1084,7 @@ get_canonical_hostname(const char *inname)
+ 	if (error) {
+ 		IDMAP_LOG(1, ("%s: getnameinfo for host '%s' failed (%d)\n",
+ 			  __FUNCTION__, inname));
+-		goto out_err;
++		goto out_free;
+ 	}
+ 	return_name = strdup (tmphost);
+ 
+@@ -1098,7 +1098,6 @@ static int
+ umichldap_init(void)
+ {
+ 	char *tssl, *canonicalize, *memberof;
+-	int missing_server = 0, missing_base = 0;
+ 	char missing_msg[128] = "";
+ 	char *server_in, *canon_name;
+ 

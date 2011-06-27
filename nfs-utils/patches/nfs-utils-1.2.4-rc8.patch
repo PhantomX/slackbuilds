@@ -1,0 +1,4491 @@
+diff -up nfs-utils-1.2.3/aclocal/keyutils.m4.orig nfs-utils-1.2.3/aclocal/keyutils.m4
+--- nfs-utils-1.2.3/aclocal/keyutils.m4.orig	2011-04-20 08:48:36.334265405 -0400
++++ nfs-utils-1.2.3/aclocal/keyutils.m4	2011-04-20 08:48:36.334265405 -0400
+@@ -0,0 +1,11 @@
++dnl Checks for keyutils library and headers
++dnl
++AC_DEFUN([AC_KEYUTILS], [
++
++  dnl Check for libkeyutils; do not add to LIBS if found
++  AC_CHECK_LIB([keyutils], [keyctl_instantiate], [LIBKEYUTILS=-lkeyutils], ,)
++  AC_SUBST(LIBKEYUTILS)
++
++  AC_CHECK_HEADERS([keyutils.h], ,
++  		   [AC_MSG_ERROR([keyutils.h header not found.])])
++])dnl
+diff -up nfs-utils-1.2.3/aclocal/libnfsidmap.m4.orig nfs-utils-1.2.3/aclocal/libnfsidmap.m4
+--- nfs-utils-1.2.3/aclocal/libnfsidmap.m4.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/aclocal/libnfsidmap.m4	2011-04-20 08:48:36.334265405 -0400
+@@ -14,4 +14,8 @@ AC_DEFUN([AC_LIBNFSIDMAP], [
+                [AC_DEFINE([HAVE_NFS4_SET_DEBUG], 1,
+                           [Define to 1 if you have the `nfs4_set_debug' function.])])
+ 
++  dnl only enable nfsidmap when libnfsidmap supports it
++  AC_CHECK_LIB([nfsidmap], [nfs4_owner_to_uid], [enable_nfsidmap=yes],
++               [enable_nfsidmap=no])
++
+ ])dnl
+diff -up nfs-utils-1.2.3/configure.ac.orig nfs-utils-1.2.3/configure.ac
+--- nfs-utils-1.2.3/configure.ac.orig	2011-04-20 08:48:17.900406953 -0400
++++ nfs-utils-1.2.3/configure.ac	2011-04-20 08:48:36.335265400 -0400
+@@ -140,11 +140,20 @@ AC_ARG_ENABLE(mount,
+ 	enable_mount=$enableval,
+ 	enable_mount=yes)
+ 	AM_CONDITIONAL(CONFIG_MOUNT, [test "$enable_mount" = "yes"])
++
++if test "$enable_mount" = yes; then
++	AC_ARG_ENABLE(libmount-mount,
++		[AC_HELP_STRING([--enable-libmount-mount],
++				[Link mount.nfs with libmount (EXPERIMENTAL)])],
++		enable_libmount=yes,
++		enable_libmount=no)
++fi
++
+ AC_ARG_ENABLE(tirpc,
+ 	[AC_HELP_STRING([--enable-tirpc],
+ 			[enable use of TI-RPC @<:@default=yes@:>@])],
+ 	enable_tirpc=$enableval,
+-	enable_tirpc='yes')
++	enable_tirpc='')
+ AC_ARG_ENABLE(ipv6,
+ 	[AC_HELP_STRING([--enable-ipv6],
+                         [enable support for IPv6 @<:@default=no@:>@])],
+@@ -255,6 +264,12 @@ if test "$enable_nfsv4" = yes; then
+   dnl check for nfsidmap libraries and headers
+   AC_LIBNFSIDMAP
+ 
++  dnl enable nfsidmap when its support by libnfsidmap
++  AM_CONDITIONAL(CONFIG_NFSIDMAP, [test "$enable_nfsidmap" = "yes"])
++
++  dnl check for the keyutils libraries and headers
++  AC_KEYUTILS
++
+   dnl librpcsecgss already has a dependency on libgssapi,
+   dnl but we need to make sure we get the right version
+   if test "$enable_gss" = yes; then
+@@ -287,6 +302,13 @@ AC_SUBST(LIBCRYPT)
+ AC_SUBST(LIBBSD)
+ AC_SUBST(LIBBLKID)
+ 
++if test "$enable_libmount" != no; then
++   AC_CHECK_LIB(mount, mnt_context_do_mount, [LIBMOUNT="-lmount"], AC_MSG_ERROR([libmount needed]))
++   AC_CHECK_HEADER(libmount/libmount.h, , AC_MSG_ERROR([Cannot find libmount header file libmount/libmount.h]))
++fi
++AM_CONDITIONAL(CONFIG_LIBMOUNT, [test "$enable_libmount" = "yes"])
++AC_SUBST(LIBMOUNT)
++
+ if test "$enable_gss" = yes; then
+   dnl 'gss' requires getnameinfo - at least for gssd_proc.c
+   AC_CHECK_FUNC([getnameinfo], , [AC_MSG_ERROR([GSSAPI support requires 'getnameinfo' function])])
+@@ -446,6 +468,7 @@ AC_CONFIG_FILES([
+ 	utils/mountd/Makefile
+ 	utils/nfsd/Makefile
+ 	utils/nfsstat/Makefile
++	utils/nfsidmap/Makefile
+ 	utils/showmount/Makefile
+ 	utils/statd/Makefile
+ 	tests/Makefile
+diff -up nfs-utils-1.2.3/.gitignore.orig nfs-utils-1.2.3/.gitignore
+--- nfs-utils-1.2.3/.gitignore.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/.gitignore	2011-04-20 08:48:36.333265412 -0400
+@@ -64,6 +64,7 @@ tests/nsm_client/nlm_sm_inter.h
+ tests/nsm_client/nlm_sm_inter_clnt.c
+ tests/nsm_client/nlm_sm_inter_svc.c
+ tests/nsm_client/nlm_sm_inter_xdr.c
++utils/nfsidmap/nfsidmap
+ # cscope database files
+ cscope.*
+ # generic editor backup et al
+diff -up nfs-utils-1.2.3/support/export/client.c.orig nfs-utils-1.2.3/support/export/client.c
+--- nfs-utils-1.2.3/support/export/client.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/export/client.c	2011-04-20 08:48:36.336265402 -0400
+@@ -178,6 +178,7 @@ out_badprefix:
+ static int
+ init_netmask6(nfs_client *UNUSED(clp), const char *UNUSED(slash))
+ {
++	return 0;
+ }
+ #endif	/* IPV6_SUPPORTED */
+ 
+diff -up nfs-utils-1.2.3/support/export/export.c.orig nfs-utils-1.2.3/support/export/export.c
+--- nfs-utils-1.2.3/support/export/export.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/export/export.c	2011-04-20 08:48:36.336265402 -0400
+@@ -38,6 +38,7 @@ export_free(nfs_export *exp)
+ 	xfree(exp->m_export.e_sqgids);
+ 	free(exp->m_export.e_mountpoint);
+ 	free(exp->m_export.e_fslocdata);
++	free(exp->m_export.e_uuid);
+ 
+ 	xfree(exp->m_export.e_hostname);
+ 	xfree(exp);
+diff -up nfs-utils-1.2.3/support/export/hostname.c.orig nfs-utils-1.2.3/support/export/hostname.c
+--- nfs-utils-1.2.3/support/export/hostname.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/export/hostname.c	2011-04-20 08:48:36.337265398 -0400
+@@ -30,10 +30,6 @@
+ #include "sockaddr.h"
+ #include "exportfs.h"
+ 
+-#ifndef HAVE_DECL_AI_ADDRCONFIG
+-#define AI_ADDRCONFIG	0
+-#endif
+-
+ /**
+  * host_ntop - generate presentation address given a sockaddr
+  * @sap: pointer to socket address
+@@ -170,7 +166,7 @@ host_addrinfo(const char *hostname)
+ #endif
+ 		/* don't return duplicates */
+ 		.ai_protocol	= (int)IPPROTO_UDP,
+-		.ai_flags	= AI_ADDRCONFIG | AI_CANONNAME,
++		.ai_flags	= AI_CANONNAME,
+ 	};
+ 	int error;
+ 
+diff -up nfs-utils-1.2.3/support/include/exportfs.h.orig nfs-utils-1.2.3/support/include/exportfs.h
+--- nfs-utils-1.2.3/support/include/exportfs.h.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/include/exportfs.h	2011-04-20 08:48:36.338265391 -0400
+@@ -100,6 +100,7 @@ typedef struct mexport {
+ } nfs_export;
+ 
+ #define HASH_TABLE_SIZE 1021
++#define DEFAULT_TTL	(30 * 60)
+ 
+ typedef struct _exp_hash_entry {
+ 	nfs_export * p_first;
+diff -up nfs-utils-1.2.3/support/include/misc.h.orig nfs-utils-1.2.3/support/include/misc.h
+--- nfs-utils-1.2.3/support/include/misc.h.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/include/misc.h	2011-04-20 08:48:36.338265391 -0400
+@@ -17,4 +17,7 @@ int	weakrandomkey(unsigned char *keyout,
+ 
+ extern int is_mountpoint(char *path);
+ 
++/* size of the file pointer buffers for rpc procfs files */
++#define RPC_CHAN_BUF_SIZE 32768
++
+ #endif /* MISC_H */
+diff -up nfs-utils-1.2.3/support/include/nfslib.h.orig nfs-utils-1.2.3/support/include/nfslib.h
+--- nfs-utils-1.2.3/support/include/nfslib.h.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/include/nfslib.h	2011-04-20 08:48:36.339265382 -0400
+@@ -25,6 +25,12 @@
+ #ifndef _PATH_EXPORTS
+ #define _PATH_EXPORTS		"/etc/exports"
+ #endif
++#ifndef _PATH_EXPORTS_D
++#define _PATH_EXPORTS_D         "/etc/exports.d"
++#endif
++#ifndef _EXT_EXPORT
++#define _EXT_EXPORT             ".exports"
++#endif
+ #ifndef _PATH_IDMAPDCONF
+ #define _PATH_IDMAPDCONF	"/etc/idmapd.conf"
+ #endif
+@@ -89,6 +95,7 @@ struct exportent {
+ 	char *          e_fslocdata;
+ 	char *		e_uuid;
+ 	struct sec_entry e_secinfo[SECFLAVOR_COUNT+1];
++	unsigned int	e_ttl;
+ };
+ 
+ struct rmtabent {
+@@ -163,6 +170,12 @@ void closeall(int min);
+ int			svctcp_socket (u_long __number, int __reuse);
+ int			svcudp_socket (u_long __number);
+ 
++/* Misc shared code prototypes */
++size_t  strlcat(char *, const char *, size_t);
++size_t  strlcpy(char *, const char *, size_t);
++ssize_t atomicio(ssize_t (*f) (int, void*, size_t),
++		 int, void *, size_t);
++
+ 
+ #define UNUSED(x) UNUSED_ ## x __attribute__((unused))
+ 
+diff -up nfs-utils-1.2.3/support/include/rpcmisc.h.orig nfs-utils-1.2.3/support/include/rpcmisc.h
+--- nfs-utils-1.2.3/support/include/rpcmisc.h.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/include/rpcmisc.h	2011-04-20 08:48:36.339265382 -0400
+@@ -31,7 +31,7 @@ struct rpc_dentry {
+ 
+ struct rpc_dtable {
+ 	struct rpc_dentry *entries;
+-	int		nproc;
++	rpcproc_t		nproc;
+ };
+ 
+ #define dtable_ent(func, vers, arg_type, res_type) \
+diff -up nfs-utils-1.2.3/support/nfs/atomicio.c.orig nfs-utils-1.2.3/support/nfs/atomicio.c
+--- nfs-utils-1.2.3/support/nfs/atomicio.c.orig	2011-04-20 08:48:36.340265372 -0400
++++ nfs-utils-1.2.3/support/nfs/atomicio.c	2011-04-20 08:48:36.340265372 -0400
+@@ -0,0 +1,54 @@
++/*
++ * Copyright (c) 2002 Marius Aamodt Eriksen <marius@monkey.org>
++ * Copyright (c) 1995,1999 Theo de Raadt.  All rights reserved.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
++ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
++ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
++ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
++ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
++ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
++ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include <sys/types.h>
++#include <unistd.h>
++#include <errno.h>
++
++/*
++ * ensure all of data on socket comes through. f==read || f==write
++ */
++ssize_t atomicio(ssize_t(*f) (int, void *, size_t), int fd, void *_s, size_t n)
++{
++	char *s = _s;
++	ssize_t res, pos = 0;
++
++	while ((ssize_t)n > pos) {
++		res = (f) (fd, s + pos, n - pos);
++		switch (res) {
++		case -1:
++			if (errno == EINTR || errno == EAGAIN)
++				continue;
++		case 0:
++			if (pos != 0)
++				return pos;
++			return res;
++		default:
++			pos += res;
++		}
++	}
++	return pos;
++}
+diff -up nfs-utils-1.2.3/support/nfs/conffile.c.orig nfs-utils-1.2.3/support/nfs/conffile.c
+--- nfs-utils-1.2.3/support/nfs/conffile.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/nfs/conffile.c	2011-04-20 08:48:36.341265363 -0400
+@@ -251,6 +251,7 @@ conf_parse_line(int trans, char *line, s
+ 		}
+ 		/* Strip off any blanks before ']' */
+ 		val = line;
++		j=0;
+ 		while (*val && !isblank(*val)) 
+ 			val++, j++;
+ 		if (*val)
+@@ -271,9 +272,9 @@ conf_parse_line(int trans, char *line, s
+ 		if (ptr == NULL)
+ 			return;
+ 		line = ++ptr;
+-		while (*ptr && *ptr != '"')
++		while (*ptr && *ptr != '"' && *ptr != ']')
+ 			ptr++;
+-		if (*ptr == '\0') {
++		if (*ptr == '\0' || *ptr == ']') {
+ 			xlog_warn("config file error: line %d: "
+  				"non-matched '\"', ignoring until next section", ln);
+ 		}  else {
+diff -up nfs-utils-1.2.3/support/nfs/exports.c.orig nfs-utils-1.2.3/support/nfs/exports.c
+--- nfs-utils-1.2.3/support/nfs/exports.c.orig	2011-04-20 08:48:17.904406924 -0400
++++ nfs-utils-1.2.3/support/nfs/exports.c	2011-04-20 08:48:36.342265353 -0400
+@@ -107,6 +107,7 @@ static void init_exportent (struct expor
+ 	ee->e_nsquids = 0;
+ 	ee->e_nsqgids = 0;
+ 	ee->e_uuid = NULL;
++	ee->e_ttl = DEFAULT_TTL;
+ }
+ 
+ struct exportent *
+@@ -332,6 +333,8 @@ dupexportent(struct exportent *dst, stru
+ 		dst->e_mountpoint = strdup(src->e_mountpoint);
+ 	if (src->e_fslocdata)
+ 		dst->e_fslocdata = strdup(src->e_fslocdata);
++	if (src->e_uuid)
++		dst->e_uuid = strdup(src->e_uuid);
+ 	dst->e_hostname = NULL;
+ }
+ 
+diff -up nfs-utils-1.2.3/support/nfs/Makefile.am.orig nfs-utils-1.2.3/support/nfs/Makefile.am
+--- nfs-utils-1.2.3/support/nfs/Makefile.am.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/nfs/Makefile.am	2011-04-20 08:48:36.340265372 -0400
+@@ -5,7 +5,7 @@ libnfs_a_SOURCES = exports.c rmtab.c xio
+ 		   xlog.c xcommon.c wildmat.c nfsclient.c \
+ 		   nfsexport.c getfh.c nfsctl.c rpc_socket.c getport.c \
+ 		   svc_socket.c cacheio.c closeall.c nfs_mntent.c conffile.c \
+-		   svc_create.c
++		   svc_create.c atomicio.c strlcpy.c strlcat.c
+ 
+ MAINTAINERCLEANFILES = Makefile.in
+ 
+diff -up nfs-utils-1.2.3/support/nfs/rpcdispatch.c.orig nfs-utils-1.2.3/support/nfs/rpcdispatch.c
+--- nfs-utils-1.2.3/support/nfs/rpcdispatch.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/nfs/rpcdispatch.c	2011-04-20 08:48:36.343265345 -0400
+@@ -32,7 +32,12 @@ rpc_dispatch(struct svc_req *rqstp, SVCX
+ 		return;
+ 	}
+ 	dtable += (rqstp->rq_vers - 1);
+-	if (((int)rqstp->rq_proc) > dtable->nproc) {
++	if (rqstp->rq_proc > dtable->nproc) {
++		svcerr_noproc(transp);
++		return;
++	}
++
++	if (dtable->nproc <= rqstp->rq_proc) {
+ 		svcerr_noproc(transp);
+ 		return;
+ 	}
+diff -up nfs-utils-1.2.3/support/nfs/strlcat.c.orig nfs-utils-1.2.3/support/nfs/strlcat.c
+--- nfs-utils-1.2.3/support/nfs/strlcat.c.orig	2011-04-20 08:48:36.343265345 -0400
++++ nfs-utils-1.2.3/support/nfs/strlcat.c	2011-04-20 08:48:36.343265345 -0400
+@@ -0,0 +1,76 @@
++/*	$OpenBSD: strlcat.c,v 1.8 2001/05/13 15:40:15 deraadt Exp $	*/
++
++/*
++ * Copyright (c) 1998 Todd C. Miller <Todd.Miller@courtesan.com>
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ * 3. The name of the author may not be used to endorse or promote products
++ *    derived from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
++ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
++ * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
++ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
++ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
++ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
++ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
++ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#if defined(LIBC_SCCS) && !defined(lint)
++static char *rcsid = "$OpenBSD: strlcat.c,v 1.8 2001/05/13 15:40:15 deraadt Exp $";
++#endif /* LIBC_SCCS and not lint */
++
++#include <sys/types.h>
++#include <string.h>
++
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif /* HAVE_CONFIG_H */
++
++/*
++ * Appends src to string dst of size siz (unlike strncat, siz is the
++ * full size of dst, not space left).  At most siz-1 characters
++ * will be copied.  Always NUL terminates (unless siz <= strlen(dst)).
++ * Returns strlen(src) + MIN(siz, strlen(initial dst)).
++ * If retval >= siz, truncation occurred.
++ */
++size_t
++strlcat(char *dst,
++	const char *src,
++	size_t siz)
++{
++	register char *d = dst;
++	register const char *s = src;
++	register size_t n = siz;
++	size_t dlen;
++
++	/* Find the end of dst and adjust bytes left but don't go past end */
++	while (n-- != 0 && *d != '\0')
++		d++;
++	dlen = d - dst;
++	n = siz - dlen;
++
++	if (n == 0)
++		return(dlen + strlen(s));
++	while (*s != '\0') {
++		if (n != 1) {
++			*d++ = *s;
++			n--;
++		}
++		s++;
++	}
++	*d = '\0';
++
++	return(dlen + (s - src));	/* count does not include NUL */
++}
+diff -up nfs-utils-1.2.3/support/nfs/strlcpy.c.orig nfs-utils-1.2.3/support/nfs/strlcpy.c
+--- nfs-utils-1.2.3/support/nfs/strlcpy.c.orig	2011-04-20 08:48:36.344265339 -0400
++++ nfs-utils-1.2.3/support/nfs/strlcpy.c	2011-04-20 08:48:36.344265339 -0400
+@@ -0,0 +1,72 @@
++/*	$OpenBSD: strlcpy.c,v 1.5 2001/05/13 15:40:16 deraadt Exp $	*/
++
++/*
++ * Copyright (c) 1998 Todd C. Miller <Todd.Miller@courtesan.com>
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ * 3. The name of the author may not be used to endorse or promote products
++ *    derived from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
++ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
++ * AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL
++ * THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
++ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
++ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
++ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
++ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
++ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#if defined(LIBC_SCCS) && !defined(lint)
++static char *rcsid = "$OpenBSD: strlcpy.c,v 1.5 2001/05/13 15:40:16 deraadt Exp $";
++#endif /* LIBC_SCCS and not lint */
++
++#include <sys/types.h>
++#include <string.h>
++
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif /* HAVE_CONFIG_H */
++
++/*
++ * Copy src to string dst of size siz.  At most siz-1 characters
++ * will be copied.  Always NUL terminates (unless siz == 0).
++ * Returns strlen(src); if retval >= siz, truncation occurred.
++ */
++size_t
++strlcpy(char *dst,
++	const char *src,
++	size_t siz)
++{
++	register char *d = dst;
++	register const char *s = src;
++	register size_t n = siz;
++
++	/* Copy as many bytes as will fit */
++	if (n != 0 && --n != 0) {
++		do {
++			if ((*d++ = *s++) == 0)
++				break;
++		} while (--n != 0);
++	}
++
++	/* Not enough room in dst, add NUL and traverse rest of src */
++	if (n == 0) {
++		if (siz != 0)
++			*d = '\0';		/* NUL-terminate dst */
++		while (*s++)
++			;
++	}
++
++	return(s - src - 1);	/* count does not include NUL */
++}
+diff -up nfs-utils-1.2.3/support/nfs/svc_create.c.orig nfs-utils-1.2.3/support/nfs/svc_create.c
+--- nfs-utils-1.2.3/support/nfs/svc_create.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/support/nfs/svc_create.c	2011-04-20 08:48:36.344265339 -0400
+@@ -27,6 +27,7 @@
+ #include <memory.h>
+ #include <signal.h>
+ #include <unistd.h>
++#include <errno.h>
+ #include <netdb.h>
+ 
+ #include <netinet/in.h>
+@@ -41,11 +42,68 @@
+ #include "tcpwrapper.h"
+ #endif
+ 
++#include "sockaddr.h"
+ #include "rpcmisc.h"
+ #include "xlog.h"
+ 
+ #ifdef HAVE_LIBTIRPC
+ 
++#define SVC_CREATE_XPRT_CACHE_SIZE	(8)
++static SVCXPRT *svc_create_xprt_cache[SVC_CREATE_XPRT_CACHE_SIZE] = { NULL, };
++
++/*
++ * Cache an SVC xprt, in case there are more programs or versions to
++ * register against it.
++ */
++static void
++svc_create_cache_xprt(SVCXPRT *xprt)
++{
++	unsigned int i;
++
++	/* Check if we've already got this one... */
++	for (i = 0; i < SVC_CREATE_XPRT_CACHE_SIZE; i++)
++		if (svc_create_xprt_cache[i] == xprt)
++			return;
++
++	/* No, we don't.  Cache it. */
++	for (i = 0; i < SVC_CREATE_XPRT_CACHE_SIZE; i++)
++		if (svc_create_xprt_cache[i] == NULL) {
++			svc_create_xprt_cache[i] = xprt;
++			return;
++		}
++
++	xlog(L_ERROR, "%s: Failed to cache an xprt", __func__);
++}
++
++/*
++ * Find a previously cached SVC xprt structure with the given bind address
++ * and transport semantics.
++ *
++ * Returns pointer to a cached SVC xprt.
++ *
++ * If no matching SVC XPRT can be found, NULL is returned.
++ */
++static SVCXPRT *
++svc_create_find_xprt(const struct sockaddr *bindaddr, const struct netconfig *nconf)
++{
++	unsigned int i;
++
++	for (i = 0; i < SVC_CREATE_XPRT_CACHE_SIZE; i++) {
++		SVCXPRT *xprt = svc_create_xprt_cache[i];
++		struct sockaddr *sap;
++
++		if (xprt == NULL)
++			continue;
++		if (strcmp(nconf->nc_netid, xprt->xp_netid) != 0)
++			continue;
++		sap = (struct sockaddr *)xprt->xp_ltaddr.buf;
++		if (!nfs_compare_sockaddr(bindaddr, sap))
++			continue;
++		return xprt;
++	}
++	return NULL;
++}
++
+ /*
+  * Set up an appropriate bind address, given @port and @nconf.
+  *
+@@ -98,17 +156,113 @@ svc_create_bindaddr(struct netconfig *nc
+ 	return ai;
+ }
+ 
++/*
++ * Create a listener socket on a specific bindaddr, and set
++ * special socket options to allow it to share the same port
++ * as other listeners.
++ *
++ * Returns an open, bound, and possibly listening network
++ * socket on success.
++ *
++ * Otherwise returns -1 if some error occurs.
++ */
++static int
++svc_create_sock(const struct sockaddr *sap, socklen_t salen,
++		struct netconfig *nconf)
++{
++	int fd, type, protocol;
++	int one = 1;
++
++	switch(nconf->nc_semantics) {
++	case NC_TPI_CLTS:
++		type = SOCK_DGRAM;
++		break;
++	case NC_TPI_COTS_ORD:
++		type = SOCK_STREAM;
++		break;
++	default:
++		xlog(D_GENERAL, "%s: Unrecognized bind address semantics: %u",
++			__func__, nconf->nc_semantics);
++		return -1;
++	}
++
++	if (strcmp(nconf->nc_proto, NC_UDP) == 0)
++		protocol = (int)IPPROTO_UDP;
++	else if (strcmp(nconf->nc_proto, NC_TCP) == 0)
++		protocol = (int)IPPROTO_TCP;
++	else {
++		xlog(D_GENERAL, "%s: Unrecognized bind address protocol: %s",
++			__func__, nconf->nc_proto);
++		return -1;
++	}
++
++	fd = socket((int)sap->sa_family, type, protocol);
++	if (fd == -1) {
++		xlog(L_ERROR, "Could not make a socket: (%d) %m",
++			errno);
++		return -1;
++	}
++
++#ifdef IPV6_SUPPORTED
++	if (sap->sa_family == AF_INET6) {
++		if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
++				&one, sizeof(one)) == -1) {
++			xlog(L_ERROR, "Failed to set IPV6_V6ONLY: (%d) %m",
++				errno);
++			(void)close(fd);
++			return -1;
++		}
++	}
++#endif	/* IPV6_SUPPORTED */
++
++	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
++		       &one, sizeof(one)) == -1) {
++		xlog(L_ERROR, "Failed to set SO_REUSEADDR: (%d) %m",
++			errno);
++		(void)close(fd);
++		return -1;
++	}
++
++	if (bind(fd, sap, salen) == -1) {
++		xlog(L_ERROR, "Could not bind socket: (%d) %m",
++			errno);
++		(void)close(fd);
++		return -1;
++	}
++
++	if (nconf->nc_semantics == NC_TPI_COTS_ORD)
++		if (listen(fd, SOMAXCONN) == -1) {
++			xlog(L_ERROR, "Could not listen on socket: (%d) %m",
++				errno);
++			(void)close(fd);
++			return -1;
++		}
++
++	return fd;
++}
++
++/*
++ * The simple case is allowing the TI-RPC library to create a
++ * transport itself, given just the bind address and transport
++ * semantics.
++ *
++ * Our local xprt cache is ignored in this path, since the
++ * caller is not interested in sharing listeners or ports, and
++ * the library automatically avoids ports already in use.
++ *
++ * Returns the count of started listeners (one or zero).
++ */
+ static unsigned int
+-svc_create_nconf(const char *name, const rpcprog_t program,
++svc_create_nconf_rand_port(const char *name, const rpcprog_t program,
+ 		const rpcvers_t version,
+ 		void (*dispatch)(struct svc_req *, SVCXPRT *),
+-		const uint16_t port, struct netconfig *nconf)
++		struct netconfig *nconf)
+ {
+ 	struct t_bind bindaddr;
+ 	struct addrinfo *ai;
+ 	SVCXPRT	*xprt;
+ 
+-	ai = svc_create_bindaddr(nconf, port);
++	ai = svc_create_bindaddr(nconf, 0);
+ 	if (ai == NULL)
+ 		return 0;
+ 
+@@ -119,7 +273,7 @@ svc_create_nconf(const char *name, const
+ 	freeaddrinfo(ai);
+ 	if (xprt == NULL) {
+ 		xlog(D_GENERAL, "Failed to create listener xprt "
+-				"(%s, %u, %s)", name, version, nconf->nc_netid);
++			"(%s, %u, %s)", name, version, nconf->nc_netid);
+ 		return 0;
+ 	}
+ 
+@@ -133,6 +287,93 @@ svc_create_nconf(const char *name, const
+ 	return 1;
+ }
+ 
++/*
++ * If a port is specified on the command line, that port value will be
++ * the same for all listeners created here.  Create each listener
++ * socket in advance and set SO_REUSEADDR, rather than allowing the
++ * RPC library to create the listeners for us on a randomly chosen
++ * port via svc_tli_create(RPC_ANYFD).
++ *
++ * Some callers want to listen for more than one RPC version using the
++ * same port number.  For example, mountd could want to listen for MNT
++ * version 1, 2, and 3 requests.  This means mountd must use the same
++ * set of listener sockets for multiple RPC versions, since, on one
++ * system, you can't have two listener sockets with the exact same
++ * bind address (and port) and transport protocol.
++ *
++ * To accomplish this, this function caches xprts as they are created.
++ * This cache is checked to see if a previously created xprt can be
++ * used, before creating a new xprt for this [program, version].  If
++ * there is a cached xprt with the same bindaddr and transport
++ * semantics, we simply register the new version with that xprt,
++ * rather than creating a fresh xprt for it.
++ *
++ * The xprt cache implemented here is local to a process.  Two
++ * separate RPC daemons can not share a set of listeners.
++ *
++ * Returns the count of started listeners (one or zero).
++ */
++static unsigned int
++svc_create_nconf_fixed_port(const char *name, const rpcprog_t program,
++		const rpcvers_t version,
++		void (*dispatch)(struct svc_req *, SVCXPRT *),
++		const uint16_t port, struct netconfig *nconf)
++{
++	struct addrinfo *ai;
++	SVCXPRT	*xprt;
++
++	ai = svc_create_bindaddr(nconf, port);
++	if (ai == NULL)
++		return 0;
++
++	xprt = svc_create_find_xprt(ai->ai_addr, nconf);
++	if (xprt == NULL) {
++		int fd;
++
++		fd = svc_create_sock(ai->ai_addr, ai->ai_addrlen, nconf);
++		if (fd == -1)
++			goto out_free;
++
++		xprt = svc_tli_create(fd, nconf, NULL, 0, 0);
++		if (xprt == NULL) {
++			xlog(D_GENERAL, "Failed to create listener xprt "
++				"(%s, %u, %s)", name, version, nconf->nc_netid);
++			(void)close(fd);
++			goto out_free;
++		}
++	}
++
++	if (!svc_reg(xprt, program, version, dispatch, nconf)) {
++		/* svc_reg(3) destroys @xprt in this case */
++		xlog(D_GENERAL, "Failed to register (%s, %u, %s)",
++				name, version, nconf->nc_netid);
++		goto out_free;
++	}
++
++	svc_create_cache_xprt(xprt);
++
++	freeaddrinfo(ai);
++	return 1;
++
++out_free:
++	freeaddrinfo(ai);
++	return 0;
++}
++
++static unsigned int
++svc_create_nconf(const char *name, const rpcprog_t program,
++		const rpcvers_t version,
++		void (*dispatch)(struct svc_req *, SVCXPRT *),
++		const uint16_t port, struct netconfig *nconf)
++{
++	if (port != 0)
++		return svc_create_nconf_fixed_port(name, program,
++			version, dispatch, port, nconf);
++
++	return svc_create_nconf_rand_port(name, program,
++			version, dispatch, nconf);
++}
++
+ /**
+  * nfs_svc_create - start up RPC svc listeners
+  * @name: C string containing name of new service
+@@ -145,8 +386,7 @@ svc_create_nconf(const char *name, const
+  * the RPC dispatcher.  Returns the number of started network transports.
+  */
+ unsigned int
+-nfs_svc_create(__attribute__((unused)) char *name,
+-		const rpcprog_t program, const rpcvers_t version,
++nfs_svc_create(char *name, const rpcprog_t program, const rpcvers_t version,
+ 		void (*dispatch)(struct svc_req *, SVCXPRT *),
+ 		const uint16_t port)
+ {
+diff -up nfs-utils-1.2.3/support/nsm/file.c.orig nfs-utils-1.2.3/support/nsm/file.c
+--- nfs-utils-1.2.3/support/nsm/file.c.orig	2011-04-20 08:48:17.901406945 -0400
++++ nfs-utils-1.2.3/support/nsm/file.c	2011-04-20 08:48:36.345265332 -0400
+@@ -127,7 +127,7 @@ exact_error_check(const ssize_t len, con
+  * containing an appropriate pathname, or NULL if an error
+  * occurs.  Caller must free the returned result with free(3).
+  */
+-__attribute_malloc__
++__attribute__((__malloc__))
+ static char *
+ nsm_make_record_pathname(const char *directory, const char *hostname)
+ {
+@@ -175,7 +175,7 @@ nsm_make_record_pathname(const char *dir
+  * containing an appropriate pathname, or NULL if an error
+  * occurs.  Caller must free the returned result with free(3).
+  */
+-__attribute_malloc__
++__attribute__((__malloc__))
+ static char *
+ nsm_make_pathname(const char *directory)
+ {
+@@ -205,7 +205,7 @@ nsm_make_pathname(const char *directory)
+  * containing an appropriate pathname, or NULL if an error
+  * occurs.  Caller must free the returned result with free(3).
+  */
+-__attribute_malloc__
++__attribute__((__malloc__))
+ static char *
+ nsm_make_temp_pathname(const char *pathname)
+ {
+@@ -422,7 +422,7 @@ nsm_drop_privileges(const int pidfd)
+ 	 */
+         if (prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0) == -1) {
+                 xlog(L_ERROR, "prctl(PR_SET_KEEPCAPS) failed: %m");
+-		return 0;
++		return false;
+ 	}
+ 
+ 	if (setgroups(0, NULL) == -1) {
+@@ -569,9 +569,8 @@ nsm_retire_monitored_hosts(void)
+ 
+ 	while ((de = readdir(dir)) != NULL) {
+ 		char *src, *dst;
++		struct stat stb;
+ 
+-		if (de->d_type != (unsigned char)DT_REG)
+-			continue;
+ 		if (de->d_name[0] == '.')
+ 			continue;
+ 
+@@ -581,6 +580,20 @@ nsm_retire_monitored_hosts(void)
+ 			continue;
+ 		}
+ 
++		/* NB: not all file systems fill in d_type correctly */
++		if (lstat(src, &stb) == -1) {
++			xlog_warn("Bad monitor file %s, skipping: %m",
++					de->d_name);
++			free(src);
++			continue;
++		}
++		if (!S_ISREG(stb.st_mode)) {
++			xlog(D_GENERAL, "Skipping non-regular file %s",
++					de->d_name);
++			free(src);
++			continue;
++		}
++
+ 		dst = nsm_make_record_pathname(NSM_NOTIFY_DIR, de->d_name);
+ 		if (dst == NULL) {
+ 			free(src);
+@@ -635,7 +648,7 @@ nsm_priv_to_hex(const char *priv, char *
+ /*
+  * Returns the length in bytes of the created record.
+  */
+-__attribute_noinline__
++__attribute__((__noinline__))
+ static size_t
+ nsm_create_monitor_record(char *buf, const size_t buflen,
+ 		const struct sockaddr *sap, const struct mon *m)
+@@ -785,7 +798,7 @@ out:
+ 	return result;
+ }
+ 
+-__attribute_noinline__
++__attribute__((__noinline__))
+ static _Bool
+ nsm_parse_line(char *line, struct sockaddr_in *sin, struct mon *m)
+ {
+@@ -847,7 +860,7 @@ nsm_read_line(const char *hostname, cons
+ }
+ 
+ /*
+- * Given a filename, reads data from a file under NSM_MONITOR_DIR
++ * Given a filename, reads data from a file under "directory"
+  * and invokes @func so caller can populate their in-core
+  * database with this data.
+  */
+@@ -864,10 +877,15 @@ nsm_load_host(const char *directory, con
+ 	if (path == NULL)
+ 		goto out_err;
+ 
+-	if (stat(path, &stb) == -1) {
++	if (lstat(path, &stb) == -1) {
+ 		xlog(L_ERROR, "Failed to stat %s: %m", path);
+ 		goto out_freepath;
+ 	}
++	if (!S_ISREG(stb.st_mode)) {
++		xlog(D_GENERAL, "Skipping non-regular file %s",
++				path);
++		goto out_freepath;
++	}
+ 
+ 	f = fopen(path, "r");
+ 	if (f == NULL) {
+@@ -914,8 +932,6 @@ nsm_load_dir(const char *directory, nsm_
+ 	}
+ 
+ 	while ((de = readdir(dir)) != NULL) {
+-		if (de->d_type != (unsigned char)DT_REG)
+-			continue;
+ 		if (de->d_name[0] == '.')
+ 			continue;
+ 
+diff -up nfs-utils-1.2.3/tests/nsm_client/nsm_client.c.orig nfs-utils-1.2.3/tests/nsm_client/nsm_client.c
+--- nfs-utils-1.2.3/tests/nsm_client/nsm_client.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/tests/nsm_client/nsm_client.c	2011-04-20 08:48:36.346265324 -0400
+@@ -205,7 +205,7 @@ nsm_client_get_rpcclient(const char *nod
+ {
+ 	unsigned short		port;
+ 	struct addrinfo		*ai;
+-	struct addrinfo		hints = { .ai_flags	= AI_ADDRCONFIG };
++	struct addrinfo		hints = { };
+ 	int			err;
+ 	CLIENT			*client = NULL;
+ 
+diff -up nfs-utils-1.2.3/utils/exportfs/exportfs.c.orig nfs-utils-1.2.3/utils/exportfs/exportfs.c
+--- nfs-utils-1.2.3/utils/exportfs/exportfs.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/exportfs/exportfs.c	2011-04-20 08:48:36.347265316 -0400
+@@ -25,6 +25,7 @@
+ #include <fcntl.h>
+ #include <netdb.h>
+ #include <errno.h>
++#include <dirent.h>
+ 
+ #include "sockaddr.h"
+ #include "misc.h"
+@@ -41,6 +42,7 @@ static void	error(nfs_export *exp, int e
+ static void	usage(const char *progname);
+ static void	validate_export(nfs_export *exp);
+ static int	matchhostname(const char *hostname1, const char *hostname2);
++static void	export_d_read(const char *dname);
+ 
+ int
+ main(int argc, char **argv)
+@@ -127,8 +129,10 @@ main(int argc, char **argv)
+ 			return 0;
+ 		}
+ 	}
+-	if (f_export && ! f_ignore)
++	if (f_export && ! f_ignore) {
+ 		export_read(_PATH_EXPORTS);
++		export_d_read(_PATH_EXPORTS_D);
++	}
+ 	if (f_export) {
+ 		if (f_all)
+ 			export_all(f_verbose);
+@@ -246,7 +250,7 @@ static void
+ exportfs(char *arg, char *options, int verbose)
+ {
+ 	struct exportent *eep;
+-	nfs_export	*exp;
++	nfs_export	*exp = NULL;
+ 	struct addrinfo	*ai = NULL;
+ 	char		*path;
+ 	char		*hname = arg;
+@@ -485,6 +489,59 @@ out:
+ 	return result;
+ }
+ 
++/* Based on mnt_table_parse_dir() in
++   util-linux-ng/shlibs/mount/src/tab_parse.c */
++static void
++export_d_read(const char *dname)
++{
++	int n = 0, i;
++	struct dirent **namelist = NULL;
++
++
++	n = scandir(dname, &namelist, NULL, versionsort);
++	if (n < 0)
++		xlog(L_NOTICE, "scandir %s: %s\n", dname, strerror(errno));
++	else if (n == 0)
++		return;
++
++	for (i = 0; i < n; i++) {
++		struct dirent *d = namelist[i];
++		size_t namesz;
++		char fname[PATH_MAX + 1];
++		int fname_len;
++
++
++		if (d->d_type != DT_UNKNOWN 
++		    && d->d_type != DT_REG
++		    && d->d_type != DT_LNK)
++			continue;
++		if (*d->d_name == '.')
++			continue;
++
++#define _EXT_EXPORT_SIZ   (sizeof(_EXT_EXPORT) - 1)
++		namesz = strlen(d->d_name);
++		if (!namesz 
++		    || namesz < _EXT_EXPORT_SIZ + 1
++		    || strcmp(d->d_name + (namesz - _EXT_EXPORT_SIZ),
++			      _EXT_EXPORT))
++			continue;
++
++		fname_len = snprintf(fname, PATH_MAX +1, "%s/%s", dname, d->d_name);
++		if (fname_len > PATH_MAX) {
++			xlog(L_WARNING, "Too long file name: %s in %s\n", d->d_name, dname);
++			continue;
++		}
++
++		export_read(fname);
++	}
++		
++	for (i = 0; i < n; i++)
++		free(namelist[i]);
++	free(namelist);
++
++	return;
++}
++
+ static char
+ dumpopt(char c, char *fmt, ...)
+ {
+diff -up nfs-utils-1.2.3/utils/exportfs/exportfs.man.orig nfs-utils-1.2.3/utils/exportfs/exportfs.man
+--- nfs-utils-1.2.3/utils/exportfs/exportfs.man.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/exportfs/exportfs.man	2011-04-20 08:48:36.348265308 -0400
+@@ -37,11 +37,15 @@ when a client sends an NFS MOUNT request
+ .PP
+ Normally the master export table is initialized with the contents of
+ .I /etc/exports
++and files under
++.I /etc/exports.d
+ by invoking
+ .BR "exportfs -a" .
+ However, a system administrator can choose to add or delete
+ exports without modifying
+ .I /etc/exports
++or files under
++.I /etc/exports.d
+ by using the
+ .B exportfs
+ command.
+@@ -92,17 +96,24 @@ Specify a list of export options in the 
+ .B -i
+ Ignore the
+ .I /etc/exports
+-file.  Only default options and options given on the command line are used.
++file and files under
++.I /etc/exports.d
++directory.  Only default options and options given on the command line are used.
+ .TP
+ .B -r
+ Reexport all directories, synchronizing
+ .I /var/lib/nfs/etab
+ with
+-.IR /etc/exports .
++.IR /etc/exports 
++and files under 
++.IR /etc/exports.d .
+ This option removes entries in
+ .I /var/lib/nfs/etab
+ which have been deleted from
+-.I /etc/exports, and removes any entries from the
++.I /etc/exports
++or files under
++.IR /etc/exports.d , 
++and removes any entries from the
+ kernel export table which are no longer valid.
+ .TP
+ .B -u
+@@ -130,6 +141,8 @@ when adding new entries to the export ta
+ .BR "exportfs -a" ,
+ all exports listed in
+ .I /etc/exports
++and files under
++.I /etc/exports.d
+ are added to
+ .IR /var/lib/nfs/etab .
+ The kernel's export table is also updated as needed.
+@@ -149,7 +162,9 @@ several sources.
+ The default export options are
+ .BR sync,ro,root_squash,wdelay .
+ These can be overridden by entries in
+-.IR /etc/exports .
++.IR /etc/exports 
++or files under
++.IR /etc/exports.d .
+ .PP
+ A system administrator may override options from these sources using the
+ .B -o
+@@ -188,6 +203,8 @@ to display the export options for each e
+ .SH EXAMPLES
+ The following adds all directories listed in
+ .I /etc/exports
++and files under
++.I /etc/exports.d
+ to
+ .I /var/lib/nfs/etab
+ and pushes the resulting export entries into the kernel:
+@@ -215,7 +232,9 @@ directory:
+ .fi
+ .PP
+ To unexport all exports listed in
+-.IR /etc/exports :
++.IR /etc/exports 
++and files under
++.IR /etc/exports.d :
+ .PP
+ .nf
+ .B "# exportfs -au
+@@ -238,6 +257,13 @@ if they themselves are no longer valid t
+ .I /etc/exports
+ input file listing exports, export options, and access control lists
+ .TP 2.5i
++.I /etc/exports.d
++directory where extra input files are stored.
++.B Note:
++only files that end with 
++.I .exports
++are used.
++.TP 2.5i
+ .I /var/lib/nfs/etab
+ master table of exports
+ .TP 2.5i
+diff -up nfs-utils-1.2.3/utils/exportfs/exports.man.orig nfs-utils-1.2.3/utils/exportfs/exports.man
+--- nfs-utils-1.2.3/utils/exportfs/exports.man.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/exportfs/exports.man	2011-04-20 08:48:36.349265300 -0400
+@@ -145,7 +145,9 @@ storage (see
+ .IR async
+ above).
+ 
+-In releases of nfs-utils up to and including 1.0.0, this option was the
++In releases of nfs-utils up to and including 1.0.0, the
++.I async 
++option was the
+ default.  In all releases after 1.0.0,
+ .I sync
+ is the default, and
+@@ -375,20 +377,6 @@ If the client asks for alternative locat
+ will be given this list of alternatives. (Note that actual replication
+ of the filesystem must be handled elsewhere.)
+ 
+-.TP
+-.IR refer= path@host[+host][:path@host[+host]]
+-A client referencing the export point will be directed to choose from
+-the given list an alternative location for the filesystem.
+-(Note that the server must have a mountpoint here, though a different
+-filesystem is not required; so, for example,
+-.IR "mount --bind" " /path /path"
+-is sufficient.)
+-.TP
+-.IR replicas= path@host[+host][:path@host[+host]]
+-If the client asks for alternative locations for the export point, it
+-will be given this list of alternatives. (Note that actual replication
+-of the filesystem must be handled elsewhere.)
+-
+ .SS User ID Mapping
+ .PP
+ .B nfsd
+@@ -456,6 +444,24 @@ export entry for
+ .B /home/joe
+ in the example section below, which maps all requests to uid 150 (which
+ is supposedly that of user joe).
++.SS Extra Export Tables
++After reading 
++.I /etc/exports 
++.B exportfs
++reads files under 
++.I /etc/exports.d. 
++directory as extra export tables.
++.B exportfs
++regards only a file which name is ended with 
++.I .exports
++and
++not started with 
++.I . 
++as an extra export file. A file which name
++is not met this condition is just ignored.
++The format for extra export tables is the same as 
++.I /etc/exports
++.
+ .IP
+ .SH EXAMPLE
+ .PP
+@@ -501,6 +507,7 @@ all three mounts with the `sync' option 
+ '''entry.
+ .SH FILES
+ /etc/exports
++/etc/exports.d
+ .SH SEE ALSO
+ .BR exportfs (8),
+ .BR netgroup (5),
+diff -up nfs-utils-1.2.3/utils/gssd/gssd.man.orig nfs-utils-1.2.3/utils/gssd/gssd.man
+--- nfs-utils-1.2.3/utils/gssd/gssd.man.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/gssd/gssd.man	2011-04-20 08:48:36.351265286 -0400
+@@ -53,6 +53,8 @@ To be more consistent with other impleme
+ specific keytab entries.  The search order for keytabs to be used
+ for "machine credentials" is now:
+ .br
++  <HOSTNAME>$@<REALM>
++.br
+   root/<hostname>@<REALM>
+ .br
+   nfs/<hostname>@<REALM>
+@@ -64,6 +66,9 @@ for "machine credentials" is now:
+   nfs/<anyname>@<REALM>
+ .br
+   host/<anyname>@<REALM>
++.IP
++If this search order does not use the correct key then provide a
++keytab file that contains only correct keys.
+ .TP
+ .B -p path
+ Tells
+diff -up nfs-utils-1.2.3/utils/gssd/gssd_proc.c.orig nfs-utils-1.2.3/utils/gssd/gssd_proc.c
+--- nfs-utils-1.2.3/utils/gssd/gssd_proc.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/gssd/gssd_proc.c	2011-04-20 08:48:36.351265286 -0400
+@@ -1245,7 +1245,7 @@ handle_gssd_upcall(struct clnt_info *clp
+ 			goto out;
+ 		if (sscanf(p, "enctypes=%s", enctypes) != 1) {
+ 			printerr(0, "WARNING: handle_gssd_upcall: "
+-				    "failed to parse target name "
++				    "failed to parse encryption types "
+ 				    "in upcall string '%s'\n", lbuf);
+ 			goto out;
+ 		}
+diff -up nfs-utils-1.2.3/utils/gssd/gss_util.c.orig nfs-utils-1.2.3/utils/gssd/gss_util.c
+--- nfs-utils-1.2.3/utils/gssd/gss_util.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/gssd/gss_util.c	2011-04-20 08:48:36.350265293 -0400
+@@ -138,6 +138,83 @@ display_status_1(char *m, u_int32_t code
+ 	}
+ }
+ #endif
++static char *
++gss_display_error(OM_uint32 status)
++{
++		char *error = NULL;
++
++		switch(status) {
++		case GSS_S_COMPLETE: 
++			error = "GSS_S_COMPLETE";
++			break;
++		case GSS_S_CALL_INACCESSIBLE_READ: 
++			error = "GSS_S_CALL_INACCESSIBLE_READ";
++			break;
++		case GSS_S_CALL_INACCESSIBLE_WRITE:
++			error = "GSS_S_CALL_INACCESSIBLE_WRITE";
++			break;
++		case GSS_S_CALL_BAD_STRUCTURE:
++			error = "GSS_S_CALL_BAD_STRUCTURE";
++			break;
++		case  GSS_S_BAD_MECH:
++			error = "GSS_S_BAD_MECH";
++			break;
++		case  GSS_S_BAD_NAME:
++			error = "GSS_S_BAD_NAME";
++			break;
++		case  GSS_S_BAD_NAMETYPE:
++			error = "GSS_S_BAD_NAMETYPE";
++			break;
++		case  GSS_S_BAD_BINDINGS:
++			error = "GSS_S_BAD_BINDINGS";
++			break;
++		case  GSS_S_BAD_STATUS:
++			error = "GSS_S_BAD_STATUS";
++			break;
++		case  GSS_S_BAD_SIG:
++			error = "GSS_S_BAD_SIG";
++			break;
++		case  GSS_S_NO_CRED:
++			error = "GSS_S_NO_CRED";
++			break;
++		case  GSS_S_NO_CONTEXT:
++			error = "GSS_S_NO_CONTEXT";
++			break;
++		case  GSS_S_DEFECTIVE_TOKEN:
++			error = "GSS_S_DEFECTIVE_TOKEN";
++			break;
++		case  GSS_S_DEFECTIVE_CREDENTIAL:
++			error = "GSS_S_DEFECTIVE_CREDENTIAL";
++			break;
++		case  GSS_S_CREDENTIALS_EXPIRED:
++			error = "GSS_S_CREDENTIALS_EXPIRED";
++			break;
++		case  GSS_S_CONTEXT_EXPIRED:
++			error = "GSS_S_CONTEXT_EXPIRED";
++			break;
++		case  GSS_S_FAILURE:
++			error = "GSS_S_FAILURE";
++			break;
++		case  GSS_S_BAD_QOP:
++			error = "GSS_S_BAD_QOP";
++			break;
++		case  GSS_S_UNAUTHORIZED:
++			error = "GSS_S_UNAUTHORIZED";
++			break;
++		case  GSS_S_UNAVAILABLE:
++			error = "GSS_S_UNAVAILABLE";
++			break;
++		case  GSS_S_DUPLICATE_ELEMENT:
++			error = "GSS_S_DUPLICATE_ELEMENT";
++			break;
++		case  GSS_S_NAME_NOT_MN:
++			error = "GSS_S_NAME_NOT_MN";
++			break;
++		default:
++			error = "Not defined";
++		}
++	return error;
++}
+ 
+ static void
+ display_status_2(char *m, u_int32_t major, u_int32_t minor, const gss_OID mech)
+@@ -175,8 +252,9 @@ display_status_2(char *m, u_int32_t majo
+ 
+ 	if (major == GSS_S_CREDENTIALS_EXPIRED)
+ 		msg_verbosity = 1;
+-	printerr(msg_verbosity, "ERROR: GSS-API: error in %s(): %s - %s\n",
+-		 m, maj, min);
++
++	printerr(msg_verbosity, "ERROR: GSS-API: error in %s(): %s (%s) - %s\n",
++		 m, gss_display_error(major), maj, min);
+ 
+ 	if (maj_gss_buf.length != 0)
+ 		(void) gss_release_buffer(&min_stat1, &maj_gss_buf);
+@@ -199,20 +277,25 @@ gssd_acquire_cred(char *server_name, con
+ 	u_int32_t ignore_maj_stat, ignore_min_stat;
+ 	gss_buffer_desc pbuf;
+ 
+-	name.value = (void *)server_name;
+-	name.length = strlen(server_name);
+-
+-	maj_stat = gss_import_name(&min_stat, &name,
+-			oid,
+-			&target_name);
++	/* If server_name is NULL, get cred for GSS_C_NO_NAME */
++	if (server_name == NULL) {
++		target_name = GSS_C_NO_NAME;
++	} else {
++		name.value = (void *)server_name;
++		name.length = strlen(server_name);
+ 
+-	if (maj_stat != GSS_S_COMPLETE) {
+-		pgsserr("gss_import_name", maj_stat, min_stat, g_mechOid);
+-		return (FALSE);
++		maj_stat = gss_import_name(&min_stat, &name,
++				oid,
++				&target_name);
++
++		if (maj_stat != GSS_S_COMPLETE) {
++			pgsserr("gss_import_name", maj_stat, min_stat, g_mechOid);
++			return (FALSE);
++		}
+ 	}
+ 
+-	maj_stat = gss_acquire_cred(&min_stat, target_name, 0,
+-			GSS_C_NULL_OID_SET, GSS_C_ACCEPT,
++	maj_stat = gss_acquire_cred(&min_stat, target_name, GSS_C_INDEFINITE,
++			GSS_C_NO_OID_SET, GSS_C_ACCEPT,
+ 			&gssd_creds, NULL, NULL);
+ 
+ 	if (maj_stat != GSS_S_COMPLETE) {
+diff -up nfs-utils-1.2.3/utils/gssd/krb5_util.c.orig nfs-utils-1.2.3/utils/gssd/krb5_util.c
+--- nfs-utils-1.2.3/utils/gssd/krb5_util.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/gssd/krb5_util.c	2011-04-20 08:48:36.352265279 -0400
+@@ -768,6 +768,7 @@ find_keytab_entry(krb5_context context, 
+ 	krb5_error_code code;
+ 	char **realmnames = NULL;
+ 	char myhostname[NI_MAXHOST], targethostname[NI_MAXHOST];
++	char myhostad[NI_MAXHOST+1];
+ 	int i, j, retval;
+ 	char *default_realm = NULL;
+ 	char *realm;
+@@ -789,6 +790,14 @@ find_keytab_entry(krb5_context context, 
+ 		printerr(1, "%s while getting local hostname\n", k5err);
+ 		goto out;
+ 	}
++
++	/* Compute the active directory machine name HOST$ */
++	strcpy(myhostad, myhostname);
++	for (i = 0; myhostad[i] != 0; ++i)
++		myhostad[i] = toupper(myhostad[i]);
++	myhostad[i] = '$';
++	myhostad[i+1] = 0;
++
+ 	retval = get_full_hostname(myhostname, myhostname, sizeof(myhostname));
+ 	if (retval)
+ 		goto out;
+@@ -833,32 +842,47 @@ find_keytab_entry(krb5_context context, 
+ 		if (strcmp(realm, default_realm) == 0)
+ 			tried_default = 1;
+ 		for (j = 0; svcnames[j] != NULL; j++) {
+-			code = krb5_build_principal_ext(context, &princ,
+-							strlen(realm),
+-							realm,
+-							strlen(svcnames[j]),
+-							svcnames[j],
+-							strlen(myhostname),
+-							myhostname,
+-							NULL);
++			char spn[300];
++
++			/*
++			 * The special svcname "$" means 'try the active
++			 * directory machine account'
++			 */
++			if (strcmp(svcnames[j],"$") == 0) {
++				snprintf(spn, sizeof(spn), "%s@%s", myhostad, realm);
++				code = krb5_build_principal_ext(context, &princ,
++								strlen(realm),
++								realm,
++								strlen(myhostad),
++								myhostad,
++								NULL);
++			} else {
++				snprintf(spn, sizeof(spn), "%s/%s@%s",
++					 svcnames[j], myhostname, realm);
++				code = krb5_build_principal_ext(context, &princ,
++								strlen(realm),
++								realm,
++								strlen(svcnames[j]),
++								svcnames[j],
++								strlen(myhostname),
++								myhostname,
++								NULL);
++			}
++
+ 			if (code) {
+ 				k5err = gssd_k5_err_msg(context, code);
+-				printerr(1, "%s while building principal for "
+-					 "'%s/%s@%s'\n", k5err, svcnames[j],
+-					 myhostname, realm);
++				printerr(1, "%s while building principal for '%s'\n",
++					 k5err, spn);
+ 				continue;
+ 			}
+ 			code = krb5_kt_get_entry(context, kt, princ, 0, 0, kte);
+ 			krb5_free_principal(context, princ);
+ 			if (code) {
+ 				k5err = gssd_k5_err_msg(context, code);
+-				printerr(3, "%s while getting keytab entry for "
+-					 "'%s/%s@%s'\n", k5err, svcnames[j],
+-					 myhostname, realm);
++				printerr(3, "%s while getting keytab entry for '%s'\n",
++					 k5err, spn);
+ 			} else {
+-				printerr(3, "Success getting keytab entry for "
+-					 "'%s/%s@%s'\n",
+-					 svcnames[j], myhostname, realm);
++				printerr(3, "Success getting keytab entry for '%s'\n",spn);
+ 				retval = 0;
+ 				goto out;
+ 			}
+@@ -870,6 +894,8 @@ find_keytab_entry(krb5_context context, 
+ 		 */
+ 		for (j = 0; svcnames[j] != NULL; j++) {
+ 			int found = 0;
++			if (strcmp(svcnames[j],"$") == 0)
++				continue;
+ 			code = gssd_search_krb5_keytab(context, kt, realm,
+ 						       svcnames[j], &found, kte);
+ 			if (!code && found) {
+@@ -1160,7 +1186,7 @@ gssd_refresh_krb5_machine_credential(cha
+ 	krb5_keytab kt = NULL;;
+ 	int retval = 0;
+ 	char *k5err = NULL;
+-	const char *svcnames[4] = { "root", "nfs", "host", NULL };
++	const char *svcnames[5] = { "$", "root", "nfs", "host", NULL };
+ 
+ 	/*
+ 	 * If a specific service name was specified, use it.
+diff -up nfs-utils-1.2.3/utils/gssd/Makefile.am.orig nfs-utils-1.2.3/utils/gssd/Makefile.am
+--- nfs-utils-1.2.3/utils/gssd/Makefile.am.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/gssd/Makefile.am	2011-04-20 08:48:36.349265300 -0400
+@@ -51,7 +51,9 @@ svcgssd_SOURCES = \
+ 	svcgssd_main_loop.c \
+ 	svcgssd_mech2file.c \
+ 	svcgssd_proc.c \
++	svcgssd_krb5.c \
+ 	\
++	svcgssd_krb5.h \
+ 	svcgssd.h
+ 
+ svcgssd_LDADD = \
+diff -up nfs-utils-1.2.3/utils/gssd/svcgssd.c.orig nfs-utils-1.2.3/utils/gssd/svcgssd.c
+--- nfs-utils-1.2.3/utils/gssd/svcgssd.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/gssd/svcgssd.c	2011-04-20 08:48:36.353265271 -0400
+@@ -262,11 +262,19 @@ main(int argc, char *argv[])
+ 				"/etc/krb5.keytab?\n");
+ 			exit(1);
+ 		}
++	} else {
++		status = gssd_acquire_cred(NULL,
++			(const gss_OID)GSS_C_NT_HOSTBASED_SERVICE);
++		if (status == FALSE) {
++			printerr(0, "unable to obtain nameless credentials\n");
++			exit(1);
++		}
+ 	}
+ 
+ 	if (!fg)
+ 		release_parent();
+ 
++	nfs4_init_name_mapping(NULL); /* XXX: should only do this once */
+ 	gssd_run();
+ 	printerr(0, "gssd_run returned!\n");
+ 	abort();
+diff -up nfs-utils-1.2.3/utils/gssd/svcgssd_krb5.c.orig nfs-utils-1.2.3/utils/gssd/svcgssd_krb5.c
+--- nfs-utils-1.2.3/utils/gssd/svcgssd_krb5.c.orig	2011-04-20 08:48:36.354265263 -0400
++++ nfs-utils-1.2.3/utils/gssd/svcgssd_krb5.c	2011-04-20 08:48:36.354265263 -0400
+@@ -0,0 +1,200 @@
++/*
++ * COPYRIGHT (c) 2011
++ * The Regents of the University of Michigan
++ * ALL RIGHTS RESERVED
++ *
++ * Permission is granted to use, copy, create derivative works
++ * and redistribute this software and such derivative works
++ * for any purpose, so long as the name of The University of
++ * Michigan is not used in any advertising or publicity
++ * pertaining to the use of distribution of this software
++ * without specific, written prior authorization.  If the
++ * above copyright notice or any other identification of the
++ * University of Michigan is included in any copy of any
++ * portion of this software, then the disclaimer below must
++ * also be included.
++ *
++ * THIS SOFTWARE IS PROVIDED AS IS, WITHOUT REPRESENTATION
++ * FROM THE UNIVERSITY OF MICHIGAN AS TO ITS FITNESS FOR ANY
++ * PURPOSE, AND WITHOUT WARRANTY BY THE UNIVERSITY OF
++ * MICHIGAN OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING
++ * WITHOUT LIMITATION THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE
++ * REGENTS OF THE UNIVERSITY OF MICHIGAN SHALL NOT BE LIABLE
++ * FOR ANY DAMAGES, INCLUDING SPECIAL, INDIRECT, INCIDENTAL, OR
++ * CONSEQUENTIAL DAMAGES, WITH RESPECT TO ANY CLAIM ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OF THE SOFTWARE, EVEN
++ * IF IT HAS BEEN OR IS HEREAFTER ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGES.
++ */
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif	/* HAVE_CONFIG_H */
++
++#ifndef _GNU_SOURCE
++#define _GNU_SOURCE
++#endif
++
++#include <stdio.h>
++#include <errno.h>
++#include <gssapi/gssapi.h>
++#include <krb5.h>
++
++#include "gss_util.h"
++#include "gss_oids.h"
++#include "err_util.h"
++#include "svcgssd_krb5.h"
++
++#define MYBUFLEN 1024
++
++char *supported_enctypes_filename = "/proc/fs/nfsd/supported_krb5_enctypes";
++int parsed_num_enctypes = 0;
++krb5_enctype *parsed_enctypes = NULL;
++char *cached_enctypes = NULL;
++
++/*==========================*/
++/*===  Internal routines ===*/
++/*==========================*/
++
++/*
++ * Parse the supported encryption type information
++ */
++static int
++parse_enctypes(char *enctypes)
++{
++	int n = 0;
++	char *curr, *comma;
++	int i;
++
++	/* Don't parse the same string over and over... */
++	if (cached_enctypes && strcmp(cached_enctypes, enctypes) == 0)
++		return 0;
++
++	/* Free any existing cached_enctypes */
++	free(cached_enctypes);
++
++	if (parsed_enctypes != NULL) {
++		free(parsed_enctypes);
++		parsed_enctypes = NULL;
++		parsed_num_enctypes = 0;
++	}
++
++	/* count the number of commas */
++	for (curr = enctypes; curr && *curr != '\0'; curr = ++comma) {
++		comma = strchr(curr, ',');
++		if (comma != NULL)
++			n++;
++		else
++			break;
++	}
++
++	/* If no more commas and we're not at the end, there's one more value */
++	if (*curr != '\0')
++		n++;
++
++	/* Empty string, return an error */
++	if (n == 0)
++		return ENOENT;
++
++	/* Allocate space for enctypes array */
++	if ((parsed_enctypes = (int *) calloc(n, sizeof(int))) == NULL) {
++		return ENOMEM;
++	}
++
++	/* Now parse each value into the array */
++	for (curr = enctypes, i = 0; curr && *curr != '\0'; curr = ++comma) {
++		parsed_enctypes[i++] = atoi(curr);
++		comma = strchr(curr, ',');
++		if (comma == NULL)
++			break;
++	}
++
++	parsed_num_enctypes = n;
++	if ((cached_enctypes = malloc(strlen(enctypes)+1)))
++		strcpy(cached_enctypes, enctypes);
++
++	return 0;
++}
++
++static void
++get_kernel_supported_enctypes(void)
++{
++	FILE *s_e;
++	int ret;
++	char buffer[MYBUFLEN + 1];
++
++	memset(buffer, '\0', sizeof(buffer));
++
++	s_e = fopen(supported_enctypes_filename, "r");
++	if (s_e == NULL)
++		goto out_clean_parsed;
++
++	ret = fread(buffer, 1, MYBUFLEN, s_e);
++	if (ret < 0) {
++		fclose(s_e);
++		goto out_clean_parsed;
++	}
++	fclose(s_e);
++	if (parse_enctypes(buffer)) {
++		goto out_clean_parsed;
++	}
++out:
++	return;
++
++out_clean_parsed:
++	if (parsed_enctypes != NULL) {
++		free(parsed_enctypes);
++		parsed_num_enctypes = 0;
++	}
++	goto out;
++}
++
++/*==========================*/
++/*===  External routines ===*/
++/*==========================*/
++
++/*
++ * Get encryption types supported by the kernel, and then
++ * call gss_krb5_set_allowable_enctypes() to limit the
++ * encryption types negotiated.
++ *
++ * Returns:
++ *	0 => all went well
++ *     -1 => there was an error
++ */
++
++int
++svcgssd_limit_krb5_enctypes(void)
++{
++#ifdef HAVE_SET_ALLOWABLE_ENCTYPES
++	u_int maj_stat, min_stat;
++	krb5_enctype default_enctypes[] = { ENCTYPE_DES_CBC_CRC,
++					    ENCTYPE_DES_CBC_MD5,
++					    ENCTYPE_DES_CBC_MD4 };
++	int default_num_enctypes =
++		sizeof(default_enctypes) / sizeof(default_enctypes[0]);
++	krb5_enctype *enctypes;
++	int num_enctypes;
++
++	get_kernel_supported_enctypes();
++
++	if (parsed_enctypes != NULL) {
++		enctypes = parsed_enctypes;
++		num_enctypes = parsed_num_enctypes;
++	} else {
++		enctypes = default_enctypes;
++		num_enctypes = default_num_enctypes;
++	}
++
++	maj_stat = gss_set_allowable_enctypes(&min_stat, gssd_creds,
++			&krb5oid, num_enctypes, enctypes);
++	if (maj_stat != GSS_S_COMPLETE) {
++		printerr(1, "WARNING: gss_set_allowable_enctypes failed\n");
++		pgsserr("svcgssd_limit_krb5_enctypes: gss_set_allowable_enctypes",
++			maj_stat, min_stat, &krb5oid);
++		return -1;
++	}
++#endif
++	return 0;
++}
+diff -up nfs-utils-1.2.3/utils/gssd/svcgssd_krb5.h.orig nfs-utils-1.2.3/utils/gssd/svcgssd_krb5.h
+--- nfs-utils-1.2.3/utils/gssd/svcgssd_krb5.h.orig	2011-04-20 08:48:36.354265263 -0400
++++ nfs-utils-1.2.3/utils/gssd/svcgssd_krb5.h	2011-04-20 08:48:36.354265263 -0400
+@@ -0,0 +1,36 @@
++/*
++ * COPYRIGHT (c) 2011
++ * The Regents of the University of Michigan
++ * ALL RIGHTS RESERVED
++ *
++ * Permission is granted to use, copy, create derivative works
++ * and redistribute this software and such derivative works
++ * for any purpose, so long as the name of The University of
++ * Michigan is not used in any advertising or publicity
++ * pertaining to the use of distribution of this software
++ * without specific, written prior authorization.  If the
++ * above copyright notice or any other identification of the
++ * University of Michigan is included in any copy of any
++ * portion of this software, then the disclaimer below must
++ * also be included.
++ *
++ * THIS SOFTWARE IS PROVIDED AS IS, WITHOUT REPRESENTATION
++ * FROM THE UNIVERSITY OF MICHIGAN AS TO ITS FITNESS FOR ANY
++ * PURPOSE, AND WITHOUT WARRANTY BY THE UNIVERSITY OF
++ * MICHIGAN OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING
++ * WITHOUT LIMITATION THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE
++ * REGENTS OF THE UNIVERSITY OF MICHIGAN SHALL NOT BE LIABLE
++ * FOR ANY DAMAGES, INCLUDING SPECIAL, INDIRECT, INCIDENTAL, OR
++ * CONSEQUENTIAL DAMAGES, WITH RESPECT TO ANY CLAIM ARISING
++ * OUT OF OR IN CONNECTION WITH THE USE OF THE SOFTWARE, EVEN
++ * IF IT HAS BEEN OR IS HEREAFTER ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGES.
++ */
++
++#ifndef SVCGSSD_KRB5_H
++#define SVCGSSD_KRB5_H
++
++int svcgssd_limit_krb5_enctypes(void);
++
++#endif /* SVCGSSD_KRB5_H */
+diff -up nfs-utils-1.2.3/utils/gssd/svcgssd_proc.c.orig nfs-utils-1.2.3/utils/gssd/svcgssd_proc.c
+--- nfs-utils-1.2.3/utils/gssd/svcgssd_proc.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/gssd/svcgssd_proc.c	2011-04-20 08:48:36.355265255 -0400
+@@ -56,7 +56,9 @@
+ #include "gss_util.h"
+ #include "err_util.h"
+ #include "context.h"
++#include "misc.h"
+ #include "gss_oids.h"
++#include "svcgssd_krb5.h"
+ 
+ extern char * mech2file(gss_OID mech);
+ #define SVCGSSD_CONTEXT_CHANNEL "/proc/net/rpc/auth.rpcsec.context/channel"
+@@ -70,6 +72,7 @@ struct svc_cred {
+ 	int	cr_ngroups;
+ 	gid_t	cr_groups[NGROUPS];
+ };
++static char vbuf[RPC_CHAN_BUF_SIZE];
+ 
+ static int
+ do_svc_downcall(gss_buffer_desc *out_handle, struct svc_cred *cred,
+@@ -91,6 +94,7 @@ do_svc_downcall(gss_buffer_desc *out_han
+ 			     SVCGSSD_CONTEXT_CHANNEL, strerror(errno));
+ 		goto out_err;
+ 	}
++	setvbuf(f, vbuf, _IOLBF, RPC_CHAN_BUF_SIZE);
+ 	qword_printhex(f, out_handle->value, out_handle->length);
+ 	/* XXX are types OK for the rest of this? */
+ 	/* For context cache, use the actual context endtime */
+@@ -241,7 +245,7 @@ get_ids(gss_name_t client_name, gss_OID 
+ 			"file for name '%s'\n", sname);
+ 		goto out_free;
+ 	}
+-	nfs4_init_name_mapping(NULL); /* XXX: should only do this once */
++
+ 	res = nfs4_gss_princ_to_ids(secname, sname, &uid, &gid);
+ 	if (res < 0) {
+ 		/*
+@@ -443,6 +447,10 @@ handle_nullreq(FILE *f) {
+ 		memcpy(&ctx, in_handle.value, in_handle.length);
+ 	}
+ 
++	if (svcgssd_limit_krb5_enctypes()) {
++		goto out_err;
++	}
++
+ 	maj_stat = gss_accept_sec_context(&min_stat, &ctx, gssd_creds,
+ 			&in_tok, GSS_C_NO_CHANNEL_BINDINGS, &client_name,
+ 			&mech, &out_tok, &ret_flags, NULL, NULL);
+diff -up nfs-utils-1.2.3/utils/idmapd/idmapd.c.orig nfs-utils-1.2.3/utils/idmapd/idmapd.c
+--- nfs-utils-1.2.3/utils/idmapd/idmapd.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/idmapd/idmapd.c	2011-04-20 08:48:36.356265247 -0400
+@@ -158,10 +158,6 @@ static int nfsdopenone(struct idmap_clie
+ static void nfsdreopen_one(struct idmap_client *);
+ static void nfsdreopen(void);
+ 
+-size_t  strlcat(char *, const char *, size_t);
+-size_t  strlcpy(char *, const char *, size_t);
+-ssize_t atomicio(ssize_t (*f) (int, void*, size_t),
+-		 int, void *, size_t);
+ void    mydaemon(int, int);
+ void    release_parent(void);
+ 
+diff -up nfs-utils-1.2.3/utils/idmapd/Makefile.am.orig nfs-utils-1.2.3/utils/idmapd/Makefile.am
+--- nfs-utils-1.2.3/utils/idmapd/Makefile.am.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/idmapd/Makefile.am	2011-04-20 08:48:36.355265255 -0400
+@@ -11,12 +11,8 @@ EXTRA_DIST = \
+ 	idmapd.conf
+ 
+ idmapd_SOURCES = \
+-	atomicio.c \
+ 	idmapd.c \
+-	strlcat.c \
+-	strlcpy.c \
+ 	\
+-	cfg.h \
+ 	nfs_idmap.h \
+ 	queue.h
+ 
+diff -up nfs-utils-1.2.3/utils/Makefile.am.orig nfs-utils-1.2.3/utils/Makefile.am
+--- nfs-utils-1.2.3/utils/Makefile.am.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/Makefile.am	2011-04-20 08:48:36.347265316 -0400
+@@ -4,6 +4,9 @@ OPTDIRS =
+ 
+ if CONFIG_NFSV4
+ OPTDIRS += idmapd
++if CONFIG_NFSIDMAP
++OPTDIRS += nfsidmap
++endif
+ endif
+ 
+ if CONFIG_GSS
+diff -up nfs-utils-1.2.3/utils/mountd/cache.c.orig nfs-utils-1.2.3/utils/mountd/cache.c
+--- nfs-utils-1.2.3/utils/mountd/cache.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mountd/cache.c	2011-04-20 08:48:36.368265155 -0400
+@@ -64,6 +64,7 @@ enum nfsd_fsid {
+  */
+ static int cache_export_ent(char *domain, struct exportent *exp, char *p);
+ 
++#define INITIAL_MANAGED_GROUPS 100
+ 
+ char *lbuf  = NULL;
+ int lbuflen = 0;
+@@ -114,7 +115,7 @@ static void auth_unix_ip(FILE *f)
+ 
+ 	qword_print(f, "nfsd");
+ 	qword_print(f, ipaddr);
+-	qword_printint(f, time(0)+30*60);
++	qword_printuint(f, time(0) + DEFAULT_TTL);
+ 	if (use_ipaddr)
+ 		qword_print(f, ipaddr);
+ 	else if (client)
+@@ -134,11 +135,21 @@ static void auth_unix_gid(FILE *f)
+ 	 */
+ 	uid_t uid;
+ 	struct passwd *pw;
+-	gid_t glist[100], *groups = glist;
+-	int ngroups = 100;
++	static gid_t *groups = NULL;
++	static int groups_len = 0;
++	gid_t *more_groups;
++	int ngroups = 0;
+ 	int rv, i;
+ 	char *cp;
+ 
++	if (groups_len == 0) {
++		groups = malloc(sizeof(gid_t) * INITIAL_MANAGED_GROUPS);
++		if (!groups)
++			return;
++
++		groups_len = ngroups = INITIAL_MANAGED_GROUPS;
++	}
++
+ 	if (readline(fileno(f), &lbuf, &lbuflen) != 1)
+ 		return;
+ 
+@@ -151,17 +162,20 @@ static void auth_unix_gid(FILE *f)
+ 		rv = -1;
+ 	else {
+ 		rv = getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups);
+-		if (rv == -1 && ngroups >= 100) {
+-			groups = malloc(sizeof(gid_t)*ngroups);
+-			if (!groups)
++		if (rv == -1 && ngroups >= groups_len) {
++			more_groups = realloc(groups, sizeof(gid_t)*ngroups);
++			if (!more_groups)
+ 				rv = -1;
+-			else
++			else {
++				groups = more_groups;
++				groups_len = ngroups;
+ 				rv = getgrouplist(pw->pw_name, pw->pw_gid,
+ 						  groups, &ngroups);
++			}
+ 		}
+ 	}
+ 	qword_printuint(f, uid);
+-	qword_printuint(f, time(0)+30*60);
++	qword_printuint(f, time(0) + DEFAULT_TTL);
+ 	if (rv >= 0) {
+ 		qword_printuint(f, ngroups);
+ 		for (i=0; i<ngroups; i++)
+@@ -169,9 +183,6 @@ static void auth_unix_gid(FILE *f)
+ 	} else
+ 		qword_printuint(f, 0);
+ 	qword_eol(f);
+-
+-	if (groups != glist)
+-		free(groups);
+ }
+ 
+ #if USE_BLKID
+@@ -644,11 +655,11 @@ static int dump_to_cache(FILE *f, char *
+ {
+ 	qword_print(f, domain);
+ 	qword_print(f, path);
+-	qword_printint(f, time(0)+30*60);
+ 	if (exp) {
+ 		int different_fs = strcmp(path, exp->e_path) != 0;
+ 		int flag_mask = different_fs ? ~NFSEXP_FSID : ~0;
+ 
++		qword_printuint(f, time(0) + exp->e_ttl);
+ 		qword_printint(f, exp->e_flags & flag_mask);
+ 		qword_printint(f, exp->e_anonuid);
+ 		qword_printint(f, exp->e_anongid);
+@@ -667,7 +678,8 @@ static int dump_to_cache(FILE *f, char *
+  			qword_print(f, "uuid");
+  			qword_printhex(f, u, 16);
+  		}
+-	}
++	} else
++		qword_printuint(f, time(0) + DEFAULT_TTL);
+ 	return qword_eol(f);
+ }
+ 
+@@ -813,6 +825,7 @@ struct {
+ 	char *cache_name;
+ 	void (*cache_handle)(FILE *f);
+ 	FILE *f;
++	char vbuf[RPC_CHAN_BUF_SIZE];
+ } cachelist[] = {
+ 	{ "auth.unix.ip", auth_unix_ip, NULL},
+ 	{ "auth.unix.gid", auth_unix_gid, NULL},
+@@ -836,6 +849,10 @@ void cache_open(void) 
+ 			continue;
+ 		sprintf(path, "/proc/net/rpc/%s/channel", cachelist[i].cache_name);
+ 		cachelist[i].f = fopen(path, "r+");
++		if (cachelist[i].f != NULL) {
++			setvbuf(cachelist[i].f, cachelist[i].vbuf, _IOLBF, 
++				RPC_CHAN_BUF_SIZE);
++		}
+ 	}
+ }
+ 
+@@ -874,8 +891,8 @@ int cache_process_req(fd_set *readfds) 
+ 
+ /*
+  * Give IP->domain and domain+path->options to kernel
+- * % echo nfsd $IP  $[now+30*60] $domain > /proc/net/rpc/auth.unix.ip/channel
+- * % echo $domain $path $[now+30*60] $options $anonuid $anongid $fsid > /proc/net/rpc/nfsd.export/channel
++ * % echo nfsd $IP  $[now+DEFAULT_TTL] $domain > /proc/net/rpc/auth.unix.ip/channel
++ * % echo $domain $path $[now+DEFAULT_TTL] $options $anonuid $anongid $fsid > /proc/net/rpc/nfsd.export/channel
+  */
+ 
+ static int cache_export_ent(char *domain, struct exportent *exp, char *path)
+@@ -955,7 +972,7 @@ int cache_export(nfs_export *exp, char *
+ 	qword_print(f, "nfsd");
+ 	qword_print(f,
+ 		host_ntop(get_addrlist(exp->m_client, 0), buf, sizeof(buf)));
+-	qword_printint(f, time(0)+30*60);
++	qword_printuint(f, time(0) + exp->m_export.e_ttl);
+ 	qword_print(f, exp->m_client->m_hostname);
+ 	err = qword_eol(f);
+ 	
+diff -up nfs-utils-1.2.3/utils/mountd/mountd.c.orig nfs-utils-1.2.3/utils/mountd/mountd.c
+--- nfs-utils-1.2.3/utils/mountd/mountd.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mountd/mountd.c	2011-04-20 08:48:36.369265148 -0400
+@@ -99,12 +99,9 @@ static int version_any(void)
+ static void
+ unregister_services (void)
+ {
+-	if (version2()) {
+-		nfs_svc_unregister(MOUNTPROG, MOUNTVERS);
+-		nfs_svc_unregister(MOUNTPROG, MOUNTVERS_POSIX);
+-	}
+-	if (version3())
+-		nfs_svc_unregister(MOUNTPROG, MOUNTVERS_NFSV3);
++	nfs_svc_unregister(MOUNTPROG, MOUNTVERS);
++	nfs_svc_unregister(MOUNTPROG, MOUNTVERS_POSIX);
++	nfs_svc_unregister(MOUNTPROG, MOUNTVERS_NFSV3);
+ }
+ 
+ static void
+@@ -840,6 +837,7 @@ main(int argc, char **argv)
+ 	if (new_cache)
+ 		cache_open();
+ 
++	unregister_services();
+ 	if (version2()) {
+ 		listeners += nfs_svc_create("mountd", MOUNTPROG,
+ 					MOUNTVERS, mount_dispatch, port);
+diff -up nfs-utils-1.2.3/utils/mountd/mountd.man.orig nfs-utils-1.2.3/utils/mountd/mountd.man
+--- nfs-utils-1.2.3/utils/mountd/mountd.man.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mountd/mountd.man	2011-04-20 08:48:36.370265140 -0400
+@@ -106,11 +106,11 @@ This option can be used to request that
+ .B rpc.mountd
+ do not offer certain versions of NFS. The current version of
+ .B rpc.mountd
+-can support both NFS version 2 and the newer version 3. If the
+-NFS kernel module was compiled without support for NFSv3,
++can support both NFS version 2, 3 and 4. If the
++either one of these version should not be offered,
+ .B rpc.mountd
+ must be invoked with the option
+-.B "\-\-no-nfs-version 3" .
++.B "\-\-no-nfs-version <vers>" .
+ .TP
+ .B \-n " or " \-\-no-tcp
+ Don't advertise TCP for mount.
+diff -up nfs-utils-1.2.3/utils/mountd/rmtab.c.orig nfs-utils-1.2.3/utils/mountd/rmtab.c
+--- nfs-utils-1.2.3/utils/mountd/rmtab.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mountd/rmtab.c	2011-04-20 08:48:36.370265140 -0400
+@@ -205,6 +205,7 @@ mountlist_list(void)
+ 	}
+ 	if (stb.st_mtime != last_mtime) {
+ 		mountlist_freeall(mlist);
++		mlist = NULL;
+ 		last_mtime = stb.st_mtime;
+ 
+ 		setrmtabent("r");
+diff -up nfs-utils-1.2.3/utils/mountd/v4root.c.orig nfs-utils-1.2.3/utils/mountd/v4root.c
+--- nfs-utils-1.2.3/utils/mountd/v4root.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mountd/v4root.c	2011-04-20 08:48:36.371265132 -0400
+@@ -144,8 +144,11 @@ static int v4root_add_parents(nfs_export
+ 	char *ptr;
+ 
+ 	path = strdup(exp->m_export.e_path);
+-	if (!path)
++	if (!path) {
++		xlog(L_WARNING, "v4root_add_parents: Unable to create "
++				"pseudo export for '%s'", exp->m_export.e_path);
+ 		return -ENOMEM;
++	}
+ 	for (ptr = path + 1; ptr; ptr = strchr(ptr, '/')) {
+ 		int ret;
+ 		char saved;
+@@ -173,7 +176,7 @@ void
+ v4root_set()
+ {
+ 	nfs_export	*exp;
+-	int	i, ret;
++	int	i;
+ 
+ 	if (!v4root_needed)
+ 		return;
+@@ -189,7 +192,7 @@ v4root_set()
+ 				 */
+ 				continue;
+ 
+-			ret = v4root_add_parents(exp);
++			v4root_add_parents(exp);
+ 			/* XXX: error handling! */
+ 		}
+ 	}
+diff -up nfs-utils-1.2.3/utils/mount/fstab.c.orig nfs-utils-1.2.3/utils/mount/fstab.c
+--- nfs-utils-1.2.3/utils/mount/fstab.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/fstab.c	2011-04-20 08:48:36.357265239 -0400
+@@ -364,19 +364,22 @@ lock_mtab (void) {
+ 	/* Repeat until it was us who made the link */
+ 	while (!we_created_lockfile) {
+ 		struct flock flock;
+-		int errsv, j;
++		int j;
+ 
+ 		j = link(linktargetfile, MOUNTED_LOCK);
+-		errsv = errno;
+ 
+-		if (j == 0)
+-			we_created_lockfile = 1;
++		{
++			int errsv = errno;
+ 
+-		if (j < 0 && errsv != EEXIST) {
+-			(void) unlink(linktargetfile);
+-			die (EX_FILEIO, _("can't link lock file %s: %s "
+-			     "(use -n flag to override)"),
+-			     MOUNTED_LOCK, strerror (errsv));
++			if (j == 0)
++				we_created_lockfile = 1;
++
++			if (j < 0 && errsv != EEXIST) {
++				(void) unlink(linktargetfile);
++				die (EX_FILEIO, _("can't link lock file %s: %s "
++				     "(use -n flag to override)"),
++				     MOUNTED_LOCK, strerror (errsv));
++			}
+ 		}
+ 
+ 		lockfile_fd = open (MOUNTED_LOCK, O_WRONLY);
+@@ -414,7 +417,7 @@ lock_mtab (void) {
+ 			}
+ 			(void) unlink(linktargetfile);
+ 		} else {
+-			static int tries = 0;
++			static int retries = 0;
+ 
+ 			/* Someone else made the link. Wait. */
+ 			alarm(LOCK_TIMEOUT);
+@@ -428,10 +431,10 @@ lock_mtab (void) {
+ 			alarm(0);
+ 			/* Limit the number of iterations - maybe there
+ 			   still is some old /etc/mtab~ */
+-			++tries;
+-			if (tries % 200 == 0)
++			++retries;
++			if (retries % 200 == 0)
+ 			   usleep(30);
+-			if (tries > 100000) {
++			if (retries > 100000) {
+ 				(void) unlink(linktargetfile);
+ 				close(lockfile_fd);
+ 				die (EX_FILEIO, _("Cannot create link %s\n"
+diff -up nfs-utils-1.2.3/utils/mount/Makefile.am.orig nfs-utils-1.2.3/utils/mount/Makefile.am
+--- nfs-utils-1.2.3/utils/mount/Makefile.am.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/Makefile.am	2011-04-20 08:48:36.357265239 -0400
+@@ -9,17 +9,17 @@ man5_MANS	= nfs.man
+ 
+ sbin_PROGRAMS	= mount.nfs
+ EXTRA_DIST = nfsmount.x $(man8_MANS) $(man5_MANS)
+-mount_nfs_SOURCES = mount.c error.c network.c fstab.c token.c \
++mount_common = error.c network.c fstab.c token.c \
+ 		    parse_opt.c parse_dev.c \
+ 		    nfsmount.c nfs4mount.c stropts.c\
+ 		    nfsumount.c \
+ 		    mount_constants.h error.h network.h fstab.h token.h \
+ 		    parse_opt.h parse_dev.h \
+ 		    nfs4_mount.h nfs_mount4.h stropts.h version.h \
+-			mount_config.h
++		    mount_config.h utils.c utils.h
+ 
+ if MOUNT_CONFIG
+-mount_nfs_SOURCES += configfile.c
++mount_common += configfile.c
+ man5_MANS += nfsmount.conf.man
+ EXTRA_DIST += nfsmount.conf
+ endif
+@@ -27,6 +27,15 @@ endif
+ mount_nfs_LDADD = ../../support/nfs/libnfs.a \
+ 		  ../../support/export/libexport.a
+ 
++mount_nfs_SOURCES = $(mount_common)
++
++if CONFIG_LIBMOUNT
++mount_nfs_SOURCES += mount_libmount.c
++mount_nfs_LDADD += $(LIBMOUNT)
++else
++mount_nfs_SOURCES += mount.c
++endif
++
+ MAINTAINERCLEANFILES = Makefile.in
+ 
+ install-exec-hook:
+diff -up nfs-utils-1.2.3/utils/mount/mount_config.h.orig nfs-utils-1.2.3/utils/mount/mount_config.h
+--- nfs-utils-1.2.3/utils/mount/mount_config.h.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/mount_config.h	2011-04-20 08:48:36.359265224 -0400
+@@ -1,7 +1,7 @@
+-#ifndef _LINUX_MOUNT__CONFIG_H
+-#define _LINUX_MOUNT_CONFIG__H
++#ifndef _LINUX_MOUNT_CONFIG_H
++#define _LINUX_MOUNT_CONFIG_H
+ /*
+- * mount_config.h -- mount configuration file routines 
++ * mount_config.h -- mount configuration file routines
+  * Copyright (C) 2008 Red Hat, Inc <nfs@redhat.com>
+  *
+  * This program is free software; you can redistribute it and/or modify
+@@ -16,15 +16,13 @@
+  *
+  */
+ 
+-inline void mount_config_init(char *);
+-
+ #ifdef MOUNT_CONFIG
+ #include "conffile.h"
+ #include "xlog.h"
+ 
+ extern char *conf_get_mntopts(char *, char *, char *);
+ 
+-inline void mount_config_init(char *program)
++static inline void mount_config_init(char *program)
+ {
+ 	xlog_open(program);
+ 	/*
+@@ -32,19 +30,22 @@ inline void mount_config_init(char *prog
+ 	 */
+ 	conf_init();
+ }
+-inline char *mount_config_opts(char *spec, 
++
++static inline char *mount_config_opts(char *spec,
+ 		char *mount_point, char *mount_opts)
+ {
+ 	return conf_get_mntopts(spec, mount_point, mount_opts);
+ }
++
+ #else /* MOUNT_CONFIG */
+ 
+-inline void mount_config_init(char *program) { }
++static inline void mount_config_init(__attribute__ ((unused)) char *program) { }
+ 
+-inline char *mount_config_opts(char *spec, 
+-		char *mount_point, char *mount_opts)
++static inline char *mount_config_opts(__attribute__ ((unused)) char *spec,
++		__attribute__ ((unused)) char *mount_point, char *mount_opts)
+ {
+ 	return mount_opts;
+ }
+ #endif /* MOUNT_CONFIG */
+-#endif
++
++#endif	/* _LINUX_MOUNT_CONFIG_H */
+diff -up nfs-utils-1.2.3/utils/mount/mount_constants.h.orig nfs-utils-1.2.3/utils/mount/mount_constants.h
+--- nfs-utils-1.2.3/utils/mount/mount_constants.h.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/mount_constants.h	2011-04-20 08:48:36.359265224 -0400
+@@ -64,4 +64,8 @@ if we have a stack or plain mount - moun
+ #define MS_MGC_MSK 0xffff0000	/* magic flag number mask */
+ #endif
+ 
++/* Generic options that are prevented from appearing
++ * in the options field in /etc/mtab. */
++#define MS_NOMTAB	(MS_REMOUNT)
++
+ #endif	/* _NFS_UTILS_MOUNT_CONSTANTS_H */
+diff -up nfs-utils-1.2.3/utils/mount/mount.c.orig nfs-utils-1.2.3/utils/mount/mount.c
+--- nfs-utils-1.2.3/utils/mount/mount.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/mount.c	2011-04-20 08:48:36.358265231 -0400
+@@ -47,7 +47,7 @@
+ #include "mount.h"
+ #include "error.h"
+ #include "stropts.h"
+-#include "version.h"
++#include "utils.h"
+ 
+ char *progname;
+ int nfs_mount_data_version;
+@@ -150,49 +150,6 @@ static const struct opt_map opt_map[] = 
+ static void parse_opts(const char *options, int *flags, char **extra_opts);
+ 
+ /*
+- * Choose the version of the nfs_mount_data structure that is appropriate
+- * for the kernel that is doing the mount.
+- *
+- * NFS_MOUNT_VERSION:		maximum version supported by these sources
+- * nfs_mount_data_version:	maximum version supported by the running kernel
+- */
+-static void discover_nfs_mount_data_version(void)
+-{
+-	unsigned int kernel_version = linux_version_code();
+-
+-	if (kernel_version) {
+-		if (kernel_version < MAKE_VERSION(2, 1, 32))
+-			nfs_mount_data_version = 1;
+-		else if (kernel_version < MAKE_VERSION(2, 2, 18))
+-			nfs_mount_data_version = 3;
+-		else if (kernel_version < MAKE_VERSION(2, 3, 0))
+-			nfs_mount_data_version = 4;
+-		else if (kernel_version < MAKE_VERSION(2, 3, 99))
+-			nfs_mount_data_version = 3;
+-		else if (kernel_version < MAKE_VERSION(2, 6, 3))
+-			nfs_mount_data_version = 4;
+-		else
+-			nfs_mount_data_version = 6;
+-	}
+-	if (nfs_mount_data_version > NFS_MOUNT_VERSION)
+-		nfs_mount_data_version = NFS_MOUNT_VERSION;
+-	else
+-		if (kernel_version > MAKE_VERSION(2, 6, 22))
+-			string++;
+-}
+-
+-static void print_one(char *spec, char *node, char *type, char *opts)
+-{
+-	if (!verbose)
+-		return;
+-
+-	if (opts)
+-		printf(_("%s on %s type %s (%s)\n"), spec, node, type, opts);
+-	else
+-		printf(_("%s on %s type %s\n"), spec, node, type);
+-}
+-
+-/*
+  * Build a canonical mount option string for /etc/mtab.
+  */
+ static char *fix_opts_string(int flags, const char *extra_opts)
+@@ -209,7 +166,7 @@ static char *fix_opts_string(int flags, 
+ 	}
+ 	if (flags & MS_USERS)
+ 		new_opts = xstrconcat3(new_opts, ",users", "");
+-	
++
+ 	for (om = opt_map; om->opt != NULL; om++) {
+ 		if (om->skip)
+ 			continue;
+@@ -224,6 +181,20 @@ static char *fix_opts_string(int flags, 
+ 	return new_opts;
+ }
+ 
++static void
++init_mntent(struct mntent *mnt, char *fsname, char *dir, char *type,
++		int flags, char *opts)
++{
++	mnt->mnt_fsname	= fsname;
++	mnt->mnt_dir	= dir;
++	mnt->mnt_type	= type;
++	mnt->mnt_opts	= fix_opts_string(flags & ~MS_NOMTAB, opts);
++
++	/* these are always zero for NFS */
++	mnt->mnt_freq	= 0;
++	mnt->mnt_passno	= 0;
++}
++
+ /* Create mtab with a root entry.  */
+ static void
+ create_mtab (void) {
+@@ -245,11 +216,8 @@ create_mtab (void) {
+ 	if ((fstab = getfsfile ("/")) || (fstab = getfsfile ("root"))) {
+ 		char *extra_opts;
+ 		parse_opts (fstab->m.mnt_opts, &flags, &extra_opts);
+-		mnt.mnt_dir = "/";
+-		mnt.mnt_fsname = xstrdup(fstab->m.mnt_fsname);
+-		mnt.mnt_type = fstab->m.mnt_type;
+-		mnt.mnt_opts = fix_opts_string (flags, extra_opts);
+-		mnt.mnt_freq = mnt.mnt_passno = 0;
++		init_mntent(&mnt, xstrdup(fstab->m.mnt_fsname), "/",
++				fstab->m.mnt_type, flags, extra_opts);
+ 		free(extra_opts);
+ 
+ 		if (nfs_addmntent (mfp, &mnt) == 1) {
+@@ -273,17 +241,12 @@ create_mtab (void) {
+ }
+ 
+ static int add_mtab(char *spec, char *mount_point, char *fstype,
+-			int flags, char *opts, int freq, int pass)
++			int flags, char *opts)
+ {
+ 	struct mntent ment;
+ 	int result = EX_SUCCESS;
+ 
+-	ment.mnt_fsname = spec;
+-	ment.mnt_dir = mount_point;
+-	ment.mnt_type = fstype;
+-	ment.mnt_opts = fix_opts_string(flags, opts);
+-	ment.mnt_freq = freq;
+-	ment.mnt_passno = pass;
++	init_mntent(&ment, spec, mount_point, fstype, flags, opts);
+ 
+ 	if (!nomtab && mtab_does_not_exist()) {
+ 		if (verbose > 1)
+@@ -321,23 +284,7 @@ static int add_mtab(char *spec, char *mo
+ 	return result;
+ }
+ 
+-void mount_usage(void)
+-{
+-	printf(_("usage: %s remotetarget dir [-rvVwfnsih] [-o nfsoptions]\n"),
+-		progname);
+-	printf(_("options:\n"));
+-	printf(_("\t-r\t\tMount file system readonly\n"));
+-	printf(_("\t-v\t\tVerbose\n"));
+-	printf(_("\t-V\t\tPrint version\n"));
+-	printf(_("\t-w\t\tMount file system read-write\n"));
+-	printf(_("\t-f\t\tFake mount, do not actually mount\n"));
+-	printf(_("\t-n\t\tDo not update /etc/mtab\n"));
+-	printf(_("\t-s\t\tTolerate sloppy mount options rather than fail\n"));
+-	printf(_("\t-h\t\tPrint this help\n"));
+-	printf(_("\tnfsoptions\tRefer to mount.nfs(8) or nfs(5)\n\n"));
+-}
+-
+-static void parse_opt(const char *opt, int *mask, char *extra_opts, int len)
++static void parse_opt(const char *opt, int *mask, char *extra_opts, size_t len)
+ {
+ 	const struct opt_map *om;
+ 
+@@ -371,7 +318,7 @@ static void parse_opts(const char *optio
+ 	if (options != NULL) {
+ 		char *opts = xstrdup(options);
+ 		char *opt, *p;
+-		int len = strlen(opts) + 1;	/* include room for a null */
++		size_t len = strlen(opts) + 1;	/* include room for a null */
+ 		int open_quote = 0;
+ 
+ 		*extra_opts = xmalloc(len);
+@@ -397,26 +344,6 @@ static void parse_opts(const char *optio
+ 	}
+ }
+ 
+-static int chk_mountpoint(char *mount_point)
+-{
+-	struct stat sb;
+-
+-	if (stat(mount_point, &sb) < 0){
+-		mount_error(NULL, mount_point, errno);
+-		return 1;
+-	}
+-	if (S_ISDIR(sb.st_mode) == 0){
+-		mount_error(NULL, mount_point, ENOTDIR);
+-		return 1;
+-	}
+-	if (access(mount_point, X_OK) < 0) {
+-		mount_error(NULL, mount_point, errno);
+-		return 1;
+-	}
+-
+-	return 0;
+-}
+-
+ static int try_mount(char *spec, char *mount_point, int flags,
+ 			char *fs_type, char **extra_opts, char *mount_opts,
+ 			int fake, int bg)
+@@ -441,9 +368,7 @@ static int try_mount(char *spec, char *m
+ 	if (!fake)
+ 		print_one(spec, mount_point, fs_type, mount_opts);
+ 
+-	ret = add_mtab(spec, mount_point, fs_type, flags, *extra_opts,
+-			0, 0 /* these are always zero for NFS */ );
+-	return ret;
++	return add_mtab(spec, mount_point, fs_type, flags, *extra_opts);
+ }
+ 
+ int main(int argc, char *argv[])
+@@ -455,7 +380,7 @@ int main(int argc, char *argv[])
+ 
+ 	progname = basename(argv[0]);
+ 
+-	discover_nfs_mount_data_version();
++	nfs_mount_data_version = discover_nfs_mount_data_version(&string);
+ 
+ 	if(!strncmp(progname, "umount", strlen("umount")))
+ 		exit(nfsumount(argc, argv));
+diff -up nfs-utils-1.2.3/utils/mount/mount_libmount.c.orig nfs-utils-1.2.3/utils/mount/mount_libmount.c
+--- nfs-utils-1.2.3/utils/mount/mount_libmount.c.orig	2011-04-20 08:48:36.360265217 -0400
++++ nfs-utils-1.2.3/utils/mount/mount_libmount.c	2011-04-20 08:48:36.360265217 -0400
+@@ -0,0 +1,413 @@
++/*
++ * mount_libmount.c -- Linux NFS [u]mount based on libmount
++ *
++ * Copyright (C) 2011 Karel Zak <kzak@redhat.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2, or (at your option)
++ * any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program; if not, write to the
++ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
++ * Boston, MA 021110-1307, USA.
++ *
++ */
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++
++#include <unistd.h>
++#include <stdio.h>
++#include <string.h>
++#include <errno.h>
++#include <getopt.h>
++
++#include <libmount/libmount.h>
++
++#include "nls.h"
++#include "mount_config.h"
++
++#include "nfs_mount.h"
++#include "nfs4_mount.h"
++#include "stropts.h"
++#include "version.h"
++#include "xcommon.h"
++
++#include "error.h"
++#include "utils.h"
++
++char *progname;
++int nfs_mount_data_version;
++int verbose;
++int sloppy;
++int string;
++int nomtab;
++
++#define FOREGROUND	(0)
++#define BACKGROUND	(1)
++
++/*
++ * Store mount options to mtab (or /dev/.mount/utab), called from mount.nfs.
++ *
++ * Note that on systems without /etc/mtab the fs-specific options are not
++ * managed by libmount at all. We have to use "mount attributes" that are
++ * private for mount.<type> helpers.
++ */
++static void store_mount_options(struct libmnt_fs *fs, const char *opts)
++{
++	mnt_fs_set_fs_options(fs, opts);	/* for mtab */
++	mnt_fs_set_attributes(fs, opts);	/* for non-mtab systems */
++}
++
++/*
++ * Retrieve mount options from mtab (or /dev/.mount/utab) called from umount.nfs.
++ *
++ * The result can passed to free().
++ */
++char *retrieve_mount_options(struct libmnt_fs *fs)
++{
++	const char *opts;
++
++	if (!fs)
++		return NULL;
++
++	opts = mnt_fs_get_attributes(fs);	/* /dev/.mount/utab */
++	if (opts)
++		return strdup(opts);
++
++	return mnt_fs_strdup_options(fs);	/* /etc/mtab */
++}
++
++static int try_mount(struct libmnt_context *cxt, int bg)
++{
++	struct libmnt_fs *fs;
++	const char *p;
++	char *src = NULL, *tgt = NULL, *type = NULL, *opts = NULL;
++	unsigned long flags = 0;
++	int fake, ret = 0;
++
++	fs = mnt_context_get_fs(cxt);
++
++	/* libmount returns read-only pointers (const char)
++	 * so, reallocate for nfsmount() functions.
++	 */
++	if ((p = mnt_fs_get_source(fs)))	/* spec */
++		src = strdup(p);
++	if ((p = mnt_fs_get_target(fs)))	/* mountpoint */
++		tgt = strdup(p);
++	if ((p = mnt_fs_get_fstype(fs)))	/* FS type */
++		type = strdup(p);
++	if ((p = mnt_fs_get_fs_options(fs)))	/* mount options */
++		opts = strdup(p);
++
++	mnt_context_get_mflags(cxt, &flags);	/* mount(2) flags */
++	fake = mnt_context_is_fake(cxt);
++
++	if (string)
++		ret = nfsmount_string(src, tgt, type, flags, &opts, fake, bg);
++
++	else if (strcmp(type, "nfs4") == 0)
++		ret = nfs4mount(src, tgt, flags, &opts, fake, bg);
++	else
++		ret = nfsmount(src, tgt, flags, &opts, fake, bg);
++
++	/* Store mount options if not called with mount --no-mtab */
++	if (!ret && !mnt_context_is_nomtab(cxt))
++		store_mount_options(fs, opts);
++
++	free(src);
++	free(tgt);
++	free(type);
++	free(opts);
++
++	return ret;
++}
++
++/* returns: error = -1, success = 0 , unknown = 1 */
++static int is_vers4(struct libmnt_context *cxt)
++{
++	struct libmnt_fs *fs = mnt_context_get_fs(cxt);
++	struct libmnt_table *tb = NULL;
++	const char *src = mnt_context_get_source(cxt),
++		   *tgt = mnt_context_get_target(cxt);
++	int rc = 1;
++
++	if (!src || !tgt)
++		return -1;
++
++	if (!mnt_fs_is_kernel(fs)) {
++		struct libmnt_table *tb = mnt_new_table_from_file("/proc/mounts");
++
++		if (!tb)
++			return -1;
++		fs = mnt_table_find_pair(tb, src, tgt, MNT_ITER_BACKWARD);
++	}
++
++	if (fs) {
++		const char *type = mnt_fs_get_fstype(fs);
++		if (type && strcmp(type, "nfs4") == 0)
++			rc = 0;
++	}
++	mnt_free_table(tb);
++	return rc;
++}
++
++static int umount_main(struct libmnt_context *cxt, int argc, char **argv)
++{
++	int rc, c;
++	char *spec = NULL, *opts = NULL;
++
++	static const struct option longopts[] = {
++		{ "force", 0, 0, 'f' },
++		{ "help", 0, 0, 'h' },
++		{ "no-mtab", 0, 0, 'n' },
++		{ "verbose", 0, 0, 'v' },
++		{ "read-only", 0, 0, 'r' },
++		{ "lazy", 0, 0, 'l' },
++		{ "types", 1, 0, 't' },
++		{ NULL, 0, 0, 0 }
++	};
++
++	mnt_context_init_helper(cxt, MNT_ACT_UMOUNT, 0);
++
++	while ((c = getopt_long (argc, argv, "fvnrlh", longopts, NULL)) != -1) {
++
++		rc = mnt_context_helper_setopt(cxt, c, optarg);
++		if (rc == 0)		/* valid option */
++			continue;
++		if (rc < 0)		/* error (probably ENOMEM) */
++			goto err;
++					/* rc==1 means unknow option */
++		umount_usage();
++		return EX_USAGE;
++	}
++
++	if (optind < argc)
++		spec = argv[optind++];
++
++	if (!spec || (*spec != '/' && strchr(spec,':') == NULL)) {
++		nfs_error(_("%s: no mount point provided"), progname);
++		return EX_USAGE;
++	}
++
++	if (mnt_context_set_target(cxt, spec))
++		goto err;
++	if (mnt_context_set_fstype_pattern(cxt, "nfs,nfs4"))	/* restrict filesystems */
++		goto err;
++
++	/* read mtab/fstab, evaluate permissions, etc. */
++	rc = mnt_context_prepare_umount(cxt);
++	if (rc) {
++		nfs_error(_("%s: failed to prepare umount: %s\n"),
++					progname, strerror(-rc));
++		goto err;
++	}
++
++	opts = retrieve_mount_options(mnt_context_get_fs(cxt));
++
++	if (!mnt_context_is_lazy(cxt)) {
++		if (opts) {
++			/* we have full FS description (e.g. from mtab or /proc) */
++			switch (is_vers4(cxt)) {
++			case 0:
++				/* We ignore the error from nfs_umount23.
++				 * If the actual umount succeeds (in del_mtab),
++				 * we don't want to signal an error, as that
++				 * could cause /sbin/mount to retry!
++				 */
++				nfs_umount23(mnt_context_get_source(cxt), opts);
++				break;
++			case 1:			/* unknown */
++				break;
++			default:		/* error */
++				goto err;
++			}
++		} else
++			/* strange, no entry in mtab or /proc not mounted */
++			nfs_umount23(spec, "tcp,v3");
++	}
++
++	rc = mnt_context_do_umount(cxt);	/* call umount(2) syscall */
++	mnt_context_finalize_mount(cxt);	/* mtab update */
++
++	if (rc && !mnt_context_get_status(cxt)) {
++		/* mnt_context_do_umount() returns errno if umount(2) failed */
++		umount_error(rc, spec);
++		goto err;
++	}
++
++	free(opts);
++	return EX_SUCCESS;
++err:
++	free(opts);
++	return EX_FAIL;
++}
++
++static int mount_main(struct libmnt_context *cxt, int argc, char **argv)
++{
++	int rc, c;
++	struct libmnt_fs *fs;
++	char *spec = NULL, *mount_point = NULL, *opts = NULL;
++
++	static const struct option longopts[] = {
++	  { "fake", 0, 0, 'f' },
++	  { "help", 0, 0, 'h' },
++	  { "no-mtab", 0, 0, 'n' },
++	  { "read-only", 0, 0, 'r' },
++	  { "ro", 0, 0, 'r' },
++	  { "verbose", 0, 0, 'v' },
++	  { "version", 0, 0, 'V' },
++	  { "read-write", 0, 0, 'w' },
++	  { "rw", 0, 0, 'w' },
++	  { "options", 1, 0, 'o' },
++	  { "sloppy", 0, 0, 's' },
++	  { NULL, 0, 0, 0 }
++	};
++
++	mount_config_init(progname);
++	mnt_context_init_helper(cxt, MNT_ACT_MOUNT, 0);
++
++	while ((c = getopt_long(argc, argv, "fhnrVvwo:s", longopts, NULL)) != -1) {
++
++		rc = mnt_context_helper_setopt(cxt, c, optarg);
++		if (rc == 0)		/* valid option */
++			continue;
++		if (rc < 0)		/* error (probably ENOMEM) */
++			goto err;
++					/* rc==1 means unknow option */
++		switch (c) {
++		case 'V':
++			printf("%s: ("PACKAGE_STRING")\n", progname);
++			return EX_SUCCESS;
++		case 'h':
++		default:
++			mount_usage();
++			return EX_USAGE;
++		}
++	}
++
++	if (optind < argc)
++		spec = argv[optind++];
++	if (optind < argc)
++		mount_point = argv[optind++];
++
++	if (!mount_point) {
++		nfs_error(_("%s: no mount point provided"), progname);
++		goto err;
++	}
++	if (!spec) {
++		nfs_error(_("%s: no mount spec provided"), progname);
++		goto err;
++	}
++
++	if (geteuid() != 0) {
++		nfs_error(_("%s: not installed setuid - "
++			    "\"user\" NFS mounts not supported."), progname);
++		goto err;
++	}
++
++	verbose = mnt_context_is_verbose(cxt);
++	sloppy = mnt_context_is_sloppy(cxt);
++	nomtab = mnt_context_is_nomtab(cxt);
++
++	if (strcmp(progname, "mount.nfs4") == 0)
++		mnt_context_set_fstype(cxt, "nfs4");
++	else
++		mnt_context_set_fstype(cxt, "nfs");	/* default */
++
++	rc = mnt_context_set_source(cxt, spec);
++	if (!rc)
++		mnt_context_set_target(cxt, mount_point);
++	if (rc) {
++		nfs_error(_("%s: failed to set spec or mountpoint: %s"),
++				progname, strerror(errno));
++		goto err;
++	}
++
++	mount_point = mnt_resolve_path(mount_point,
++				       mnt_context_get_cache(cxt));
++
++	if (chk_mountpoint(mount_point))
++		goto err;
++	/*
++	 * Concatenate mount options from the configuration file
++	 */
++	fs = mnt_context_get_fs(cxt);
++	if (fs) {
++		opts = mnt_fs_strdup_options(fs);
++
++		opts = mount_config_opts(spec, mount_point, opts);
++		mnt_fs_set_options(fs, opts);
++	}
++
++	rc = mnt_context_prepare_mount(cxt);
++	if (rc) {
++		nfs_error(_("%s: failed to prepare mount: %s\n"),
++					progname, strerror(-rc));
++		goto err;
++	}
++
++	rc = try_mount(cxt, FOREGROUND);
++
++	if (rc == EX_BG) {
++		printf(_("%s: backgrounding \"%s\"\n"),
++			progname, mnt_context_get_source(cxt));
++		printf(_("%s: mount options: \"%s\"\n"),
++			progname, opts);
++
++		fflush(stdout);
++
++		if (daemon(0, 0)) {
++			nfs_error(_("%s: failed to start "
++					"background process: %s\n"),
++					progname, strerror(errno));
++			exit(EX_FAIL);
++		}
++
++		rc = try_mount(cxt, BACKGROUND);
++
++		if (verbose && rc)
++			printf(_("%s: giving up \"%s\"\n"),
++				progname, mnt_context_get_source(cxt));
++	}
++
++	mnt_context_set_syscall_status(cxt, rc == EX_SUCCESS ? 0 : -1);
++	mnt_context_finalize_mount(cxt);	/* mtab update */
++	return rc;
++err:
++	return EX_FAIL;
++}
++
++int main(int argc, char *argv[])
++{
++	struct libmnt_context *cxt;
++	int rc;
++
++	mnt_init_debug(0);
++	cxt = mnt_new_context();
++	if (!cxt) {
++		nfs_error(_("Can't initilize libmount: %s"),
++					strerror(errno));
++		rc = EX_FAIL;
++		goto done;
++	}
++
++	progname = basename(argv[0]);
++	nfs_mount_data_version = discover_nfs_mount_data_version(&string);
++
++	if(strncmp(progname, "umount", 6) == 0)
++		rc = umount_main(cxt, argc, argv);
++	else
++		rc = mount_main(cxt, argc, argv);
++done:
++	mnt_free_context(cxt);
++	return rc;
++}
+diff -up nfs-utils-1.2.3/utils/mount/network.c.orig nfs-utils-1.2.3/utils/mount/network.c
+--- nfs-utils-1.2.3/utils/mount/network.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/network.c	2011-04-20 08:48:36.361265209 -0400
+@@ -59,6 +59,8 @@
+ #define CONNECT_TIMEOUT	(20)
+ #define MOUNT_TIMEOUT	(30)
+ 
++#define SAFE_SOCKADDR(x)	(struct sockaddr *)(char *)(x)
++
+ extern int nfs_mount_data_version;
+ extern char *progname;
+ extern int verbose;
+@@ -208,9 +210,6 @@ int nfs_lookup(const char *hostname, con
+ {
+ 	struct addrinfo *gai_results;
+ 	struct addrinfo gai_hint = {
+-#ifdef HAVE_DECL_AI_ADDRCONFIG
+-		.ai_flags	= AI_ADDRCONFIG,
+-#endif	/* HAVE_DECL_AI_ADDRCONFIG */
+ 		.ai_family	= family,
+ 	};
+ 	socklen_t len = *salen;
+@@ -428,12 +427,12 @@ static int get_socket(struct sockaddr_in
+ 		if (bindresvport(so, &laddr) < 0)
+ 			goto err_bindresvport;
+ 	} else {
+-		cc = bind(so, (struct sockaddr *)&laddr, namelen);
++		cc = bind(so, SAFE_SOCKADDR(&laddr), namelen);
+ 		if (cc < 0)
+ 			goto err_bind;
+ 	}
+ 	if (type == SOCK_STREAM || (conn && type == SOCK_DGRAM)) {
+-		cc = connect_to(so, (struct sockaddr *)saddr, namelen,
++		cc = connect_to(so, SAFE_SOCKADDR(saddr), namelen,
+ 				timeout);
+ 		if (cc < 0)
+ 			goto err_connect;
+@@ -756,11 +755,12 @@ int nfs_probe_bothports(const struct soc
+  */
+ int probe_bothports(clnt_addr_t *mnt_server, clnt_addr_t *nfs_server)
+ {
+-	return nfs_probe_bothports((struct sockaddr *)&mnt_server->saddr,
+-					sizeof(mnt_server->saddr),
++	struct sockaddr *mnt_addr = SAFE_SOCKADDR(&mnt_server->saddr);
++	struct sockaddr *nfs_addr = SAFE_SOCKADDR(&nfs_server->saddr);
++
++	return nfs_probe_bothports(mnt_addr, sizeof(mnt_server->saddr),
+ 					&mnt_server->pmap,
+-					(struct sockaddr *)&nfs_server->saddr,
+-					sizeof(nfs_server->saddr),
++					nfs_addr, sizeof(nfs_server->saddr),
+ 					&nfs_server->pmap);
+ }
+ 
+@@ -772,7 +772,7 @@ static int nfs_probe_statd(void)
+ 	};
+ 	rpcprog_t program = nfs_getrpcbyname(NSMPROG, nfs_ns_pgmtbl);
+ 
+-	return nfs_getport_ping((struct sockaddr *)&addr, sizeof(addr),
++	return nfs_getport_ping(SAFE_SOCKADDR(&addr), sizeof(addr),
+ 				program, (rpcvers_t)1, IPPROTO_UDP);
+ }
+ 
+@@ -901,7 +901,7 @@ int nfs_advise_umount(const struct socka
+  */
+ int nfs_call_umount(clnt_addr_t *mnt_server, dirpath *argp)
+ {
+-	struct sockaddr *sap = (struct sockaddr *)&mnt_server->saddr;
++	struct sockaddr *sap = SAFE_SOCKADDR(&mnt_server->saddr);
+ 	socklen_t salen = sizeof(mnt_server->saddr);
+ 	struct pmap *pmap = &mnt_server->pmap;
+ 	CLIENT *clnt;
+@@ -1011,11 +1011,11 @@ int clnt_ping(struct sockaddr_in *saddr,
+ 		struct sockaddr_in *caddr)
+ {
+ 	CLIENT *clnt = NULL;
+-	int sock, stat;
++	int sock, status;
+ 	static char clnt_res;
+ 	struct sockaddr dissolve;
+ 
+-	rpc_createerr.cf_stat = stat = 0;
++	rpc_createerr.cf_stat = status = 0;
+ 	sock = get_socket(saddr, prot, CONNECT_TIMEOUT, FALSE, TRUE);
+ 	if (sock == RPC_ANYSOCK) {
+ 		if (rpc_createerr.cf_error.re_errno == ETIMEDOUT) {
+@@ -1058,18 +1058,18 @@ int clnt_ping(struct sockaddr_in *saddr,
+ 		return 0;
+ 	}
+ 	memset(&clnt_res, 0, sizeof(clnt_res));
+-	stat = clnt_call(clnt, NULLPROC,
++	status = clnt_call(clnt, NULLPROC,
+ 			 (xdrproc_t)xdr_void, (caddr_t)NULL,
+ 			 (xdrproc_t)xdr_void, (caddr_t)&clnt_res,
+ 			 TIMEOUT);
+-	if (stat) {
++	if (status) {
+ 		clnt_geterr(clnt, &rpc_createerr.cf_error);
+-		rpc_createerr.cf_stat = stat;
++		rpc_createerr.cf_stat = status;
+ 	}
+ 	clnt_destroy(clnt);
+ 	close(sock);
+ 
+-	if (stat == RPC_SUCCESS)
++	if (status == RPC_SUCCESS)
+ 		return 1;
+ 	else
+ 		return 0;
+@@ -1095,7 +1095,7 @@ static int nfs_ca_sockname(const struct 
+ 		.sin6_family		= AF_INET6,
+ 		.sin6_addr		= IN6ADDR_ANY_INIT,
+ 	};
+-	int sock;
++	int sock, result = 0;
+ 
+ 	sock = socket(sap->sa_family, SOCK_DGRAM, IPPROTO_UDP);
+ 	if (sock < 0)
+@@ -1103,28 +1103,26 @@ static int nfs_ca_sockname(const struct 
+ 
+ 	switch (sap->sa_family) {
+ 	case AF_INET:
+-		if (bind(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+-			close(sock);
+-			return 0;
+-		}
++		if (bind(sock, SAFE_SOCKADDR(&sin), sizeof(sin)) < 0)
++			goto out;
+ 		break;
+ 	case AF_INET6:
+-		if (bind(sock, (struct sockaddr *)&sin6, sizeof(sin6)) < 0) {
+-			close(sock);
+-			return 0;
+-		}
++		if (bind(sock, SAFE_SOCKADDR(&sin6), sizeof(sin6)) < 0)
++			goto out;
+ 		break;
+ 	default:
+ 		errno = EAFNOSUPPORT;
+-		return 0;
++		goto out;
+ 	}
+ 
+-	if (connect(sock, sap, salen) < 0) {
+-		close(sock);
+-		return 0;
+-	}
++	if (connect(sock, sap, salen) < 0)
++		goto out;
+ 
+-	return !getsockname(sock, buf, buflen);
++	result = !getsockname(sock, buf, buflen);
++
++out:
++	close(sock);
++	return result;
+ }
+ 
+ /*
+@@ -1346,7 +1344,7 @@ nfs_nfs_port(struct mount_options *optio
+ 	case PO_NOT_FOUND:
+ 		break;
+ 	case PO_FOUND:
+-		if (tmp >= 1 && tmp <= 65535) {
++		if (tmp >= 0 && tmp <= 65535) {
+ 			*port = tmp;
+ 			return 1;
+ 		}
+@@ -1518,7 +1516,11 @@ nfs_mount_protocol(struct mount_options 
+ 	 * set @protocol to zero.  The pmap protocol value will
+ 	 * be filled in later by an rpcbind query in this case.
+ 	 */
+-	return nfs_nfs_protocol(options, protocol);
++	if (!nfs_nfs_protocol(options, protocol))
++		return 0;
++	if (*protocol == NFSPROTO_RDMA)
++		*protocol = IPPROTO_TCP;
++	return 1;
+ }
+ 
+ /*
+@@ -1534,7 +1536,7 @@ nfs_mount_port(struct mount_options *opt
+ 	case PO_NOT_FOUND:
+ 		break;
+ 	case PO_FOUND:
+-		if (tmp >= 1 && tmp <= 65535) {
++		if (tmp >= 0 && tmp <= 65535) {
+ 			*port = tmp;
+ 			return 1;
+ 		}
+@@ -1622,3 +1624,71 @@ int nfs_options2pmap(struct mount_option
+ 
+ 	return 1;
+ }
++
++/*
++ * Discover mount server's hostname/address by examining mount options
++ *
++ * Returns a pointer to a string that the caller must free, on
++ * success; otherwise NULL is returned.
++ */
++static char *nfs_umount_hostname(struct mount_options *options,
++				 char *hostname)
++{
++	char *option;
++
++	option = po_get(options, "mountaddr");
++	if (option)
++		goto out;
++	option = po_get(options, "mounthost");
++	if (option)
++		goto out;
++	option = po_get(options, "addr");
++	if (option)
++		goto out;
++
++	return hostname;
++
++out:
++	free(hostname);
++	return strdup(option);
++}
++
++
++/*
++ * Returns EX_SUCCESS if mount options and device name have been
++ * parsed successfully; otherwise EX_FAIL.
++ */
++int nfs_umount_do_umnt(struct mount_options *options,
++		       char **hostname, char **dirname)
++{
++	union nfs_sockaddr address;
++	struct sockaddr *sap = &address.sa;
++	socklen_t salen = sizeof(address);
++	struct pmap nfs_pmap, mnt_pmap;
++	sa_family_t family;
++
++	if (!nfs_options2pmap(options, &nfs_pmap, &mnt_pmap))
++		return EX_FAIL;
++
++	/* Skip UMNT call for vers=4 mounts */
++	if (nfs_pmap.pm_vers == 4)
++		return EX_SUCCESS;
++
++	*hostname = nfs_umount_hostname(options, *hostname);
++	if (!*hostname) {
++		nfs_error(_("%s: out of memory"), progname);
++		return EX_FAIL;
++	}
++
++	if (!nfs_mount_proto_family(options, &family))
++		return 0;
++	if (!nfs_lookup(*hostname, family, sap, &salen))
++		/* nfs_lookup reports any errors */
++		return EX_FAIL;
++
++	if (nfs_advise_umount(sap, salen, &mnt_pmap, dirname) == 0)
++		/* nfs_advise_umount reports any errors */
++		return EX_FAIL;
++
++	return EX_SUCCESS;
++}
+diff -up nfs-utils-1.2.3/utils/mount/network.h.orig nfs-utils-1.2.3/utils/mount/network.h
+--- nfs-utils-1.2.3/utils/mount/network.h.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/network.h	2011-04-20 08:48:36.362265201 -0400
+@@ -75,4 +75,7 @@ int nfs_advise_umount(const struct socka
+ CLIENT *mnt_openclnt(clnt_addr_t *, int *);
+ void mnt_closeclnt(CLIENT *, int);
+ 
++int nfs_umount_do_umnt(struct mount_options *options,
++		       char **hostname, char **dirname);
++
+ #endif	/* _NFS_UTILS_MOUNT_NETWORK_H */
+diff -up nfs-utils-1.2.3/utils/mount/nfs.man.orig nfs-utils-1.2.3/utils/mount/nfs.man
+--- nfs-utils-1.2.3/utils/mount/nfs.man.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/nfs.man	2011-04-20 08:48:36.363265193 -0400
+@@ -69,10 +69,9 @@ for details on specifying raw IPv6 addre
+ .P
+ The
+ .I fstype
+-field contains "nfs", for whatever version of the protocol.
+-The
+-.B nfs
+-allow several mount options, which are described below.
++field contains "nfs".  Use of the "nfs4" fstype in
++.I /etc/fstab
++is deprecated.
+ .SH "MOUNT OPTIONS"
+ Refer to
+ .BR mount (8)
+@@ -464,9 +463,9 @@ by other clients, but can impact applica
+ .IP
+ The DATA AND METADATA COHERENCE section contains a
+ detailed discussion of these trade-offs.
+-.SS "Options for versions 2 and 3 only"
++.SS "Options for NFS versions 2 and 3 only"
+ Use these options, along with the options in the above subsection,
+-for NFSv2/v3 only. They will be ignored for newer versions.
++for NFS versions 2 and 3 only.
+ .TP 1.5i
+ .BI proto= netid
+ The transport protocol name and protocol family the NFS client uses
+@@ -619,7 +618,7 @@ in such cases.
+ .BI nfsvers= n
+ The NFS protocol version number used to contact the server's NFS service.
+ If the server does not support the requested version, the mount request fails.
+-If this option is not specified, the client negociate a suitable version with
++If this option is not specified, the client negotiates a suitable version with
+ the server, trying version 4 first, version 3 second, and version 2 last.
+ .TP 1.5i
+ .BI vers= n
+@@ -717,9 +716,53 @@ If this option is not specified, the NFS
+ on NFS version 3 mounts to read small directories.
+ Some applications perform better if the client uses only READDIR requests
+ for all directories.
+-.SS "Options for version 4 only"
++.TP 1.5i
++.BR local_lock= mechanism
++Specifies whether to use local locking for any or both of the flock and the
++POSIX locking mechanisms.
++.I mechanism
++can be one of
++.BR all ,
++.BR flock ,
++.BR posix ,
++or
++.BR none .
++This option is supported in kernels 2.6.37 and later.
++.IP
++The Linux NFS client provides a way to make locks local. This means, the
++applications can lock files, but such locks provide exclusion only against
++other applications running on the same client. Remote applications are not
++affected by these locks.
++.IP
++If this option is not specified, or if
++.B none
++is specified, the client assumes that the locks are not local.
++.IP
++If
++.BR all
++is specified, the client assumes that both flock and POSIX locks are local.
++.IP
++If
++.BR flock
++is specified, the client assumes that only flock locks are local and uses
++NLM sideband protocol to lock files when POSIX locks are used.
++.IP
++If
++.BR posix
++is specified, the client assumes that POSIX locks are local and uses NLM
++sideband protocol to lock files when flock locks are used.
++.IP
++To support legacy flock behavior similar to that of NFS clients < 2.6.12, use
++'local_lock=flock'. This option is required when exporting NFS mounts via
++Samba as Samba maps Windows share mode locks as flock. Since NFS clients >
++2.6.12 implement flock by emulating POSIX locks, this will result in
++conflicting locks.
++.IP
++NOTE: When used together, the 'local_lock' mount option will be overridden
++by 'nolock'/'lock' mount option.
++.SS "Options for NFS version 4 only"
+ Use these options, along with the options in the first subsection above,
+-for NFSv4 only. They will be ignored with older versions.
++for NFS version 4 and newer.
+ .TP 1.5i
+ .BI proto= netid
+ The transport protocol name and protocol family the NFS client uses
+@@ -1480,32 +1523,54 @@ of Access Control Lists that are semanti
+ NFS version 4 ACLs are not fully compatible with POSIX ACLs; as such,
+ some translation between the two is required
+ in an environment that mixes POSIX ACLs and NFS version 4.
+-.SH FILES
+-.TP 1.5i
+-.I /etc/fstab
+-file system table
+-.SH BUGS
+-The generic
+-.B remount
+-option is not fully supported.
+-Generic options, such as
+-.BR rw " and " ro
+-can be modified using the
+-.B remount
+-option,
+-but NFS-specific options are not all supported.
++.SH "THE REMOUNT OPTION"
++Generic mount options such as
++.BR rw " and " sync
++can be modified on NFS mount points using the
++.BR remount
++option.
++See
++.BR mount (8)
++for more information on generic mount options.
++.P
++With few exceptions, NFS-specific options
++are not able to be modified during a remount.
+ The underlying transport or NFS version
+ cannot be changed by a remount, for example.
++.P
+ Performing a remount on an NFS file system mounted with the
+ .B noac
+ option may have unintended consequences.
+ The
+ .B noac
+-option is a mixture of a generic option,
++option is a combination of the generic option
+ .BR sync ,
+-and an NFS-specific option
++and the NFS-specific option
+ .BR actimeo=0 .
++.SS "Unmounting after a remount"
++For mount points that use NFS versions 2 or 3, the NFS umount subcommand
++depends on knowing the original set of mount options used to perform the
++MNT operation.
++These options are stored on disk by the NFS mount subcommand,
++and can be erased by a remount.
++.P
++To ensure that the saved mount options are not erased during a remount,
++specify either the local mount directory, or the server hostname and
++export pathname, but not both, during a remount.  For example,
+ .P
++.NF
++.TA 2.5i
++	mount -o remount,ro /mnt
++.FI
++.P
++merges the mount option
++.B ro
++with the mount options already saved on disk for the NFS server mounted at /mnt.
++.SH FILES
++.TP 1.5i
++.I /etc/fstab
++file system table
++.SH BUGS
+ Before 2.4.7, the Linux NFS client did not support NFS over TCP.
+ .P
+ Before 2.4.20, the Linux NFS client used a heuristic
+diff -up nfs-utils-1.2.3/utils/mount/nfsumount.c.orig nfs-utils-1.2.3/utils/mount/nfsumount.c
+--- nfs-utils-1.2.3/utils/mount/nfsumount.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/nfsumount.c	2011-04-20 08:48:36.364265185 -0400
+@@ -31,11 +31,16 @@
+ #include "nls.h"
+ 
+ #include "mount_constants.h"
++#include "nfs_mount.h"
+ #include "mount.h"
+ #include "error.h"
+ #include "network.h"
+ #include "parse_opt.h"
+ #include "parse_dev.h"
++#include "utils.h"
++
++#define MOUNTSFILE	"/proc/mounts"
++#define LINELEN		(4096)
+ 
+ #if !defined(MNT_FORCE)
+ /* dare not try to include <linux/mount.h> -- lots of errors */
+@@ -109,7 +114,7 @@ static int del_mtab(const char *spec, co
+ 			res = try_remount(spec, node);
+ 			if (res)
+ 				goto writemtab;
+-			return 0;
++			return EX_SUCCESS;
+ 		} else
+ 			umnt_err = errno;
+ 	}
+@@ -127,7 +132,7 @@ static int del_mtab(const char *spec, co
+ 	}
+ 
+ 	if (res >= 0)
+-		return 0;
++		return EX_SUCCESS;
+ 
+ 	if (umnt_err)
+ 		umount_error(umnt_err, node);
+@@ -135,110 +140,88 @@ static int del_mtab(const char *spec, co
+ }
+ 
+ /*
+- * Discover mount server's hostname/address by examining mount options
+- *
+- * Returns a pointer to a string that the caller must free, on
+- * success; otherwise NULL is returned.
+- */
+-static char *nfs_umount_hostname(struct mount_options *options,
+-				 char *hostname)
+-{
+-	char *option;
+-
+-	option = po_get(options, "mountaddr");
+-	if (option)
+-		goto out;
+-	option = po_get(options, "mounthost");
+-	if (option)
+-		goto out;
+-	option = po_get(options, "addr");
+-	if (option)
+-		goto out;
+-
+-	return hostname;
+-
+-out:
+-	free(hostname);
+-	return strdup(option);
+-}
+-
+-/*
+- * Returns EX_SUCCESS if mount options and device name have been
+- * parsed successfully; otherwise EX_FAIL.
+- */
+-static int nfs_umount_do_umnt(struct mount_options *options,
+-			      char **hostname, char **dirname)
+-{
+-	union {
+-		struct sockaddr		sa;
+-		struct sockaddr_in	s4;
+-		struct sockaddr_in6	s6;
+-	} address;
+-	struct sockaddr *sap = &address.sa;
+-	socklen_t salen = sizeof(address);
+-	struct pmap nfs_pmap, mnt_pmap;
+-	sa_family_t family;
+-
+-	if (!nfs_options2pmap(options, &nfs_pmap, &mnt_pmap))
+-		return EX_FAIL;
+-
+-	/* Skip UMNT call for vers=4 mounts */
+-	if (nfs_pmap.pm_vers == 4)
+-		return EX_SUCCESS;
+-
+-	*hostname = nfs_umount_hostname(options, *hostname);
+-	if (!*hostname) {
+-		nfs_error(_("%s: out of memory"), progname);
+-		return EX_FAIL;
+-	}
+-
+-	if (!nfs_mount_proto_family(options, &family))
+-		return 0;
+-	if (!nfs_lookup(*hostname, family, sap, &salen))
+-		/* nfs_lookup reports any errors */
+-		return EX_FAIL;
+-
+-	if (nfs_advise_umount(sap, salen, &mnt_pmap, dirname) == 0)
+-		/* nfs_advise_umount reports any errors */
+-		return EX_FAIL;
+-
+-	return EX_SUCCESS;
+-}
+-
+-/*
+- * Pick up certain mount options used during the original mount
+- * from /etc/mtab.  The basics include the server's IP address and
+- * the server pathname of the share to unregister.
++ * Detect NFSv4 mounts.
+  *
+- * These options might also describe the mount port, mount protocol
+- * version, and transport protocol used to punch through a firewall.
+- * We will need this information to get through the firewall again
+- * to do the umount.
++ * Consult /proc/mounts to determine if the mount point
++ * is an NFSv4 mount.  The kernel is authoritative about
++ * what type of mount this is.
+  *
+- * Note that option parsing failures won't necessarily cause the
+- * umount request to fail.  Those values will be left zero in the
+- * pmap tuple.  If the GETPORT call later fails to disambiguate them,
+- * then we fail.
++ * Returns 1 if "mc" is an NFSv4 mount, zero if not, and
++ * -1 if some error occurred.
+  */
+-static int nfs_umount23(const char *devname, char *string)
++static int nfs_umount_is_vers4(const struct mntentchn *mc)
+ {
+-	char *hostname, *dirname;
+-	struct mount_options *options;
+-	int result = EX_FAIL;
++	char buffer[LINELEN], *next;
++	int retval;
++	FILE *f;
++
++	if ((f = fopen(MOUNTSFILE, "r")) == NULL) {
++		fprintf(stderr, "%s: %s\n",
++			MOUNTSFILE, strerror(errno));
++		return -1;
++	}
++
++	retval = -1;
++	while (fgets(buffer, sizeof(buffer), f) != NULL) {
++		char *device, *mntdir, *type, *flags;
++		struct mount_options *options;
++		char *line = buffer;
++
++		next = strchr(line, '\n');
++		if (next != NULL)
++			*next = '\0';
++
++		device = strtok(line, " \t");
++		if (device == NULL)
++			continue;
++		mntdir = strtok(NULL, " \t");
++		if (mntdir == NULL)
++			continue;
++		if (strcmp(device, mc->m.mnt_fsname) != 0 &&
++		    strcmp(mntdir, mc->m.mnt_dir) != 0)
++			continue;
++
++		type = strtok(NULL, " \t");
++		if (type == NULL)
++			continue;
++		if (strcmp(type, "nfs4") == 0)
++			goto out_nfs4;
++
++		flags = strtok(NULL, " \t");
++		if (flags == NULL)
++			continue;
++		options = po_split(flags);
++		if (options != NULL) {
++			unsigned long version;
++			int rc;
++
++			rc = nfs_nfs_version(options, &version);
++			po_destroy(options);
++			if (rc && version == 4)
++				goto out_nfs4;
++		}
+ 
+-	if (!nfs_parse_devname(devname, &hostname, &dirname))
+-		return EX_USAGE;
++		goto out_nfs;
++	}
++	if (retval == -1)
++		fprintf(stderr, "%s was not found in %s\n",
++			mc->m.mnt_dir, MOUNTSFILE);
+ 
+-	options = po_split(string);
+-	if (options) {
+-		result = nfs_umount_do_umnt(options, &hostname, &dirname);
+-		po_destroy(options);
+-	} else
+-		nfs_error(_("%s: option parsing error"), progname);
++out:
++	fclose(f);
++	return retval;
+ 
+-	free(hostname);
+-	free(dirname);
+-	return result;
++out_nfs4:
++	if (verbose)
++		fprintf(stderr, "NFSv4 mount point detected\n");
++	retval = 1;
++	goto out;
++
++out_nfs:
++	if (verbose)
++		fprintf(stderr, "Legacy NFS mount point detected\n");
++	retval = 0;
++	goto out;
+ }
+ 
+ static struct option umount_longopts[] =
+@@ -251,17 +234,6 @@ static struct option umount_longopts[] =
+   { NULL, 0, 0, 0 }
+ };
+ 
+-static void umount_usage(void)
+-{
+-	printf(_("usage: %s dir [-fvnrlh]\n"), progname);
+-	printf(_("options:\n\t-f\t\tforce unmount\n"));
+-	printf(_("\t-v\tverbose\n"));
+-	printf(_("\t-n\tDo not update /etc/mtab\n"));
+-	printf(_("\t-r\tremount\n"));
+-	printf(_("\t-l\tlazy unmount\n"));
+-	printf(_("\t-h\tprint this help\n\n"));
+-}
+-
+ int nfsumount(int argc, char *argv[])
+ {
+ 	int c, ret;
+@@ -362,16 +334,25 @@ int nfsumount(int argc, char *argv[])
+ 		}
+ 	}
+ 
+-	ret = 0;
++	ret = EX_SUCCESS;
+ 	if (mc) {
+-		if (!lazy && strcmp(mc->m.mnt_type, "nfs4") != 0)
+-			/* We ignore the error from nfs_umount23.
+-			 * If the actual umount succeeds (in del_mtab),
+-			 * we don't want to signal an error, as that
+-			 * could cause /sbin/mount to retry!
+-			 */
+-			nfs_umount23(mc->m.mnt_fsname, mc->m.mnt_opts);
+-		ret = del_mtab(mc->m.mnt_fsname, mc->m.mnt_dir) ?: ret;
++		if (!lazy) {
++			switch (nfs_umount_is_vers4(mc)) {
++			case 0:
++				/* We ignore the error from nfs_umount23.
++				 * If the actual umount succeeds (in del_mtab),
++				 * we don't want to signal an error, as that
++				 * could cause /sbin/mount to retry!
++				 */
++				nfs_umount23(mc->m.mnt_fsname, mc->m.mnt_opts);
++				break;
++			case 1:
++				break;
++			default:
++				return EX_FAIL;
++			}
++		}
++		ret = del_mtab(mc->m.mnt_fsname, mc->m.mnt_dir);
+ 	} else if (*spec != '/') {
+ 		if (!lazy)
+ 			ret = nfs_umount23(spec, "tcp,v3");
+diff -up nfs-utils-1.2.3/utils/mount/parse_opt.c.orig nfs-utils-1.2.3/utils/mount/parse_opt.c
+--- nfs-utils-1.2.3/utils/mount/parse_opt.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/parse_opt.c	2011-04-20 08:48:36.365265177 -0400
+@@ -508,7 +508,7 @@ po_found_t po_get_numeric(struct mount_o
+ int po_rightmost(struct mount_options *options, const char *keys[])
+ {
+ 	struct mount_option *option;
+-	unsigned int i;
++	int i;
+ 
+ 	if (options) {
+ 		for (option = options->tail; option; option = option->prev) {
+diff -up nfs-utils-1.2.3/utils/mount/stropts.c.orig nfs-utils-1.2.3/utils/mount/stropts.c
+--- nfs-utils-1.2.3/utils/mount/stropts.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/stropts.c	2011-04-20 08:48:36.366265169 -0400
+@@ -49,10 +49,6 @@
+ #include "parse_dev.h"
+ #include "conffile.h"
+ 
+-#ifndef HAVE_DECL_AI_ADDRCONFIG
+-#define AI_ADDRCONFIG	0
+-#endif
+-
+ #ifndef NFS_PROGRAM
+ #define NFS_PROGRAM	(100003)
+ #endif
+@@ -114,7 +110,7 @@ static void nfs_default_version(struct n
+ 	}
+ }
+ #else
+-inline void nfs_default_version(struct nfsmount_info *mi) {}
++inline void nfs_default_version(__attribute__ ((unused)) struct nfsmount_info *mi) {}
+ #endif /* MOUNT_CONFIG */
+ 
+ /*
+@@ -123,10 +119,12 @@ inline void nfs_default_version(struct n
+  * Returns a time_t timeout timestamp, in seconds.
+  */
+ static time_t nfs_parse_retry_option(struct mount_options *options,
+-				     unsigned int timeout_minutes)
++				     const time_t default_timeout)
+ {
++	time_t timeout_minutes;
+ 	long tmp;
+ 
++	timeout_minutes = default_timeout;
+ 	switch (po_get_numeric(options, "retry", &tmp)) {
+ 	case PO_NOT_FOUND:
+ 		break;
+@@ -135,6 +133,7 @@ static time_t nfs_parse_retry_option(str
+ 			timeout_minutes = tmp;
+ 			break;
+ 		}
++		/*FALLTHROUGH*/
+ 	case PO_BAD_VALUE:
+ 		if (verbose)
+ 			nfs_error(_("%s: invalid retry timeout was specified; "
+@@ -142,7 +141,7 @@ static time_t nfs_parse_retry_option(str
+ 		break;
+ 	}
+ 
+-	return time(NULL) + (time_t)(timeout_minutes * 60);
++	return time(NULL) + (timeout_minutes * 60);
+ }
+ 
+ /*
+@@ -343,7 +342,6 @@ static int nfs_validate_options(struct n
+ {
+ 	struct addrinfo hint = {
+ 		.ai_protocol	= (int)IPPROTO_UDP,
+-		.ai_flags	= AI_ADDRCONFIG,
+ 	};
+ 	sa_family_t family;
+ 	int error;
+@@ -570,16 +568,18 @@ static int nfs_sys_mount(struct nfsmount
+ 	char *options = NULL;
+ 	int result;
+ 
++	if (mi->fake)
++		return 1;
++
+ 	if (po_join(opts, &options) == PO_FAILED) {
+ 		errno = EIO;
+ 		return 0;
+ 	}
+ 
+-	if (mi->fake)
+-		return 1;
+-
+ 	result = mount(mi->spec, mi->node, mi->type,
+ 			mi->flags & ~(MS_USER|MS_USERS), options);
++	free(options);
++
+ 	if (verbose && result) {
+ 		int save = errno;
+ 		nfs_error(_("%s: mount(2): %s"), progname, strerror(save));
+@@ -650,7 +650,7 @@ out_fail:
+ static int nfs_try_mount_v3v2(struct nfsmount_info *mi)
+ {
+ 	struct addrinfo *ai;
+-	int ret;
++	int ret = 0;
+ 
+ 	for (ai = mi->address; ai != NULL; ai = ai->ai_next) {
+ 		ret = nfs_do_mount_v3v2(mi, ai->ai_addr, ai->ai_addrlen);
+@@ -737,7 +737,7 @@ out_fail:
+ static int nfs_try_mount_v4(struct nfsmount_info *mi)
+ {
+ 	struct addrinfo *ai;
+-	int ret;
++	int ret = 0;
+ 
+ 	for (ai = mi->address; ai != NULL; ai = ai->ai_next) {
+ 		ret = nfs_do_mount_v4(mi, ai->ai_addr, ai->ai_addrlen);
+diff -up nfs-utils-1.2.3/utils/mount/utils.c.orig nfs-utils-1.2.3/utils/mount/utils.c
+--- nfs-utils-1.2.3/utils/mount/utils.c.orig	2011-04-20 08:48:36.367265162 -0400
++++ nfs-utils-1.2.3/utils/mount/utils.c	2011-04-20 08:48:36.367265162 -0400
+@@ -0,0 +1,175 @@
++/*
++ * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2, or (at your option)
++ * any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program; if not, write to the
++ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
++ * Boston, MA 021110-1307, USA.
++ *
++ */
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++
++#include <stdio.h>
++#include <string.h>
++#include <errno.h>
++#include <unistd.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++
++#include "sockaddr.h"
++#include "nfs_mount.h"
++#include "nls.h"
++#include "xcommon.h"
++#include "version.h"
++#include "error.h"
++#include "utils.h"
++#include "mount.h"
++#include "network.h"
++#include "parse_dev.h"
++
++extern int verbose;
++extern char *progname;
++
++/*
++ * Choose the version of the nfs_mount_data structure that is appropriate
++ * for the kernel that is doing the mount.
++ *
++ * NFS_MOUNT_VERSION:		maximum version supported by these sources
++ * nfs_mount_data_version:	maximum version supported by the running kernel
++ */
++int discover_nfs_mount_data_version(int *string_ver)
++{
++	unsigned int kernel_version = linux_version_code();
++	int ver = 0;
++
++	*string_ver = 0;
++
++	if (kernel_version) {
++		if (kernel_version < MAKE_VERSION(2, 1, 32))
++			ver = 1;
++		else if (kernel_version < MAKE_VERSION(2, 2, 18))
++			ver = 3;
++		else if (kernel_version < MAKE_VERSION(2, 3, 0))
++			ver = 4;
++		else if (kernel_version < MAKE_VERSION(2, 3, 99))
++			ver = 3;
++		else if (kernel_version < MAKE_VERSION(2, 6, 3))
++			ver = 4;
++		else
++			ver = 6;
++	}
++	if (ver > NFS_MOUNT_VERSION)
++		ver = NFS_MOUNT_VERSION;
++	else
++		if (kernel_version > MAKE_VERSION(2, 6, 22))
++			(*string_ver)++;
++
++	return ver;
++}
++
++void print_one(char *spec, char *node, char *type, char *opts)
++{
++	if (!verbose)
++		return;
++
++	if (opts)
++		printf(_("%s on %s type %s (%s)\n"), spec, node, type, opts);
++	else
++		printf(_("%s on %s type %s\n"), spec, node, type);
++}
++
++void mount_usage(void)
++{
++	printf(_("usage: %s remotetarget dir [-rvVwfnsih] [-o nfsoptions]\n"),
++		progname);
++	printf(_("options:\n"));
++	printf(_("\t-r\t\tMount file system readonly\n"));
++	printf(_("\t-v\t\tVerbose\n"));
++	printf(_("\t-V\t\tPrint version\n"));
++	printf(_("\t-w\t\tMount file system read-write\n"));
++	printf(_("\t-f\t\tFake mount, do not actually mount\n"));
++	printf(_("\t-n\t\tDo not update /etc/mtab\n"));
++	printf(_("\t-s\t\tTolerate sloppy mount options rather than fail\n"));
++	printf(_("\t-h\t\tPrint this help\n"));
++	printf(_("\tnfsoptions\tRefer to mount.nfs(8) or nfs(5)\n\n"));
++}
++
++void umount_usage(void)
++{
++	printf(_("usage: %s dir [-fvnrlh]\n"), progname);
++	printf(_("options:\n\t-f\t\tforce unmount\n"));
++	printf(_("\t-v\tverbose\n"));
++	printf(_("\t-n\tDo not update /etc/mtab\n"));
++	printf(_("\t-r\tremount\n"));
++	printf(_("\t-l\tlazy unmount\n"));
++	printf(_("\t-h\tprint this help\n\n"));
++}
++
++int chk_mountpoint(const char *mount_point)
++{
++	struct stat sb;
++
++	if (stat(mount_point, &sb) < 0){
++		mount_error(NULL, mount_point, errno);
++		return 1;
++	}
++	if (S_ISDIR(sb.st_mode) == 0){
++		mount_error(NULL, mount_point, ENOTDIR);
++		return 1;
++	}
++	if (access(mount_point, X_OK) < 0) {
++		mount_error(NULL, mount_point, errno);
++		return 1;
++	}
++
++	return 0;
++}
++
++/*
++ * Pick up certain mount options used during the original mount
++ * from /etc/mtab.  The basics include the server's IP address and
++ * the server pathname of the share to unregister.
++ *
++ * These options might also describe the mount port, mount protocol
++ * version, and transport protocol used to punch through a firewall.
++ * We will need this information to get through the firewall again
++ * to do the umount.
++ *
++ * Note that option parsing failures won't necessarily cause the
++ * umount request to fail.  Those values will be left zero in the
++ * pmap tuple.  If the GETPORT call later fails to disambiguate them,
++ * then we fail.
++ */
++int nfs_umount23(const char *devname, char *string)
++{
++	char *hostname = NULL, *dirname = NULL;
++	struct mount_options *options;
++	int result = EX_FAIL;
++
++	if (!nfs_parse_devname(devname, &hostname, &dirname))
++		return EX_USAGE;
++
++	options = po_split(string);
++	if (options) {
++		result = nfs_umount_do_umnt(options, &hostname, &dirname);
++		po_destroy(options);
++	} else
++		nfs_error(_("%s: option parsing error"), progname);
++
++	free(hostname);
++	free(dirname);
++	return result;
++}
+diff -up nfs-utils-1.2.3/utils/mount/utils.h.orig nfs-utils-1.2.3/utils/mount/utils.h
+--- nfs-utils-1.2.3/utils/mount/utils.h.orig	2011-04-20 08:48:36.367265162 -0400
++++ nfs-utils-1.2.3/utils/mount/utils.h	2011-04-20 08:48:36.367265162 -0400
+@@ -0,0 +1,36 @@
++/*
++ * utils.h -- misc utils for mount and umount
++ *
++ * Copyright (C) 2010 Karel Zak <kzak@redhat.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program; if not, write to the
++ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
++ * Boston, MA 021110-1307, USA.
++ *
++ */
++
++#ifndef _NFS_UTILS_MOUNT_UTILS_H
++#define _NFS_UTILS_MOUNT_UTILS_H
++
++#include "parse_opt.h"
++
++int discover_nfs_mount_data_version(int *string_ver);
++void print_one(char *spec, char *node, char *type, char *opts);
++void mount_usage(void);
++void umount_usage(void);
++int chk_mountpoint(const char *mount_point);
++
++int nfs_umount23(const char *devname, char *string);
++
++#endif	/* !_NFS_UTILS_MOUNT_UTILS_H */
+diff -up nfs-utils-1.2.3/utils/mount/version.h.orig nfs-utils-1.2.3/utils/mount/version.h
+--- nfs-utils-1.2.3/utils/mount/version.h.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/mount/version.h	2011-04-20 08:48:36.368265155 -0400
+@@ -42,9 +42,9 @@ static inline unsigned int linux_version
+ 	if (uname(&my_utsname))
+ 		return 0;
+ 
+-	p = atoi(strtok(my_utsname.release, "."));
+-	q = atoi(strtok(NULL, "."));
+-	r = atoi(strtok(NULL, "."));
++	p = (unsigned int)atoi(strtok(my_utsname.release, "."));
++	q = (unsigned int)atoi(strtok(NULL, "."));
++	r = (unsigned int)atoi(strtok(NULL, "."));
+ 	return MAKE_VERSION(p, q, r);
+ }
+ 
+diff -up nfs-utils-1.2.3/utils/nfsidmap/Makefile.am.orig nfs-utils-1.2.3/utils/nfsidmap/Makefile.am
+--- nfs-utils-1.2.3/utils/nfsidmap/Makefile.am.orig	2011-04-20 08:48:36.371265132 -0400
++++ nfs-utils-1.2.3/utils/nfsidmap/Makefile.am	2011-04-20 08:48:36.372265124 -0400
+@@ -0,0 +1,9 @@
++## Process this file with automake to produce Makefile.in
++
++man8_MANS = nfsidmap.man
++
++sbin_PROGRAMS	= nfsidmap
++nfsidmap_SOURCES = nfsidmap.c
++nfsidmap_LDADD = -lnfsidmap -lkeyutils
++
++MAINTAINERCLEANFILES = Makefile.in
+diff -up nfs-utils-1.2.3/utils/nfsidmap/nfsidmap.c.orig nfs-utils-1.2.3/utils/nfsidmap/nfsidmap.c
+--- nfs-utils-1.2.3/utils/nfsidmap/nfsidmap.c.orig	2011-04-20 08:48:36.372265124 -0400
++++ nfs-utils-1.2.3/utils/nfsidmap/nfsidmap.c	2011-04-20 08:48:36.372265124 -0400
+@@ -0,0 +1,118 @@
++
++#include <stdarg.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include <pwd.h>
++#include <grp.h>
++#include <keyutils.h>
++#include <nfsidmap.h>
++
++#include <syslog.h>
++
++/* gcc nfsidmap.c -o nfsidmap -l nfsidmap -l keyutils */
++
++#define MAX_ID_LEN   11
++#define IDMAP_NAMESZ 128
++#define USER  1
++#define GROUP 0
++
++
++/*
++ * Find either a user or group id based on the name@domain string
++ */
++int id_lookup(char *name_at_domain, key_serial_t key, int type)
++{
++	char id[MAX_ID_LEN];
++	uid_t uid = 0;
++	gid_t gid = 0;
++	int rc;
++
++	if (type == USER) {
++		rc = nfs4_owner_to_uid(name_at_domain, &uid);
++		sprintf(id, "%u", uid);
++	} else {
++		rc = nfs4_group_owner_to_gid(name_at_domain, &gid);
++		sprintf(id, "%u", gid);
++	}
++
++	if (rc == 0)
++		rc = keyctl_instantiate(key, id, strlen(id) + 1, 0);
++
++	return rc;
++}
++
++/*
++ * Find the name@domain string from either a user or group id
++ */
++int name_lookup(char *id, key_serial_t key, int type)
++{
++	char name[IDMAP_NAMESZ];
++	char domain[NFS4_MAX_DOMAIN_LEN];
++	uid_t uid;
++	gid_t gid;
++	int rc;
++
++	rc = nfs4_get_default_domain(NULL, domain, NFS4_MAX_DOMAIN_LEN);
++	if (rc != 0) {
++		rc = -1;
++		goto out;
++	}
++
++	if (type == USER) {
++		uid = atoi(id);
++		rc = nfs4_uid_to_name(uid, domain, name, IDMAP_NAMESZ);
++	} else {
++		gid = atoi(id);
++		rc = nfs4_gid_to_name(gid, domain, name, IDMAP_NAMESZ);
++	}
++
++	if (rc == 0)
++		rc = keyctl_instantiate(key, &name, strlen(name), 0);
++
++out:
++	return rc;
++}
++
++int main(int argc, char **argv)
++{
++	char *arg;
++	char *value;
++	char *type;
++	int rc = 1;
++	int timeout = 600;
++	key_serial_t key;
++
++	if (argc < 3)
++		return 1;
++
++	arg = malloc(sizeof(char) * strlen(argv[2]) + 1);
++	strcpy(arg, argv[2]);
++	type = strtok(arg, ":");
++	value = strtok(NULL, ":");
++
++	if (argc == 4) {
++		timeout = atoi(argv[3]);
++		if (timeout < 0)
++			timeout = 0;
++	}
++
++	key = strtol(argv[1], NULL, 10);
++
++	if (strcmp(type, "uid") == 0)
++		rc = id_lookup(value, key, USER);
++	else if (strcmp(type, "gid") == 0)
++		rc = id_lookup(value, key, GROUP);
++	else if (strcmp(type, "user") == 0)
++		rc = name_lookup(value, key, USER);
++	else if (strcmp(type, "group") == 0)
++		rc = name_lookup(value, key, GROUP);
++
++	/* Set timeout to 5 (600 seconds) minutes */
++	if (rc == 0)
++		keyctl_set_timeout(key, timeout);
++
++	free(arg);
++	return rc;
++}
+diff -up nfs-utils-1.2.3/utils/nfsidmap/nfsidmap.man.orig nfs-utils-1.2.3/utils/nfsidmap/nfsidmap.man
+--- nfs-utils-1.2.3/utils/nfsidmap/nfsidmap.man.orig	2011-04-20 08:48:36.373265116 -0400
++++ nfs-utils-1.2.3/utils/nfsidmap/nfsidmap.man	2011-04-20 08:48:36.373265116 -0400
+@@ -0,0 +1,60 @@
++.\"
++.\"@(#)nfsidmap(8) - The NFS idmapper upcall program
++.\"
++.\" Copyright (C) 2010 Bryan Schumaker <bjschuma@netapp.com>
++.TH nfsidmap 5 "1 October 2010"
++.SH NAME
++nfsidmap \- The NFS idmapper upcall program
++.SH DESCRIPTION
++The file
++.I /usr/sbin/nfsidmap
++is used by the NFS idmapper to translate user and group ids into names, and to
++translate user and group names into ids. Idmapper uses request-key to perform
++the upcall and cache the result.
++.I /usr/sbin/nfsidmap
++should only be called by request-key, and will perform the translation and
++initialize a key with the resulting information.
++.PP
++NFS_USE_NEW_IDMAPPER must be selected when configuring the kernel to use this
++feature.
++.SH CONFIGURING
++The file
++.I /etc/request-key.conf
++will need to be modified so
++.I /sbin/request-key
++can properly direct the upcall. The following line should be added before a call
++to keyctl negate:
++.PP
++create	nfs_idmap	*	*	/usr/sbin/nfsidmap %k %d 600
++.PP
++This will direct all nfs_idmap requests to the program
++.I /usr/sbin/nfsidmap
++The last parameter, 600, defines how many seconds into the future the key will
++expire.  This is an optional parameter for
++.I /usr/sbin/nfsidmap
++and will default to 600 seconds when not specified.
++.PP
++The idmapper system uses four key descriptions:
++.PP
++	  uid: Find the UID for the given user
++.br
++	  gid: Find the GID for the given group
++.br
++	 user: Find the user name for the given UID
++.br
++	group: Find the group name for the given GID
++.PP
++You can choose to handle any of these individually, rather than using the
++generic upcall program.  If you would like to use your own program for a uid
++lookup then you would edit your request-key.conf so it looks similar to this:
++.PP
++create	nfs_idmap	uid:*	*	/some/other/program %k %d 600
++.br
++create	nfs_idmap	*		*	/usr/sbin/nfsidmap %k %d 600
++.PP
++Notice that the new line was added above the line for the generic program.
++request-key will find the first matching line and run the corresponding program.
++In this case, /some/other/program will handle all uid lookups, and
++/usr/sbin/nfsidmap will handle gid, user, and group lookups.
++.SH AUTHOR
++Bryan Schumaker, <bjschuma@netapp.com>
+diff -up nfs-utils-1.2.3/utils/nfsstat/nfsstat.c.orig nfs-utils-1.2.3/utils/nfsstat/nfsstat.c
+--- nfs-utils-1.2.3/utils/nfsstat/nfsstat.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/nfsstat/nfsstat.c	2011-04-20 08:48:36.374265108 -0400
+@@ -46,7 +46,7 @@ static unsigned int	cltproc3info[CLTPROC
+ static unsigned int	srvproc4info[SRVPROC4_SZ+2],
+ 			srvproc4info_old[SRVPROC4_SZ+2];	/* NFSv4 call counts ([0] == 2) */
+ static unsigned int	cltproc4info[CLTPROC4_SZ+2],
+-			cltproc4info_old[CLTPROC4_SZ+2];	/* NFSv4 call counts ([0] == 48) */
++			cltproc4info_old[CLTPROC4_SZ+2];	/* NFSv4 call counts ([0] == 49) */
+ static unsigned int	srvproc4opsinfo[SRVPROC4OPS_SZ+2],
+ 			srvproc4opsinfo_old[SRVPROC4OPS_SZ+2];	/* NFSv4 call counts ([0] == 59) */
+ static unsigned int	srvnetinfo[5], srvnetinfo_old[5];	/* 0  # of received packets
+@@ -221,8 +221,8 @@ DECLARE_CLT(cltinfo);
+ DECLARE_CLT(cltinfo, _old);
+ 
+ static void		print_all_stats(int, int, int);
+-static void		print_server_stats(int, int);
+-static void		print_client_stats(int, int);
++static void		print_server_stats(int);
++static void		print_client_stats(int);
+ static void		print_stats_list(int, int, int);
+ static void		print_numbers(const char *, unsigned int *,
+ 					unsigned int);
+@@ -239,7 +239,7 @@ static int		mounts(const char *);
+ 
+ static void		get_stats(const char *, struct statinfo *, int *, int,
+ 					int);
+-static int		has_stats(const unsigned int *);
++static int		has_stats(const unsigned int *, int);
+ static int		has_rpcstats(const unsigned int *, int);
+ static void 		diff_stats(struct statinfo *, struct statinfo *, int);
+ static void 		unpause(int);
+@@ -468,7 +468,7 @@ main(int argc, char **argv)
+ 		pause();
+ 	}
+ 
+-	if (opt_since || opt_sleep) {
++	if (opt_since || (opt_sleep && !sleep_time)) {
+ 		if (opt_srv) {
+ 			get_stats(NFSSRVSTAT, serverinfo_tmp, &opt_srv, opt_clt, 1);
+ 			diff_stats(serverinfo_tmp, serverinfo, 1);
+@@ -516,16 +516,16 @@ main(int argc, char **argv)
+ static void
+ print_all_stats (int opt_srv, int opt_clt, int opt_prt)
+ {
+-	print_server_stats(opt_srv, opt_prt);
+-	print_client_stats(opt_clt, opt_prt);
++	if (opt_srv)
++		print_server_stats(opt_prt);
++
++	if (opt_clt)
++		print_client_stats(opt_prt);
+ }
+ 
+ static void 
+-print_server_stats(int opt_srv, int opt_prt) 
++print_server_stats(int opt_prt) 
+ {
+-	if (!opt_srv)
+-		return;
+-
+ 	if (opt_prt & PRNT_NET) {
+ 		if (opt_sleep && !has_rpcstats(srvnetinfo, 4)) {
+ 		} else {
+@@ -582,31 +582,29 @@ print_server_stats(int opt_srv, int opt_
+ 		printf("\n");
+ 	}
+ 	if (opt_prt & PRNT_CALLS) {
++		int has_v2_stats = has_stats(srvproc2info, SRVPROC2_SZ+2);
++		int has_v3_stats = has_stats(srvproc3info, SRVPROC3_SZ+2);
++		int has_v4_stats = has_stats(srvproc4info, SRVPROC4_SZ+2);
++
+ 		if ((opt_prt & PRNT_V2) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(srvproc2info))) {
+-			if (opt_sleep && !has_stats(srvproc2info)) {
+-				;
+-			} else {
++				((opt_prt & PRNT_AUTO) && has_v2_stats)) {
++			if (!opt_sleep || has_v2_stats) {
+ 				print_callstats(LABEL_srvproc2,
+ 					nfsv2name, srvproc2info + 1, 
+ 					sizeof(nfsv2name)/sizeof(char *));
+ 			}
+ 		}
+ 		if ((opt_prt & PRNT_V3) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(srvproc3info))) {
+-			if (opt_sleep && !has_stats(srvproc3info)) {
+-				;
+-			} else {
++				((opt_prt & PRNT_AUTO) && has_v3_stats)) {
++			if (!opt_sleep || has_v3_stats) {
+ 				print_callstats(LABEL_srvproc3,
+ 					nfsv3name, srvproc3info + 1, 
+ 					sizeof(nfsv3name)/sizeof(char *));
+ 			}
+ 		}
+ 		if ((opt_prt & PRNT_V4) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(srvproc4info))) {
+-			if (opt_sleep && !has_stats(srvproc4info)) {
+-				;
+-			} else {
++				((opt_prt & PRNT_AUTO) && has_v4_stats)) {
++			if (!opt_sleep || has_v4_stats) {
+ 				print_callstats( LABEL_srvproc4,
+ 					nfssrvproc4name, srvproc4info + 1, 
+ 					sizeof(nfssrvproc4name)/sizeof(char *));
+@@ -618,11 +616,8 @@ print_server_stats(int opt_srv, int opt_
+ 	}
+ }
+ static void
+-print_client_stats(int opt_clt, int opt_prt) 
++print_client_stats(int opt_prt) 
+ {
+-	if (!opt_clt)
+-		return;
+-
+ 	if (opt_prt & PRNT_NET) {
+ 		if (opt_sleep && !has_rpcstats(cltnetinfo, 4)) {
+ 			;
+@@ -644,31 +639,28 @@ print_client_stats(int opt_clt, int opt_
+ 		}
+ 	}
+ 	if (opt_prt & PRNT_CALLS) {
++		int has_v2_stats = has_stats(cltproc2info, CLTPROC2_SZ+2);
++		int has_v3_stats = has_stats(cltproc3info, CLTPROC3_SZ+2);
++		int has_v4_stats = has_stats(cltproc4info, CLTPROC4_SZ+2);
+ 		if ((opt_prt & PRNT_V2) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(cltproc2info))) {
+-			if (opt_sleep && !has_stats(cltproc2info)) {
+-				;
+-			} else {
++				((opt_prt & PRNT_AUTO) && has_v2_stats)) {
++			if (!opt_sleep || has_v2_stats) {
+ 				print_callstats(LABEL_cltproc2,
+ 					nfsv2name, cltproc2info + 1,  
+ 					sizeof(nfsv2name)/sizeof(char *));
+ 			}
+ 		}
+ 		if ((opt_prt & PRNT_V3) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(cltproc3info))) {
+-			if (opt_sleep && !has_stats(cltproc3info)) {
+-				;
+-			} else {
++				((opt_prt & PRNT_AUTO) && has_v3_stats)) {
++			if (!opt_sleep || has_v3_stats) {
+ 				print_callstats(LABEL_cltproc3,
+ 					nfsv3name, cltproc3info + 1, 
+ 					sizeof(nfsv3name)/sizeof(char *));
+ 			}
+ 		}
+ 		if ((opt_prt & PRNT_V4) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(cltproc4info))) {
+-			if (opt_sleep && !has_stats(cltproc4info)) {
+-				;
+-			} else {
++				((opt_prt & PRNT_AUTO) && has_v4_stats)) {
++			if (!opt_sleep || has_v4_stats) {
+ 				print_callstats(LABEL_cltproc4,
+ 					nfscltproc4name, cltproc4info + 1,  
+ 					sizeof(nfscltproc4name)/sizeof(char *));
+@@ -681,34 +673,28 @@ static void
+ print_clnt_list(int opt_prt) 
+ {
+ 	if (opt_prt & PRNT_CALLS) {
++		int has_v2_stats = has_stats(cltproc2info, CLTPROC2_SZ+2);
++		int has_v3_stats = has_stats(cltproc3info, CLTPROC3_SZ+2);
++		int has_v4_stats = has_stats(cltproc4info, CLTPROC4_SZ+2);
+ 		if ((opt_prt & PRNT_V2) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(cltproc2info))) {
+-			if (opt_sleep && !has_stats(cltproc2info)) {
+-				;
+-			} else {
++				((opt_prt & PRNT_AUTO) && has_v2_stats)) {
++			if (!opt_sleep || has_v2_stats) {
+ 				print_callstats_list("nfs v2 client",
+ 					nfsv2name, cltproc2info + 1,  
+ 					sizeof(nfsv2name)/sizeof(char *));
+ 			}
+ 		}
+ 		if ((opt_prt & PRNT_V3) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(cltproc3info))) {
+-			if (opt_sleep && !has_stats(cltproc3info)) {
+-				;
+-			} else { 
++				((opt_prt & PRNT_AUTO) && has_v3_stats)) {
++			if (!opt_sleep || has_v3_stats) {
+ 				print_callstats_list("nfs v3 client",
+ 					nfsv3name, cltproc3info + 1, 
+ 					sizeof(nfsv3name)/sizeof(char *));
+ 			}
+ 		}
+ 		if ((opt_prt & PRNT_V4) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(cltproc4info))) {
+-			if (opt_sleep && !has_stats(cltproc4info)) {
+-				;
+-			} else {
+-				print_callstats_list("nfs v4 ops",
+-					nfssrvproc4opname, srvproc4opsinfo + 1, 
+-					sizeof(nfssrvproc4opname)/sizeof(char *));
++				((opt_prt & PRNT_AUTO) && has_v4_stats)) {
++			if (!opt_sleep || has_v4_stats) {
+ 				print_callstats_list("nfs v4 client",
+ 					nfscltproc4name, cltproc4info + 1,  
+ 					sizeof(nfscltproc4name)/sizeof(char *));
+@@ -720,32 +706,32 @@ static void
+ print_serv_list(int opt_prt) 
+ {
+ 	if (opt_prt & PRNT_CALLS) {
++		int has_v2_stats = has_stats(srvproc2info, SRVPROC2_SZ+2);
++		int has_v3_stats = has_stats(srvproc3info, SRVPROC3_SZ+2);
++		int has_v4_stats = has_stats(srvproc4info, SRVPROC4_SZ+2);
+ 		if ((opt_prt & PRNT_V2) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(srvproc2info))) {
+-			if (opt_sleep && !has_stats(srvproc2info)) {
+-				;
+-			} else {
++				((opt_prt & PRNT_AUTO) && has_v2_stats)) {
++			if (!opt_sleep || has_v2_stats) {
+ 				print_callstats_list("nfs v2 server",
+ 					nfsv2name, srvproc2info + 1, 
+ 					sizeof(nfsv2name)/sizeof(char *));
+ 			}
+ 		}
+ 		if ((opt_prt & PRNT_V3) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(srvproc3info))) {
+-			if (opt_sleep && !has_stats(srvproc3info)) {
+-				;
+-			} else {
++				((opt_prt & PRNT_AUTO) && has_v3_stats)) {
++			if (!opt_sleep || has_v3_stats) {
+ 				print_callstats_list("nfs v3 server",
+ 					nfsv3name, srvproc3info + 1, 
+ 					sizeof(nfsv3name)/sizeof(char *));
+ 			}
+ 		}
+ 		if ((opt_prt & PRNT_V4) || 
+-				((opt_prt & PRNT_AUTO) && has_stats(srvproc4opsinfo))) {
+-			if (opt_sleep && !has_stats(srvproc4info)) {
+-				;
+-			} else {
+-				print_callstats_list("nfs v4 ops",
++				((opt_prt & PRNT_AUTO) && has_v4_stats)) {
++			if (!opt_sleep || has_v4_stats) {
++				print_callstats_list("nfs v4 server",
++					nfssrvproc4name, srvproc4info + 1, 
++					sizeof(nfssrvproc4name)/sizeof(char *));
++				print_callstats_list("nfs v4 servop",
+ 					nfssrvproc4opname, srvproc4opsinfo + 1, 
+ 					sizeof(nfssrvproc4opname)/sizeof(char *));
+ 			}
+@@ -1054,9 +1040,9 @@ out:
+  * there are stats if the sum's greater than the entry-count.
+  */
+ static int
+-has_stats(const unsigned int *info)
++has_stats(const unsigned int *info, int nr)
+ {
+-	return (info[0] && info[info[0] + 1] > info[0]);
++	return (info[0] && info[nr-1] > info[0]);
+ }
+ static int
+ has_rpcstats(const unsigned int *info, int size)
+diff -up nfs-utils-1.2.3/utils/nfsstat/nfsstat.man.orig nfs-utils-1.2.3/utils/nfsstat/nfsstat.man
+--- nfs-utils-1.2.3/utils/nfsstat/nfsstat.man.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/nfsstat/nfsstat.man	2011-04-20 08:48:36.374265108 -0400
+@@ -30,10 +30,12 @@ Print only NFS v2 statistics. The defaul
+ about the versions of \fBNFS\fR that have non-zero counts.
+ .TP
+ .B \-3
+-Print only NFS v3 statistics. 
++Print only NFS v3 statistics. The default is to only print information
++about the versions of \fBNFS\fR that have non-zero counts.
+ .TP
+ .B \-4
+-Print only NFS v4 statistics. 
++Print only NFS v4 statistics. The default is to only print information
++about the versions of \fBNFS\fR that have non-zero counts.
+ .TP
+ .B \-m, \-\-mounts
+ Print information about each of the mounted \fBNFS\fR file systems.
+diff -up nfs-utils-1.2.3/utils/statd/hostname.c.orig nfs-utils-1.2.3/utils/statd/hostname.c
+--- nfs-utils-1.2.3/utils/statd/hostname.c.orig	2010-09-28 08:24:16.000000000 -0400
++++ nfs-utils-1.2.3/utils/statd/hostname.c	2011-04-20 08:48:36.375265101 -0400
+@@ -39,10 +39,6 @@
+ #include "statd.h"
+ #include "xlog.h"
+ 
+-#ifndef HAVE_DECL_AI_ADDRCONFIG
+-#define AI_ADDRCONFIG	0
+-#endif
+-
+ /**
+  * statd_present_address - convert sockaddr to presentation address
+  * @sap: pointer to socket address to convert
+diff -up nfs-utils-1.2.3/utils/statd/sm-notify.c.orig nfs-utils-1.2.3/utils/statd/sm-notify.c
+--- nfs-utils-1.2.3/utils/statd/sm-notify.c.orig	2011-04-20 08:48:17.906406908 -0400
++++ nfs-utils-1.2.3/utils/statd/sm-notify.c	2011-04-20 08:48:36.376265094 -0400
+@@ -37,8 +37,9 @@
+ #include "nsm.h"
+ #include "nfsrpc.h"
+ 
+-#ifndef HAVE_DECL_AI_ADDRCONFIG
+-#define AI_ADDRCONFIG	0
++/* glibc before 2.3.4 */
++#ifndef AI_NUMERICSERV
++#define AI_NUMERICSERV	0
+ #endif
+ 
+ #define NSM_TIMEOUT	2
+@@ -81,7 +82,6 @@ smn_lookup(const char *name)
+ {
+ 	struct addrinfo	*ai = NULL;
+ 	struct addrinfo hint = {
+-		.ai_flags	= AI_ADDRCONFIG,
+ 		.ai_family	= (nsm_family == AF_INET ? AF_INET: AF_UNSPEC),
+ 		.ai_protocol	= (int)IPPROTO_UDP,
+ 	};
+@@ -257,6 +257,7 @@ smn_bind_address(const char *srcaddr, co
+ 	if (srcaddr == NULL)
+ 		hint.ai_flags |= AI_PASSIVE;
+ 
++	/* Do not allow "node" and "service" parameters both to be NULL */
+ 	if (srcport == NULL)
+ 		error = getaddrinfo(srcaddr, "", &hint, &ai);
+ 	else
+diff -up nfs-utils-1.2.3/utils/statd/statd.man.orig nfs-utils-1.2.3/utils/statd/statd.man
+--- nfs-utils-1.2.3/utils/statd/statd.man.orig	2011-04-20 08:48:17.897406977 -0400
++++ nfs-utils-1.2.3/utils/statd/statd.man	2011-04-20 08:48:36.376265094 -0400
+@@ -12,7 +12,7 @@
+ .SH NAME
+ rpc.statd \- NSM service daemon
+ .SH SYNOPSIS
+-.BI "rpc.statd [-dh?FLNvVw] [-H " prog "] [-n " my-name "] [-o " outgoing-port "] [-p " listener-port "] [-P " path " ]
++.BI "rpc.statd [-dh?FLNvV] [-H " prog "] [-n " my-name "] [-o " outgoing-port "] [-p " listener-port "] [-P " path " ]
+ .SH DESCRIPTION
+ File locks are not part of persistent file system state.
+ Lock state is thus lost when a host reboots.

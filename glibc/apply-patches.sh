@@ -50,6 +50,7 @@ ApplyPatch glibc-2.13-futex.patch
 ApplyPatch glibc-2.14-free-initfini.patch
 # Add missing headers
 ApplyPatch glibc-2.14-fix-headers.patch
+ApplyPatch glibc-2.14-reexport-rpc-interface.patch
 # Revert this
 patch -p1 --verbose -R -i ${SB_PATCHDIR}/0001-Handle-DNS-server-failures-in-case-of-AF_UNSPEC-look.patch
 

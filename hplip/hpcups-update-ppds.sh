@@ -57,10 +57,6 @@ do
     [ -z "${nickname##*, hpcups*}" ] || continue
     $debug && echo "hpcups: true"
 
-    # Does it have an hpPrinterLanguage attribute?
-    grep -q '^\*hpPrinterLanguage:' "$ppd" &>/dev/null && continue
-    $debug && echo "No hpPrinterLanguage attribute"
-
     # No: need to regenerate the PPD.
     if [ ! -f "$tmpdir/models" ]
     then

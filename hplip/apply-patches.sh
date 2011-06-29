@@ -16,6 +16,10 @@ zcat ${SB_PATCHDIR}/hplip-ui-optional.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/hplip-no-asm.patch.gz | patch -p1 -E --backup --verbose
 # Corrected several IEEE 1284 Device IDs using foomatic data.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-deviceIDs-drv.patch
+mv prnt/drv/hpijs.drv.in{,.deviceIDs-drv-hpijs}
+./copy-deviceids.py prnt/drv/hpcups.drv.in \
+  prnt/drv/hpijs.drv.in.deviceIDs-drv-hpijs \
+  > prnt/drv/hpijs.drv.in
 # Stopped hpcups pointlessly trying to read spool files directly.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-mucks-with-spooldir.patch
 # Removed SYSFS use in udev rules and actually made them work.
@@ -55,6 +59,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-skip-blank-lines.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbglog-newline.patch
 # Wait longer to see if a system tray becomes available.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-no-system-tray.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-cups15.patch
 # Fix ImageableArea for Laserjet 8150/9000 (bug #596298).
 for ppd_file in $(grep '^diff' ${SB_PATCHDIR}/hplip-ppd-ImageableArea.patch | cut -d " " -f 4);
 do

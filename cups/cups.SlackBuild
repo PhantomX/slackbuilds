@@ -44,7 +44,7 @@ fi
 NAME=cups
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.4.6}
+VERSION=${VERSION:-1.5rc1}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -65,7 +65,7 @@ PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 # Set to YES to enable dnssd support (with avahi)
-SB_DNSSD=${SB_DNSSD:-NO}
+SB_DNSSD=${SB_DNSSD:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -118,6 +118,8 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+sed -i -e '1iMaxLogSize 0' conf/cupsd.conf.in
+
 # Let's look at the compilation command lines.
 sed -i -e "s,^.SILENT:,," Makedefs.in
 
@@ -130,8 +132,7 @@ autoconf -I config-scripts || exit 1
 
 [ "${SB_DNSSD}" = "YES" ] || SB_DNSSDOPTS='--disable-dnssd'
 
-sed -i.orig -e 's#$exec_prefix/lib/cups#$libdir/cups#g' configure
-CFLAGS="${SLKCFLAGS}" \
+CFLAGS="${SLKCFLAGS} -fstack-protector-all -DLDAP_DEPRECATED=1" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
@@ -140,6 +141,8 @@ CXXFLAGS="${SLKCFLAGS}" \
   --localstatedir=/var \
   --infodir=/usr/info \
   --mandir=/usr/man \
+  --enable-debug \
+  --enable-relro \
   --enable-ssl \
   --enable-openssl=yes \
   --enable-gnutls=no \
@@ -147,6 +150,8 @@ CXXFLAGS="${SLKCFLAGS}" \
   --docdir=/usr/doc \
   --without-php \
   --disable-pam ${SB_DNSSDOPTS} \
+  --with-log-file-perm=0600 \
+  --with-pdftops=pdftops \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
@@ -157,6 +162,14 @@ make install BUILDROOT=${PKG} || exit 1
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+rm -rf ${PKG}/usr/man/cat? ${PKG}/usr/man/*/cat?
+
+mkdir -p ${PKG}/usr/share/ppd
+
+chmod 700 ${PKG}/usr/lib/backend/serial
+
+find ${PKG}/usr/share/cups/model -name "*.ppd" |xargs gzip -n9f
+
 # I've added so many things like /etc/init.d/ to Slackware that CUPS
 # is now installing init scripts to the Red Hat locations.  We'll move
 # them to the usual locations:
@@ -166,6 +179,16 @@ mv ${PKG}/etc/init.d/cups ${PKG}/etc/rc.d/rc.cups.new
 chmod 644 ${PKG}/etc/rc.d/rc.cups.new
 # Clear out the additions:
 rm -rf ${PKG}/etc/init.d ${PKG}/etc/rc{0,2,3,5}.d
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/cups.service ${PKG}/lib/systemd/system/ || exit 1
+
+# install /etc/tmpfiles.d/cups.conf (bug #656566)
+mkdir -p ${PKG}/etc/tmpfiles.d
+cat > ${PKG}/etc/tmpfiles.d/cups.conf <<EOF
+d /var/run/cups 0755 root lp -
+d /var/run/cups/certs 0511 lp sys -
+EOF
 
 # I'm not sure if overwriting this blindly could have ill effects,
 # but it never hurts to play it safe.  According to the dbus-daemon
@@ -305,7 +328,6 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
 # Figure out our root directory
 ROOTDIR=\$(pwd)
 unset CHROOT
@@ -353,6 +375,10 @@ ${CHROOT} /bin/chown root.lp /etc/cups/ssl
 ${CHROOT} /bin/chown root.lp /etc/cups/snmp.conf*
 ${CHROOT} /bin/chown root.lp /etc/cups/interfaces
 ${CHROOT} /bin/chown root.lp /etc/cups/cupsd.conf*
+
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -362,11 +388,12 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/${NAME}-*.rules.gz ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${NAME}-*.rules.gz ${CWD}/cups.service ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
@@ -378,7 +405,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.lp ./etc/cups{,/ppd,/ssl,/interfaces} ./etc/cups/{cupsd,snmp}.conf* ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

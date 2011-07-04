@@ -4,6 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.2-stack-smash.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.2-format_not_a_string_literal_and_no_format_arguments.patch
 ## From Fedora
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.2-no-donators-menu.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.2-default-archive-format.patch

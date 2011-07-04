@@ -56,7 +56,7 @@ else
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
 SLKDIST=${SLKDIST:-Slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-4}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -65,6 +65,8 @@ PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+grep --quiet '^ssh_keys:' /etc/group && SB_HGROUP=1
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.gz
@@ -156,8 +158,9 @@ install -pm0644 contrib/ssh-copy-id.1 ${PKG}/usr/man/man1/ || exit 1
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-mkdir -p ${PKG}/var/empty
+mkdir -p ${PKG}/var/empty/sshd
 chmod 755 ${PKG}/var/empty
+chmod 711 ${PKG}/var/empty/sshd
 
 for file in ssh_host_{ec,}dsa_key{,.pub} ssh_host_rsa_key{,.pub} ssh_host_key{,.pub} ;do
   rm -f ${PKG}/etc/ssh/${file}
@@ -166,18 +169,37 @@ for file in ssh_config sshd_config ;do
   mv ${PKG}/etc/ssh/${file} ${PKG}/etc/ssh/${file}.new || exit 1
 done
 
+install -pm0755 ${CWD}/sshd-keygen ${PKG}/usr/sbin/ || exit 1
+
 mkdir -p ${PKG}/etc/rc.d
 install -m0755 ${CWD}/rc.sshd \
   ${PKG}/etc/rc.d/rc.sshd.new || exit 1
 
 mkdir -p ${PKG}/lib/systemd/system
-install -pm0644 ${CWD}/systemd/*.service ${PKG}/lib/systemd/system/ || exit 1
+install -pm0644 ${CWD}/systemd/sshd{,-keygen}.service ${PKG}/lib/systemd/system/ || exit 1
 
 mkdir -p ${PKG}/lib/systemd/system/multi-user.target.wants
-for file in dsa ecdsa rsa rsa1 ;do
-  ln -s ../ssh-keygen-${file}.service \
-    ${PKG}/lib/systemd/system/multi-user.target.wants/ssh-keygen-${file}.service
-done
+ln -s ../sshd-keygen.service \
+  ${PKG}/lib/systemd/system/multi-user.target.wants/sshd-keygen.service
+
+mkdir -p ${PKG}/etc/default
+cat > ${PKG}/etc/default/sshd.new <<EOF
+# Configuration file for the sshd service.
+
+# The server keys are automatically generated if they ommited
+# to change the automatic creation uncomment the approprite 
+# line.
+
+# AUTOCREATE_SERVER_KEYS=RSAONLY
+# AUTOCREATE_SERVER_KEYS=NO
+AUTOCREATE_SERVER_KEYS=YES
+
+# Do not change this option unless you have hardware random
+# generator and you REALLY know what you are doing/
+
+export SSH_USE_STRONG_RNG=0
+# export SSH_USE_STRONG_RNG=1
+EOF
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -222,6 +244,23 @@ if test "\${ROOTDIR}" != "/"; then
   CHROOT="chroot \${ROOTDIR} "
   ROOTDIR="\${ROOTDIR}/"
 fi
+
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
+# Set up groups.
+if ! grep --quiet '^ssh_keys:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+            -g $(free_group_id) \
+            ssh_keys 2> /dev/null
+fi
+
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -268,6 +307,9 @@ if [ ! -r var/log/btmp ]; then
   ( cd var/log ; umask 077 ; touch btmp )
 fi
 
+${CHROOT} /bin/chown root.ssh_keys /usr/libexec/ssh-keysign
+${CHROOT} /bin/chmod 2111 /usr/libexec/ssh-keysign
+
 if [ -x bin/systemctl ] ; then
   ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
 fi
@@ -280,10 +322,10 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/{patches,systemd}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${CWD}/rc.sshd ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/rc.sshd ${CWD}/sshd-keygen ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
-  install -m0644 ${CWD}/systemd/*.service \
+  install -m0644 ${CWD}/systemd/*.* \
     ${SBDIR}/systemd/
   install -m0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
@@ -294,10 +336,14 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  /bin/chown root.nobody ./usr/bin/ssh-agent ;
+  /bin/chmod 2111 ./usr/bin/ssh-agent ;
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.ssh_keys ./usr/libexec/ssh-keysign ;
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chmod 2111 ./usr/libexec/ssh-keysign ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

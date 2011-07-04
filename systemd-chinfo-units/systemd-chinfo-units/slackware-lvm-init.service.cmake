@@ -5,7 +5,7 @@ Conflicts=shutdown.target
 Before=cryptsetup.target local-fs.target shutdown.target
 
 [Service]
-ExecStart=@SYSTEMD_INSTALL_DIR@/slackware-storage-init
+ExecStart=@SYSTEMD_INSTALL_DIR@/slackware-lvm-init
 Type=oneshot
 TimeoutSec=0
 RemainAfterExit=yes

@@ -24,7 +24,5 @@ fi
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/freetype-multilib.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/freetype-2.4.2-CVE-2010-3311.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Fall-back-to-autohinting-if-a-TTF-OTF-doesn-t-contai.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-Fix-autohinting-fallback.patch
 
 set +e +o pipefail

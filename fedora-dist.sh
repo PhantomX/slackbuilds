@@ -27,39 +27,40 @@
 set -e
 
 module="${1}"
+branch="${2}"
 
 fedoraroot="git://pkgs.fedoraproject.org"
 fedorapkgroot="http://pkgs.fedoraproject.org/repo/pkgs"
 
 
 txt() {
-  echo "Usage: $0 module dist <file>"
+  echo "Usage: $0 module branch <file>"
   echo "module is package name"
-  echo "dist is Fedora version (f??/devel)"
+  echo "branch is Fedora git branch (f*/devel/etc)"
   echo "file is optional"
   echo
   echo "In case of other errors, try to download in a Fedora mirror or change file format extension."
 }
 
 txt2() {
-  echo "Select correct dist: f8, f9, f10, f11, f12, f13, f14 or devel"
+  echo "Select correct branch: f*/devel/etc"
 }
 
 if [ -z "${module}" ] ;then
   txt
   exit 1
 fi
+if [ -z "${branch}" ] ;then
+  txt2
+  exit 1
+fi
 
-case "${2}" in
-  f8|f9|f10|f11|f12|f13|f14|master)
-    dist="${2}"
-    ;;
+case "${branch}" in
   devel)
     dist=master
     ;;
   *)
-    txt2
-    exit 1
+    dist="${branch}"
     ;;
 esac
 

@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-3}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -109,10 +109,11 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
+
+install -pm0644 ${CWD}/sasl-mechlist.c . || exit 1
 
 rm -f config/config.guess config/config.sub 
 rm -f config/ltconfig config/ltmain.sh config/libtool.m4
@@ -149,25 +150,50 @@ CXXFLAGS="${SLKCFLAGS}" \
   --enable-login \
   --disable-anon \
   --without-ldap \
-  --with-saslauthd \
+  --with-saslauthd=/var/run/saslauthd \
   --with-gdbm \
   --with-dblib=gdbm \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make sasldir=/usr/lib${LIBDIRSUFFIX}/sasl2 || exit 1
+( cd lib || exit 1
+  ../libtool --tag=CC --mode=link gcc -o sasl2-shared-mechlist \
+    -I../include ${CFLAGS} ../sasl-mechlist.c ${LDFLAGS} ./libsasl2.la || exit $?
+)  || exit $?
 make install DESTDIR=${PKG} sasldir=/usr/lib${LIBDIRSUFFIX}/sasl2 || exit 1
+./libtool --tag=CC --mode=install \
+install -m755 lib/sasl2-shared-mechlist ${PKG}/usr/sbin/ || exit $?
 
 [ "${SB_RMLA}" = "YES" ] && rm -f ${PKG}/usr/lib*/*.la ${PKG}/usr/lib*/*/*.la
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-mkdir -p ${PKG}/var/state/saslauthd
+mkdir -p ${PKG}/var/run/saslauthd
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.saslauthd.gz > ${PKG}/etc/rc.d/rc.saslauthd.new
+install -pm0644 ${CWD}/rc.saslauthd ${PKG}/etc/rc.d/rc.saslauthd.new || exit 1
 # Fix sloppy man page installation:
 rm -rf ${PKG}/usr/man/cat8
 cat saslauthd/saslauthd.mdoc > ${PKG}/usr/man/man8/saslauthd.8
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/saslauthd.service ${PKG}/lib/systemd/system/ || exit 1
+
+mkdir -p ${PKG}/etc/tmpfiles.d
+cat > ${PKG}/etc/tmpfiles.d/saslauthd.conf <<'EOF'
+d /var/run/saslauthd 0755 root root -
+EOF
+
+mkdir -p ${PKG}/etc/default
+cat > ${PKG}/etc/default/saslauthd.new <<'EOF'
+# Mechanism to use when checking passwords.  Run "saslauthd -v" to get a list
+# of which mechanism your installation was compiled with the ablity to use.
+MECH=shadow
+
+# Additional flags to pass to saslauthd on the command line.  See saslauthd(8)
+# for the list of accepted flags.
+FLAGS=
+EOF
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -203,7 +229,6 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
 # Figure out our root directory
 ROOTDIR=\$(pwd)
 unset CHROOT
@@ -237,6 +262,12 @@ EOF
   echo >> ${PKG}/install/doinst.sh
 )
 
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -244,11 +275,12 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/rc.*.gz ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/rc.* ${CWD}/*.service ${CWD}/sasl-*.c ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
@@ -258,7 +290,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

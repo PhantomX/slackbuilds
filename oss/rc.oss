@@ -1,0 +1,262 @@
+#!/bin/sh
+#
+# /etc/rc.d/rc.oss for Slackware
+#
+# Starts the OSS sound driver
+#
+# description: Open Sound System for Linux (OSS/Linux) is a \
+# commercial quality sound driver distributed by 4Front Technologies \
+# (http://www.opensound.com). 
+
+[ -x /usr/sbin/ossdetect ] || exit 0
+
+OSSETC=/etc/oss
+
+prog=oss
+lockfile=/proc/opensound/devfiles
+logfile=/var/log/oss.log
+RETVAL=0
+
+alsadisable(){
+
+  PROGRAMS="$(fuser /dev/snd/* /dev/dsp* /dev/audio* 2>/dev/null)"
+
+  if [ "${PROGRAMS}" ] ; then
+    echo
+    echo "Some applications are still using ALSA - cannot unload"
+    echo
+
+    for pid in ${PROGRAMS} ;do
+      if test -f /proc/${pid}/cmdline ; then
+        echo "${pid} $(cat /proc/${pid}/cmdline | sed 's/\x00/ /g')"
+      else
+        echo "${pid} Unknown"
+      fi
+    done
+
+    echo
+    echo "Please stop these applications and try again"
+    return 2
+  fi
+
+  # Try to unload alsa if any
+  if grep -q ^snd /proc/modules ;then
+    for mod in $(cat /proc/modules|grep ^snd_|sed 's/ .*//') ;do
+      /sbin/modprobe -r ${mod} > /dev/null 2>&1
+    done
+    /sbin/modprobe -r snd > /dev/null 2>&1
+
+    # Remove soundcore
+    /sbin/modprobe -r soundcore > /dev/null 2>&1
+    RETVAL=$?
+  fi
+  if [ "${RETVAL}" -ne 0 ] ;then
+    echo "Cannot disable alsa"
+    echo "Try comment lines in or remove /etc/modprobe.d/sound"
+    echo "and/or remove execution permissions from /etc/rc.d/rc.alsa."
+  fi
+  return ${RETVAL}
+}
+
+start() {
+
+  echo "Starting Open Sound System."
+
+  echo "Open Sound System starting" $(date) > ${logfile}
+  echo "OSS version: " $(cat /usr/share/misc/ossversion.dat) >> ${logfile} 2>&1
+  KERNEL_VERSION=$(uname -r)
+  echo "Kernel version: " ${KERNEL_VERSION} >> ${logfile}
+  KERNEL_VERMAGIC=$(/usr/sbin/ossvermagic -z -s)
+  echo "Kernel vermagic: " ${KERNEL_VERMAGIC} >> ${logfile} 2>&1
+
+  if ! [ -f "/lib/modules/${KERNEL_VERSION}/extra/oss/osscore.ko" ] ;then
+    echo "Install kmod-oss package for ${KERNEL_VERSION}"
+    exit 1
+  fi
+
+  if ! alsadisable ; then
+    echo "Disabling ALSA failed" >> ${logfile}
+    exit 2
+  fi
+
+  if ! [ -f /etc/oss/installed_drivers ] ; then
+    /usr/sbin/ossdetect -v >> ${logfile}
+  fi
+  
+  if [ -f ${OSSETC}/license.asc ] ; then
+   /usr/sbin/ossdetect -l >> ${logfile}
+  fi
+
+  unset OPTIONS
+  if test -f ${OSSETC}/conf/osscore.conf ; then
+    OPTIONS="$(grep -v -h '^#' ${OSSETC}/conf/osscore.conf|sed 's/ //g')"
+  fi
+  if ! /sbin/modprobe osscore ${OPTIONS} >/dev/null 2>&1 ; then
+    echo "Loading module osscore failed" 2>&1 | tee -a ${logfile}
+    dmesg >> ${logfile}
+    exit 1
+  fi
+
+  for mod in $(cat ${OSSETC}/installed_drivers | sed 's/#.*//') ; do
+    unset OPTIONS
+    if test -f ${OSSETC}/conf/${mod}.conf ; then
+      OPTIONS="$(grep -v -h '^#' ${OSSETC}/conf/${mod}.conf|sed 's/ //g')"
+    fi
+
+    if ! /sbin/modprobe ${mod} ${OPTIONS} ; then
+      echo "Loading module ${mod} failed or ignored" | tee -a ${logfile}
+    else
+      echo "${mod} module loaded OK" >> ${logfile}
+    fi
+  done
+
+  if ! [ -f ${lockfile} ] ; then
+    echo "OSS Core module refused to start" | tee -a ${logfile}
+    dmesg >> ${logfile}
+    exit 70
+  fi
+
+  /usr/sbin/ossdetect -d >> ${logfile} 2>&1
+
+  # Restore the legacy device links. This is necessary because in some
+  # Linux distributions they get lost when the system is booted.
+  if [ -f ${OSSETC}/legacy_devices ] ; then
+    sh ${OSSETC}/legacy_devices >> ${logfile} 2>&1
+  fi
+
+  # Set permissions
+  if [ -d /dev/oss ] ;then
+    chown root.audio /dev/oss/oss*/mix* /dev/oss/oss*/pcm* /dev/mixer >> ${logfile} 2>&1
+    chmod 0660 /dev/oss/oss*/mix* /dev/oss/oss*/pcm* /dev/mixer >> ${logfile} 2>&1
+  fi
+
+  /usr/sbin/ossdevlinks -v >> ${logfile} 2>&1
+
+  echo "+++ ossinfo -v3 +++" >> ${logfile}
+  ossinfo -v3 >> ${logfile} 2>&1
+  echo "+++ /dev/sndstat +++" >> ${logfile}
+  cat /dev/sndstat >> ${logfile} 2>&1
+  echo "+++ dmesg +++" >> ${logfile}
+  dmesg >> ${logfile}
+  echo "+++ lspci +++" >> ${logfile}
+  /sbin/lspci -v >> ${logfile} 2>&1
+  echo "+++ /proc/interrupts +++" >> ${logfile}
+  cat /proc/interrupts >> ${logfile} 2>&1
+  echo "+++ /proc/cpuinfo +++" >> ${logfile}
+  cat /proc/cpuinfo >> ${logfile} 2>&1
+  echo "+++ /proc/opensound/devfiles +++" >> ${logfile}
+  cat /proc/opensound/devfiles >> ${logfile} 2>&1
+  ls -l /dev/dsp* /dev/mixer* /dev/midi* /dev/oss/*/* >> ${logfile} 2>&1
+
+  echo >> ${logfile}
+  echo "Loading OSS mixer settings: /usr/sbin/savemixer"
+  /usr/sbin/savemixer -L -v >> ${logfile} 2>&1
+
+  if [ -x /usr/sbin/flashsupport-control ] ;then
+    /usr/sbin/flashsupport-control oss >> ${logfile} 2>&1
+  fi
+
+}
+
+stop() {
+
+  echo "Stopping Open Sound System."
+  if ! [ -f ${lockfile} ] ; then
+    echo "OSS not loaded."
+    exit 0
+  fi
+
+  if ! [ -f ${OSSETC}/installed_drivers ] ;then
+    echo "${OSSETC}/installed_drivers is missing."
+    exit 1
+  fi
+
+  PROGRAMS="$(fuser /dev/mixer* /dev/dsp* /dev/midi* /dev/oss/*/* 2>/dev/null)"
+  
+  if [ "${PROGRAMS}" ] ; then
+    echo
+    echo "Some applications are still using OSS - cannot unload"
+    echo
+
+    for pid in ${PROGRAMS} ;do
+      if test -f /proc/${pid}/cmdline ; then
+        echo "${pid} $(cat /proc/${pid}/cmdline | sed 's/\x00/ /g')"
+      else
+        echo "${pid} Unknown"
+      fi
+    done
+
+    echo
+    echo "Please stop these applications and try stop again"
+    exit 2
+  fi
+
+  if [ -x /usr/sbin/flashsupport-control ] ;then
+    /usr/sbin/flashsupport-control disable >> ${logfile} 2>&1
+  fi
+
+  # Save mixer settings automatically if requested
+  /usr/sbin/savemixer
+
+  for i in 1 2 3 ;do
+    for mod in \
+      $(grep -E "^osscore" /proc/modules 2>/dev/null | cut -d ' ' -f 4 | sed 's/,/ /g') \
+      $(cat ${OSSETC}/installed_drivers | sed 's/#.*//') osscore ; do
+      /sbin/modprobe -r ${mod} > /dev/null 2>&1
+    done
+  done
+
+  for mod in \
+    $(grep -E "^osscore" /proc/modules 2>/dev/null | cut -d ' ' -f 4 | sed 's/,/ /g') \
+    $(cat ${OSSETC}/installed_drivers | sed 's/#.*//') osscore ; do
+    /sbin/modprobe -r ${mod} > /dev/null 2>&1
+  done
+
+  if [ -f ${lockfile} ] ;then
+    echo "Cannot unload the OSS driver modules"
+    exit 3
+  fi
+
+  if [ -d /dev/oss ] ;then
+    rm -rf /dev/oss /dev/dsp* /dev/mixer* > /dev/null 2>&1
+  fi
+  
+}
+
+restart() {
+  stop
+  start
+}
+
+reload() {
+  restart
+}
+
+force_reload() {
+  restart
+}
+
+
+case "$1" in
+  start|stop|restart|reload)
+    $1
+    ;;
+  force-reload)
+    force_reload
+    ;;
+  status)
+    if [ -f ${lockfile} ]; then
+      echo "${prog} is loaded."
+    else
+      echo "${prog} is not loaded."
+    fi
+    ;;
+  condrestart)
+    if  [ ! -f ${lockfile} ]; then restart ;fi
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|status|restart|condrestart|reload|force-reload}"
+    exit 2
+    ;;
+esac
+exit ${RETVAL}

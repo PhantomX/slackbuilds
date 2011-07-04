@@ -14,11 +14,13 @@ if(NOT DEFINED SYSTEMD_SERVICES_INSTALL_DIR)
   set(SYSTEMD_SERVICES_INSTALL_DIR "/lib/systemd/system" CACHE PATH "Where systemd unit files are located")
 endif()
 
-set(SYSTEMDFILES    slackware-motd
-                    slackware-lvm-init 
+set(SYSTEMDFILES    slackware-depmod
+                    slackware-motd
+                    slackware-lvm-init
                     systemd-clean-dead-links )
 
-set(SYSTEMDSRVSLKFILES slackware-motd.service
+set(SYSTEMDSRVSLKFILES slackware-depmod.service
+                       slackware-motd.service
                        slackware-lvm-init.service 
                        systemd-clean-dead-links.service )
 

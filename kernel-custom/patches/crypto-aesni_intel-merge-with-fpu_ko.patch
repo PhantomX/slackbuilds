@@ -1,0 +1,134 @@
+From: Andy Lutomirski <luto@mit.edu>
+Date: Mon, 16 May 2011 05:12:47 +0000 (+1000)
+Subject: crypto: aesni-intel - Merge with fpu.ko
+X-Git-Tag: v3.0-rc1~371^2~5
+X-Git-Url: http://git.kernel.org/?p=linux%2Fkernel%2Fgit%2Ftorvalds%2Flinux-2.6.git;a=commitdiff_plain;h=b23b64516500df6b70fcafb820970f18538252cf
+
+crypto: aesni-intel - Merge with fpu.ko
+
+Loading fpu without aesni-intel does nothing.  Loading aesni-intel
+without fpu causes modes like xts to fail.  (Unloading
+aesni-intel will restore those modes.)
+
+One solution would be to make aesni-intel depend on fpu, but it
+seems cleaner to just combine the modules.
+
+This is probably responsible for bugs like:
+https://bugzilla.redhat.com/show_bug.cgi?id=589390
+
+Signed-off-by: Andy Lutomirski <luto@mit.edu>
+Signed-off-by: Herbert Xu <herbert@gondor.apana.org.au>
+[also 9bed4aca for the bugfix. --kyle]
+
+---
+diff --git a/arch/x86/crypto/Makefile b/arch/x86/crypto/Makefile
+index 1a58ad8..c04f1b7 100644
+--- a/arch/x86/crypto/Makefile
++++ b/arch/x86/crypto/Makefile
+@@ -2,8 +2,6 @@
+ # Arch-specific CryptoAPI modules.
+ #
+ 
+-obj-$(CONFIG_CRYPTO_FPU) += fpu.o
+-
+ obj-$(CONFIG_CRYPTO_AES_586) += aes-i586.o
+ obj-$(CONFIG_CRYPTO_TWOFISH_586) += twofish-i586.o
+ obj-$(CONFIG_CRYPTO_SALSA20_586) += salsa20-i586.o
+@@ -24,6 +22,6 @@ aes-x86_64-y := aes-x86_64-asm_64.o aes_glue.o
+ twofish-x86_64-y := twofish-x86_64-asm_64.o twofish_glue.o
+ salsa20-x86_64-y := salsa20-x86_64-asm_64.o salsa20_glue.o
+ 
+-aesni-intel-y := aesni-intel_asm.o aesni-intel_glue.o
++aesni-intel-y := aesni-intel_asm.o aesni-intel_glue.o fpu.o
+ 
+ ghash-clmulni-intel-y := ghash-clmulni-intel_asm.o ghash-clmulni-intel_glue.o
+diff --git a/arch/x86/crypto/aesni-intel_glue.c b/arch/x86/crypto/aesni-intel_glue.c
+index b375b2a..ede3fa7 100644
+--- a/arch/x86/crypto/aesni-intel_glue.c
++++ b/arch/x86/crypto/aesni-intel_glue.c
+@@ -94,6 +94,10 @@ asmlinkage void aesni_cbc_enc(struct crypto_aes_ctx *ctx, u8 *out,
+ 			      const u8 *in, unsigned int len, u8 *iv);
+ asmlinkage void aesni_cbc_dec(struct crypto_aes_ctx *ctx, u8 *out,
+ 			      const u8 *in, unsigned int len, u8 *iv);
++
++int crypto_fpu_init(void);
++void crypto_fpu_exit(void);
++
+ #ifdef CONFIG_X86_64
+ asmlinkage void aesni_ctr_enc(struct crypto_aes_ctx *ctx, u8 *out,
+ 			      const u8 *in, unsigned int len, u8 *iv);
+@@ -1259,6 +1263,8 @@ static int __init aesni_init(void)
+ 		return -ENODEV;
+ 	}
+ 
++	if ((err = crypto_fpu_init()))
++		goto fpu_err;
+ 	if ((err = crypto_register_alg(&aesni_alg)))
+ 		goto aes_err;
+ 	if ((err = crypto_register_alg(&__aesni_alg)))
+@@ -1336,6 +1342,7 @@ blk_ecb_err:
+ __aes_err:
+ 	crypto_unregister_alg(&aesni_alg);
+ aes_err:
++fpu_err:
+ 	return err;
+ }
+ 
+@@ -1365,6 +1372,8 @@ static void __exit aesni_exit(void)
+ 	crypto_unregister_alg(&blk_ecb_alg);
+ 	crypto_unregister_alg(&__aesni_alg);
+ 	crypto_unregister_alg(&aesni_alg);
++
++	crypto_fpu_exit();
+ }
+ 
+ module_init(aesni_init);
+diff --git a/arch/x86/crypto/fpu.c b/arch/x86/crypto/fpu.c
+index 1a8f864..98d7a18 100644
+--- a/arch/x86/crypto/fpu.c
++++ b/arch/x86/crypto/fpu.c
+@@ -150,18 +150,12 @@ static struct crypto_template crypto_fpu_tmpl = {
+ 	.module = THIS_MODULE,
+ };
+ 
+-static int __init crypto_fpu_module_init(void)
++int __init crypto_fpu_init(void)
+ {
+ 	return crypto_register_template(&crypto_fpu_tmpl);
+ }
+ 
+-static void __exit crypto_fpu_module_exit(void)
++void __exit crypto_fpu_exit(void)
+ {
+ 	crypto_unregister_template(&crypto_fpu_tmpl);
+ }
+-
+-module_init(crypto_fpu_module_init);
+-module_exit(crypto_fpu_module_exit);
+-
+-MODULE_LICENSE("GPL");
+-MODULE_DESCRIPTION("FPU block cipher wrapper");
+diff --git a/crypto/Kconfig b/crypto/Kconfig
+index 4b7cb0e..87b22ca 100644
+--- a/crypto/Kconfig
++++ b/crypto/Kconfig
+@@ -264,11 +264,6 @@ config CRYPTO_XTS
+ 	  key size 256, 384 or 512 bits. This implementation currently
+ 	  can't handle a sectorsize which is not a multiple of 16 bytes.
+ 
+-config CRYPTO_FPU
+-	tristate
+-	select CRYPTO_BLKCIPHER
+-	select CRYPTO_MANAGER
+-
+ comment "Hash modes"
+ 
+ config CRYPTO_HMAC
+@@ -543,7 +538,6 @@ config CRYPTO_AES_NI_INTEL
+ 	select CRYPTO_AES_586 if !64BIT
+ 	select CRYPTO_CRYPTD
+ 	select CRYPTO_ALGAPI
+-	select CRYPTO_FPU
+ 	help
+ 	  Use Intel AES-NI instructions for AES algorithm.
+ 

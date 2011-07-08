@@ -44,6 +44,11 @@ patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.90-halectomy.patch
 # official backports
 
 # Branch upstream
+# fix docbook-style-xsl borkage
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.4-kdoctools_docbook.patch
+# http://bugzilla.redhat.com/667787
+# http://bugs.kde.org/261180
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.4-kstatusnotifieritemdbus_leak.patch
 
 # Trunk patches
 

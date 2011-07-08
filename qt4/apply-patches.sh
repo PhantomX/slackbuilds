@@ -79,6 +79,8 @@ ApplyPatch qt-everywhere-opensource-src-4.7.0-CVE-2010-1822-crash-svg-image.patc
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # Fix QNetworkConfigurationManager crash due to null private pointer. (QTBUG-17305, rhbz#682656)
 ApplyPatch 4d3b9aa83cf7f6d9f9b88d9936e5980629daac2a.patch
+# bz#705348, per-font autohint fontconfig directives globally disable the bytecode interpreter 
+ApplyPatch QTBUG-19947-fontconfig-2.patch
 
 # kde-qt patches
 ApplyPatch 0004-0005.patch

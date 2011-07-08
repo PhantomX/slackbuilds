@@ -10,6 +10,7 @@ patch -p1 --verbose --backup -z .rbconfig -i ${SB_PATCHDIR}/${NAME}-rubyconfig.h
 
 ## upstreamable patches
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.95-valgrind.patch
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.3-python-bz\#684419.patch
 
 ## upstream
 

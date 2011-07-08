@@ -40,10 +40,16 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
+SNAPBUILD=${SNAPBUILD:-YES}
+
 NAME=libfm
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.1.14}
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+else
+  VERSION=${VERSION:-0.1.14}
+fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -73,16 +79,26 @@ SB_MAILD=${SB_MAILD:-mozilla-thunderbird}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  SRCARCHIVE=${SRCDIR}.tar.xz
+else
+  SRCARCHIVE=${SRCDIR}.tar.gz
+fi
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
 DL_URL="${SF_MIRROR}/pcmanfm/${SRCARCHIVE}"
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+else
+  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -121,11 +137,13 @@ if [ -r ${CWD}/apply-patches.sh ]; then
 fi
 
 sed -i \
-  -e "/^WebBrowser=/s|=.*$|=${SB_BROWSERD}|g" \
-  -e "/^MailClient=/s|=.*$|=${SB_MAILD}|g" \
+  -e "/^WebBrowser=/s|=.*$|=${SB_BROWSERD}.desktop|g" \
+  -e "/^MailClient=/s|=.*$|=${SB_MAILD}.desktop|g" \
   data/pref-apps.conf || exit 1
 
-autoreconf -ivf || exit 1
+if [ ! -r configure ]; then
+  sh ./autogen.sh || exit $?
+fi
 
 # treak rpath
 sed -i.libdir_syssearch -e \
@@ -145,10 +163,13 @@ CXXFLAGS="${SLKCFLAGS}" \
   --disable-static \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
+make -C po -j1 GMSGFMT="msgfmt --statistics" || exit 1
 make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} || exit 1
 
 find ${PKG} -name '*.la' -exec rm -f {} ';'
+
+rmdir -p ${PKG}/usr/lib*/gio/modules
 
 for file in ${PKG}/etc/xdg/*/*.conf ;do
   mv ${file} ${file}.new || exit 1
@@ -194,6 +215,18 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
 #!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+
+if [ -x usr/bin/update-mime-database ]; then
+  \${CHROOT} /usr/bin/update-mime-database /usr/share/mime &> /dev/null
+fi
+
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -221,11 +254,12 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${SNAPUPDATE} ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:

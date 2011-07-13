@@ -76,8 +76,6 @@ ApplyPatch linux-2.6-utrace.patch
 ApplyPatch linux-2.6-utrace-ptrace.patch
 
 # mm patches
-# CVE-2011-2183
-ApplyPatch ksm-fix-null-pointer-dereference-in-scan-get-next-rmap-item.patch
 
 # vm patches
 
@@ -212,8 +210,6 @@ ApplyPatch drm-intel-big-hammer.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 ApplyPatch drm-intel-edp-fixes.patch
-ApplyPatch drm-i915-snb-irq-stalls-fix.patch
-ApplyPatch drm-i915-apply-hwstam-workaround-for-bsd-ring-on-sandybridge.patch
 
 # linux1394 git patches
 # apply if non-empty

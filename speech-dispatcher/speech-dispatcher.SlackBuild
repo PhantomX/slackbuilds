@@ -43,7 +43,7 @@ fi
 NAME=speech-dispatcher
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.6.7}
+VERSION=${VERSION:-0.7.1}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -118,6 +118,12 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+# enable pulseaudio as default with a fallback to alsa
+sed -i -e 's/# AudioOutputMethod "pulse"/AudioOutputMethod "pulse,alsa"/' \
+  config/speechd.conf || exit 1
+
+sed -i -e "s|\"/lib /usr/lib|\"/lib${LIBDIRSUFFIX} /usr/lib${LIBDIRSUFFIX}|" configure
+
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
@@ -131,26 +137,18 @@ CXXFLAGS="${SLKCFLAGS}" \
   --disable-static \
   --with-alsa \
   --with-pulse \
-  --without-flite \
+  --with-flite \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
-
-sed -i 's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec=""|g' libtool
-sed -i 's|^runpath_var=LD_RUN_PATH|runpath_var=DIE_RPATH_DIE|g' libtool
 
 make -j${NJOBS} || make || exit 1
 
 for dir in \
- config/ doc/ src/audio/ src/c/ src/modules/ src/tests/ src/server/ 
+ config/ doc/ src/audio/ src/c/ src/modules/ src/tests/ src/server/ src/python/
  do
   ( cd ${dir} || exit 1
     make install DESTDIR=${PKG} INSTALL="install -p" || exit 1
   ) || exit 1
 done
-
-(  cd src/python || exit 1
-  mkdir -p build/lib/speechd
-  python setup.py install --root ${PKG} || exit 1
-) || exit 1
 
 chmod 0755 ${PKG}/${PYSITELIB}/speechd/_test.py
 
@@ -177,9 +175,6 @@ for conf in ${PKG}/etc/speech-dispatcher/modules/*.conf ;do
   mv ${conf} ${conf}.new
 done
 
-# Remove dummy sound
-rm -rf ${PKG}/usr/share/sounds/
-
 # Create log dir
 mkdir -p ${PKG}/var/log/speech-dispatcher/
 chmod 0700 ${PKG}/var/log/speech-dispatcher
@@ -193,9 +188,12 @@ install -pm0755 ${CWD}/rc.${NAME}d.sh \
   ${PKG}/etc/rc.d/rc.${NAME}d.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
-zcat ${CWD}/setup.onlyonce.rc${NAME}d.gz > \
-  ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}d || exit 1
+zcat ${CWD}/setup.onlyonce.rc${NAME}d.gz \
+  > ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}d || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}d
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/${NAME}.service ${PKG}/lib/systemd/system/ || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -241,7 +239,6 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
 # Figure out our root directory
 ROOTDIR=\$(pwd)
 unset CHROOT
@@ -278,9 +275,17 @@ fi
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
+EOF
+
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
@@ -289,12 +294,13 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/setup.*.rc${NAME}d.gz \
-                 ${CWD}/rc.*.sh ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/setup.*.rc${NAME}d.gz ${CWD}/rc.*.sh \
+    ${CWD}/${NAME}.service ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
@@ -304,7 +310,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

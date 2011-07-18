@@ -25,8 +25,6 @@ fi
 mkdir -p patches
 cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
 
-patch -p1 -E --verbose -d patches -i ${SB_PATCHDIR}/7.3.202-fix.patch
-patch -p1 -E --verbose -d patches -i ${SB_PATCHDIR}/7.3.203-fix.patch
 ( SB_PATCHDIR=patches
   for i in $( seq -w ${PATCHLEVEL} ) ; do
     patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${SVER}.${i}

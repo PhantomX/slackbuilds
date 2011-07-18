@@ -1,0 +1,151 @@
+From 1d0fa86a15c350367588fe734b179d35ee0d3d77 Mon Sep 17 00:00:00 2001
+From: Phantom X <megaphantomx@bol.com.br>
+Date: Wed, 13 Jul 2011 21:51:11 -0300
+Subject: [PATCH] Revert: use new VT ESC sequence to clear scrollback
+ buffer
+
+---
+ src/util.c |  102 ++++++++++++++++++++++++++++++++++++++----------------------
+ 1 files changed, 65 insertions(+), 37 deletions(-)
+
+diff --git a/src/util.c b/src/util.c
+index a0fbdc5..a6b5d14 100644
+--- a/src/util.c
++++ b/src/util.c
+@@ -4684,31 +4684,16 @@ int terminal_vhangup(const char *name) {
+ int vt_disallocate(const char *name) {
+         int fd, r;
+         unsigned u;
++        int temporary_vt, temporary_fd;
++        char tpath[64];
++        struct vt_stat vt_stat;
+ 
+         /* Deallocate the VT if possible. If not possible
+          * (i.e. because it is the active one), at least clear it
+          * entirely (including the scrollback buffer) */
+ 
+-        if (!startswith(name, "/dev/"))
+-                return -EINVAL;
+-
+-        if (!tty_is_vc(name)) {
+-                /* So this is not a VT. I guess we cannot deallocate
+-                 * it then. But let's at least clear the screen */
+-
+-                fd = open_terminal(name, O_RDWR|O_NOCTTY|O_CLOEXEC);
+-                if (fd < 0)
+-                        return fd;
+-
+-                loop_write(fd,
+-                           "\033[r"    /* clear scrolling region */
+-                           "\033[H"    /* move home */
+-                           "\033[2J",  /* clear screen */
+-                           10, false);
+-                close_nointr_nofail(fd);
+-
+-                return 0;
+-        }
++        if (!tty_is_vc(name))
++                return -EIO;
+ 
+         if (!startswith(name, "/dev/tty"))
+                 return -EINVAL;
+@@ -4718,36 +4703,79 @@ int vt_disallocate(const char *name) {
+                 return r;
+ 
+         if (u <= 0)
+-                return -EINVAL;
++                return -EIO;
+ 
+-        /* Try to deallocate */
+         fd = open_terminal("/dev/tty0", O_RDWR|O_NOCTTY|O_CLOEXEC);
+         if (fd < 0)
+                 return fd;
+ 
+         r = ioctl(fd, VT_DISALLOCATE, u);
+-        close_nointr_nofail(fd);
+-
+-        if (r >= 0)
++        if (r >= 0) {
++                close_nointr_nofail(fd);
+                 return 0;
++        }
+ 
+-        if (errno != EBUSY)
++        if (errno != EBUSY) {
++                close_nointr_nofail(fd);
+                 return -errno;
++        }
+ 
+-        /* Couldn't deallocate, so let's clear it fully with
+-         * scrollback */
+-        fd = open_terminal(name, O_RDWR|O_NOCTTY|O_CLOEXEC);
+-        if (fd < 0)
+-                return fd;
++        if (ioctl(fd, VT_GETSTATE, &vt_stat) < 0) {
++                close_nointr_nofail(fd);
++                return -errno;
++        }
+ 
+-        loop_write(fd,
+-                   "\033[r"   /* clear scrolling region */
+-                   "\033[H"   /* move home */
+-                   "\033[3J", /* clear screen including scrollback, requires Linux 2.6.40 */
+-                   10, false);
++        if (u != vt_stat.v_active) {
++                close_nointr_nofail(fd);
++                return -EBUSY;
++        }
++
++        if (ioctl(fd, VT_OPENQRY, &temporary_vt) < 0) {
++                close_nointr_nofail(fd);
++                return -errno;
++        }
++
++        if (temporary_vt <= 0) {
++                close_nointr_nofail(fd);
++                return -EIO;
++        }
++
++        /* Switch to temporary VT */
++        snprintf(tpath, sizeof(tpath), "/dev/tty%i", temporary_vt);
++        char_array_0(tpath);
++        temporary_fd = open_terminal(tpath, O_RDWR|O_NOCTTY|O_CLOEXEC);
++        ioctl(fd, VT_ACTIVATE, temporary_vt);
++        if (temporary_fd >= 0)
++                close_nointr_nofail(temporary_fd);
++
++        /* Reopen /dev/tty0 */
+         close_nointr_nofail(fd);
++        fd = open_terminal("/dev/tty0", O_RDWR|O_NOCTTY|O_CLOEXEC);
++        if (fd < 0)
++                r = -errno;
++        else {
++                /* Disallocate the real VT */
++                if (ioctl(fd, VT_DISALLOCATE, u) < 0)
++                        r = -errno;
++                else
++                        r = 0;
++        }
+ 
+-        return 0;
++        /* Recreate original VT */
++        temporary_fd = open_terminal(name, O_RDWR|O_NOCTTY|O_CLOEXEC);
++
++        if (temporary_fd >= 0) {
++                loop_write(temporary_fd, "\033[H\033[2J", 7, false); /* clear screen explicitly */
++                close_nointr_nofail(temporary_fd);
++        }
++
++        /* Switch back to original VT */
++        if (fd >= 0) {
++                ioctl(fd, VT_ACTIVATE, vt_stat.v_active);
++                close_nointr_nofail(fd);
++        }
++
++        return r;
+ }
+ 
+ 
+-- 
+1.7.6
+

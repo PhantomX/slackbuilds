@@ -16,5 +16,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-disable-test.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-embedded-crash.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-home.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-plugin-bool.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-openssl-test.patch
 
 set +e +o pipefail

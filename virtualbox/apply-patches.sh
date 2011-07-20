@@ -13,6 +13,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-asneeded.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-vnc.patch
 # Mantain ~/.Virtualbox
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.2-restore_old_machines_dir.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.0-vboxpci-build.patch
 
 # from Mandriva
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.6-kernelrelease.patch
@@ -32,7 +33,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-default-to-linux26.pat
 
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-strings.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-libcxx.patch
+patch -p1 -E --backup -z .libcxx --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.0-libcxx.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-3.2.10-noansi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-3.2.6-vboxkeyboard.patch
 

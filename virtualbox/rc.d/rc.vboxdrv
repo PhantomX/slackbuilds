@@ -15,6 +15,7 @@ fi
 moduledrv="vboxdrv"
 modulenet="vboxnetflt"
 moduleadp="vboxnetadp"
+modulepci="vboxpci"
 prog="VirtualBox"
 
 DRVDEVICE=/dev/${moduledrv}
@@ -30,9 +31,15 @@ running() {
 }
 
 probe() {
-  if ! /sbin/modinfo ${moduledrv} ${modulenet} &>/dev/null ; then
-    echo "${moduledrv} and ${modulenet} modules missing, please install them."
-    exit 1
+  modulesfail=
+  for module in ${moduledrv} ${modulenet} ${moduleadp} ${modulepci} ;do
+    if ! /sbin/modinfo ${module} &>/dev/null ; then
+      modulesfail="${module} ${modulesfail}"
+    fi
+  done
+  if [ -n "${modulesfail}" ] ;then
+    echo "Modules are missing (${modulesfail% }), please install them."
+    exit 5
   fi
 }
 
@@ -58,10 +65,18 @@ start() {
       if [ ${RETVAL} -eq 0 ] ;then
         /sbin/modprobe ${moduleadp} > /dev/null 2>&1
         RETVAL=$?
+        if [ ${RETVAL} -eq 0 ] ;then
+          /sbin/modprobe ${modulepci} > /dev/null 2>&1
+          RETVAL=$?
+        fi
       fi
     fi
   fi
   if [ ${RETVAL} -eq 0 ] ; then
+    if grep -q usb_device /proc/devices; then
+      mkdir -p -m 0750 /dev/vboxusb 2>/dev/null
+      chown root:${GROUPNAME} /dev/vboxusb 2>/dev/null
+    fi
     echo -e "\t\t\t\t\t\t[  OK  ]\r"
   else
     echo -e "\t\t\t\t\t\t[FAILED]\r"
@@ -112,23 +127,29 @@ stop_vms() {
 
 stop() {
   echo -n "Stopping ${prog}: "
-  if running ${moduleadp}; then
-    /sbin/modprobe -r ${moduleadp}
+  if running ${modulepci}; then
+    /sbin/modprobe -r ${modulepci}
     RETVAL=$?
   fi
   if [ ${RETVAL} -eq 0 ] ;then
     if running ${moduledrv}; then
-      if running ${modulenet}; then
-        /sbin/modprobe -r ${modulenet} 2>/dev/null
+      if running ${moduleadp}; then
+        /sbin/modprobe -r ${moduleadp} 2>/dev/null
         RETVAL=$?
       fi
       if [ ${RETVAL} -eq 0 ] ;then
-        /sbin/modprobe -r ${moduledrv} 2>/dev/null
-        if [ -c ${DRVDEVICE} ]; then
-          /sbin/modprobe -r ${moduledrv} 2>/dev/null
+        if running ${modulenet}; then
+          /sbin/modprobe -r ${modulenet} 2>/dev/null
           RETVAL=$?
-        else
-          RETVAL=0
+        fi
+        if [ ${RETVAL} -eq 0 ] ;then
+          /sbin/modprobe -r ${moduledrv} 2>/dev/null
+          if [ -c ${DRVDEVICE} ]; then
+            /sbin/modprobe -r ${moduledrv} 2>/dev/null
+            RETVAL=$?
+          else
+            RETVAL=0
+          fi
         fi
       fi
     fi
@@ -142,16 +163,19 @@ stop() {
 }
 
 status() {
+  modules=
   if running ${moduledrv} ; then
-    if running ${moduleflt}; then
+    modules=${moduledrv}
+    if running ${modulenet}; then
+      modules="${modules}, ${modulenet}"
       if running ${moduleadp}; then
-        echo "VirtualBox kernel modules (${moduledrv}, ${modulenet} and ${moduleadp}) are loaded."
-      else
-        echo "VirtualBox kernel modules (${moduledrv} and ${modulenet}) are loaded."
+        modules="${modules}, ${moduleadp}"
+        if running ${modulepci}; then
+          modules="${modules}, ${modulepci}"
+        fi
       fi
-    else
-      echo "VirtualBox ${moduledrv} kernel module is loaded."
     fi
+    echo "VirtualBox kernel modules (${modules}) are loaded."
     for i in ${SHUTDOWN_USERS}; do
       # don't create the ipcd directory with wrong permissions!
       if [ -d /tmp/.vbox-${i}-ipc ]; then

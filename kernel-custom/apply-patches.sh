@@ -76,13 +76,20 @@ ApplyPatch linux-2.6-utrace.patch
 ApplyPatch linux-2.6-utrace-ptrace.patch
 
 # mm patches
+ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 
 # vm patches
+ApplyPatch grab-swap-token-oops.patch
 
 # Architecture patches
 # x86(-64)
 # Add K10 and native cpu optimization support
 ApplyPatch linux-2.6-add-cpu-optimizations.patch
+ApplyPatch mtrr_stop_machine_quick_fix.patch
+ApplyPatch kill-__stop_machine.patch
+ApplyPatch reorganize_stop_cpus.patch
+ApplyPatch implement_stop_machine_from_offline_cpu.patch
+ApplyPatch use_stop_machine_for_mtrr_rendezvous.patch
 
 #
 # Intel IOMMU
@@ -102,9 +109,13 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 ApplyPatch remount-no-shrink-dcache.patch
 
 # reisefs
+ApplyPatch reiserfs-barrier-default.patch
 ApplyPatch reiserfs-force-inode-evictions-before-umount-to-avoid-crash.patch
 
 # ext4
+ApplyPatch ext3-barrier-default.patch
+
+# ext3
 
 # xfs
 
@@ -131,6 +142,11 @@ ApplyPatch linux-2.6-debug-taint-vm.patch
 ## try to find out what is breaking acpi-cpufreq
 ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
 
+# cpufreq
+ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
+## cpuidle perf events cleanups and related
+ApplyPatch perf_timechart_fix_zero_timestamps.patch
+
 #
 # PCI
 #
@@ -146,10 +162,16 @@ ApplyPatch pci-enable-aspm-state-clearing-regardless-of-policy.patch
 #
 # Fix drive detection failure on mvsas (rhbz#705019)
 ApplyPatch libata-sas-only-set-frozen-flag-if-new-eh-is-supported.patch
+ApplyPatch scsi-check-host-lookup-failure.patch
 
+# BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
+ApplyPatch 0001-block-prepare-I-O-context-code-for-BFQ-v2-for-2.6.39.patch
+ApplyPatch 0002-block-cgroups-kconfig-build-bits-for-BFQ-v2-2.6.39.patch
+ApplyPatch 0003-block-introduce-the-BFQ-v2-I-O-sched-for-2.6.39.patch
 
 # ALSA
 ApplyPatch hda_intel-prealloc-4mb-dmabuffer.patch
+ApplyPatch alsa-hda-0023-Enable-sync_write-workaround-for-AMD.patch
 
 # block/bio
 #

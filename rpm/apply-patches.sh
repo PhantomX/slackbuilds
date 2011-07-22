@@ -8,10 +8,9 @@ zcat ${SB_PATCHDIR}/rpm-4.5.90-pkgconfig-path.patch.gz | patch -p1 -E --backup -
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.8.0-no-man-dirs.patch
 # gnupg2 comes installed by default, avoid need to drag in gnupg too
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.8.1-use-gpg2.patch
-# Do not try to free and unallocated variable (#688091)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.9.0-manifest-fix.patch
 
 # Patches already in upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.9.1-recurse-dir.patch
 
 # These are not yet upstream
 zcat ${SB_PATCHDIR}/rpm-4.6.0-niagara.patch.gz | patch -p1 -E --backup --verbose

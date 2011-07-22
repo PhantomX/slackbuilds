@@ -9,7 +9,7 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/freetype.illadvisederror.diff.gz | patch -p1 -E --backup --verbose
 
 # Bytecode interpreter
-# Default is enabled, but for now are some bugs to deal
+# Upstream default is enabled
 if [ "${SB_BCI}" != "YES" ] ; then
    patch -p1 -R -E --backup --verbose -i ${SB_PATCHDIR}/freetype.bytecode.interpreter.diff
 fi
@@ -24,5 +24,6 @@ fi
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/freetype-multilib.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/freetype-2.4.2-CVE-2010-3311.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/freetype-2.4.5-CVE-2011-0226.patch
 
 set +e +o pipefail

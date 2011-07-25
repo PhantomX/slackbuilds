@@ -1,0 +1,358 @@
+#!/bin/sh
+#-- musescore for Slackware --
+# Build script by Phantom X <megaphantomx at bol.com.br>
+# Suggested usage: $ musescore.SlackBuild 2>&1 | tee build.log
+#--
+# Copyright 2008, 2009, 2010, 2011 Phantom X, Goiania, Brazil.
+# Copyright 2006 Martijn Dekker, Groningen, Netherlands.
+# All rights reserved.
+#
+# Redistribution and use of this script, with or without modification, is
+# permitted provided that the following conditions are met:
+#
+# 1. Redistributions of this script must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR `AS IS'' AND ANY EXPRESS OR IMPLIED
+#  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+#  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+#  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+#  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+#  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# http://www.musescore.org/
+
+PACKAGER_ID=${PACKAGER_ID:-$USER}
+PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
+
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
+CWD=$(pwd)
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
+
+PNAME=mscore
+NAME=musescore
+PKG=${PKG:-${TMP}/package-${NAME}}
+
+VERSION=${VERSION:-1.0}
+SVER=$(echo ${VERSION} | cut -d . -f1-2)
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-x86_64}
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  SLKTARGET=${SLKTARGET:-x86_64}
+else
+  SLKTARGET=${SLKTARGET:-i486}
+fi
+SLKDIST=${SLKDIST:-Slackware}
+BUILD=${BUILD:-1}
+NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
+DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
+SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
+PKGDEST=${PKGDEST:-${CWD}}
+PKGFORMAT=${PKGFORMAT:-tgz}
+PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+TTFDIR=usr/share/fonts/TTF/mscore
+
+DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+SRCDIR=${PNAME}-${VERSION}
+SRCARCHIVE=MuseScore-${VERSION}.tar.bz2
+
+DL_PROG=${DL_PROG:-wget}
+DL_TO=${DL_TO:-5}
+DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
+SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
+DL_URL="${SF_MIRROR}/mscore/${SRCARCHIVE}"
+
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+    s390|*)      SLKCFLAGS="-O2"
+                 ;;
+  esac
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
+fi
+
+if [ -d ${PKG} ]; then
+  # Clean up a previous build
+  rm -rf ${PKG}
+fi
+mkdir -p ${PKG}
+
+unset QTDIR QTINC QTLIB
+export QTDIR=$(qmake-qt4 -query QT_INSTALL_PREFIX)
+PATH="$(qmake-qt4 -query QT_INSTALL_BINS):${PATH}" ; export PATH
+
+cd ${TMP}
+rm -rf ${SRCDIR}
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
+cd ${SRCDIR} || exit 1
+
+chmod -R u+w,go+r-w,a-s .
+
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+# Fix EOL encoding
+sed 's|\r||' ${PNAME}/rtf2html/README > tmpfile
+touch -r ${PNAME}/rtf2html/README tmpfile
+mv -f tmpfile ${PNAME}/rtf2html/README
+
+# Remove preshipped fonts. We will build them from source
+rm -f ${PNAME}/${PNAME}/fonts/*.ttf
+rm -rf mscore/singleapp/
+rm -rf mscore/rtf2html/rtf2html
+
+find . -name CMakeLists.txt -exec sed -i "s|-O3|${SLKCFLAGS} $(pkg-config --cflags-only-I sndfile)|" {} ';'
+sed -i 's|scriptgen||' ${PNAME}/CMakeLists.txt || exit 1
+sed -i '/rpath/d' ${PNAME}/${PNAME}/CMakeLists.txt || exit 1
+
+export CFLAGS="${SLKCFLAGS}"
+export CXXFLAGS="${SLKCFLAGS} $(pkg-config --cflags-only-I sndfile)"
+export FFLAGS="${SLKCFLAGS}"
+
+mkdir -p build
+( cd build || exit $?
+
+  cmake ../mscore \
+    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DINCLUDE_INSTALL_DIR:PATH=/usr/include \
+    -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSHARE_INSTALL_PREFIX:PATH=/usr/share \
+    -DMAN_INSTALL_DIR:PATH=/usr/man \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+    -DUSE_SYSTEM_QTSINGLEAPPLICATION=1 \
+    || exit $?
+
+  make lupdate || make lupdate || exit $?
+  make lrelease || make lrelease || exit $?
+  make -j${NJOBS} || make || exit $?
+  make install DESTDIR=${PKG} || exit $?
+
+) || exit $?
+
+find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
+  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+# Build fonts from source:
+( cd ${PNAME}/${PNAME}/fonts || exit 1
+
+cat > ${PNAME}-ConvertFont.ff <<'EOF'
+#!/usr/bin/fontforge
+if ($argc > 1)
+    i = 1;
+    while ( i < $argc )
+	Open($argv[i])
+	ttfile = "mscore-" + $fontname + ".ttf"
+	Print("Converting ",ttfile)
+	Generate(ttfile,"ttf")
+	Close()
+	i++
+    endloop
+else
+    Print("Usage: $0 font.sfd [font.sfd ...]")
+endif
+EOF
+
+   ./genFont || exit 1
+   fontforge ${PNAME}-ConvertFont.ff MuseJazz.sfd || exit 1
+) || exit $?
+
+# Install fonts
+mkdir -p ${PKG}/${TTFDIR}
+install -pm 644 ${PNAME}/${PNAME}/fonts/${PNAME}*.ttf ${PKG}/${TTFDIR}/ || exit 1
+touch ${PKG}/${TTFDIR}/fonts.{cache-1,dir,scale}
+
+# Mime type
+mkdir -p ${PKG}/usr/share/mime/packages
+install -pm 644 ${CWD}/${PNAME}.xml ${PKG}/usr/share/mime/packages/ || exit 1
+
+# Desktop file
+desktop-file-install \
+  --dir=${PKG}/usr/share/applications \
+  --add-category="X-Notation" \
+  --remove-category="Sequencer" \
+  --remove-category="AudioVideoEditing" \
+  --add-mime-type="audio/midi" \
+  --add-mime-type="text/x-lilypond" \
+  --add-mime-type="application/xml" \
+  ${PKG}/usr/share/applications/${PNAME}.desktop || exit 1
+
+# Move images to the freedesktop location
+mkdir -p ${PKG}/usr/share/icons/hicolor/{32x32,64x64}/apps/
+mkdir -p ${PKG}/usr/share/icons/hicolor/{32x32,64x64}/mimetypes/
+cp -a ${PKG}/usr/share/pixmaps/${PNAME}.xpm \
+   ${PKG}/usr/share/icons/hicolor/32x32/mimetypes/application-x-musescore.xpm || exit 1
+mv ${PKG}/usr/share/pixmaps/${PNAME}.xpm \
+   ${PKG}/usr/share/icons/hicolor/32x32/apps/ || exit 1
+cp -a ${PKG}/usr/share/pixmaps/${PNAME}.png \
+   ${PKG}/usr/share/icons/hicolor/64x64/mimetypes/application-x-musescore.png || exit 1
+mv ${PKG}/usr/share/pixmaps/${PNAME}.png \
+   ${PKG}/usr/share/icons/hicolor/64x64/apps/ || exit 1
+rmdir -p ${PKG}/usr/share/pixmaps
+
+# Manpage
+mkdir -p ${PKG}/usr/man/man1
+install -pm 644 ${PNAME}/packaging/${PNAME}.1 ${PKG}/usr/man/man1/ || exit 1
+
+# Openoffice templates
+cp -a ${PNAME}/utils/OOoMuseScore/ ${PKG}/usr/share/${PNAME}-${SVER}/ || exit 1
+
+# There are many doc files spread around the tarball. Let's collect them
+for file in ChangeLog COPYING.LESSER README README.mscore README.ru ;do
+  mv ${PNAME}/rtf2html/${file} ${PNAME}/${file}.rtf2html
+done
+for file in README README.mscore ;do
+  mv ${PNAME}/osdabzip/${file} ${PNAME}/${file}.osdabzip
+done
+mv ${PNAME}/share/wallpaper/COPYRIGHT ${PNAME}/COPYING.wallpaper
+
+# Add a documentation directory:
+mkdir -p ${DOCDIR}
+cp -a \
+  mscore/{COPYING*,NEWS,README*} ${CWD}/ChangeLog.SB \
+  ${DOCDIR}/
+[ -r mscore/ChangeLog ] && head -n 1000 mscore/ChangeLog > ${DOCDIR}/ChangeLog
+[ -r mscore/ChangeLog.rtf2html ] && head -n 1000 mscore/ChangeLog.rtf2html \
+  > ${DOCDIR}/ChangeLog.rtf2html
+find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
+find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
+
+# Compress and link manpages, if any:
+if [ -d ${PKG}/usr/share/man ]; then
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
+fi
+if [ -d ${PKG}/usr/man ]; then
+  ( cd ${PKG}/usr/man
+    for manpagedir in $(find . -type d -name "man*") ; do
+      ( cd ${manpagedir}
+        for eachpage in $( find . -type l -maxdepth 1) ; do
+          ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
+          rm -f ${eachpage}
+        done
+        gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
+      )
+    done
+  )
+fi
+
+mkdir -p ${PKG}/install
+cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
+cat ${CWD}/slack-required > ${PKG}/install/slack-required
+
+cat > ${PKG}/install/doinst.sh <<EOF
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/update-desktop-database ]; then
+  \${CHROOT} /usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1
+fi
+if [ -x usr/bin/gtk-update-icon-cache ]; then
+  \${CHROOT} /usr/bin/touch --no-create /usr/share/icons/hicolor >/dev/null 2>&1
+  \${CHROOT} /usr/bin/gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1
+fi
+if [ -x usr/bin/update-mime-database ]; then
+  \${CHROOT} /usr/bin/update-mime-database /usr/share/mime &> /dev/null
+fi
+
+# Update the X font indexes:
+if [ -x usr/bin/mkfontdir -o -x usr/X11R6/bin/mkfontdir ]; then
+  ( cd ${TTFDIR#\/}
+    \${CHROOT} /usr/bin/mkfontscale .
+    \${CHROOT} /usr/bin/mkfontdir .
+  )
+fi
+if [ -x usr/bin/fc-cache ]; then
+  \${CHROOT} /usr/bin/fc-cache -f
+fi
+EOF
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+  ${PKG}/install/slack-desc
+
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/patches
+  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+    ${CWD}/apply-patches.sh ${CWD}/${PNAME}.xml ${SBDIR}/
+  install -m0755 ${CWD}/${NAME}.SlackBuild \
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
+fi
+
+# Build package:
+set +o xtrace        # no longer print commands upon execution
+
+ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDS="${ROOTCOMMANDS}
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDS}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDS} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDS}"
+fi
+
+# Clean up the extra stuff:
+if [ "$1" = "--cleanup" ]; then
+  echo "Cleaning..."
+  if [ -d ${TMP}/${SRCDIR} ]; then
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
+  fi
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
+fi
+exit 0

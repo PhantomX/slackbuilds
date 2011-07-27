@@ -66,6 +66,7 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
 
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
   ApplyPatch 0030_all_glibc-respect-env-CPPFLAGS.patch
+  ApplyPatch 0059_all_glibc-2.13-dlclose-search-reset.patch
   ApplyPatch 0061_all_glibc-2.13-static-memset.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
@@ -111,6 +112,11 @@ ApplyPatch 0001-Don-t-free-non-malloced-memory-and-fix-memory-leak.patch
 ApplyPatch 0002-Fix-typo-in-stack-guard-setup-code-for-old-kernels.patch
 ApplyPatch 0003-Assume-Intel-Core-i3-i5-i7-processor-if-AVX-is-avail.patch
 ApplyPatch 0004-Fix-bits-mqueue2.h-for-C.patch
-
+ApplyPatch 0001-Improve-64-bit-build.patch
+ApplyPatch 0001-Fix-IPv6-only-lookups-through-getaddrinfo.patch
+ApplyPatch 0002-Fix-Ipv4-IPv6-lookup-in-getaddrinfo.patch
+ApplyPatch 0001-Use-size_t-for-strlen-results.patch
+ApplyPatch 0001-Force-a_x86_64_ymm-to-be-16-byte-aligned.patch
+ApplyPatch 0001-Work-around-limit-in-writev-in-2.6.38-kernels.patch
 
 set +e +o pipefail

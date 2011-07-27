@@ -34,6 +34,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-ricoh-deviceid-oid.patch
 # Avahi support in the dnssd backend.
 #patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-icc.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-systemd-socket.patch
 
 ## SECURITY PATCHES:
 

@@ -34,8 +34,6 @@ zcat ${SB_PATCHDIR}/hplip-discovery-method.patch.gz | patch -p1 -E --backup --ve
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpijs-marker-supply.patch
 # Clear old printer-state-reasons we used to manage.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-clear-old-state-reasons.patch
-# Change shebang /usr/bin/env python -> /usr/bin/python
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-env-python.patch
 # Avoid busy loop in hpcups when backend has exited.
 zcat ${SB_PATCHDIR}/hplip-hpcups-sigpipe.patch.gz | patch -p1 -E --backup --verbose
 # Use correct fax PPD name for Qt3 UI.

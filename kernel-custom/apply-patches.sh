@@ -70,10 +70,7 @@ ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
 # utrace
-ApplyPatch linux-2.6-utrace-revert-make-ptrace-functions-static.patch
-ApplyPatch linux-2.6-tracehook.patch
-ApplyPatch linux-2.6-utrace.patch
-ApplyPatch linux-2.6-utrace-ptrace.patch
+ApplyPatch utrace.patch
 
 # mm patches
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
@@ -84,7 +81,7 @@ ApplyPatch grab-swap-token-oops.patch
 # Architecture patches
 # x86(-64)
 # Add K10 and native cpu optimization support
-ApplyPatch linux-2.6-add-cpu-optimizations.patch
+ApplyPatch linux-3.0-add-cpu-optimizations.patch
 ApplyPatch mtrr_stop_machine_quick_fix.patch
 ApplyPatch kill-__stop_machine.patch
 ApplyPatch reorganize_stop_cpus.patch
@@ -104,7 +101,6 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 #
 # bugfixes to drivers and filesystems
 #
-#ApplyPatch tmpfs-implement-generic-xattr-support.patch
 
 ApplyPatch remount-no-shrink-dcache.patch
 
@@ -113,9 +109,9 @@ ApplyPatch reiserfs-barrier-default.patch
 ApplyPatch reiserfs-force-inode-evictions-before-umount-to-avoid-crash.patch
 
 # ext4
-ApplyPatch ext3-barrier-default.patch
 
 # ext3
+ApplyPatch ext3-barrier-default.patch
 
 # xfs
 
@@ -150,28 +146,22 @@ ApplyPatch perf_timechart_fix_zero_timestamps.patch
 #
 # PCI
 #
-# disable message signaled interrupts
-ApplyPatch linux-2.6-defaults-pci_no_msi.patch
-ApplyPatch linux-2.6-defaults-pci_use_crs.patch
 # enable ASPM by default on hardware we expect to work
 ApplyPatch linux-2.6-defaults-aspm.patch.gz
-ApplyPatch pci-enable-aspm-state-clearing-regardless-of-policy.patch
 
 #
 # SCSI / block Bits.
 #
-# Fix drive detection failure on mvsas (rhbz#705019)
-ApplyPatch libata-sas-only-set-frozen-flag-if-new-eh-is-supported.patch
 ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
 ApplyPatch 0001-block-prepare-I-O-context-code-for-BFQ-v2-for-2.6.39.patch
 ApplyPatch 0002-block-cgroups-kconfig-build-bits-for-BFQ-v2-2.6.39.patch
 ApplyPatch 0003-block-introduce-the-BFQ-v2-I-O-sched-for-2.6.39.patch
+ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
 ApplyPatch hda_intel-prealloc-4mb-dmabuffer.patch
-ApplyPatch alsa-hda-0023-Enable-sync_write-workaround-for-AMD.patch
 
 # block/bio
 #
@@ -186,9 +176,6 @@ ApplyPatch linux-2.6-input-kill-stupid-messages.patch
 ApplyPatch die-floppy-die.patch
 
 ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch.gz
-
-ApplyPatch revert-hid-magicmouse-ignore-ivalid-report-id-while-switching.patch
-ApplyPatch hid-multitouch-add-support-for-elo-touchsystems.patch
 
 # Allow to use 480600 baud on 16C950 UARTs
 ApplyPatch linux-2.6-serial-460800.patch
@@ -223,15 +210,12 @@ ApplyPatch fix_xen_guest_on_old_EC2.patch
 # DRM core
 
 # Nouveau DRM
-ApplyOptionalPatch drm-nouveau-fixes.patch
 ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-intel-big-hammer.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
-ApplyPatch drm-intel-edp-fixes.patch
 
 # linux1394 git patches
 # apply if non-empty
@@ -251,24 +235,12 @@ ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch neuter_intel_microcode_load.patch
 
-# various fixes for Apple and EFI
-ApplyPatch acpi_reboot.patch
-
 # Runtime PM
 #ApplyPatch linux-2.6-usb-pci-autosuspend.patch
 #ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
 
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
-
-ApplyPatch scsi-sd-downgrade-caching-printk-from-error-to-notice.patch
-
-# rhbz#589390
-ApplyPatch crypto-aesni_intel-merge-with-fpu_ko.patch
-
-#ApplyPatch mm-slub-do-not-wake-kswapd-for-slubs-speculative-high-order-allocations.patch
-#ApplyPatch mm-slub-do-not-take-expensive-steps-for-slubs-speculative-high-order-allocations.patch
-#ApplyPatch mm-vmscan-if-kswapd-has-been-running-too-long-allow-it-to-sleep.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

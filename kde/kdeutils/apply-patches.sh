@@ -8,9 +8,6 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.4.1-printer-applet-InstallPrinterDrivers.patch
 
 # default to gpg2 in kgpg, todo: support gpg *or* gpg2
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.1-gpg2.patch
-
-# Number buttons cannot be used in kcalc, kde#256591
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.5-kcalc-bz\#719306.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.80-gpg2.patch
 
 set +e +o pipefail

@@ -15,12 +15,12 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.3.90-install_all_css.pa
 
 # Add "(Slackware)" to khtml user agent
 sed -e "s|_KDELIBS_SLK_DIST|${KDELIBS_SLK_DIST}|g" \
-  ${SB_PATCHDIR}/kdelibs-4.5.80-branding-slk.patch | patch -p1 -E --backup --verbose
+  ${SB_PATCHDIR}/kdelibs-4.6.80-branding-slk.patch | patch -p1 -E --backup --verbose
 
 # patch KStandardDirs to use /usr/libexec/kde4 instead of /usr/lib${LIBDIRSUFFIX}/kde4/libexec
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-libexecdir.patch
 # kstandarddirs changes: search /etc/kde, find /usr/libexec/kde4
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-kstandarddirs.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.90-kstandarddirs.patch
 zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 #zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 
@@ -35,20 +35,19 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patc
 # https://bugs.kde.org/show_bug.cgi?id=269045
 # https://git.reviewboard.kde.org/r/101231/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
+# Fix for KHTML form completion regression (kde#277457) from bugs.kde.org
+# attachment (patch by Andrea Iacovitti)
+# https://bugs.kde.org/show_bug.cgi?id=277457#c2
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.95-khtml-kde\#277457.patch
 
 # make forcefully hal-free build
-patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.90-halectomy.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.80-halectomy.patch
 
 # Mandriva
 
 # official backports
 
 # Branch upstream
-# fix docbook-style-xsl borkage
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.4-kdoctools_docbook.patch
-# http://bugzilla.redhat.com/667787
-# http://bugs.kde.org/261180
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.4-kstatusnotifieritemdbus_leak.patch
 
 # Trunk patches
 

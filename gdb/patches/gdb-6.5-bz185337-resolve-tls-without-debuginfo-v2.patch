@@ -19,6 +19,8 @@ will get:
 Attached suggestion patch how to deal with the most common "errno" symbol
 for the most common under-ggdb3 compiled programs.
 
+Original patch hooked into target_translate_tls_address.  But its inferior
+call invalidates `struct frame *' in the callers - RH BZ 690908.
 
 
 2007-11-03  Jan Kratochvil  <jan.kratochvil@redhat.com>
@@ -30,114 +32,21 @@ glibc-debuginfo-2.7-2.x86_64: /usr/lib/debug/lib64/libc.so.6.debug:
   <81a2>     DW_AT_name        : (indirect string, offset: 0x280e): __errno_location
   <81a8>     DW_AT_MIPS_linkage_name: (indirect string, offset: 0x2808): *__GI___errno_location
 
-Index: gdb-7.0.50.20100128/gdb/gdbtypes.c
-===================================================================
---- gdb-7.0.50.20100128.orig/gdb/gdbtypes.c	2010-01-28 12:52:17.000000000 +0100
-+++ gdb-7.0.50.20100128/gdb/gdbtypes.c	2010-01-28 12:52:48.000000000 +0100
-@@ -3978,6 +3978,9 @@ gdbtypes_post_init (struct gdbarch *gdba
-     = arch_type (gdbarch, TYPE_CODE_INTERNAL_FUNCTION, 0,
- 		 "<internal function>");
+--- a/gdb/printcmd.c
++++ b/gdb/printcmd.c
+@@ -967,6 +967,8 @@ print_command_1 (char *exp, int inspect, int voidprint)
  
-+  builtin_type->nodebug_text_symbol_errno_location
-+    = lookup_function_type (lookup_pointer_type (builtin_type->builtin_int));
-+
-   return builtin_type;
- }
- 
-Index: gdb-7.0.50.20100128/gdb/gdbtypes.h
-===================================================================
---- gdb-7.0.50.20100128.orig/gdb/gdbtypes.h	2010-01-28 12:52:17.000000000 +0100
-+++ gdb-7.0.50.20100128/gdb/gdbtypes.h	2010-01-28 12:52:48.000000000 +0100
-@@ -1245,6 +1245,8 @@ struct builtin_type
- 
-   /* This type is used to represent a GDB internal function.  */
-   struct type *internal_fn;
-+
-+  struct type *nodebug_text_symbol_errno_location;
- };
- 
- /* Return the type table for the specified architecture.  */
-Index: gdb-7.0.50.20100128/gdb/parse.c
-===================================================================
---- gdb-7.0.50.20100128.orig/gdb/parse.c	2010-01-28 12:52:19.000000000 +0100
-+++ gdb-7.0.50.20100128/gdb/parse.c	2010-01-28 12:53:20.000000000 +0100
-@@ -509,7 +509,11 @@ write_exp_msymbol (struct minimal_symbol
-     case mst_text:
-     case mst_file_text:
-     case mst_solib_trampoline:
--      write_exp_elt_type (objfile_type (objfile)->nodebug_text_symbol);
-+      if (builtin_type (gdbarch)->nodebug_text_symbol_errno_location != NULL
-+          && strcmp (SYMBOL_LINKAGE_NAME (msymbol), "__errno_location") == 0)
-+	write_exp_elt_type (builtin_type (gdbarch)->nodebug_text_symbol_errno_location);
-+      else
-+	write_exp_elt_type (objfile_type (objfile)->nodebug_text_symbol);
-       break;
- 
-     case mst_text_gnu_ifunc:
-Index: gdb-7.0.50.20100128/gdb/target.c
-===================================================================
---- gdb-7.0.50.20100128.orig/gdb/target.c	2010-01-28 12:52:29.000000000 +0100
-+++ gdb-7.0.50.20100128/gdb/target.c	2010-01-28 12:52:48.000000000 +0100
-@@ -1000,6 +1000,25 @@ pop_all_targets (int quitting)
-   pop_all_targets_above (dummy_stratum, quitting);
- }
- 
-+static int
-+resolve_errno (void *arg)
-+{
-+  CORE_ADDR *arg_addr = arg;
-+  struct expression *expr;
-+  struct cleanup *old_chain = 0;
-+  struct value *val;
-+
-+  expr = parse_expression ("__errno_location()");
-+  old_chain = make_cleanup (free_current_contents, &expr);
-+  val = evaluate_expression (expr);
-+  *arg_addr = value_as_address (val);
-+  release_value (val);
-+  value_free (val);
-+  do_cleanups (old_chain);
-+
-+  return 1;
-+}
-+
- /* Using the objfile specified in OBJFILE, find the address for the
-    current thread's thread-local storage with offset OFFSET.  */
- CORE_ADDR
-@@ -1090,7 +1109,28 @@ target_translate_tls_address (struct obj
-   /* It wouldn't be wrong here to try a gdbarch method, too; finding
-      TLS is an ABI-specific thing.  But we don't do that yet.  */
-   else
--    error (_("Cannot find thread-local variables on this target"));
-+    {
-+      struct minimal_symbol *msymbol;
-+
-+      msymbol = lookup_minimal_symbol ("errno", NULL, NULL);
-+      if (msymbol != NULL
-+	  && SYMBOL_VALUE_ADDRESS (msymbol) == offset
-+	  && (SYMBOL_OBJ_SECTION (msymbol)->objfile == objfile
-+	      || (objfile->separate_debug_objfile != NULL
-+	          && SYMBOL_OBJ_SECTION (msymbol)->objfile
-+		     == objfile->separate_debug_objfile)
-+	      || (objfile->separate_debug_objfile_backlink != NULL
-+	          && SYMBOL_OBJ_SECTION (msymbol)->objfile
-+		     == objfile->separate_debug_objfile_backlink)))
-+	{
-+	  if (!catch_errors (resolve_errno, (void *) &addr, "",
-+	                     RETURN_MASK_ALL))
-+	    error (_("TLS symbol `errno' not resolved for non-TLS program."
-+		     "  You should compile the program with `gcc -pthread'."));
-+	}
-+      else
-+	error (_("Cannot find thread-local variables on this target"));
-+    }
- 
-   return addr;
- }
-Index: gdb-7.0.50.20100128/gdb/testsuite/gdb.dwarf2/dw2-errno.c
+   if (exp && *exp)
+     {
++      if (strcmp (exp, "errno") == 0)
++	exp = "*((int *(*) (void)) __errno_location) ()";
+       expr = parse_expression (exp);
+       old_chain = make_cleanup (free_current_contents, &expr);
+       cleanup = 1;
+Index: gdb-7.2/gdb/testsuite/gdb.dwarf2/dw2-errno.c
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ gdb-7.0.50.20100128/gdb/testsuite/gdb.dwarf2/dw2-errno.c	2010-01-28 12:52:48.000000000 +0100
++++ gdb-7.2/gdb/testsuite/gdb.dwarf2/dw2-errno.c	2011-03-29 10:55:35.000000000 +0200
 @@ -0,0 +1,28 @@
 +/* This testcase is part of GDB, the GNU debugger.
 +
@@ -167,10 +76,10 @@ Index: gdb-7.0.50.20100128/gdb/testsuite/gdb.dwarf2/dw2-errno.c
 +
 +  return 0;	/* breakpoint */
 +}
-Index: gdb-7.0.50.20100128/gdb/testsuite/gdb.dwarf2/dw2-errno.exp
+Index: gdb-7.2/gdb/testsuite/gdb.dwarf2/dw2-errno.exp
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ gdb-7.0.50.20100128/gdb/testsuite/gdb.dwarf2/dw2-errno.exp	2010-01-28 12:52:48.000000000 +0100
++++ gdb-7.2/gdb/testsuite/gdb.dwarf2/dw2-errno.exp	2011-03-29 10:55:35.000000000 +0200
 @@ -0,0 +1,60 @@
 +# Copyright 2007 Free Software Foundation, Inc.
 +

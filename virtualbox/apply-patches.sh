@@ -36,5 +36,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-strings.pat
 patch -p1 -E --backup -z .libcxx --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.0-libcxx.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-3.2.10-noansi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-3.2.6-vboxkeyboard.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fix-kernel-panic.patch
 
 set +e +o pipefail

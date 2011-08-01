@@ -1,0 +1,709 @@
+http://sourceware.org/ml/gdb-patches/2011-07/msg00645.html
+Subject: [patch] workaround gcc46: prologue skip skips too far (PR 12435) #2
+
+Hi,
+
+this is an improved patch of a former:
+	[patch] workaround gcc46: prologue skip skips too far (PR 12435)
+	http://sourceware.org/ml/gdb-patches/2011-03/msg01108.html
+	cancel/FYI: Re: [patch] workaround gcc46: prologue skip skips too far (PR 12435)
+	http://sourceware.org/ml/gdb-patches/2011-03/msg01123.html
+
+For example `break error' does not work for debugging GDB with gcc-4.6.x.
+
+As gcc-4.6.0 and now even 4.6.1 still has this bug and I have seen a user(s?)
+on non-Fedora platform asking about this bug and as there may be enough
+binaries out there (although it affects only -O0 -g compilation) coded it
+properly I have coded the workaround properly this time.
+
+It does not solve overlays well, but the code just does not work for overlays,
+it has no other negative effect.
+
+I will update the code after FSF gcc gets fixed to minimize the workaround.
+
+No regressions on {x86_64,x86_64-m32,i686}-fedora16pre-linux-gnu.
+
+I would welcome a comment whether it is suitable for FSF GDB.
+
+
+Thanks,
+Jan
+
+
+gdb/
+2011-07-22  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	PR breakpoints/12435
+	* amd64-tdep.c (amd64_skip_prologue): New variables start_pc_sal,
+	next_sal, buf, offset and xmmreg.  Advance PC if it sees the PR.
+	* dwarf2read.c (process_full_comp_unit): Initialize
+	amd64_prologue_line_bug.
+	* symtab.h (struct symtab): New field amd64_prologue_line_bug.
+
+gdb/testsuite/
+2011-07-22  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	PR breakpoints/12435
+	* gdb.arch/amd64-prologue-xmm.c: New file.
+	* gdb.arch/amd64-prologue-xmm.exp: New file.
+	* gdb.arch/amd64-prologue-xmm.s: New file.
+
+Index: gdb-7.3/gdb/amd64-tdep.c
+===================================================================
+--- gdb-7.3.orig/gdb/amd64-tdep.c	2011-03-18 19:52:29.000000000 +0100
++++ gdb-7.3/gdb/amd64-tdep.c	2011-07-26 22:09:15.000000000 +0200
+@@ -1902,6 +1902,9 @@ amd64_skip_prologue (struct gdbarch *gdb
+ {
+   struct amd64_frame_cache cache;
+   CORE_ADDR pc;
++  struct symtab_and_line start_pc_sal, next_sal;
++  gdb_byte buf[4 + 8 * 7];
++  int offset, xmmreg;
+ 
+   amd64_init_frame_cache (&cache);
+   pc = amd64_analyze_prologue (gdbarch, start_pc, 0xffffffffffffffffLL,
+@@ -1909,7 +1912,71 @@ amd64_skip_prologue (struct gdbarch *gdb
+   if (cache.frameless_p)
+     return start_pc;
+ 
+-  return pc;
++  /* GCC PR debug/48827 produced false prologue end:
++     84 c0                test   %al,%al
++     74 23                je     after
++     <-- here is 0 lines advance - the false prologue end marker.
++     0f 29 85 70 ff ff ff movaps %xmm0,-0x90(%rbp)
++     0f 29 4d 80          movaps %xmm1,-0x80(%rbp)
++     0f 29 55 90          movaps %xmm2,-0x70(%rbp)
++     0f 29 5d a0          movaps %xmm3,-0x60(%rbp)
++     0f 29 65 b0          movaps %xmm4,-0x50(%rbp)
++     0f 29 6d c0          movaps %xmm5,-0x40(%rbp)
++     0f 29 75 d0          movaps %xmm6,-0x30(%rbp)
++     0f 29 7d e0          movaps %xmm7,-0x20(%rbp)
++     after:  */
++
++  if (pc == start_pc)
++    return pc;
++
++  start_pc_sal = find_pc_sect_line (start_pc, NULL, 0);
++  if (start_pc_sal.symtab == NULL
++      || !start_pc_sal.symtab->amd64_prologue_line_bug
++      || start_pc_sal.pc != start_pc || pc >= start_pc_sal.end)
++    return pc;
++
++  next_sal = find_pc_sect_line (start_pc_sal.end, NULL, 0);
++  if (next_sal.line != start_pc_sal.line)
++    return pc;
++
++  /* START_PC can be from overlayed memory, ignored here.  */
++  if (target_read_memory (next_sal.pc - 4, buf, sizeof (buf)) != 0)
++    return pc;
++
++  /* test %al,%al */
++  if (buf[0] != 0x84 || buf[1] != 0xc0)
++    return pc;
++  /* je AFTER */
++  if (buf[2] != 0x74)
++    return pc;
++
++  offset = 4;
++  for (xmmreg = 0; xmmreg < 8; xmmreg++)
++    {
++      /* movaps %xmmreg?,-0x??(%rbp) */
++      if (buf[offset] != 0x0f || buf[offset + 1] != 0x29
++          || (buf[offset + 2] & 0b00111111) != (xmmreg << 3 | 0b101))
++	return pc;
++
++      if ((buf[offset + 2] & 0b11000000) == 0b01000000)
++	{
++	  /* 8-bit displacement.  */
++	  offset += 4;
++	}
++      else if ((buf[offset + 2] & 0b11000000) == 0b10000000)
++	{
++	  /* 32-bit displacement.  */
++	  offset += 7;
++	}
++      else
++	return pc;
++    }
++
++  /* je AFTER */
++  if (offset - 4 != buf[3])
++    return pc;
++
++  return next_sal.end;
+ }
+ 
+ 
+Index: gdb-7.3/gdb/dwarf2read.c
+===================================================================
+--- gdb-7.3.orig/gdb/dwarf2read.c	2011-07-26 22:08:59.000000000 +0200
++++ gdb-7.3/gdb/dwarf2read.c	2011-07-26 22:11:07.000000000 +0200
+@@ -4647,6 +4647,42 @@ producer_is_gcc_ge_4_0 (struct dwarf2_cu
+   return major >= 4;
+ }
+ 
++static int
++producer_is_gcc_ge_4_6 (struct dwarf2_cu *cu)
++{
++  const char *cs;
++  int major, minor;
++
++  if (cu->producer == NULL)
++    {
++      /* For unknown compilers expect their behavior is not compliant.  For GCC
++	 this case can also happen for -gdwarf-4 type units supported since
++	 gcc-4.5.  */
++
++      return 0;
++    }
++
++  /* Skip any identifier after "GNU " - such as "C++" or "Java".  */
++
++  if (strncmp (cu->producer, "GNU ", strlen ("GNU ")) != 0)
++    {
++      /* For non-GCC compilers expect their behavior is not compliant.  */
++
++      return 0;
++    }
++  cs = &cu->producer[strlen ("GNU ")];
++  while (*cs && !isdigit (*cs))
++    cs++;
++  if (sscanf (cs, "%d.%d", &major, &minor) != 2)
++    {
++      /* Not recognized as GCC.  */
++
++      return 0;
++    }
++
++  return major >= 4 && minor >= 6;
++}
++
+ /* Generate full symbol information for PST and CU, whose DIEs have
+    already been loaded into memory.  */
+ 
+@@ -4706,6 +4742,9 @@ process_full_comp_unit (struct dwarf2_pe
+ 	 */ 
+       if (cu->has_loclist && producer_is_gcc_ge_4_0 (cu))
+ 	symtab->locations_valid = 1;
++
++      if (producer_is_gcc_ge_4_6 (cu))
++	symtab->amd64_prologue_line_bug = 1;
+     }
+ 
+   if (dwarf2_per_objfile->using_index)
+Index: gdb-7.3/gdb/symtab.h
+===================================================================
+--- gdb-7.3.orig/gdb/symtab.h	2011-07-26 22:08:57.000000000 +0200
++++ gdb-7.3/gdb/symtab.h	2011-07-26 22:09:39.000000000 +0200
+@@ -779,6 +779,11 @@ struct symtab
+ 
+   unsigned int locations_valid : 1;
+ 
++  /* At least GCC 4.6.0 and 4.6.1 can produce invalid false prologue and marker
++     on amd64.  This flag is set independently of the symtab arch.  */
++
++  unsigned amd64_prologue_line_bug : 1;
++
+   /* The macro table for this symtab.  Like the blockvector, this
+      may be shared between different symtabs --- and normally is for
+      all the symtabs in a given compilation unit.  */
+Index: gdb-7.3/gdb/testsuite/gdb.arch/amd64-prologue-xmm.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.3/gdb/testsuite/gdb.arch/amd64-prologue-xmm.c	2011-07-26 22:09:15.000000000 +0200
+@@ -0,0 +1,38 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2011 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++static volatile int v, fail;
++
++static void
++func (int i, ...)
++{
++  v = i;
++}
++
++static void
++marker (void)
++{
++}
++
++int
++main (void)
++{
++  func (1);
++  fail = 1;
++  marker ();
++  return 0;
++}
+Index: gdb-7.3/gdb/testsuite/gdb.arch/amd64-prologue-xmm.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.3/gdb/testsuite/gdb.arch/amd64-prologue-xmm.exp	2011-07-26 22:09:15.000000000 +0200
+@@ -0,0 +1,46 @@
++# Copyright 2011 Free Software Foundation, Inc.
++#
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++# Test GCC PR debug/48827 workaround in GDB.
++
++set testfile "amd64-prologue-xmm"
++set srcfile ${testfile}.s
++set csrcfile ${testfile}.c
++set binfile ${objdir}/${subdir}/${testfile}.x
++set opts {}
++
++if [info exists COMPILE] {
++    # make check RUNTESTFLAGS='gdb.arch/amd64-prologue-xmm.exp COMPILE=1'
++    set srcfile ${csrcfile}
++    lappend opts debug optimize=-O0
++} elseif { ![istarget x86_64-*-* ] || ![is_lp64_target] } {
++    verbose "Skipping amd64-prologue-xmm test."
++    return 0
++}
++
++if {[prepare_for_testing ${testfile}.exp ${testfile} $srcfile $opts]} {
++    return -1
++}
++
++if ![runto_main] {
++    return -1
++}
++
++gdb_breakpoint "func"
++gdb_breakpoint "marker"
++
++gdb_continue_to_breakpoint "func"
++
++gdb_test "p fail" " = 0" "stopped at func"
+Index: gdb-7.3/gdb/testsuite/gdb.arch/amd64-prologue-xmm.s
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.3/gdb/testsuite/gdb.arch/amd64-prologue-xmm.s	2011-07-26 22:09:15.000000000 +0200
+@@ -0,0 +1,400 @@
++/* This testcase is part of GDB, the GNU debugger.
++      	
++   Copyright 2011 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++      	
++/* This file is compiled from gdb.arch/amd64-prologue-xmm.c
++   using -g -dA -S.  */
++
++	.file	"amd64-prologue-xmm.c"
++	.text
++.Ltext0:
++	.local	v
++	.comm	v,4,4
++	.local	fail
++	.comm	fail,4,4
++	.type	func, @function
++func:
++.LFB0:
++	.file 1 "gdb.arch/amd64-prologue-xmm.c"
++	# gdb.arch/amd64-prologue-xmm.c:22
++	.loc 1 22 0
++	.cfi_startproc
++	# basic block 2
++	pushq	%rbp
++	.cfi_def_cfa_offset 16
++	.cfi_offset 6, -16
++	movq	%rsp, %rbp
++	.cfi_def_cfa_register 6
++	subq	$72, %rsp
++	movq	%rsi, -168(%rbp)
++	movq	%rdx, -160(%rbp)
++	movq	%rcx, -152(%rbp)
++	movq	%r8, -144(%rbp)
++	movq	%r9, -136(%rbp)
++	testb	%al, %al
++	je	.L2
++	# basic block 3
++	# gdb.arch/amd64-prologue-xmm.c:22
++	.loc 1 22 0
++	movaps	%xmm0, -128(%rbp)
++	movaps	%xmm1, -112(%rbp)
++	movaps	%xmm2, -96(%rbp)
++	movaps	%xmm3, -80(%rbp)
++	movaps	%xmm4, -64(%rbp)
++	movaps	%xmm5, -48(%rbp)
++	movaps	%xmm6, -32(%rbp)
++	movaps	%xmm7, -16(%rbp)
++.L2:
++	# basic block 4
++	movl	%edi, -180(%rbp)
++	# gdb.arch/amd64-prologue-xmm.c:23
++	.loc 1 23 0
++	movl	-180(%rbp), %eax
++	movl	%eax, v(%rip)
++	# gdb.arch/amd64-prologue-xmm.c:24
++	.loc 1 24 0
++	leave
++	.cfi_def_cfa 7, 8
++	ret
++	.cfi_endproc
++.LFE0:
++	.size	func, .-func
++	.type	marker, @function
++marker:
++.LFB1:
++	# gdb.arch/amd64-prologue-xmm.c:28
++	.loc 1 28 0
++	.cfi_startproc
++	# basic block 2
++	pushq	%rbp
++	.cfi_def_cfa_offset 16
++	.cfi_offset 6, -16
++	movq	%rsp, %rbp
++	.cfi_def_cfa_register 6
++	# gdb.arch/amd64-prologue-xmm.c:29
++	.loc 1 29 0
++	popq	%rbp
++	.cfi_def_cfa 7, 8
++	ret
++	.cfi_endproc
++.LFE1:
++	.size	marker, .-marker
++	.globl	main
++	.type	main, @function
++main:
++.LFB2:
++	# gdb.arch/amd64-prologue-xmm.c:33
++	.loc 1 33 0
++	.cfi_startproc
++	# basic block 2
++	pushq	%rbp
++	.cfi_def_cfa_offset 16
++	.cfi_offset 6, -16
++	movq	%rsp, %rbp
++	.cfi_def_cfa_register 6
++	# gdb.arch/amd64-prologue-xmm.c:34
++	.loc 1 34 0
++	movl	$1, %edi
++	movl	$0, %eax
++	call	func
++	# gdb.arch/amd64-prologue-xmm.c:35
++	.loc 1 35 0
++	movl	$1, fail(%rip)
++	# gdb.arch/amd64-prologue-xmm.c:36
++	.loc 1 36 0
++	call	marker
++	# gdb.arch/amd64-prologue-xmm.c:37
++	.loc 1 37 0
++	movl	$0, %eax
++	# gdb.arch/amd64-prologue-xmm.c:38
++	.loc 1 38 0
++	popq	%rbp
++	.cfi_def_cfa 7, 8
++	ret
++	.cfi_endproc
++.LFE2:
++	.size	main, .-main
++.Letext0:
++	.section	.debug_info,"",@progbits
++.Ldebug_info0:
++	.long	0xc0	# Length of Compilation Unit Info
++	.value	0x4	# DWARF version number
++	.long	.Ldebug_abbrev0	# Offset Into Abbrev. Section
++	.byte	0x8	# Pointer Size (in bytes)
++	.uleb128 0x1	# (DIE (0xb) DW_TAG_compile_unit)
++	.long	.LASF1	# DW_AT_producer: "GNU C 4.6.1 20110715 (Red Hat 4.6.1-3)"
++	.byte	0x1	# DW_AT_language
++	.long	.LASF2	# DW_AT_name: "gdb.arch/amd64-prologue-xmm.c"
++	.long	.LASF3	# DW_AT_comp_dir: ""
++	.quad	.Ltext0	# DW_AT_low_pc
++	.quad	.Letext0	# DW_AT_high_pc
++	.long	.Ldebug_line0	# DW_AT_stmt_list
++	.uleb128 0x2	# (DIE (0x2d) DW_TAG_subprogram)
++	.long	.LASF4	# DW_AT_name: "func"
++	.byte	0x1	# DW_AT_decl_file (gdb.arch/amd64-prologue-xmm.c)
++	.byte	0x15	# DW_AT_decl_line
++			# DW_AT_prototyped
++	.quad	.LFB0	# DW_AT_low_pc
++	.quad	.LFE0	# DW_AT_high_pc
++	.uleb128 0x1	# DW_AT_frame_base
++	.byte	0x9c	# DW_OP_call_frame_cfa
++			# DW_AT_GNU_all_call_sites
++	.long	0x59	# DW_AT_sibling
++	.uleb128 0x3	# (DIE (0x4a) DW_TAG_formal_parameter)
++	.ascii "i\0"	# DW_AT_name
++	.byte	0x1	# DW_AT_decl_file (gdb.arch/amd64-prologue-xmm.c)
++	.byte	0x15	# DW_AT_decl_line
++	.long	0x59	# DW_AT_type
++	.uleb128 0x3	# DW_AT_location
++	.byte	0x91	# DW_OP_fbreg
++	.sleb128 -196
++	.uleb128 0x4	# (DIE (0x57) DW_TAG_unspecified_parameters)
++	.byte	0	# end of children of DIE 0x2d
++	.uleb128 0x5	# (DIE (0x59) DW_TAG_base_type)
++	.byte	0x4	# DW_AT_byte_size
++	.byte	0x5	# DW_AT_encoding
++	.ascii "int\0"	# DW_AT_name
++	.uleb128 0x6	# (DIE (0x60) DW_TAG_subprogram)
++	.long	.LASF5	# DW_AT_name: "marker"
++	.byte	0x1	# DW_AT_decl_file (gdb.arch/amd64-prologue-xmm.c)
++	.byte	0x1b	# DW_AT_decl_line
++			# DW_AT_prototyped
++	.quad	.LFB1	# DW_AT_low_pc
++	.quad	.LFE1	# DW_AT_high_pc
++	.uleb128 0x1	# DW_AT_frame_base
++	.byte	0x9c	# DW_OP_call_frame_cfa
++			# DW_AT_GNU_all_call_sites
++	.uleb128 0x7	# (DIE (0x79) DW_TAG_subprogram)
++			# DW_AT_external
++	.long	.LASF6	# DW_AT_name: "main"
++	.byte	0x1	# DW_AT_decl_file (gdb.arch/amd64-prologue-xmm.c)
++	.byte	0x20	# DW_AT_decl_line
++			# DW_AT_prototyped
++	.long	0x59	# DW_AT_type
++	.quad	.LFB2	# DW_AT_low_pc
++	.quad	.LFE2	# DW_AT_high_pc
++	.uleb128 0x1	# DW_AT_frame_base
++	.byte	0x9c	# DW_OP_call_frame_cfa
++			# DW_AT_GNU_all_tail_call_sites
++	.uleb128 0x8	# (DIE (0x96) DW_TAG_variable)
++	.ascii "v\0"	# DW_AT_name
++	.byte	0x1	# DW_AT_decl_file (gdb.arch/amd64-prologue-xmm.c)
++	.byte	0x12	# DW_AT_decl_line
++	.long	0xa9	# DW_AT_type
++	.uleb128 0x9	# DW_AT_location
++	.byte	0x3	# DW_OP_addr
++	.quad	v
++	.uleb128 0x9	# (DIE (0xa9) DW_TAG_volatile_type)
++	.long	0x59	# DW_AT_type
++	.uleb128 0xa	# (DIE (0xae) DW_TAG_variable)
++	.long	.LASF0	# DW_AT_name: "fail"
++	.byte	0x1	# DW_AT_decl_file (gdb.arch/amd64-prologue-xmm.c)
++	.byte	0x12	# DW_AT_decl_line
++	.long	0xa9	# DW_AT_type
++	.uleb128 0x9	# DW_AT_location
++	.byte	0x3	# DW_OP_addr
++	.quad	fail
++	.byte	0	# end of children of DIE 0xb
++	.section	.debug_abbrev,"",@progbits
++.Ldebug_abbrev0:
++	.uleb128 0x1	# (abbrev code)
++	.uleb128 0x11	# (TAG: DW_TAG_compile_unit)
++	.byte	0x1	# DW_children_yes
++	.uleb128 0x25	# (DW_AT_producer)
++	.uleb128 0xe	# (DW_FORM_strp)
++	.uleb128 0x13	# (DW_AT_language)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x3	# (DW_AT_name)
++	.uleb128 0xe	# (DW_FORM_strp)
++	.uleb128 0x1b	# (DW_AT_comp_dir)
++	.uleb128 0xe	# (DW_FORM_strp)
++	.uleb128 0x11	# (DW_AT_low_pc)
++	.uleb128 0x1	# (DW_FORM_addr)
++	.uleb128 0x12	# (DW_AT_high_pc)
++	.uleb128 0x1	# (DW_FORM_addr)
++	.uleb128 0x10	# (DW_AT_stmt_list)
++	.uleb128 0x17	# (DW_FORM_sec_offset)
++	.byte	0
++	.byte	0
++	.uleb128 0x2	# (abbrev code)
++	.uleb128 0x2e	# (TAG: DW_TAG_subprogram)
++	.byte	0x1	# DW_children_yes
++	.uleb128 0x3	# (DW_AT_name)
++	.uleb128 0xe	# (DW_FORM_strp)
++	.uleb128 0x3a	# (DW_AT_decl_file)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x3b	# (DW_AT_decl_line)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x27	# (DW_AT_prototyped)
++	.uleb128 0x19	# (DW_FORM_flag_present)
++	.uleb128 0x11	# (DW_AT_low_pc)
++	.uleb128 0x1	# (DW_FORM_addr)
++	.uleb128 0x12	# (DW_AT_high_pc)
++	.uleb128 0x1	# (DW_FORM_addr)
++	.uleb128 0x40	# (DW_AT_frame_base)
++	.uleb128 0x18	# (DW_FORM_exprloc)
++	.uleb128 0x2117	# (DW_AT_GNU_all_call_sites)
++	.uleb128 0x19	# (DW_FORM_flag_present)
++	.uleb128 0x1	# (DW_AT_sibling)
++	.uleb128 0x13	# (DW_FORM_ref4)
++	.byte	0
++	.byte	0
++	.uleb128 0x3	# (abbrev code)
++	.uleb128 0x5	# (TAG: DW_TAG_formal_parameter)
++	.byte	0	# DW_children_no
++	.uleb128 0x3	# (DW_AT_name)
++	.uleb128 0x8	# (DW_FORM_string)
++	.uleb128 0x3a	# (DW_AT_decl_file)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x3b	# (DW_AT_decl_line)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x49	# (DW_AT_type)
++	.uleb128 0x13	# (DW_FORM_ref4)
++	.uleb128 0x2	# (DW_AT_location)
++	.uleb128 0x18	# (DW_FORM_exprloc)
++	.byte	0
++	.byte	0
++	.uleb128 0x4	# (abbrev code)
++	.uleb128 0x18	# (TAG: DW_TAG_unspecified_parameters)
++	.byte	0	# DW_children_no
++	.byte	0
++	.byte	0
++	.uleb128 0x5	# (abbrev code)
++	.uleb128 0x24	# (TAG: DW_TAG_base_type)
++	.byte	0	# DW_children_no
++	.uleb128 0xb	# (DW_AT_byte_size)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x3e	# (DW_AT_encoding)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x3	# (DW_AT_name)
++	.uleb128 0x8	# (DW_FORM_string)
++	.byte	0
++	.byte	0
++	.uleb128 0x6	# (abbrev code)
++	.uleb128 0x2e	# (TAG: DW_TAG_subprogram)
++	.byte	0	# DW_children_no
++	.uleb128 0x3	# (DW_AT_name)
++	.uleb128 0xe	# (DW_FORM_strp)
++	.uleb128 0x3a	# (DW_AT_decl_file)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x3b	# (DW_AT_decl_line)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x27	# (DW_AT_prototyped)
++	.uleb128 0x19	# (DW_FORM_flag_present)
++	.uleb128 0x11	# (DW_AT_low_pc)
++	.uleb128 0x1	# (DW_FORM_addr)
++	.uleb128 0x12	# (DW_AT_high_pc)
++	.uleb128 0x1	# (DW_FORM_addr)
++	.uleb128 0x40	# (DW_AT_frame_base)
++	.uleb128 0x18	# (DW_FORM_exprloc)
++	.uleb128 0x2117	# (DW_AT_GNU_all_call_sites)
++	.uleb128 0x19	# (DW_FORM_flag_present)
++	.byte	0
++	.byte	0
++	.uleb128 0x7	# (abbrev code)
++	.uleb128 0x2e	# (TAG: DW_TAG_subprogram)
++	.byte	0	# DW_children_no
++	.uleb128 0x3f	# (DW_AT_external)
++	.uleb128 0x19	# (DW_FORM_flag_present)
++	.uleb128 0x3	# (DW_AT_name)
++	.uleb128 0xe	# (DW_FORM_strp)
++	.uleb128 0x3a	# (DW_AT_decl_file)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x3b	# (DW_AT_decl_line)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x27	# (DW_AT_prototyped)
++	.uleb128 0x19	# (DW_FORM_flag_present)
++	.uleb128 0x49	# (DW_AT_type)
++	.uleb128 0x13	# (DW_FORM_ref4)
++	.uleb128 0x11	# (DW_AT_low_pc)
++	.uleb128 0x1	# (DW_FORM_addr)
++	.uleb128 0x12	# (DW_AT_high_pc)
++	.uleb128 0x1	# (DW_FORM_addr)
++	.uleb128 0x40	# (DW_AT_frame_base)
++	.uleb128 0x18	# (DW_FORM_exprloc)
++	.uleb128 0x2116	# (DW_AT_GNU_all_tail_call_sites)
++	.uleb128 0x19	# (DW_FORM_flag_present)
++	.byte	0
++	.byte	0
++	.uleb128 0x8	# (abbrev code)
++	.uleb128 0x34	# (TAG: DW_TAG_variable)
++	.byte	0	# DW_children_no
++	.uleb128 0x3	# (DW_AT_name)
++	.uleb128 0x8	# (DW_FORM_string)
++	.uleb128 0x3a	# (DW_AT_decl_file)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x3b	# (DW_AT_decl_line)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x49	# (DW_AT_type)
++	.uleb128 0x13	# (DW_FORM_ref4)
++	.uleb128 0x2	# (DW_AT_location)
++	.uleb128 0x18	# (DW_FORM_exprloc)
++	.byte	0
++	.byte	0
++	.uleb128 0x9	# (abbrev code)
++	.uleb128 0x35	# (TAG: DW_TAG_volatile_type)
++	.byte	0	# DW_children_no
++	.uleb128 0x49	# (DW_AT_type)
++	.uleb128 0x13	# (DW_FORM_ref4)
++	.byte	0
++	.byte	0
++	.uleb128 0xa	# (abbrev code)
++	.uleb128 0x34	# (TAG: DW_TAG_variable)
++	.byte	0	# DW_children_no
++	.uleb128 0x3	# (DW_AT_name)
++	.uleb128 0xe	# (DW_FORM_strp)
++	.uleb128 0x3a	# (DW_AT_decl_file)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x3b	# (DW_AT_decl_line)
++	.uleb128 0xb	# (DW_FORM_data1)
++	.uleb128 0x49	# (DW_AT_type)
++	.uleb128 0x13	# (DW_FORM_ref4)
++	.uleb128 0x2	# (DW_AT_location)
++	.uleb128 0x18	# (DW_FORM_exprloc)
++	.byte	0
++	.byte	0
++	.byte	0
++	.section	.debug_aranges,"",@progbits
++	.long	0x2c	# Length of Address Ranges Info
++	.value	0x2	# DWARF Version
++	.long	.Ldebug_info0	# Offset of Compilation Unit Info
++	.byte	0x8	# Size of Address
++	.byte	0	# Size of Segment Descriptor
++	.value	0	# Pad to 16 byte boundary
++	.value	0
++	.quad	.Ltext0	# Address
++	.quad	.Letext0-.Ltext0	# Length
++	.quad	0
++	.quad	0
++	.section	.debug_line,"",@progbits
++.Ldebug_line0:
++	.section	.debug_str,"MS",@progbits,1
++.LASF3:
++	.string	""
++.LASF0:
++	.string	"fail"
++.LASF4:
++	.string	"func"
++.LASF1:
++	.string	"GNU C 4.6.1 20110715 (Red Hat 4.6.1-3)"
++.LASF2:
++	.string	"gdb.arch/amd64-prologue-xmm.c"
++.LASF5:
++	.string	"marker"
++.LASF6:
++	.string	"main"
++	.ident	"GCC: (GNU) 4.6.1 20110715 (Red Hat 4.6.1-3)"
++	.section	.note.GNU-stack,"",@progbits

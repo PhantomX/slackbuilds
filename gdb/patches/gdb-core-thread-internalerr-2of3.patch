@@ -1,0 +1,102 @@
+http://sourceware.org/ml/gdb-patches/2011-02/msg00680.html
+Subject: [patch 2/3] Fix threading internal error on corrupted memory [rediff]
+
+[rediff]
+
+gdb/
+2011-02-24  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* linux-thread-db.c (find_new_threads_callback): Exit on zero TI_TID
+	even if !TARGET_HAS_EXECUTION.
+
+gdb/testsuite/
+2011-02-24  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.threads/gcore-thread.exp ($core0file): New variable.
+	(clear __stack_user.next, clear stack_used.next)
+	(save a zeroed-threads corefile): New test.
+	Call core_load for $core0file.
+	(zeroed-threads cannot be listed): New test.
+
+--- a/gdb/linux-thread-db.c
++++ b/gdb/linux-thread-db.c
+@@ -1335,7 +1335,7 @@ find_new_threads_callback (const td_thrhandle_t *th_p, void *data)
+   if (ti.ti_state == TD_THR_UNKNOWN || ti.ti_state == TD_THR_ZOMBIE)
+     return 0;			/* A zombie -- ignore.  */
+ 
+-  if (ti.ti_tid == 0 && target_has_execution)
++  if (ti.ti_tid == 0)
+     {
+       /* A thread ID of zero means that this is the main thread, but
+ 	 glibc has not yet initialized thread-local storage and the
+@@ -1347,10 +1347,13 @@ find_new_threads_callback (const td_thrhandle_t *th_p, void *data)
+ 	 need this glibc bug workaround.  */
+       info->need_stale_parent_threads_check = 0;
+ 
+-      err = info->td_thr_event_enable_p (th_p, 1);
+-      if (err != TD_OK)
+-	error (_("Cannot enable thread event reporting for LWP %d: %s"),
+-	       (int) ti.ti_lid, thread_db_err_str (err));
++      if (target_has_execution)
++	{
++	  err = info->td_thr_event_enable_p (th_p, 1);
++	  if (err != TD_OK)
++	    error (_("Cannot enable thread event reporting for LWP %d: %s"),
++		   (int) ti.ti_lid, thread_db_err_str (err));
++	}
+ 
+       return 0;
+     }
+--- a/gdb/testsuite/gdb.threads/gcore-thread.exp
++++ b/gdb/testsuite/gdb.threads/gcore-thread.exp
+@@ -26,6 +26,7 @@ set testfile "gcore-thread"
+ set srcfile  pthreads.c
+ set binfile  ${objdir}/${subdir}/${testfile}
+ set corefile ${objdir}/${subdir}/${testfile}.test
++set core0file ${objdir}/${subdir}/${testfile}0.test
+ 
+ if [istarget "*-*-linux"] then {
+     set target_cflags "-D_MIT_POSIX_THREADS"
+@@ -110,6 +111,29 @@ if {!$core_supported} {
+ }
+ 
+ 
++# Test the uninitialized thread list.
++# Provide the case of glibc td_thr_get_info handling of:
++# /* Special case for the main thread before initialization.  */
++
++foreach symbol {__stack_user stack_used} {
++    set test "clear ${symbol}.next"
++    gdb_test_multiple "p *(void **) &${symbol} = 0" $test {
++	-re " = \\(void \\*\\) 0x0\r\n$gdb_prompt $" {
++	    pass $test
++	}
++	-re "No symbol \"${symbol}\" in current context\\.\r\n$gdb_prompt $" {
++	    xfail $test
++	    # Do not do the verification.
++	    set core0file ""
++	}
++    }
++}
++
++if {"$core0file" != ""} {
++    gdb_test "gcore $core0file" "Saved corefile .*" "save a zeroed-threads corefile"
++}
++
++
+ # Now restart gdb and load the corefile.
+ clean_restart ${testfile}
+ 
+@@ -160,3 +184,11 @@ gdb_test "info threads" ".* thread2 .*" \
+ 
+ gdb_test "info threads" ".*${nl}\\* ${horiz} thread2 .*" \
+ 	"thread2 is current thread in corefile"
++
++
++# Test the uninitialized thread list.
++
++if {"$core0file" != "" && [load_core $core0file]} {
++
++    gdb_test "info threads" "Cannot find new threads: .*" "zeroed-threads cannot be listed"
++}
+

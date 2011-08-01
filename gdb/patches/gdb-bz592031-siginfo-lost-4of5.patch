@@ -1,0 +1,992 @@
+http://sourceware.org/ml/gdb-patches/2010-09/msg00360.html
+Subject: [patch 3/4]#3 linux-nat: Do not respawn signals
+
+Hi,
+
+linux-nat.c is fixed to never respawn signals; possibly keeping SIGSTOP
+pending, as is done in current in FSF gdbserver and as suggested by Pedro:
+	http://sourceware.org/ml/gdb-patches/2010-08/msg00544.html
+
+The last linux-nat.c removed patch chunk comes from the initial implementation
+by Mark Kettenis:
+	[PATCH] New Linux threads support
+	http://sourceware.org/ml/gdb-patches/2000-09/msg00020.html
+	92280a75e017683bf8e4f339f4f85640b0700509
+It gets in part reimplemented into the new stop_wait_callback <if (lp->step)>
+part and partially just not needed as currently GDB never drops the signals as
+it does not PTRACE_CONT the thread; signal is kept for processing:
+	"RC: Not resuming sibling %s (has pending)\n"
+
+In stop_wait_callback I believe breakpoints cancellation is not needed here,
+it would be done later.
+
+
+The testcase sigstep-threads.exp was written to catch a regression-like
+appearance then the new <if (lp->step)> part of stop_wait_callback gets
+removed.  Still the tecase fails even with FSF HEAD:
+
+32        var++;                /* step-1 */
+(gdb) step
+Program received signal SIGUSR1, User defined signal 1.
+Program received signal SIGUSR1, User defined signal 1.
+31      {                       /* step-0 */
+
+There is no reason why it shouldn't stop on line 33, between line 32 and line
+33 no signal would occur.  Stepping of the current thread should not be
+affected by whatever happens in the other threads as select_event_lwp has:
+  /* Give preference to any LWP that is being single-stepped.  */
+
+There is a problem that with FSF HEAD GDB does PTRACE_SINGLESTEP for thread A,
+PTRACE_CONT for thread B (because of set scheduler-locking off), thread B hits
+SIGUSR1, so GDB tkills thread A with SIGSTOP and it can receive SIGSTOP for
+thread A before the SIGTRAP for completed PTRACE_SINGLESTEP.  At that moment
+select_event_lwp. forgets it was stepping thread A because there is no pending
+SIGTRAP event.  currently_stepping still remembers thread A was stepping so it
+will later stop but as thread A was PTRACE_CONT-ed in the meantime it is too
+late.
+
+There is the new <if (lp->step)> part of stop_wait_callback to always track
+thread A is stepping.  Due to different scheduling without this part the
+changed GDB would very rarely stop in this testcase otherwise, making it look
+as a regression.
+
+I have some another patch I may post separately as if multiple signals happen
+besides SIGTRAP GDB still may switch from thread A away (as not considering it
+stepping) to thread B for SIGUSR and accidentally PTRACE_CONT thread A.
+But I do not find this as a prerequisite for this patchset.
+
+
+
+Thanks,
+Jan
+
+
+gdb/
+2010-09-20  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* linux-nat.c (stop_wait_callback): New gdb_assert.  Remove signals
+	respawning; keep TP with SIGNALLED.  New debugging message "SWC:
+	Delayed SIGSTOP caught for %s.".  Catch next signal if SIGSTOP has
+	been caught and LP->STEP is set.
+	(linux_nat_wait_1) <lp && lp->signalled>: Remove.
+
+gdb/testsuite/
+2010-09-20  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.threads/siginfo-threads.exp: New file.
+	* gdb.threads/siginfo-threads.c: New file.
+	* gdb.threads/sigstep-threads.exp: New file.
+	* gdb.threads/sigstep-threads.c: New file.
+
+Index: gdb-7.2.50.20110117/gdb/linux-nat.c
+===================================================================
+--- gdb-7.2.50.20110117.orig/gdb/linux-nat.c	2011-01-17 15:53:14.000000000 +0100
++++ gdb-7.2.50.20110117/gdb/linux-nat.c	2011-01-17 16:05:57.000000000 +0100
+@@ -2803,6 +2803,8 @@ stop_wait_callback (struct lwp_info *lp,
+     {
+       int status;
+ 
++      gdb_assert (lp->resumed);
++
+       status = wait_lwp (lp);
+       if (status == 0)
+ 	return 0;
+@@ -2828,110 +2830,61 @@ stop_wait_callback (struct lwp_info *lp,
+ 
+       if (WSTOPSIG (status) != SIGSTOP)
+ 	{
+-	  if (linux_nat_status_is_event (status))
+-	    {
+-	      /* If a LWP other than the LWP that we're reporting an
+-	         event for has hit a GDB breakpoint (as opposed to
+-	         some random trap signal), then just arrange for it to
+-	         hit it again later.  We don't keep the SIGTRAP status
+-	         and don't forward the SIGTRAP signal to the LWP.  We
+-	         will handle the current event, eventually we will
+-	         resume all LWPs, and this one will get its breakpoint
+-	         trap again.
+-
+-	         If we do not do this, then we run the risk that the
+-	         user will delete or disable the breakpoint, but the
+-	         thread will have already tripped on it.  */
+-
+-	      /* Save the trap's siginfo in case we need it later.  */
+-	      save_siginfo (lp);
+-
+-	      save_sigtrap (lp);
+-
+-	      /* Now resume this LWP and get the SIGSTOP event.  */
+-	      errno = 0;
+-	      ptrace (PTRACE_CONT, GET_LWP (lp->ptid), 0, 0);
+-	      if (debug_linux_nat)
+-		{
+-		  fprintf_unfiltered (gdb_stdlog,
+-				      "PTRACE_CONT %s, 0, 0 (%s)\n",
+-				      target_pid_to_str (lp->ptid),
+-				      errno ? safe_strerror (errno) : "OK");
+-
+-		  fprintf_unfiltered (gdb_stdlog,
+-				      "SWC: Candidate SIGTRAP event in %s\n",
+-				      target_pid_to_str (lp->ptid));
+-		}
+-	      /* Hold this event/waitstatus while we check to see if
+-		 there are any more (we still want to get that SIGSTOP).  */
+-	      stop_wait_callback (lp, NULL);
++	  /* The thread was stopped with a signal other than SIGSTOP.  */
+ 
+-	      /* Hold the SIGTRAP for handling by linux_nat_wait.  If
+-		 there's another event, throw it back into the
+-		 queue.  */
+-	      if (lp->status)
+-		{
+-		  if (debug_linux_nat)
+-		    fprintf_unfiltered (gdb_stdlog,
+-					"SWC: kill %s, %s\n",
+-					target_pid_to_str (lp->ptid),
+-					status_to_str ((int) status));
+-		  kill_lwp (GET_LWP (lp->ptid), WSTOPSIG (lp->status));
+-		}
++	  /* Save the trap's siginfo in case we need it later.  */
++	  save_siginfo (lp);
+ 
+-	      /* Save the sigtrap event.  */
+-	      lp->status = status;
+-	      return 0;
+-	    }
+-	  else
+-	    {
+-	      /* The thread was stopped with a signal other than
+-	         SIGSTOP, and didn't accidentally trip a breakpoint.  */
++	  save_sigtrap (lp);
+ 
+-	      if (debug_linux_nat)
+-		{
+-		  fprintf_unfiltered (gdb_stdlog,
+-				      "SWC: Pending event %s in %s\n",
+-				      status_to_str ((int) status),
+-				      target_pid_to_str (lp->ptid));
+-		}
+-	      /* Now resume this LWP and get the SIGSTOP event.  */
+-	      errno = 0;
+-	      ptrace (PTRACE_CONT, GET_LWP (lp->ptid), 0, 0);
+-	      if (debug_linux_nat)
+-		fprintf_unfiltered (gdb_stdlog,
+-				    "SWC: PTRACE_CONT %s, 0, 0 (%s)\n",
+-				    target_pid_to_str (lp->ptid),
+-				    errno ? safe_strerror (errno) : "OK");
+-
+-	      /* Hold this event/waitstatus while we check to see if
+-	         there are any more (we still want to get that SIGSTOP).  */
+-	      stop_wait_callback (lp, NULL);
++	  if (debug_linux_nat)
++	    fprintf_unfiltered (gdb_stdlog,
++				"SWC: Pending event %s in %s\n",
++				status_to_str ((int) status),
++				target_pid_to_str (lp->ptid));
+ 
+-	      /* If the lp->status field is still empty, use it to
+-		 hold this event.  If not, then this event must be
+-		 returned to the event queue of the LWP.  */
+-	      if (lp->status)
+-		{
+-		  if (debug_linux_nat)
+-		    {
+-		      fprintf_unfiltered (gdb_stdlog,
+-					  "SWC: kill %s, %s\n",
+-					  target_pid_to_str (lp->ptid),
+-					  status_to_str ((int) status));
+-		    }
+-		  kill_lwp (GET_LWP (lp->ptid), WSTOPSIG (status));
+-		}
+-	      else
+-		lp->status = status;
+-	      return 0;
+-	    }
++	  /* Save the sigtrap event.  */
++	  lp->status = status;
++	  gdb_assert (! lp->stopped);
++	  gdb_assert (lp->signalled);
++	  lp->stopped = 1;
+ 	}
+       else
+ 	{
+ 	  /* We caught the SIGSTOP that we intended to catch, so
+ 	     there's no SIGSTOP pending.  */
+-	  lp->stopped = 1;
++
++	  if (debug_linux_nat)
++	    fprintf_unfiltered (gdb_stdlog,
++				"SWC: Delayed SIGSTOP caught for %s.\n",
++				target_pid_to_str (lp->ptid));
++
++	  if (lp->step)
++	    {
++	      /* LP->STATUS is 0 here.  That means SIGTRAP from
++		 PTRACE_SINGLESTEP still has to be delivered for this inferior
++		 stop.  Catching the SIGTRAP event is important to prevent
++		 starvation in select_event_lwp.  */
++
++	      registers_changed ();
++	      linux_ops->to_resume (linux_ops, pid_to_ptid (GET_LWP (lp->ptid)),
++				    1, TARGET_SIGNAL_0);
++	      if (debug_linux_nat)
++		fprintf_unfiltered (gdb_stdlog,
++				    "SWC: %s %s, 0, 0 (discard SIGSTOP)\n",
++				    "PTRACE_SINGLESTEP",
++				    target_pid_to_str (lp->ptid));
++
++	      lp->stopped = 0;
++	      gdb_assert (lp->resumed);
++	      stop_wait_callback (lp, NULL);
++	      gdb_assert (lp->stopped);
++	    }
++	  else
++	    lp->stopped = 1;
++
++	  /* Reset SIGNALLED only after the stop_wait_callback call above as
++	     it does gdb_assert on SIGNALLED.  */
+ 	  lp->signalled = 0;
+ 	}
+     }
+@@ -3514,52 +3467,6 @@ retry:
+ 	lp = NULL;
+     }
+ 
+-  if (lp && lp->signalled)
+-    {
+-      /* A pending SIGSTOP may interfere with the normal stream of
+-         events.  In a typical case where interference is a problem,
+-         we have a SIGSTOP signal pending for LWP A while
+-         single-stepping it, encounter an event in LWP B, and take the
+-         pending SIGSTOP while trying to stop LWP A.  After processing
+-         the event in LWP B, LWP A is continued, and we'll never see
+-         the SIGTRAP associated with the last time we were
+-         single-stepping LWP A.  */
+-
+-      /* Resume the thread.  It should halt immediately returning the
+-         pending SIGSTOP.  */
+-      registers_changed ();
+-      linux_ops->to_resume (linux_ops, pid_to_ptid (GET_LWP (lp->ptid)),
+-			    lp->step, TARGET_SIGNAL_0);
+-      if (debug_linux_nat)
+-	fprintf_unfiltered (gdb_stdlog,
+-			    "LLW: %s %s, 0, 0 (expect SIGSTOP)\n",
+-			    lp->step ? "PTRACE_SINGLESTEP" : "PTRACE_CONT",
+-			    target_pid_to_str (lp->ptid));
+-      lp->stopped = 0;
+-      gdb_assert (lp->resumed);
+-
+-      /* Catch the pending SIGSTOP.  */
+-      status = lp->status;
+-      lp->status = 0;
+-
+-      stop_wait_callback (lp, NULL);
+-
+-      /* If the lp->status field isn't empty, we caught another signal
+-	 while flushing the SIGSTOP.  Return it back to the event
+-	 queue of the LWP, as we already have an event to handle.  */
+-      if (lp->status)
+-	{
+-	  if (debug_linux_nat)
+-	    fprintf_unfiltered (gdb_stdlog,
+-				"LLW: kill %s, %s\n",
+-				target_pid_to_str (lp->ptid),
+-				status_to_str (lp->status));
+-	  kill_lwp (GET_LWP (lp->ptid), WSTOPSIG (lp->status));
+-	}
+-
+-      lp->status = status;
+-    }
+-
+   if (!target_can_async_p ())
+     {
+       /* Causes SIGINT to be passed on to the attached process.  */
+Index: gdb-7.2.50.20110117/gdb/testsuite/gdb.threads/siginfo-threads.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.2.50.20110117/gdb/testsuite/gdb.threads/siginfo-threads.c	2011-01-17 16:02:40.000000000 +0100
+@@ -0,0 +1,447 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2010 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#define _GNU_SOURCE
++#include <pthread.h>
++#include <stdio.h>
++#include <limits.h>
++#include <errno.h>
++#include <stdlib.h>
++#include <string.h>
++#include <assert.h>
++#include <sys/types.h>
++#include <signal.h>
++#include <unistd.h>
++#include <asm/unistd.h>
++
++#define gettid() syscall (__NR_gettid)
++#define tgkill(tgid, tid, sig) syscall (__NR_tgkill, tgid, tid, sig)
++
++/* Terminate always in the main task, it can lock up with SIGSTOPped GDB
++   otherwise.  */
++#define TIMEOUT (gettid () == getpid() ? 10 : 15)
++
++static pid_t thread1_tid;
++static pthread_cond_t thread1_tid_cond = PTHREAD_COND_INITIALIZER;
++static pthread_mutex_t thread1_tid_mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
++static int thread1_sigusr1_hit;
++static int thread1_sigusr2_hit;
++
++static pid_t thread2_tid;
++static pthread_cond_t thread2_tid_cond = PTHREAD_COND_INITIALIZER;
++static pthread_mutex_t thread2_tid_mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
++static int thread2_sigusr1_hit;
++static int thread2_sigusr2_hit;
++
++static pthread_mutex_t terminate_mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
++
++/* Do not use alarm as it would create a ptrace event which would hang up us if
++   we are being traced by GDB which we stopped ourselves.  */
++
++static void timed_mutex_lock (pthread_mutex_t *mutex)
++{
++  int i;
++  struct timespec start, now;
++
++  i = clock_gettime (CLOCK_MONOTONIC, &start);
++  assert (i == 0);
++
++  do
++    {
++      i = pthread_mutex_trylock (mutex);
++      if (i == 0)
++	return;
++      assert (i == EBUSY);
++
++      i = clock_gettime (CLOCK_MONOTONIC, &now);
++      assert (i == 0);
++      assert (now.tv_sec >= start.tv_sec);
++    }
++  while (now.tv_sec - start.tv_sec < TIMEOUT);
++
++  fprintf (stderr, "Timed out waiting for internal lock!\n");
++  exit (EXIT_FAILURE);
++}
++
++static void
++handler (int signo, siginfo_t *siginfo, void *exception)
++{
++  int *varp;
++
++  assert (siginfo->si_signo == signo);
++  assert (siginfo->si_code == SI_TKILL);
++  assert (siginfo->si_pid == getpid ());
++
++  if (gettid () == thread1_tid)
++    {
++      if (signo == SIGUSR1)
++	varp = &thread1_sigusr1_hit;
++      else if (signo == SIGUSR2)
++	varp = &thread1_sigusr2_hit;
++      else
++	assert (0);
++    }
++  else if (gettid () == thread2_tid)
++    {
++      if (signo == SIGUSR1)
++	varp = &thread2_sigusr1_hit;
++      else if (signo == SIGUSR2)
++	varp = &thread2_sigusr2_hit;
++      else
++	assert (0);
++    }
++  else
++    assert (0);
++
++  if (*varp)
++    {
++      fprintf (stderr, "Signal %d for TID %lu has been already hit!\n", signo,
++	       (unsigned long) gettid ());
++      exit (EXIT_FAILURE);
++    }
++  *varp = 1;
++}
++
++static void *
++thread1_func (void *unused)
++{
++  int i;
++
++  timed_mutex_lock (&thread1_tid_mutex);
++
++  /* THREAD1_TID_MUTEX must be already locked to avoid race.  */
++  thread1_tid = gettid ();
++
++  i = pthread_cond_signal (&thread1_tid_cond);
++  assert (i == 0);
++  i = pthread_mutex_unlock (&thread1_tid_mutex);
++  assert (i == 0);
++
++  /* Be sure the "t (tracing stop)" test can proceed for both threads.  */
++  timed_mutex_lock (&terminate_mutex);
++  i = pthread_mutex_unlock (&terminate_mutex);
++  assert (i == 0);
++
++  if (! thread1_sigusr1_hit)
++    {
++      fprintf (stderr, "Thread 1 signal SIGUSR1 not hit!\n");
++      exit (EXIT_FAILURE);
++    }
++  if (! thread1_sigusr2_hit)
++    {
++      fprintf (stderr, "Thread 1 signal SIGUSR2 not hit!\n");
++      exit (EXIT_FAILURE);
++    }
++
++  return NULL;
++}
++
++static void *
++thread2_func (void *unused)
++{
++  int i;
++
++  timed_mutex_lock (&thread2_tid_mutex);
++
++  /* THREAD2_TID_MUTEX must be already locked to avoid race.  */
++  thread2_tid = gettid ();
++
++  i = pthread_cond_signal (&thread2_tid_cond);
++  assert (i == 0);
++  i = pthread_mutex_unlock (&thread2_tid_mutex);
++  assert (i == 0);
++
++  /* Be sure the "t (tracing stop)" test can proceed for both threads.  */
++  timed_mutex_lock (&terminate_mutex);
++  i = pthread_mutex_unlock (&terminate_mutex);
++  assert (i == 0);
++
++  if (! thread2_sigusr1_hit)
++    {
++      fprintf (stderr, "Thread 2 signal SIGUSR1 not hit!\n");
++      exit (EXIT_FAILURE);
++    }
++  if (! thread2_sigusr2_hit)
++    {
++      fprintf (stderr, "Thread 2 signal SIGUSR2 not hit!\n");
++      exit (EXIT_FAILURE);
++    }
++
++  return NULL;
++}
++
++static const char *
++proc_string (const char *filename, const char *line)
++{
++  FILE *f;
++  static char buf[LINE_MAX];
++  size_t line_len = strlen (line);
++
++  f = fopen (filename, "r");
++  if (f == NULL)
++    {
++      fprintf (stderr, "fopen (\"%s\") for \"%s\": %s\n", filename, line,
++	       strerror (errno));
++      exit (EXIT_FAILURE);
++    }
++  while (errno = 0, fgets (buf, sizeof (buf), f))
++    {
++      char *s;
++
++      s = strchr (buf, '\n');
++      assert (s != NULL);
++      *s = 0;
++
++      if (strncmp (buf, line, line_len) != 0)
++	continue;
++
++      if (fclose (f))
++	{
++	  fprintf (stderr, "fclose (\"%s\") for \"%s\": %s\n", filename, line,
++		   strerror (errno));
++	  exit (EXIT_FAILURE);
++	}
++
++      return &buf[line_len];
++    }
++  if (errno != 0)
++    {
++      fprintf (stderr, "fgets (\"%s\": %s\n", filename, strerror (errno));
++      exit (EXIT_FAILURE);
++    }
++  fprintf (stderr, "\"%s\": No line \"%s\" found.\n", filename, line);
++  exit (EXIT_FAILURE);
++}
++
++static unsigned long
++proc_ulong (const char *filename, const char *line)
++{
++  const char *s = proc_string (filename, line);
++  long retval;
++  char *end;
++
++  errno = 0;
++  retval = strtol (s, &end, 10);
++  if (retval < 0 || retval >= LONG_MAX || (end && *end))
++    {
++      fprintf (stderr, "\"%s\":\"%s\": %ld, %s\n", filename, line, retval,
++	       strerror (errno));
++      exit (EXIT_FAILURE);
++    }
++  return retval;
++}
++
++static void
++state_wait (pid_t process, const char *wanted)
++{
++  char *filename;
++  int i;
++  struct timespec start, now;
++  const char *state;
++
++  i = asprintf (&filename, "/proc/%lu/status", (unsigned long) process);
++  assert (i > 0);
++
++  i = clock_gettime (CLOCK_MONOTONIC, &start);
++  assert (i == 0);
++
++  do
++    {
++      state = proc_string (filename, "State:\t");
++
++      /* torvalds/linux-2.6.git 464763cf1c6df632dccc8f2f4c7e50163154a2c0
++	 has changed "T (tracing stop)" to "t (tracing stop)".  Make the GDB
++	 testcase backward compatible with older Linux kernels.  */
++      if (strcmp (state, "T (tracing stop)") == 0)
++	state = "t (tracing stop)";
++
++      if (strcmp (state, wanted) == 0)
++	{
++	  free (filename);
++	  return;
++	}
++
++      if (sched_yield ())
++	{
++	  perror ("sched_yield()");
++	  exit (EXIT_FAILURE);
++	}
++
++      i = clock_gettime (CLOCK_MONOTONIC, &now);
++      assert (i == 0);
++      assert (now.tv_sec >= start.tv_sec);
++    }
++  while (now.tv_sec - start.tv_sec < TIMEOUT);
++
++  fprintf (stderr, "Timed out waiting for PID %lu \"%s\" (now it is \"%s\")!\n",
++	   (unsigned long) process, wanted, state);
++  exit (EXIT_FAILURE);
++}
++
++static volatile pid_t tracer = 0;
++static pthread_t thread1, thread2;
++
++static void
++cleanup (void)
++{
++  printf ("Resuming GDB PID %lu.\n", (unsigned long) tracer);
++
++  if (tracer)
++    {
++      int i;
++      int tracer_save = tracer;
++
++      tracer = 0;
++
++      i = kill (tracer_save, SIGCONT);
++      assert (i == 0);
++    }
++}
++
++int
++main (int argc, char **argv)
++{
++  int i;
++  int standalone = 0;
++  struct sigaction act;
++
++  if (argc == 2 && strcmp (argv[1], "-s") == 0)
++    standalone = 1;
++  else
++    assert (argc == 1);
++
++  setbuf (stdout, NULL);
++
++  timed_mutex_lock (&thread1_tid_mutex);
++  timed_mutex_lock (&thread2_tid_mutex);
++
++  timed_mutex_lock (&terminate_mutex);
++
++  errno = 0;
++  memset (&act, 0, sizeof (act));
++  act.sa_sigaction = handler;
++  act.sa_flags = SA_RESTART | SA_SIGINFO;
++  i = sigemptyset (&act.sa_mask);
++  assert_perror (errno);
++  assert (i == 0);
++  i = sigaction (SIGUSR1, &act, NULL);
++  assert_perror (errno);
++  assert (i == 0);
++  i = sigaction (SIGUSR2, &act, NULL);
++  assert_perror (errno);
++  assert (i == 0);
++
++  i = pthread_create (&thread1, NULL, thread1_func, NULL);
++  assert (i == 0);
++
++  i = pthread_create (&thread2, NULL, thread2_func, NULL);
++  assert (i == 0);
++
++  if (!standalone)
++    {
++      tracer = proc_ulong ("/proc/self/status", "TracerPid:\t");
++      if (tracer == 0)
++	{
++	  fprintf (stderr, "The testcase must be run by GDB!\n");
++	  exit (EXIT_FAILURE);
++	}
++      if (tracer != getppid ())
++	{
++	  fprintf (stderr, "The testcase parent must be our GDB tracer!\n");
++	  exit (EXIT_FAILURE);
++	}
++    }
++
++  /* SIGCONT our debugger in the case of our crash as we would deadlock
++     otherwise.  */
++
++  atexit (cleanup);
++
++  printf ("Stopping GDB PID %lu.\n", (unsigned long) tracer);
++
++  if (tracer)
++    {
++      i = kill (tracer, SIGSTOP);
++      assert (i == 0);
++      state_wait (tracer, "T (stopped)");
++    }
++
++  /* Threads are now waiting at timed_mutex_lock (thread1_tid_mutex) and so
++     they could not trigger the signals before GDB gets unstopped later.
++     Threads get resumed at pthread_cond_wait below.  Use `while' loops for
++     protection against spurious pthread_cond_wait wakeups.  */
++
++  printf ("Waiting till the threads initialize their TIDs.\n");
++
++  while (thread1_tid == 0)
++    {
++      i = pthread_cond_wait (&thread1_tid_cond, &thread1_tid_mutex);
++      assert (i == 0);
++    }
++
++  while (thread2_tid == 0)
++    {
++      i = pthread_cond_wait (&thread2_tid_cond, &thread2_tid_mutex);
++      assert (i == 0);
++    }
++
++  printf ("Thread 1 TID = %lu, thread 2 TID = %lu, PID = %lu.\n",
++	  (unsigned long) thread1_tid, (unsigned long) thread2_tid,
++	  (unsigned long) getpid ());
++
++  errno = 0;
++  i = tgkill (getpid (), thread1_tid, SIGUSR1);
++  assert_perror (errno);
++  assert (i == 0);
++  i = tgkill (getpid (), thread1_tid, SIGUSR2);
++  assert_perror (errno);
++  assert (i == 0);
++  i = tgkill (getpid (), thread2_tid, SIGUSR1);
++  assert_perror (errno);
++  assert (i == 0);
++  i = tgkill (getpid (), thread2_tid, SIGUSR2);
++  assert_perror (errno);
++  assert (i == 0);
++
++  printf ("Waiting till the threads get trapped by the signals.\n");
++
++  if (tracer)
++    {
++      /* s390x-unknown-linux-gnu will fail with "R (running)".  */
++
++      state_wait (thread1_tid, "t (tracing stop)");
++
++      state_wait (thread2_tid, "t (tracing stop)");
++    }
++
++  cleanup ();
++
++  printf ("Joining the threads.\n");
++
++  i = pthread_mutex_unlock (&terminate_mutex);
++  assert (i == 0);
++
++  i = pthread_join (thread1, NULL);
++  assert (i == 0);
++
++  i = pthread_join (thread2, NULL);
++  assert (i == 0);
++
++  printf ("Exiting.\n");	/* break-at-exit */
++
++  return EXIT_SUCCESS;
++}
+Index: gdb-7.2.50.20110117/gdb/testsuite/gdb.threads/siginfo-threads.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.2.50.20110117/gdb/testsuite/gdb.threads/siginfo-threads.exp	2011-01-17 16:02:40.000000000 +0100
+@@ -0,0 +1,94 @@
++# Copyright 2010 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++set testfile "siginfo-threads"
++set srcfile ${testfile}.c
++set binfile ${objdir}/${subdir}/${testfile}
++if {[gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" ${binfile} executable [list debug additional_flags=-lrt]] != "" } {
++    return -1
++}
++
++clean_restart $testfile
++
++if ![runto_main] {
++    return -1
++}
++
++# `nostop noprint pass' could in some cases report false PASS due to the
++# (preempt 'handle') code path.
++
++gdb_test "handle SIGUSR1 stop print pass" "Signal\[ \t\]+Stop\[ \t\]+Print\[ \t\]+Pass to program\[ \t\]+Description\r\nSIGUSR1\[ \t\]+Yes\[ \t\]+Yes\[ \t\]+Yes\[ \t\].*"
++gdb_test "handle SIGUSR2 stop print pass" "Signal\[ \t\]+Stop\[ \t\]+Print\[ \t\]+Pass to program\[ \t\]+Description\r\nSIGUSR2\[ \t\]+Yes\[ \t\]+Yes\[ \t\]+Yes\[ \t\].*"
++
++gdb_breakpoint [gdb_get_line_number "break-at-exit"]
++
++set test "get pid"
++gdb_test_multiple "p getpid ()" $test {
++    -re " = (\[0-9\]+)\r\n$gdb_prompt $" {
++	set pid $expect_out(1,string)
++	pass $test
++    }
++}
++
++for {set sigcount 0} {$sigcount < 4} {incr sigcount} {
++    set test "catch signal $sigcount"
++    set sigusr ""
++    gdb_test_multiple "continue" $test {
++	-re "Program received signal SIGUSR(\[12\]), User defined signal \[12\]\\.\r\n.*\r\n$gdb_prompt $" {
++	    set sigusr $expect_out(1,string)
++	    pass $test
++	}
++    }
++    if {$sigusr == ""} {
++	return -1
++    }
++
++    set test "signal $sigcount si_signo"
++    if {$sigusr == 1} {
++	set signo 10
++    } else {
++	set signo 12
++    }
++    gdb_test_multiple {p $_siginfo.si_signo} $test {
++	-re " = $signo\r\n$gdb_prompt $" {
++	    pass $test
++	}
++	-re "Attempt to extract a component of a value that is not a structure\\.\r\n$gdb_prompt $" {
++	    unsupported $test
++	}
++    }
++
++    set test "signal $sigcount si_code is SI_TKILL"
++    gdb_test_multiple {p $_siginfo.si_code} $test {
++	-re " = -6\r\n$gdb_prompt $" {
++	    pass $test
++	}
++	-re "Attempt to extract a component of a value that is not a structure\\.\r\n$gdb_prompt $" {
++	    unsupported $test
++	}
++    }
++
++    set test "signal $sigcount si_pid"
++    gdb_test_multiple {p $_siginfo._sifields._kill.si_pid} $test {
++	-re " = $pid\r\n$gdb_prompt $" {
++	    pass $test
++	}
++	-re "Attempt to extract a component of a value that is not a structure\\.\r\n$gdb_prompt $" {
++	    unsupported $test
++	}
++    }
++}
++
++gdb_continue_to_breakpoint break-at-exit ".*break-at-exit.*"
+Index: gdb-7.2.50.20110117/gdb/testsuite/gdb.threads/sigstep-threads.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.2.50.20110117/gdb/testsuite/gdb.threads/sigstep-threads.c	2011-01-17 16:02:40.000000000 +0100
+@@ -0,0 +1,54 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2010 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#include <pthread.h>
++#include <assert.h>
++#include <signal.h>
++
++#include <asm/unistd.h>
++#include <unistd.h>
++#define tgkill(tgid, tid, sig) syscall (__NR_tgkill, (tgid), (tid), (sig))
++#define gettid() syscall (__NR_gettid)
++
++static volatile int var;
++
++static void
++handler (int signo)	/* step-0 */
++{			/* step-0 */
++  var++;		/* step-1 */
++  tgkill (getpid (), gettid (), SIGUSR1);	/* step-2 */
++}
++
++static void *
++start (void *arg)
++{
++  signal (SIGUSR1, handler);
++  tgkill (getpid (), gettid (), SIGUSR1);
++  assert (0);
++
++  return NULL;
++}
++
++int
++main (void)
++{
++  pthread_t thread;
++
++  pthread_create (&thread, NULL, start, NULL);
++  start (NULL);	/* main-start */
++  return 0;
++}
+Index: gdb-7.2.50.20110117/gdb/testsuite/gdb.threads/sigstep-threads.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.2.50.20110117/gdb/testsuite/gdb.threads/sigstep-threads.exp	2011-01-17 16:02:40.000000000 +0100
+@@ -0,0 +1,74 @@
++# Copyright 2010 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++set testfile sigstep-threads
++set srcfile ${testfile}.c
++set executable ${testfile}
++set binfile ${objdir}/${subdir}/${executable}
++
++if { [gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
++    untested ${testfile}.exp
++    return -1
++}
++
++clean_restart $executable
++
++if ![runto_main] {
++    return -1;
++}
++
++# `noprint' would not test the full logic of GDB.
++gdb_test "handle SIGUSR1 nostop print pass" "\r\nSIGUSR1\[ \t\]+No\[ \t\]+Yes\[ \t\]+Yes\[ \t\].*"
++
++gdb_test_no_output "set scheduler-locking off"
++
++gdb_breakpoint [gdb_get_line_number "step-1"]
++gdb_test_no_output {set $step1=$bpnum}
++gdb_continue_to_breakpoint "step-1" ".* step-1 .*"
++gdb_test_no_output {disable $step1}
++
++# 1 as we are now stopped at the `step-1' label.
++set step_at 1
++for {set i 0} {$i < 100} {incr i} {
++    set test "step $i"
++    # Presume this step failed - as in the case of a timeout.
++    set failed 1
++    gdb_test_multiple "step" $test {
++	-re "\r\nProgram received signal SIGUSR1, User defined signal 1.\r\n" {
++	    exp_continue -continue_timer
++	}
++	-re "step-(\[012\]).*\r\n$gdb_prompt $" {
++	    set now $expect_out(1,string)
++	    if {$step_at == 2 && $now == 1} {
++		set failed 0
++	    } elseif {$step_at == 1 && $now == 2} {
++		set failed 0
++		# Continue over the re-signalling back to the handle entry.
++		gdb_test_no_output {enable $step1} ""
++		gdb_test "continue" " step-1 .*" ""
++		set now 1
++		gdb_test_no_output {disable $step1} ""
++	    } else  {
++		fail $test
++	    }
++	    set step_at $now
++	}
++    }
++    if $failed {
++	return
++    }
++}
++# We can never reliably say the racy problematic case has been tested.
++pass "step"

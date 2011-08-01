@@ -1,0 +1,218 @@
+http://sourceware.org/ml/gdb-patches/2011-04/msg00154.html
+Subject: [patch] Workaround buggy GCC PR 47510 produced code
+
+Hi,
+
+GCC PR debug/47510 is already fixed and GDB has the proper support for it:
+	RFC: update for GCC PR 47510
+	http://sourceware.org/ml/gdb-patches/2011-03/msg00916.html
+
+Still FSF GDB HEAD will crash on a binary produced by older/buggy GCC:
+	Reading symbols from .../gcc46.o...dwarf2read.c:9329: internal-error: could not find partial DIE 0x9a in cache [from module .../gcc46.o]
+
+Which may not give much clue to the user.
+
+The proposed patch could make false warnings if any code out there has
+DW_TAG_typedef with children, it does not check for specific GCC versions.
+Still such DWARF is invalid, although in such case complaint() would be more
+appropriate than warning().  Does it make sense to differentiate it?
+
+No regressions on {x86_64,x86_64-m32,i686}-fedora15-linux-gnu.
+
+
+Thanks,
+Jan
+
+
+gdb/
+2011-04-11  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* dwarf2read.c (struct dwarf2_per_objfile): New field
+	typedef_children_warning_printed.
+	(load_partial_dies): Read in any children of DW_TAG_typedef with
+	a warning in such case.
+
+gdb/testsuite/
+2011-04-11  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.dwarf2/dw2-typedef-children.S: New file.
+	* gdb.dwarf2/dw2-typedef-children.exp: New file.
+
+--- a/gdb/dwarf2read.c
++++ b/gdb/dwarf2read.c
+@@ -209,6 +209,9 @@ struct dwarf2_per_objfile
+      or we are faking it for OBJF_READNOW's sake.  */
+   unsigned char using_index;
+ 
++  /* Print the GCC PR debug/47510 warning only once per objfile.  */
++  unsigned typedef_children_warning_printed : 1;
++
+   /* The mapped index, or NULL if .gdb_index is missing or not being used.  */
+   struct mapped_index *index_table;
+ 
+@@ -8951,7 +8954,7 @@ load_partial_dies (bfd *abfd, gdb_byte *buffer, gdb_byte *info_ptr,
+       if (parent_die == NULL
+ 	  && part_die->has_specification == 0
+ 	  && part_die->is_declaration == 0
+-	  && (part_die->tag == DW_TAG_typedef
++	  && ((part_die->tag == DW_TAG_typedef && !part_die->has_children)
+ 	      || part_die->tag == DW_TAG_base_type
+ 	      || part_die->tag == DW_TAG_subrange_type))
+ 	{
+@@ -8964,6 +8967,20 @@ load_partial_dies (bfd *abfd, gdb_byte *buffer, gdb_byte *info_ptr,
+ 	  continue;
+ 	}
+ 
++      /* The exception for DW_TAG_typedef with has_children above is
++	 a workaround of GCC PR debug/47510.  GDB crashed on broken GCC output
++	 as it skipped children of DW_TAG_typedef by the shortcut above and
++	 then it could not find the child DIEs referenced later.  */
++
++      if (!dwarf2_per_objfile->typedef_children_warning_printed
++	  && part_die->tag == DW_TAG_typedef && part_die->has_children)
++	{
++	  warning (_("DW_TAG_typedef has childen - GCC PR debug/47510 bug "
++		     "- DIE at 0x%x [in module %s]"),
++		   part_die->offset, cu->objfile->name);
++	  dwarf2_per_objfile->typedef_children_warning_printed = 1;
++	}
++
+       /* If we're at the second level, and we're an enumerator, and
+ 	 our parent has no specification (meaning possibly lives in a
+ 	 namespace elsewhere), then we can add the partial symbol now
+--- /dev/null
++++ b/gdb/testsuite/gdb.dwarf2/dw2-typedef-children.S
+@@ -0,0 +1,92 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2011 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++/* Debug information */
++
++	.section .debug_info
++.Lcu1_begin:
++	/* CU header */
++	.4byte	.Lcu1_end - .Lcu1_start		/* Length of Compilation Unit */
++.Lcu1_start:
++	.2byte	2				/* DWARF Version */
++	.4byte	.Labbrev1_begin			/* Offset into abbrev section */
++	.byte	4				/* Pointer size */
++
++	/* CU die */
++	.uleb128 1				/* Abbrev: DW_TAG_compile_unit */
++	.ascii	"file1.txt\0"			/* DW_AT_name */
++	.ascii	"GNU C 3.3.3\0"			/* DW_AT_producer */
++	.byte	1				/* DW_AT_language (C) */
++
++.Ltype_int:
++	.uleb128	2			/* Abbrev: DW_TAG_base_type */
++	.ascii		"int\0"			/* DW_AT_name */
++	.byte		4			/* DW_AT_byte_size */
++	.byte		5			/* DW_AT_encoding */
++
++	.uleb128	0x3			/* (DIE (0x38) DW_TAG_typedef) */
++	.ascii		"new\0"			/* DW_AT_name */
++	.long		.Ltype_int - .Lcu1_begin	/* DW_AT_type */
++
++	.uleb128	2			/* Abbrev: DW_TAG_base_type */
++	.ascii		"int\0"			/* DW_AT_name */
++	.byte		4			/* DW_AT_byte_size */
++	.byte		5			/* DW_AT_encoding */
++
++	.uleb128	0			/* End of DW_TAG_typedef */
++	.uleb128	0			/* End of DW_TAG_compile_unit */
++.Lcu1_end:
++
++/* Abbrev table */
++	.section .debug_abbrev
++.Labbrev1_begin:
++	.uleb128	1			/* Abbrev code */
++	.uleb128	0x11			/* DW_TAG_compile_unit */
++	.byte		1			/* has_children */
++	.uleb128	0x3			/* DW_AT_name */
++	.uleb128	0x8			/* DW_FORM_string */
++	.uleb128	0x25			/* DW_AT_producer */
++	.uleb128	0x8			/* DW_FORM_string */
++	.uleb128	0x13			/* DW_AT_language */
++	.uleb128	0xb			/* DW_FORM_data1 */
++	.byte		0x0			/* Terminator */
++	.byte		0x0			/* Terminator */
++
++	.uleb128	2			/* Abbrev code */
++	.uleb128	0x24			/* DW_TAG_base_type */
++	.byte		0			/* has_children */
++	.uleb128	0x3			/* DW_AT_name */
++	.uleb128	0x8			/* DW_FORM_string */
++	.uleb128	0xb			/* DW_AT_byte_size */
++	.uleb128	0xb			/* DW_FORM_data1 */
++	.uleb128	0x3e			/* DW_AT_encoding */
++	.uleb128	0xb			/* DW_FORM_data1 */
++	.byte		0x0			/* Terminator */
++	.byte		0x0			/* Terminator */
++
++	.uleb128	0x3			/* (abbrev code) */
++	.uleb128	0x16			/* (TAG: DW_TAG_typedef) */
++	.byte		0x1			/* DW_children_yes */
++	.uleb128	0x3			/* (DW_AT_name) */
++	.uleb128	0x8			/* (DW_FORM_string) */
++	.uleb128	0x49			/* (DW_AT_type) */
++	.uleb128	0x13			/* (DW_FORM_ref4) */
++	.byte		0x0
++	.byte		0x0
++
++	.byte		0x0			/* Terminator */
++	.byte		0x0			/* Terminator */
+--- /dev/null
++++ b/gdb/testsuite/gdb.dwarf2/dw2-typedef-children.exp
+@@ -0,0 +1,37 @@
++# Copyright 2011 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++load_lib dwarf.exp
++
++# Note: Inspired from dw2-basic.exp.
++
++# This test can only be run on targets which support DWARF-2 and use gas.
++if {![dwarf2_support]} {
++    return 0
++}
++
++set testfile "dw2-typedef-children"
++set srcfile ${testfile}.S
++set binfile ${objdir}/${subdir}/${testfile}.x
++
++if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" object {nodebug}] != "" } {
++    return -1
++}
++
++gdb_exit
++gdb_start
++
++gdb_test "file $binfile" \
++	 "warning: DW_TAG_typedef has childen - GCC PR debug/47510 bug - DIE at .*" \
++	 "warning message"
+

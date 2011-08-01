@@ -102,13 +102,13 @@ fi
 APP=$(which $0)
 APP=${APP##/*/}
 case "$APP" in
-  VirtualBox|VBox)
+  VirtualBox|VBox|virtualbox)
     exec "$INSTALL_DIR/VirtualBox" "$@"
     ;;
   VBoxManage|vboxmanage)
     exec "$INSTALL_DIR/VBoxManage" "$@"
     ;;
-  VBoxSDL)
+  VBoxSDL|vboxsdl)
     exec "$INSTALL_DIR/VBoxSDL" "$@"
     ;;
   VBoxVRDP|VBoxHeadless|vboxheadless)

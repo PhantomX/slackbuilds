@@ -21,5 +21,7 @@ zcat ${SB_PATCHDIR}/${NAME}-1.2.11-is_quitting.patch.gz | patch -p1 -E --backup 
 zcat ${SB_PATCHDIR}/${NAME}-1.2.10-configfile-safe-write.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-1.2.10-reposition.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.2.11-dso.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xmms-1.2.10-ubuntu-CVE-2007-0653.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xmms-alsa-fix-loop.patch
 
 set +e +o pipefail

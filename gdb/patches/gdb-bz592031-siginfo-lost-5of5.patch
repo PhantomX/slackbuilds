@@ -1,0 +1,141 @@
+http://sourceware.org/ml/gdb-patches/2010-09/msg00361.html
+Subject: [patch 4/4]#3 Remove redundant lp->siginfo
+
+Hi,
+
+this is a simplification which should not affect GDB behavior.  As linux-nat
+now stops on each received signal without any reordering of them then
+PTRACE_GETSIGINFO is enough to access siginfo, without any need to copy it in
+advance.
+
+
+Thanks,
+Jan
+
+
+gdb/
+2010-09-20  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* linux-nat.c (resume_callback) <lp->stopped && lp->status == 0>
+	(linux_nat_resume): Remove LP->SIGINFO clearing.
+	(save_siginfo): Remove.
+	(stop_wait_callback) <WSTOPSIG (status) != SIGSTOP>
+	(linux_nat_filter_event) <linux_nat_status_is_event (status)>: Remove
+	the save_siginfo call.
+	(resume_stopped_resumed_lwps): Remove LP->SIGINFO clearing.
+	(linux_nat_set_siginfo_fixup): Use PTRACE_GETSIGINFO.
+	* linux-nat.h (struct lwp_info) <siginfo>: Remove.
+
+Index: gdb-7.2.50.20101116/gdb/linux-nat.c
+===================================================================
+--- gdb-7.2.50.20101116.orig/gdb/linux-nat.c	2010-11-16 09:12:26.000000000 +0100
++++ gdb-7.2.50.20101116/gdb/linux-nat.c	2010-11-16 09:13:21.000000000 +0100
+@@ -1850,7 +1850,6 @@ resume_callback (struct lwp_info *lp, vo
+ 			    target_pid_to_str (lp->ptid));
+       lp->stopped = 0;
+       lp->step = 0;
+-      memset (&lp->siginfo, 0, sizeof (lp->siginfo));
+       lp->stopped_by_watchpoint = 0;
+     }
+   else if (lp->stopped && debug_linux_nat)
+@@ -1993,7 +1992,6 @@ linux_nat_resume (struct target_ops *ops
+   ptid = pid_to_ptid (GET_LWP (lp->ptid));
+ 
+   linux_ops->to_resume (linux_ops, ptid, step, signo);
+-  memset (&lp->siginfo, 0, sizeof (lp->siginfo));
+   lp->stopped_by_watchpoint = 0;
+ 
+   if (debug_linux_nat)
+@@ -2503,22 +2501,6 @@ wait_lwp (struct lwp_info *lp)
+   return status;
+ }
+ 
+-/* Save the most recent siginfo for LP.  This is currently only called
+-   for SIGTRAP; some ports use the si_addr field for
+-   target_stopped_data_address.  In the future, it may also be used to
+-   restore the siginfo of requeued signals.  */
+-
+-static void
+-save_siginfo (struct lwp_info *lp)
+-{
+-  errno = 0;
+-  ptrace (PTRACE_GETSIGINFO, GET_LWP (lp->ptid),
+-	  (PTRACE_TYPE_ARG3) 0, &lp->siginfo);
+-
+-  if (errno != 0)
+-    memset (&lp->siginfo, 0, sizeof (lp->siginfo));
+-}
+-
+ /* Send a SIGSTOP to LP.  */
+ 
+ static int
+@@ -2787,9 +2769,6 @@ stop_wait_callback (struct lwp_info *lp,
+ 	{
+ 	  /* The thread was stopped with a signal other than SIGSTOP.  */
+ 
+-	  /* Save the trap's siginfo in case we need it later.  */
+-	  save_siginfo (lp);
+-
+ 	  save_sigtrap (lp);
+ 
+ 	  if (debug_linux_nat)
+@@ -3155,12 +3134,7 @@ linux_nat_filter_event (int lwpid, int s
+     }
+ 
+   if (linux_nat_status_is_event (status))
+-    {
+-      /* Save the trap's siginfo in case we need it later.  */
+-      save_siginfo (lp);
+-
+-      save_sigtrap (lp);
+-    }
++    save_sigtrap (lp);
+ 
+   /* Check if the thread has exited.  */
+   if ((WIFEXITED (status) || WIFSIGNALED (status))
+@@ -3763,7 +3737,6 @@ resume_stopped_resumed_lwps (struct lwp_
+       linux_ops->to_resume (linux_ops, pid_to_ptid (GET_LWP (lp->ptid)),
+ 			    lp->step, TARGET_SIGNAL_0);
+       lp->stopped = 0;
+-      memset (&lp->siginfo, 0, sizeof (lp->siginfo));
+       lp->stopped_by_watchpoint = 0;
+     }
+ 
+@@ -5932,11 +5905,19 @@ linux_nat_set_siginfo_fixup (struct targ
+ struct siginfo *
+ linux_nat_get_siginfo (ptid_t ptid)
+ {
+-  struct lwp_info *lp = find_lwp_pid (ptid);
++  static struct siginfo siginfo;
++  int pid;
+ 
+-  gdb_assert (lp != NULL);
++  pid = GET_LWP (ptid);
++  if (pid == 0)
++    pid = GET_PID (ptid);
++
++  errno = 0;
++  ptrace (PTRACE_GETSIGINFO, pid, (PTRACE_TYPE_ARG3) 0, &siginfo);
++  if (errno != 0)
++    memset (&siginfo, 0, sizeof (siginfo));
+ 
+-  return &lp->siginfo;
++  return &siginfo;
+ }
+ 
+ /* Provide a prototype to silence -Wmissing-prototypes.  */
+Index: gdb-7.2.50.20101116/gdb/linux-nat.h
+===================================================================
+--- gdb-7.2.50.20101116.orig/gdb/linux-nat.h	2010-11-16 07:54:36.000000000 +0100
++++ gdb-7.2.50.20101116/gdb/linux-nat.h	2010-11-16 09:12:44.000000000 +0100
+@@ -58,10 +58,6 @@ struct lwp_info
+   /* The kind of stepping of this LWP.  */
+   enum resume_step step;
+ 
+-  /* Non-zero si_signo if this LWP stopped with a trap.  si_addr may
+-     be the address of a hardware watchpoint.  */
+-  struct siginfo siginfo;
+-
+   /* STOPPED_BY_WATCHPOINT is non-zero if this LWP stopped with a data
+      watchpoint trap.  */
+   int stopped_by_watchpoint;

@@ -1,0 +1,669 @@
+http://sourceware.org/ml/gdb-patches/2011-04/msg00418.html
+Subject: Re: [patch 3/3] case insensitive: the fix [rediff]
+
+On Fri, 22 Apr 2011 21:05:07 +0200, Eli Zaretskii wrote:
+> This @table will look weird in the manual: it produces lines that
+> begin with a lower-case letter.  Perhaps reorder thusly:
+
+OK, thanks for the review.
+
+
+Regards,
+Jan
+
+
+gdb/doc/
+2011-04-22  Jan Kratochvil  <jan.kratochvil@redhat.com>
+	    Eli Zaretskii  <eliz@gnu.org>
+
+	* gdb.texinfo (Index Section Format): Change the version to 5.
+	Describe the different formula.
+
+gdb/
+2011-04-08  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* dwarf2read.c: Include ctype.h.
+	(struct mapped_index): New field version.
+	(mapped_index_string_hash): New parameter index_version.  New comment
+	for it.  Call tolower appropriately.
+	(find_slot_in_mapped_hash): New variable cmp, initialize it, use it.
+	Choose the right index version for mapped_index_string_hash.
+	(dwarf2_read_index): Support also the index version 5.  Initialize the
+	new struct mapped_index field version.
+	(hash_strtab_entry): Pass INT_MAX for the new parameter, explain why.
+	(find_slot): Explain the version needs.  Pass INT_MAX for the new
+	parameter.
+	(write_psymtabs_to_index): Produce version 5.
+	* minsyms.c (lookup_minimal_symbol): New variable cmp, initialize it,
+	use it.  New comment for SYMBOL_MATCHES_SEARCH_NAME.
+	* psymtab.c (lookup_partial_symbol): Find the
+	SYMBOL_MATCHES_SEARCH_NAME start of the found block of matching
+	entries.
+	* symtab.c (lookup_symbol_in_language): Remove the case_sensitive_off
+	NAME lowercasing.
+	(search_symbols): Pass REG_ICASE to regcomp for case_sensitive_off.
+	(completion_list_add_name): New variable ncmp, initialize it, use it.
+	* symtab.h (SYMBOL_HASH_NEXT): Always call tolower.
+	* utils.c (strcmp_iw): Support case_sensitive_off.
+	(strcmp_iw_ordered): Sort in a way compatible with case_sensitive_off.
+	New function comment part.  New variables saved_string1,
+	saved_string2 and case_pass.  Add a proper second pass.
+
+gdb/testsuite/
+2011-04-08  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.base/fortran-sym-case.c: New file.
+	* gdb.base/fortran-sym-case.exp: New file.
+	* gdb.dwarf2/dw2-case-insensitive-debug.S: New file.
+	* gdb.dwarf2/dw2-case-insensitive.c: New file.
+	* gdb.dwarf2/dw2-case-insensitive.exp: New file.
+
+Index: gdb-7.2.90.20110525/gdb/dwarf2read.c
+===================================================================
+--- gdb-7.2.90.20110525.orig/gdb/dwarf2read.c	2011-05-25 17:12:51.000000000 +0200
++++ gdb-7.2.90.20110525/gdb/dwarf2read.c	2011-05-25 19:12:33.000000000 +0200
+@@ -152,6 +152,9 @@ DEF_VEC_I (offset_type);
+    a comment by the code that writes the index.  */
+ struct mapped_index
+ {
++  /* Index data format version.  */
++  int version;
++
+   /* The total length of the buffer.  */
+   off_t total_size;
+ 
+@@ -1997,17 +2000,23 @@ create_addrmap_from_index (struct objfil
+    SYMBOL_HASH_NEXT, but we keep a separate copy to maintain control over the
+    implementation.  This is necessary because the hash function is tied to the
+    format of the mapped index file.  The hash values do not have to match with
+-   SYMBOL_HASH_NEXT.  */
++   SYMBOL_HASH_NEXT.
++   
++   Use INT_MAX for INDEX_VERSION if you generate the current index format.  */
+ 
+ static hashval_t
+-mapped_index_string_hash (const void *p)
++mapped_index_string_hash (int index_version, const void *p)
+ {
+   const unsigned char *str = (const unsigned char *) p;
+   hashval_t r = 0;
+   unsigned char c;
+ 
+   while ((c = *str++) != 0)
+-    r = r * 67 + c - 113;
++    {
++      if (index_version >= 5)
++	c = tolower (c);
++      r = r * 67 + c - 113;
++    }
+ 
+   return r;
+ }
+@@ -2023,6 +2032,7 @@ find_slot_in_mapped_hash (struct mapped_
+   struct cleanup *back_to = make_cleanup (null_cleanup, 0);
+   offset_type hash;
+   offset_type slot, step;
++  int (*cmp) (const char *, const char *);
+ 
+   if (current_language->la_language == language_cplus
+       || current_language->la_language == language_java
+@@ -2045,9 +2055,16 @@ find_slot_in_mapped_hash (struct mapped_
+ 	}
+     }
+ 
+-  hash = mapped_index_string_hash (name);
++  /* Index version 4 did not support case insensitive searches.  But the
++     indexes for case insensitive languages are built in lowercase, therefore
++     simulate our NAME being searched is also lowercased.  */
++  hash = mapped_index_string_hash ((index->version == 4
++                                    && case_sensitivity == case_sensitive_off
++				    ? 5 : index->version),
++				   name);
+   slot = hash & (index->symbol_table_slots - 1);
+   step = ((hash * 17) & (index->symbol_table_slots - 1)) | 1;
++  cmp = (case_sensitivity == case_sensitive_on ? strcmp : strcasecmp);
+ 
+   for (;;)
+     {
+@@ -2061,7 +2078,7 @@ find_slot_in_mapped_hash (struct mapped_
+ 	}
+ 
+       str = index->constant_pool + MAYBE_SWAP (index->symbol_table[i]);
+-      if (!strcmp (name, str))
++      if (!cmp (name, str))
+ 	{
+ 	  *vec_out = (offset_type *) (index->constant_pool
+ 				      + MAYBE_SWAP (index->symbol_table[i + 1]));
+@@ -2105,15 +2122,17 @@ dwarf2_read_index (struct objfile *objfi
+   /* Versions earlier than 3 emitted every copy of a psymbol.  This
+      causes the index to behave very poorly for certain requests.  Version 3
+      contained incomplete addrmap.  So, it seems better to just ignore such
+-     indices.  */
++     indices.  Index version 4 uses a different hash function than index
++     version 5 and later.  */
+   if (version < 4)
+     return 0;
+   /* Indexes with higher version than the one supported by GDB may be no
+      longer backward compatible.  */
+-  if (version > 4)
++  if (version > 5)
+     return 0;
+ 
+   map = OBSTACK_ZALLOC (&objfile->objfile_obstack, struct mapped_index);
++  map->version = version;
+   map->total_size = dwarf2_per_objfile->gdb_index.size;
+ 
+   metadata = (offset_type *) (addr + sizeof (offset_type));
+@@ -15692,13 +15711,16 @@ struct strtab_entry
+   const char *str;
+ };
+ 
+-/* Hash function for a strtab_entry.  */
++/* Hash function for a strtab_entry.
++
++   Function is used only during write_hash_table so no index format backward
++   compatibility is needed.  */
+ 
+ static hashval_t
+ hash_strtab_entry (const void *e)
+ {
+   const struct strtab_entry *entry = e;
+-  return mapped_index_string_hash (entry->str);
++  return mapped_index_string_hash (INT_MAX, entry->str);
+ }
+ 
+ /* Equality function for a strtab_entry.  */
+@@ -15836,12 +15858,15 @@ cleanup_mapped_symtab (void *p)
+ }
+ 
+ /* Find a slot in SYMTAB for the symbol NAME.  Returns a pointer to
+-   the slot.  */
++   the slot.
++   
++   Function is used only during write_hash_table so no index format backward
++   compatibility is needed.  */
+ 
+ static struct symtab_index_entry **
+ find_slot (struct mapped_symtab *symtab, const char *name)
+ {
+-  offset_type index, step, hash = mapped_index_string_hash (name);
++  offset_type index, step, hash = mapped_index_string_hash (INT_MAX, name);
+ 
+   index = hash & (symtab->size - 1);
+   step = ((hash * 17) & (symtab->size - 1)) | 1;
+@@ -16369,7 +16394,7 @@ write_psymtabs_to_index (struct objfile 
+   total_len = size_of_contents;
+ 
+   /* The version number.  */
+-  val = MAYBE_SWAP (4);
++  val = MAYBE_SWAP (5);
+   obstack_grow (&contents, &val, sizeof (val));
+ 
+   /* The offset of the CU list from the start of the file.  */
+Index: gdb-7.2.90.20110525/gdb/minsyms.c
+===================================================================
+--- gdb-7.2.90.20110525.orig/gdb/minsyms.c	2011-05-25 17:12:51.000000000 +0200
++++ gdb-7.2.90.20110525/gdb/minsyms.c	2011-05-25 17:13:13.000000000 +0200
+@@ -239,11 +239,16 @@ lookup_minimal_symbol (const char *name,
+ 
+ 		  if (pass == 1)
+ 		    {
+-		      match = strcmp (SYMBOL_LINKAGE_NAME (msymbol),
+-				      modified_name) == 0;
++		      int (*cmp) (const char *, const char *);
++
++		      cmp = (case_sensitivity == case_sensitive_on
++		             ? strcmp : strcasecmp);
++		      match = cmp (SYMBOL_LINKAGE_NAME (msymbol),
++				   modified_name) == 0;
+ 		    }
+ 		  else
+ 		    {
++		      /* The function respects CASE_SENSITIVITY.  */
+ 		      match = SYMBOL_MATCHES_SEARCH_NAME (msymbol,
+ 							  modified_name);
+ 		    }
+Index: gdb-7.2.90.20110525/gdb/psymtab.c
+===================================================================
+--- gdb-7.2.90.20110525.orig/gdb/psymtab.c	2011-04-20 22:10:29.000000000 +0200
++++ gdb-7.2.90.20110525/gdb/psymtab.c	2011-05-25 17:13:13.000000000 +0200
+@@ -690,8 +690,15 @@ lookup_partial_symbol (struct partial_sy
+ 	internal_error (__FILE__, __LINE__,
+ 			_("failed internal consistency check"));
+ 
+-      while (top <= real_top
+-	     && SYMBOL_MATCHES_SEARCH_NAME (*top, search_name))
++      /* For `case_sensitivity == case_sensitive_off' strcmp_iw_ordered will
++	 search more exactly than what matches SYMBOL_MATCHES_SEARCH_NAME.  */
++      while (top >= start && SYMBOL_MATCHES_SEARCH_NAME (*top, search_name))
++	top--;
++
++      /* Fixup to have a symbol which matches SYMBOL_MATCHES_SEARCH_NAME.  */
++      top++;
++
++      while (top <= real_top && SYMBOL_MATCHES_SEARCH_NAME (*top, search_name))
+ 	{
+ 	  if (symbol_matches_domain (SYMBOL_LANGUAGE (*top),
+ 				     SYMBOL_DOMAIN (*top), domain))
+Index: gdb-7.2.90.20110525/gdb/symtab.c
+===================================================================
+--- gdb-7.2.90.20110525.orig/gdb/symtab.c	2011-05-25 17:12:51.000000000 +0200
++++ gdb-7.2.90.20110525/gdb/symtab.c	2011-05-25 17:13:49.000000000 +0200
+@@ -1062,19 +1062,6 @@ lookup_symbol_in_language (const char *n
+ 	}
+     }
+ 
+-  if (case_sensitivity == case_sensitive_off)
+-    {
+-      char *copy;
+-      int len, i;
+-
+-      len = strlen (name);
+-      copy = (char *) alloca (len + 1);
+-      for (i= 0; i < len; i++)
+-        copy[i] = tolower (name[i]);
+-      copy[len] = 0;
+-      modified_name = copy;
+-    }
+-
+   returnval = lookup_symbol_aux (modified_name, block, domain, lang,
+ 				 is_a_field_of_this);
+   do_cleanups (cleanup);
+@@ -3106,7 +3093,9 @@ search_symbols (char *regexp, domain_enu
+ 	    }
+ 	}
+ 
+-      errcode = regcomp (&datum.preg, regexp, REG_NOSUB);
++      errcode = regcomp (&datum.preg, regexp,
++			 REG_NOSUB | (case_sensitivity == case_sensitive_off
++				      ? REG_ICASE : 0));
+       if (errcode != 0)
+ 	{
+ 	  char *err = get_regcomp_error (errcode, &datum.preg);
+@@ -3546,7 +3535,11 @@ rbreak_command (char *regexp, int from_t
+ static int
+ compare_symbol_name (const char *name, const char *sym_text, int sym_text_len)
+ {
+-  if (strncmp (name, sym_text, sym_text_len) != 0)
++  int (*ncmp) (const char *, const char *, size_t);
++
++  ncmp = (case_sensitivity == case_sensitive_on ? strncmp : strncasecmp);
++
++  if (ncmp (name, sym_text, sym_text_len) != 0)
+     return 0;
+ 
+   if (sym_text[sym_text_len] == '(')
+Index: gdb-7.2.90.20110525/gdb/symtab.h
+===================================================================
+--- gdb-7.2.90.20110525.orig/gdb/symtab.h	2011-05-25 17:12:51.000000000 +0200
++++ gdb-7.2.90.20110525/gdb/symtab.h	2011-05-25 17:13:13.000000000 +0200
+@@ -1036,7 +1036,8 @@ extern unsigned int msymbol_hash (const 
+    is only a GDB in-memory computed value with no external files compatibility
+    requirements.  */
+ 
+-#define SYMBOL_HASH_NEXT(hash, c) ((hash) * 67 + (c) - 113)
++#define SYMBOL_HASH_NEXT(hash, c) \
++  ((hash) * 67 + tolower ((unsigned char) (c)) - 113)
+ 
+ extern struct objfile * msymbol_objfile (struct minimal_symbol *sym);
+ 
+Index: gdb-7.2.90.20110525/gdb/testsuite/gdb.base/fortran-sym-case.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.2.90.20110525/gdb/testsuite/gdb.base/fortran-sym-case.c	2011-05-25 17:13:13.000000000 +0200
+@@ -0,0 +1,22 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2011 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++int
++main (int argc, char **aRGv)
++{
++  return 0;
++}
+Index: gdb-7.2.90.20110525/gdb/testsuite/gdb.base/fortran-sym-case.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.2.90.20110525/gdb/testsuite/gdb.base/fortran-sym-case.exp	2011-05-25 17:13:13.000000000 +0200
+@@ -0,0 +1,27 @@
++# Copyright (C) 2011 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++set testfile fortran-sym-case
++if { [prepare_for_testing ${testfile}.exp ${testfile}] } {
++    return -1
++}
++
++if ![runto_main] {
++    return -1
++}
++
++gdb_test "set language fortran" {Warning: the current language does not match this frame\.}
++
++gdb_test "frame" ", aRGv=.*"
+Index: gdb-7.2.90.20110525/gdb/testsuite/gdb.dwarf2/dw2-case-insensitive-debug.S
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.2.90.20110525/gdb/testsuite/gdb.dwarf2/dw2-case-insensitive-debug.S	2011-05-25 17:13:13.000000000 +0200
+@@ -0,0 +1,102 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2011 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++	.section .debug_info
++.Lcu1_begin:
++	/* CU header */
++	.4byte	.Lcu1_end - .Lcu1_start		/* Length of Compilation Unit */
++.Lcu1_start:
++	.2byte	2				/* DWARF Version */
++	.4byte	.Labbrev1_begin			/* Offset into abbrev section */
++	.byte	4				/* Pointer size */
++
++	/* CU die */
++	.uleb128 1				/* Abbrev: DW_TAG_compile_unit */
++	.ascii	"file1.txt\0"			/* DW_AT_name */
++	.ascii	"GNU C 3.3.3\0"			/* DW_AT_producer */
++	.byte	8				/* DW_AT_language (DW_LANG_Fortran90) */
++	.4byte		FUNC_lang		/* DW_AT_low_pc */
++	.4byte		main			/* DW_AT_high_pc */
++
++	.uleb128	3			/* Abbrev: DW_TAG_subprogram */
++	.byte		1			/* DW_AT_external */
++	.ascii		"FUNC_lang\0"		/* DW_AT_name */
++	.4byte		FUNC_lang		/* DW_AT_low_pc */
++	.4byte		main			/* DW_AT_high_pc */
++	.byte		1			/* DW_AT_prototyped */
++	.4byte		.Ltype - .Lcu1_begin	/* DW_AT_type */
++
++.Ltype:
++	.uleb128 	0x5			/* Abbrev: DW_TAG_base_type */
++	.byte		0x4			/* DW_AT_byte_size */
++	.byte		0x5			/* DW_AT_encoding */
++	.ascii 		"foo\0"			/* DW_AT_name */
++
++	.byte		0			/* End of children of CU */
++.Lcu1_end:
++
++/* Abbrev table */
++	.section .debug_abbrev
++.Labbrev1_begin:
++	.uleb128	1			/* Abbrev code */
++	.uleb128	0x11			/* DW_TAG_compile_unit */
++	.byte		1			/* has_children */
++	.uleb128	0x3			/* DW_AT_name */
++	.uleb128	0x8			/* DW_FORM_string */
++	.uleb128	0x25			/* DW_AT_producer */
++	.uleb128	0x8			/* DW_FORM_string */
++	.uleb128	0x13			/* DW_AT_language */
++	.uleb128	0xb			/* DW_FORM_data1 */
++	.uleb128	0x11			/* DW_AT_low_pc */
++	.uleb128	0x1			/* DW_FORM_addr */
++	.uleb128	0x12			/* DW_AT_high_pc */
++	.uleb128	0x1			/* DW_FORM_addr */
++	.byte		0x0			/* Terminator */
++	.byte		0x0			/* Terminator */
++
++	.uleb128	3			/* Abbrev code */
++	.uleb128	0x2e			/* DW_TAG_subprogram */
++	.byte		0			/* has_children */
++	.uleb128	0x3f			/* DW_AT_external */
++	.uleb128	0xc			/* DW_FORM_flag */
++	.uleb128	0x3			/* DW_AT_name */
++	.uleb128	0x8			/* DW_FORM_string */
++	.uleb128	0x11			/* DW_AT_low_pc */
++	.uleb128	0x1			/* DW_FORM_addr */
++	.uleb128	0x12			/* DW_AT_high_pc */
++	.uleb128	0x1			/* DW_FORM_addr */
++	.uleb128	0x27			/* DW_AT_prototyped */
++	.uleb128	0xc			/* DW_FORM_flag */
++	.uleb128	0x49			/* DW_AT_type */
++	.uleb128	0x13			/* DW_FORM_ref4 */
++	.byte		0x0			/* Terminator */
++	.byte		0x0			/* Terminator */
++
++	.uleb128	0x5			/* Abbrev code */
++	.uleb128	0x24			/* DW_TAG_base_type */
++	.byte		0x0			/* DW_children_no */
++	.uleb128	0xb			/* DW_AT_byte_size */
++	.uleb128	0xb			/* DW_FORM_data1 */
++	.uleb128	0x3e			/* DW_AT_encoding */
++	.uleb128	0xb			/* DW_FORM_data1 */
++	.uleb128	0x3			/* DW_AT_name */
++	.uleb128	0x8			/* DW_FORM_string */
++	.byte		0x0			/* Terminator */
++	.byte		0x0			/* Terminator */
++
++	.byte		0x0			/* Terminator */
++	.byte		0x0			/* Terminator */
+Index: gdb-7.2.90.20110525/gdb/testsuite/gdb.dwarf2/dw2-case-insensitive.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.2.90.20110525/gdb/testsuite/gdb.dwarf2/dw2-case-insensitive.c	2011-05-25 17:13:13.000000000 +0200
+@@ -0,0 +1,38 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2011 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++/* Use DW_LANG_Fortran90 for case insensitive DWARF.  */
++
++void
++FUNC_lang (void)
++{
++}
++
++/* Symbol is present only in ELF .symtab.  */
++
++void
++FUNC_symtab (void)
++{
++}
++
++int
++main (void)
++{
++  FUNC_lang ();
++  FUNC_symtab ();
++  return 0;
++}
+Index: gdb-7.2.90.20110525/gdb/testsuite/gdb.dwarf2/dw2-case-insensitive.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.2.90.20110525/gdb/testsuite/gdb.dwarf2/dw2-case-insensitive.exp	2011-05-25 17:13:13.000000000 +0200
+@@ -0,0 +1,49 @@
++# Copyright 2011 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++load_lib dwarf.exp
++
++# This test can only be run on targets which support DWARF-2 and use gas.
++if {![dwarf2_support]} {
++    return 0  
++}
++
++set testfile "dw2-case-insensitive"
++
++if { [prepare_for_testing ${testfile}.exp ${testfile} [list ${testfile}.c ${testfile}-debug.S] {nodebug}] } {
++    return -1
++}
++
++gdb_test "show case-sensitive" {Case sensitivity in name search is "auto; currently on"\.}
++
++gdb_test "info functions fUnC_lang" \
++	 "All functions matching regular expression \"fUnC_lang\":" \
++	 "regexp case-sensitive on"
++
++gdb_test "set case-sensitive off" {warning: the current case sensitivity setting does not match the language\.}
++
++gdb_test "info functions fUnC_lang" \
++	 "All functions matching regular expression \"fUnC_lang\":\[\r\n\]+File file1.txt:\r\nfoo FUNC_lang\\(void\\);" \
++	 "regexp case-sensitive off"
++
++gdb_test "p fuNC_lang" { = {foo \(void\)} 0x[0-9a-f]+ <FUNC_lang>}
++gdb_test "p fuNC_symtab" { = {<text variable, no debug info>} 0x[0-9a-f]+ <FUNC_symtab>}
++
++if {[gdb_breakpoint "fuNC_lang"] == 1} {
++    pass "setting breakpoint at fuNC_lang"
++}
++
++if {[gdb_breakpoint "fuNC_symtab"] == 1} {
++    pass "setting breakpoint at fuNC_symtab"
++}
+Index: gdb-7.2.90.20110525/gdb/utils.c
+===================================================================
+--- gdb-7.2.90.20110525.orig/gdb/utils.c	2011-05-25 17:12:51.000000000 +0200
++++ gdb-7.2.90.20110525/gdb/utils.c	2011-05-25 17:13:13.000000000 +0200
+@@ -3003,10 +3003,12 @@ strcmp_iw (const char *string1, const ch
+ 	{
+ 	  string2++;
+ 	}
+-      if (*string1 != *string2)
+-	{
+-	  break;
+-	}
++      if (case_sensitivity == case_sensitive_on && *string1 != *string2)
++	break;
++      if (case_sensitivity == case_sensitive_off
++	  && (tolower ((unsigned char) *string1)
++	      != tolower ((unsigned char) *string2)))
++	break;
+       if (*string1 != '\0')
+ 	{
+ 	  string1++;
+@@ -3027,6 +3029,10 @@ strcmp_iw (const char *string1, const ch
+    strcmp_iw(LIST_ELT, NAME), then the place to start looking is right
+    where this function would put NAME.
+ 
++   This function must be neutral to the CASE_SENSITIVITY setting as the user
++   may choose it during later lookup.  Therefore this function always sorts
++   primarily case-insensitively and secondarily case-sensitively.
++
+    Here are some examples of why using strcmp to sort is a bad idea:
+ 
+    Whitespace example:
+@@ -3052,8 +3058,10 @@ strcmp_iw (const char *string1, const ch
+ int
+ strcmp_iw_ordered (const char *string1, const char *string2)
+ {
+-  /* Formatting stub.  */
+-  if (1)
++  const char *saved_string1 = string1, *saved_string2 = string2;
++  enum case_sensitivity case_pass = case_sensitive_off;
++
++  for (;;)
+     {
+       /* C1 and C2 are valid only if *string1 != '\0' && *string2 != '\0'.
+ 	 Provide stub characters if we are already at the end of one of the
+@@ -3067,8 +3075,17 @@ strcmp_iw_ordered (const char *string1, 
+ 	  while (isspace (*string2))
+ 	    string2++;
+ 
++	  switch (case_pass)
++	  {
++	    case case_sensitive_off:
++	      c1 = tolower ((unsigned char) *string1);
++	      c2 = tolower ((unsigned char) *string2);
++	      break;
++	    case case_sensitive_on:
+ 	      c1 = *string1;
+ 	      c2 = *string2;
++	      break;
++	  }
+ 	  if (c1 != c2)
+ 	    break;
+ 
+@@ -3086,7 +3103,7 @@ strcmp_iw_ordered (const char *string1, 
+ 	     comparison in the cases where one of them is '\0' or '('.  */
+ 	case '\0':
+ 	  if (*string2 == '\0')
+-	    return 0;
++	    break;
+ 	  else
+ 	    return -1;
+ 	case '(':
+@@ -3097,9 +3114,22 @@ strcmp_iw_ordered (const char *string1, 
+ 	default:
+ 	  if (*string2 == '\0' || *string2 == '(')
+ 	    return 1;
+-	  else
+-	    return c1 - c2;
++	  else if (c1 > c2)
++	    return 1;
++	  else if (c1 < c2)
++	    return -1;
++	  /* PASSTHRU */
+ 	}
++
++      if (case_pass == case_sensitive_on)
++	return 0;
++      
++      /* Otherwise the strings were equal in case insensitive way, make
++	 a more fine grained comparison in a case sensitive way.  */
++
++      case_pass = case_sensitive_on;
++      string1 = saved_string1;
++      string2 = saved_string2;
+     }
+ }
+ 

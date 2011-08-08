@@ -1,65 +1,6 @@
-From 1db0a48375836c7e93ac30649007c2391be8b3b2 Mon Sep 17 00:00:00 2001
-From: Lennart Poettering <lennart@poettering.net>
-Date: Mon, 4 Jul 2011 01:37:01 +0200
-Subject: [PATCH] systemd: add systemd socket activation and unit files
-
-On newer Linux machines systemd supports launchd-style socket
-activation. This patch adds support for this mechanism and also adds
-systemd unit files as appropriate to hook this up with systemd.
-
-This includes an MIT-licensed drop-in file that implements the most
-basic interfaces needed to get the file descriptors from systemd. Most
-of the systemd and Linux-specific code compiles to NOPs on other
-systems.
-
-Three triggers to start CUPS are defined: a) if new printer hardware is
-plugged in, b) when a client accesses the CUPS socket and c) when a
-spool file resides in /var/spool/cups.
----
- Makedefs.in                    |    2 +
- config-scripts/cups-systemd.m4 |   25 ++
- configure.in                   |    4 +
- data/Makefile                  |    9 +
- data/cups.path.in              |    8 +
- data/cups.service.in           |    9 +
- data/cups.socket.in            |    9 +
- scheduler/Makefile             |    9 +
- scheduler/main.c               |  107 ++++++++
- scheduler/sd-daemon.c          |  520 ++++++++++++++++++++++++++++++++++++++++
- scheduler/sd-daemon.h          |  277 +++++++++++++++++++++
- 11 files changed, 979 insertions(+), 0 deletions(-)
- create mode 100644 config-scripts/cups-systemd.m4
- create mode 100644 data/cups.path.in
- create mode 100644 data/cups.service.in
- create mode 100644 data/cups.socket.in
- create mode 100644 scheduler/sd-daemon.c
- create mode 100644 scheduler/sd-daemon.h
-
-diff --git a/Makedefs.in b/Makedefs.in
-index 654eea4..02c43b6 100644
---- a/Makedefs.in
-+++ b/Makedefs.in
-@@ -143,6 +143,7 @@ CXXFLAGS	=	@CPPFLAGS@ @CXXFLAGS@
- CXXLIBS		=	@CXXLIBS@
- DBUS_NOTIFIER	=	@DBUS_NOTIFIER@
- DBUS_NOTIFIERLIBS =	@DBUS_NOTIFIERLIBS@
-+SYSTEMD_UNITS   =       @SYSTEMD_UNITS@
- DNSSD_BACKEND	=	@DNSSD_BACKEND@
- DSOFLAGS	=	-L../cups @DSOFLAGS@
- DSOLIBS		=	@DSOLIBS@ $(COMMONLIBS)
-@@ -267,6 +268,7 @@ PAMFILE		=	@PAMFILE@
- 
- DEFAULT_LAUNCHD_CONF =	@DEFAULT_LAUNCHD_CONF@
- DBUSDIR		=	@DBUSDIR@
-+SYSTEMDUNITDIR  =       $(BUILDROOT)@systemdsystemunitdir@
- 
- 
- #
-diff --git a/config-scripts/cups-systemd.m4 b/config-scripts/cups-systemd.m4
-new file mode 100644
-index 0000000..fead8a9
---- /dev/null
-+++ b/config-scripts/cups-systemd.m4
+diff -up cups-1.5.0/config-scripts/cups-systemd.m4.systemd-socket cups-1.5.0/config-scripts/cups-systemd.m4
+--- cups-1.5.0/config-scripts/cups-systemd.m4.systemd-socket	2011-08-05 15:09:00.789855786 +0100
++++ cups-1.5.0/config-scripts/cups-systemd.m4	2011-08-05 15:09:00.789855786 +0100
 @@ -0,0 +1,25 @@
 +dnl
 +dnl "$Id$"
@@ -86,10 +27,9 @@ index 0000000..fead8a9
 +dnl
 +dnl "$Id$"
 +dnl
-diff --git a/configure.in b/configure.in
-index 560f4f8..b0c19a9 100644
---- a/configure.in
-+++ b/configure.in
+diff -up cups-1.5.0/configure.in.systemd-socket cups-1.5.0/configure.in
+--- cups-1.5.0/configure.in.systemd-socket	2010-11-20 01:03:46.000000000 +0000
++++ cups-1.5.0/configure.in	2011-08-05 15:09:00.789855786 +0100
 @@ -37,6 +37,7 @@ sinclude(config-scripts/cups-pam.m4)
  sinclude(config-scripts/cups-largefile.m4)
  sinclude(config-scripts/cups-dnssd.m4)
@@ -108,10 +48,47 @@ index 560f4f8..b0c19a9 100644
  	  desktop/cups.desktop
  	  doc/help/ref-cupsd-conf.html
  	  doc/help/standard.html
-diff --git a/data/Makefile b/data/Makefile
-index b9de21a..cccab85 100644
---- a/data/Makefile
-+++ b/data/Makefile
+diff -up cups-1.5.0/data/cups.path.in.systemd-socket cups-1.5.0/data/cups.path.in
+--- cups-1.5.0/data/cups.path.in.systemd-socket	2011-08-05 15:09:00.790855758 +0100
++++ cups-1.5.0/data/cups.path.in	2011-08-05 15:09:00.790855758 +0100
+@@ -0,0 +1,8 @@
++[Unit]
++Description=CUPS Printer Service Spool
++
++[Path]
++DirectoryNotEmpty=@CUPS_REQUESTS@
++
++[Install]
++WantedBy=multi-user.target
+diff -up cups-1.5.0/data/cups.service.in.systemd-socket cups-1.5.0/data/cups.service.in
+--- cups-1.5.0/data/cups.service.in.systemd-socket	2011-08-05 15:09:00.791855730 +0100
++++ cups-1.5.0/data/cups.service.in	2011-08-05 15:09:00.791855730 +0100
+@@ -0,0 +1,9 @@
++[Unit]
++Description=CUPS Printing Service
++
++[Service]
++ExecStart=@sbindir@/cupsd -f
++
++[Install]
++Also=cups.socket cups.path
++WantedBy=printer.target
+diff -up cups-1.5.0/data/cups.socket.in.systemd-socket cups-1.5.0/data/cups.socket.in
+--- cups-1.5.0/data/cups.socket.in.systemd-socket	2011-08-05 15:09:00.791855730 +0100
++++ cups-1.5.0/data/cups.socket.in	2011-08-05 15:09:00.791855730 +0100
+@@ -0,0 +1,9 @@
++[Unit]
++Description=CUPS Printing Service Sockets
++
++[Socket]
++ListenStream=@CUPS_DEFAULT_DOMAINSOCKET@
++ListenStream=631
++
++[Install]
++WantedBy=sockets.target
+diff -up cups-1.5.0/data/Makefile.systemd-socket cups-1.5.0/data/Makefile
+--- cups-1.5.0/data/Makefile.systemd-socket	2011-05-12 06:21:56.000000000 +0100
++++ cups-1.5.0/data/Makefile	2011-08-05 15:09:00.790855758 +0100
 @@ -112,6 +112,12 @@ install-data:
  		$(INSTALL_DATA) $$file $(DATADIR)/ppdc; \
  	done
@@ -135,81 +112,28 @@ index b9de21a..cccab85 100644
  
  
  #
-diff --git a/data/cups.path.in b/data/cups.path.in
-new file mode 100644
-index 0000000..c99e39b
---- /dev/null
-+++ b/data/cups.path.in
-@@ -0,0 +1,8 @@
-+[Unit]
-+Description=CUPS Printer Service Spool
-+
-+[Path]
-+DirectoryNotEmpty=@CUPS_REQUESTS@
-+
-+[Install]
-+WantedBy=multi-user.target
-diff --git a/data/cups.service.in b/data/cups.service.in
-new file mode 100644
-index 0000000..007d0e6
---- /dev/null
-+++ b/data/cups.service.in
-@@ -0,0 +1,9 @@
-+[Unit]
-+Description=CUPS Printing Service
-+
-+[Service]
-+ExecStart=@sbindir@/cupsd -f
-+
-+[Install]
-+Also=cups.socket cups.path
-+WantedBy=printer.target
-diff --git a/data/cups.socket.in b/data/cups.socket.in
-new file mode 100644
-index 0000000..b940096
---- /dev/null
-+++ b/data/cups.socket.in
-@@ -0,0 +1,9 @@
-+[Unit]
-+Description=CUPS Printing Service Sockets
-+
-+[Socket]
-+ListenStream=@CUPS_DEFAULT_DOMAINSOCKET@
-+ListenStream=631
-+
-+[Install]
-+WantedBy=sockets.target
-diff --git a/scheduler/Makefile b/scheduler/Makefile
-index 3c7da8e..05152a6 100644
---- a/scheduler/Makefile
-+++ b/scheduler/Makefile
-@@ -39,6 +39,7 @@ CUPSDOBJS =	\
- 		server.o \
- 		statbuf.o \
- 		subscriptions.o \
-+		sd-daemon.o \
- 		sysman.o
- LIBOBJS =	\
- 		filter.o \
-@@ -568,6 +569,14 @@ sloc:
+diff -up cups-1.5.0/Makedefs.in.systemd-socket cups-1.5.0/Makedefs.in
+--- cups-1.5.0/Makedefs.in.systemd-socket	2011-08-05 15:08:39.672435367 +0100
++++ cups-1.5.0/Makedefs.in	2011-08-05 15:09:00.788855814 +0100
+@@ -143,6 +143,7 @@ CXXFLAGS	=	@CPPFLAGS@ @CXXFLAGS@
+ CXXLIBS		=	@CXXLIBS@
+ DBUS_NOTIFIER	=	@DBUS_NOTIFIER@
+ DBUS_NOTIFIERLIBS =	@DBUS_NOTIFIERLIBS@
++SYSTEMD_UNITS   =       @SYSTEMD_UNITS@
+ DNSSD_BACKEND	=	@DNSSD_BACKEND@
+ DSOFLAGS	=	-L../cups @DSOFLAGS@
+ DSOLIBS		=	@DSOLIBS@ $(COMMONLIBS)
+@@ -267,6 +268,7 @@ PAMFILE		=	@PAMFILE@
+ 
+ DEFAULT_LAUNCHD_CONF =	@DEFAULT_LAUNCHD_CONF@
+ DBUSDIR		=	@DBUSDIR@
++SYSTEMDUNITDIR  =       $(BUILDROOT)@systemdsystemunitdir@
  
  
  #
-+# Update sd-daemon.[ch] drop-in file from upstream git
-+#
-+
-+update-systemd:
-+	curl http://cgit.freedesktop.org/systemd/plain/src/sd-daemon.c > sd-daemon.c
-+	curl http://cgit.freedesktop.org/systemd/plain/src/sd-daemon.h > sd-daemon.h
-+
-+#
- # Dependencies...
- #
- 
-diff --git a/scheduler/main.c b/scheduler/main.c
-index baaa3a1..5a4b8e1 100644
---- a/scheduler/main.c
-+++ b/scheduler/main.c
+diff -up cups-1.5.0/scheduler/main.c.systemd-socket cups-1.5.0/scheduler/main.c
+--- cups-1.5.0/scheduler/main.c.systemd-socket	2011-08-05 15:08:39.755433088 +0100
++++ cups-1.5.0/scheduler/main.c	2011-08-05 15:09:00.795855621 +0100
 @@ -26,6 +26,8 @@
   *   launchd_checkin()     - Check-in with launchd and collect the listening
   *                           fds.
@@ -236,7 +160,7 @@ index baaa3a1..5a4b8e1 100644
  static void		parent_handler(int sig);
  static void		process_children(void);
  static void		sigchld_handler(int sig);
-@@ -520,6 +525,11 @@ main(int  argc,				/* I - Number of command-line args */
+@@ -538,6 +543,11 @@ main(int  argc,				/* I - Number of comm
  #endif /* HAVE_LAUNCHD */
  
   /*
@@ -248,7 +172,7 @@ index baaa3a1..5a4b8e1 100644
    * Startup the server...
    */
  
-@@ -731,6 +741,12 @@ main(int  argc,				/* I - Number of command-line args */
+@@ -760,6 +770,12 @@ main(int  argc,				/* I - Number of comm
  #endif /* HAVE_LAUNCHD */
  
         /*
@@ -261,7 +185,7 @@ index baaa3a1..5a4b8e1 100644
          * Startup the server...
          */
  
-@@ -1535,6 +1551,97 @@ launchd_checkout(void)
+@@ -1584,6 +1600,97 @@ launchd_checkout(void)
  }
  #endif /* HAVE_LAUNCHD */
  
@@ -359,11 +283,35 @@ index baaa3a1..5a4b8e1 100644
  
  /*
   * 'parent_handler()' - Catch USR1/CHLD signals...
-diff --git a/scheduler/sd-daemon.c b/scheduler/sd-daemon.c
-new file mode 100644
-index 0000000..a2ec74c
---- /dev/null
-+++ b/scheduler/sd-daemon.c
+diff -up cups-1.5.0/scheduler/Makefile.systemd-socket cups-1.5.0/scheduler/Makefile
+--- cups-1.5.0/scheduler/Makefile.systemd-socket	2011-08-05 15:08:39.765432815 +0100
++++ cups-1.5.0/scheduler/Makefile	2011-08-05 15:09:22.170268932 +0100
+@@ -41,6 +41,7 @@ CUPSDOBJS =	\
+ 		server.o \
+ 		statbuf.o \
+ 		subscriptions.o \
++		sd-daemon.o \
+ 		sysman.o \
+ 		timeout.o
+ LIBOBJS =	\
+@@ -571,6 +572,14 @@ sloc:
+ 
+ 
+ #
++# Update sd-daemon.[ch] drop-in file from upstream git
++#
++
++update-systemd:
++	curl http://cgit.freedesktop.org/systemd/plain/src/sd-daemon.c > sd-daemon.c
++	curl http://cgit.freedesktop.org/systemd/plain/src/sd-daemon.h > sd-daemon.h
++
++#
+ # Dependencies...
+ #
+ 
+diff -up cups-1.5.0/scheduler/sd-daemon.c.systemd-socket cups-1.5.0/scheduler/sd-daemon.c
+--- cups-1.5.0/scheduler/sd-daemon.c.systemd-socket	2011-08-05 15:09:00.796855594 +0100
++++ cups-1.5.0/scheduler/sd-daemon.c	2011-08-05 15:09:00.796855594 +0100
 @@ -0,0 +1,520 @@
 +/*-*- Mode: C; c-basic-offset: 8; indent-tabs-mode: nil -*-*/
 +
@@ -885,11 +833,9 @@ index 0000000..a2ec74c
 +        return a.st_dev != b.st_dev;
 +#endif
 +}
-diff --git a/scheduler/sd-daemon.h b/scheduler/sd-daemon.h
-new file mode 100644
-index 0000000..46dc7fd
---- /dev/null
-+++ b/scheduler/sd-daemon.h
+diff -up cups-1.5.0/scheduler/sd-daemon.h.systemd-socket cups-1.5.0/scheduler/sd-daemon.h
+--- cups-1.5.0/scheduler/sd-daemon.h.systemd-socket	2011-08-05 15:09:00.797855566 +0100
++++ cups-1.5.0/scheduler/sd-daemon.h	2011-08-05 15:09:00.797855566 +0100
 @@ -0,0 +1,277 @@
 +/*-*- Mode: C; c-basic-offset: 8; indent-tabs-mode: nil -*-*/
 +
@@ -1168,6 +1114,3 @@ index 0000000..46dc7fd
 +#endif
 +
 +#endif
--- 
-1.7.6
-

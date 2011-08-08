@@ -19,10 +19,10 @@ zcat ${SB_PATCHDIR}/${NAME}-2.5.23-translucent-menus.diff.gz | patch -p0 -E --ba
 zcat ${SB_PATCHDIR}/03-ColourBorders.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/04-ResizeOutlineThin.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/05-Conditionals.patch.gz | patch -p0 -E --backup --verbose
-zcat ${SB_PATCHDIR}/06-FlatSeparators.patch.gz | patch -p0 -E --backup --verbose
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/06-FlatSeparators.patch
 zcat ${SB_PATCHDIR}/07-BorderUnderTitle.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/08-InactiveFont.patch.gz | patch -p0 -E --backup --verbose
-zcat ${SB_PATCHDIR}/09-FluxRoundedCorners.patch.gz | patch -p0 -E --backup --verbose
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/09-FluxRoundedCorners.patch
 zcat ${SB_PATCHDIR}/10-TopBorder.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/11-ButtonWidth.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/12-MultiBorder.patch.gz | patch -p0 -E --backup --verbose

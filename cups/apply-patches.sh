@@ -32,7 +32,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-hp-deviceid-oid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-dnssd-deviceid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-ricoh-deviceid-oid.patch
 # Avahi support in the dnssd backend.
-#patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi.patch
+patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi-1-config.patch
+patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi-2-backend.patch
+patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi-3-timeouts.patch
+patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi-4-poll.patch
+patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi-5-services.patch
+
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-icc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-systemd-socket.patch
 

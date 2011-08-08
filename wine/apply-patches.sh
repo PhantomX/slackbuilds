@@ -23,4 +23,7 @@ zcat ${SB_PATCHDIR}/wine-1.1.15-winegcc.patch.gz | patch -p1 -E --backup --verbo
   #filterdiff -p1 -x "programs/winecfg/*.rc" ${SB_WPDIR}/${PPASRCARCHIVE3} | patch -p1 -E --backup --verbose
 )
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-udisks1.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-udisks2.patch
+
 set +e +o pipefail

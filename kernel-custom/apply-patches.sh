@@ -217,11 +217,6 @@ ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
-# linux1394 git patches
-# apply if non-empty
-#ApplyOptionalPatch linux-2.6-firewire-git-update.patch
-#ApplyOptionalPatch linux-2.6-firewire-git-pending.patch.gz
-
 # silence the ACPI blacklist code
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 
@@ -233,7 +228,9 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
-ApplyPatch neuter_intel_microcode_load.patch
+ApplyPatch udlfb-bind-framebuffer-to-interface.patch
+ApplyPatch fix-cdc-ncm-dma-stack-vars.patch
+ApplyPatch ums-realtek-driver-uses-stack-memory-for-DMA.patch
 
 # Runtime PM
 #ApplyPatch linux-2.6-usb-pci-autosuspend.patch
@@ -241,6 +238,11 @@ ApplyPatch neuter_intel_microcode_load.patch
 
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
+
+ApplyPatch epoll-fix-spurious-lockdep-warnings.patch
+ApplyPatch hfsplus-ensure-bio-requests-are-not-smaller-than-the.patch
+
+ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

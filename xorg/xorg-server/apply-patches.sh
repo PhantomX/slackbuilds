@@ -37,8 +37,6 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-bg-none-revert.patch
 # not like the upstream patch due to refactoring
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-swrastg.patch
 
-# sent upstream, should be in soon
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10-dix-only-transform-valuators-when-we-need-them.patch
 # ditto
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.1-memcpy-abuse.patch
 

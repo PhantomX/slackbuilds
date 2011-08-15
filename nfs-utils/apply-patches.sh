@@ -4,6 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.1.2.5-rc1.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.2.3-libmount-api-2.20.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.2.1-statdpath-man.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.2.2-statdpath.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.2.1-exp-subtree-warn-off.patch

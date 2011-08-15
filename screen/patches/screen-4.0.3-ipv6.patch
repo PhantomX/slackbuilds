@@ -1,0 +1,323 @@
+--- screen-4.0.3/window.h.ipv6	2003-08-21 16:57:30.000000000 +0200
++++ screen-4.0.3/window.h	2006-11-15 13:36:57.000000000 +0100
+@@ -254,7 +254,7 @@
+   struct display *w_zdisplay;
+ #endif
+ #ifdef BUILTIN_TELNET
+-  struct sockaddr_in w_telsa;
++  struct sockaddr_storage w_telsa;
+   char   w_telbuf[IOSIZE];
+   int    w_telbufl;
+   char   w_telmopts[256];
+--- screen-4.0.3/window.c.ipv6	2003-12-05 14:45:41.000000000 +0100
++++ screen-4.0.3/window.c	2006-11-15 13:39:27.000000000 +0100
+@@ -582,6 +582,13 @@
+   n = pp - wtab;
+   debug1("Makewin creating %d\n", n);
+ 
++#ifdef BUILTIN_TELNET                                                                                                        
++  if(!strcmp(nwin.args[0], "//telnet")) {                                                                                    
++         type = W_TYPE_TELNET;                                                                                               
++         TtyName = "telnet";                                                                                                 
++  }                                                                                                                          
++  else                                                                                                                       
++#endif 
+   if ((f = OpenDevice(nwin.args, nwin.lflag, &type, &TtyName)) < 0)
+     return -1;
+ 
+@@ -736,7 +743,7 @@
+ #ifdef BUILTIN_TELNET
+   if (type == W_TYPE_TELNET)
+     {
+-      if (TelConnect(p))
++      if (TelOpenAndConnect(p))
+ 	{
+ 	  FreeWindow(p);
+ 	  return -1;
+@@ -834,6 +841,13 @@
+   int lflag, f;
+ 
+   lflag = nwin_default.lflag;
++#ifdef BUILTIN_TELNET                                                                                                        
++  if(!strcmp(p->w_cmdargs[0], "//telnet")) {                                                                                 
++         p->w_type = W_TYPE_TELNET;                                                                                          
++         TtyName = "telnet";                                                                                                 
++  }                                                                                                                          
++  else                                                                                                                       
++#endif   
+   if ((f = OpenDevice(p->w_cmdargs, lflag, &p->w_type, &TtyName)) < 0)
+     return -1;
+ 
+@@ -864,7 +878,7 @@
+ #ifdef BUILTIN_TELNET
+   if (p->w_type == W_TYPE_TELNET)
+     {
+-      if (TelConnect(p))
++      if (TelOpenAndConnect(p))
+         return -1;
+     }
+   else
+@@ -1007,16 +1021,6 @@
+ 
+   if (!arg)
+     return -1;
+-#ifdef BUILTIN_TELNET
+-  if (strcmp(arg, "//telnet") == 0)
+-    {
+-      f = TelOpen(args + 1);
+-      lflag = 0;
+-      *typep = W_TYPE_TELNET;
+-      *namep = "telnet";
+-    }
+-  else
+-#endif
+   if ((stat(arg, &st)) == 0 && S_ISCHR(st.st_mode))
+     {
+       if (access(arg, R_OK | W_OK) == -1)
+--- screen-4.0.3/teln.c.ipv6	2003-09-08 16:26:56.000000000 +0200
++++ screen-4.0.3/teln.c	2006-11-15 13:36:57.000000000 +0100
+@@ -25,6 +25,7 @@
+ #include <sys/socket.h>
+ #include <fcntl.h>
+ #include <netdb.h>
++#include <stdio.h>
+ 
+ #include "config.h"
+ 
+@@ -37,12 +38,13 @@
+ extern struct layer *flayer;
+ extern int visual_bell;
+ extern char screenterm[];
++extern int af;
+ 
+ static void TelReply __P((struct win *, char *, int));
+ static void TelDocmd __P((struct win *, int, int));
+ static void TelDosub __P((struct win *));
+-
+-#define TEL_DEFPORT	23
++// why TEL_DEFPORT has "
++#define TEL_DEFPORT	"23"
+ #define TEL_CONNECTING	(-2)
+ 
+ #define TC_IAC          255
+@@ -99,86 +101,78 @@
+ }
+ 
+ int
+-TelOpen(args)
+-char **args;
+-{
+-  int fd;
+-  int on = 1;
+-
+-  if ((fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
+-    {
+-      Msg(errno, "TelOpen: socket");
+-      return -1;
+-    }
+-  if (setsockopt(fd, SOL_SOCKET, SO_OOBINLINE, (char *)&on, sizeof(on)))
+-    Msg(errno, "TelOpen: setsockopt SO_OOBINLINE");
+-  return fd;
+-}
+-
+-int
+-TelConnect(p)
+-struct win *p;
+-{
+-  int port = TEL_DEFPORT;
+-  struct hostent *hp;
+-  char **args;
++TelOpenAndConnect(struct win *p) {                                                                                           
++  int fd, on = 1;
+   char buf[256];
+ 
+-  args = p->w_cmdargs + 1;
+-
+-  if (!*args)
+-    {
+-      Msg(0, "Usage: screen //telnet host [port]");
+-      return -1;
+-    }
+-  if (args[1])
+-    port = atoi(args[1]);
+-  p->w_telsa.sin_family = AF_INET;
+-  if((p->w_telsa.sin_addr.s_addr = inet_addr(*args)) == -1)
+-    {
+-      if ((hp = gethostbyname(*args)) == NULL)
+-        {
+-	  Msg(0, "unknown host: %s", *args);
+-	  return -1;
+-        }
+-      if (hp->h_length != sizeof(p->w_telsa.sin_addr.s_addr) || hp->h_addrtype != AF_INET)
+-	{
+-	  Msg(0, "Bad address type for %s", hp->h_name);
+-	  return -1;
+-	}
+-      bcopy((char *)hp->h_addr,(char *)&p->w_telsa.sin_addr.s_addr, hp->h_length);
+-      p->w_telsa.sin_family = hp->h_addrtype;
+-    }
+-  p->w_telsa.sin_port = htons(port);
+-  if (port != TEL_DEFPORT)
+-    sprintf(buf, "Trying %s %d...", inet_ntoa(p->w_telsa.sin_addr), port);
+-  else
+-    sprintf(buf, "Trying %s...", inet_ntoa(p->w_telsa.sin_addr));
+-  WriteString(p, buf, strlen(buf));
+-  if (connect(p->w_ptyfd, (struct sockaddr *)&p->w_telsa, sizeof(p->w_telsa)))
+-    {
+-      if (errno == EINPROGRESS)
+-        {
+-	  p->w_telstate = TEL_CONNECTING;
+-	  p->w_telconnev.fd = p->w_ptyfd;
+-	  p->w_telconnev.handler = tel_connev_fn;
+-	  p->w_telconnev.data = (char *)p;
+-	  p->w_telconnev.type = EV_WRITE;
+-	  p->w_telconnev.pri = 1;
+-	  debug("telnet connect in progress...\n");
+-	  evenq(&p->w_telconnev);
+-	}
+-      else
+-        {
+-	  Msg(errno, "TelOpen: connect");
+-	  return -1;
+-	}
+-    }
+-  else
+-    WriteString(p, "connected.\r\n", 12);
+-  if (port == TEL_DEFPORT)
+-    TelReply(p, (char *)tn_init, sizeof(tn_init));
+-  return 0;
++  struct addrinfo hints, *res0, *res;                                                                                        
++                                                                                                                             
++  if (!(p->w_cmdargs[1])) {                                                                                                  
++    Msg(0, "Usage: screen //telnet host [port]");                                                                            
++    return -1;                                                                                                               
++  }                                                                                                                          
++                                                                                                                             
++  memset(&hints, 0, sizeof(hints));                                                                                          
++  hints.ai_family = af;                                                                                                      
++  hints.ai_socktype = SOCK_STREAM;                                                                                           
++  hints.ai_protocol = IPPROTO_TCP;                                                                                           
++  if(getaddrinfo(p->w_cmdargs[1], p->w_cmdargs[2] ? p->w_cmdargs[2] : TEL_DEFPORT,                                           
++                 &hints, &res0)) {                                                                                           
++     Msg(0, "unknown host: %s", p->w_cmdargs[1]);
++     return -1;                                                                                                              
++  }                                                                                                                          
++                                                                                                                             
++  for(res = res0; res; res = res->ai_next) {                                                                                 
++    if((fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) {                                            
++      if(res->ai_next)                                                                                                       
++        continue;                                                                                                            
++      else {                                                                                                                 
++        Msg(errno, "TelOpenAndConnect: socket");                                                                             
++        freeaddrinfo(res0);                                                                                                  
++        return -1;                                                                                                           
++      }                                                                                                                      
++    }                                                                                                                        
++                                                                                                                             
++    if (setsockopt(fd, SOL_SOCKET, SO_OOBINLINE, (char *)&on, sizeof(on)))                                                   
++      Msg(errno, "TelOpenAndConnect: setsockopt SO_OOBINLINE");                                                               
++                                                                                                                             
++    if (p->w_cmdargs[2] && strcmp(p->w_cmdargs[2], TEL_DEFPORT))                                                             
++      snprintf(buf, 256, "Trying %s %s...", p->w_cmdargs[1], p->w_cmdargs[2]);                                               
++    else                                                                                                                     
++      snprintf(buf, 256, "Trying %s...", p->w_cmdargs[1]);                                                                   
++    WriteString(p, buf, strlen(buf));
++    if (connect(fd, res->ai_addr, res->ai_addrlen)) {                                                                        
++      if (errno == EINPROGRESS) {                                                                                            
++       p->w_telstate = TEL_CONNECTING;                                                                                       
++       p->w_telconnev.fd = fd;                                                                                               
++       p->w_telconnev.handler = tel_connev_fn;                                                                               
++       p->w_telconnev.data = (char *)p;                                                                                      
++       p->w_telconnev.type = EV_WRITE;                                                                                       
++       p->w_telconnev.pri = 1;                                                                                               
++       debug("telnet connect in progress...\n");                                                                             
++       evenq(&p->w_telconnev);                                                                                               
++      }                                                                                                                      
++      else {                                                                                                                 
++        close(fd);                                                                                                           
++       if(res->ai_next)                                                                                                      
++         continue;                                                                                                           
++       else {                                                                                                                
++          Msg(errno, "TelOpenAndConnect: connect");                                                                          
++          freeaddrinfo(res0);                                                                                                
++          return -1;                                                                                                         
++       }                                                                                                                     
++      }
++    }                                                                                                                        
++    else                                                                                                                     
++      WriteString(p, "connected.\r\n", 12);                                                                                  
++    if (!(p->w_cmdargs[2] && strcmp(p->w_cmdargs[2], TEL_DEFPORT)))
++      TelReply(p, (char *)tn_init, sizeof(tn_init));                                                                         
++    p->w_ptyfd = fd;                                                                                                         
++    memcpy(&p->w_telsa, &res->ai_addr, sizeof(res->ai_addr));                                                                
++    freeaddrinfo(res0);                                                                                                      
++    return 0;                                                                                                                
++  }                  
++  return -1;
+ }
+ 
+ int
+--- screen-4.0.3/help.c.ipv6	2003-09-08 16:25:33.000000000 +0200
++++ screen-4.0.3/help.c	2006-11-15 13:36:57.000000000 +0100
+@@ -49,6 +49,10 @@
+ {
+   printf("Use: %s [-opts] [cmd [args]]\n", myname);
+   printf(" or: %s -r [host.tty]\n\nOptions:\n", myname);
++#ifdef BUILTIN_TELNET                                                                                                        
++  printf("-4            Use IPv4.\n");                                                                                       
++  printf("-6            Use IPv6.\n");                                                                                       
++#endif    
+   printf("-a            Force all capabilities into each window's termcap.\n");
+   printf("-A -[r|R]     Adapt all windows to the new display width & height.\n");
+   printf("-c file       Read configuration file instead of '.screenrc'.\n");
+--- screen-4.0.3/screen.c.ipv6	2003-09-08 16:26:41.000000000 +0200
++++ screen-4.0.3/screen.c	2006-11-15 13:36:57.000000000 +0100
+@@ -231,8 +231,9 @@
+ struct win *fore;
+ struct win *windows;
+ struct win *console_window;
+-
+-
++#ifdef BUILTIN_TELNET                                                                                                        
++int af;                                                                                                                      
++#endif 
+ 
+ /*
+  * Do this last
+@@ -471,6 +472,9 @@
+   nwin = nwin_undef;
+   nwin_options = nwin_undef;
+   strcpy(screenterm, "screen");
++#ifdef BUILTIN_TELNET                                                                                                        
++  af = AF_UNSPEC;                                                                                                            
++#endif
+ 
+   logreopen_register(lf_secreopen);
+ 
+@@ -505,6 +509,14 @@
+ 	    {
+ 	      switch (*ap)
+ 		{
++#ifdef BUILTIN_TELNET                                                                                                        
++               case '4':                                                                                                     
++                 af = AF_INET;                                                                                               
++                 break;                                                                                                      
++               case '6':                                                                                                     
++                 af = AF_INET6;                                                                                              
++                 break;                                                                                                      
++#endif         
+ 		case 'a':
+ 		  nwin_options.aflag = 1;
+ 		  break;
+--- screen-4.0.3/extern.h.ipv6	2003-08-22 14:27:57.000000000 +0200
++++ screen-4.0.3/extern.h	2006-11-15 13:36:57.000000000 +0100
+@@ -446,8 +446,7 @@
+ 
+ /* teln.c */
+ #ifdef BUILTIN_TELNET
+-extern int   TelOpen __P((char **));
+-extern int   TelConnect __P((struct win *));
++extern int   TelOpenAndConnect __P((struct win *));
+ extern int   TelIsline __P((struct win *p));
+ extern void  TelProcessLine __P((char **, int *));
+ extern int   DoTelnet __P((char *, int *, int));

@@ -16,7 +16,7 @@ zcat ${SB_PATCHDIR}/util-linux-ng-2.13-ctrlaltdel-man.patch.gz | patch -p1 -E --
 # 151635 - makeing /var/log/lastlog
 zcat ${SB_PATCHDIR}/util-linux-ng-2.13-login-lastlog.patch.gz | patch -p1 -E --backup --verbose
 # 231192 - ipcs is not printing correct values on pLinux
-zcat ${SB_PATCHDIR}/util-linux-ng-2.15-ipcs-32bit.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-2.20-ipcs-32bit.patch
 
 ### Upstream Patches
 ###

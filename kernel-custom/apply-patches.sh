@@ -67,6 +67,8 @@ ApplyOptionalPatch linux-2.6-compile-fixes.patch.gz
 # revert patches from upstream that conflict or that we get via other means
 ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
+ApplyPatch perf-check-ownership.patch
+
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
 # utrace
@@ -175,7 +177,7 @@ ApplyPatch linux-2.6-input-kill-stupid-messages.patch
 # stop floppy.ko from autoloading during udev...
 ApplyPatch die-floppy-die.patch
 
-ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch.gz
+ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch
 
 # Allow to use 480600 baud on 16C950 UARTs
 ApplyPatch linux-2.6-serial-460800.patch
@@ -206,6 +208,7 @@ ApplyPatch linux-2.6-crash-driver.patch
 
 # Assorted Virt Fixes
 ApplyPatch fix_xen_guest_on_old_EC2.patch
+ApplyPatch xen-blkfront-name-adjust.patch
 
 # DRM core
 
@@ -231,6 +234,10 @@ ApplyPatch disable-i8042-check-on-apple-mac.patch
 ApplyPatch udlfb-bind-framebuffer-to-interface.patch
 ApplyPatch fix-cdc-ncm-dma-stack-vars.patch
 ApplyPatch ums-realtek-driver-uses-stack-memory-for-DMA.patch
+ApplyPatch rcu-avoid-just-onlined-cpu-resched.patch
+ApplyPatch block-stray-block-put-after-teardown.patch
+ApplyPatch usb-add-quirk-for-logitech-webcams.patch
+ApplyPatch crypto-register-cryptd-first.patch
 
 # Runtime PM
 #ApplyPatch linux-2.6-usb-pci-autosuspend.patch
@@ -243,6 +250,8 @@ ApplyPatch epoll-fix-spurious-lockdep-warnings.patch
 ApplyPatch hfsplus-ensure-bio-requests-are-not-smaller-than-the.patch
 
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
+
+ApplyPatch iwlagn-check-for-priv--txq-in-iwlagn_wait_tx_queue_empty.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

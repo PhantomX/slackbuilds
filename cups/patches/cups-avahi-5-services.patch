@@ -55,21 +55,20 @@ index e4c9b01..984dcc5 100644
   /*
    * Check if the hostname is an IP address...
 diff --git a/scheduler/conf.c b/scheduler/conf.c
-index badc630..1cbe5e2 100644
+index badc630..c1edd39 100644
 --- a/scheduler/conf.c
 +++ b/scheduler/conf.c
-@@ -651,6 +651,9 @@ cupsdReadConfiguration(void)
- #ifdef HAVE_DNSSD
+@@ -648,7 +648,7 @@ cupsdReadConfiguration(void)
+   Browsing                 = CUPS_DEFAULT_BROWSING;
+   DefaultShared            = CUPS_DEFAULT_DEFAULT_SHARED;
+ 
+-#ifdef HAVE_DNSSD
++#if defined(HAVE_DNSSD) || defined(HAVE_AVAHI)
    cupsdSetString(&DNSSDRegType, "_ipp._tcp,_cups");
  #endif /* HAVE_DNSSD */
-+#ifdef HAVE_AVAHI
-+  cupsdSetString(&DNSSDRegType, "_ipp._tcp");
-+#endif /* HAVE_AVAHI */
  
-   cupsdSetString(&LPDConfigFile, CUPS_DEFAULT_LPD_CONFIG_FILE);
-   cupsdSetString(&SMBConfigFile, CUPS_DEFAULT_SMB_CONFIG_FILE);
 diff --git a/scheduler/dirsvc.c b/scheduler/dirsvc.c
-index eb3c862..542ed7c 100644
+index eb3c862..48dcef9 100644
 --- a/scheduler/dirsvc.c
 +++ b/scheduler/dirsvc.c
 @@ -27,6 +27,7 @@
@@ -476,7 +475,7 @@ index eb3c862..542ed7c 100644
  /*
   * 'dnssdRegisterPrinter()' - Start sending broadcast information for a printer
   *		              or update the broadcast contents.
-@@ -2654,20 +2803,39 @@ dnssdRegisterCallback(
+@@ -2654,20 +2803,40 @@ dnssdRegisterCallback(
  static void
  dnssdRegisterPrinter(cupsd_printer_t *p)/* I - Printer */
  {
@@ -495,10 +494,11 @@ index eb3c862..542ed7c 100644
 +  int			ret;		/* Error code */
 +  AvahiStringList	*ipp_txt,	/* IPP TXT record */
 +			*printer_txt;	/* LPD TXT record */
-+  char			name[AVAHI_LABEL_MAX];	/* Service name */
++  char			name[AVAHI_LABEL_MAX],	/* Service name */
++			fullsubtype[AVAHI_LABEL_MAX]; /* Full subtype */
 +  char			*regtype_copy,	/* Writeable copy of reg type */
-+			*regtypeptr,	/* Current reg type */
-+			*nextregtype;	/* Next reg type */
++			*subtype,	/* Current service sub type */
++			*nextsubtype;	/* Next service sub type */
 +#endif /* HAVE_AVAHI */
 +  char			*nameptr;	/* Pointer into name */
    const char		*regtype;	/* Registration type */
@@ -519,7 +519,7 @@ index eb3c862..542ed7c 100644
   /*
    * If per-printer sharing was just disabled make sure we're not
    * registered before returning.
-@@ -2686,12 +2854,36 @@ dnssdRegisterPrinter(cupsd_printer_t *p)/* I - Printer */
+@@ -2686,12 +2855,36 @@ dnssdRegisterPrinter(cupsd_printer_t *p)/* I - Printer */
    if (p->info && strlen(p->info) > 0)
    {
      if (DNSSDComputerName)
@@ -558,7 +558,7 @@ index eb3c862..542ed7c 100644
    else
      strlcpy(name, p->name, sizeof(name));
  
-@@ -2712,6 +2904,7 @@ dnssdRegisterPrinter(cupsd_printer_t *p)/* I - Printer */
+@@ -2712,6 +2905,7 @@ dnssdRegisterPrinter(cupsd_printer_t *p)/* I - Printer */
    * Register IPP and (optionally) LPD...
    */
  
@@ -566,7 +566,7 @@ index eb3c862..542ed7c 100644
    ipp_len = 0;				/* anti-compiler-warning-code */
    ipp_txt = dnssdBuildTxtRecord(&ipp_len, p, 0);
  
-@@ -2884,6 +3077,193 @@ dnssdRegisterPrinter(cupsd_printer_t *p)/* I - Printer */
+@@ -2884,6 +3078,209 @@ dnssdRegisterPrinter(cupsd_printer_t *p)/* I - Printer */
  
    if (printer_txt)
      free(printer_txt);
@@ -595,35 +595,27 @@ index eb3c862..542ed7c 100644
 +      avahi_string_list_free (p->printer_txt);
 +
 +   /*
-+    * Update each service type (DNSSDRegType may contain several,
-+    * separated by commas).
++    * Update the service group entry.
 +    */
 +
-+    regtypeptr = regtype_copy = strdup (regtype);
-+    while (regtypeptr && *regtypeptr)
-+    {
-+      nextregtype = strchr (regtypeptr, ',');
-+      if (nextregtype)
-+	*nextregtype++ = '\0';
++    regtype_copy = strdup (regtype);
++    subtype = strchr (regtype_copy, ',');
++    if (subtype)
++      *subtype = '\0';
 +
-+      cupsdLogMessage (CUPSD_LOG_DEBUG,
-+		       "Updating TXT record for %s (%s)", name, regtypeptr);
-+
-+      ret = avahi_entry_group_update_service_txt_strlst (p->avahi_group,
-+							 AVAHI_IF_UNSPEC,
-+							 AVAHI_PROTO_UNSPEC,
-+							 0, name, regtypeptr,
-+							 NULL, ipp_txt);
-+      if (ret < 0)
-+      {
-+	free (regtype_copy);
-+	goto update_failed;
-+      }
-+
-+      regtypeptr = nextregtype;
-+    }
-+
++    cupsdLogMessage (CUPSD_LOG_DEBUG,
++		     "Updating TXT record for %s (%s)", name, regtype_copy);
++    ret = avahi_entry_group_update_service_txt_strlst (p->avahi_group,
++						       AVAHI_IF_UNSPEC,
++						       AVAHI_PROTO_UNSPEC,
++						       0, name,
++						       regtype_copy,
++						       NULL, ipp_txt);
 +    free (regtype_copy);
++
++    if (ret < 0)
++      goto update_failed;
++
 +    p->ipp_txt = ipp_txt;
 +    ipp_txt = NULL;
 +
@@ -682,30 +674,54 @@ index eb3c862..542ed7c 100644
 +    * separated by commas).
 +    */
 +
-+    regtypeptr = regtype_copy = strdup (regtype);
-+    while (regtypeptr && *regtypeptr)
++    subtype = regtype_copy = strdup (regtype);
++    while (subtype && *subtype)
 +    {
-+      nextregtype = strchr (regtypeptr, ',');
-+      if (nextregtype)
-+	*nextregtype++ = '\0';
++      nextsubtype = strchr (subtype, ',');
++      if (nextsubtype)
++	*nextsubtype++ = '\0';
 +
-+      cupsdLogMessage (CUPSD_LOG_DEBUG,
-+		       "Adding TXT record for %s (%s)", name, regtypeptr);
++      if (subtype == regtype_copy)
++      {
++       /*
++	* Main type entry.
++	*/
 +
-+      ret = avahi_entry_group_add_service_strlst (p->avahi_group,
-+						  AVAHI_IF_UNSPEC,
-+						  AVAHI_PROTO_UNSPEC,
-+						  0, name, regtypeptr,
-+						  NULL, NULL,
-+						  DNSSDPort,
-+						  ipp_txt);
++	cupsdLogMessage (CUPSD_LOG_DEBUG,
++			 "Adding TXT record for %s (%s)", name, regtype_copy);
++	ret = avahi_entry_group_add_service_strlst (p->avahi_group,
++						    AVAHI_IF_UNSPEC,
++						    AVAHI_PROTO_UNSPEC,
++						    0, name, regtype_copy,
++						    NULL, NULL,
++						    DNSSDPort,
++						    ipp_txt);
++      }
++      else
++      {
++       /*
++	* Sub-type entry.
++	*/
++
++	snprintf (fullsubtype, sizeof(fullsubtype),
++		  "%s._sub.%s", subtype, regtype_copy);
++	cupsdLogMessage (CUPSD_LOG_DEBUG,
++			 "Adding TXT record for %s (%s)", name, fullsubtype);
++	ret = avahi_entry_group_add_service_subtype (p->avahi_group,
++						     AVAHI_IF_UNSPEC,
++						     AVAHI_PROTO_UNSPEC,
++						     0, name,
++						     regtype_copy,
++						     NULL, fullsubtype);
++      }
++
 +      if (ret < 0)
 +      {
 +	free (regtype_copy);
 +	goto add_failed;
 +      }
 +
-+      regtypeptr = nextregtype;
++      subtype = nextsubtype;
 +    }
 +
 +    free (regtype_copy);
@@ -760,7 +776,7 @@ index eb3c862..542ed7c 100644
  }
  
  
-@@ -2896,6 +3276,10 @@ dnssdStop(void)
+@@ -2896,6 +3293,10 @@ dnssdStop(void)
  {
    cupsd_printer_t	*p;		/* Current printer */
  
@@ -771,7 +787,7 @@ index eb3c862..542ed7c 100644
  
   /*
    * De-register the individual printers
-@@ -2906,6 +3290,7 @@ dnssdStop(void)
+@@ -2906,6 +3307,7 @@ dnssdStop(void)
         p = (cupsd_printer_t *)cupsArrayNext(Printers))
      dnssdDeregisterPrinter(p);
  
@@ -779,7 +795,7 @@ index eb3c862..542ed7c 100644
   /*
    * Shutdown the rest of the service refs...
    */
-@@ -2926,14 +3311,17 @@ dnssdStop(void)
+@@ -2926,14 +3328,17 @@ dnssdStop(void)
  
    DNSServiceRefDeallocate(DNSSDRef);
    DNSSDRef = NULL;
@@ -797,7 +813,7 @@ index eb3c862..542ed7c 100644
  /*
   * 'dnssdUpdate()' - Handle DNS-SD queries.
   */
-@@ -2955,6 +3343,147 @@ dnssdUpdate(void)
+@@ -2955,6 +3360,147 @@ dnssdUpdate(void)
  #endif /* HAVE_DNSSD */
  
  

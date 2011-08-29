@@ -36,7 +36,7 @@ ApplyPatch() {
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
-#ApplyPatch gdb-upstream.patch
+ApplyPatch gdb-upstream.patch
 
 # The merged branch `archer' of: http://sourceware.org/gdb/wiki/ProjectArcher
 ApplyPatch gdb-archer.patch

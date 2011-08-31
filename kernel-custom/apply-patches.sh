@@ -84,11 +84,10 @@ ApplyPatch grab-swap-token-oops.patch
 # x86(-64)
 # Add K10 and native cpu optimization support
 ApplyPatch linux-3.0-add-cpu-optimizations.patch
-ApplyPatch mtrr_stop_machine_quick_fix.patch
+#ApplyPatch mtrr_stop_machine_quick_fix.patch
 ApplyPatch kill-__stop_machine.patch
 ApplyPatch reorganize_stop_cpus.patch
 ApplyPatch implement_stop_machine_from_offline_cpu.patch
-ApplyPatch use_stop_machine_for_mtrr_rendezvous.patch
 
 #
 # Intel IOMMU
@@ -188,6 +187,9 @@ ApplyPatch linux-2.6-silence-noise.patch
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 
+# Get rid of useless bridge window conflict warnings
+ApplyPatch x86-pci-reduce-severity-of-host-bridge-window-conflict-warnings.patch
+
 # Changes to upstream defaults.
 # Turns pnpbios off by default, useful, since pnpbios
 # is know to cause problems (TTL: forever)
@@ -208,9 +210,9 @@ ApplyPatch linux-2.6-crash-driver.patch
 
 # Assorted Virt Fixes
 ApplyPatch fix_xen_guest_on_old_EC2.patch
-ApplyPatch xen-blkfront-name-adjust.patch
 
 # DRM core
+ApplyPatch drm-ttm-nouveau-oops-fix.patch
 
 # Nouveau DRM
 ApplyOptionalPatch drm-nouveau-updates.patch
@@ -252,6 +254,14 @@ ApplyPatch hfsplus-ensure-bio-requests-are-not-smaller-than-the.patch
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch iwlagn-check-for-priv--txq-in-iwlagn_wait_tx_queue_empty.patch
+ApplyPatch iwlagn-revert-max-aggregate-size.patch
+
+# rhbz#719607
+ApplyPatch vfs-fix-automount-for-negative-autofs-dentries.patch
+
+# rhbz#727927 rhbz#731278 rhbz#732934
+# cifs-possible-memory-corruption-on-mount.patch is already queued for 3.0.4
+ApplyPatch cifs-fix-ERR_PTR-dereference-in-cifs_get_root.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

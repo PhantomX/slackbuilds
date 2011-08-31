@@ -1,1 +1,460 @@
-nil
+ drivers/gpu/drm/nouveau/nouveau_drv.c   |   11 ++-
+ drivers/gpu/drm/nouveau/nouveau_drv.h   |    3 +-
+ drivers/gpu/drm/nouveau/nouveau_state.c |    4 +-
+ drivers/gpu/drm/nouveau/nv04_graph.c    |   22 ++----
+ drivers/gpu/drm/nouveau/nv10_graph.c    |   15 +++--
+ drivers/gpu/drm/nouveau/nv20_graph.c    |   11 ++-
+ drivers/gpu/drm/nouveau/nv40_graph.c    |  112 ++++++-------------------------
+ drivers/gpu/drm/nouveau/nv40_mpeg.c     |    2 +-
+ drivers/gpu/drm/nouveau/nv50_graph.c    |    9 ++-
+ drivers/gpu/drm/nouveau/nv50_mpeg.c     |    2 +-
+ drivers/gpu/drm/nouveau/nv84_crypt.c    |    2 +-
+ drivers/gpu/drm/nouveau/nva3_copy.c     |    2 +-
+ drivers/gpu/drm/nouveau/nvc0_copy.c     |    2 +-
+ drivers/gpu/drm/nouveau/nvc0_graph.c    |    2 +-
+ 14 files changed, 68 insertions(+), 131 deletions(-)
+
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drv.c b/drivers/gpu/drm/nouveau/nouveau_drv.c
+index 02c6f37..4e1a360 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drv.c
++++ b/drivers/gpu/drm/nouveau/nouveau_drv.c
+@@ -210,10 +210,13 @@ nouveau_pci_suspend(struct pci_dev *pdev, pm_message_t pm_state)
+ 	pfifo->unload_context(dev);
+ 
+ 	for (e = NVOBJ_ENGINE_NR - 1; e >= 0; e--) {
+-		if (dev_priv->eng[e]) {
+-			ret = dev_priv->eng[e]->fini(dev, e);
+-			if (ret)
+-				goto out_abort;
++		if (!dev_priv->eng[e])
++			continue;
++
++		ret = dev_priv->eng[e]->fini(dev, e, true);
++		if (ret) {
++			NV_ERROR(dev, "... engine %d failed: %d\n", i, ret);
++			goto out_abort;
+ 		}
+ 	}
+ 
+diff --git a/drivers/gpu/drm/nouveau/nouveau_drv.h b/drivers/gpu/drm/nouveau/nouveau_drv.h
+index 9c56331..82d6295 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_drv.h
++++ b/drivers/gpu/drm/nouveau/nouveau_drv.h
+@@ -297,7 +297,7 @@ struct nouveau_channel {
+ struct nouveau_exec_engine {
+ 	void (*destroy)(struct drm_device *, int engine);
+ 	int  (*init)(struct drm_device *, int engine);
+-	int  (*fini)(struct drm_device *, int engine);
++	int  (*fini)(struct drm_device *, int engine, bool suspend);
+ 	int  (*context_new)(struct nouveau_channel *, int engine);
+ 	void (*context_del)(struct nouveau_channel *, int engine);
+ 	int  (*object_new)(struct nouveau_channel *, int engine,
+@@ -1120,7 +1120,6 @@ extern int  nvc0_fifo_unload_context(struct drm_device *);
+ 
+ /* nv04_graph.c */
+ extern int  nv04_graph_create(struct drm_device *);
+-extern void nv04_graph_fifo_access(struct drm_device *, bool);
+ extern int  nv04_graph_object_new(struct nouveau_channel *, int, u32, u16);
+ extern int  nv04_graph_mthd_page_flip(struct nouveau_channel *chan,
+ 				      u32 class, u32 mthd, u32 data);
+diff --git a/drivers/gpu/drm/nouveau/nouveau_state.c b/drivers/gpu/drm/nouveau/nouveau_state.c
+index 731acea..e65e71b 100644
+--- a/drivers/gpu/drm/nouveau/nouveau_state.c
++++ b/drivers/gpu/drm/nouveau/nouveau_state.c
+@@ -682,7 +682,7 @@ out_engine:
+ 		for (e = e - 1; e >= 0; e--) {
+ 			if (!dev_priv->eng[e])
+ 				continue;
+-			dev_priv->eng[e]->fini(dev, e);
++			dev_priv->eng[e]->fini(dev, e, false);
+ 			dev_priv->eng[e]->destroy(dev,e );
+ 		}
+ 	}
+@@ -727,7 +727,7 @@ static void nouveau_card_takedown(struct drm_device *dev)
+ 		engine->fifo.takedown(dev);
+ 		for (e = NVOBJ_ENGINE_NR - 1; e >= 0; e--) {
+ 			if (dev_priv->eng[e]) {
+-				dev_priv->eng[e]->fini(dev, e);
++				dev_priv->eng[e]->fini(dev, e, false);
+ 				dev_priv->eng[e]->destroy(dev,e );
+ 			}
+ 		}
+diff --git a/drivers/gpu/drm/nouveau/nv04_graph.c b/drivers/gpu/drm/nouveau/nv04_graph.c
+index 3626ee7..dbdea8e 100644
+--- a/drivers/gpu/drm/nouveau/nv04_graph.c
++++ b/drivers/gpu/drm/nouveau/nv04_graph.c
+@@ -450,13 +450,13 @@ nv04_graph_context_del(struct nouveau_channel *chan, int engine)
+ 	unsigned long flags;
+ 
+ 	spin_lock_irqsave(&dev_priv->context_switch_lock, flags);
+-	nv04_graph_fifo_access(dev, false);
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000000);
+ 
+ 	/* Unload the context if it's the currently active one */
+ 	if (nv04_graph_channel(dev) == chan)
+ 		nv04_graph_unload_context(dev);
+ 
+-	nv04_graph_fifo_access(dev, true);
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000001);
+ 	spin_unlock_irqrestore(&dev_priv->context_switch_lock, flags);
+ 
+ 	/* Free the context resources */
+@@ -538,24 +538,18 @@ nv04_graph_init(struct drm_device *dev, int engine)
+ }
+ 
+ static int
+-nv04_graph_fini(struct drm_device *dev, int engine)
++nv04_graph_fini(struct drm_device *dev, int engine, bool suspend)
+ {
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000000);
++	if (!nv_wait(dev, NV04_PGRAPH_STATUS, ~0, 0) && suspend) {
++		nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000001);
++		return -EBUSY;
++	}
+ 	nv04_graph_unload_context(dev);
+ 	nv_wr32(dev, NV03_PGRAPH_INTR_EN, 0x00000000);
+ 	return 0;
+ }
+ 
+-void
+-nv04_graph_fifo_access(struct drm_device *dev, bool enabled)
+-{
+-	if (enabled)
+-		nv_wr32(dev, NV04_PGRAPH_FIFO,
+-					nv_rd32(dev, NV04_PGRAPH_FIFO) | 1);
+-	else
+-		nv_wr32(dev, NV04_PGRAPH_FIFO,
+-					nv_rd32(dev, NV04_PGRAPH_FIFO) & ~1);
+-}
+-
+ static int
+ nv04_graph_mthd_set_ref(struct nouveau_channel *chan,
+ 			u32 class, u32 mthd, u32 data)
+diff --git a/drivers/gpu/drm/nouveau/nv10_graph.c b/drivers/gpu/drm/nouveau/nv10_graph.c
+index 0930c6c..7255e4a 100644
+--- a/drivers/gpu/drm/nouveau/nv10_graph.c
++++ b/drivers/gpu/drm/nouveau/nv10_graph.c
+@@ -708,8 +708,8 @@ static void nv10_graph_load_dma_vtxbuf(struct nouveau_channel *chan,
+ 		0x2c000000 | chan->id << 20 | subchan << 16 | 0x18c);
+ 	nv_wr32(dev, NV10_PGRAPH_FFINTFC_ST2_DL, inst);
+ 	nv_mask(dev, NV10_PGRAPH_CTX_CONTROL, 0, 0x10000);
+-	nv04_graph_fifo_access(dev, true);
+-	nv04_graph_fifo_access(dev, false);
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000001);
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000000);
+ 
+ 	/* Restore the FIFO state */
+ 	for (i = 0; i < ARRAY_SIZE(fifo); i++)
+@@ -879,13 +879,13 @@ nv10_graph_context_del(struct nouveau_channel *chan, int engine)
+ 	unsigned long flags;
+ 
+ 	spin_lock_irqsave(&dev_priv->context_switch_lock, flags);
+-	nv04_graph_fifo_access(dev, false);
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000000);
+ 
+ 	/* Unload the context if it's the currently active one */
+ 	if (nv10_graph_channel(dev) == chan)
+ 		nv10_graph_unload_context(dev);
+ 
+-	nv04_graph_fifo_access(dev, true);
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000001);
+ 	spin_unlock_irqrestore(&dev_priv->context_switch_lock, flags);
+ 
+ 	/* Free the context resources */
+@@ -957,8 +957,13 @@ nv10_graph_init(struct drm_device *dev, int engine)
+ }
+ 
+ static int
+-nv10_graph_fini(struct drm_device *dev, int engine)
++nv10_graph_fini(struct drm_device *dev, int engine, bool suspend)
+ {
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000000);
++	if (!nv_wait(dev, NV04_PGRAPH_STATUS, ~0, 0) && suspend) {
++		nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000001);
++		return -EBUSY;
++	}
+ 	nv10_graph_unload_context(dev);
+ 	nv_wr32(dev, NV03_PGRAPH_INTR_EN, 0x00000000);
+ 	return 0;
+diff --git a/drivers/gpu/drm/nouveau/nv20_graph.c b/drivers/gpu/drm/nouveau/nv20_graph.c
+index affc7d7..b6cf157 100644
+--- a/drivers/gpu/drm/nouveau/nv20_graph.c
++++ b/drivers/gpu/drm/nouveau/nv20_graph.c
+@@ -454,13 +454,13 @@ nv20_graph_context_del(struct nouveau_channel *chan, int engine)
+ 	unsigned long flags;
+ 
+ 	spin_lock_irqsave(&dev_priv->context_switch_lock, flags);
+-	nv04_graph_fifo_access(dev, false);
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000000);
+ 
+ 	/* Unload the context if it's the currently active one */
+ 	if (nv10_graph_channel(dev) == chan)
+ 		nv20_graph_unload_context(dev);
+ 
+-	nv04_graph_fifo_access(dev, true);
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000001);
+ 	spin_unlock_irqrestore(&dev_priv->context_switch_lock, flags);
+ 
+ 	/* Free the context resources */
+@@ -654,8 +654,13 @@ nv30_graph_init(struct drm_device *dev, int engine)
+ }
+ 
+ int
+-nv20_graph_fini(struct drm_device *dev, int engine)
++nv20_graph_fini(struct drm_device *dev, int engine, bool suspend)
+ {
++	nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000000);
++	if (!nv_wait(dev, NV04_PGRAPH_STATUS, ~0, 0) && suspend) {
++		nv_mask(dev, NV04_PGRAPH_FIFO, 0x00000001, 0x00000001);
++		return -EBUSY;
++	}
+ 	nv20_graph_unload_context(dev);
+ 	nv_wr32(dev, NV03_PGRAPH_INTR_EN, 0x00000000);
+ 	return 0;
+diff --git a/drivers/gpu/drm/nouveau/nv40_graph.c b/drivers/gpu/drm/nouveau/nv40_graph.c
+index 5beb01b..ba14a93 100644
+--- a/drivers/gpu/drm/nouveau/nv40_graph.c
++++ b/drivers/gpu/drm/nouveau/nv40_graph.c
+@@ -35,89 +35,6 @@ struct nv40_graph_engine {
+ 	u32 grctx_size;
+ };
+ 
+-static struct nouveau_channel *
+-nv40_graph_channel(struct drm_device *dev)
+-{
+-	struct drm_nouveau_private *dev_priv = dev->dev_private;
+-	struct nouveau_gpuobj *grctx;
+-	uint32_t inst;
+-	int i;
+-
+-	inst = nv_rd32(dev, NV40_PGRAPH_CTXCTL_CUR);
+-	if (!(inst & NV40_PGRAPH_CTXCTL_CUR_LOADED))
+-		return NULL;
+-	inst = (inst & NV40_PGRAPH_CTXCTL_CUR_INSTANCE) << 4;
+-
+-	for (i = 0; i < dev_priv->engine.fifo.channels; i++) {
+-		if (!dev_priv->channels.ptr[i])
+-			continue;
+-
+-		grctx = dev_priv->channels.ptr[i]->engctx[NVOBJ_ENGINE_GR];
+-		if (grctx && grctx->pinst == inst)
+-			return dev_priv->channels.ptr[i];
+-	}
+-
+-	return NULL;
+-}
+-
+-static int
+-nv40_graph_transfer_context(struct drm_device *dev, uint32_t inst, int save)
+-{
+-	uint32_t old_cp, tv = 1000, tmp;
+-	int i;
+-
+-	old_cp = nv_rd32(dev, NV20_PGRAPH_CHANNEL_CTX_POINTER);
+-	nv_wr32(dev, NV20_PGRAPH_CHANNEL_CTX_POINTER, inst);
+-
+-	tmp  = nv_rd32(dev, NV40_PGRAPH_CTXCTL_0310);
+-	tmp |= save ? NV40_PGRAPH_CTXCTL_0310_XFER_SAVE :
+-		      NV40_PGRAPH_CTXCTL_0310_XFER_LOAD;
+-	nv_wr32(dev, NV40_PGRAPH_CTXCTL_0310, tmp);
+-
+-	tmp  = nv_rd32(dev, NV40_PGRAPH_CTXCTL_0304);
+-	tmp |= NV40_PGRAPH_CTXCTL_0304_XFER_CTX;
+-	nv_wr32(dev, NV40_PGRAPH_CTXCTL_0304, tmp);
+-
+-	nouveau_wait_for_idle(dev);
+-
+-	for (i = 0; i < tv; i++) {
+-		if (nv_rd32(dev, NV40_PGRAPH_CTXCTL_030C) == 0)
+-			break;
+-	}
+-
+-	nv_wr32(dev, NV20_PGRAPH_CHANNEL_CTX_POINTER, old_cp);
+-
+-	if (i == tv) {
+-		uint32_t ucstat = nv_rd32(dev, NV40_PGRAPH_CTXCTL_UCODE_STAT);
+-		NV_ERROR(dev, "Failed: Instance=0x%08x Save=%d\n", inst, save);
+-		NV_ERROR(dev, "IP: 0x%02x, Opcode: 0x%08x\n",
+-			 ucstat >> NV40_PGRAPH_CTXCTL_UCODE_STAT_IP_SHIFT,
+-			 ucstat  & NV40_PGRAPH_CTXCTL_UCODE_STAT_OP_MASK);
+-		NV_ERROR(dev, "0x40030C = 0x%08x\n",
+-			 nv_rd32(dev, NV40_PGRAPH_CTXCTL_030C));
+-		return -EBUSY;
+-	}
+-
+-	return 0;
+-}
+-
+-static int
+-nv40_graph_unload_context(struct drm_device *dev)
+-{
+-	uint32_t inst;
+-	int ret;
+-
+-	inst = nv_rd32(dev, NV40_PGRAPH_CTXCTL_CUR);
+-	if (!(inst & NV40_PGRAPH_CTXCTL_CUR_LOADED))
+-		return 0;
+-	inst &= NV40_PGRAPH_CTXCTL_CUR_INSTANCE;
+-
+-	ret = nv40_graph_transfer_context(dev, inst, 1);
+-
+-	nv_wr32(dev, NV40_PGRAPH_CTXCTL_CUR, inst);
+-	return ret;
+-}
+-
+ static int
+ nv40_graph_context_new(struct nouveau_channel *chan, int engine)
+ {
+@@ -163,16 +80,16 @@ nv40_graph_context_del(struct nouveau_channel *chan, int engine)
+ 	struct nouveau_gpuobj *grctx = chan->engctx[engine];
+ 	struct drm_device *dev = chan->dev;
+ 	struct drm_nouveau_private *dev_priv = dev->dev_private;
++	u32 inst = 0x01000000 | (grctx->pinst >> 4);
+ 	unsigned long flags;
+ 
+ 	spin_lock_irqsave(&dev_priv->context_switch_lock, flags);
+-	nv04_graph_fifo_access(dev, false);
+-
+-	/* Unload the context if it's the currently active one */
+-	if (nv40_graph_channel(dev) == chan)
+-		nv40_graph_unload_context(dev);
+-
+-	nv04_graph_fifo_access(dev, true);
++	nv_mask(dev, 0x400720, 0x00000000, 0x00000001);
++	if (nv_rd32(dev, 0x40032c) == inst)
++		nv_mask(dev, 0x40032c, 0x01000000, 0x00000000);
++	if (nv_rd32(dev, 0x400330) == inst)
++		nv_mask(dev, 0x400330, 0x01000000, 0x00000000);
++	nv_mask(dev, 0x400720, 0x00000001, 0x00000001);
+ 	spin_unlock_irqrestore(&dev_priv->context_switch_lock, flags);
+ 
+ 	/* Free the context resources */
+@@ -429,9 +346,20 @@ nv40_graph_init(struct drm_device *dev, int engine)
+ }
+ 
+ static int
+-nv40_graph_fini(struct drm_device *dev, int engine)
++nv40_graph_fini(struct drm_device *dev, int engine, bool suspend)
+ {
+-	nv40_graph_unload_context(dev);
++	u32 inst = nv_rd32(dev, 0x40032c);
++	if (inst & 0x01000000) {
++		nv_wr32(dev, 0x400720, 0x00000000);
++		nv_wr32(dev, 0x400784, inst);
++		nv_mask(dev, 0x400310, 0x00000020, 0x00000020);
++		nv_mask(dev, 0x400304, 0x00000001, 0x00000001);
++		if (!nv_wait(dev, 0x400300, 0x00000001, 0x00000000)) {
++			u32 insn = nv_rd32(dev, 0x400308);
++			NV_ERROR(dev, "PGRAPH: ctxprog timeout 0x%08x\n", insn);
++		}
++		nv_mask(dev, 0x40032c, 0x01000000, 0x00000000);
++	}
+ 	return 0;
+ }
+ 
+diff --git a/drivers/gpu/drm/nouveau/nv40_mpeg.c b/drivers/gpu/drm/nouveau/nv40_mpeg.c
+index 6d2af29..ad03a0e 100644
+--- a/drivers/gpu/drm/nouveau/nv40_mpeg.c
++++ b/drivers/gpu/drm/nouveau/nv40_mpeg.c
+@@ -137,7 +137,7 @@ nv40_mpeg_init(struct drm_device *dev, int engine)
+ }
+ 
+ static int
+-nv40_mpeg_fini(struct drm_device *dev, int engine)
++nv40_mpeg_fini(struct drm_device *dev, int engine, bool suspend)
+ {
+ 	/*XXX: context save? */
+ 	nv_mask(dev, 0x00b32c, 0x00000001, 0x00000000);
+diff --git a/drivers/gpu/drm/nouveau/nv50_graph.c b/drivers/gpu/drm/nouveau/nv50_graph.c
+index e25cbb4..d27dcf0 100644
+--- a/drivers/gpu/drm/nouveau/nv50_graph.c
++++ b/drivers/gpu/drm/nouveau/nv50_graph.c
+@@ -125,7 +125,6 @@ static void
+ nv50_graph_init_reset(struct drm_device *dev)
+ {
+ 	uint32_t pmc_e = NV_PMC_ENABLE_PGRAPH | (1 << 21);
+-
+ 	NV_DEBUG(dev, "\n");
+ 
+ 	nv_wr32(dev, NV03_PMC_ENABLE, nv_rd32(dev, NV03_PMC_ENABLE) & ~pmc_e);
+@@ -255,9 +254,13 @@ nv50_graph_init(struct drm_device *dev, int engine)
+ }
+ 
+ static int
+-nv50_graph_fini(struct drm_device *dev, int engine)
++nv50_graph_fini(struct drm_device *dev, int engine, bool suspend)
+ {
+-	NV_DEBUG(dev, "\n");
++	nv_mask(dev, 0x400500, 0x00010001, 0x00000000);
++	if (!nv_wait(dev, 0x400700, ~0, 0) && suspend) {
++		nv_mask(dev, 0x400500, 0x00010001, 0x00010001);
++		return -EBUSY;
++	}
+ 	nv50_graph_unload_context(dev);
+ 	nv_wr32(dev, 0x40013c, 0x00000000);
+ 	return 0;
+diff --git a/drivers/gpu/drm/nouveau/nv50_mpeg.c b/drivers/gpu/drm/nouveau/nv50_mpeg.c
+index 1dc5913..b57a2d1 100644
+--- a/drivers/gpu/drm/nouveau/nv50_mpeg.c
++++ b/drivers/gpu/drm/nouveau/nv50_mpeg.c
+@@ -160,7 +160,7 @@ nv50_mpeg_init(struct drm_device *dev, int engine)
+ }
+ 
+ static int
+-nv50_mpeg_fini(struct drm_device *dev, int engine)
++nv50_mpeg_fini(struct drm_device *dev, int engine, bool suspend)
+ {
+ 	/*XXX: context save for s/r */
+ 	nv_mask(dev, 0x00b32c, 0x00000001, 0x00000000);
+diff --git a/drivers/gpu/drm/nouveau/nv84_crypt.c b/drivers/gpu/drm/nouveau/nv84_crypt.c
+index 75b809a..edece9c 100644
+--- a/drivers/gpu/drm/nouveau/nv84_crypt.c
++++ b/drivers/gpu/drm/nouveau/nv84_crypt.c
+@@ -138,7 +138,7 @@ nv84_crypt_isr(struct drm_device *dev)
+ }
+ 
+ static int
+-nv84_crypt_fini(struct drm_device *dev, int engine)
++nv84_crypt_fini(struct drm_device *dev, int engine, bool suspend)
+ {
+ 	nv_wr32(dev, 0x102140, 0x00000000);
+ 	return 0;
+diff --git a/drivers/gpu/drm/nouveau/nva3_copy.c b/drivers/gpu/drm/nouveau/nva3_copy.c
+index b86820a..8f356d5 100644
+--- a/drivers/gpu/drm/nouveau/nva3_copy.c
++++ b/drivers/gpu/drm/nouveau/nva3_copy.c
+@@ -140,7 +140,7 @@ nva3_copy_init(struct drm_device *dev, int engine)
+ }
+ 
+ static int
+-nva3_copy_fini(struct drm_device *dev, int engine)
++nva3_copy_fini(struct drm_device *dev, int engine, bool suspend)
+ {
+ 	nv_mask(dev, 0x104048, 0x00000003, 0x00000000);
+ 
+diff --git a/drivers/gpu/drm/nouveau/nvc0_copy.c b/drivers/gpu/drm/nouveau/nvc0_copy.c
+index 208fa7a..4d58c33 100644
+--- a/drivers/gpu/drm/nouveau/nvc0_copy.c
++++ b/drivers/gpu/drm/nouveau/nvc0_copy.c
+@@ -127,7 +127,7 @@ nvc0_copy_init(struct drm_device *dev, int engine)
+ }
+ 
+ static int
+-nvc0_copy_fini(struct drm_device *dev, int engine)
++nvc0_copy_fini(struct drm_device *dev, int engine, bool suspend)
+ {
+ 	struct nvc0_copy_engine *pcopy = nv_engine(dev, engine);
+ 
+diff --git a/drivers/gpu/drm/nouveau/nvc0_graph.c b/drivers/gpu/drm/nouveau/nvc0_graph.c
+index ca6db20..69c6522 100644
+--- a/drivers/gpu/drm/nouveau/nvc0_graph.c
++++ b/drivers/gpu/drm/nouveau/nvc0_graph.c
+@@ -248,7 +248,7 @@ nvc0_graph_object_new(struct nouveau_channel *chan, int engine,
+ }
+ 
+ static int
+-nvc0_graph_fini(struct drm_device *dev, int engine)
++nvc0_graph_fini(struct drm_device *dev, int engine, bool suspend)
+ {
+ 	return 0;
+ }

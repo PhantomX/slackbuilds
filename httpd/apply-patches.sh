@@ -22,6 +22,7 @@ zcat ${SB_PATCHDIR}/${NAME}-2.0.45-export.patch.gz | patch -p1 -E --backup --ver
 zcat ${SB_PATCHDIR}/${NAME}-2.2.11-corelimit.patch.gz | patch -p1 -E --backup --verbose
 #zcat ${SB_PATCHDIR}/${NAME}-2.2.11-selinux.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.2.9-suenable.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.2.19-logresolve-ipv6.patch
 # Bug fixes
 zcat ${SB_PATCHDIR}/${NAME}-2.2.0-authnoprov.patch.gz | patch -p1 -E --backup --verbose
 # Security fixes

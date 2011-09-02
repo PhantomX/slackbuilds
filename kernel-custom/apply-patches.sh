@@ -84,10 +84,10 @@ ApplyPatch grab-swap-token-oops.patch
 # x86(-64)
 # Add K10 and native cpu optimization support
 ApplyPatch linux-3.0-add-cpu-optimizations.patch
-#ApplyPatch mtrr_stop_machine_quick_fix.patch
-ApplyPatch kill-__stop_machine.patch
+
 ApplyPatch reorganize_stop_cpus.patch
-ApplyPatch implement_stop_machine_from_offline_cpu.patch
+ApplyPatch implement-stop_machine_from_inactive_cpu.patch
+ApplyPatch use_stop_machine_for_mtrr_rendezvous.patch
 
 #
 # Intel IOMMU

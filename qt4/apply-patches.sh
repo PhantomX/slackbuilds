@@ -65,8 +65,6 @@ ApplyPatch qt-4.6.3-indic-rendering-bz636399.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.0-bpp24.patch
 # Fails to create debug build of Qt projects on mingw (rhbz#653674)
 ApplyPatch qt-everywhere-opensource-src-4.7.1-QTBUG-14467.patch
-# fix QTreeView crash triggered by KPackageKit (patch by David Faure)
-ApplyPatch qt-everywhere-opensource-src-4.7.1-qtreeview-kpackagekit-crash.patch
 
 ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 
@@ -77,8 +75,6 @@ ApplyPatch qt-everywhere-opensource-src-4.7.0-CVE-2010-1822-crash-svg-image.patc
 # adds debug support to webkit/JavaScriptCore
 # UPSTREAM ME
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
-# Fix QNetworkConfigurationManager crash due to null private pointer. (QTBUG-17305, rhbz#682656)
-ApplyPatch 4d3b9aa83cf7f6d9f9b88d9936e5980629daac2a.patch
 # bz#705348, per-font autohint fontconfig directives globally disable the bytecode interpreter 
 ApplyPatch QTBUG-19947-fontconfig-2.patch
 

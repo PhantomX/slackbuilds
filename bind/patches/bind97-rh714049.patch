@@ -1,0 +1,160 @@
+diff -up bind-9.7.3-P3/bin/nsupdate/nsupdate.c.rh714049 bind-9.7.3-P3/bin/nsupdate/nsupdate.c
+--- bind-9.7.3-P3/bin/nsupdate/nsupdate.c.rh714049	2011-08-12 14:17:39.520175003 +0200
++++ bind-9.7.3-P3/bin/nsupdate/nsupdate.c	2011-08-12 15:11:01.812173573 +0200
+@@ -109,6 +109,13 @@ extern int h_errno;
+ 
+ #define DNSDEFAULTPORT 53
+ 
++/*
++ * Assume that bind9_getaddresses returns IPv6 and IPv4 addrs
++ * so when master server is not reachable via IPv6
++ * we can switch to IPv4.
++ */
++#define MAX_SERVERADDRS 4
++
+ static isc_uint16_t dnsport = DNSDEFAULTPORT;
+ 
+ #ifndef RESOLV_CONF
+@@ -151,6 +158,8 @@ static isc_sockaddr_t *servers;
+ static int ns_inuse = 0;
+ static int ns_total = 0;
+ static isc_sockaddr_t *userserver = NULL;
++static int curserver = 0;
++static int userservers = 0;
+ static isc_sockaddr_t *localaddr = NULL;
+ static isc_sockaddr_t *serveraddr = NULL;
+ static isc_sockaddr_t tempaddr;
+@@ -703,7 +712,8 @@ doshutdown(void) {
+ 	isc_task_detach(&global_task);
+ 
+ 	if (userserver != NULL)
+-		isc_mem_put(mctx, userserver, sizeof(isc_sockaddr_t));
++		isc_mem_put(mctx, userserver,
++			    MAX_SERVERADDRS * sizeof(isc_sockaddr_t));
+ 
+ 	if (localaddr != NULL)
+ 		isc_mem_put(mctx, localaddr, sizeof(isc_sockaddr_t));
+@@ -914,17 +924,21 @@ setup_system(void) {
+ }
+ 
+ static void
+-get_address(char *host, in_port_t port, isc_sockaddr_t *sockaddr) {
++get_addresses(char *host, in_port_t port, isc_sockaddr_t *sockaddr, int *naddrs) {
+ 	int count;
+ 	isc_result_t result;
+ 
+ 	isc_app_block();
+-	result = bind9_getaddresses(host, port, sockaddr, 1, &count);
++	result = bind9_getaddresses(host, port, sockaddr,
++				    (naddrs == NULL) ? 1 : MAX_SERVERADDRS, &count);
+ 	isc_app_unblock();
+ 	if (result != ISC_R_SUCCESS)
+ 		fatal("couldn't get address for '%s': %s",
+ 		      host, isc_result_totext(result));
+-	INSIST(count == 1);
++	if (naddrs == NULL)
++		INSIST(count == 1);
++	else
++		*naddrs = count;
+ }
+ 
+ #define PARSE_ARGS_FMT "dDML:y:ghlovk:p:rR::t:u:"
+@@ -1364,12 +1378,14 @@ evaluate_server(char *cmdline) {
+ 	}
+ 
+ 	if (userserver == NULL) {
+-		userserver = isc_mem_get(mctx, sizeof(isc_sockaddr_t));
++		userserver = isc_mem_get(mctx,
++					 MAX_SERVERADDRS * sizeof(isc_sockaddr_t));
+ 		if (userserver == NULL)
+ 			fatal("out of memory");
+ 	}
+ 
+-	get_address(server, (in_port_t)port, userserver);
++	memset(userserver, 0, MAX_SERVERADDRS * sizeof(isc_sockaddr_t));
++	get_addresses(server, (in_port_t)port, userserver, &userservers);
+ 
+ 	return (STATUS_MORE);
+ }
+@@ -2207,19 +2223,25 @@ recvsoa(isc_task_t *task, isc_event_t *e
+ 
+ 	if (eresult != ISC_R_SUCCESS) {
+ 		char addrbuf[ISC_SOCKADDR_FORMATSIZE];
++		isc_sockaddr_t *server;
+ 
+ 		isc_sockaddr_format(addr, addrbuf, sizeof(addrbuf));
+ 		fprintf(stderr, "; Communication with %s failed: %s\n",
+ 			addrbuf, isc_result_totext(eresult));
+-		if (userserver != NULL)
+-			fatal("could not talk to specified name server");
+-		else if (++ns_inuse >= lwconf->nsnext)
++		if (userserver != NULL) {
++			if (++curserver == MAX_SERVERADDRS)
++				fatal("could not talk to specified name server");
++			else
++				ddebug("recvsoa: trying next server");
++		} else if (++ns_inuse >= lwconf->nsnext)
+ 			fatal("could not talk to any default name server");
+ 		ddebug("Destroying request [%p]", request);
+ 		dns_request_destroy(&request);
+ 		dns_message_renderreset(soaquery);
+ 		dns_message_settsigkey(soaquery, NULL);
+-		sendrequest(localaddr, &servers[ns_inuse], soaquery, &request);
++		server = (userserver != NULL) ? &userserver[curserver] :
++						&servers[ns_inuse];
++		sendrequest(localaddr, server, soaquery, &request);
+ 		isc_mem_put(mctx, reqinfo, sizeof(nsu_requestinfo_t));
+ 		isc_event_free(&event);
+ 		setzoneclass(dns_rdataclass_none);
+@@ -2351,7 +2373,7 @@ recvsoa(isc_task_t *task, isc_event_t *e
+ 	}
+ 
+ 	if (userserver != NULL)
+-		serveraddr = userserver;
++		serveraddr = &userserver[curserver];
+ 	else {
+ 		char serverstr[DNS_NAME_MAXTEXT+1];
+ 		isc_buffer_t buf;
+@@ -2360,7 +2382,7 @@ recvsoa(isc_task_t *task, isc_event_t *e
+ 		result = dns_name_totext(&master, ISC_TRUE, &buf);
+ 		check_result(result, "dns_name_totext");
+ 		serverstr[isc_buffer_usedlength(&buf)] = 0;
+-		get_address(serverstr, dnsport, &tempaddr);
++		get_addresses(serverstr, dnsport, &tempaddr, NULL);
+ 		serveraddr = &tempaddr;
+ 	}
+ 	dns_rdata_freestruct(&soa);
+@@ -2464,9 +2486,9 @@ start_gssrequest(dns_name_t *master)
+ 			fatal("out of memory");
+ 	}
+ 	if (userserver == NULL)
+-		get_address(namestr, dnsport, kserver);
++		get_addresses(namestr, dnsport, kserver, NULL);
+ 	else
+-		(void)memcpy(kserver, userserver, sizeof(isc_sockaddr_t));
++		(void)memcpy(kserver, &userserver[curserver], sizeof(isc_sockaddr_t));
+ 
+ 	dns_fixedname_init(&fname);
+ 	servname = dns_fixedname_name(&fname);
+@@ -2594,15 +2616,17 @@ recvgss(isc_task_t *task, isc_event_t *e
+ 		isc_sockaddr_format(addr, addrbuf, sizeof(addrbuf));
+ 		fprintf(stderr, "; Communication with %s failed: %s\n",
+ 			addrbuf, isc_result_totext(eresult));
+-		if (userserver != NULL)
++		if (userserver != NULL) {
+ 			fatal("could not talk to specified name server");
+-		else if (++ns_inuse >= lwconf->nsnext)
++		} else if (++ns_inuse >= lwconf->nsnext)
+ 			fatal("could not talk to any default name server");
+ 		ddebug("Destroying request [%p]", request);
+ 		dns_request_destroy(&request);
+ 		dns_message_renderreset(tsigquery);
+-		sendrequest(localaddr, &servers[ns_inuse], tsigquery,
+-			    &request);
++		sendrequest(localaddr,
++			    (userserver != NULL) ? &userserver[curserver] :
++						   &servers[ns_inuse],
++			    tsigquery, &request);
+ 		isc_mem_put(mctx, reqinfo, sizeof(nsu_gssinfo_t));
+ 		isc_event_free(&event);
+ 		return;

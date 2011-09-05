@@ -26,5 +26,6 @@ zcat ${SB_PATCHDIR}/netpbm-pnmmontagefix.patch.gz | patch -p1 -E --backup --verb
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-noppmtompeg.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-cmuwtopbm.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pamtojpeg2k.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-manfix.patch
 
 set +e +o pipefail

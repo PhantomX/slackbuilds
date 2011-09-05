@@ -27,6 +27,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2b2-test-weakref-COUN
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2b2-fix-test-gc-COUNT_ALLOCS.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2b2-test_sys-COUNT_ALLOCS.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2.1-fix-test-subprocess-with-nonreadable-path-dir.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7.2-disable-tests-in-test_io.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autotool-intermediates.patch
 
 set +e +o pipefail

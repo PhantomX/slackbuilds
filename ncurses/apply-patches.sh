@@ -7,23 +7,23 @@ SB_PATCHDIR=${CWD}/patches
 
 if [ "${PVER}" -ne 0 ] ; then
   bzcat ${SB_PATCHDIR}/updates/${PSRCARCHIVE} | patch -p1 --verbose
+fi
 
 C=$(wc -l ${CWD}/${PSRCARCHIVES} | awk '{print $1}')
 if [ "$C" -gt 0 ]; then
   for file in $(<${CWD}/${PSRCARCHIVES}) ; do
     pver2=$(echo ${file} | cut -d- -f3 | cut -d. -f1)
-    if [ "${pver2}" -gt "${PVER}" ] ;then
+    if [ "${pver2}" -gt "${PVER}" ] && [ -f ${SB_PATCHDIR}/updates/${file} ] ;then
       zcat ${SB_PATCHDIR}/updates/${file} | patch -p1 --verbose
     fi
   done
 fi
-fi
 
 zcat ${SB_PATCHDIR}/ncurses.mkhashsize.diff.gz | patch -p1 --verbose
 
-zcat ${SB_PATCHDIR}/ncurses-5.7-20100116-config-slk.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/ncurses-5.6-20070612-libs.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/ncurses-5.6-20080112-xterm.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/ncurses-5.6-20080112-urxvt.patch.gz | patch -p1 --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-config.patch
+zcat ${SB_PATCHDIR}/ncurses-libs.patch.gz | patch -p1 --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-urxvt.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-kbs.patch
 
 set +e +o pipefail

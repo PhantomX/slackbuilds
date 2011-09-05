@@ -9,6 +9,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-slknew.patch
 # From Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-handle-fwrite-return.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-grub_test_assert_printf.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-Workaround-for-variable-set-but-not-used-issue.patch
 
 #filterdiff -p1 -x configure.ac -x ChangeLog -x "po/*" -x "debian/po/*" -z \
 zcat ${CWD}/${PSRCARCHIVE} | patch -p1 -E --verbose
@@ -31,6 +32,7 @@ for patch in \
   lazy_stat.patch \
   btrfs_stat.patch \
   partition_performance.patch \
+  gfxterm_background.patch \
   ; do
   patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done

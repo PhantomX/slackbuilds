@@ -22,7 +22,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-libexecdir.patch
 # kstandarddirs changes: search /etc/kde, find /usr/libexec/kde4
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.90-kstandarddirs.patch
 zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig
-#zcat ${SB_PATCHDIR}/kdelibs-4.3.1-drkonq.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 
 # die rpath die, since we're using standard paths, we can avoid
 # this extra hassle (even though cmake is *supposed* to not add standard
@@ -30,15 +29,15 @@ zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-no_rpath.patch
 
-# add gpg2 support to knewstuff, rough first try s/gpg/gpg2/
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.1-knewstuff_gpg2.patch
+# knewstuff2 variant of:
+# https://git.reviewboard.kde.org/r/102439/
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.0-knewstuff2_gpg2.patch
+
+
+
 # https://bugs.kde.org/show_bug.cgi?id=269045
 # https://git.reviewboard.kde.org/r/101231/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
-# Fix for KHTML form completion regression (kde#277457) from bugs.kde.org
-# attachment (patch by Andrea Iacovitti)
-# https://bugs.kde.org/show_bug.cgi?id=277457#c2
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.95-khtml-kde\#277457.patch
 
 # make forcefully hal-free build
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.80-halectomy.patch

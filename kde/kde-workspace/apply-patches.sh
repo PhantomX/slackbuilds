@@ -46,6 +46,9 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.71-notif
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.80-kde\#171685.patch
 
+# use /etc/login.defs to define a 'system' account instead of hard-coding 500 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.0-bz\#732830-login.patch
+
 # Branch patches
 
 ## trunk patches

@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -67,6 +67,9 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 SB_TEST=${SB_TEST:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+grep --quiet '^clamav:' /etc/group && SB_HGROUP=1
+grep --quiet '^clamav:' /etc/passwd && SB_HUSER=1
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.gz
@@ -119,6 +122,26 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+# make some of our own settings for good milter operation
+sed -ri \
+  -e 's!Example config!Config!' \
+  -e 's!^Example$!#Example!' \
+  -e 's!^#?(LogFile ).*!#\1/var/log/clamd.<SERVICE>!g' \
+  -e 's!^#?(LocalSocket ).*!#\1/var/run/clamd.<SERVICE>/clamd.sock!g' \
+  -e 's!^(#?PidFile ).*!\1/var/run/clamd.<SERVICE>/clamd.pid!g' \
+  -e 's!^#?(User ).*!\1<USER>!g' \
+  -e 's!^#?(AllowSupplementaryGroups|LogSyslog).*!\1 yes!g' \
+  -e 's! /usr/local/share/clamav,! /var/lib/clamav,!g' \
+  etc/clamd.conf || exit 1
+
+sed -ri \
+  -e 's!Example config!Config!' \
+  -e 's!^Example$!#Example!' \
+  -e 's!^#?(UpdateLogFile )!#\1!g;' \
+  -e 's!^#?(LogSyslog).*!\1 yes!g' \
+  -e 's!(DatabaseOwner *)clamav$!\1clamav!g' \
+  etc/freshclam.conf || exit 1
+
 # IPv6 check is buggy and does not work when there are no IPv6 interface on build machine
 export have_cv_ipv6=yes
 
@@ -129,7 +152,7 @@ LDFLAGS="${LDFLAGS} -Wl,--as-needed" \
   --prefix=/usr \
   --sysconfdir=/etc \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
-  --localstatedir=/var/lib \
+  --localstatedir=/var \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
@@ -142,6 +165,7 @@ LDFLAGS="${LDFLAGS} -Wl,--as-needed" \
   --with-user=clamav \
   --with-group=clamav \
   --disable-clamav \
+  --enable-clamdtop \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} all || exit 1
@@ -168,30 +192,36 @@ if [ "${SB_TEST}" = "YES" ] ;then
 fi
 
 rm -f ${PKG}/var/lib/clamav/*.cvd || exit 1
+touch ${PKG}/var/lib/clamav/bytecode.cld.new
+touch ${PKG}/var/lib/clamav/daily.cld.new
+touch ${PKG}/var/lib/clamav/main.cld.new
+touch ${PKG}/var/lib/clamav/mirrors.dat.new
+chmod 0664 ${PKG}/var/lib/clamav/*.new
+chmod 0600 ${PKG}/var/lib/clamav/mirrors.dat.new
 
-chmod 754 ${PKG}/usr/sbin/{clamd,clamav-milter}
+rm -f ${PKG}/etc/{clamd,clamav-milter}.conf
 
-# make some of our own settings for good milter operation
-sed --i 's,Example config,Config,
-         s,^Example$,#Example,
-         s,^ *#* *UpdateLogFile .*,UpdateLogFile /var/log/clamav-update,
-         s,^ *#* *PidFile /.*,PidFile /var/run/clamav-milter/freshclam.pid,' \
-         ${PKG}/etc/freshclam.conf || exit 1
-sed -i "s,Example config,Config,
-        s,^Example$,#Example,
-        s,^ *#* *LogSyslog,LogSyslog,
-        s,^ *#* *LogFile /.*,LogFile /var/log/clamd,
-        s,^ *#* *PidFile /.*,PidFile /var/run/clamav-milter/clamd.pid,
-        s,^ *#* *LocalSocket /.*,LocalSocket /var/run/clamav-milter/clamd.sock,
-        s,^ *#* *User .*,User clamav," \
-        ${PKG}/etc/clamd.conf || exit 1
+mkdir ${PKG}/etc/clamd.d
+sed -e 's!<SERVICE>!scan!g;s!<USER>!clamav!g' \
+  etc/clamd.conf > ${PKG}/etc/clamd.d/scan.conf.new || exit 1
 
-mv ${PKG}/etc/freshclam.conf ${PKG}/etc/freshclam.conf.new
-mv ${PKG}/etc/clamd.conf ${PKG}/etc/clamd.conf.new
+mkdir -p ${PKG}/etc/mail
+sed -r \
+  -e 's!^#?(User).*!\1 clamav!g' \
+  -e 's!^#?(AllowSupplementaryGroups|LogSyslog) .*!\1 yes!g' \
+  -e 's! /tmp/clamav-milter.socket! /var/run/clamav-milter/clamav-milter.socket!g' \
+  -e 's! /var/run/clamav-milter.pid! /var/run/clamav-milter/clamav-milter.pid!g' \
+  -e 's! /tmp/clamav-milter.log! /var/log/clamav-milter.log!g' \
+  etc/clamav-milter.conf > ${PKG}/etc/mail/clamav-milter.conf.new || exit 1
 
-mkdir --p ${PKG}/var/run/clamav-milter ${PKG}/var/log
-touch ${PKG}/var/log/{clamd,clamav-update}.new
-chmod 640 ${PKG}/var/log/clamd.new
+mv ${PKG}/etc/freshclam.conf ${PKG}/etc/freshclam.conf.new || exit 1
+
+mkdir -p ${PKG}/var/run/{clamd.scan,clamav-milter} ${PKG}/var/log
+chmod 0710 ${PKG}/var/run/{clamd.scan,clamav-milter}
+
+touch ${PKG}/var/log/{clamd.scan,clamav-milter.log,freshclam.log}.new
+chmod 0664 ${PKG}/var/log/{clamd.scan,freshclam.log}.new
+chmod 0620 ${PKG}/var/log/clamav-milter.log.new
 
 MC_BASENAMES=$(find /usr/share/sendmail/cf/cf -type f \
   -name 'sendmail-slackware*.mc' ! -name '*clamav*' -printf '%P ' |
@@ -200,26 +230,27 @@ MC_BASENAMES=$(find /usr/share/sendmail/cf/cf -type f \
 mkdir -p ${PKG}/usr/share/sendmail/cf/cf
 for MCNAME in ${MC_BASENAMES}; do
   for FILE in ${MCNAME}-clamav.cf cf/cf/${MCNAME}-clamav.mc; do
-    echo "# Dummy from Slackware package ${PKGNAME}.tgz" > \
-         ${PKG}/usr/share/sendmail/${FILE}
-    echo '# If you see this, the package wasnt installed correctly.' >> \
-         ${PKG}/usr/share/sendmail/${FILE}
+    echo "# Dummy from Slackware package ${PKGNAME}.tgz" \
+      > ${PKG}/usr/share/sendmail/${FILE}
+    echo '# If you see this, the package wasnt installed correctly.' \
+      >> ${PKG}/usr/share/sendmail/${FILE}
   done
 done
 
 mkdir -p ${PKG}/etc/cron.daily
-zcat ${CWD}/${NAME}-update.cron.gz \
-  > ${PKG}/etc/cron.daily/${NAME}-update.new || exit 1
-chmod 0755 ${PKG}/etc/cron.daily/${NAME}-update.new
+install -pm0755 ${CWD}/${NAME}-update.cron \
+  ${PKG}/etc/cron.daily/${NAME}-update.new || exit 1
 
 mkdir -p ${PKG}/etc/logrotate.d
-install -pm00644 ${CWD}/${NAME}-milter.logrotate \
-  ${PKG}/etc/logrotate.d/${NAME}-milter.new || exit 1
+install -pm0644 ${CWD}/logrotate/${NAME}-update.logrotate \
+  ${PKG}/etc/logrotate.d/${NAME}-update.new || exit 1
+
+sed -e 's!<SERVICE>!scan!g' ${CWD}/logrotate/clamd.logrotate \
+  > ${PKG}/etc/logrotate.d/clamd.scan.new || exit 1
 
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.${NAME}.gz \
-  > ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
+install -pm0755 ${CWD}/rc.${NAME} \
+  ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
 zcat ${CWD}/setup.onlyonce.rc${NAME}.gz \
@@ -227,10 +258,23 @@ zcat ${CWD}/setup.onlyonce.rc${NAME}.gz \
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 
 mkdir -p ${PKG}/lib/systemd/system
-install -pm0644 ${CWD}/${NAME}.service ${PKG}/lib/systemd/system/ || exit 1
+install -pm0644 ${CWD}/systemd/*.service ${PKG}/lib/systemd/system/ || exit 1
+
+mkdir -p ${PKG}/etc/tmpfiles.d
+cat > ${PKG}/etc/tmpfiles.d/clamd.conf << EOF
+d /var/run/clamd.scan 0710 clamav clamav
+EOF
+cat > ${PKG}/etc/tmpfiles.d/clamav-milter.conf <<EOF
+d /var/run/clamav-milter 0710 clamav clamav
+EOF
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+mkdir -p ${PKG}/usr/share/clamav/template
+install -pm0644 ${CWD}/clamd-README ${PKG}/usr/share/clamav/template/README || exit 1
+install -pm0644 ${CWD}/logrotate/clamd.logrotate etc/clamd.conf \
+  ${PKG}/usr/share/clamav/template/ || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -362,25 +406,18 @@ fi
 EOF2
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  find etc/cron.daily -name *.new -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
-  find var/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/cron.daily -name '*.new' -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
 cat >> ${PKG}/install/doinst.sh <<'EOF3'
 # Fix permissions
-${CHROOT} /bin/chown -R clamav.clamav /var/lib/clamav 
-${CHROOT} /bin/chown -R clamav.clamav /var/run/clamav-milter
-if [ -f var/log/clamav-update ] ;then
-  ${CHROOT} /bin/chown clamav.clamav /var/log/clamav-update*
-fi
-if [ -f var/log/clamd ] ;then
-  ${CHROOT} /bin/chown clamav.clamav  /var/log/clamd*
-  ${CHROOT} /bin/chmod 0640 /var/log/clamd*
-fi
-${CHROOT} /bin/chown root.clamav /usr/sbin/clamav-milter
-${CHROOT} /bin/chown root.clamav /usr/sbin/clamd
+${CHROOT} /bin/chown clamav.clamav /var/lib/clamav /var/lib/clamav/*.{cld,dat}* /var/lib/clamav/.plan
+${CHROOT} /bin/chown clamav.clamav /var/run/clamd.*
+${CHROOT} /bin/chown clamav.clamav /var/run/clamav-milter
+${CHROOT} /bin/chown root.clamav /var/log/{clamd.scan,clamav-milter.log,freshclam.log}* >/dev/null 2>&1
 
 # Generate Sendmail .mc and .cf files with support for the ClamAV milter
 CLMILTER_MC_CMD="dnl# ClamAV milter integration from clamav-0.92.1-i686-1xinc.tgz:
@@ -442,14 +479,18 @@ sed "s/^$NAME: //" install/slack-desc > ${PKG}/var/lib/clamav/.plan
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/patches
+  mkdir -p ${SBDIR}/{logrotate,patches,systemd}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${CWD}/${NAME}-*.{cron.gz,logrotate} \
-    ${CWD}/rc.*.gz ${CWD}/setup.*.rc*.gz ${CWD}/${NAME}.service ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${NAME}-*.cron ${CWD}/rc.* ${CWD}/setup.*.rc*.gz \
+    ${CWD}/clamd-README ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
      ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/logrotate/*.logrotate \
+    ${SBDIR}/logrotate/
   install -m0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
+  install -m0644 ${CWD}/systemd/*.* \
+    ${SBDIR}/systemd/
   rmdir ${SBDIR}/patches
 fi
 
@@ -458,7 +499,10 @@ set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
-  /bin/chmod 0640 ./var/log/clamd.new ;"
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown clamav.clamav ./var/lib/clamav ./var/lib/clamav/*.new ./var/lib/clamav/.plan ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown clamav.clamav ./var/run/clamd.* ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown clamav.clamav ./var/run/clamav-milter ;
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.clamav ./var/log/{clamd.scan,clamav-milter.log,freshclam.log}* ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

@@ -1,0 +1,131 @@
+#! /bin/bash
+# Start/stop/restart clamav.
+
+ME=/etc/rc.d/rc.clamav
+TIMEOUT=60	# seconds
+
+function clamav_already_running
+# usage: clamav_already_running <bin_file> <pid_file>
+# exit status: true (0) = process already running
+# outputs PID to stdout if process running
+{
+	local PID
+
+	test -f "$2" || return 1
+	read PID < "$2"
+	PID=${PID#-}
+	test "$(readlink /proc/$PID/exe)" = "$1" && echo "$PID"
+}
+
+function clamav_start_process
+# usage: clamav_start_process <description> <command>	\
+#		<basename_of_pid_and_sock_files>
+{
+	local BIN_F=${2%% *}
+	local BIN_N=$(basename $BIN_F)
+	local PID_F=/var/run/clamav-milter/$3.pid
+	local SOCK_F=/var/run/clamav-milter/$3.sock
+
+	test -x $BIN_F || return 0
+
+	if clamav_already_running $BIN_F $PID_F > /dev/null; then
+		echo "$ME: $BIN_N is already running." 1>&2
+		return 0
+	else
+		echo "Starting $1 ($BIN_F)."
+		rm --force $PID_F $SOCK_F
+		eval $2
+		if test $? -ne 0; then
+			echo "$ME: Could not start $BIN_N." 1>&2
+			return 1
+		fi
+		return 0
+	fi
+}
+	
+# Start clamav:
+function clamav_start {
+	local TIMER=0
+
+	clamav_start_process "the ClamAV daemon"	\
+		"/usr/sbin/clamd -c /etc/clamd.d/scan.conf" "clamd.scan" || return 0
+
+	# Give clamd a chance to make the socket
+	printf "Waiting for \e[1mclamd\e[0m to load the virus database "
+	printf "and make its socket:\n"
+	while ! test -S /var/run/clamav.scan/clamd.sock; do
+		sleep 1
+		let TIMER+=1
+		echo -n '.'
+		if test $TIMER -gt $TIMEOUT; then
+			printf '\r\e[K\e[A\e[K\e[1;31m'
+			printf "Error: \e[0;1mclamd\e[0m did not make its \
+socket within $TIMEOUT seconds. Not starting \e[1mclamav-milter\e[0m. \
+You can try increasing the TIMEOUT value in \e[1m$ME\e[0m, especially \
+if you have a slow computer.\n" | fold --spaces 1>&2
+			return 0
+		fi
+	done
+	printf '\r\e[K\e[A\e[K' # CR; erase line; cursor up; erase line
+
+	clamav_start_process "the ClamAV milter"			\
+		"/usr/sbin/clamav-milter -c /etc/mail/clamav-milter.conf  --external
+			--quiet --dont-scan-on-error --local --max-children=2
+			--pidfile=/var/run/clamav-milter/clamav-milter.pid
+			local:/var/run/clamav-milter/clamav-milter.sock"	\
+		"clamav-milter" || return 0
+}
+
+function clamav_stop_process
+# usage: clamav_stop_process <description> <command>	\
+#		<basename_of_pid_and_sock_files>
+{
+	local TIMER=0
+	local BIN_F=${2%% *}
+	local BIN_N=$(basename $BIN_F)
+	local PID_F=/var/run/clamav-milter/$3.pid
+	local PID
+	local SOCK_F=/var/run/clamav-milter/$3.sock
+
+	if PID=$(clamav_already_running $BIN_F $PID_F); then
+		echo -n "Stopping $1 ($BIN_N): "
+		kill -15 $PID				# 15=SIGTERM
+		while test -d /proc/$PID; do		# omit any leading `-'
+			sleep .2
+			let TIMER+=1
+			if test $TIMER -gt 35; then 	# give it 7 seconds
+				echo "Failed. Force-killing it."
+				kill -9 $PID		# 9=SIGKILL
+				rm --force $PID_F $SOCK_F
+				return
+			fi
+		done
+		echo "OK."
+	else
+		killall --verbose -9 $BIN_F
+		rm --force $PID_F $SOCK_F
+	fi
+}
+
+# Stop clamav:
+function clamav_stop {
+	clamav_stop_process "the ClamAV daemon" /usr/sbin/clamd clamd.scan
+	clamav_stop_process "the ClamAV milter" /usr/sbin/clamav-milter clamav-milter
+}
+
+case "$1" in
+	( 'start' )
+		clamav_start
+		;;
+	( 'stop' )
+		clamav_stop
+		;;
+	( 'restart' )
+		clamav_stop
+		clamav_start
+		;;
+	( * )
+		echo "Usage: $0 start|stop|restart"
+		exit 1
+		;;
+esac

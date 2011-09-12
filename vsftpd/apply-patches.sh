@@ -25,5 +25,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.2.0-wildchar.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.2.2-clone.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.2.2-v6only.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.3.4-tout.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.3.4-sd.patch
 
 set +e +o pipefail

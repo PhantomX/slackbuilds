@@ -20,6 +20,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.5.95-compiz.
 zcat ${SB_PATCHDIR}/kdebase-runtime-4.3.2-knotify-fix-cpu-charge.patch.gz | patch -p1 -E --backup --verbose
 
 # Branch patches
+# https://projects.kde.org/projects/kde/kde-runtime/repository/revisions/b50bbd77572a2e20709fbb40274aface8314b4eb
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.2-empty-jobs.patch
 
 # Trunk  patches
 

@@ -43,7 +43,7 @@ fi
 NAME=dansguardian
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.10.1.1}
+VERSION=${VERSION:-2.12.0.0}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -75,10 +75,10 @@ DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://dansguardian.org/downloads/2/Stable/${SRCARCHIVE}"
-#DL_URL="http://usmirror.dansguardian.org/downloads/2/Stable/${SRCARCHIVE}"
+DL_URLB="http://dansguardian.org/downloads/2/Alpha/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || ${DL_PROG} ${DL_OPTS} ${DL_URLB} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native ${SB_ECFLAGS} -pipe"
@@ -112,7 +112,6 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
@@ -127,7 +126,6 @@ CXXFLAGS="${SLKCFLAGS}" \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
-  --enable-clamav \
   --enable-clamd \
   --enable-icap \
   --enable-kavd \
@@ -180,59 +178,22 @@ EOF
 # Startup scripts.
 mkdir -p ${PKG}/etc/rc.d
 install -pm0755 ${CWD}/rc.${NAME} \
-  ${PKG}/etc/rc.d/rc.${NAME} || exit 1
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}
+  ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
-zcat ${CWD}/setup.onlyonce.rc${NAME}.gz > \
-    ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
+zcat ${CWD}/setup.onlyonce.rc${NAME}.gz \
+  > ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}
-
-cat > ${PKG}/etc/rc.d/rc.${NAME}-clamd <<'EOF'
-#!/bin/bash
-#
-# description: The clamd server running for dansguardian
-
-CLAMD_SERVICE=dansguardian
-. /usr/share/clamav/clamd-wrapper
-EOF
-chmod 0755 ${PKG}/etc/rc.d/rc.${NAME}-clamd.new
 
 # for clamav integration
 mkdir -p ${PKG}/var/run/${NAME}
 chmod 0700 ${PKG}/var/run/${NAME}
-touch ${PKG}/var/run/${NAME}/clamd.sock
-ln -s clamd ${PKG}/usr/bin/clamd.${NAME}
 
-mkdir -p ${PKG}/etc/clamd.d
-cat > ${PKG}/etc/clamd.d/${NAME}.conf.new  <<'EOF'
-# Use system logger.
-LogSyslog yes
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/${NAME}.service ${PKG}/lib/systemd/system/ || exit 1
 
-# Specify the type of syslog messages - please refer to 'man syslog'
-# for facility names.
-LogFacility LOG_DAEMON
-
-# This option allows you to save a process identifier of the listening
-# daemon (main thread).
-PidFile /var/run/dansguardian/clamd.pid
-
-# Remove stale socket after unclean shutdown.
-# Default: disabled
-FixStaleSocket yes
-
-# Run as a selected user (clamd must be started by root).
-User dansguardian
-
-# Path to a local socket file the daemon will listen on.
-LocalSocket /var/run/dansguardian/clamd.sock
-EOF
-
-mkdir -p ${PKG}/etc/default
-cat > ${PKG}/etc/default/clamd.${NAME} <<EOF
-CLAMD_CONFIGFILE=/etc/clamd.d/dansguardian.conf
-CLAMD_SOCKET=/var/run/dansguardian/clamd.sock
-CLAMD_OPTIONS=
+cat > ${PKG}/etc/tmpfiles.d/${NAME}.conf << EOF
+d /var/run/dansguardian 0700 dansguardian dansguardian -
 EOF
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
@@ -243,8 +204,10 @@ mkdir -p ${DOCDIR}
 cp -a \
   LICENSE README ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -366,6 +329,12 @@ EOF
   echo '${CHROOT} /bin/chown dansguardian.dansguardian /var/run/dansguardian' >> ${PKG}/install/doinst.sh
 )
 
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -373,12 +342,13 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                  ${CWD}/apply-patches.sh ${CWD}/rc.${NAME} ${CWD}/setup.*.rc${NAME}.gz \
-                  ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/apply-patches.sh ${CWD}/rc.${NAME} \
+    ${CWD}/setup.*.rc${NAME}.gz ${CWD}/${NAME}.service ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
-  install -m0644 ${CWD}/patches/*.gz \
-                 ${SBDIR}/patches/
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
@@ -389,7 +359,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown dansguardian.dansguardian ./var/{log,run}/dansguardian ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

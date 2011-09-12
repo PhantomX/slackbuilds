@@ -1,0 +1,118 @@
+#!/bin/sh
+#
+# postgresql-setup	Initialization and upgrade operations for PostgreSQL
+
+# PGVERSION is the full package version, e.g., 9.0.2
+# Note: the specfile inserts the correct value during package build
+PGVERSION=xxxx
+# PGENGINE is the directory containing the postmaster executable
+# Note: the specfile inserts the correct value during package build
+PGENGINE=xxxx
+
+# Absorb configuration settings from the specified systemd service file,
+# or the default "postgresql" service if not specified
+SERVICE_NAME="$2"
+if [ x"$SERVICE_NAME" = x ]
+then
+    SERVICE_NAME=postgresql
+fi
+
+if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]
+then
+    SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+elif [ -f "/lib/systemd/system/${SERVICE_NAME}.service" ]
+then
+    SERVICE_FILE="/lib/systemd/system/${SERVICE_NAME}.service"
+else
+    echo "Could not find systemd unit file ${SERVICE_NAME}.service"
+    exit 1
+fi
+
+# Get port number and data directory from the service file
+PGPORT=`sed -n 's/Environment=PGPORT=//p' "${SERVICE_FILE}"`
+PGDATA=`sed -n 's/Environment=PGDATA=//p' "${SERVICE_FILE}"`
+
+# Log file for initdb
+PGLOG=/var/lib/pgsql/initdb.log
+
+# Log file for pg_upgrade
+PGUPLOG=/var/lib/pgsql/pgupgrade.log
+
+export PGPORT
+export PGDATA
+
+# For SELinux we need to use 'runuser' not 'su'
+if [ -x /sbin/runuser ]
+then
+    SU=runuser
+else
+    SU=su
+fi
+
+script_result=0
+
+# code shared between initdb and upgrade actions
+perform_initdb(){
+	if [ ! -e "$PGDATA" -a ! -h "$PGDATA" ]
+	then
+		mkdir -p "$PGDATA" || return 1
+		chown postgres:postgres "$PGDATA"
+		chmod go-rwx "$PGDATA"
+	fi
+	# Clean up SELinux tagging for PGDATA
+	[ -x /sbin/restorecon ] && /sbin/restorecon "$PGDATA"
+
+	# Create the initdb log file if needed
+	if [ ! -e "$PGLOG" -a ! -h "$PGLOG" ]
+	then
+		touch "$PGLOG" || return 1
+		chown postgres:postgres "$PGLOG"
+		chmod go-rwx "$PGLOG"
+		[ -x /sbin/restorecon ] && /sbin/restorecon "$PGLOG"
+	fi
+
+	# Initialize the database
+	$SU -l postgres -c "$PGENGINE/initdb --pgdata='$PGDATA' --auth='ident'" >> "$PGLOG" 2>&1 < /dev/null
+
+	# Create directory for postmaster log files
+	mkdir "$PGDATA/pg_log"
+	chown postgres:postgres "$PGDATA/pg_log"
+	chmod go-rwx "$PGDATA/pg_log"
+
+	if [ -f "$PGDATA/PG_VERSION" ]
+	then
+	    return 0
+	fi
+	return 1
+}
+
+initdb(){
+    if [ -f "$PGDATA/PG_VERSION" ]
+    then
+	echo $"Data directory is not empty!"
+	echo
+	script_result=1
+    else
+	echo -n $"Initializing database ... "
+	if perform_initdb
+	then
+	    echo $"OK"
+	else
+	    echo $"failed, see $PGLOG"
+	    script_result=1
+	fi
+	echo
+    fi
+}
+
+# See how we were called.
+case "$1" in
+  initdb)
+	initdb
+	;;
+  *)
+	echo "Usage: $0 initdb [ service_name ]"
+	exit 2
+esac
+
+exit $script_result

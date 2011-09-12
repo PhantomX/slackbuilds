@@ -12,5 +12,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.5-apsl-copying.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.7-perl-linking.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.6-test-debug.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.6.1-mysql.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.7-systemd.patch
 
 set +e +o pipefail

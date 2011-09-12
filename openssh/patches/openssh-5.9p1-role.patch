@@ -1,0 +1,613 @@
+diff -up openssh-5.9p0/auth-pam.c.role openssh-5.9p0/auth-pam.c
+--- openssh-5.9p0/auth-pam.c.role	2009-07-12 14:07:21.000000000 +0200
++++ openssh-5.9p0/auth-pam.c	2011-08-31 11:42:54.870087433 +0200
+@@ -1069,7 +1069,7 @@ is_pam_session_open(void)
+  * during the ssh authentication process.
+  */
+ int
+-do_pam_putenv(char *name, char *value)
++do_pam_putenv(char *name, const char *value)
+ {
+ 	int ret = 1;
+ #ifdef HAVE_PAM_PUTENV
+diff -up openssh-5.9p0/auth-pam.h.role openssh-5.9p0/auth-pam.h
+--- openssh-5.9p0/auth-pam.h.role	2004-09-11 14:17:26.000000000 +0200
++++ openssh-5.9p0/auth-pam.h	2011-08-31 11:42:54.979086333 +0200
+@@ -38,7 +38,7 @@ void do_pam_session(void);
+ void do_pam_set_tty(const char *);
+ void do_pam_setcred(int );
+ void do_pam_chauthtok(void);
+-int do_pam_putenv(char *, char *);
++int do_pam_putenv(char *, const char *);
+ char ** fetch_pam_environment(void);
+ char ** fetch_pam_child_environment(void);
+ void free_pam_environment(char **);
+diff -up openssh-5.9p0/auth.h.role openssh-5.9p0/auth.h
+--- openssh-5.9p0/auth.h.role	2011-08-31 11:42:47.760024631 +0200
++++ openssh-5.9p0/auth.h	2011-08-31 11:42:55.090151027 +0200
+@@ -59,6 +59,9 @@ struct Authctxt {
+ 	char		*service;
+ 	struct passwd	*pw;		/* set if 'valid' */
+ 	char		*style;
++#ifdef WITH_SELINUX
++	char		*role;
++#endif
+ 	void		*kbdintctxt;
+ 	void		*jpake_ctx;
+ #ifdef BSD_AUTH
+diff -up openssh-5.9p0/auth1.c.role openssh-5.9p0/auth1.c
+--- openssh-5.9p0/auth1.c.role	2010-08-31 14:36:39.000000000 +0200
++++ openssh-5.9p0/auth1.c	2011-08-31 11:42:55.215033075 +0200
+@@ -384,6 +384,9 @@ do_authentication(Authctxt *authctxt)
+ {
+ 	u_int ulen;
+ 	char *user, *style = NULL;
++#ifdef WITH_SELINUX
++	char *role=NULL;
++#endif
+ 
+ 	/* Get the name of the user that we wish to log in as. */
+ 	packet_read_expect(SSH_CMSG_USER);
+@@ -392,11 +395,24 @@ do_authentication(Authctxt *authctxt)
+ 	user = packet_get_cstring(&ulen);
+ 	packet_check_eom();
+ 
++#ifdef WITH_SELINUX
++	if ((role = strchr(user, '/')) != NULL)
++		*role++ = '\0';
++#endif
++
+ 	if ((style = strchr(user, ':')) != NULL)
+ 		*style++ = '\0';
++#ifdef WITH_SELINUX
++	else
++		if (role && (style = strchr(role, ':')) != NULL)
++			*style++ = '\0';
++#endif
+ 
+ 	authctxt->user = user;
+ 	authctxt->style = style;
++#ifdef WITH_SELINUX
++	authctxt->role = role;
++#endif
+ 
+ 	/* Verify that the user is a valid user. */
+ 	if ((authctxt->pw = PRIVSEP(getpwnamallow(user))) != NULL)
+diff -up openssh-5.9p0/auth2-gss.c.role openssh-5.9p0/auth2-gss.c
+--- openssh-5.9p0/auth2-gss.c.role	2011-05-05 06:04:11.000000000 +0200
++++ openssh-5.9p0/auth2-gss.c	2011-08-31 11:42:55.313025576 +0200
+@@ -260,6 +260,7 @@ input_gssapi_mic(int type, u_int32_t ple
+ 	Authctxt *authctxt = ctxt;
+ 	Gssctxt *gssctxt;
+ 	int authenticated = 0;
++	char *micuser;
+ 	Buffer b;
+ 	gss_buffer_desc mic, gssbuf;
+ 	u_int len;
+@@ -272,7 +273,13 @@ input_gssapi_mic(int type, u_int32_t ple
+ 	mic.value = packet_get_string(&len);
+ 	mic.length = len;
+ 
+-	ssh_gssapi_buildmic(&b, authctxt->user, authctxt->service,
++#ifdef WITH_SELINUX
++	if (authctxt->role && (strlen(authctxt->role) > 0))
++		xasprintf(&micuser, "%s/%s", authctxt->user, authctxt->role);
++	else
++#endif
++		micuser = authctxt->user;
++	ssh_gssapi_buildmic(&b, micuser, authctxt->service,
+ 	    "gssapi-with-mic");
+ 
+ 	gssbuf.value = buffer_ptr(&b);
+@@ -284,6 +291,8 @@ input_gssapi_mic(int type, u_int32_t ple
+ 		logit("GSSAPI MIC check failed");
+ 
+ 	buffer_free(&b);
++	if (micuser != authctxt->user)
++		xfree(micuser);
+ 	xfree(mic.value);
+ 
+ 	authctxt->postponed = 0;
+diff -up openssh-5.9p0/auth2-hostbased.c.role openssh-5.9p0/auth2-hostbased.c
+--- openssh-5.9p0/auth2-hostbased.c.role	2011-08-31 11:42:47.863023264 +0200
++++ openssh-5.9p0/auth2-hostbased.c	2011-08-31 11:42:55.421024814 +0200
+@@ -106,7 +106,15 @@ userauth_hostbased(Authctxt *authctxt)
+ 	buffer_put_string(&b, session_id2, session_id2_len);
+ 	/* reconstruct packet */
+ 	buffer_put_char(&b, SSH2_MSG_USERAUTH_REQUEST);
+-	buffer_put_cstring(&b, authctxt->user);
++#ifdef WITH_SELINUX
++	if (authctxt->role) {
++		buffer_put_int(&b, strlen(authctxt->user)+strlen(authctxt->role)+1);
++		buffer_append(&b, authctxt->user, strlen(authctxt->user));
++		buffer_put_char(&b, '/');
++		buffer_append(&b, authctxt->role, strlen(authctxt->role));
++	} else 
++#endif
++		buffer_put_cstring(&b, authctxt->user);
+ 	buffer_put_cstring(&b, service);
+ 	buffer_put_cstring(&b, "hostbased");
+ 	buffer_put_string(&b, pkalg, alen);
+diff -up openssh-5.9p0/auth2-pubkey.c.role openssh-5.9p0/auth2-pubkey.c
+--- openssh-5.9p0/auth2-pubkey.c.role	2011-08-31 11:42:47.978087418 +0200
++++ openssh-5.9p0/auth2-pubkey.c	2011-08-31 11:42:55.551025263 +0200
+@@ -121,7 +121,15 @@ userauth_pubkey(Authctxt *authctxt)
+ 		}
+ 		/* reconstruct packet */
+ 		buffer_put_char(&b, SSH2_MSG_USERAUTH_REQUEST);
+-		buffer_put_cstring(&b, authctxt->user);
++#ifdef WITH_SELINUX
++		if (authctxt->role) {
++			buffer_put_int(&b, strlen(authctxt->user)+strlen(authctxt->role)+1);
++			buffer_append(&b, authctxt->user, strlen(authctxt->user));
++			buffer_put_char(&b, '/');
++			buffer_append(&b, authctxt->role, strlen(authctxt->role));
++		} else 
++#endif
++			buffer_put_cstring(&b, authctxt->user);
+ 		buffer_put_cstring(&b,
+ 		    datafellows & SSH_BUG_PKSERVICE ?
+ 		    "ssh-userauth" :
+diff -up openssh-5.9p0/auth2.c.role openssh-5.9p0/auth2.c
+--- openssh-5.9p0/auth2.c.role	2011-08-31 11:42:45.409026065 +0200
++++ openssh-5.9p0/auth2.c	2011-08-31 11:42:55.676024869 +0200
+@@ -216,6 +216,9 @@ input_userauth_request(int type, u_int32
+ 	Authctxt *authctxt = ctxt;
+ 	Authmethod *m = NULL;
+ 	char *user, *service, *method, *style = NULL;
++#ifdef WITH_SELINUX
++	char *role = NULL;
++#endif
+ 	int authenticated = 0;
+ 
+ 	if (authctxt == NULL)
+@@ -227,6 +230,11 @@ input_userauth_request(int type, u_int32
+ 	debug("userauth-request for user %s service %s method %s", user, service, method);
+ 	debug("attempt %d failures %d", authctxt->attempt, authctxt->failures);
+ 
++#ifdef WITH_SELINUX
++	if ((role = strchr(user, '/')) != NULL)
++		*role++ = 0;
++#endif
++
+ 	if ((style = strchr(user, ':')) != NULL)
+ 		*style++ = 0;
+ 
+@@ -249,8 +257,15 @@ input_userauth_request(int type, u_int32
+ 		    use_privsep ? " [net]" : "");
+ 		authctxt->service = xstrdup(service);
+ 		authctxt->style = style ? xstrdup(style) : NULL;
+-		if (use_privsep)
++#ifdef WITH_SELINUX
++		authctxt->role = role ? xstrdup(role) : NULL;
++#endif
++		if (use_privsep) {
+ 			mm_inform_authserv(service, style);
++#ifdef WITH_SELINUX
++			mm_inform_authrole(role);
++#endif
++		}
+ 		userauth_banner();
+ 	} else if (strcmp(user, authctxt->user) != 0 ||
+ 	    strcmp(service, authctxt->service) != 0) {
+diff -up openssh-5.9p0/monitor.c.role openssh-5.9p0/monitor.c
+--- openssh-5.9p0/monitor.c.role	2011-08-31 11:42:53.301024819 +0200
++++ openssh-5.9p0/monitor.c	2011-08-31 11:42:55.796025812 +0200
+@@ -148,6 +148,9 @@ int mm_answer_sign(int, Buffer *);
+ int mm_answer_pwnamallow(int, Buffer *);
+ int mm_answer_auth2_read_banner(int, Buffer *);
+ int mm_answer_authserv(int, Buffer *);
++#ifdef WITH_SELINUX
++int mm_answer_authrole(int, Buffer *);
++#endif
+ int mm_answer_authpassword(int, Buffer *);
+ int mm_answer_bsdauthquery(int, Buffer *);
+ int mm_answer_bsdauthrespond(int, Buffer *);
+@@ -231,6 +234,9 @@ struct mon_table mon_dispatch_proto20[]
+     {MONITOR_REQ_SIGN, MON_ONCE, mm_answer_sign},
+     {MONITOR_REQ_PWNAM, MON_ONCE, mm_answer_pwnamallow},
+     {MONITOR_REQ_AUTHSERV, MON_ONCE, mm_answer_authserv},
++#ifdef WITH_SELINUX
++    {MONITOR_REQ_AUTHROLE, MON_ONCE, mm_answer_authrole},
++#endif
+     {MONITOR_REQ_AUTH2_READ_BANNER, MON_ONCE, mm_answer_auth2_read_banner},
+     {MONITOR_REQ_AUTHPASSWORD, MON_AUTH, mm_answer_authpassword},
+ #ifdef USE_PAM
+@@ -819,6 +825,9 @@ mm_answer_pwnamallow(int sock, Buffer *m
+ 	else {
+ 		/* Allow service/style information on the auth context */
+ 		monitor_permit(mon_dispatch, MONITOR_REQ_AUTHSERV, 1);
++#ifdef WITH_SELINUX
++		monitor_permit(mon_dispatch, MONITOR_REQ_AUTHROLE, 1);
++#endif
+ 		monitor_permit(mon_dispatch, MONITOR_REQ_AUTH2_READ_BANNER, 1);
+ 	}
+ #ifdef USE_PAM
+@@ -862,6 +871,25 @@ mm_answer_authserv(int sock, Buffer *m)
+ 	return (0);
+ }
+ 
++#ifdef WITH_SELINUX
++int
++mm_answer_authrole(int sock, Buffer *m)
++{
++	monitor_permit_authentications(1);
++
++	authctxt->role = buffer_get_string(m, NULL);
++	debug3("%s: role=%s",
++	    __func__, authctxt->role);
++
++	if (strlen(authctxt->role) == 0) {
++		xfree(authctxt->role);
++		authctxt->role = NULL;
++	}
++
++	return (0);
++}
++#endif
++
+ int
+ mm_answer_authpassword(int sock, Buffer *m)
+ {
+@@ -1227,7 +1255,7 @@ static int
+ monitor_valid_userblob(u_char *data, u_int datalen)
+ {
+ 	Buffer b;
+-	char *p;
++	char *p, *r;
+ 	u_int len;
+ 	int fail = 0;
+ 
+@@ -1253,6 +1281,8 @@ monitor_valid_userblob(u_char *data, u_i
+ 	if (buffer_get_char(&b) != SSH2_MSG_USERAUTH_REQUEST)
+ 		fail++;
+ 	p = buffer_get_string(&b, NULL);
++	if ((r = strchr(p, '/')) != NULL)
++		*r = '\0';
+ 	if (strcmp(authctxt->user, p) != 0) {
+ 		logit("wrong user name passed to monitor: expected %s != %.100s",
+ 		    authctxt->user, p);
+@@ -1284,7 +1314,7 @@ monitor_valid_hostbasedblob(u_char *data
+     char *chost)
+ {
+ 	Buffer b;
+-	char *p;
++	char *p, *r;
+ 	u_int len;
+ 	int fail = 0;
+ 
+@@ -1301,6 +1331,8 @@ monitor_valid_hostbasedblob(u_char *data
+ 	if (buffer_get_char(&b) != SSH2_MSG_USERAUTH_REQUEST)
+ 		fail++;
+ 	p = buffer_get_string(&b, NULL);
++	if ((r = strchr(p, '/')) != NULL)
++		*r = '\0';
+ 	if (strcmp(authctxt->user, p) != 0) {
+ 		logit("wrong user name passed to monitor: expected %s != %.100s",
+ 		    authctxt->user, p);
+diff -up openssh-5.9p0/monitor.h.role openssh-5.9p0/monitor.h
+--- openssh-5.9p0/monitor.h.role	2011-08-31 11:42:53.409025333 +0200
++++ openssh-5.9p0/monitor.h	2011-08-31 11:42:55.889024801 +0200
+@@ -31,6 +31,9 @@
+ enum monitor_reqtype {
+ 	MONITOR_REQ_MODULI, MONITOR_ANS_MODULI,
+ 	MONITOR_REQ_FREE, MONITOR_REQ_AUTHSERV,
++#ifdef WITH_SELINUX
++	MONITOR_REQ_AUTHROLE,
++#endif
+ 	MONITOR_REQ_SIGN, MONITOR_ANS_SIGN,
+ 	MONITOR_REQ_PWNAM, MONITOR_ANS_PWNAM,
+ 	MONITOR_REQ_AUTH2_READ_BANNER, MONITOR_ANS_AUTH2_READ_BANNER,
+diff -up openssh-5.9p0/monitor_wrap.c.role openssh-5.9p0/monitor_wrap.c
+--- openssh-5.9p0/monitor_wrap.c.role	2011-08-31 11:42:53.548024503 +0200
++++ openssh-5.9p0/monitor_wrap.c	2011-08-31 11:42:56.029024553 +0200
+@@ -336,6 +336,25 @@ mm_inform_authserv(char *service, char *
+ 	buffer_free(&m);
+ }
+ 
++/* Inform the privileged process about role */
++
++#ifdef WITH_SELINUX
++void
++mm_inform_authrole(char *role)
++{
++	Buffer m;
++
++	debug3("%s entering", __func__);
++
++	buffer_init(&m);
++	buffer_put_cstring(&m, role ? role : "");
++
++	mm_request_send(pmonitor->m_recvfd, MONITOR_REQ_AUTHROLE, &m);
++
++	buffer_free(&m);
++}
++#endif
++
+ /* Do the password authentication */
+ int
+ mm_auth_password(Authctxt *authctxt, char *password)
+diff -up openssh-5.9p0/monitor_wrap.h.role openssh-5.9p0/monitor_wrap.h
+--- openssh-5.9p0/monitor_wrap.h.role	2011-08-31 11:42:53.660025271 +0200
++++ openssh-5.9p0/monitor_wrap.h	2011-08-31 11:42:56.131025748 +0200
+@@ -42,6 +42,9 @@ int mm_is_monitor(void);
+ DH *mm_choose_dh(int, int, int);
+ int mm_key_sign(Key *, u_char **, u_int *, u_char *, u_int);
+ void mm_inform_authserv(char *, char *);
++#ifdef WITH_SELINUX
++void mm_inform_authrole(char *);
++#endif
+ struct passwd *mm_getpwnamallow(const char *);
+ char *mm_auth2_read_banner(void);
+ int mm_auth_password(struct Authctxt *, char *);
+diff -up openssh-5.9p0/openbsd-compat/Makefile.in.role openssh-5.9p0/openbsd-compat/Makefile.in
+--- openssh-5.9p0/openbsd-compat/Makefile.in.role	2010-10-07 13:19:24.000000000 +0200
++++ openssh-5.9p0/openbsd-compat/Makefile.in	2011-08-31 11:48:02.404091479 +0200
+@@ -20,7 +20,7 @@ OPENBSD=base64.o basename.o bindresvport
+ 
+ COMPAT=bsd-arc4random.o bsd-asprintf.o bsd-closefrom.o bsd-cray.o bsd-cygwin_util.o bsd-getpeereid.o bsd-misc.o bsd-nextstep.o bsd-openpty.o bsd-poll.o bsd-snprintf.o bsd-statvfs.o bsd-waitpid.o fake-rfc2553.o openssl-compat.o xmmap.o xcrypt.o
+ 
+-PORTS=port-aix.o port-irix.o port-linux.o port-solaris.o port-tun.o port-uw.o
++PORTS=port-aix.o port-irix.o port-linux.o port-linux_part_2.o port-solaris.o port-tun.o port-uw.o
+ 
+ .c.o:
+ 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $<
+diff -up openssh-5.9p0/openbsd-compat/port-linux.c.role openssh-5.9p0/openbsd-compat/port-linux.c
+--- openssh-5.9p0/openbsd-compat/port-linux.c.role	2011-08-29 08:09:57.000000000 +0200
++++ openssh-5.9p0/openbsd-compat/port-linux.c	2011-08-31 11:42:56.492087969 +0200
+@@ -31,7 +31,11 @@
+ 
+ #include "log.h"
+ #include "xmalloc.h"
++#include "servconf.h"
+ #include "port-linux.h"
++#include "key.h"
++#include "hostfile.h"
++#include "auth.h"
+ 
+ #ifdef WITH_SELINUX
+ #include <selinux/selinux.h>
+@@ -42,41 +46,63 @@
+ # define SSH_SELINUX_UNCONFINED_TYPE ":unconfined_t:"
+ #endif
+ 
+-/* Wrapper around is_selinux_enabled() to log its return value once only */
+-int
+-ssh_selinux_enabled(void)
+-{
+-	static int enabled = -1;
++extern ServerOptions options;
++extern Authctxt *the_authctxt;
++extern int inetd_flag;
++extern int rexeced_flag;
+ 
+-	if (enabled == -1) {
+-		enabled = (is_selinux_enabled() == 1);
+-		debug("SELinux support %s", enabled ? "enabled" : "disabled");
++static void
++ssh_selinux_get_role_level(char **role, const char **level)
++{
++	*role = NULL;
++	*level = NULL;
++	if (the_authctxt) {
++		if (the_authctxt->role != NULL) {
++			char *slash;
++			*role = xstrdup(the_authctxt->role);
++			if ((slash = strchr(*role, '/')) != NULL) {
++				*slash = '\0';
++				*level = slash + 1;
++			}
++		}
+ 	}
+-
+-	return (enabled);
+ }
+ 
+ /* Return the default security context for the given username */
+ static security_context_t
+ ssh_selinux_getctxbyname(char *pwname)
+ {
+-	security_context_t sc;
+-	char *sename = NULL, *lvl = NULL;
+-	int r;
++	security_context_t sc = NULL;
++	char *sename, *lvl;
++	char *role;
++	const char *reqlvl;
++	int r = 0;
++ 
++	ssh_selinux_get_role_level(&role, &reqlvl);
+ 
+ #ifdef HAVE_GETSEUSERBYNAME
+-	if (getseuserbyname(pwname, &sename, &lvl) != 0)
+-		return NULL;
++	if ((r=getseuserbyname(pwname, &sename, &lvl)) != 0) {
++		sename = NULL;
++		lvl = NULL;
++	}
+ #else
+ 	sename = pwname;
+ 	lvl = NULL;
+ #endif
+ 
++	if (r == 0) {
+ #ifdef HAVE_GET_DEFAULT_CONTEXT_WITH_LEVEL
+-	r = get_default_context_with_level(sename, lvl, NULL, &sc);
++		if (role != NULL && role[0])
++			r = get_default_context_with_rolelevel(sename, role, lvl, NULL, &sc);
++		else
++			r = get_default_context_with_level(sename, lvl, NULL, &sc);
+ #else
+-	r = get_default_context(sename, NULL, &sc);
++		if (role != NULL && role[0])
++			r = get_default_context_with_role(sename, role, NULL, &sc);
++		else
++			r = get_default_context(sename, NULL, &sc);
+ #endif
++	}
+ 
+ 	if (r != 0) {
+ 		switch (security_getenforce()) {
+@@ -104,6 +130,36 @@ ssh_selinux_getctxbyname(char *pwname)
+ 	return (sc);
+ }
+ 
++/* Setup environment variables for pam_selinux */
++static int
++ssh_selinux_setup_pam_variables(void)
++{
++	const char *reqlvl;
++	char *role;
++	char *use_current;
++	int rv;
++
++	debug3("%s: setting execution context", __func__);
++
++	ssh_selinux_get_role_level(&role, &reqlvl);
++
++	rv = do_pam_putenv("SELINUX_ROLE_REQUESTED", role ? role : "");
++	
++	if (inetd_flag && !rexeced_flag) {
++		use_current = "1";
++	} else {
++		use_current = "";
++		rv = rv || do_pam_putenv("SELINUX_LEVEL_REQUESTED", reqlvl ? reqlvl: "");
++	}
++
++	rv = rv || do_pam_putenv("SELINUX_USE_CURRENT_RANGE", use_current);
++
++	if (role != NULL)
++		xfree(role);
++	
++	return rv;
++}
++
+ /* Set the execution context to the default for the specified user */
+ void
+ ssh_selinux_setup_exec_context(char *pwname)
+@@ -113,6 +169,24 @@ ssh_selinux_setup_exec_context(char *pwn
+ 	if (!ssh_selinux_enabled())
+ 		return;
+ 
++	if (options.use_pam) {
++		/* do not compute context, just setup environment for pam_selinux */
++		if (ssh_selinux_setup_pam_variables()) {
++			switch (security_getenforce()) {
++			case -1:
++				fatal("%s: security_getenforce() failed", __func__);
++			case 0:
++				error("%s: SELinux PAM variable setup failure. Continuing in permissive mode.",
++				    __func__);
++			break;
++			default:
++				fatal("%s: SELinux PAM variable setup failure. Aborting connection.",
++				    __func__);
++			}
++		}
++		return;
++	}
++
+ 	debug3("%s: setting execution context", __func__);
+ 
+ 	user_ctx = ssh_selinux_getctxbyname(pwname);
+@@ -220,21 +294,6 @@ ssh_selinux_change_context(const char *n
+ 	xfree(newctx);
+ }
+ 
+-void
+-ssh_selinux_setfscreatecon(const char *path)
+-{
+-	security_context_t context;
+-
+-	if (!ssh_selinux_enabled())
+-		return;
+-	if (path == NULL) {
+-		setfscreatecon(NULL);
+-		return;
+-	}
+-	if (matchpathcon(path, 0700, &context) == 0)
+-		setfscreatecon(context);
+-}
+-
+ #endif /* WITH_SELINUX */
+ 
+ #ifdef LINUX_OOM_ADJUST
+diff -up openssh-5.9p0/openbsd-compat/port-linux_part_2.c.role openssh-5.9p0/openbsd-compat/port-linux_part_2.c
+--- openssh-5.9p0/openbsd-compat/port-linux_part_2.c.role	2011-08-31 11:42:56.583047619 +0200
++++ openssh-5.9p0/openbsd-compat/port-linux_part_2.c	2011-08-31 11:42:56.586178005 +0200
+@@ -0,0 +1,75 @@
++/* $Id: port-linux.c,v 1.11.4.2 2011/02/04 00:43:08 djm Exp $ */
++
++/*
++ * Copyright (c) 2005 Daniel Walsh <dwalsh@redhat.com>
++ * Copyright (c) 2006 Damien Miller <djm@openbsd.org>
++ *
++ * Permission to use, copy, modify, and distribute this software for any
++ * purpose with or without fee is hereby granted, provided that the above
++ * copyright notice and this permission notice appear in all copies.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++ */
++
++/*
++ * Linux-specific portability code - just SELinux support at present
++ */
++
++#include "includes.h"
++
++#if defined(WITH_SELINUX) || defined(LINUX_OOM_ADJUST)
++#include <errno.h>
++#include <stdarg.h>
++#include <string.h>
++#include <stdio.h>
++
++#include "log.h"
++#include "xmalloc.h"
++#include "port-linux.h"
++#include "key.h"
++#include "hostfile.h"
++#include "auth.h"
++
++#ifdef WITH_SELINUX
++#include <selinux/selinux.h>
++#include <selinux/flask.h>
++#include <selinux/get_context_list.h>
++
++/* Wrapper around is_selinux_enabled() to log its return value once only */
++int
++ssh_selinux_enabled(void)
++{
++	static int enabled = -1;
++
++	if (enabled == -1) {
++		enabled = (is_selinux_enabled() == 1);
++		debug("SELinux support %s", enabled ? "enabled" : "disabled");
++	}
++
++	return (enabled);
++}
++
++void
++ssh_selinux_setfscreatecon(const char *path)
++{
++	security_context_t context;
++
++	if (!ssh_selinux_enabled())
++		return;
++	if (path == NULL) {
++		setfscreatecon(NULL);
++		return;
++	}
++	if (matchpathcon(path, 0700, &context) == 0)
++		setfscreatecon(context);
++}
++
++#endif /* WITH_SELINUX */
++
++#endif /* WITH_SELINUX || LINUX_OOM_ADJUST */

@@ -59,7 +59,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/nessus/${NAME}
@@ -118,7 +118,6 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${PNAME}.patch.gz | patch -p1 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
@@ -195,27 +194,46 @@ install -p -m 644 nessus-services \
 mkdir -p ${PKG2}/var/lib/nessus/plugins
 
 mkdir -p ${PKG2}/etc/nessus
-zcat ${CWD}/nessusd.conf.new.gz > \
-     ${PKG2}/etc/nessus/nessusd.conf.new || exit 1
-zcat ${CWD}/nessusd.rules.new.gz > \
-     ${PKG2}/etc/nessus/nessusd.rules.new || exit 1
-zcat ${CWD}/nessusd.users.new.gz > \
-     ${PKG2}/etc/nessus/nessusd.users.new || exit 1
+zcat ${CWD}/nessusd.conf.new.gz \
+  > ${PKG2}/etc/nessus/nessusd.conf.new || exit 1
+zcat ${CWD}/nessusd.rules.new.gz \
+  > ${PKG2}/etc/nessus/nessusd.rules.new || exit 1
+zcat ${CWD}/nessusd.users.new.gz \
+  > ${PKG2}/etc/nessus/nessusd.users.new || exit 1
 chmod 0600 ${PKG2}/etc/nessus/*.new
 
 mkdir -p ${PKG2}/etc/logrotate.d
-zcat ${CWD}/nessusd.log.gz > \
-     ${PKG2}/etc/logrotate.d/nessusd || exit 1
+cat > ${PKG2}/etc/logrotate.d/nessusd <<'EOF'
+/var/log/nessus/nessusd.messages {
+  missingok
+  notifempty
+  create 0600 root root
+  postrotate
+      /bin/systemctl try-restart nessusd.service > /dev/null 2>/dev/null || /etc/rc.d/rc.nessusd condrestart >/dev/null 2>/dev/null || :
+  endscript
+}
+EOF
+
+mkdir -p ${PKG2}/etc/default
+cat > ${PKG2}/etc/default/nessusd.new <<'EOF'
+#
+# nessus service options
+#
+#OPTIONS=""
+EOF
 
 mkdir -p ${PKG2}/etc/rc.d
-zcat ${CWD}/rc.nessusd.gz > \
-     ${PKG2}/etc/rc.d/rc.nessusd.new || exit 1
-chmod 0755 ${PKG2}/etc/rc.d/rc.nessusd.new || exit 1
+install -pm0755 ${CWD}/rc.nessusd \
+  ${PKG2}/etc/rc.d/rc.nessusd.new || exit 1
 
 mkdir -p ${PKG2}/var/log/setup
-zcat ${CWD}/setup.onlyonce.rcnessusd.gz > \
-     ${PKG2}/var/log/setup/setup.onlyonce.rcnessusd || exit 1
+zcat ${CWD}/setup.onlyonce.rcnessusd.gz \
+  > ${PKG2}/var/log/setup/setup.onlyonce.rcnessusd || exit 1
 chmod 0755 ${PKG2}/var/log/setup/setup.onlyonce.rcnessusd || exit 1
+
+mkdir -p ${PKG2}/lib/systemd/system
+install -pm0644 ${CWD}/nessusd.service ${PKG2}/lib/systemd/system/ || exit 1
+
 
 mkdir -p ${PKG}/usr/share/applications
 cat > ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
@@ -232,8 +250,8 @@ Categories=GTK;System;Security;
 EOF
 
 mkdir -p ${PKG}/usr/share/icons/hicolor/48x48/apps
-zcat ${CWD}/${NAME}.png.gz > \
-     ${PKG}/usr/share/icons/hicolor/48x48/apps/${NAME}.png
+zcat ${CWD}/${NAME}.png.gz \
+  > ${PKG}/usr/share/icons/hicolor/48x48/apps/${NAME}.png
 
 ( cd ${PKG}/usr/share/icons/hicolor
   for size in 16x16 32x32 ;do
@@ -315,19 +333,14 @@ EOF
 
 ( cd ${PKG2}
   find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG2}/install/doinst.sh
-  find etc/ -name *.new -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name *.new -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG2}/install/doinst.sh
   echo >> ${PKG2}/install/doinst.sh
 )
 
 cat >> ${PKG2}/install/doinst.sh <<'EOF'
-# Fix permissions
-${CHROOT} /bin/chmod 0700 /etc/pki/nessus/private/CA
-${CHROOT} /bin/chmod 0600 /etc/pki/nessus/private/CA/{cakey,serverkey}.pem*
-${CHROOT} /bin/chmod 0644 /etc/pki/nessus/private/CA/{cacert,servercert}.pem*
-${CHROOT} /bin/chmod 0600 /etc/nessus/nessusd.conf*
-${CHROOT} /bin/chmod 0600 /etc/nessus/nessusd.rules*
-${CHROOT} /bin/chmod 0600 /etc/nessus/nessusd.users*
-${CHROOT} /bin/chmod 0750 /var/lib/nessus
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -337,13 +350,14 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/setup.*.gz ${CWD}/rc.*.gz \
-                 ${CWD}/${NAME}.png.gz ${CWD}/faq.html.gz ${CWD}/nessusd.*.new.gz \
-                 ${CWD}/*.log.gz ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/setup.*.gz ${CWD}/rc.* ${CWD}/nessusd.service \
+    ${CWD}/${NAME}.png.gz ${CWD}/faq.html.gz ${CWD}/nessusd.*.new.gz \
+    ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
-  install -m0644 ${CWD}/patches/*.gz \
-                 ${SBDIR}/patches
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
@@ -352,19 +366,12 @@ set +o xtrace        # no longer print commands upon execution
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 ROOTCOMMANDS2="set -o errexit -o xtrace ; cd ${PKG2} ;
-  /bin/chown --recursive root:root .  ;
-  /bin/chmod 0700 etc/pki/nessus/private/CA ;
-  /bin/chmod 0600 etc/pki/nessus/private/CA/{cakey,serverkey}.pem* ;
-  /bin/chmod 0644 etc/pki/nessus/private/CA/{cacert,servercert}.pem* ;
-  /bin/chmod 0600 etc/nessus/nessusd.conf* ;
-  /bin/chmod 0600 etc/nessus/nessusd.rules* ;
-  /bin/chmod 0600 etc/nessus/nessusd.users* ;
-  /bin/chmod 0750 var/lib/nessus ; "
+  /bin/chown --recursive root:root .  ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 ROOTCOMMANDS2="${ROOTCOMMANDS2}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME2}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME2}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

@@ -21,13 +21,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.pat
 # add note about no difference between binary/text mode on Linux - md5sum manpage
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-manpages.patch
 # temporarily workaround probable kernel issue with TCSADRAIN
-zcat ${SB_PATCHDIR}/${NAME}-7.4-sttytcsadrain.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-7.4-sttytcsadrain.patch
 #df --direct
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-df-direct.patch
 #add note about mkdir --mode behaviour into info documentation(#610559)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.4-mkdir-modenote.patch
-# use acl_extended_file_nofollow if available (#692823)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-acl-extended-file-nofollow.patch
 
 # sh-utils
 # add info about TZ envvar to date manpage

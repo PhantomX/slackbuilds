@@ -58,7 +58,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -121,7 +121,6 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
@@ -216,13 +215,18 @@ ln -sf ../sbin/sendmail ${PKG}/usr/lib/sendmail
 install -m0644 ${CWD}/config/rc.d/rc.${NAME}.new \
   ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
-install -pm0644 ${CWD}/config/mail/*.new ${PKG}/${maildir}/
+install -pm0644 ${CWD}/config/mail/*.new ${PKG}/${maildir}/ || exit 1
+mv ${PKG}/${maildir}/aliases*.new ${PKG}/etc/ || exit 1
 chmod 600 ${PKG}/${maildir}/statistics.new
 if [ "${stdir}" != "${maildir}" ] ;then
   mv ${PKG}/${maildir}/statistics.new ${PKG}/${stdir}
 fi
 chmod 640 ${PKG}/${maildir}/access.new
-chmod 640 ${PKG}/${maildir}/{access,aliases,domaintable,mailertable}.db.new 
+chmod 640 ${PKG}/etc/aliases.db.new
+chmod 640 ${PKG}/${maildir}/{access,domaintable,mailertable,virtusertable}.db.new 
+chmod 750 ${PKG}/${maildir}/make.new
+
+touch ${PKG}/${maildir}/aliasesdb-stamp.new
 
 ( cd cf/cf || exit 1
   for file in ${CWD}/config/mc/*.mc ;do
@@ -237,7 +241,10 @@ zcat ${CWD}/README.linux.gz > ${PKG}/${sendmailcf}/README.linux
 # Add a sample sendmail.cf:
 cat ${PKG}/${sendmailcf}/sendmail-slackware.cf \
   > ${PKG}/${maildir}/sendmail.cf.new || exit 1
+cat ${CWD}/config/mc/sendmail-slackware.mc \
+  > ${PKG}/${maildir}/sendmail.mc.new || exit 1
 cat cf/cf/submit.cf > ${PKG}/${maildir}/submit.cf.new || exit 1
+cat cf/cf/submit.mc > ${PKG}/${maildir}/submit.mc.new || exit 1
 sed -i '/##### built by.*on/,+3d' ${PKG}/${maildir}/submit.cf.new
 
 chmod 770 ${PKG}/var/spool/clientmqueue
@@ -248,6 +255,7 @@ mkdir -p ${PKGCF}/${sendmailcf}
 chmod 0644 cf/cf/*.cf
 cp -ar cf/* ${PKGCF}/${sendmailcf}
 install -pm 0644 ${CWD}/config/mc/*.mc ${PKGCF}/${sendmailcf}/cf/ || exit 1
+
 # remove patch backup files
 rm -rf ${PKGCF}/${sendmailcf}/cf/Build.*
 rm -rf ${PKGCF}/${sendmailcf}/*/*.mc.*
@@ -286,10 +294,10 @@ chmod 0755 $1
 if [ "${SB_DEFWRAP}" = "YES" ] ;then
   mkdir -p ${PKG}/usr/libexec/${NAME}
   mv ${PKG}/usr/sbin/sendmail ${PKG}/usr/libexec/${NAME}/ || exit 1
-  defwrapper ${PKG}/usr/sbin/sendmail || exit 1
+  defwrapper ${PKG}/usr/sbin/sendmail.new || exit 1
   for i in mailq newaliases rmail; do
     mv ${PKG}/usr/bin/${i} ${PKG}/usr/libexec/${NAME}/ || exit 1
-    defwrapper ${PKG}/usr/bin/${i} || exit 1
+    defwrapper ${PKG}/usr/bin/${i}.new || exit 1
   done
 
   for f in hoststat purgestat ; do
@@ -328,12 +336,15 @@ fi
 
 mkdir -p ${PKG}/etc/default
 cat > ${PKG}/etc/default/${NAME}.new <<'EOF'
-QUEUE=25m
+# queue options (do not forget the "-q"
+SENDMAIL_QOPTS=-q25m
+
+# Other arguments
 #SENDMAIL_OPTARG=
 EOF
 
 mkdir -p ${PKG}/lib/systemd/system
-install -pm0644 ${CWD}/${NAME}.service ${PKG}/lib/systemd/system/ || exit 1
+install -pm0644 ${CWD}/config/systemd/*.service ${PKG}/lib/systemd/system/ || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}/contrib
@@ -377,7 +388,6 @@ cat ${CWD}/slack-desc.cf > ${PKGCF}/install/slack-desc
 echo "${NAME} = ${VERSION}" > ${PKGCF}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
 # Figure out our root directory
 ROOTDIR=\$(pwd)
 unset CHROOT
@@ -407,10 +417,9 @@ fi
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  if [ "${stdir}" != "${maildir}" ] ;then
-    find var/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  fi
+  find etc/ var/ usr/sbin/ usr/bin/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find usr/sbin/ usr/bin/ -name '*.new' -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
@@ -426,9 +435,15 @@ cat >> ${PKG}/install/doinst.sh <<EOF
 \${CHROOT} /bin/chown root.mail /var/spool/mqueue
 \${CHROOT} /bin/chmod 700 /var/spool/mqueue
 
-\${CHROOT} /bin/chown root.smmsp /${maildir#\/}/aliases.db*
-\${CHROOT} /bin/chmod 0640 /${maildir#\/}/aliases.db*
+\${CHROOT} /bin/chown root.smmsp /etc/aliases.db*
+\${CHROOT} /bin/chmod 0640 /etc/aliases.db*
 
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -442,7 +457,7 @@ if [ "${SB_REP}" = "YES" ] ;then
     ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
-  for dir in mail rc.d mc ;do
+  for dir in mail rc.d mc systemd ;do
     mkdir -p ${SBDIR}/config/${dir}
     install -m0644 ${CWD}/config/${dir}/* ${SBDIR}/config/${dir}/
   done
@@ -460,13 +475,13 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chmod 2555 ./${SENDMAILBIN} ;
   /bin/chown smmsp.smmsp ./var/spool/clientmqueue ;
   /bin/chown root.mail ./var/spool/mqueue ;
-  /bin/chown root.smmsp ./etc/mail/aliases.db.new ; "
+  /bin/chown root.smmsp ./etc/aliases.db.new ; "
 
 ROOTCOMMANDSCF="set -o errexit -o xtrace ; cd ${PKGCF} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 ROOTCOMMANDSCF="${ROOTCOMMANDSCF}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAMECF}.${PKGFORMAT} "
 

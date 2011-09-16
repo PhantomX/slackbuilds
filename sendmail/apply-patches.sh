@@ -24,5 +24,10 @@ zcat ${SB_PATCHDIR}/sendmail-8.14.3-ipv6-bad-helo.patch.gz | patch -p1 -E --back
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.14.4-libdb5.patch
 # silence warning about missing sasl2 config in /usr/lib*, now in /etc/sasl2
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.14.4-sasl2-in-etc.patch
+# add QoS support, patch from Philip Prindeville <philipp@fedoraproject.org>
+# upstream reserved option ID 0xe7 for testing of this new feature, #576643
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.14.5-qos-slk.patch
+# fix SMTP AUTH over TLS in case of two AUTH lines, #716628
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.14.5-auth2.patch
 
 set +e +o pipefail

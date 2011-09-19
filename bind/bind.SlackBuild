@@ -57,13 +57,16 @@ else
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
 SLKDIST=${SLKDIST:-Slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+grep --quiet '^named:' /etc/group && SB_HGROUP=1
+grep --quiet '^named:' /etc/passwd && SB_HUSER=1
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -133,6 +136,7 @@ CPPFLAGS="${CPPCFLAGS} -DDIG_SIGCHASE" \
   --prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
+  --includedir=/usr/include/bind9 \
   --localstatedir=/var \
   --infodir=/usr/info \
   --mandir=/usr/man \
@@ -171,10 +175,15 @@ install -pm0644 ${CWD}/rc.bind ${PKG}/etc/rc.d/rc.bind.new || Exit 1
 chmod 644 ${PKG}/etc/rc.d/rc.bind.new
 
 touch ${PKG}/etc/rndc.key.new || exit 1
-touch ${PKG}/etc/rndc.conf.new || exit 1
+#touch ${PKG}/etc/rndc.conf.new || exit 1
+chmod 0640 ${PKG}/etc/rndc.key.new
 
 # Add /var/run/named directory:
 mkdir -p ${PKG}/var/run/named
+
+mkdir -p ${PKG}/var/log
+touch ${PKG}/var/log/named.log.new
+chmod 0660 ${PKG}/var/log/named.log.new
 
 mkdir -p ${PKG}/var/named
 
@@ -189,12 +198,15 @@ cat ${SB_CACHEDIR}/named.root > ${PKG}/var/named/caching-example/named.root || e
 # an old configuration file wants it:
 cat ${SB_CACHEDIR}/named.root > ${PKG}/var/named/caching-example/named.ca || exit 1
 
+chmod 0750 ${PKG}/var/named ${PKG}/var/named/caching-example
+chmod 0640 ${PKG}/var/named/caching-example/*
+
 mkdir -p ${PKG}/lib/systemd/system
 install -pm0644 ${CWD}/named.service ${PKG}/lib/systemd/system/ || exit 1
 
 mkdir -p ${PKG}/etc/tmpfiles.d
 cat > ${PKG}/etc/tmpfiles.d/named.conf <<'EOF'
-d /var/run/named 0755 root root -
+d /var/run/named 0755 named named -
 EOF
 
 mkdir -p ${PKG}/etc/default
@@ -237,31 +249,33 @@ fi
     rm -f ${man}.3
     ln -sf lwres_gethostent.3 ${man}.3
   done
+  for man in lwres_gethostbyaddr lwres_gethostbyaddr_r lwres_gethostbyname lwres_gethostbyname2 \
+    lwres_gethostbyname_r lwres_gethostent_r lwres_sethostent lwres_sethostent_r
+  do
+    rm -f ${man}.3
+    ln -sf lwres_gethostent.3 ${man}.3
+  done
   rm -f lwres_freeaddrinfo.3
   ln -sf lwres_getaddrinfo.3 lwres_freeaddrinfo.3
-  rm -f lwres_freehostent.3
-  ln -sf lwres_getipnode.3 lwres_freehostent.3
+  for man in lwres_freehostent lwres_getipnodebyaddr lwres_getipnodebyname ;do
+    rm -f ${man}.3
+    ln -sf lwres_getipnode.3 ${man}.3
+  done
   for man in lwres_context_*.3 ;do
     rm -f ${man}
     ln -sf lwres_context.3 ${man}
   done
-  for man in lwres_getipnodeby*.3 ;do
+  for man in lwres_gabn*_*.3 ;do
     rm -f ${man}
-    ln -sf lwres_getipnode.3 ${man}
+    ln -sf lwres_gabn.3 ${man}
   done
   for man in lwres_gnba*_*.3 ;do
     rm -f ${man}
     ln -sf lwres_gnba.3 ${man}
   done
-  for man in lwres_gethostbyaddr lwres_gethostbyaddr_r lwres_gethostbyname lwres_gethostbyname2 \
-    lwres_gethostbyname_r lwres_gethostent_r
-  do
-    rm -f ${man}.3
-    ln -sf lwres_gethostent.3 ${man}.3
-  done
   rm -f lwres_herror.3
   ln -sf lwres_hstrerror.3 lwres_herror.3
-  for man in llwres_lwpacket_*.3 ;do
+  for man in lwres_lwpacket_*.3 ;do
     rm -f ${man}
     ln -sf lwres_packet.3 ${man}
   done
@@ -271,10 +285,6 @@ fi
   done
   rm -f lwres_net_ntop.3
   ln -sf lwres_inetntop.3 lwres_net_ntop.3
-  for man in lwres_sethostent lwres_sethostent_r ;do
-    rm -f ${man}.3
-    ln -sf lwres_gethostent.3 ${man}.3
-  done
 )
 if [ -d ${PKG}/usr/man ]; then
   ( cd ${PKG}/usr/man
@@ -296,14 +306,74 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<EOF
+cat > ${PKG}/install/doinst.sh <<'EOF'
+function free_user_id {
+  # Find a free user-ID >= 100 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
 # Figure out our root directory
-ROOTDIR=\$(pwd)
+ROOTDIR=$(pwd)
 unset CHROOT
-if test "\${ROOTDIR}" != "/"; then
-  CHROOT="chroot \${ROOTDIR} "
-  ROOTDIR="\${ROOTDIR}/"
+if test "${ROOTDIR}" != "/"; then
+ CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
+
+# Set up groups.
+if ! grep --quiet '^named:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    named 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^avahi:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/named:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "avahi"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/var/named' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g named \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'Named' \
+    -u $(free_user_id) \
+    -g named \
+    -s /bin/false \
+    -d '/var/named' \
+    named 2> /dev/null
+fi
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
 # Generate /etc/rndc.key if there's none there,
 # and there also no /etc/rndc.conf (the other
 # way to set this up).
@@ -333,12 +403,23 @@ fi
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  find etc/ -name *.new -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
 cat >> ${PKG}/install/doinst.sh <<'EOF'
+# Fix permissions
+${CHROOT} /bin/chown -R named.named /var/named >/dev/null 2>&1
+${CHROOT} /bin/chown named.named /var/run/named >/dev/null 2>&1
+${CHROOT} /bin/chown named.named /var/log/named.log{,.new} >/dev/null 2>&1
+${CHROOT} /bin/chown root.named /etc/rndc.key{,.new} >/dev/null 2>&1
+${CHROOT} /bin/chmod 0640 /etc/rndc.key{,.new} >/dev/null 2>&1
+
+if [ -f etc/rndc.conf ] ;then
+  ${CHROOT} /bin/chown root.named /etc/rndc.conf{,.new} >/dev/null 2>&1
+fi
+
 if [ -x bin/systemctl ] ; then
   ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
 fi
@@ -365,7 +446,9 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown -R named.named ./var/run/named ./var/named ./var/log/named.log.new ;
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.named ./etc/rndc.key.new ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n --prepend ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

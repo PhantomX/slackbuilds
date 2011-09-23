@@ -4,6 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+# Internal debug
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-wIm.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-coverity.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1872
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p1-fingerprint.patch

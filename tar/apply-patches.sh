@@ -21,6 +21,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.17-wildcards.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.22-atime-rofs.patch
 #oldarchive option was not working(#594044)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.23-oldarchive.patch
+#partially revert upstream commit 4bde4f3 (#717684)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.24-openat-partial-revert.patch
 
 # Adds txz support
 zcat ${SB_PATCHDIR}/${NAME}-1.23-support_txz.diff.gz | patch -p1 -E --backup --verbose

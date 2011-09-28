@@ -5,10 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Build patches
-sed \
-  -e "s/__RPM_VERSION_INTERNAL__/${FF_DIR_VER}/" \
-  ${SB_PATCHDIR}/firefox-version.patch | patch -p1 -E --backup --verbose
-
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-install-dir.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-6.0-cache-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-5.0-asciidel.patch
 

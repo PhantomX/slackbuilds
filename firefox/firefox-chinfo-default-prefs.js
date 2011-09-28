@@ -1,0 +1,16 @@
+pref("app.update.auto", false);
+pref("app.update.enabled", false);
+pref("app.update.autoInstallEnabled", false);
+pref("browser.backspace_action",            2);
+pref("browser.display.use_system_colors",   true);
+pref("browser.download.folderList",         1);
+pref("browser.link.open_external",          3);
+pref("browser.shell.checkDefaultBrowser",   false);
+pref("browser.urlbar.trimURLs", false);
+pref("browser.zoom.full", false);
+pref("general.autoScroll", false);
+pref("general.smoothScroll", false);
+pref("middlemouse.contentLoadURL", false);
+pref("general.useragent.vendor", "FIREFOX_SLK_DIST");
+pref("general.useragent.vendorSub", "FIREFOX_SLK_VR");
+pref("intl.locale.matchOS", true);

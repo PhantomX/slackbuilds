@@ -11,6 +11,7 @@ patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-build-sbrk.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.0-chromium-types.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-5.0-curl.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-6.0-secondary-ipc.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-linux3.patch
 
 # Fedora specific patches
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
@@ -21,7 +22,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/crashreporter-remove-static.pa
 # Upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-network-link-service.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-NetworkManager09.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-639554.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-cairo-return.patch
 
 # OpenSuse kde integration support
 install -m 644 ${SB_PATCHDIR}/kde.js browser/app/profile/kde.js

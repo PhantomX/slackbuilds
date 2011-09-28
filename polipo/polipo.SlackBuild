@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -111,7 +111,9 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
 sed -i \
     -e '/^PREFIX =/s|=.*$|= /usr|g' \
@@ -129,7 +131,7 @@ install -pm0644 ${CWD}/${NAME}.forbidden ${PKG}/etc/${NAME}/forbidden.new || exi
 
 # Startup scripts.
 mkdir -p ${PKG}/etc/rc.d
-install -pm0755 ${CWD}/rc.${NAME} \
+install -pm0644 ${CWD}/rc.${NAME} \
   ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
@@ -137,11 +139,25 @@ zcat ${CWD}/setup.onlyonce.rc${NAME}.gz \
   > ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}
 
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/${NAME}.service ${PKG}/lib/systemd/system/ || exit 1
+
 mkdir -p ${PKG}/var/cache/${NAME}
 chmod 750 ${PKG}/var/cache/${NAME}
 
 mkdir -p ${PKG}/var/run/${NAME}
-chmod 750 ${PKG}/var/cache/${NAME}
+chmod 775 ${PKG}/var/ru/${NAME}
+
+mkdir -p ${PKG}/etc/tmpfiles.d
+cat > ${PKG}/etc/tmpfiles.d/${NAME}.conf <<EOF
+D /var/run/polipo 0775 root polipo -
+EOF
+
+mkdir -p ${PKG}/etc/default
+cat > ${PKG}/etc/default/${NAME}.new <<'EOF'
+# polipo config
+CONFIG=/etc/polipo/config
+EOF
 
 mkdir -p ${PKG}/etc/logrotate.d
 cat >> ${PKG}/etc/logrotate.d/${NAME}.new <<EOF
@@ -151,7 +167,7 @@ cat >> ${PKG}/etc/logrotate.d/${NAME}.new <<EOF
     notifempty
     delaycompress
     postrotate
-  test -x /etc/rc.d/rc.polipo && /etc/rc.d/rc.polipo reload 2>/dev/null >/dev/null || : 
+  /bin/systemctl reload polipo.service > /dev/null 2>/dev/null || test -x /etc/rc.d/rc.polipo && /etc/rc.d/rc.polipo reload >/dev/null 2>/dev/null || :
     endscript
 }
 EOF
@@ -201,7 +217,6 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<'EOF'
-#!/bin/sh
 function free_user_id {
   # Find a free user-ID >= 100 (should be < 1000 so it's not a normal user)
   local FREE_USER_ID=100
@@ -294,7 +309,8 @@ fi
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
@@ -302,7 +318,11 @@ cat >> ${PKG}/install/doinst.sh <<'EOF'
 # Fix permissions
 ${CHROOT} /bin/chmod 0750 /var/cache/polipo
 ${CHROOT} /bin/chown polipo.polipo /var/cache/polipo
-${CHROOT} /bin/chown polipo.polipo /var/run/polipo
+${CHROOT} /bin/chown root.polipo /var/run/polipo
+
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
+fi
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -310,12 +330,15 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches 
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${NAME}.{config,forbidden} ${CWD}/rc.${NAME} \
-                 ${CWD}/setup.*.rc${NAME}.gz ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${NAME}.{config,forbidden} ${CWD}/rc.${NAME} \
+    ${CWD}/${NAME}.service ${CWD}/setup.*.rc${NAME}.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
@@ -323,10 +346,11 @@ set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
-  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown polipo.polipo ./var/cache/polipo ./var/run/polipo; "
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown polipo.polipo ./var/cache/polipo ;
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.polipo ./var/run/polipo; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

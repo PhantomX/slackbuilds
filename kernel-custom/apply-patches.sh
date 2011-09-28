@@ -89,6 +89,8 @@ ApplyPatch reorganize_stop_cpus.patch
 ApplyPatch implement-stop_machine_from_inactive_cpu.patch
 ApplyPatch use_stop_machine_for_mtrr_rendezvous.patch
 
+ApplyPatch x86_64-hpet-64bit-timer.patch
+
 #
 # Intel IOMMU
 #
@@ -131,6 +133,7 @@ ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch acpi-ec-add-delay-before-write.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
+ApplyPatch acpi-ensure-thermal-limits-match-cpu-freq.patch
 # list acpi fixed events at /proc/acpi/fixed_events
 ApplyPatch acpi-add-proc-event-regs.patch
 
@@ -156,9 +159,9 @@ ApplyPatch linux-2.6-defaults-aspm.patch.gz
 ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
-ApplyPatch 0001-block-prepare-I-O-context-code-for-BFQ-v2-for-2.6.39.patch
-ApplyPatch 0002-block-cgroups-kconfig-build-bits-for-BFQ-v2-2.6.39.patch
-ApplyPatch 0003-block-introduce-the-BFQ-v2-I-O-sched-for-2.6.39.patch
+ApplyPatch 0001-block-prepare-I-O-context-code-for-BFQ-v3-for-3.0.patch
+ApplyPatch 0002-block-cgroups-kconfig-build-bits-for-BFQ-v3-3.0.patch
+ApplyPatch 0003-block-introduce-the-BFQ-v3-I-O-sched-for-3.0.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -189,6 +192,8 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 
 # Get rid of useless bridge window conflict warnings
 ApplyPatch x86-pci-reduce-severity-of-host-bridge-window-conflict-warnings.patch
+
+ApplyPatch pty-fix-pty-counting.patch
 
 # Changes to upstream defaults.
 # Turns pnpbios off by default, useful, since pnpbios
@@ -230,6 +235,9 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
+# Avoid false quiescent states in rcu.
+ApplyPatch rcutree-avoid-false-quiescent-states.patch
+
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
@@ -262,6 +270,22 @@ ApplyPatch vfs-fix-automount-for-negative-autofs-dentries.patch
 # rhbz#727927 rhbz#731278 rhbz#732934
 # cifs-possible-memory-corruption-on-mount.patch is already queued for 3.0.4
 ApplyPatch cifs-fix-ERR_PTR-dereference-in-cifs_get_root.patch
+
+# from 3.0.5 patch queue
+ApplyPatch sendmmsg-sendmsg-fix-unsafe-user-pointer-access.patch
+
+#rhbz 735437
+ApplyPatch ucvideo-fix-crash-when-linking-entities.patch
+
+# CVE-2011-3191
+ApplyPatch cifs-fix-possible-memory-corruption-in-CIFSFindNext.patch
+
+# CVE-2011-1161 CVE-2011-1162
+ApplyPatch TPM-Call-tpm_transmit-with-correct-size.patch
+ApplyPatch TPM-Zero-buffer-after-copying-to-userspace.patch
+
+#rhbz 740645
+ApplyPatch md-dont-delay-reboot-by-1-second-if-no-MD-devices.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

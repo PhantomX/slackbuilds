@@ -1,3 +1,17 @@
+ configure.ac    |   20 ++-
+ doc/tar.texi    |   75 +++++++++
+ src/Makefile.am |    7 +-
+ src/common.h    |   18 ++
+ src/create.c    |   54 ++++++-
+ src/extract.c   |  123 ++++++++++++++
+ src/list.c      |    7 +
+ src/tar.c       |   80 +++++++++-
+ src/tar.h       |   20 +++
+ src/xattrs.c    |  489 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ src/xattrs.h    |   14 ++
+ src/xheader.c   |  237 +++++++++++++++++++++++----
+ 12 files changed, 1103 insertions(+), 41 deletions(-)
+
 diff -urNp tar-1.24-orig/configure.ac tar-1.24/configure.ac
 --- tar-1.24-orig/configure.ac	2010-10-24 23:35:35.000000000 +0200
 +++ tar-1.24/configure.ac	2010-10-25 10:24:52.548214037 +0200
@@ -63,7 +77,7 @@ diff -urNp tar-1.24-orig/doc/tar.texi tar-1.24/doc/tar.texi
  @opsummary{after-date}
  @item --after-date
  
-@@ -2915,6 +2919,10 @@ contents have changed (as opposed to jus
+@@ -2914,6 +2918,10 @@ contents have changed (as opposed to just @option{--newer}, which will
  also back up files for which any status information has
  changed).  @xref{after}.
  
@@ -74,7 +88,7 @@ diff -urNp tar-1.24-orig/doc/tar.texi tar-1.24/doc/tar.texi
  @opsummary{no-anchored}
  @item --no-anchored
  An exclude pattern can match any subsequence of the name's components.
-@@ -2998,11 +3006,21 @@ locations.  Usually @command{tar} determ
+@@ -2997,11 +3005,21 @@ locations.  Usually @command{tar} determines automatically whether
  the archive can be seeked or not.  Use this option to disable this
  mechanism.
  
@@ -96,7 +110,7 @@ diff -urNp tar-1.24-orig/doc/tar.texi tar-1.24/doc/tar.texi
  @opsummary{no-wildcards}
  @item --no-wildcards
  Do not use wildcards.
-@@ -3235,6 +3253,11 @@ in cases when such recognition fails.  I
+@@ -3234,6 +3252,11 @@ in cases when such recognition fails.  It takes effect only if the
  archive is open for reading (e.g. with @option{--list} or
  @option{--extract} options).
  
@@ -108,7 +122,7 @@ diff -urNp tar-1.24-orig/doc/tar.texi tar-1.24/doc/tar.texi
  @opsummary{show-defaults}
  @item --show-defaults
  
-@@ -3448,6 +3471,11 @@ Enable or disable warning messages ident
+@@ -3447,6 +3470,11 @@ Enable or disable warning messages identified by @var{keyword}.  The
  messages are suppressed if @var{keyword} is prefixed with @samp{no-}.
  @xref{warnings}.
  
@@ -120,7 +134,7 @@ diff -urNp tar-1.24-orig/doc/tar.texi tar-1.24/doc/tar.texi
  @opsummary{wildcards}
  @item --wildcards
  Use wildcards when matching member names with patterns.
-@@ -8643,6 +8671,8 @@ implementation able to read @samp{ustar}
+@@ -8659,6 +8687,8 @@ implementation able to read @samp{ustar} archives will be able to read
  most @samp{posix} archives as well, with the only exception that any
  additional information (such as long file names etc.) will in such
  case be extracted as plain text files along with the files it refers to.
@@ -129,7 +143,7 @@ diff -urNp tar-1.24-orig/doc/tar.texi tar-1.24/doc/tar.texi
  
  This archive format will be the default format for future versions
  of @GNUTAR{}.
-@@ -9259,6 +9289,51 @@ Same as both @option{--same-permissions}
+@@ -9293,6 +9323,51 @@ Same as both @option{--same-permissions} and @option{--same-order}.
  
  This option is deprecated, and will be removed in @GNUTAR{} version 1.23.
  
@@ -200,7 +214,7 @@ diff -urNp tar-1.24-orig/src/common.h tar-1.24/src/common.h
  /* When set, strip the given number of file name components from the file name
     before extracting */
  GLOBAL size_t strip_name_components;
-@@ -706,6 +715,9 @@ extern char *output_start;
+@@ -707,6 +716,9 @@ extern char *output_start;
  
  void update_archive (void);
  
@@ -210,7 +224,7 @@ diff -urNp tar-1.24-orig/src/common.h tar-1.24/src/common.h
  /* Module xheader.c.  */
  
  void xheader_decode (struct tar_stat_info *stat);
-@@ -726,6 +738,12 @@ bool xheader_string_end (struct xheader 
+@@ -727,6 +739,12 @@ bool xheader_string_end (struct xheader *xhdr, char const *keyword);
  bool xheader_keyword_deleted_p (const char *kw);
  char *xheader_format_name (struct tar_stat_info *st, const char *fmt,
  			   size_t n);
@@ -234,7 +248,7 @@ diff -urNp tar-1.24-orig/src/create.c tar-1.24/src/create.c
  #include <hash.h>
  
  /* Error number to use when an impostor is discovered.
-@@ -934,6 +935,30 @@ start_header (struct tar_stat_info *st)
+@@ -936,6 +937,30 @@ start_header (struct tar_stat_info *st)
        GNAME_TO_CHARS (st->gname, header->header.gname);
      }
  
@@ -265,18 +279,22 @@ diff -urNp tar-1.24-orig/src/create.c tar-1.24/src/create.c
    return header;
  }
  
-@@ -1709,6 +1734,10 @@ dump_file0 (struct tar_stat_info *st, ch
+@@ -1710,6 +1735,14 @@ dump_file0 (struct tar_stat_info *st, char const *name, char const *p)
+     {
        bool ok;
        struct stat final_stat;
- 
-+      xattrs_acls_get(st, p, fd, !is_dir);
-+      xattrs_selinux_get(st, p, fd);
-+      xattrs_xattrs_get(st, p, fd);
++      int fd_xattr = fd;
++      if (!fd_xattr)
++	// upstream tar now uses zero fd as "no fd"
++	fd_xattr = -1;
 +
++      xattrs_acls_get(st, p, fd_xattr, !is_dir);
++      xattrs_selinux_get(st, p, fd_xattr);
++      xattrs_xattrs_get(st, p, fd_xattr);
+ 
        if (is_dir)
  	{
- 	  const char *tag_file_name;
-@@ -1826,6 +1855,9 @@ dump_file0 (struct tar_stat_info *st, ch
+@@ -1829,6 +1862,9 @@ dump_file0 (struct tar_stat_info *st, char const *name, char const *p)
        if (NAME_FIELD_SIZE - (archive_format == OLDGNU_FORMAT) < size)
  	write_long_link (st);
  
@@ -286,7 +304,7 @@ diff -urNp tar-1.24-orig/src/create.c tar-1.24/src/create.c
        block_ordinal = current_block_ordinal ();
        st->stat.st_size = 0;	/* force 0 size on symlink */
        header = start_header (st);
-@@ -1844,11 +1876,23 @@ dump_file0 (struct tar_stat_info *st, ch
+@@ -1847,11 +1883,23 @@ dump_file0 (struct tar_stat_info *st, char const *name, char const *p)
      }
  #endif
    else if (S_ISCHR (st->stat.st_mode))
@@ -398,7 +416,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
    strcpy (data->file_name, file_name);
    delayed_set_stat_head = data;
    if (must_be_dot_or_slash (file_name))
-@@ -661,6 +708,31 @@ maybe_recoverable (char *file_name, bool
+@@ -673,6 +727,31 @@ maybe_recoverable (char *file_name, bool regular, bool *interdir_made)
    return RECOVER_NO;
  }
  
@@ -430,7 +448,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
  /* Fix the statuses of all directories whose statuses need fixing, and
     which are not ancestors of FILE_NAME.  If AFTER_LINKS is
     nonzero, do this for all such directories; otherwise, stop at the
-@@ -721,12 +793,23 @@ apply_nonancestor_delayed_set_stat (char
+@@ -733,12 +812,23 @@ apply_nonancestor_delayed_set_stat (char const *file_name, bool after_links)
  	  sb.stat.st_gid = data->gid;
  	  sb.atime = data->atime;
  	  sb.mtime = data->mtime;
@@ -454,7 +472,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
        free (data);
      }
  }
-@@ -842,6 +925,7 @@ extract_dir (char *file_name, int typefl
+@@ -854,6 +944,7 @@ extract_dir (char *file_name, int typeflag)
  
  static int
  open_output_file (char const *file_name, int typeflag, mode_t mode,
@@ -462,7 +480,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
  		  mode_t *current_mode, mode_t *current_mode_mask)
  {
    int fd;
-@@ -852,6 +936,10 @@ open_output_file (char const *file_name,
+@@ -864,6 +955,10 @@ open_output_file (char const *file_name, int typeflag, mode_t mode,
  		     ? O_TRUNC | (dereference_option ? 0 : O_NOFOLLOW)
  		     : O_EXCL));
  
@@ -473,7 +491,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
    if (typeflag == CONTTYPE)
      {
        static int conttype_diagnosed;
-@@ -908,6 +996,7 @@ extract_file (char *file_name, int typef
+@@ -934,6 +1029,7 @@ extract_file (char *file_name, int typeflag)
    bool interdir_made = false;
    mode_t mode = (current_stat_info.stat.st_mode & MODE_RWX
  		 & ~ (0 < same_owner_option ? S_IRWXG | S_IRWXO : 0));
@@ -481,7 +499,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
    mode_t current_mode = 0;
    mode_t current_mode_mask = 0;
  
-@@ -924,7 +1013,17 @@ extract_file (char *file_name, int typef
+@@ -950,7 +1046,17 @@ extract_file (char *file_name, int typeflag)
      }
    else
      {
@@ -499,7 +517,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
  				     &current_mode, &current_mode_mask))
  	     < 0)
  	{
-@@ -1065,6 +1164,13 @@ create_placeholder_file (char *file_name
+@@ -1091,6 +1197,13 @@ create_placeholder_file (char *file_name, bool is_symlink, bool *interdir_made)
  			    + strlen (file_name) + 1);
        p->sources->next = 0;
        strcpy (p->sources->string, file_name);
@@ -513,7 +531,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
        strcpy (p->target, current_stat_info.link_name);
  
        h = delayed_set_stat_head;
-@@ -1499,6 +1605,13 @@ apply_delayed_links (void)
+@@ -1525,6 +1638,13 @@ apply_delayed_links (void)
  		  st1.stat.st_gid = ds->gid;
  		  st1.atime = ds->atime;
  		  st1.mtime = ds->mtime;
@@ -527,7 +545,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
  		  set_stat (source, &st1, -1, 0, 0, SYMTYPE,
  			    false, AT_SYMLINK_NOFOLLOW);
  		  valid_source = source;
-@@ -1513,6 +1626,9 @@ apply_delayed_links (void)
+@@ -1539,6 +1659,9 @@ apply_delayed_links (void)
  	  sources = next;
  	}
  
@@ -540,7 +558,7 @@ diff -urNp tar-1.24-orig/src/extract.c tar-1.24/src/extract.c
 diff -urNp tar-1.24-orig/src/list.c tar-1.24/src/list.c
 --- tar-1.24-orig/src/list.c	2010-10-25 09:15:14.216463863 +0200
 +++ tar-1.24/src/list.c	2010-10-25 10:24:52.563213968 +0200
-@@ -597,6 +597,13 @@ decode_header (union block *header, stru
+@@ -615,6 +615,13 @@ decode_header (union block *header, struct tar_stat_info *stat_info,
    assign_string (&stat_info->gname,
  		 header->header.gname[0] ? header->header.gname : NULL);
  
@@ -1580,6 +1598,8 @@ diff -urNp tar-1.24-orig/src/xheader.c tar-1.24/src/xheader.c
 +    XHDR_PROTECTED | XHDR_GLOBAL, false },
    { "GNU.volume.offset", volume_offset_coder, volume_offset_decoder,
 -    XHDR_PROTECTED | XHDR_GLOBAL },
+-
+-  { NULL, NULL, NULL, 0 }
 +    XHDR_PROTECTED | XHDR_GLOBAL, false },
 +
 +  /* We get the SELinux value from filecon, so add a namespace for SELinux
@@ -1611,7 +1631,6 @@ diff -urNp tar-1.24-orig/src/xheader.c tar-1.24/src/xheader.c
 +
 +  /* ignore everything else in the xattr namespaces... */
 +  { "SCHILY.xattr",         dummy_coder, dummy_decoder, 0, true },
- 
--  { NULL, NULL, NULL, 0 }
++
 +  { NULL, NULL, NULL, 0, false }
  };

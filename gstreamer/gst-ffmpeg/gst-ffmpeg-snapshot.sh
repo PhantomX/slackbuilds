@@ -19,7 +19,7 @@ unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 gitbranch=${gitbranch:-master}
-gittree=${gittree:-master}
+gittree=${gittree:-${gitbranch}}
 
 [ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
 [ "${gitbranch}" = "${master}" ] || gitbranch="origin/${gitbranch}"
@@ -35,7 +35,7 @@ pushd "${tmp}"
       cd common
       if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
         gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
-        git checkout $(git rev-list -n 1 --before="${gitdate}" master)
+        git checkout $(git rev-list -n 1 --before="${gitdate}" ${gitbranch})
       fi
       rm -f .gitignore config.git-hash
     )

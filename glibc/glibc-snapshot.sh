@@ -19,7 +19,7 @@ unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 gitbranch=${gitbranch:-master}
-gittree=${gittree:-master}
+gittree=${gittree:-${gitbranch}}
 
 pgitbranch=${pgitbranch:-master}
 pgittree=${pgittree:-master}
@@ -34,7 +34,7 @@ pushd "${tmp}"
   pushd ${module}-${snap}
     if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
       gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
-      git checkout $(git rev-list -n 1 --before="${gitdate}" master)
+      git checkout $(git rev-list -n 1 --before="${gitdate}" ${gitbranch})
     fi
     find . -type d -name .git -print0 | xargs -0r rm -rf
     rm -f .gitignore config.git-hash
@@ -42,7 +42,7 @@ pushd "${tmp}"
   pushd ${module}-ports-${snap}
     if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
       gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
-      git checkout $(git rev-list -n 1 --before="${gitdate}" master)
+      git checkout $(git rev-list -n 1 --before="${gitdate}" ${gitbranch})
     fi
     find . -type d -name .git -print0 | xargs -0r rm -rf
     rm -f .gitignore config.git-hash

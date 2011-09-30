@@ -18,7 +18,7 @@ unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 gitbranch=${gitbranch:-master}
-gittree=${gittree:-master}
+gittree=${gittree:-${gitbranch}}
 
 [ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
 [ "${gitbranch}" = "${master}" ] || gitbranch="origin/${gitbranch}"

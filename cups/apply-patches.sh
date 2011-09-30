@@ -26,6 +26,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-filter-debug.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-uri-compat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-cups-get-classes.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-str3382.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-str3947.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-0755.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-snmp-quirks.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-hp-deviceid-oid.patch

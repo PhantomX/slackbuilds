@@ -19,7 +19,7 @@ unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
 gitbranch=${gitbranch:-master}
-gittree=${gittree:-master}
+gittree=${gittree:-${gitbranch}}
 
 [ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
 [ "${snap}" = "$(date +%Y%m%d)" ] && FFSNAP_COOPTS="--depth 1"
@@ -39,7 +39,7 @@ pushd "${tmp}"
       cd ffmpeg
       if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
         gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
-        git checkout $(git rev-list -n 1 --before="${gitdate}" master)
+        git checkout $(git rev-list -n 1 --before="${gitdate}" ${gitbranch})
         gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
       fi
       echo "git-$(git describe --always 2> /dev/null)" > VERSION

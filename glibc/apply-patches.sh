@@ -44,15 +44,11 @@ ApplyPatch glibc-2.12.1-static-shared-getpagesize.patch
 # http://www.exploit-db.com/exploits/15274/
 # http://sourceware.org/git/?p=glibc.git;a=patch;h=d14e6b09 (only fedora branch...)
 ApplyPatch glibc-2.12.2-ignore-origin-of-privileged-program.patch
-# http://sourceware.org/bugzilla/show_bug.cgi?id=12403
-ApplyPatch glibc-2.13-futex.patch
 # Fixes segfaults with nvidia blob
 ApplyPatch glibc-2.14-free-initfini.patch
 # Add missing headers
 ApplyPatch glibc-2.14-fix-headers.patch
 ApplyPatch glibc-2.14-reexport-rpc-interface.patch
-# Revert this
-patch -p1 --verbose -R -i ${SB_PATCHDIR}/0001-Handle-DNS-server-failures-in-case-of-AF_UNSPEC-look.patch
 
 if [ "${SB_BOOTSTRP}" = "YES" ] ;then
   # Multilib - Disable check for forced unwind (Patch from eglibc) since we
@@ -66,10 +62,10 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
 
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
   ApplyPatch 0030_all_glibc-respect-env-CPPFLAGS.patch
-  ApplyPatch 0059_all_glibc-2.13-dlclose-search-reset.patch
   ApplyPatch 0061_all_glibc-2.13-static-memset.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
+  ApplyPatch 1008_all_glibc-rwlock-assume.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch
   ApplyPatch 1020_all_glibc-longjmp-chk-hidden-fortify.patch
   ApplyPatch 1030_all_glibc-manual-no-perl.patch
@@ -79,7 +75,6 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
   ApplyPatch 1070_all_glibc-fadvise64_64.patch
   ApplyPatch 1075_all_glibc-section-comments.patch
   ApplyPatch 1080_all_glibc-no-inline-gmon.patch
-  ApplyPatch 1085_all_glibc-2.9-check_native-headers.patch
   ApplyPatch 1090_all_glibc-2.3.6-fix-pr631.patch
   ApplyPatch 1095_all_glibc-2.14-assume-pipe2-dup3.patch
   ApplyPatch 1100_all_glibc-2.3.3-china.patch
@@ -108,15 +103,6 @@ ApplyPatch glibc-2.10.1-multiarch.patch.gz
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 # master
-ApplyPatch 0001-Don-t-free-non-malloced-memory-and-fix-memory-leak.patch
-ApplyPatch 0002-Fix-typo-in-stack-guard-setup-code-for-old-kernels.patch
-ApplyPatch 0003-Assume-Intel-Core-i3-i5-i7-processor-if-AVX-is-avail.patch
-ApplyPatch 0004-Fix-bits-mqueue2.h-for-C.patch
-ApplyPatch 0001-Improve-64-bit-build.patch
-ApplyPatch 0001-Fix-IPv6-only-lookups-through-getaddrinfo.patch
-ApplyPatch 0002-Fix-Ipv4-IPv6-lookup-in-getaddrinfo.patch
-ApplyPatch 0001-Use-size_t-for-strlen-results.patch
-ApplyPatch 0001-Force-a_x86_64_ymm-to-be-16-byte-aligned.patch
 ApplyPatch 0001-Work-around-limit-in-writev-in-2.6.38-kernels.patch
 
 set +e +o pipefail

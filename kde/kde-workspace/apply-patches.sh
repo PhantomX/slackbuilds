@@ -50,7 +50,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.80-kde\#
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.0-bz\#732830-login.patch
 
 # Branch patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-kwin-performance.patch
 
 ## trunk patches
 

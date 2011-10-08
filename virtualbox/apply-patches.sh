@@ -10,7 +10,7 @@ patch -p1 -E --backup -z .noup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.2-noupdat
 ## from Gentoo
 # unset useless/problematic mesa checks in configure
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ose-3.2.8-mesa-check.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-asneeded.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.4-asneeded.patch
 # add the --enable-vnc option to configure script
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-vnc.patch
 # Mantain ~/.Virtualbox

@@ -47,8 +47,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.80-halectomy.patch
 # official backports
 
 # Branch upstream
-# https://projects.kde.org/projects/kde/kdelibs/repository/revisions/7df5a79fb9f09e4a4a80cd541cc478b5fa6df00f
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.2-kdirwatch-linux30.patch
 
 # Trunk patches
 

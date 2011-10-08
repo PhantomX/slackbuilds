@@ -193,8 +193,6 @@ ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
 # Get rid of useless bridge window conflict warnings
 ApplyPatch x86-pci-reduce-severity-of-host-bridge-window-conflict-warnings.patch
 
-ApplyPatch pty-fix-pty-counting.patch
-
 # Changes to upstream defaults.
 # Turns pnpbios off by default, useful, since pnpbios
 # is know to cause problems (TTL: forever)
@@ -242,7 +240,6 @@ ApplyPatch rcutree-avoid-false-quiescent-states.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch udlfb-bind-framebuffer-to-interface.patch
-ApplyPatch fix-cdc-ncm-dma-stack-vars.patch
 ApplyPatch ums-realtek-driver-uses-stack-memory-for-DMA.patch
 ApplyPatch rcu-avoid-just-onlined-cpu-resched.patch
 ApplyPatch block-stray-block-put-after-teardown.patch
@@ -262,7 +259,6 @@ ApplyPatch hfsplus-ensure-bio-requests-are-not-smaller-than-the.patch
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch iwlagn-check-for-priv--txq-in-iwlagn_wait_tx_queue_empty.patch
-ApplyPatch iwlagn-revert-max-aggregate-size.patch
 
 # rhbz#719607
 ApplyPatch vfs-fix-automount-for-negative-autofs-dentries.patch
@@ -271,21 +267,27 @@ ApplyPatch vfs-fix-automount-for-negative-autofs-dentries.patch
 # cifs-possible-memory-corruption-on-mount.patch is already queued for 3.0.4
 ApplyPatch cifs-fix-ERR_PTR-dereference-in-cifs_get_root.patch
 
-# from 3.0.5 patch queue
-ApplyPatch sendmmsg-sendmsg-fix-unsafe-user-pointer-access.patch
-
 #rhbz 735437
 ApplyPatch ucvideo-fix-crash-when-linking-entities.patch
 
-# CVE-2011-3191
-ApplyPatch cifs-fix-possible-memory-corruption-in-CIFSFindNext.patch
-
-# CVE-2011-1161 CVE-2011-1162
-ApplyPatch TPM-Call-tpm_transmit-with-correct-size.patch
-ApplyPatch TPM-Zero-buffer-after-copying-to-userspace.patch
-
 #rhbz 740645
 ApplyPatch md-dont-delay-reboot-by-1-second-if-no-MD-devices.patch
+
+# rhbz #714381
+ApplyPatch hid-magicmouse-ignore-ivalid-report-id-while-switching-modes-v2.patch
+
+# rhbz #496675
+ApplyPatch Platform-fix-samsung-laptop-DMI-identification-for-N.patch
+
+# rhbz #700718
+ApplyPatch x86-Save-stack-pointer-in-perf-live-regs-savings.patch
+ApplyPatch x86-Fetch-stack-from-regs-when-possible-in-dump_trac.patch
+
+#rhbz #708563
+ApplyPatch binfmt_elf-fix-PIE-execution-with-random-disabled.patch
+
+#rhbz #722509
+ApplyPatch mmc-Always-check-for-lower-base-frequency-quirk-for-.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

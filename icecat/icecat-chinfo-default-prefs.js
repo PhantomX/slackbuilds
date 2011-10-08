@@ -6,6 +6,7 @@ pref("browser.display.use_system_colors",   true);
 pref("browser.download.folderList",         1);
 pref("browser.link.open_external",          3);
 pref("browser.shell.checkDefaultBrowser",   false);
+pref("browser.urlbar.trimURLs", false);
 pref("browser.zoom.full", false);
 pref("general.autoScroll", false);
 pref("general.smoothScroll", false);

@@ -57,7 +57,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-skip-blank-lines.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbglog-newline.patch
 # Wait longer to see if a system tray becomes available.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-no-system-tray.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-cups15.patch
 # Fix ImageableArea for Laserjet 8150/9000 (bug #596298).
 for ppd_file in $(grep '^diff' ${SB_PATCHDIR}/hplip-ppd-ImageableArea.patch | cut -d " " -f 4);
 do

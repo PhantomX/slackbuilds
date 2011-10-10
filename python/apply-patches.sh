@@ -70,6 +70,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00145-force-sys-platform-to-be
 # Add a sys._debugmallocstats() function
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00147-add-debug-malloc-stats.patch
 
+# Cherrypick fix for dbm version detection to cope with gdbm-1.9's magic values
+# Taken from upstream http://bugs.python.org/issue13007 (rhbz#742242)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00148-gdbm-1.9-magic-values.patch
+
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autotool-intermediates.patch
 
 set +e +o pipefail

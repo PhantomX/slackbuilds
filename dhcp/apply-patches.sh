@@ -29,10 +29,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-UseMulticast.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.1-sendDecline.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.1-retransmission.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-rfc3442-classless-static-routes.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-PIE-RELRO.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-honor-expired.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-noprefixavail.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-sharedlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-PPP.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-lpf-ib.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-improved-xid.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-gpxe-cid.patch
 
 set +e +o pipefail

@@ -47,7 +47,10 @@ ApplyPatch perl-disable_test_hosts.patch
 # systems.
 ApplyPatch perl-5.10.0-x86_64-io-test-failure.patch
 
-# temporarily export debug symbols even though DEBUGGING is not set:
-#ApplyPatch perl-add-symbols.patch
+# switch off test, which is failing only on koji (fork)
+ApplyPatch perl-5.14.1-offtest.patch
+
+# Fix code injection in Digest, rhbz #743010, RT#71390, fixed in Digest-1.17.
+ApplyPatch perl-5.14.2-digest_eval.patch
 
 set +e +o pipefail

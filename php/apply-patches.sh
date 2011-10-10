@@ -17,11 +17,11 @@ sed -e "/extension_dir/s|/lib/|/lib${LIBDIRSUFFIX}/|g" \
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.7-gnusrc.patch
 zcat ${SB_PATCHDIR}/php-5.3.0-install.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.2.4-norpath.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/php-5.3.0-phpize64.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.2.0-includedir.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.2.4-embed.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.3.0-recode.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.8-aconf259.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.8-mysqlnd.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/004_all_strict_aliasing.patch
 
@@ -35,6 +35,7 @@ zcat ${SB_PATCHDIR}/php-5.3.0-easter.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.3.1-systzdata-v7.patch.gz | patch -p1 -E --backup --verbose
 # See http://bugs.php.net/53436
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.4-phpize.patch
+patch -p4 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.8-isa.patch
 
 # Fixes for tests
 zcat ${SB_PATCHDIR}/php-5.0.4-tests-wddx.patch.gz | patch -p1 -E --backup --verbose

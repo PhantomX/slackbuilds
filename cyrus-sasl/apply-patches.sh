@@ -20,6 +20,7 @@ zcat ${SB_PATCHDIR}/cyrus-sasl-2.1.22-bad-elif.patch.gz | patch -p1 -E --backup 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.23-ac-quote.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.23-race.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.23-rimap2.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.23-relro.patch
 ### Gentoo
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.23-db-5.0.patch
 

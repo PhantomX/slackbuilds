@@ -47,6 +47,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.80-halectomy.patch
 # official backports
 
 # Branch upstream
+# fix nepomuk queries *not* using wide-unicode
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.2-nepomuk_unicode.patch
 
 # Trunk patches
 

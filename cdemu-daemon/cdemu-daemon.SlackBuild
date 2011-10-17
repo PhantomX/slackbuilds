@@ -43,7 +43,7 @@ fi
 NAME=cdemu-daemon
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.3.0}
+VERSION=${VERSION:-1.4.0}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -114,6 +114,13 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+cp -f ${CWD}/cdemu-daemon-session.sh session/ || exit 1
+cp -f ${CWD}/cdemu-daemon-system.sh system/ || exit 1
+
+sed -i -e 's|/usr/bin/|/usr/sbin/|g' {session,system}/*.service
+
+sed -i -e '/policy/s|group="root"|group="cdemu"|g' system/cdemud-dbus.conf || exit 1
+
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
@@ -138,32 +145,22 @@ fi
 
 mkdir -p ${PKG}/etc/default
 cat > ${PKG}/etc/default/${NAME}.new <<'EOF'
-# Module to insert
-MODULE=vhba
-
 # Number of devices
-DEVICES=1
+NUM_DEVICES=2
 
-# Control device
-CTL_DEVICE=/dev/vhba_ctl
+# Audio driver: alsa, pulse, null
+# User
+AUDIO_DRIVER=null
+# System
+SYS_AUDIO_DRIVER=null
 
-# Audio backend: alsa, null
-AUDIO_BACKEND=null
+# Logfile destination
+# User
+LOG_FILE=~/.cdemu-daemon.log
+# System
+SYS_LOG_FILE=/tmp/cdemu-daemon.log
 
 EOF
-
-# Startup scripts.
-mkdir -p ${PKG}/etc/rc.d
-install -pm0755 ${CWD}/rc.cdemud \
-  ${PKG}/etc/rc.d/rc.cdemud.new || exit 1
-
-mkdir -p ${PKG}/var/log/setup
-zcat ${CWD}/setup.onlyonce.rccdemud.gz \
-  > ${PKG}/var/log/setup/setup.onlyonce.rccdemud || exit 1
-chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rccdemud
-
-mkdir -p ${PKG}/lib/systemd/system
-install -pm0644 ${CWD}/cdemud.service ${PKG}/lib/systemd/system/ || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -203,32 +200,6 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<'EOF'
-function free_group_id {
-  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
-  local FREE_GROUP_ID=120
-  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
-    let FREE_GROUP_ID++
-  done
-  echo ${FREE_GROUP_ID}
-}
-
-# Figure out our root directory
-ROOTDIR=$(pwd)
-unset CHROOT
-if test "${ROOTDIR}" != "/"; then
-  CHROOT="chroot ${ROOTDIR} "
-  ROOTDIR="${ROOTDIR}/"
-fi
-
-# Set up group.
-if ! grep --quiet '^cdemu:' etc/group ;then
-  ${CHROOT} /usr/sbin/groupadd \
-            -g $(free_group_id) \
-            cdemu 2> /dev/null
-fi
-EOF
-
 cat >> ${PKG}/install/doinst.sh <<EOF
 config() {
   NEW="\$1"
@@ -243,24 +214,13 @@ config() {
   # Otherwise, we leave the .new copy for the admin to consider...
 }
 
-# Keep same perms on rc.cdemud.new:
-if [ -r etc/rc.d/rc.cdemud -a -r etc/rc.d/rc.cdemud.new ]; then
-  chmod --reference=etc/rc.d/rc.cdemud etc/rc.d/rc.cdemud.new
-fi
-
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
-
-cat >> ${PKG}/install/doinst.sh <<'EOF'
-if [ -x bin/systemctl ] ; then
-  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
-fi
-EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
@@ -269,7 +229,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/rc.cdemud ${CWD}/setup.onlyonce.rc*.gz ${CWD}/cdemud.service ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${NAME}-{session,system}.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
@@ -284,7 +244,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

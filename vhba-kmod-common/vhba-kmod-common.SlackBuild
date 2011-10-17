@@ -96,8 +96,20 @@ cd ${SRCDIR} || exit 1
 mkdir -p ${PKG}/lib/udev/rules.d
 cat > ${PKG}/lib/udev/rules.d/70-vhba.rules << 'EOF'
 # Make vhba
-KERNEL=="vhba_ctl", MODE="0660", OWNER="root", GROUP="vhba"
+KERNEL=="vhba_ctl", NAME="%k", MODE="0660", OWNER="root", GROUP="cdemu"
 EOF
+
+# Startup scripts.
+mkdir -p ${PKG}/etc/rc.d
+install -pm0755 ${CWD}/rc.vhba \
+  ${PKG}/etc/rc.d/rc.vhba.new || exit 1
+
+mkdir -p ${PKG}/var/log/setup
+install -pm0755 ${CWD}/setup.onlyonce.rcvhba \
+  ${PKG}/var/log/setup/setup.onlyonce.rcvhba || exit 1
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/vhba.service ${PKG}/lib/systemd/system/ || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -133,10 +145,43 @@ if test "${ROOTDIR}" != "/"; then
 fi
 
 # Set up group.
-if ! grep --quiet '^vhba:' etc/group ;then
+if ! grep --quiet '^cdemu:' etc/group ;then
   ${CHROOT} /usr/sbin/groupadd \
             -g $(free_group_id) \
             vhba 2> /dev/null
+fi
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+# Keep same perms on rc.cdemud.new:
+if [ -r etc/rc.d/rc.vhba -a -r etc/rc.d/rc.vhba.new ]; then
+  chmod --reference=etc/rc.d/rc.vhba etc/rc.d/rc.vhba.new
+fi
+
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl daemon-reload >/dev/null 2>&1
 fi
 EOF
 
@@ -147,9 +192,9 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${SNAPUPDATE} ${SBDIR}/
+    ${CWD}/${SNAPUPDATE} ${CWD}/rc.vhba ${CWD}/setup.*.rcvhba ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
 fi
 
 # Build package:
@@ -159,7 +204,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

@@ -39,6 +39,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.90-multi
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.85-no_HAL.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.90-no_HAL2.patch
 
+# plasmaclock displayEvents=false default, one more item to avoid
+# starting akonadi by default
+# FIXME/TODO: implement this via config to plasma javascript somehow?
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.2-displayEvents_default.patch
+
 # Mandriva
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.71-notify_color_changes.patch
 

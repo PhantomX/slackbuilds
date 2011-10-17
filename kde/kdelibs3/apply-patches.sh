@@ -34,6 +34,8 @@ zcat ${SB_PATCHDIR}/kdelibs-3.5.9-KDE3.patch.gz | patch -p1 --verbose --backup -
 zcat ${SB_PATCHDIR}/kdelibs-3.5.9-fix-flock-redefinition.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # update the KatePart latex.xml syntax definition to the version from Kile 2.0.3
 zcat ${SB_PATCHDIR}/kdelibs-3.5.10-latex-syntax-kile-2.0.3.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+# fix FTBFS (cups-util.c must include stdio.h, #714133)
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.10-cups-util-missing-header.patch
 
 # use /etc/kde in addition to /usr/share/config, borrowed from debian
 zcat ${SB_PATCHDIR}/kdelibs-3.5.5-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig
@@ -71,7 +73,8 @@ zcat ${SB_PATCHDIR}/kdelibs-3.5.10-CVE-2009-2702.patch.gz | patch -p1 --verbose 
 zcat ${SB_PATCHDIR}/kdelibs-3.5.10-oCERT-2009-015-xmlhttprequest.patch.gz | patch -p0 --verbose --backup --suffix=.orig
 # CVE-2009-3736, libltdl may load and execute code from a library in the current directory
 zcat ${SB_PATCHDIR}/libltdl-CVE-2009-3736.patch.gz | patch -p1 --verbose --backup --suffix=.orig
-
+# CVE-2011-3365, input validation failure in KSSL
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.x-CVE-2011-3365.patch
 
 # Add "(Slackware)" to khtml user agent (modified from Gentoo patch).
 zcat ${SB_PATCHDIR}/kdelibs-3.5-cattlebrand.patch.gz |sed \

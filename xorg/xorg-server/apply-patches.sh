@@ -34,6 +34,9 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99.1-test.patch
 # Submitted to upstream but not merged for 1.11
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99-config-add-udev-systemd-multi-seat-support.patch
 
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-CVE-2011-4028.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-CVE-2011-4029.patch
+
 # misc
 # http://www.nvnews.net/vbulletin/showpost.php?p=2488518&postcount=15
 patch -p1 --verbose -i ${SB_PATCHDIR}/110_nvidia_slowdow_fix.patch

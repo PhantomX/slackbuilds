@@ -1,4 +1,4 @@
-From 7a8aceb1e8585410e3fca17c2e349877915dfdac Mon Sep 17 00:00:00 2001
+From db29c24e3ff75938775aa1f4072e346aeb7f6a9c Mon Sep 17 00:00:00 2001
 From: Richard Hughes <richard@hughsie.com>
 Date: Tue, 1 Mar 2011 16:05:48 +0000
 Subject: [PATCH] Add colord support to CUPS which allows Linux printers to be
@@ -7,12 +7,12 @@ Subject: [PATCH] Add colord support to CUPS which allows Linux printers to be
 This functionality is possible because of lots of help from Tim Waugh -- thanks!
 ---
  scheduler/Makefile   |    1 +
- scheduler/colord.c   |  682 ++++++++++++++++++++++++++++++++++++++++++++++++++
- scheduler/colord.h   |   22 ++
- scheduler/ipp.c      |   18 ++-
+ scheduler/colord.c   |  784 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ scheduler/colord.h   |   41 +++
+ scheduler/ipp.c      |   18 +-
  scheduler/printers.c |   69 +++++
  scheduler/printers.h |    4 +
- 6 files changed, 793 insertions(+), 3 deletions(-)
+ 6 files changed, 914 insertions(+), 3 deletions(-)
  create mode 100644 scheduler/colord.c
  create mode 100644 scheduler/colord.h
 
@@ -30,22 +30,40 @@ index 3c7da8e..b9c47d3 100644
  		log.o \
 diff --git a/scheduler/colord.c b/scheduler/colord.c
 new file mode 100644
-index 0000000..e420a6d
+index 0000000..bd06e1c
 --- /dev/null
 +++ b/scheduler/colord.c
-@@ -0,0 +1,682 @@
+@@ -0,0 +1,784 @@
 +/*
 + * "$Id$"
 + *
 + *   colord integration for the CUPS scheduler.
 + *
-+ *   Copyright 2011, Red Hat.
++ *   Copyright 2011 Red Hat, Inc.
 + *
-+ *   These coded instructions, statements, and computer programs are the
-+ *   property of Apple Inc. and are protected by Federal copyright
-+ *   law.  Distribution and use rights are outlined in the file "LICENSE.txt"
-+ *   which should have been included with this file.  If this file is
-+ *   file is missing or damaged, see the license at "http://www.cups.org/".
++ *   Redistribution and use in source and binary forms, with or without
++ *   modification, are permitted provided that the following conditions
++ *   are met:
++ *
++ *   Redistributions of source code must retain the above copyright
++ *   notice, this list of conditions and the following disclaimer.
++ *
++ *   Redistributions in binary form must reproduce the above copyright
++ *   notice, this list of conditions and the following disclaimer in the
++ *   documentation and/or other materials provided with the distribution.
++ *
++ *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
++ *   FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
++ *   COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
++ *   INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
++ *   (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ *   SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ *   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
++ *   STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
++ *   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
++ *   OF THE POSSIBILITY OF SUCH DAMAGE.
 + *
 + * Contents:
 + *
@@ -302,6 +320,7 @@ index 0000000..e420a6d
 +                    ppd_file_t *ppd,            /* I - PPD file */
 +                    cups_array_t *profiles,     /* I - Profiles array */
 +                    const char *colorspace,     /* I - Device colorspace, e.g. 'rgb' */
++                    char **format,              /* I - Device qualifier format */
 +                    const char *relation,       /* I - Profile relation, either 'soft' or 'hard' */
 +                    const char *scope)          /* I - The scope of the device, e.g.
 +                                                       'normal', 'temp' or 'disk' */
@@ -316,6 +335,7 @@ index 0000000..e420a6d
 +  char                  *default_profile_path = NULL;
 +                                                /* Default profile path */
 +  char                  device_id[1024];        /* Device ID as understood by colord */
++  char                  format_str[1024];       /* Qualifier format as a string */
 +
 + /*
 +  * Create the device...
@@ -333,6 +353,12 @@ index 0000000..e420a6d
 +  dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &device_path);
 +  dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &scope);
 +
++  /* mush the qualifier format into a simple string */
++  snprintf(format_str, sizeof(format_str), "%s.%s.%s",
++           format[0],
++           format[1],
++           format[2]);
++
 +  /* set initial properties */
 +  dbus_message_iter_open_container(&args,
 +                                 DBUS_TYPE_ARRAY,
@@ -346,6 +372,7 @@ index 0000000..e420a6d
 +    message_dict_add_strings(&dict, "Model", ppd->modelname);
 +  if (p->sanitized_device_uri != NULL)
 +    message_dict_add_strings(&dict, "Serial", p->sanitized_device_uri);
++  message_dict_add_strings(&dict, "Format", format_str);
 +  message_dict_add_strings(&dict, "Kind", COLORD_KIND_PRINTER);
 +  dbus_message_iter_close_container(&args, &dict);
 +
@@ -396,6 +423,64 @@ index 0000000..e420a6d
 +}
 +
 +/*
++ * 'colordFindDeviceById()' - Finds a device
++ */
++
++static char *
++colordFindDeviceById (const char *device_id)      /* I - Device ID string */
++{
++  DBusMessage           *message = NULL;        /* D-Bus request */
++  DBusMessage           *reply = NULL;          /* D-Bus reply */
++  DBusMessageIter       args;                   /* D-Bus method arguments */
++  DBusError             error;                  /* D-Bus error */
++  const char           *device_path_tmp;        /* Device object path */
++  char                 *device_path = NULL;     /* Device object path */
++
++  message = dbus_message_new_method_call("org.freedesktop.ColorManager",
++                                         "/org/freedesktop/ColorManager",
++                                         "org.freedesktop.ColorManager",
++                                         "FindDeviceById");
++
++  dbus_message_iter_init_append(message, &args);
++  dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &device_id);
++
++  /* send syncronous */
++  dbus_error_init(&error);
++  cupsdLogMessage(CUPSD_LOG_DEBUG, "Calling FindDeviceById(%s)", device_id);
++  reply = dbus_connection_send_with_reply_and_block(con,
++                                                    message,
++                                                    COLORD_DBUS_TIMEOUT,
++                                                    &error);
++  if (reply == NULL)
++  {
++        /* this can happen normally on start-up */
++        cupsdLogMessage(CUPSD_LOG_DEBUG,
++                        "failed to DeleteDevice: %s:%s",
++                        error.name, error.message);
++        dbus_error_free(&error);
++        goto out;
++  }
++
++  /* get reply data */
++  dbus_message_iter_init(reply, &args);
++  if (dbus_message_iter_get_arg_type(&args) != DBUS_TYPE_OBJECT_PATH)
++  {
++        cupsdLogMessage(CUPSD_LOG_WARN,
++                        "incorrect reply type");
++        goto out;
++  }
++  dbus_message_iter_get_basic(&args, &device_path_tmp);
++  if (device_path_tmp != NULL)
++    device_path = strdup (device_path_tmp);
++out:
++  if (message != NULL)
++    dbus_message_unref(message);
++  if (reply != NULL)
++    dbus_message_unref(reply);
++  return device_path;
++}
++
++/*
 + * 'colordDeleteDevice()' - Delete a device
 + */
 +
@@ -406,9 +491,24 @@ index 0000000..e420a6d
 +  DBusMessage           *reply = NULL;          /* D-Bus reply */
 +  DBusMessageIter       args;                   /* D-Bus method arguments */
 +  DBusError             error;                  /* D-Bus error */
++  char                 *device_path;            /* Device object path */
 +
 + /*
-+  * Create the device...
++  * Find the device...
++  */
++
++  device_path = colordFindDeviceById (device_id);
++  if (device_path == NULL)
++  {
++        /* this can happen normally on start-up */
++        cupsdLogMessage(CUPSD_LOG_WARN,
++                        "failed to find device: %s",
++                        device_id);
++        goto out;
++  }
++
++ /*
++  * Delete the device...
 +  */
 +
 +  message = dbus_message_new_method_call("org.freedesktop.ColorManager",
@@ -436,6 +536,7 @@ index 0000000..e420a6d
 +        goto out;
 +  }
 +out:
++  free (device_path);
 +  if (message != NULL)
 +    dbus_message_unref(message);
 +  if (reply != NULL)
@@ -671,6 +772,7 @@ index 0000000..e420a6d
 +                      ppd,
 +                      profiles,
 +                      device_colorspace,
++                      format,
 +                      COLORD_RELATION_SOFT,
 +                      COLORD_SCOPE_TEMP);
 +
@@ -718,22 +820,41 @@ index 0000000..e420a6d
 + */
 diff --git a/scheduler/colord.h b/scheduler/colord.h
 new file mode 100644
-index 0000000..262b695
+index 0000000..75bdd3b
 --- /dev/null
 +++ b/scheduler/colord.h
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,41 @@
 +/*
 + * "$Id$"
 + *
 + *   colord integration for the CUPS scheduler.
 + *
-+ *   Copyright 2011, Red Hat.
++ *   Copyright 2011 Red Hat, Inc.
 + *
-+ *   These coded instructions, statements, and computer programs are the
-+ *   property of Apple Inc. and are protected by Federal copyright
-+ *   law.  Distribution and use rights are outlined in the file "LICENSE.txt"
-+ *   which should have been included with this file.  If this file is
-+ *   file is missing or damaged, see the license at "http://www.cups.org/".
++ *   Redistribution and use in source and binary forms, with or without
++ *   modification, are permitted provided that the following conditions
++ *   are met:
++ *
++ *   Redistributions of source code must retain the above copyright
++ *   notice, this list of conditions and the following disclaimer.
++ *
++ *   Redistributions in binary form must reproduce the above copyright
++ *   notice, this list of conditions and the following disclaimer in the
++ *   documentation and/or other materials provided with the distribution.
++ *
++ *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
++ *   FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
++ *   COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
++ *   INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
++ *   (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ *   SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ *   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
++ *   STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
++ *   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
++ *   OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
 + */
 +
 +void	colordRegisterPrinter(cupsd_printer_t *p);
@@ -745,10 +866,10 @@ index 0000000..262b695
 + * End of "$Id$".
 + */
 diff --git a/scheduler/ipp.c b/scheduler/ipp.c
-index 2b91319..e470c32 100644
+index b9903d1..b5af36f 100644
 --- a/scheduler/ipp.c
 +++ b/scheduler/ipp.c
-@@ -2925,17 +2925,23 @@ add_printer(cupsd_client_t  *con,	/* I - Client connection */
+@@ -2921,17 +2921,23 @@ add_printer(cupsd_client_t  *con,	/* I - Client connection */
  
      cupsdSetPrinterReasons(printer, "none");
  
@@ -774,7 +895,7 @@ index 2b91319..e470c32 100644
    }
  
   /*
-@@ -7032,11 +7038,17 @@ delete_printer(cupsd_client_t  *con,	/* I - Client connection */
+@@ -7028,11 +7034,17 @@ delete_printer(cupsd_client_t  *con,	/* I - Client connection */
    snprintf(filename, sizeof(filename), "%s/%s.data", CacheDir, printer->name);
    unlink(filename);
  
@@ -794,7 +915,7 @@ index 2b91319..e470c32 100644
  #endif /* __APPLE__ */
  
 diff --git a/scheduler/printers.c b/scheduler/printers.c
-index 9b876e3..cfb0db3 100644
+index 6920801..e830499 100644
 --- a/scheduler/printers.c
 +++ b/scheduler/printers.c
 @@ -80,6 +80,9 @@
@@ -807,7 +928,7 @@ index 9b876e3..cfb0db3 100644
  
  /*
   * Local functions...
-@@ -708,6 +711,53 @@ cupsdDeleteAllPrinters(void)
+@@ -712,6 +715,53 @@ cupsdDeleteAllPrinters(void)
    }
  }
  
@@ -861,7 +982,7 @@ index 9b876e3..cfb0db3 100644
  
  /*
   * 'cupsdDeletePrinter()' - Delete a printer from the system.
-@@ -748,6 +798,12 @@ cupsdDeletePrinter(
+@@ -752,6 +802,12 @@ cupsdDeletePrinter(
  		              "Job stopped.");
  
   /*
@@ -874,7 +995,7 @@ index 9b876e3..cfb0db3 100644
    * If this printer is the next for browsing, point to the next one...
    */
  
-@@ -1414,6 +1470,12 @@ cupsdRenamePrinter(
+@@ -1418,6 +1474,12 @@ cupsdRenamePrinter(
    }
  
   /*
@@ -887,7 +1008,7 @@ index 9b876e3..cfb0db3 100644
    * Rename the printer...
    */
  
-@@ -2640,6 +2702,13 @@ cupsdSetPrinterAttrs(cupsd_printer_t *p)/* I - Printer to setup */
+@@ -2644,6 +2706,13 @@ cupsdSetPrinterAttrs(cupsd_printer_t *p)/* I - Printer to setup */
  #endif /* __sgi */
  
   /*
@@ -917,5 +1038,5 @@ index 1751578..3820428 100644
  
  /*
 -- 
-1.7.5.2
+1.7.6.2
 

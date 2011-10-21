@@ -1,0 +1,117 @@
+From 563ba9ea6e60774086555998b957edf923e24b46 Mon Sep 17 00:00:00 2001
+From: Michal Schmidt <mschmidt@redhat.com>
+Date: Mon, 17 Oct 2011 11:12:12 +0200
+Subject: [PATCH 2/5] manager: fix a crash in isolating
+
+HASHMAP_FOREACH is safe against the removal of the current entry, but
+not against the removal of other entries. job_finish_and_invalidate()
+can recursively remove other entries.
+
+It triggered an assertion failure:
+  Assertion 'j->installed' failed at src/manager.c:1218, function
+  transaction_apply(). Aborting.
+
+Fix the crash by iterating from the beginning when there is a
+possibility that the iterator could be invalid.
+
+It is O(n^2) in the worst case, but that's better than a crash.
+
+https://bugzilla.redhat.com/show_bug.cgi?id=717325
+---
+ src/job.c     |   19 ++++++++++++++-----
+ src/manager.c |    7 ++++++-
+ 2 files changed, 20 insertions(+), 6 deletions(-)
+
+diff --git a/src/job.c b/src/job.c
+index 5c0913b..20971da 100644
+--- a/src/job.c
++++ b/src/job.c
+@@ -527,6 +527,7 @@ int job_finish_and_invalidate(Job *j, JobResult result) {
+         Unit *other;
+         JobType t;
+         Iterator i;
++        bool recursed = false;
+ 
+         assert(j);
+         assert(j->installed);
+@@ -573,23 +574,29 @@ int job_finish_and_invalidate(Job *j, JobResult result) {
+                                 if (other->meta.job &&
+                                     (other->meta.job->type == JOB_START ||
+                                      other->meta.job->type == JOB_VERIFY_ACTIVE ||
+-                                     other->meta.job->type == JOB_RELOAD_OR_START))
++                                     other->meta.job->type == JOB_RELOAD_OR_START)) {
+                                         job_finish_and_invalidate(other->meta.job, JOB_DEPENDENCY);
++                                        recursed = true;
++                                }
+ 
+                         SET_FOREACH(other, u->meta.dependencies[UNIT_BOUND_BY], i)
+                                 if (other->meta.job &&
+                                     (other->meta.job->type == JOB_START ||
+                                      other->meta.job->type == JOB_VERIFY_ACTIVE ||
+-                                     other->meta.job->type == JOB_RELOAD_OR_START))
++                                     other->meta.job->type == JOB_RELOAD_OR_START)) {
+                                         job_finish_and_invalidate(other->meta.job, JOB_DEPENDENCY);
++                                        recursed = true;
++                                }
+ 
+                         SET_FOREACH(other, u->meta.dependencies[UNIT_REQUIRED_BY_OVERRIDABLE], i)
+                                 if (other->meta.job &&
+                                     !other->meta.job->override &&
+                                     (other->meta.job->type == JOB_START ||
+                                      other->meta.job->type == JOB_VERIFY_ACTIVE ||
+-                                     other->meta.job->type == JOB_RELOAD_OR_START))
++                                     other->meta.job->type == JOB_RELOAD_OR_START)) {
+                                         job_finish_and_invalidate(other->meta.job, JOB_DEPENDENCY);
++                                        recursed = true;
++                                }
+ 
+                 } else if (t == JOB_STOP) {
+ 
+@@ -597,8 +604,10 @@ int job_finish_and_invalidate(Job *j, JobResult result) {
+                                 if (other->meta.job &&
+                                     (other->meta.job->type == JOB_START ||
+                                      other->meta.job->type == JOB_VERIFY_ACTIVE ||
+-                                     other->meta.job->type == JOB_RELOAD_OR_START))
++                                     other->meta.job->type == JOB_RELOAD_OR_START)) {
+                                         job_finish_and_invalidate(other->meta.job, JOB_DEPENDENCY);
++                                        recursed = true;
++                                }
+                 }
+         }
+ 
+@@ -626,7 +635,7 @@ finish:
+ 
+         manager_check_finished(u->meta.manager);
+ 
+-        return 0;
++        return recursed;
+ }
+ 
+ int job_start_timer(Job *j) {
+diff --git a/src/manager.c b/src/manager.c
+index e626347..6d20258 100644
+--- a/src/manager.c
++++ b/src/manager.c
+@@ -1214,13 +1214,18 @@ static int transaction_apply(Manager *m, JobMode mode) {
+ 
+                 /* When isolating first kill all installed jobs which
+                  * aren't part of the new transaction */
++        rescan:
+                 HASHMAP_FOREACH(j, m->jobs, i) {
+                         assert(j->installed);
+ 
+                         if (hashmap_get(m->transaction_jobs, j->unit))
+                                 continue;
+ 
+-                        job_finish_and_invalidate(j, JOB_CANCELED);
++                        /* 'j' itself is safe to remove, but if other jobs
++                           are invalidated recursively, our iterator may become
++                           invalid and we need to start over. */
++                        if (job_finish_and_invalidate(j, JOB_CANCELED) > 0)
++                                goto rescan;
+                 }
+         }
+ 
+-- 
+1.7.4.4
+

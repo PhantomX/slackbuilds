@@ -74,11 +74,19 @@ ApplyOptionalPatch linux-2.6-hotfixes.patch
 # utrace
 ApplyPatch utrace.patch
 
+# vm patches
+ApplyPatch grab-swap-token-oops.patch
+
 # mm patches
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 
-# vm patches
-ApplyPatch grab-swap-token-oops.patch
+# Minor fixes from 3.0-3.1-rc4 not included in -stable
+ApplyPatch mm-swap-token-makes-global-variables-to-function-local.patch
+ApplyPatch mm-thp-minor-lock-simplification-in-__khugepaged_exit.patch
+ApplyPatch mm-remove-ZAP_BLOCK_SIZE.patch
+ApplyPatch mm-vmscan-fix-force-scanning-small-targets-without-swap.patch
+ApplyPatch mm-vmscan-drop-nr_force_scan-from-get_scan_count.patch
+ApplyPatch mm-vmscan-clear-ZONE_CONGESTED-for-zone-with-good-watermark.patch
 
 # Architecture patches
 # x86(-64)
@@ -223,6 +231,7 @@ ApplyOptionalPatch drm-nouveau-updates.patch
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
+ApplyPatch drm-i915-sdvo-lvds-is-digital.patch
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
 # silence the ACPI blacklist code
@@ -245,6 +254,8 @@ ApplyPatch rcu-avoid-just-onlined-cpu-resched.patch
 ApplyPatch block-stray-block-put-after-teardown.patch
 ApplyPatch usb-add-quirk-for-logitech-webcams.patch
 ApplyPatch crypto-register-cryptd-first.patch
+ApplyPatch cputimer-Cure-lock-inversion.patch
+ApplyPatch x86-efi-Calling-__pa-with-an-ioremap-address-is-invalid.patch
 
 # Runtime PM
 #ApplyPatch linux-2.6-usb-pci-autosuspend.patch
@@ -288,6 +299,14 @@ ApplyPatch binfmt_elf-fix-PIE-execution-with-random-disabled.patch
 
 #rhbz #722509
 ApplyPatch mmc-Always-check-for-lower-base-frequency-quirk-for-.patch
+
+#rhbz #745241
+ApplyPatch fuse-fix-memory-leak.patch
+
+#rhbz #735946
+ApplyPatch 0001-mm-vmscan-Limit-direct-reclaim-for-higher-order-allo.patch
+ApplyPatch 0002-mm-Abort-reclaim-compaction-if-compaction-can-procee.patch
+
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

@@ -8,7 +8,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhclient-script.PATH.diff
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-remove-bind.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-errwarn-message.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-options.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-options.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-release-by-ifup.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-dhclient-decline-backoff.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-unicast-bootp.patch
@@ -28,11 +28,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-logpid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-UseMulticast.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.1-sendDecline.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.1-retransmission.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-rfc3442-classless-static-routes.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-rfc3442-classless-static-routes.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-honor-expired.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-noprefixavail.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-sharedlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-PPP.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-paranoia-pid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-lpf-ib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-improved-xid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-gpxe-cid.patch

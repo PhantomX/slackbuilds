@@ -38,8 +38,8 @@ if [ -r ${cwd}/fblogo-${KERNNAME}.png ] ;then
   echo "Coverting ${cwd}/fblogo-${KERNNAME}.png"
   pngtopnm ${cwd}/fblogo-${KERNNAME}.png | ppmquant -fs 223 | pnmtoplainpnm \
     > ${cwd}/fblogo-${KERNNAME}.ppm || exit 1
-  gzip -9 ${cwd}/fblogo-${KERNNAME}.ppm || exit 1
-  echo "${cwd}/fblogo-${KERNNAME}.ppm.gz created"
+  xz -9 ${cwd}/fblogo-${KERNNAME}.ppm || exit 1
+  echo "${cwd}/fblogo-${KERNNAME}.ppm.xz created"
 else
   echo "No ${cwd}/fblogo-${KERNNAME}.png"
   exit 1

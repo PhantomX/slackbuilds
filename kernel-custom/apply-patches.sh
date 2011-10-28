@@ -125,6 +125,7 @@ ApplyPatch reiserfs-force-inode-evictions-before-umount-to-avoid-crash.patch
 ApplyPatch ext3-barrier-default.patch
 
 # xfs
+ApplyPatch xfs-Fix-possible-memory-corruption-in-xfs_readlink.patch
 
 # btrfs
 
@@ -223,7 +224,6 @@ ApplyPatch linux-2.6-crash-driver.patch
 ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 # DRM core
-ApplyPatch drm-ttm-nouveau-oops-fix.patch
 
 # Nouveau DRM
 ApplyOptionalPatch drm-nouveau-updates.patch
@@ -254,7 +254,6 @@ ApplyPatch rcu-avoid-just-onlined-cpu-resched.patch
 ApplyPatch block-stray-block-put-after-teardown.patch
 ApplyPatch usb-add-quirk-for-logitech-webcams.patch
 ApplyPatch crypto-register-cryptd-first.patch
-ApplyPatch cputimer-Cure-lock-inversion.patch
 ApplyPatch x86-efi-Calling-__pa-with-an-ioremap-address-is-invalid.patch
 
 # Runtime PM
@@ -265,7 +264,7 @@ ApplyPatch x86-efi-Calling-__pa-with-an-ioremap-address-is-invalid.patch
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
 ApplyPatch epoll-fix-spurious-lockdep-warnings.patch
-ApplyPatch hfsplus-ensure-bio-requests-are-not-smaller-than-the.patch
+ApplyPatch epoll-limit-paths.patch
 
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
@@ -274,18 +273,8 @@ ApplyPatch iwlagn-check-for-priv--txq-in-iwlagn_wait_tx_queue_empty.patch
 # rhbz#719607
 ApplyPatch vfs-fix-automount-for-negative-autofs-dentries.patch
 
-# rhbz#727927 rhbz#731278 rhbz#732934
-# cifs-possible-memory-corruption-on-mount.patch is already queued for 3.0.4
-ApplyPatch cifs-fix-ERR_PTR-dereference-in-cifs_get_root.patch
-
-#rhbz 735437
-ApplyPatch ucvideo-fix-crash-when-linking-entities.patch
-
 #rhbz 740645
 ApplyPatch md-dont-delay-reboot-by-1-second-if-no-MD-devices.patch
-
-# rhbz #714381
-ApplyPatch hid-magicmouse-ignore-ivalid-report-id-while-switching-modes-v2.patch
 
 # rhbz #496675
 ApplyPatch Platform-fix-samsung-laptop-DMI-identification-for-N.patch
@@ -300,13 +289,14 @@ ApplyPatch binfmt_elf-fix-PIE-execution-with-random-disabled.patch
 #rhbz #722509
 ApplyPatch mmc-Always-check-for-lower-base-frequency-quirk-for-.patch
 
-#rhbz #745241
-ApplyPatch fuse-fix-memory-leak.patch
-
 #rhbz #735946
 ApplyPatch 0001-mm-vmscan-Limit-direct-reclaim-for-higher-order-allo.patch
 ApplyPatch 0002-mm-Abort-reclaim-compaction-if-compaction-can-procee.patch
 
+#rhbz 748691
+ApplyPatch be2net-move-to-new-vlan-model.patch
+ApplyPatch be2net-non-member-vlan-pkts-not-received-in-promisco.patch
+ApplyPatch benet-remove-bogus-unlikely-on-vlan-check.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

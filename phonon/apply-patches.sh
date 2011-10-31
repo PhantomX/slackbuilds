@@ -11,6 +11,8 @@ patch -p1 -E --backup -z .subtitles --verbose -i ${SB_PATCHDIR}/phonon-4.5.0-sub
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/phonon-4.3.50-phonon-allow-stop-empty-source.patch
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/libqzeitgeist08.patch
+
 ## Upstream patches
 
 set +e +o pipefail

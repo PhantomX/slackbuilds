@@ -1,0 +1,110 @@
+>From 4b61f7ca2ed63deb1d35c17150b53a1661f395f7 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Thu, 30 Jun 2011 10:41:36 +0200
+Subject: [PATCH 17/28] qxl: error handling fixes and cleanups.
+
+Add qxl_guest_bug() function which is supposed to be called in case
+sanity checks of guest requests fail.  It raises an error IRQ and
+logs a message in case guest debugging is enabled.
+
+Make PANIC_ON() abort instead of exit.  That macro should be used
+for qemu bugs only, any guest-triggerable stuff should use the new
+qxl_guest_bug() function instead.
+
+Convert a few easy cases from PANIC_ON() to qxl_guest_bug() to
+show intended usage.
+
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+---
+ hw/qxl.c |   34 ++++++++++++++++++++++++++++++----
+ hw/qxl.h |    3 ++-
+ 2 files changed, 32 insertions(+), 5 deletions(-)
+
+diff --git a/hw/qxl.c b/hw/qxl.c
+index 6e66021..28c8b5d 100644
+--- a/hw/qxl.c
++++ b/hw/qxl.c
+@@ -125,6 +125,16 @@ static void qxl_reset_memslots(PCIQXLDevice *d);
+ static void qxl_reset_surfaces(PCIQXLDevice *d);
+ static void qxl_ring_set_dirty(PCIQXLDevice *qxl);
+ 
++void qxl_guest_bug(PCIQXLDevice *qxl, const char *msg)
++{
++#if SPICE_INTERFACE_QXL_MINOR >= 1
++    qxl_send_events(qxl, QXL_INTERRUPT_ERROR);
++#endif
++    if (qxl->guestdebug) {
++        fprintf(stderr, "qxl-%d: guest bug: %s\n", qxl->id, msg);
++    }
++}
++
+ 
+ void qxl_spice_update_area(PCIQXLDevice *qxl, uint32_t surface_id,
+                            struct QXLRect *area, struct QXLRect *dirty_rects,
+@@ -1091,22 +1101,38 @@ static void ioport_write(void *opaque, uint32_t addr, uint32_t val)
+         qxl_hard_reset(d, 0);
+         break;
+     case QXL_IO_MEMSLOT_ADD:
+-        PANIC_ON(val >= NUM_MEMSLOTS);
+-        PANIC_ON(d->guest_slots[val].active);
++        if (val >= NUM_MEMSLOTS) {
++            qxl_guest_bug(d, "QXL_IO_MEMSLOT_ADD: val out of range");
++            break;
++        }
++        if (d->guest_slots[val].active) {
++            qxl_guest_bug(d, "QXL_IO_MEMSLOT_ADD: memory slot already active");
++            break;
++        }
+         d->guest_slots[val].slot = d->ram->mem_slot;
+         qxl_add_memslot(d, val, 0);
+         break;
+     case QXL_IO_MEMSLOT_DEL:
++        if (val >= NUM_MEMSLOTS) {
++            qxl_guest_bug(d, "QXL_IO_MEMSLOT_DEL: val out of range");
++            break;
++        }
+         qxl_del_memslot(d, val);
+         break;
+     case QXL_IO_CREATE_PRIMARY:
+-        PANIC_ON(val != 0);
++        if (val != 0) {
++            qxl_guest_bug(d, "QXL_IO_CREATE_PRIMARY: val != 0");
++            break;
++        }
+         dprint(d, 1, "QXL_IO_CREATE_PRIMARY\n");
+         d->guest_primary.surface = d->ram->create_surface;
+         qxl_create_guest_primary(d, 0);
+         break;
+     case QXL_IO_DESTROY_PRIMARY:
+-        PANIC_ON(val != 0);
++        if (val != 0) {
++            qxl_guest_bug(d, "QXL_IO_DESTROY_PRIMARY: val != 0");
++            break;
++        }
+         dprint(d, 1, "QXL_IO_DESTROY_PRIMARY (%s)\n", qxl_mode_to_string(d->mode));
+         qxl_destroy_primary(d);
+         break;
+diff --git a/hw/qxl.h b/hw/qxl.h
+index 5d0e85e..5db9aae 100644
+--- a/hw/qxl.h
++++ b/hw/qxl.h
+@@ -86,7 +86,7 @@ typedef struct PCIQXLDevice {
+ 
+ #define PANIC_ON(x) if ((x)) {                         \
+     printf("%s: PANIC %s failed\n", __FUNCTION__, #x); \
+-    exit(-1);                                          \
++    abort();                                           \
+ }
+ 
+ #define dprint(_qxl, _level, _fmt, ...)                                 \
+@@ -99,6 +99,7 @@ typedef struct PCIQXLDevice {
+ 
+ /* qxl.c */
+ void *qxl_phys2virt(PCIQXLDevice *qxl, QXLPHYSICAL phys, int group_id);
++void qxl_guest_bug(PCIQXLDevice *qxl, const char *msg);
+ 
+ void qxl_spice_update_area(PCIQXLDevice *qxl, uint32_t surface_id,
+                            struct QXLRect *area, struct QXLRect *dirty_rects,
+-- 
+1.7.5.1
+

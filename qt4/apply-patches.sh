@@ -61,10 +61,12 @@ ApplyPatch qt-4.6.3-bn-rendering-bz562049.patch
 ApplyPatch qt-4.6.3-bn-rendering-bz562058.patch
 ApplyPatch qt-4.6.3-indic-rendering-bz631732.patch
 ApplyPatch qt-4.6.3-indic-rendering-bz636399.patch
-# fix 24bit color issue
-ApplyPatch qt-everywhere-opensource-src-4.7.0-bpp24.patch
+
 # Fails to create debug build of Qt projects on mingw (rhbz#653674)
 ApplyPatch qt-everywhere-opensource-src-4.7.1-QTBUG-14467.patch
+
+# Qt doesn't close orphaned file descriptors after printing (#746601, QTBUG-14724)
+ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-14724.patch
 
 ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 
@@ -72,6 +74,9 @@ ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-CVE-2010-1822-crash-svg-image.patch
 
 ## upstream patches
+# Applications crash when using a visual with 24 bits per pixel 
+# https://bugreports.qt.nokia.com/browse/QTBUG-21754
+ApplyPatch qt-everywhere-opensource-src-4.7.4-QTBUG-21754.patch
 # adds debug support to webkit/JavaScriptCore
 # UPSTREAM ME
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch

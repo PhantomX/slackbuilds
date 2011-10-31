@@ -1,0 +1,117 @@
+diff -up qt-everywhere-opensource-src-4.7.4/src/gui/image/qnativeimage.cpp.QTBUG-21754 qt-everywhere-opensource-src-4.7.4/src/gui/image/qnativeimage.cpp
+--- qt-everywhere-opensource-src-4.7.4/src/gui/image/qnativeimage.cpp.QTBUG-21754	2011-09-12 01:49:28.000000000 -0500
++++ qt-everywhere-opensource-src-4.7.4/src/gui/image/qnativeimage.cpp	2011-10-28 16:04:53.836638684 -0500
+@@ -150,7 +150,12 @@ QImage::Format QNativeImage::systemForma
+ QNativeImage::QNativeImage(int width, int height, QImage::Format format,bool /* isTextBuffer */, QWidget *widget)
+     : xshmimg(0), xshmpm(0)
+ {
+-    if (!X11->use_mitshm) {
++    QX11Info info = widget->x11Info();
++
++    int dd = info.depth();
++    Visual *vis = (Visual*) info.visual();
++
++    if (!X11->use_mitshm || format != QImage::Format_RGB16 && X11->bppForDepth.value(dd) != 32) {
+         image = QImage(width, height, format);
+         // follow good coding practice and set xshminfo attributes, though values not used in this case
+         xshminfo.readOnly = true;
+@@ -160,11 +165,6 @@ QNativeImage::QNativeImage(int width, in
+         return;
+     }
+ 
+-    QX11Info info = widget->x11Info();
+-
+-    int dd = info.depth();
+-    Visual *vis = (Visual*) info.visual();
+-
+     xshmimg = XShmCreateImage(X11->display, vis, dd, ZPixmap, 0, &xshminfo, width, height);
+     if (!xshmimg) {
+         qWarning("QNativeImage: Unable to create shared XImage.");
+diff -up qt-everywhere-opensource-src-4.7.4/src/gui/image/qpixmap_x11.cpp.QTBUG-21754 qt-everywhere-opensource-src-4.7.4/src/gui/image/qpixmap_x11.cpp
+--- qt-everywhere-opensource-src-4.7.4/src/gui/image/qpixmap_x11.cpp.QTBUG-21754	2011-09-12 01:49:28.000000000 -0500
++++ qt-everywhere-opensource-src-4.7.4/src/gui/image/qpixmap_x11.cpp	2011-10-28 16:04:53.837638713 -0500
+@@ -897,12 +897,20 @@ void QX11PixmapData::fromImage(const QIm
+                     }
+                     )
+                     break;
+-            case BPP24_888:                        // 24 bit MSB
++            case BPP24_888:
+                 CYCLE(
+-                    for (int x=0; x<w; x++) {
+-                        *dst++ = qRed  (*p);
+-                        *dst++ = qGreen(*p);
+-                        *dst++ = qBlue (*p++);
++                    if (QSysInfo::ByteOrder == QSysInfo::BigEndian) {
++                        for (int x=0; x<w; x++) {
++                            *dst++ = qRed  (*p);
++                            *dst++ = qGreen(*p);
++                            *dst++ = qBlue (*p++);
++                        }
++                    } else {
++                        for (int x=0; x<w; x++) {
++                            *dst++ = qBlue (*p);
++                            *dst++ = qGreen(*p);
++                            *dst++ = qRed  (*p++);
++                        }
+                     }
+                     )
+                     break;
+diff -up qt-everywhere-opensource-src-4.7.4/src/gui/kernel/qapplication_x11.cpp.QTBUG-21754 qt-everywhere-opensource-src-4.7.4/src/gui/kernel/qapplication_x11.cpp
+--- qt-everywhere-opensource-src-4.7.4/src/gui/kernel/qapplication_x11.cpp.QTBUG-21754	2011-09-12 01:49:28.000000000 -0500
++++ qt-everywhere-opensource-src-4.7.4/src/gui/kernel/qapplication_x11.cpp	2011-10-28 16:04:53.838638742 -0500
+@@ -1892,6 +1892,12 @@ void qt_init(QApplicationPrivate *priv, 
+         X11->defaultScreen = DefaultScreen(X11->display);
+         X11->screenCount = ScreenCount(X11->display);
+ 
++        int formatCount = 0;
++        XPixmapFormatValues *values = XListPixmapFormats(X11->display, &formatCount);
++        for (int i = 0; i < formatCount; ++i)
++            X11->bppForDepth[values[i].depth] = values[i].bits_per_pixel;
++        XFree(values);
++
+         X11->screens = new QX11InfoData[X11->screenCount];
+         X11->argbVisuals = new Visual *[X11->screenCount];
+         X11->argbColormaps = new Colormap[X11->screenCount];
+diff -up qt-everywhere-opensource-src-4.7.4/src/gui/kernel/qt_x11_p.h.QTBUG-21754 qt-everywhere-opensource-src-4.7.4/src/gui/kernel/qt_x11_p.h
+--- qt-everywhere-opensource-src-4.7.4/src/gui/kernel/qt_x11_p.h.QTBUG-21754	2011-09-12 01:49:28.000000000 -0500
++++ qt-everywhere-opensource-src-4.7.4/src/gui/kernel/qt_x11_p.h	2011-10-28 16:04:53.839638771 -0500
+@@ -54,6 +54,7 @@
+ //
+ 
+ #include "QtGui/qwindowdefs.h"
++#include "QtCore/qhash.h"
+ #include "QtCore/qlist.h"
+ #include "QtCore/qvariant.h"
+ 
+@@ -467,6 +468,7 @@ struct QX11Data
+     Colormap *argbColormaps;
+     int screenCount;
+     int defaultScreen;
++    QHash<int, int> bppForDepth;
+ 
+     Time time;
+     Time userTime;
+diff -up qt-everywhere-opensource-src-4.7.4/src/gui/painting/qwindowsurface_raster.cpp.QTBUG-21754 qt-everywhere-opensource-src-4.7.4/src/gui/painting/qwindowsurface_raster.cpp
+--- qt-everywhere-opensource-src-4.7.4/src/gui/painting/qwindowsurface_raster.cpp.QTBUG-21754	2011-09-12 01:49:28.000000000 -0500
++++ qt-everywhere-opensource-src-4.7.4/src/gui/painting/qwindowsurface_raster.cpp	2011-10-28 16:11:47.145681289 -0500
+@@ -224,9 +224,10 @@ void QRasterWindowSurface::flush(QWidget
+     } else
+ #endif
+     {
++        int depth = widget->x11Info().depth();
+         const QImage &src = d->image->image;
+         br = br.intersected(src.rect());
+-        if (src.format() != QImage::Format_RGB32 || widget->x11Info().depth() < 24) {
++        if (src.format() != QImage::Format_RGB32 || depth < 24 || X11->bppForDepth.value(depth) != 32) {    
+             Q_ASSERT(src.depth() >= 16);
+             const QImage sub_src(src.scanLine(br.y()) + br.x() * (uint(src.depth()) / 8),
+                                  br.width(), br.height(), src.bytesPerLine(), src.format());
+@@ -238,7 +239,7 @@ void QRasterWindowSurface::flush(QWidget
+         } else {
+             // qpaintengine_x11.cpp
+             extern void qt_x11_drawImage(const QRect &rect, const QPoint &pos, const QImage &image, Drawable hd, GC gc, Display *dpy, Visual *visual, int depth);
+-            qt_x11_drawImage(br, wbr.topLeft(), src, widget->handle(), d_ptr->gc, X11->display, (Visual *)widget->x11Info().visual(), widget->x11Info().depth());
++            qt_x11_drawImage(br, wbr.topLeft(), src, widget->handle(), d_ptr->gc, X11->display, (Visual *)widget->x11Info().visual(), depth);
+         }
+     }
+ 

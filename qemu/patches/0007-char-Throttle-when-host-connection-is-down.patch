@@ -1,0 +1,56 @@
+>From 5121e48706408e28c811e74d3e6da5b78aa9137d Mon Sep 17 00:00:00 2001
+From: Amit Shah <amit.shah@redhat.com>
+Date: Mon, 21 Mar 2011 22:05:10 +0100
+Subject: [PATCH 07/28] char: Throttle when host connection is down#
+
+When the host-side connection goes down, throttle the virtio-serial bus
+and later unthrottle when a connection gets established.  This helps
+prevent any lost IO (guest->host) while the host connection was down.
+
+Bugzilla: 621484
+
+This commit actually helps the bug mentioned above as no writes will now
+get lost because of the throttling done here.  With just the patches
+sent earlier for that bug, one write will end up getting lost in the
+worst case (host d/c, guest write, host connect).
+
+Signed-off-by: Amit Shah <amit.shah@redhat.com>
+---
+ qemu-char.c |   14 ++++++++++++++
+ 1 files changed, 14 insertions(+), 0 deletions(-)
+
+diff --git a/qemu-char.c b/qemu-char.c
+index f54ce04..8d39500 100644
+--- a/qemu-char.c
++++ b/qemu-char.c
+@@ -140,6 +140,9 @@ static void qemu_chr_generic_open_bh(void *opaque)
+ {
+     CharDriverState *s = opaque;
+     qemu_chr_event(s, CHR_EVENT_OPENED);
++    if (s->write_blocked) {
++        char_write_unblocked(s);
++    }
+     qemu_bh_delete(s->bh);
+     s->bh = NULL;
+ }
+@@ -2060,6 +2063,17 @@ static int tcp_chr_write(CharDriverState *chr, const uint8_t *buf, int len)
+         ret = send_all(chr, s->fd, buf, len);
+         if (ret == -1 && errno == EPIPE) {
+             tcp_closed(chr);
++
++            if (chr->chr_enable_write_fd_handler && chr->chr_write_unblocked) {
++                /*
++                 * Since we haven't written out anything, let's say
++                 * we're throttled.  This will prevent any output from
++                 * the guest getting lost if host-side chardev goes
++                 * down.  Unthrottle when we re-connect.
++                 */
++                chr->write_blocked = true;
++                return 0;
++            }
+         }
+         return ret;
+     } else {
+-- 
+1.7.5.1
+

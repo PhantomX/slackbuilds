@@ -19,6 +19,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.5.95-compiz.
 # Mandriva
 zcat ${SB_PATCHDIR}/kdebase-runtime-4.3.2-knotify-fix-cpu-charge.patch.gz | patch -p1 -E --backup --verbose
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/libqzeitgeist08.patch
+
 # Branch patches
 
 # Trunk  patches

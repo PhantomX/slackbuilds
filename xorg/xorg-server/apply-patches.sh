@@ -34,8 +34,8 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99.1-test.patch
 # Submitted to upstream but not merged for 1.11
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99-config-add-udev-systemd-multi-seat-support.patch
 
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-CVE-2011-4028.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-CVE-2011-4029.patch
+# [Crestline] Coredump when doing exit
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-dix-block-signals-when-closing-all-devices.patch
 
 # misc
 

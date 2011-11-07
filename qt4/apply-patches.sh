@@ -68,6 +68,13 @@ ApplyPatch qt-everywhere-opensource-src-4.7.1-QTBUG-14467.patch
 # Qt doesn't close orphaned file descriptors after printing (#746601, QTBUG-14724)
 ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-14724.patch
 
+# workaround aliasing issues in declarative/qml (#748936, QTBUG-19736) 
+ApplyPatch qt-everywhere-opensource-src-4.7.4-qml_no_strict_aliasing.patch
+
+# workaround
+# sql/drivers/tds/qsql_tds.cpp:341:49: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+ApplyPatch qt-everywhere-opensource-src-4.7.4-tds_no_strict_aliasing.patch
+
 ApplyPatch qt-everywhere-opensource-src-4.6.1-add_missing_bold_style.patch.gz
 
 # security patches

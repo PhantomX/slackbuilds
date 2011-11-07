@@ -19,6 +19,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-ijs-automake-ver.p
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-runlibfileifexists.patch
 # Applied upstream fix for gdevcups handling of RGBW (Ghostscript # bug #691922).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-cups-rgbw.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-glyph-crash.patch
 # Applied patch to fix NULL dereference in JBIG2 decoder.
 zcat ${SB_PATCHDIR}/ghostscript-jbig2dec-nullderef.patch.gz | patch -p1 --verbose
 # Install CUPS filter convs files in the correct place.

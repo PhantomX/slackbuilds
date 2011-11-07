@@ -44,6 +44,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-systemd-socket.patch
 # Avoid GIF reader loop (CVE-2011-2896, STR #3914, bug #727800).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-CVE-2011-2896.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-str3921.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-ps-command-filter.patch
 
 ## SECURITY PATCHES:
 

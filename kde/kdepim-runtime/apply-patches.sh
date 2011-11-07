@@ -13,9 +13,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.2-nepomuk_notifica
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.1-sqlite-support.patch
 
 # upstream patches
-# http://bugs.kde.org/283467
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.2-kde283467.patch
-# http://bugs.kde.org/283364
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.2-kde283364.patch
 
 set +e +o pipefail

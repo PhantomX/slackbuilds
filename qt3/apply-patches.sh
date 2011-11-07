@@ -38,6 +38,12 @@ zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8b-sane_defaults.patch.gz | sed \
   -e "s|@@KDE3_PLUGIN_PATH@@|/usr/lib${LIBDIRSUFFIX}/kde3/plugins|" \
   | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-cstddef.patch
+# fix aliasing issue in qlocale.cpp
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-qlocale-aliasing.patch
+# silence compiler warning in qimage.h by adding parentheses
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-qimage-parentheses.patch
+# fix the include path for zlib.h in qcstring.cpp to pick up the system version
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-system-zlib-header.patch
 
 # immodule patches
 bzcat ${SB_PATCHDIR}/qt-x11-immodule-unified-qt3.3.8-20071116.diff.bz2 | patch -p1 -E --backup --verbose
@@ -69,6 +75,6 @@ zcat ${SB_PATCHDIR}/qt-ulibc.patch.gz | patch -p1 -E --backup --verbose
 # eycandy patch(es)
 zcat ${SB_PATCHDIR}/qt-3.3.8-eyecandy.patch.gz | patch -p1 -E --backup --verbose
 
-zcat ${SB_PATCHDIR}/qt3-png14.patch.gz | patch -p0 -E --backup --verbose
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/qt-3.3.8-libpng15.patch
 
 set +e +o pipefail

@@ -24,6 +24,7 @@ patch -p1 --backup --verbose -i ${SB_PATCHDIR}/tooltip-positioning.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=611313
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/window-dragging.patch
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk2-schar.patch
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/0a0fd5af99f2ae9b0f8cc6b943b98b7be43ed723.patch
 
 # From Debian
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/003_gdk.pc_privates.patch

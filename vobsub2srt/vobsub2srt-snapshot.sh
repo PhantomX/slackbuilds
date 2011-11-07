@@ -31,6 +31,9 @@ pushd "${tmp}"
       git checkout $(git rev-list -n 1 --before="${gitdate}" ${gitbranch})
       gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
     fi
-    git archive --format=tar --prefix=${module}-${snap}/ ${gittree} | xz -9 > "${pwd}"/${module}-${snap}.tar.xz
+    echo "$(git describe --tags --dirty --always 2> /dev/null)" > version
+    find . -type d -name .git -print0 | xargs -0r rm -rf
+    rm -f .gitignore config.git-hash
   popd
+  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

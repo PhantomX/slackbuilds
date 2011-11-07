@@ -4,7 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-zcat ${SB_PATCHDIR}/libpng-1.2.36-pngconf-setjmp.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/libpng-1.4.0-multilib.patch.gz | patch -p0 --verbose
+sed -e "s|_VER_|${SVER//.}|g" ${SB_PATCHDIR}/libpng-multilib.patch | \
+  patch -p1 -E --backup --verbose
 
 set +e +o pipefail

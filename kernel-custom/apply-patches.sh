@@ -67,35 +67,23 @@ ApplyOptionalPatch linux-2.6-compile-fixes.patch.gz
 # revert patches from upstream that conflict or that we get via other means
 ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
-ApplyPatch perf-check-ownership.patch
-
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
 # utrace
 ApplyPatch utrace.patch
 
 # vm patches
+ApplyPatch oom-warning.patch
 ApplyPatch grab-swap-token-oops.patch
+ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
+ApplyPatch oom-thaw-threads-if-oom-killed-thread-is-frozen-befo.patch
 
 # mm patches
-ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
-
-# Minor fixes from 3.0-3.1-rc4 not included in -stable
-ApplyPatch mm-swap-token-makes-global-variables-to-function-local.patch
-ApplyPatch mm-thp-minor-lock-simplification-in-__khugepaged_exit.patch
-ApplyPatch mm-remove-ZAP_BLOCK_SIZE.patch
-ApplyPatch mm-vmscan-fix-force-scanning-small-targets-without-swap.patch
-ApplyPatch mm-vmscan-drop-nr_force_scan-from-get_scan_count.patch
-ApplyPatch mm-vmscan-clear-ZONE_CONGESTED-for-zone-with-good-watermark.patch
 
 # Architecture patches
 # x86(-64)
 # Add K10 and native cpu optimization support
 ApplyPatch linux-3.0-add-cpu-optimizations.patch
-
-ApplyPatch reorganize_stop_cpus.patch
-ApplyPatch implement-stop_machine_from_inactive_cpu.patch
-ApplyPatch use_stop_machine_for_mtrr_rendezvous.patch
 
 ApplyPatch x86_64-hpet-64bit-timer.patch
 
@@ -116,13 +104,11 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 ApplyPatch remount-no-shrink-dcache.patch
 
 # reisefs
-ApplyPatch reiserfs-barrier-default.patch
 ApplyPatch reiserfs-force-inode-evictions-before-umount-to-avoid-crash.patch
 
 # ext4
 
 # ext3
-ApplyPatch ext3-barrier-default.patch
 
 # xfs
 ApplyPatch xfs-Fix-possible-memory-corruption-in-xfs_readlink.patch
@@ -140,7 +126,6 @@ ApplyPatch xfs-Fix-possible-memory-corruption-in-xfs_readlink.patch
 # ACPI
 ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
 ApplyPatch linux-2.6-acpi-video-dos.patch
-ApplyPatch acpi-ec-add-delay-before-write.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
 ApplyPatch acpi-ensure-thermal-limits-match-cpu-freq.patch
 # list acpi fixed events at /proc/acpi/fixed_events
@@ -148,8 +133,6 @@ ApplyPatch acpi-add-proc-event-regs.patch
 
 # Various low-impact patches to aid debugging.
 ApplyPatch linux-2.6-debug-taint-vm.patch
-## try to find out what is breaking acpi-cpufreq
-ApplyPatch linux-2.6-debug-vm-would-have-oomkilled.patch
 
 # cpufreq
 ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
@@ -168,13 +151,12 @@ ApplyPatch linux-2.6-defaults-aspm.patch.gz
 ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
-ApplyPatch 0001-block-prepare-I-O-context-code-for-BFQ-v3-for-3.0.patch
-ApplyPatch 0002-block-cgroups-kconfig-build-bits-for-BFQ-v3-3.0.patch
-ApplyPatch 0003-block-introduce-the-BFQ-v3-I-O-sched-for-3.0.patch
+ApplyPatch 0001-block-prepare-I-O-context-code-for-BFQ-v3r1-for-3.1.patch
+ApplyPatch 0002-block-cgroups-kconfig-build-bits-for-BFQ-v3r1-3.1.patch
+ApplyPatch 0003-block-introduce-the-BFQ-v3r1-I-O-sched-for-3.1.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
-ApplyPatch hda_intel-prealloc-4mb-dmabuffer.patch
 
 # block/bio
 #
@@ -187,6 +169,7 @@ ApplyPatch linux-2.6-input-kill-stupid-messages.patch
 
 # stop floppy.ko from autoloading during udev...
 ApplyPatch die-floppy-die.patch
+ApplyPatch floppy-drop-disable_hlt-warning.patch
 
 ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch
 
@@ -198,9 +181,6 @@ ApplyPatch linux-2.6-silence-noise.patch
 
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
-
-# Get rid of useless bridge window conflict warnings
-ApplyPatch x86-pci-reduce-severity-of-host-bridge-window-conflict-warnings.patch
 
 # Changes to upstream defaults.
 # Turns pnpbios off by default, useful, since pnpbios
@@ -231,7 +211,11 @@ ApplyOptionalPatch drm-nouveau-updates.patch
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-intel-make-lvds-work.patch
+ApplyPatch drm-i915-fbc-stfu.patch
 ApplyPatch drm-i915-sdvo-lvds-is-digital.patch
+
+ApplyPatch drm-lower-severity-radeon-lockup.diff
+
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
 # silence the ACPI blacklist code
@@ -250,41 +234,27 @@ ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch udlfb-bind-framebuffer-to-interface.patch
 ApplyPatch ums-realtek-driver-uses-stack-memory-for-DMA.patch
+ApplyPatch epoll-fix-spurious-lockdep-warnings.patch
+ApplyPatch epoll-limit-paths.patch
 ApplyPatch rcu-avoid-just-onlined-cpu-resched.patch
 ApplyPatch block-stray-block-put-after-teardown.patch
 ApplyPatch usb-add-quirk-for-logitech-webcams.patch
+
 ApplyPatch crypto-register-cryptd-first.patch
-ApplyPatch x86-efi-Calling-__pa-with-an-ioremap-address-is-invalid.patch
 
 # Runtime PM
-#ApplyPatch linux-2.6-usb-pci-autosuspend.patch
-#ApplyPatch linux-2.6-enable-more-pci-autosuspend.patch
 
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
-ApplyPatch epoll-fix-spurious-lockdep-warnings.patch
-ApplyPatch epoll-limit-paths.patch
-
+ApplyPatch revert-efi-rtclock.patch
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
-ApplyPatch iwlagn-check-for-priv--txq-in-iwlagn_wait_tx_queue_empty.patch
+ApplyPatch hvcs_pi_buf_alloc.patch
 
-# rhbz#719607
-ApplyPatch vfs-fix-automount-for-negative-autofs-dentries.patch
+ApplyPatch powerpc-Fix-deadlock-in-icswx-code.patch
 
-#rhbz 740645
-ApplyPatch md-dont-delay-reboot-by-1-second-if-no-MD-devices.patch
-
-# rhbz #496675
-ApplyPatch Platform-fix-samsung-laptop-DMI-identification-for-N.patch
-
-# rhbz #700718
-ApplyPatch x86-Save-stack-pointer-in-perf-live-regs-savings.patch
-ApplyPatch x86-Fetch-stack-from-regs-when-possible-in-dump_trac.patch
-
-#rhbz #708563
-ApplyPatch binfmt_elf-fix-PIE-execution-with-random-disabled.patch
+ApplyPatch iwlagn-fix-ht_params-NULL-pointer-dereference.patch
 
 #rhbz #722509
 ApplyPatch mmc-Always-check-for-lower-base-frequency-quirk-for-.patch
@@ -294,9 +264,27 @@ ApplyPatch 0001-mm-vmscan-Limit-direct-reclaim-for-higher-order-allo.patch
 ApplyPatch 0002-mm-Abort-reclaim-compaction-if-compaction-can-procee.patch
 
 #rhbz 748691
-ApplyPatch be2net-move-to-new-vlan-model.patch
 ApplyPatch be2net-non-member-vlan-pkts-not-received-in-promisco.patch
 ApplyPatch benet-remove-bogus-unlikely-on-vlan-check.patch
+
+#rhbz 750402
+ApplyPatch oom-fix-integer-overflow-of-points.patch
+
+#rhbz 706574
+ApplyPatch WMI-properly-cleanup-devices-to-avoid-crashes.patch
+
+#rhbz 728607
+ApplyPatch elantech.patch
+
+#rhbz 748210
+ApplyPatch ideapad-Check-if-acpi-already-handle-backlight.patch
+
+#rhbz 731365
+ApplyPatch mac80211-fix-remain_off_channel-regression.patch
+ApplyPatch mac80211-config-hw-when-going-back-on-channel.patch
+
+#rhbz 752176
+ApplyPatch sysfs-msi-irq-per-device.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

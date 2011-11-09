@@ -7,9 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 # build patches
 zcat ${SB_PATCHDIR}/${NAME}-version.patch.gz | sed -e "s/__RPM_VERSION_INTERNAL__/${GECKO_DIR_VER}/" | patch -p1 -E --backup --verbose
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-build.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-build-sbrk.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.0-chromium-types.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-5.0-curl.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-6.0-secondary-ipc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-linux3.patch
 
@@ -22,7 +20,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/crashreporter-remove-static.pa
 # Upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-network-link-service.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-NetworkManager09.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-cairo-return.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-670719.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-686280.patch
 
 # OpenSuse kde integration support
 install -m 644 ${SB_PATCHDIR}/kde.js browser/app/profile/kde.js

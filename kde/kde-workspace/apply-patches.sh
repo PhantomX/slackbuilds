@@ -63,6 +63,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.0-bz\#73
 # Branch patches
 
 ## trunk patches
+# Fix possible uninitialized variable use in ksplashx multi-screen code
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-ksplashx.patch
 
 # Arch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/terminate-server.patch

@@ -41,5 +41,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.11-shell-dnd-quit-cra
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.11-startup-warning.patch
 # CVE-2011-2896: fix heap corruption and buffer overflow, upstreamed
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-2.6.11-gif-load.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gimp-libpng15-v2.diff
 
 set +e +o pipefail

@@ -77,7 +77,6 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
   ApplyPatch 1080_all_glibc-no-inline-gmon.patch
   ApplyPatch 1090_all_glibc-2.3.6-fix-pr631.patch
   ApplyPatch 1095_all_glibc-2.14-assume-pipe2-dup3.patch
-  ApplyPatch 1100_all_glibc-2.3.3-china.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1103_all_glibc-new-valencian-locale.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1120_all_glibc-2.11-longjmp-chk-fallback.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1130_all_glibc-2.4-undefine-__i686.patch

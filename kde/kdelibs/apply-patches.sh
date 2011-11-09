@@ -53,5 +53,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.80-halectomy.patch
 # security fix
 ## Not Upstreamed? why not ? -- Rex
 zcat ${SB_PATCHDIR}/kdelibs-4.3.1-CVE-2009-2702.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.3-CVE-0046.patch
 
 set +e +o pipefail

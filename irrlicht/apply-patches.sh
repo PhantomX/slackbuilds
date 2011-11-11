@@ -10,8 +10,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-optflags.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.5.1-glext.patch
 # Use system libaesgm
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.7.1-libaesgm.patch
-# Use improved fastatof from assimp
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.7.2-fastatof-improvements.patch
 # Make libIrrXML.so
 patch -p1 -E --backup -z .irrXML --verbose -i ${SB_PATCHDIR}/${NAME}-irrXML-shared-library.patch
 

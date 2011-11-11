@@ -3,8 +3,11 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${PNAME}-0.92.0-cvs20060123.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${PNAME}-gcc41.patch.gz | patch -p0 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-dso.patch
+
 #patches from altlinux
 zcat ${SB_PATCHDIR}/${PNAME}-0.91.0-alt-sowings.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${PNAME}-0.91.0-alt-session.patch.gz | patch -p1 -E --backup --verbose
@@ -39,5 +42,6 @@ zcat ${SB_PATCHDIR}/${PNAME}-wakeup-delayedAction.patch.gz | patch -p1 -E --back
 zcat ${SB_PATCHDIR}/${PNAME}-wakeup-timer.patch.gz | patch -p1 -E --backup --verbose
 
 zcat ${SB_PATCHDIR}/WindowMaker-0.92.0-png14.patch.gz | patch -p0 -E --backup --verbose
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.92.0-libpng15.patch
 
 set +e +o pipefail

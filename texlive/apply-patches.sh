@@ -7,6 +7,8 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
 zcat ${SB_PATCHDIR}/${NAME}-2007-png14.patch.gz | patch -p0 -E --backup --verbose
+patch -p0 -E --backup -z .png15 --verbose -i ${SB_PATCHDIR}/${NAME}-2007-libpng15.patch
+patch -p0 -E --backup -z .fixtex --verbose -i ${SB_PATCHDIR}/${NAME}-2007-fixtex.patch
 patch -p0 -E --backup -z .newmake --verbose -i ${SB_PATCHDIR}/${NAME}-2007-newmake.patch
 patch -p0 -E --backup -z .rb19 --verbose -i ${SB_PATCHDIR}/${NAME}-2007-ruby19.patch
 

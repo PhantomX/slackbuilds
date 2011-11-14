@@ -233,14 +233,10 @@ ApplyPatch rcutree-avoid-false-quiescent-states.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch udlfb-bind-framebuffer-to-interface.patch
-ApplyPatch ums-realtek-driver-uses-stack-memory-for-DMA.patch
-ApplyPatch epoll-fix-spurious-lockdep-warnings.patch
 ApplyPatch epoll-limit-paths.patch
 ApplyPatch rcu-avoid-just-onlined-cpu-resched.patch
 ApplyPatch block-stray-block-put-after-teardown.patch
 ApplyPatch usb-add-quirk-for-logitech-webcams.patch
-
-ApplyPatch crypto-register-cryptd-first.patch
 
 # Runtime PM
 
@@ -251,13 +247,6 @@ ApplyPatch revert-efi-rtclock.patch
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch hvcs_pi_buf_alloc.patch
-
-ApplyPatch powerpc-Fix-deadlock-in-icswx-code.patch
-
-ApplyPatch iwlagn-fix-ht_params-NULL-pointer-dereference.patch
-
-#rhbz #722509
-ApplyPatch mmc-Always-check-for-lower-base-frequency-quirk-for-.patch
 
 #rhbz #735946
 ApplyPatch 0001-mm-vmscan-Limit-direct-reclaim-for-higher-order-allo.patch
@@ -270,21 +259,16 @@ ApplyPatch benet-remove-bogus-unlikely-on-vlan-check.patch
 #rhbz 750402
 ApplyPatch oom-fix-integer-overflow-of-points.patch
 
-#rhbz 706574
-ApplyPatch WMI-properly-cleanup-devices-to-avoid-crashes.patch
-
 #rhbz 728607
 ApplyPatch elantech.patch
 
 #rhbz 748210
 ApplyPatch ideapad-Check-if-acpi-already-handle-backlight.patch
 
-#rhbz 731365
-ApplyPatch mac80211-fix-remain_off_channel-regression.patch
-ApplyPatch mac80211-config-hw-when-going-back-on-channel.patch
-
 #rhbz 752176
 ApplyPatch sysfs-msi-irq-per-device.patch
+
+ApplyPatch pci-Rework-ASPM-disable-code.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

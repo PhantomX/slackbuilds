@@ -3,7 +3,8 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="https://netpbm.svn.sourceforge.net/svnroot/${module}/stable"
+branch=${branch:-advanced}
+snaproot="https://netpbm.svn.sourceforge.net/svnroot/${module}/${branch}"
 snaproot2="https://netpbm.svn.sourceforge.net/svnroot/${module}/userguide"
 
 tmp=$(mktemp -d)

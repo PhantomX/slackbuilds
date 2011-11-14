@@ -33,8 +33,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-no_rpath.patch
 # https://git.reviewboard.kde.org/r/102439/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.0-knewstuff2_gpg2.patch
 
-
-
 # https://bugs.kde.org/show_bug.cgi?id=269045
 # https://git.reviewboard.kde.org/r/101231/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
@@ -42,7 +40,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
 # make forcefully hal-free build
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.80-halectomy.patch
 
-# Mandriva
+# Gentoo/Mandriva
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
 
 # official backports
 

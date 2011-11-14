@@ -18,5 +18,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openjpeg-1.4-cmake_pkgconfig.p
 # fix cmake create_symlink usage
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openjpeg-1.4-cmake_symlink_fix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openjpeg-1.4-OpenJPEGConfig.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openjpeg-1.4-libpng15.patch
 
 set +e +o pipefail

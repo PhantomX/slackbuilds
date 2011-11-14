@@ -4,8 +4,6 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-slknew.patch
-
 # From Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-handle-fwrite-return.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-grub_test_assert_printf.patch
@@ -33,8 +31,12 @@ for patch in \
   btrfs_stat.patch \
   partition_performance.patch \
   gfxterm_background.patch \
+  probe_canonicalise.patch \
+  mkconfig_skip_readme.patch \
   ; do
   patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done
+
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-slknew.patch
 
 set +e +o pipefail

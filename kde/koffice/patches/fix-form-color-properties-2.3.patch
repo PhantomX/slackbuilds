@@ -1,0 +1,210 @@
+commit 97fa68c81cf7db73b24f352e8c08077a37d13bcd
+Author: Jaroslaw Staniek <staniek@kde.org>
+Date:   Wed Mar 9 14:10:59 2011 +0100
+
+    Forms: re-add foreground and background color properties for widgets
+    
+    Undo/redo works too.
+    
+    BUG:267671
+
+diff --git a/kexi/formeditor/form.cpp b/kexi/formeditor/form.cpp
+index 36b2693..b7d9963 100644
+--- kexi/formeditor/form.cpp
++++ kexi/formeditor/form.cpp
+@@ -241,7 +241,28 @@ public:
+     }
+ 
+     KoProperty::Property::ListData* createValueList(WidgetInfo *winfo, const QStringList &list);
+-
++    
++    //! Sets color of selected widget(s) to value of @a p. 
++    //! @a roleMethod can be backgroundColor or foregroundColor.
++    void setColorProperty(KoProperty::Property& p,
++                          QPalette::ColorRole (QWidget::*roleMethod)() const)
++    {
++        foreach(QWidget* widget, selected) {
++            ObjectTreeItem *titem = q->objectTree()->lookup(widget->objectName());
++            if (titem && p.isModified())
++                titem->addModifiedProperty(p.name(), p.value());
++            QPalette widgetPalette(widget->palette());
++            QColor oldColor(widgetPalette.color((widget->*roleMethod)()));
++            widgetPalette.setColor((widget->*roleMethod)(), p.value().value<QColor>());
++            widget->setPalette(widgetPalette);
++            if (!isRedoing) {
++                q->addPropertyCommand(widget->objectName().toLatin1(),
++                    oldColor, p.value(), p.name(), Form::DontExecuteCommand);
++            }
++            //handleWidgetPropertyChanged(widget, p.name(), value);
++        }
++    }
++        
+     Form::Mode mode;
+     Form::State state;
+     Form::Features features;
+@@ -1837,6 +1858,14 @@ void Form::slotPropertyChanged(KoProperty::Set& set, KoProperty::Property& p)
+         // return;
+         // special types of properties handled separately
+     }
++    else if (property == "paletteBackgroundColor") {
++        d->setColorProperty(p, &QWidget::backgroundRole);
++        return;
++    }
++    else if (property == "paletteForegroundColor") {
++        d->setColorProperty(p, &QWidget::foregroundRole);
++        return;
++    }
+     else if (property == "hAlign" || property == "vAlign" || property == "wordbreak") {
+         saveAlignProperty(property);
+         return;
+@@ -2218,6 +2247,13 @@ void Form::createPropertiesForWidget(QWidget *w)
+         // update the Property.oldValue() and isModified() using the value stored in the ObjectTreeItem
+         updatePropertyValue(tree, propertyName, meta);
+     }
++    
++    newProp = new KoProperty::Property("paletteBackgroundColor",
++                                       w->palette().color(w->backgroundRole()));
++    d->propertySet.addProperty(newProp);
++    newProp = new KoProperty::Property("paletteForegroundColor",
++                                       w->palette().color(w->foregroundRole()));
++    d->propertySet.addProperty(newProp);
+ 
+     d->propertySet["objectName"].setAutoSync(false); // name should be updated only when pressing Enter
+ //! @todo fix enabled property here
+@@ -3365,8 +3401,11 @@ void Form::changeFont()
+     if (1 == widgetsWithFontProperty.count()) {
+         //single widget's settings
+ //?        QWidget *widget = widgetsWithFontProperty.first();
+-        if (QDialog::Accepted != KFontDialog::getFont(font, false, widget()))
++        if (QDialog::Accepted != KFontDialog::getFont(
++                font, KFontChooser::NoDisplayFlags, widget()))
++        {
+             return;
++        }
+         d->propertySet.changeProperty("font", font);
+         return;
+     }
+diff --git a/kexi/formeditor/formIO.cpp b/kexi/formeditor/formIO.cpp
+index 1f9a73e..cdf2d3e 100644
+--- kexi/formeditor/formIO.cpp
++++ kexi/formeditor/formIO.cpp
+@@ -938,7 +938,6 @@ FormIO::saveWidget(ObjectTreeItem *item, QDomElement &parent, QDomDocument &domD
+     if (!item)
+         return;
+     kDebug() << item->className() << item->widget()->objectName();
+-    bool savedAlignment = false;
+ #ifndef KEXI_NO_FORM_SPRING_ELEMENT
+     // we let Spring class handle saving itself
+     if (item->className() == "Spring") {
+@@ -984,7 +983,11 @@ FormIO::saveWidget(ObjectTreeItem *item, QDomElement &parent, QDomDocument &domD
+     else // Normal widgets
+         tclass.setAttribute("class", lib->savingName(item->widget()->metaObject()->className()));
+ 
++    // We save every property in the modifProp list of the ObjectTreeItem
++    QHash<QString, QVariant> hash(*(item->modifiedProperties()));
++    QStringList names(hash.keys());
+     savePropertyValue(tclass, domDoc, "objectName", item->widget()->objectName(), item->widget());
++    names.removeOne("objectName");
+ 
+     // Important: save dataSource property FIRST before properties like "alignment"
+     // - needed when subproperties are defined after subwidget creation, and subwidget is created after setting "dataSource"
+@@ -1004,28 +1007,48 @@ FormIO::saveWidget(ObjectTreeItem *item, QDomElement &parent, QDomDocument &domD
+     else if (parent.tagName() == "widget" || parent.tagName() == "UI")
+         savePropertyValue(tclass, domDoc, "geometry", item->widget()->property("geometry"), item->widget());
+ 
++    names.removeOne("geometry");
++    names.removeOne("layout");
++
+     // Save the buddy widget for a label
+-    if (item->widget()->inherits("QLabel") && ((QLabel*)item->widget())->buddy())
++    if (   dynamic_cast<QLabel*>(item->widget())
++        && dynamic_cast<QLabel*>(item->widget())->buddy())
++    {
+         savePropertyElement(
+-            tclass, domDoc, "property", "buddy", ((QLabel*)item->widget())->buddy()->objectName());
+-
+-    // We save every property in the modifProp list of the ObjectTreeItem
+-    QHash<QString, QVariant> hash(*(item->modifiedProperties()));
+-    foreach (const QString& name, hash.keys()) {
+-        if (name == "hAlign" || name == "vAlign" || name == "wordbreak" || name == "alignment") {
+-            if (!savedAlignment) { // not to save it twice
+-                savePropertyValue(
+-                    tclass, domDoc, "alignment", 
+-                    item->widget()->property("alignment"), item->widget());
+-                savedAlignment = true;
+-            }
+-        } else if (name == "objectName" || name == "geometry" || name == "layout") {
+-            // these have already been saved
+-        } else {
+-            savePropertyValue(tclass, domDoc, name.toLatin1(), item->widget()->property(name.toLatin1()),
+-                              item->widget(), lib);
++            tclass, domDoc, "property", "buddy",
++            dynamic_cast<QLabel*>(item->widget())->buddy()->objectName());
++    }
++    
++    if (names.contains("paletteBackgroundColor")) {
++        savePropertyElement(
++            tclass, domDoc, "property", "paletteBackgroundColor",
++            item->widget()->palette().color(item->widget()->backgroundRole()));
++        names.removeOne("paletteBackgroundColor");
++    }
++    if (names.contains("paletteForegroundColor")) {
++        savePropertyElement(
++            tclass, domDoc, "property", "paletteForegroundColor",
++            item->widget()->palette().color(item->widget()->foregroundRole()));
++        names.removeOne("paletteForegroundColor");
++    }
++
++    QStringList alignProperties;
++    alignProperties << "hAlign" << "vAlign" << "wordbreak" << "alignment";
++    foreach (const QString& name, alignProperties) {
++        if (names.contains(name)) {
++            names.removeOne(name);
++            savePropertyValue(
++                tclass, domDoc, "alignment", 
++                item->widget()->property("alignment"), item->widget());
++            break;
+         }
+     }
++
++    foreach (const QString& name, names) {
++        savePropertyValue(tclass, domDoc, name.toLatin1(),
++                          item->widget()->property(name.toLatin1()),
++                          item->widget(), lib);
++    }
+     hash.clear();
+ 
+     if (KexiUtils::objectIsA(item->widget(), "CustomWidget")) {
+@@ -1394,8 +1417,9 @@ FormIO::readChildNodes(ObjectTreeItem *item, Container *container, const QDomEle
+             }
+ 
+             // We cannot assign the buddy now as the buddy widget may not be created yet
+-            if (name == "buddy")
++            if (name == "buddy") {
+                 m_buddies->insert(readPropertyValue(node.firstChild(), w, name).toString(), (QLabel*)w);
++            }
+             else if (    (eltag == "grid" || eltag == "hbox" || eltag == "vbox")
+                       && item->container()
+                       && item->container()->layout() )
+@@ -1426,8 +1450,19 @@ FormIO::readChildNodes(ObjectTreeItem *item, Container *container, const QDomEle
+ #endif
+                 }
+             }
+-            // If the object doesn't have this property, we let the Factory handle it (maybe a special property)
+-            else if (!isQt3NameProperty && -1 == subwidget->metaObject()->indexOfProperty(name.toLatin1())) {
++            else if (name == "paletteBackgroundColor" || name == "paletteForegroundColor") {
++                QPalette widgetPalette(w->palette());
++                QVariant val(readPropertyValue(node.firstChild(), w, name));
++                if (!val.isNull())
++                    widgetPalette.setColor(
++                        name == "paletteBackgroundColor" ? w->backgroundRole() : w->foregroundRole(),
++                        val.value<QColor>());
++                w->setPalette(widgetPalette);
++                item->addModifiedProperty(name.toLatin1(), val);
++            }
++            else if (!isQt3NameProperty && -1 == subwidget->metaObject()->indexOfProperty(name.toLatin1()))
++            {
++                // If the object doesn't have this property, we let the Factory handle it (maybe a special property)
+                 if (w->metaObject()->className() == QString::fromLatin1("CustomWidget"))
+                     item->storeUnknownProperty(node);
+                 else {

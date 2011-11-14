@@ -16,10 +16,4 @@ zcat ${SB_PATCHDIR}/${NAME}-1.1.17-avsync_hack.patch.gz | patch -p1 -E --backup 
 # http://bugzilla.redhat.com/477226
 zcat ${SB_PATCHDIR}/${NAME}-1.1.16.2-multilib.patch.gz | patch -p1 -E --backup --verbose
 
-# http://bugs.gentoo.org/164425
-zcat ${SB_PATCHDIR}/${NAME}-1.1.15-textrel-fix.patch.gz | patch -p1 -E --backup --verbose
-# http://bugs.gentoo.org/332389
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.19-xvmc.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.19-ffmpeg.patch
-
 set +e +o pipefail

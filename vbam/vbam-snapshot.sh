@@ -4,6 +4,7 @@ set -e
 
 module=$(basename $0 -snapshot.sh)
 snaproot="https://vbam.svn.sourceforge.net/svnroot/${module}/trunk"
+snaproot2="https://vbam.svn.sourceforge.net/svnroot/${module}/dependencies"
 
 tmp=$(mktemp -d)
 
@@ -22,6 +23,7 @@ snap=${snap:-$(date +%Y%m%d)}
 
 pushd "${tmp}"
   svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
+  svn export ${SNAP_COOPTS} ${snaproot2}/fex ${module}-${snap}/fex
   svn co --depth=files --force ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
     SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"

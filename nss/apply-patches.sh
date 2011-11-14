@@ -16,6 +16,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-646045.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-libnsspem-rhbz-734760.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nsspem-init-inform-not-thread-safe.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-ckbi-1.88.rtm.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gnuc-minor-def-fix.patch
 # Uncomment this if builds stops with -lz error
 #zcat ${SB_PATCHDIR}/nss-fix-zlib.patch.gz | patch -p0 -E --backup --verbose
 

@@ -38,7 +38,7 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.0-knewstuff2_gpg2.pat
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
 
 # make forcefully hal-free build
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.80-halectomy.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.3-halectomy.patch
 
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch

@@ -13,6 +13,8 @@ zcat ${SB_PATCHDIR}/kdebase-runtime-4.3.3-home_onlyshowin_kde.patch.gz | patch -
 # Launch compiz via compiz-manager so we get window decorations and
 # other such decadent luxuries (AdamW 2011/01)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.5.95-compiz.patch
+# To build/include activitymanager or not
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-runtime-4.7.2-no_activitymanager.patch
 # tirpc support
 #patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.6.4-tirpc.patch
 

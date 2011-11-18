@@ -102,7 +102,9 @@ for obj in objects:
         trust[obj['CKA_LABEL']] = True
     elif obj['CKA_TRUST_EMAIL_PROTECTION'] == 'CKT_NSS_TRUSTED_DELEGATOR':
         trust[obj['CKA_LABEL']] = True
-    elif obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NETSCAPE_UNTRUSTED':
+    elif obj['CKA_TRUST_CODE_SIGNING'] == 'CKT_NSS_TRUSTED_DELEGATOR':
+        trust[obj['CKA_LABEL']] = True
+    elif obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_UNTRUSTED':
         print '!'*74
         print "UNTRUSTED BUT NOT BLACKLISTED CERTIFICATE FOUND: %s" % obj['CKA_LABEL']
         print '!'*74
@@ -115,13 +117,16 @@ for obj in objects:
     trustmap[label] = obj
     print " added cert", label
 
-def label_to_filename(label):
+def obj_to_filename(obj):
+    label = obj['CKA_LABEL'][1:-1]
     label = label.replace('/', '_')\
         .replace(' ', '_')\
         .replace('(', '=')\
         .replace(')', '=')\
-        .replace(',', '_') + '.crt'
-    return re.sub(r'\\x[0-9a-fA-F]{2}', lambda m:chr(int(m.group(0)[2:], 16)), label)
+        .replace(',', '_')
+    label = re.sub(r'\\x[0-9a-fA-F]{2}', lambda m:chr(int(m.group(0)[2:], 16)), label)
+    serial = ".".join(map(lambda x:str(ord(x)), obj['CKA_SERIAL_NUMBER']))
+    return label + ":" + serial + ".crt"
 
 trust_types = {
   "CKA_TRUST_DIGITAL_SIGNATURE": "digital-signature",
@@ -151,9 +156,11 @@ openssl_trust = {
 
 for obj in objects:
     if obj['CKA_CLASS'] == 'CKO_CERTIFICATE':
-        #if not obj['CKA_LABEL'] in trust or not trust[obj['CKA_LABEL']]:
-        #    continue
-        fname = label_to_filename(obj['CKA_LABEL'][1:-1])
+        print "producing cert file for " + obj['CKA_LABEL']
+        if not obj['CKA_LABEL'] in trust or not trust[obj['CKA_LABEL']]:
+            print " -> untrusted, ignoring"
+            continue
+        fname = obj_to_filename(obj)
         f = open(fname, 'w')
         trustbits = []
         openssl_trustflags = []
@@ -169,4 +176,7 @@ for obj in objects:
         f.write("-----BEGIN CERTIFICATE-----\n")
         f.write("\n".join(textwrap.wrap(base64.b64encode(obj['CKA_VALUE']), 64)))
         f.write("\n-----END CERTIFICATE-----\n")
+        print " -> written as '%s', trust = %s, openssl-trust = %s" % (fname, trustbits, openssl_trustflags)
+
+
 

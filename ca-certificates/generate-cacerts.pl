@@ -288,8 +288,11 @@ foreach $cert (@certs)
         if ($write_current_cert == 1)
         {
             $pem_file_count++;
-            sysopen(PEM, "$cert_alias.pem", O_WRONLY|O_CREAT|O_EXCL)
-                || die("FAIL: could not open file for $cert_alias.pem: $!");
+            if (!sysopen(PEM, "$cert_alias.pem", O_WRONLY|O_CREAT|O_EXCL)) {
+                $cert_alias = "$cert_alias.1";
+                sysopen(PEM, "$cert_alias.1.pem", O_WRONLY|O_CREAT|O_EXCL)
+                    || die("FAIL: could not open file for $cert_alias.pem: $!");
+            }
             print PEM $cert;
             print " => writing $cert_alias.pem...\n";
         }

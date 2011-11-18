@@ -30,6 +30,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh693982.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh700097.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh714049.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind98-dlz_buildfix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind98-rh735103.patch
 
 # needs inpection
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-96-dyndb.patch

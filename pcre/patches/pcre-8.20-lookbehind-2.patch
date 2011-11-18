@@ -1,0 +1,473 @@
+From 5d9a1b3aee83b5068ab2635e474c3d75a0277e1c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Petr=20P=C3=ADsa=C5=99?= <ppisar@redhat.com>
+Date: Wed, 16 Nov 2011 13:18:09 +0100
+Subject: [PATCH] Fixed several items that were being incorrectly rejected as
+ "not fixed length" in lookbehinds.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+From SVN tree:
+r747 | ph10 | 2011-11-15 18:35:10 +0100 (Út, 15 lis 2011) | 3 lines
+
+While fixing 6 above, I noticed that a number of other items were being
+incorrectly rejected as "not fixed length". This arose partly because newer
+opcodes had not been added to the fixed-length checking code. I have (a)
+corrected the bug and added tests for these items, and (b) arranged for an
+error to occur if an unknown opcode is encountered while checking for fixed
+length instead of just assuming "not fixed length". The items that were
+rejected were: (*ACCEPT), (*COMMIT), (*FAIL), (*MARK), (*PRUNE), (*SKIP),
+(*THEN), \h, \H, \v, \V, and single character negative classes with fixed
+repetitions, e.g. [^a]{3}, with and without PCRE_CASELESS.
+
+Petr Pisar: Remove change log entry.
+See <https://lists.exim.org/lurker/message/20111115.175054.077a216c.en.html>.
+---
+ pcre_compile.c        |  154 ++++++++++++++++++++++++++++++++++++++++++-------
+ pcre_internal.h       |    2 +-
+ pcreposix.c           |    2 +
+ testdata/testinput1   |   24 ++++++++
+ testdata/testinput11  |   27 +++++++++
+ testdata/testoutput1  |   36 +++++++++++
+ testdata/testoutput11 |   41 +++++++++++++
+ 7 files changed, 263 insertions(+), 23 deletions(-)
+
+diff --git a/pcre_compile.c b/pcre_compile.c
+index 588e981..27c8240 100644
+--- a/pcre_compile.c
++++ b/pcre_compile.c
+@@ -410,6 +410,8 @@ static const char error_texts[] =
+   "this version of PCRE is not compiled with PCRE_UCP support\0"
+   "\\c must be followed by an ASCII character\0"
+   "\\k is not followed by a braced, angle-bracketed, or quoted name\0"
++  /* 70 */
++  "internal error: unknown opcode in find_fixedlength()\0"
+   ;
+ 
+ /* Table to identify digits and hex digits. This is used when compiling
+@@ -1477,6 +1479,7 @@ Returns:   the fixed length,
+              or -1 if there is no fixed length,
+              or -2 if \C was encountered
+              or -3 if an OP_RECURSE item was encountered and atend is FALSE
++             or -4 if an unknown opcode was encountered (internal error)
+ */
+ 
+ static int
+@@ -1500,8 +1503,7 @@ for (;;)
+     /* We only need to continue for OP_CBRA (normal capturing bracket) and
+     OP_BRA (normal non-capturing bracket) because the other variants of these
+     opcodes are all concerned with unlimited repeated groups, which of course
+-    are not of fixed length. They will cause a -1 response from the default
+-    case of this switch. */
++    are not of fixed length. */
+ 
+     case OP_CBRA:
+     case OP_BRA:
+@@ -1515,15 +1517,17 @@ for (;;)
+     cc += 1 + LINK_SIZE;
+     break;
+ 
+-    /* Reached end of a branch; if it's a ket it is the end of a nested
+-    call. If it's ALT it is an alternation in a nested call. If it is
+-    END it's the end of the outer call. All can be handled by the same code.
+-    Note that we must not include the OP_KETRxxx opcodes here, because they
+-    all imply an unlimited repeat. */
++    /* Reached end of a branch; if it's a ket it is the end of a nested call.
++    If it's ALT it is an alternation in a nested call. An ACCEPT is effectively
++    an ALT. If it is END it's the end of the outer call. All can be handled by
++    the same code. Note that we must not include the OP_KETRxxx opcodes here,
++    because they all imply an unlimited repeat. */
+ 
+     case OP_ALT:
+     case OP_KET:
+     case OP_END:
++    case OP_ACCEPT:
++    case OP_ASSERT_ACCEPT:
+     if (length < 0) length = branchlength;
+       else if (length != branchlength) return -1;
+     if (*cc != OP_ALT) return length;
+@@ -1557,23 +1561,36 @@ for (;;)
+ 
+     /* Skip over things that don't match chars */
+ 
+-    case OP_REVERSE:
+-    case OP_CREF:
+-    case OP_NCREF:
+-    case OP_RREF:
+-    case OP_NRREF:
+-    case OP_DEF:
++    case OP_MARK:
++    case OP_PRUNE_ARG:
++    case OP_SKIP_ARG:
++    case OP_THEN_ARG:
++    cc += cc[1] + _pcre_OP_lengths[*cc];
++    break;
++
+     case OP_CALLOUT:
+-    case OP_SOD:
+-    case OP_SOM:
+-    case OP_SET_SOM:
+-    case OP_EOD:
+-    case OP_EODN:
+     case OP_CIRC:
+     case OP_CIRCM:
++    case OP_CLOSE:
++    case OP_COMMIT:
++    case OP_CREF:
++    case OP_DEF:
+     case OP_DOLL:
+     case OP_DOLLM:
++    case OP_EOD:
++    case OP_EODN:
++    case OP_FAIL:
++    case OP_NCREF:
++    case OP_NRREF:
+     case OP_NOT_WORD_BOUNDARY:
++    case OP_PRUNE:
++    case OP_REVERSE:
++    case OP_RREF:
++    case OP_SET_SOM:
++    case OP_SKIP:
++    case OP_SOD:
++    case OP_SOM:
++    case OP_THEN:
+     case OP_WORD_BOUNDARY:
+     cc += _pcre_OP_lengths[*cc];
+     break;
+@@ -1595,7 +1612,9 @@ for (;;)
+     need to skip over a multibyte character in UTF8 mode.  */
+ 
+     case OP_EXACT:
+-    case OP_EXACTI: 
++    case OP_EXACTI:
++    case OP_NOTEXACT:
++    case OP_NOTEXACTI:
+     branchlength += GET2(cc,1);
+     cc += 4;
+ #ifdef SUPPORT_UTF8
+@@ -1616,6 +1635,10 @@ for (;;)
+     cc += 2;
+     /* Fall through */
+ 
++    case OP_HSPACE:
++    case OP_VSPACE:
++    case OP_NOT_HSPACE:
++    case OP_NOT_VSPACE:
+     case OP_NOT_DIGIT:
+     case OP_DIGIT:
+     case OP_NOT_WHITESPACE:
+@@ -1647,6 +1670,8 @@ for (;;)
+ 
+     switch (*cc)
+       {
++      case OP_CRPLUS:
++      case OP_CRMINPLUS:
+       case OP_CRSTAR:
+       case OP_CRMINSTAR:
+       case OP_CRQUERY:
+@@ -1667,8 +1692,91 @@ for (;;)
+ 
+     /* Anything else is variable length */
+ 
+-    default:
++    case OP_ANYNL:
++    case OP_BRAMINZERO:
++    case OP_BRAPOS:
++    case OP_BRAPOSZERO:
++    case OP_BRAZERO:
++    case OP_CBRAPOS:
++    case OP_EXTUNI:
++    case OP_KETRMAX:
++    case OP_KETRMIN:
++    case OP_KETRPOS:
++    case OP_MINPLUS:
++    case OP_MINPLUSI:
++    case OP_MINQUERY:
++    case OP_MINQUERYI:
++    case OP_MINSTAR:
++    case OP_MINSTARI:
++    case OP_MINUPTO:
++    case OP_MINUPTOI:
++    case OP_NOTMINPLUS:
++    case OP_NOTMINPLUSI:
++    case OP_NOTMINQUERY:
++    case OP_NOTMINQUERYI:
++    case OP_NOTMINSTAR:
++    case OP_NOTMINSTARI:
++    case OP_NOTMINUPTO:
++    case OP_NOTMINUPTOI:
++    case OP_NOTPLUS:
++    case OP_NOTPLUSI:
++    case OP_NOTPOSPLUS:
++    case OP_NOTPOSPLUSI:
++    case OP_NOTPOSQUERY:
++    case OP_NOTPOSQUERYI:
++    case OP_NOTPOSSTAR:
++    case OP_NOTPOSSTARI:
++    case OP_NOTPOSUPTO:
++    case OP_NOTPOSUPTOI:
++    case OP_NOTQUERY:
++    case OP_NOTQUERYI:
++    case OP_NOTSTAR:
++    case OP_NOTSTARI:
++    case OP_NOTUPTO:
++    case OP_NOTUPTOI:
++    case OP_PLUS:
++    case OP_PLUSI:
++    case OP_POSPLUS:
++    case OP_POSPLUSI:
++    case OP_POSQUERY:
++    case OP_POSQUERYI:
++    case OP_POSSTAR:
++    case OP_POSSTARI:
++    case OP_POSUPTO:
++    case OP_POSUPTOI:
++    case OP_QUERY:
++    case OP_QUERYI:
++    case OP_REF:
++    case OP_REFI:
++    case OP_SBRA:
++    case OP_SBRAPOS:
++    case OP_SCBRA:
++    case OP_SCBRAPOS:
++    case OP_SCOND:
++    case OP_SKIPZERO:
++    case OP_STAR:
++    case OP_STARI:
++    case OP_TYPEMINPLUS:
++    case OP_TYPEMINQUERY:
++    case OP_TYPEMINSTAR:
++    case OP_TYPEMINUPTO:
++    case OP_TYPEPLUS:
++    case OP_TYPEPOSPLUS:
++    case OP_TYPEPOSQUERY:
++    case OP_TYPEPOSSTAR:
++    case OP_TYPEPOSUPTO:
++    case OP_TYPEQUERY:
++    case OP_TYPESTAR:
++    case OP_TYPEUPTO:
++    case OP_UPTO:
++    case OP_UPTOI:
+     return -1;
++
++    /* Catch unrecognized opcodes so that when new ones are added they
++    are not forgotten, as has happened in the past. */
++
++    default:
++    return -4;
+     }
+   }
+ /* Control never gets here */
+@@ -6564,7 +6672,8 @@ for (;;)
+         }
+       else if (fixed_length < 0)
+         {
+-        *errorcodeptr = (fixed_length == -2)? ERR36 : ERR25;
++        *errorcodeptr = (fixed_length == -2)? ERR36 :
++                        (fixed_length == -4)? ERR70: ERR25;
+         *ptrptr = ptr;
+         return FALSE;
+         }
+@@ -7363,7 +7472,8 @@ if (cd->check_lookbehind)
+       DPRINTF(("fixed length = %d\n", fixed_length));
+       if (fixed_length < 0)
+         {
+-        errorcode = (fixed_length == -2)? ERR36 : ERR25;
++        errorcode = (fixed_length == -2)? ERR36 :
++                    (fixed_length == -4)? ERR70 : ERR25;
+         break;
+         }
+       PUT(cc, 1, fixed_length);
+diff --git a/pcre_internal.h b/pcre_internal.h
+index faf1b76..2d02e5d 100644
+--- a/pcre_internal.h
++++ b/pcre_internal.h
+@@ -1665,7 +1665,7 @@ enum { ERR0,  ERR1,  ERR2,  ERR3,  ERR4,  ERR5,  ERR6,  ERR7,  ERR8,  ERR9,
+        ERR40, ERR41, ERR42, ERR43, ERR44, ERR45, ERR46, ERR47, ERR48, ERR49,
+        ERR50, ERR51, ERR52, ERR53, ERR54, ERR55, ERR56, ERR57, ERR58, ERR59,
+        ERR60, ERR61, ERR62, ERR63, ERR64, ERR65, ERR66, ERR67, ERR68, ERR69,
+-       ERRCOUNT };
++       ERR70, ERRCOUNT };
+ 
+ /* The real format of the start of the pcre block; the index of names and the
+ code vector run on as long as necessary after the end. We store an explicit
+diff --git a/pcreposix.c b/pcreposix.c
+index 2061be0..648254b 100644
+--- a/pcreposix.c
++++ b/pcreposix.c
+@@ -153,6 +153,8 @@ static const int eint[] = {
+   REG_INVARG,  /* this version of PCRE is not compiled with PCRE_UCP support */
+   REG_BADPAT,  /* \c must be followed by an ASCII character */
+   REG_BADPAT,  /* \k is not followed by a braced, angle-bracketed, or quoted name */
++  /* 70 */
++  REG_BADPAT,  /* internal error: unknown opcode in find_fixedlength() */ 
+ };
+ 
+ /* Table of texts corresponding to POSIX error codes */
+diff --git a/testdata/testinput1 b/testdata/testinput1
+index aa9ce42..b24f900 100644
+--- a/testdata/testinput1
++++ b/testdata/testinput1
+@@ -4261,4 +4261,28 @@
+     ** Failers
+     xaabc  
+ 
++/(?<=a\h)c/
++    xa c
++    
++/(?<=[^a]{2})b/
++    axxbc
++    aAAbc 
++    ** Failers
++    xaabc    
++
++/(?<=[^a]{2})b/i
++    axxbc  
++    ** Failers
++    aAAbc 
++    xaabc    
++
++/(?<=a\H)c/
++    abc
++
++/(?<=a\V)c/
++    abc
++    
++/(?<=a\v)c/
++    a\nc
++
+ /-- End of testinput1 --/
+diff --git a/testdata/testinput11 b/testdata/testinput11
+index 198dbf2..37ee38b 100644
+--- a/testdata/testinput11
++++ b/testdata/testinput11
+@@ -767,4 +767,31 @@ name)/K
+ 
+ /------------------------------/
+ 
++/(?<=a(*ACCEPT)b)c/
++    xacd
++
++/(?<=(a(*ACCEPT)b))c/
++    xacd
++
++/(?<=(a(*COMMIT)b))c/
++    xabcd
++    ** Failers 
++    xacd
++    
++/(?<!a(*FAIL)b)c/
++    xcd
++    acd 
++
++/(?<=a(*:N)b)c/K
++    xabcd
++    
++/(?<=a(*PRUNE)b)c/
++    xabcd 
++
++/(?<=a(*SKIP)b)c/
++    xabcd 
++
++/(?<=a(*THEN)b)c/
++    xabcd 
++
+ /-- End of testinput11 --/
+diff --git a/testdata/testoutput1 b/testdata/testoutput1
+index 5a025e2..0c2e84e 100644
+--- a/testdata/testoutput1
++++ b/testdata/testoutput1
+@@ -6968,4 +6968,40 @@ No match
+     xaabc  
+ No match
+ 
++/(?<=a\h)c/
++    xa c
++ 0: c
++    
++/(?<=[^a]{2})b/
++    axxbc
++ 0: b
++    aAAbc 
++ 0: b
++    ** Failers
++No match
++    xaabc    
++No match
++
++/(?<=[^a]{2})b/i
++    axxbc  
++ 0: b
++    ** Failers
++No match
++    aAAbc 
++No match
++    xaabc    
++No match
++
++/(?<=a\H)c/
++    abc
++ 0: c
++
++/(?<=a\V)c/
++    abc
++ 0: c
++    
++/(?<=a\v)c/
++    a\nc
++ 0: c
++
+ /-- End of testinput1 --/
+diff --git a/testdata/testoutput11 b/testdata/testoutput11
+index 4af2e92..8a9d6c2 100644
+--- a/testdata/testoutput11
++++ b/testdata/testoutput11
+@@ -1389,4 +1389,45 @@ No match
+ 
+ /------------------------------/
+ 
++/(?<=a(*ACCEPT)b)c/
++    xacd
++ 0: c
++
++/(?<=(a(*ACCEPT)b))c/
++    xacd
++ 0: c
++ 1: a
++
++/(?<=(a(*COMMIT)b))c/
++    xabcd
++ 0: c
++ 1: ab
++    ** Failers 
++No match
++    xacd
++No match
++    
++/(?<!a(*FAIL)b)c/
++    xcd
++ 0: c
++    acd 
++ 0: c
++
++/(?<=a(*:N)b)c/K
++    xabcd
++ 0: c
++MK: N
++    
++/(?<=a(*PRUNE)b)c/
++    xabcd 
++ 0: c
++
++/(?<=a(*SKIP)b)c/
++    xabcd 
++ 0: c
++
++/(?<=a(*THEN)b)c/
++    xabcd 
++ 0: c
++
+ /-- End of testinput11 --/
+-- 
+1.7.6.4
+

@@ -18,5 +18,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-plugin-bool.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-openssl-test.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysqld-nowatch.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-va-list.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-netdevname.patch
 
 set +e +o pipefail

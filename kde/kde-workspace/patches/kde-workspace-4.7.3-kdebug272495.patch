@@ -1,0 +1,264 @@
+commit 639155a5493a28ca9460d60fa0c078ec65c3bb96
+Author: Aaron Seigo <aseigo@kde.org>
+Date:   Thu Nov 10 13:01:37 2011 +0100
+
+    use a QWeakPointer to track the lifespan of the task
+    
+    the itemRemoved signal from TaskGroup has dangling pointers, apparently
+    by design (the next thing on my list to investigate), and the signal is
+    delayed. so between the actual deletion of the task and the signal, there
+    pointer is a dangler. easy solution is to just track it in the WindowTaskItem
+    itself with a cheap QWeakPointer.
+    
+    BUG:272495
+
+diff --git a/plasma/desktop/applets/tasks/abstracttaskitem.cpp b/plasma/desktop/applets/tasks/abstracttaskitem.cpp
+index 00140ef..48ba172 100644
+--- a/plasma/desktop/applets/tasks/abstracttaskitem.cpp
++++ b/plasma/desktop/applets/tasks/abstracttaskitem.cpp
+@@ -203,6 +203,10 @@ QIcon AbstractTaskItem::icon() const
+     return QIcon();
+ }
+ 
++void AbstractTaskItem::close()
++{
++}
++
+ void AbstractTaskItem::setTaskFlags(const TaskFlags flags)
+ {
+     if (((m_flags & TaskWantsAttention) != 0) != ((flags & TaskWantsAttention) != 0)) {
+diff --git a/plasma/desktop/applets/tasks/abstracttaskitem.h b/plasma/desktop/applets/tasks/abstracttaskitem.h
+index 9520e1f..a527881 100644
+--- a/plasma/desktop/applets/tasks/abstracttaskitem.h
++++ b/plasma/desktop/applets/tasks/abstracttaskitem.h
+@@ -103,7 +103,7 @@ public:
+     /** Returns the current icon for this task. */
+     QIcon icon() const;
+ 
+-    virtual void close() = 0;
++    virtual void close();
+ 
+     /** Tells the window manager the minimized task's geometry. */
+     virtual void publishIconGeometry() const;
+diff --git a/plasma/desktop/applets/tasks/windowtaskitem.cpp b/plasma/desktop/applets/tasks/windowtaskitem.cpp
+index 1ddca2c..1c33476 100644
+--- a/plasma/desktop/applets/tasks/windowtaskitem.cpp
++++ b/plasma/desktop/applets/tasks/windowtaskitem.cpp
+@@ -56,7 +56,6 @@
+ 
+ WindowTaskItem::WindowTaskItem(QGraphicsWidget *parent, Tasks *applet)
+     : AbstractTaskItem(parent, applet),
+-      m_task(0),
+       m_busyWidget(0)
+ {
+ }
+@@ -77,8 +76,8 @@ void WindowTaskItem::activate()
+     // in a widget such as a line edit which does accept the focus)
+     // this needs to be implemented for Plasma's own panels.
+     //kDebug();
+-    if (m_task && m_task->task()) {
+-        m_task->task()->activateRaiseOrIconify();
++    if (m_task && m_task.data()->task()) {
++        m_task.data()->task()->activateRaiseOrIconify();
+        // emit windowSelected(this);
+     }
+ }
+@@ -108,27 +107,20 @@ void WindowTaskItem::keyPressEvent(QKeyEvent *event)
+     }
+ }
+ 
+-//destroy this item
+-void WindowTaskItem::close()
+-{
+-    //kDebug();
+-    m_task = 0;
+-}
+-
+ void WindowTaskItem::publishIconGeometry() const
+ {
+-    if (!m_task || !m_task->task()) {
++    if (!m_task || !m_task.data()->task()) {
+         return;
+     }
+ 
+     QRect rect = iconGeometry();
+-    m_task->task()->publishIconGeometry(rect);
++    m_task.data()->task()->publishIconGeometry(rect);
+ }
+ 
+ void WindowTaskItem::publishIconGeometry(const QRect &rect) const
+ {
+-    if (m_task && m_task->task()) {
+-        m_task->task()->publishIconGeometry(rect);
++    if (m_task && m_task.data()->task()) {
++        m_task.data()->task()->publishIconGeometry(rect);
+     }
+ }
+ 
+@@ -142,7 +134,7 @@ void WindowTaskItem::updateTask(::TaskManager::TaskChanges changes)
+     TaskFlags flags = m_flags;
+ 
+     if (changes & TaskManager::StateChanged) {
+-        if (m_task->isActive()) {
++        if (m_task.data()->isActive()) {
+             flags |= TaskHasFocus;
+             if (!(m_flags & TaskHasFocus)) {
+                 emit activated(this);
+@@ -151,7 +143,7 @@ void WindowTaskItem::updateTask(::TaskManager::TaskChanges changes)
+             flags &= ~TaskHasFocus;
+         }
+ 
+-        if (m_task->isMinimized()) {
++        if (m_task.data()->isMinimized()) {
+             flags |= TaskIsMinimized;
+         } else {
+             flags &= ~TaskIsMinimized;
+@@ -160,7 +152,7 @@ void WindowTaskItem::updateTask(::TaskManager::TaskChanges changes)
+     }
+ 
+     if (changes & TaskManager::AttentionChanged) {
+-        if (m_task->demandsAttention()) {
++        if (m_task.data()->demandsAttention()) {
+             flags |= TaskWantsAttention;
+         } else {
+             flags &= ~TaskWantsAttention;
+@@ -191,14 +183,14 @@ void WindowTaskItem::updateTask(::TaskManager::TaskChanges changes)
+ 
+     if (needsUpdate) {
+         //redraw
+-        //kDebug() << m_task->name();
++        //kDebug() << m_task.data()->name();
+         queueUpdate();
+     }
+ }
+ 
+ void WindowTaskItem::updateToolTip()
+ {
+-    if (!m_task || !m_task->task()) {
++    if (!m_task || !m_task.data()->task()) {
+         return;
+     }
+ 
+@@ -219,19 +211,19 @@ void WindowTaskItem::updateToolTip()
+     }
+ 
+     if (showToolTip) {
+-        QPixmap p = m_task->task()->icon(KIconLoader::SizeLarge, KIconLoader::SizeLarge, false);
++        QPixmap p = m_task.data()->task()->icon(KIconLoader::SizeLarge, KIconLoader::SizeLarge, false);
+         if (p.height() > KIconLoader::SizeLarge) {
+             p = p.scaled(QSize(KIconLoader::SizeLarge, KIconLoader::SizeLarge),
+                                 Qt::KeepAspectRatio, Qt::SmoothTransformation);
+         }
+ 
+-        Plasma::ToolTipContent data(Qt::escape(m_task->name()), QString(), p);
+-        if (m_task->desktop() != 0 && 
+-            (!m_applet->groupManager().showOnlyCurrentDesktop() || !m_task->isOnCurrentDesktop())) {
++        Plasma::ToolTipContent data(Qt::escape(m_task.data()->name()), QString(), p);
++        if (m_task.data()->desktop() != 0 && 
++            (!m_applet->groupManager().showOnlyCurrentDesktop() || !m_task.data()->isOnCurrentDesktop())) {
+             data.setSubText(i18nc("Which virtual desktop a window is currently on", "On %1",
+-                                  KWindowSystem::desktopName(m_task->desktop())));
++                                  KWindowSystem::desktopName(m_task.data()->desktop())));
+         }
+-        data.setWindowToPreview(m_task->task()->window());
++        data.setWindowsToPreview(QList<WId>() << m_task.data()->task()->window());
+         data.setClickable(true);
+         data.setInstantPopup(true);
+         data.setHighlightWindows(m_applet->highlightWindows());
+@@ -285,8 +277,9 @@ void WindowTaskItem::gotTaskPointer()
+ void WindowTaskItem::setWindowTask(TaskManager::TaskItem* taskItem)
+ {
+     if (m_task) {
+-        disconnect(m_task->task().constData(), 0, this, 0);
++        disconnect(m_task.data()->task().constData(), 0, this, 0);
+     }
++
+     m_task = taskItem;
+     m_abstractItem = qobject_cast<TaskManager::AbstractGroupableItem *>(taskItem);
+ 
+@@ -294,8 +287,10 @@ void WindowTaskItem::setWindowTask(TaskManager::TaskItem* taskItem)
+         connect(m_abstractItem, SIGNAL(destroyed(QObject*)), this, SLOT(clearAbstractItem()));
+     }
+ 
+-    connect(m_task, SIGNAL(changed(::TaskManager::TaskChanges)),
+-            this, SLOT(updateTask(::TaskManager::TaskChanges)));
++    if (m_task) {
++        connect(m_task.data(), SIGNAL(changed(::TaskManager::TaskChanges)),
++                this, SLOT(updateTask(::TaskManager::TaskChanges)));
++    }
+ 
+     updateTask(::TaskManager::EverythingChanged);
+     publishIconGeometry();
+@@ -319,7 +314,7 @@ void WindowTaskItem::setTask(TaskManager::TaskItem* taskItem)
+ 
+ TaskManager::TaskPtr WindowTaskItem::windowTask() const
+ {
+-    return m_task ? m_task->task() : TaskManager::TaskPtr();
++    return m_task ? m_task.data()->task() : TaskManager::TaskPtr();
+ }
+ 
+ void WindowTaskItem::contextMenuEvent(QGraphicsSceneContextMenuEvent *e)
+@@ -331,10 +326,10 @@ void WindowTaskItem::contextMenuEvent(QGraphicsSceneContextMenuEvent *e)
+ 
+     QList <QAction*> actionList;
+     QAction *a(0);
+-    if (m_task->isGrouped()) {
++    if (m_task.data()->isGrouped()) {
+         a = new QAction(i18n("Collapse Parent Group"), 0);
+         actionList.append(a);
+-        TaskGroupItem *group = qobject_cast<TaskGroupItem*>(m_applet->rootGroupItem()->abstractTaskItem(m_task->parentGroup()));
++        TaskGroupItem *group = qobject_cast<TaskGroupItem*>(m_applet->rootGroupItem()->abstractTaskItem(m_task.data()->parentGroup()));
+         connect(a, SIGNAL(triggered()), group, SLOT(collapse()));
+     }
+ 
+@@ -343,7 +338,7 @@ void WindowTaskItem::contextMenuEvent(QGraphicsSceneContextMenuEvent *e)
+         actionList.append(configAction);
+     }
+ 
+-    TaskManager::BasicMenu menu(0, m_task, &m_applet->groupManager(), actionList);
++    TaskManager::BasicMenu menu(0, m_task.data(), &m_applet->groupManager(), actionList);
+     menu.adjustSize();
+ 
+     if (m_applet->formFactor() != Plasma::Vertical) {
+@@ -364,18 +359,13 @@ bool WindowTaskItem::isWindowItem() const
+ 
+ bool WindowTaskItem::isActive() const
+ {
+-    if (!m_task) {
+-        //kDebug() << "no task set";
+-        return false;
+-    }
+-
+-    return m_task->isActive();
++    return m_task ? m_task.data()->isActive() : false;
+ }
+ 
+ void WindowTaskItem::setAdditionalMimeData(QMimeData* mimeData)
+ {
+     if (m_task) {
+-        m_task->addMimeData(mimeData);
++        m_task.data()->addMimeData(mimeData);
+     }
+ }
+ 
+diff --git a/plasma/desktop/applets/tasks/windowtaskitem.h b/plasma/desktop/applets/tasks/windowtaskitem.h
+index a5b698a..4db9d43 100644
+--- a/plasma/desktop/applets/tasks/windowtaskitem.h
++++ b/plasma/desktop/applets/tasks/windowtaskitem.h
+@@ -63,7 +63,6 @@ signals:
+ 
+ public slots:
+     void activate();
+-    void close();
+ 
+ protected:
+     void contextMenuEvent(QGraphicsSceneContextMenuEvent *event);
+@@ -82,7 +81,7 @@ private:
+     /** Sets the window represented by this task. */
+     void setWindowTask(TaskManager::TaskItem* taskItem);
+ 
+-    TaskManager::TaskItem *m_task;
++    QWeakPointer<TaskManager::TaskItem> m_task;
+     Plasma::BusyWidget *m_busyWidget;
+ };
+ 

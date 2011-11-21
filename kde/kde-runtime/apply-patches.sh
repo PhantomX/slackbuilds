@@ -4,6 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+## Most patches are from Fedora
 zcat ${SB_PATCHDIR}/kdebase-runtime-4.1.x-searchproviders-shortcuts.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.6.90-iconthemes-inherit.patch
 zcat ${SB_PATCHDIR}/kdebase-runtime-4.3.1-manpath.patch.gz | patch -p1 -E --backup --verbose
@@ -23,10 +24,9 @@ zcat ${SB_PATCHDIR}/kdebase-runtime-4.3.2-knotify-fix-cpu-charge.patch.gz | patc
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/libqzeitgeist08.patch
 
-# Branch patches
-
-# Trunk  patches
-
-## Branch upstream patches
+## upstream patches
+# based on patch from ftp://ftp.kde.org/pub/kde/stable/active/1.0/src/
+# includes only the piece wrt additional nepomuk ontologies
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/active-development-4.7-diff-1.patch
 
 set +e +o pipefail

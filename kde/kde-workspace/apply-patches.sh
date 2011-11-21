@@ -4,6 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+## Most patches are from Fedora
 patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.1-redhat_startkde.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.0-plasma-konsole.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-systemsettings_onlyshowin_kde.patch
@@ -53,18 +54,38 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.71-notif
 # https://bugs.kde.org/show_bug.cgi?id=284628
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.2-bz\#747982-launchers.patch
 
-# upstream patches:
+# upstreamable patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.80-kde\#171685.patch
 
 # use /etc/login.defs to define a 'system' account instead of hard-coding 500 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.0-bz\#732830-login.patch
 
-# Branch patches
+## upstream patches
+# battery plasmoid fixes (#753429)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.4-batteryplasmoid.patch
+# Crash in TaskManager::TaskItem::task (kde#272495)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-kdebug272495.patch
+# Crashes When Adding Weather Widgets (Geolocation) [gps_read, Gpsd::run] (kde#277036)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-kdebug277036.patch
+
+## plasma active patches
+# adapted version of fix-wetab-power-button-freeze.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-fix-wetab-power-button-freeze.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nepomuksearch-566052f0.diff
+# adapted/fixed version of ksplash-qml.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-ksplash-qml.patch 
+# adapted version of wac-html-widgets.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.7.3-wac-html-widgets.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kwin-check-opengl.diff
 
 ## trunk patches
 # Fix possible uninitialized variable use in ksplashx multi-screen code
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-ksplashx.patch
+# There are a bug in Kwin when using nVidia + TwinView + 2 monitors with
+# differents resolutions, see https://bugs.kde.org/show_bug.cgi?id=286146 and
+# https://bugs.kde.org/show_bug.cgi?id=285967
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.8.0-kwin-twinview.patch
 
 # Arch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/terminate-server.patch

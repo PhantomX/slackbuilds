@@ -1,0 +1,95 @@
+From 8762202dd0d6e46854f786bdb6fb3780a1625efe Mon Sep 17 00:00:00 2001
+From: Eryu Guan <guaneryu@gmail.com>
+Date: Tue, 1 Nov 2011 19:04:59 -0400
+Subject: [PATCH] jbd/jbd2: validate sb->s_first in journal_get_superblock()
+
+I hit a J_ASSERT(blocknr != 0) failure in cleanup_journal_tail() when
+mounting a fsfuzzed ext3 image. It turns out that the corrupted ext3
+image has s_first = 0 in journal superblock, and the 0 is passed to
+journal->j_head in journal_reset(), then to blocknr in
+cleanup_journal_tail(), in the end the J_ASSERT failed.
+
+So validate s_first after reading journal superblock from disk in
+journal_get_superblock() to ensure s_first is valid.
+
+The following script could reproduce it:
+
+fstype=ext3
+blocksize=1024
+img=$fstype.img
+offset=0
+found=0
+magic="c0 3b 39 98"
+
+dd if=/dev/zero of=$img bs=1M count=8
+mkfs -t $fstype -b $blocksize -F $img
+filesize=`stat -c %s $img`
+while [ $offset -lt $filesize ]
+do
+        if od -j $offset -N 4 -t x1 $img | grep -i "$magic";then
+                echo "Found journal: $offset"
+                found=1
+                break
+        fi
+        offset=`echo "$offset+$blocksize" | bc`
+done
+
+if [ $found -ne 1 ];then
+        echo "Magic \"$magic\" not found"
+        exit 1
+fi
+
+dd if=/dev/zero of=$img seek=$(($offset+23)) conv=notrunc bs=1 count=1
+
+mkdir -p ./mnt
+mount -o loop $img ./mnt
+
+Cc: Jan Kara <jack@suse.cz>
+Signed-off-by: Eryu Guan <guaneryu@gmail.com>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+---
+ fs/jbd/journal.c  |    8 ++++++++
+ fs/jbd2/journal.c |    8 ++++++++
+ 2 files changed, 16 insertions(+), 0 deletions(-)
+
+diff --git a/fs/jbd/journal.c b/fs/jbd/journal.c
+index 9fe061f..fea8dd6 100644
+--- a/fs/jbd/journal.c
++++ b/fs/jbd/journal.c
+@@ -1135,6 +1135,14 @@ static int journal_get_superblock(journal_t *journal)
+ 		goto out;
+ 	}
+ 
++	if (be32_to_cpu(sb->s_first) == 0 ||
++	    be32_to_cpu(sb->s_first) >= journal->j_maxlen) {
++		printk(KERN_WARNING
++			"JBD: Invalid start block of journal: %u\n",
++			be32_to_cpu(sb->s_first));
++		goto out;
++	}
++
+ 	return 0;
+ 
+ out:
+diff --git a/fs/jbd2/journal.c b/fs/jbd2/journal.c
+index f24df13..d6e93d0 100644
+--- a/fs/jbd2/journal.c
++++ b/fs/jbd2/journal.c
+@@ -1251,6 +1251,14 @@ static int journal_get_superblock(journal_t *journal)
+ 		goto out;
+ 	}
+ 
++	if (be32_to_cpu(sb->s_first) == 0 ||
++	    be32_to_cpu(sb->s_first) >= journal->j_maxlen) {
++		printk(KERN_WARNING
++			"JBD2: Invalid start block of journal: %u\n",
++			be32_to_cpu(sb->s_first));
++		goto out;
++	}
++
+ 	return 0;
+ 
+ out:
+-- 
+1.7.7.1
+

@@ -107,6 +107,7 @@ ApplyPatch remount-no-shrink-dcache.patch
 ApplyPatch reiserfs-force-inode-evictions-before-umount-to-avoid-crash.patch
 
 # ext4
+ApplyPatch jbd-jbd2-validate-sb-s_first-in-journal_get_superblo.patch
 
 # ext3
 
@@ -118,6 +119,7 @@ ApplyPatch xfs-Fix-possible-memory-corruption-in-xfs_readlink.patch
 # cifs
 
 # NFSv4
+ApplyPatch nfsv4-include-bitmap-in-nfsv4_get_acl_data.patch
 
 # USB
 
@@ -220,6 +222,7 @@ ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
 # silence the ACPI blacklist code
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch
+ApplyPatch quite-apm.patch
 
 # V4L/DVB updates/fixes/experimental drivers
 ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
@@ -251,6 +254,7 @@ ApplyPatch hvcs_pi_buf_alloc.patch
 #rhbz #735946
 ApplyPatch 0001-mm-vmscan-Limit-direct-reclaim-for-higher-order-allo.patch
 ApplyPatch 0002-mm-Abort-reclaim-compaction-if-compaction-can-procee.patch
+ApplyPatch mm-do-not-stall-in-synchronous-compaction-for-THP-allocations.patch
 
 #rhbz 748691
 ApplyPatch be2net-non-member-vlan-pkts-not-received-in-promisco.patch

@@ -239,7 +239,6 @@ ApplyPatch udlfb-bind-framebuffer-to-interface.patch
 ApplyPatch epoll-limit-paths.patch
 ApplyPatch rcu-avoid-just-onlined-cpu-resched.patch
 ApplyPatch block-stray-block-put-after-teardown.patch
-ApplyPatch usb-add-quirk-for-logitech-webcams.patch
 
 # Runtime PM
 

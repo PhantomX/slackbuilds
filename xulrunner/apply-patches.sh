@@ -22,6 +22,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-network-link-ser
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-NetworkManager09.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-670719.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-686280.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-589735.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-680917.patch
 
 # OpenSuse kde integration support
 install -m 644 ${SB_PATCHDIR}/kde.js browser/app/profile/kde.js

@@ -34,8 +34,8 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99.1-test.patch
 # Submitted to upstream but not merged for 1.11
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99-config-add-udev-systemd-multi-seat-support.patch
 
-# [Crestline] Coredump when doing exit
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-dix-block-signals-when-closing-all-devices.patch
+# Bug #714746: Xorg crash in record when ProcDRI2WaitMSCReply called
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.11.2-record-crasher.patch
 
 # misc
 

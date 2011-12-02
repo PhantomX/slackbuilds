@@ -1,0 +1,707 @@
+diff -up oprofile-0.9.7/daemon/init.c.xen oprofile-0.9.7/daemon/init.c
+--- oprofile-0.9.7/daemon/init.c.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/daemon/init.c	2011-11-28 16:25:07.577000010 -0500
+@@ -312,6 +312,8 @@ static void opd_26_init(void)
+ 
+ 	opd_create_vmlinux(vmlinux, kernel_range);
+ 	opd_create_xen(xenimage, xen_range);
++	if (xen_passive_setup)
++		opd_create_passive(xen_passive_setup);
+ 
+ 	opd_buf_size = opd_read_fs_int("/dev/oprofile/", "buffer_size", 1);
+ 	kernel_pointer_size = opd_read_fs_int("/dev/oprofile/", "pointer_size", 1);
+diff -up oprofile-0.9.7/daemon/opd_kernel.c.xen oprofile-0.9.7/daemon/opd_kernel.c
+--- oprofile-0.9.7/daemon/opd_kernel.c.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/daemon/opd_kernel.c	2011-11-28 16:25:07.579000010 -0500
+@@ -34,11 +34,22 @@ static struct kernel_image vmlinux_image
+ 
+ static struct kernel_image xen_image;
+ 
++static struct kernel_image xen_image_anon;
++static struct kernel_image vmlinux_image_anon;
++
++static LIST_HEAD(passive_vmlinux);
++static LIST_HEAD(passive_xen);
++static LIST_HEAD(passive_apps);
++static LIST_HEAD(passive_modules);
++static LIST_HEAD(passive_xen_anon);
++
+ void opd_create_vmlinux(char const * name, char const * arg)
+ {
+ 	/* vmlinux is *not* on the list of modules */
+ 	list_init(&vmlinux_image.list);
+ 
++	list_init(&vmlinux_image_anon.list);
++
+ 	/* for no vmlinux */
+ 	if (no_vmlinux) {
+ 		vmlinux_image.name = "no-vmlinux";
+@@ -57,13 +68,22 @@ void opd_create_vmlinux(char const * nam
+ 		        vmlinux_image.start, vmlinux_image.end);
+ 		exit(EXIT_FAILURE);
+ 	}
++
++	vmlinux_image_anon.name  = "vmlinux-unknown";
++	vmlinux_image_anon.start = vmlinux_image.start;
++	vmlinux_image_anon.end   = vmlinux_image.end;
++
+ }
+ 
+ void opd_create_xen(char const * name, char const * arg)
+ {
++	int stat;
++
+ 	/* xen is *not* on the list of modules */
+ 	list_init(&xen_image.list);
+ 
++	list_init(&xen_image_anon.list);
++
+ 	/* for no xen */
+ 	if (no_xen) {
+ 		xen_image.name = "no-xen";
+@@ -72,18 +92,106 @@ void opd_create_xen(char const * name, c
+ 
+ 	xen_image.name = xstrdup(name);
+ 
+-	sscanf(arg, "%llx,%llx", &xen_image.start, &xen_image.end);
++	stat = sscanf(arg, "%llx,%llx", &xen_image.start, &xen_image.end);
++
++	xen_image_anon.name  = "xen-unknown";
++	xen_image_anon.start = xen_image.start;
++	xen_image_anon.end   = xen_image.end;
+ 
+ 	verbprintf(vmisc, "xen_start = %llx, xen_end = %llx\n",
+ 	           xen_image.start, xen_image.end);
+ 
+-	if (!xen_image.start && !xen_image.end) {
++	if ( stat != 2 ) {
+ 		fprintf(stderr, "error: mis-parsed xen range: %llx-%llx\n",
+ 		        xen_image.start, xen_image.end);
+ 		exit(EXIT_FAILURE);
+ 	}
++
+ }
+ 
++void opd_create_passive_domain(int id, char const * image_kernel, 
++			       char const * range, char const * image_xen)
++{
++	char file[64];
++	struct kernel_image * image;
++	int stat;
++
++	image = xmalloc(sizeof(struct kernel_image));
++	image->name = xstrdup(image_kernel);
++	image->start = image->end = 0; 
++	stat = sscanf(range, "%llx,%llx", &image->start, &image->end);
++	image->id = id;
++	list_add(&image->list, &passive_vmlinux);
++	
++	if ( stat != 2 ) {
++		fprintf(stderr, "error: mis-parsed passive domain range for "
++			"domain %d: %llx-%llx\n", id, image->start, image->end);
++		exit(EXIT_FAILURE);
++	}
++
++	image = xmalloc(sizeof(struct kernel_image));
++	image->name = xstrdup(image_xen);
++	image->start = xen_image.start;
++	image->end = xen_image.end;
++	image->id = id;
++	list_add(&image->list, &passive_xen);
++
++	sprintf(file, "domain%d-apps", id);
++	image = xmalloc(sizeof(struct kernel_image));
++	image->name = xstrdup(file);
++	image->start = 0; 
++	image->end = 0;
++	image->id = id;
++	list_add(&image->list, &passive_apps);
++
++	sprintf(file, "domain%d-modules", id);
++	image = xmalloc(sizeof(struct kernel_image));
++	image->name = xstrdup(file);
++	image->start = 0; 
++	image->end = 0;
++	stat = sscanf(range, "%llx,%llx", &image->start, &image->end);
++	image->id = id;
++	list_add(&image->list, &passive_modules);
++
++	sprintf(file, "domain%d-xen-unknown", id);
++	image = xmalloc(sizeof(struct kernel_image));
++	image->name = xstrdup(file);
++	image->start = xen_image.start; 
++	image->end = xen_image.end;
++	image->id = id;
++	list_add(&image->list, &passive_xen_anon);
++
++}
++
++void opd_create_passive(char const *setup_file)
++{
++	FILE *fp;
++	int id=0;
++	char image_kernel[128+1];
++	char range[128+1];
++	char image_xen[128+1];
++	int stat;
++
++	image_kernel[0] = range[0] = image_xen[0] = 0;
++
++	fp = fopen(setup_file, "r");
++
++	if (!fp) {
++		fprintf(stderr, "error: Could not open Xen passive domain "
++			"setup file %s\n", setup_file);
++		exit(EXIT_FAILURE);
++	}
++
++	while (1) {
++		stat = fscanf(fp, "%d %128s %128s %128s", &id, image_kernel, range, 
++			image_xen);
++		if ( stat != 4 )
++			return;
++		opd_create_passive_domain(id, image_kernel, range, image_xen);
++	}
++
++	fclose(fp);
++}
+ 
+ /**
+  * Allocate and initialise a kernel image description
+@@ -210,6 +318,75 @@ struct kernel_image * find_kernel_image(
+ 	struct list_head * pos;
+ 	struct kernel_image * image = &vmlinux_image;
+ 
++	if (current_domain != COORDINATOR_DOMAIN) {
++		/* we rely on cpu_mode value (i.e. trans->in_kernel)
++		 * to search the right image type: xen, kernel or user
++		 * We cannot use address ranges since hypervisor does not
++		 * share the same address space with fully virtualized guests,
++		 * and thus address ranges can overlap  */
++		switch ( trans->in_kernel ) {
++
++		/* user mode */
++		case 1:
++			list_for_each(pos, &passive_apps) {
++				image = list_entry(pos, struct kernel_image, list);
++				if (image->id == current_domain) 
++					return image;
++			}
++			return NULL;
++
++		/* kernel mode */
++		case 2:
++			list_for_each(pos, &passive_vmlinux) {
++				image = list_entry(pos, struct kernel_image, list);
++				if ( (image->id == current_domain)
++				     && ( (image->start == 0 && image->end == 0)
++					  || (image->start <= trans->pc 
++					      && image->end > trans->pc) ) )
++						return image;
++			}
++			/* if not in kernel image range then it should be a module */ 
++			list_for_each(pos, &passive_modules) {
++				image = list_entry(pos, struct kernel_image, list);
++				if (image->id == current_domain) 
++					return image;
++			}
++			/* This should not happen if the kernel and user level 
++                           oprofile code are sane and in sync */
++			return NULL;
++
++		/* hypervisor mode */
++		case 3:
++			list_for_each(pos, &passive_xen) {
++				image = list_entry(pos, struct kernel_image, list);
++				if (image->id == current_domain
++				    && image->start <= trans->pc 
++				    && image->end > trans->pc) 
++					return image;
++			}
++			list_for_each(pos, &passive_xen_anon) {
++				image = list_entry(pos, struct kernel_image, list);
++				if (image->id == current_domain)
++					return image;
++			}
++			return NULL;
++
++		default:
++			printf("Unexpected error on passive mode: CPU mode is "
++			       "%d for domain %d\n", trans->in_kernel, current_domain);
++			return NULL;
++		}
++		
++		
++	}
++
++	if (xen_image.start <= trans->pc && xen_image.end > trans->pc)
++		return &xen_image;
++ 
++	if (trans->in_kernel == 2) {
++		return &xen_image_anon;
++	}
++
+ 	if (no_vmlinux)
+ 		return image;
+ 
+@@ -222,8 +399,5 @@ struct kernel_image * find_kernel_image(
+ 			return image;
+ 	}
+ 
+-	if (xen_image.start <= trans->pc && xen_image.end > trans->pc)
+-		return &xen_image;
+-
+-	return NULL;
++	return &vmlinux_image_anon;
+ }
+diff -up oprofile-0.9.7/daemon/opd_kernel.h.xen oprofile-0.9.7/daemon/opd_kernel.h
+--- oprofile-0.9.7/daemon/opd_kernel.h.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/daemon/opd_kernel.h	2011-11-28 16:25:07.580000010 -0500
+@@ -23,8 +23,12 @@ struct transient;
+ /** create the kernel image */
+ void opd_create_vmlinux(char const * name, char const * arg);
+ 
++/** create Xen image */
+ void opd_create_xen(char const * name, char const * arg);
+ 
++/** create Xen passive domain images */
++void opd_create_passive(char const *setup_file);
++
+ /** opd_reread_module_info - parse /proc/modules for kernel modules */
+ void opd_reread_module_info(void);
+ 
+@@ -33,6 +37,7 @@ struct kernel_image {
+ 	char * name;
+ 	vma_t start;
+ 	vma_t end;
++	int id;
+ 	struct list_head list;
+ };
+ 
+diff -up oprofile-0.9.7/daemon/opd_sfile.c.xen oprofile-0.9.7/daemon/opd_sfile.c
+--- oprofile-0.9.7/daemon/opd_sfile.c.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/daemon/opd_sfile.c	2011-11-28 16:25:07.582000010 -0500
+@@ -240,7 +240,7 @@ struct sfile * sfile_find(struct transie
+ 	}
+ 
+ 	/* we might need a kernel image start/end to hash on */
+-	if (trans->in_kernel) {
++	else if (trans->in_kernel) {
+ 		ki = find_kernel_image(trans);
+ 		if (!ki) {
+ 			verbprintf(vsamples, "Lost kernel sample %llx\n", trans->pc);
+diff -up oprofile-0.9.7/daemon/opd_trans.c.xen oprofile-0.9.7/daemon/opd_trans.c
+--- oprofile-0.9.7/daemon/opd_trans.c.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/daemon/opd_trans.c	2011-11-28 16:25:07.584000010 -0500
+@@ -31,6 +31,8 @@
+ #include <stdio.h>
+ #include <errno.h>
+ 
++int32_t current_domain = COORDINATOR_DOMAIN;
++
+ extern size_t kernel_pointer_size;
+ 
+ 
+@@ -203,6 +205,9 @@ static void code_kernel_enter(struct tra
+ {
+ 	verbprintf(vmisc, "KERNEL_ENTER_SWITCH to kernel\n");
+ 	trans->in_kernel = 1;
++	/* if in passive domain mode cpu mode should be incremented */
++	if (current_domain != COORDINATOR_DOMAIN)
++		trans->in_kernel++;
+ 	clear_trans_current(trans);
+ 	/* subtlety: we must keep trans->cookie cached,
+ 	 * even though it's meaningless for the kernel -
+@@ -216,6 +221,9 @@ static void code_user_enter(struct trans
+ {
+ 	verbprintf(vmisc, "USER_ENTER_SWITCH to user-space\n");
+ 	trans->in_kernel = 0;
++	/* if in passive domain mode cpu mode should be incremented */
++	if (current_domain != COORDINATOR_DOMAIN)
++		trans->in_kernel++;
+ 	clear_trans_current(trans);
+ 	clear_trans_last(trans);
+ }
+@@ -244,17 +252,34 @@ static void code_trace_begin(struct tran
+ static void code_xen_enter(struct transient * trans)
+ {
+ 	verbprintf(vmisc, "XEN_ENTER_SWITCH to xen\n");
+-	trans->in_kernel = 1;
++	trans->in_kernel = 2;
++	/* if in passive domain mode cpu mode should be incremented */
++	if (current_domain != COORDINATOR_DOMAIN)
++		trans->in_kernel++;
+ 	trans->current = NULL;
+ 	/* subtlety: we must keep trans->cookie cached, even though it's
+-	 * meaningless for Xen - we won't necessarily get a cookie switch
+-	 * on Xen exit. See comments in opd_sfile.c. It seems that we can
+-	 * get away with in_kernel = 1 as long as we supply the correct
+-	 * Xen image, and its address range in startup find_kernel_image
+-	 * is modified to look in the Xen image also
+-	 */
++	 * meaningless for Xen - same reason as for kernel */
+ }
+ 
++static void code_domain_switch(struct transient *trans)
++{
++	/* While processing passive domain samples we ensure (in_kernel!=0)
++	 * We do this in order to ignore cookies for passive domain samples 
++	 * But, we have to remember the kernel value for coordinator domain, 
++	 * so we do the safe thing: increment when leaving the coordinator
++	 * domain and decrement when returning to it 
++ 	 */
++	if (current_domain == COORDINATOR_DOMAIN)
++		trans->in_kernel++;
++
++	trans->current = NULL;
++	current_domain = (int32_t) pop_buffer_value(trans);
++
++	/* If returning to coordinator domain restore the kernel value */
++	if (current_domain == COORDINATOR_DOMAIN)
++		trans->in_kernel--;
++}
++ 
+ extern void code_spu_profiling(struct transient * trans);
+ extern void code_spu_ctx_switch(struct transient * trans);
+ 
+@@ -278,7 +303,7 @@ handler_t handlers[LAST_CODE + 1] = {
+ 	&code_spu_profiling,
+ 	&code_spu_ctx_switch,
+ #else
+-	&code_unknown,
++ 	&code_domain_switch,
+ 	&code_unknown,
+ #endif
+ 	&code_ibs_fetch_sample,
+diff -up oprofile-0.9.7/daemon/opd_trans.h.xen oprofile-0.9.7/daemon/opd_trans.h
+--- oprofile-0.9.7/daemon/opd_trans.h.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/daemon/opd_trans.h	2011-11-28 16:25:07.585000010 -0500
+@@ -21,6 +21,10 @@
+ 
+ #include <stdint.h>
+ 
++#define COORDINATOR_DOMAIN -1
++
++extern int32_t current_domain;
++
+ struct sfile;
+ struct anon_mapping;
+ 
+diff -up oprofile-0.9.7/daemon/oprofiled.c.xen oprofile-0.9.7/daemon/oprofiled.c
+--- oprofile-0.9.7/daemon/oprofiled.c.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/daemon/oprofiled.c	2011-11-28 16:25:07.587000010 -0500
+@@ -71,6 +71,7 @@ char * session_dir;
+ int no_xen;
+ char * xenimage;
+ char * xen_range;
++char * xen_passive_setup;
+ static char * verbose;
+ static char * binary_name_filter;
+ static char * events;
+@@ -91,6 +92,7 @@ static struct poptOption options[] = {
+ 	{ "xen-range", 0, POPT_ARG_STRING, &xen_range, 0, "Xen VMA range", "start-end", },
+ 	{ "xen-image", 0, POPT_ARG_STRING, &xenimage, 0, "Xen image", "file", },
+ 	{ "image", 0, POPT_ARG_STRING, &binary_name_filter, 0, "image name filter", "profile these comma separated image" },
++	{ "xen-passive-setup", 0, POPT_ARG_STRING, &xen_passive_setup, 0, "Xen passive domain setup file", "filename", },
+ 	{ "separate-lib", 0, POPT_ARG_INT, &separate_lib, 0, "separate library samples for each distinct application", "[0|1]", },
+ 	{ "separate-kernel", 0, POPT_ARG_INT, &separate_kernel, 0, "separate kernel samples for each distinct application", "[0|1]", },
+ 	{ "separate-thread", 0, POPT_ARG_INT, &separate_thread, 0, "thread-profiling mode", "[0|1]" },
+diff -up oprofile-0.9.7/daemon/oprofiled.h.xen oprofile-0.9.7/daemon/oprofiled.h
+--- oprofile-0.9.7/daemon/oprofiled.h.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/daemon/oprofiled.h	2011-11-28 16:25:07.588000010 -0500
+@@ -65,5 +65,6 @@ extern char * kernel_range;
+ extern int no_xen;
+ extern char * xenimage;
+ extern char * xen_range;
++extern char * xen_passive_setup;
+ 
+ #endif /* OPROFILED_H */
+diff -up oprofile-0.9.7/doc/opcontrol.1.in.xen oprofile-0.9.7/doc/opcontrol.1.in
+--- oprofile-0.9.7/doc/opcontrol.1.in.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/doc/opcontrol.1.in	2011-11-28 16:25:07.590000010 -0500
+@@ -158,12 +158,41 @@ Xen image
+ .br
+ .TP
+ .BI "--active-domains="<list>
+-List of domain ids participating in a multi-domain profiling session. If 
++List of domain ids participating in a multi-domain profiling session. 
++Each of the specified domains must run an instance of oprofile. The 
++sequence of opcontrol commands in each domain must follow a given 
++order which is specified in the oprofile user manual. If 
+ more than one domain is specified in <list> they should be separated using 
+ commas. This option can only be used in domain 0 which is the only domain 
+ that can coordinate a multi-domain profiling session. Including domain 0 in 
+ the list of active domains is optional. (e.g. --active-domains=2,5,6 and 
+---active-domains=0,2,5,6 are equivalent)
++--active-domains=0,2,5,6 are equivalent).
++This option can only be specified
++if --start-daemon is also specified and it is only 
++valid for the current run of the oprofile daemon; e.g. the list 
++of active domains is not persistent.
++.br
++.TP
++.BI "--passive-domains="<list> or "--domains="<list>
++List of domain ids to be profiled, separated by commas. 
++As opposed to the --active-domains option, the domains specified with this
++option do not need to run oprofile. This makes 
++profiling multiple domains easier. However, with the passive-domains option, 
++samples in user level processes and kernel modules cannot be 
++mapped to specific symbols and are aggregated
++under a generic class. Both --active-domains and --passive-domains 
++options can be specified in the same command, but the same domain cannot be
++specified in both options. This option can only be specified if either --start
++or --start-daemon is specified on the same command and it is only valid for 
++the current run of the oprofile daemon; e.g. the list of passive domains is 
++not persistent.
++.br
++.TP
++.BI "--passive-images="<list> or "--domains-images="<list>
++List of kernel images associated with the domains specified in the
++--passive-domains option, also separated by commas. The association
++between the images and domains is based on the order they are
++specified in both options.
+ .br
+ 
+ .SH ENVIRONMENT
+diff -up oprofile-0.9.7/libpp/format_output.cpp.xen oprofile-0.9.7/libpp/format_output.cpp
+--- oprofile-0.9.7/libpp/format_output.cpp.xen	2011-07-04 22:25:04.000000000 -0400
++++ oprofile-0.9.7/libpp/format_output.cpp	2011-11-28 16:25:07.592000010 -0500
+@@ -287,8 +287,8 @@ string formatter::format_app_name(field_
+ {
+ 	return get_image_name(f.symbol.app_name,
+ 		long_filenames 
+-			? image_name_storage::int_real_filename
+-			: image_name_storage::int_real_basename,
++			? image_name_storage::int_filename
++			: image_name_storage::int_basename,
+ 		extra_found_images);
+ }
+ 
+diff -up oprofile-0.9.7/utils/opcontrol.xen oprofile-0.9.7/utils/opcontrol
+--- oprofile-0.9.7/utils/opcontrol.xen	2011-07-20 15:36:48.000000000 -0400
++++ oprofile-0.9.7/utils/opcontrol	2011-11-28 16:28:56.431000248 -0500
+@@ -236,9 +236,16 @@ opcontrol: usage:
+    --note-table-size             kernel notes buffer size in notes units (2.4
+                                  kernel)
+ 
+-   --xen                         Xen image (for Xen only)
+-   --active-domains=<list>       List of domains in profiling session (for Xen)
+-                                 (list contains domain ids separated by commas)
++   --xen=file                    Xen image (for Xen only)
++   --active-domains=id[,ids]     list of domains in multiple domain profiling session (Xen)
++                                 (detailed profiling of user level and kernel modules code)
++                                 (requires running oprofile on these domains)
++   --passive-domains=id[,ids]    list of domains to be profiled (Xen).
++     or --domains=id[,ids]       (coarse profiling of user level and kernel modules code)
++                                 (no need to run oprofile on these domains)
++   --passive-images=file[,files] list of kernel images associated with each passive domain
++     or 
++   --domain-images=file[,files]
+ EOF
+ }
+ 
+@@ -388,6 +395,9 @@ do_init()
+ 	SETUP_FILE="$SETUP_DIR/daemonrc"
+ 	SEC_SETUP_FILE="$SETUP_DIR/daemonrc_new"
+ 
++	# location for passing info about passive domains to daemon
++	PASSIVE_SETUP_FILE="$SETUP_DIR/xendomain.setup"
++
+ 	# initialize daemon vars
+ 	decide_oprofile_device_mount
+ 	CPUTYPE=`cat $MOUNT/cpu_type`
+@@ -539,7 +549,7 @@ do_load_setup()
+ }
+ 
+ 
+-check_valid_args()
++check_valid_vmlinux()
+ {
+ 	if test -z "$VMLINUX"; then
+ 		echo "No vmlinux file specified. You must specify the correct vmlinux file, e.g." >&2
+@@ -560,8 +570,12 @@ check_valid_args()
+ 
+ 	echo "The specified vmlinux file \"$VMLINUX\" doesn't exist." >&2
+ 	exit 1
++}
++
+ 
+ # similar check for Xen image
++check_valid_xen()
++{
+ 	if test -f "$XENIMAGE"; then
+ 		return
+ 	fi
+@@ -622,6 +636,77 @@ get_image_range()
+ }
+ 
+ 
++set_passive_domain()
++{
++	DOMAIN_ID=$1
++	FILE_IMAGE=$2
++	XEN_IMAGE=$3
++
++	if test "$FILE_IMAGE" = "none"; then
++		RANGE="0,0"
++		FILE_IMAGE="domain$DOMAIN_ID-kernel"
++	else
++		# Find VMA range for passive domain kernel image 
++		range_info=`objdump -h $FILE_IMAGE 2>/dev/null | grep " .text "`
++		tmp1=`echo $range_info | awk '{print $4}'`	
++		tmp_length=`echo $range_info | awk  '{print $3}'`
++		tmp2=`objdump -h $FILE_IMAGE --adjust-vma=0x$tmp_length 2>/dev/null | grep " .text " | awk  '{print $4}'`
++
++		if test -z "$tmp1" -o -z "$tmp2"; then
++			echo "The specified file $FILE_IMAGE does not seem to be valid" >&2
++			echo "Make sure you are using the non-compressed image file (e.g. vmlinux not vmlinuz)" >&2
++			vecho "found start as \"$tmp1\", end as \"$tmp2\"" >&2
++			exit 1
++		fi
++		RANGE="`echo $tmp1`,`echo $tmp2`"
++	fi
++	echo " $DOMAIN_ID $FILE_IMAGE $RANGE $XEN_IMAGE" >> $PASSIVE_SETUP_FILE
++}
++
++
++set_passive_domain_config()
++{
++
++	create_dir "$SETUP_DIR"
++
++	touch $PASSIVE_SETUP_FILE
++	chmod 644 $PASSIVE_SETUP_FILE
++	>$PASSIVE_SETUP_FILE
++
++	NDOMAINS=`echo "$PASSIVE_DOMAINS" | awk -F',' '{print NF}'`
++
++	if test -n "$PASSIVE_IMAGES"; then
++		NIMAGES=`echo "$PASSIVE_IMAGES" | awk -F',' '{print NF}'`
++		if [ $NDOMAINS != $NIMAGES ]; then
++			echo "# of passive domains and # of passive images doesn't match." >&2
++			do_help
++			exit 1
++		fi
++
++		for (( i=1; i<=$NDOMAINS; i++ )); do
++			ID=`echo "$PASSIVE_DOMAINS" | awk -F"," '{print $'$i'}'`
++			FILE=`echo "$PASSIVE_IMAGES" | awk -F',' '{print $'$i'}'`
++			if test ! -f "$FILE"; then
++				echo "Image $FILE for passive domain $ID not found." >&2
++				return 1
++			fi
++			LNK_KERNEL=/boot/domain$ID-kernel
++			ln -sf $FILE $LNK_KERNEL
++			LNK_XEN=/boot/domain$ID-xen
++			ln -sf $XENIMAGE $LNK_XEN
++			set_passive_domain $ID $LNK_KERNEL $LNK_XEN 
++		done
++	else
++			for (( i=1; i<=$NDOMAINS; i++ )); do
++				ID=`echo "$PASSIVE_DOMAINS" | awk -F"," '{print $'$i'}'`
++				LNK_XEN=/boot/domain$ID-xen
++				set_passive_domain $ID none $LNK_XEN
++		done 
++
++	fi
++}
++
++  
+ # validate --separate= parameters. This function is called with IFS=,
+ # so on each argument is splitted
+ validate_separate_args()
+@@ -932,10 +1017,20 @@ do_options()
+ 				DO_SETUP=yes
+ 				;;
+ 			--active-domains)
+-				error_if_invalid_arg $arg $val
++				error_if_invalid_arg "$arg" "$val"
+ 				ACTIVE_DOMAINS=$val
+ 				DO_SETUP=yes
+ 				;;
++			--passive-domains|--domains)
++				error_if_invalid_arg "$arg" "$val"
++				PASSIVE_DOMAINS=$val
++				DO_SETUP=yes
++				;;
++			--passive-images|--domain-images)
++				error_if_invalid_arg "$arg" "$val"
++				PASSIVE_IMAGES=$val
++				DO_SETUP=yes
++				;;
+ 			--note-table-size)
+ 				if test "$KERNEL_SUPPORT" = "yes"; then
+ 					echo "\"$arg\" meaningless on this kernel" >&2
+@@ -1366,6 +1461,16 @@ check_event_mapping_data()
+ 			exit 1
+ 		fi
+ 	fi
++
++	if test -n "$ACTIVE_DOMAINS" -a "$START_DAEMON" != "yes"; then
++		echo "Option \"--active-domains\" can only be used with option \"-start-daemon\"." >&2
++		exit 1
++	fi
++
++	if test -n "$PASSIVE_DOMAINS" -a "$START_DAEMON" != "yes" -a "$START" != "yes"; then
++		echo "Option \"--passive-domains\" or "--domains" can only be used with option \"--start-daemon\" or \"--start\"." >&2
++		exit 1
++	fi
+ }
+ 
+ 
+@@ -1404,6 +1509,15 @@ do_param_setup()
+ 		fi
+ 	fi
+ 
++	if test -n "$PASSIVE_DOMAINS"; then
++		if test "$KERNEL_SUPPORT" = "yes"; then
++			echo $PASSIVE_DOMAINS >$MOUNT/passive_domains
++			set_passive_domain_config
++		else
++			echo "passive-domains not supported - ignored" >&2
++		fi
++	fi
++	
+ 	if test $NOTE_SIZE != 0; then
+ 		set_param notesize $NOTE_SIZE
+ 	fi
+@@ -1566,7 +1680,8 @@ do_start_daemon()
+ 	fi
+ 
+ 	do_setup
+-	check_valid_args
++ 	check_valid_vmlinux
++ 	check_valid_xen
+ 	get_image_range "linux"
+ 	get_image_range "xen"
+ 	do_param_setup
+@@ -1600,6 +1715,10 @@ do_start_daemon()
+ 		OPD_ARGS="$OPD_ARGS --image=$IMAGE_FILTER"
+ 	fi
+ 
++	if ! test -z "$PASSIVE_DOMAINS"; then
++		OPD_ARGS="$OPD_ARGS --xen-passive-setup=$PASSIVE_SETUP_FILE"
++	fi
++
+ 	if test -n "$VERBOSE"; then
+ 		OPD_ARGS="$OPD_ARGS --verbose=$VERBOSE"
+ 	fi
+@@ -1805,6 +1924,8 @@ do_save_session()
+ 	fi
+ 
+ 	hup_daemon
++
++	rm -f /boot/domain-*-kernel /boot/domain-*-xen
+ }
+ 
+ 
+@@ -1855,7 +1976,8 @@ do_operations()
+ 	fi
+ 
+ 	if test "$SETUP" = "yes"; then
+-		check_valid_args
++		check_valid_vmlinux
++		check_valid_xen
+ 		do_save_setup
+ 	fi
+ 

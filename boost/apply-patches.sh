@@ -14,6 +14,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-exceptions.patch
 # https://svn.boost.org/trac/boost/ticket/6150
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-fix-non-utf8-files.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-add-bjam-man-page.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-lexical_cast-incomplete.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_75540.diff
 
 set +e +o pipefail

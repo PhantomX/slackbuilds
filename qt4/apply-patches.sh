@@ -42,7 +42,9 @@ ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch
 # workaround for gdal/grass crashers wrt glib_eventloop null deref's
 ApplyPatch qt-everywhere-opensource-src-4.6.3-glib_eventloop_nullcheck.patch
 # remove dependency of webkit in assistant
-#ApplyPatch qt-everywhere-opensource-src-4.7.1-assistant_no_webkit.patch.patch
+ApplyPatch qt-everywhere-opensource-src-4.7.1-assistant_no_webkit.patch
+# workaround for a MOC issue with Boost 1.48 headers (#756395)
+ApplyPatch qt-everywhere-opensource-src-4.8.0-rc1-moc-boost148.patch
 
 ## upstreamable bits
 # fix invalid inline assembly in qatomic_{i386,x86_64}.h (de)ref implementations

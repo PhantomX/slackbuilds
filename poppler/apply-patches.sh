@@ -9,7 +9,4 @@ SB_PATCHDIR=${CWD}/patches
 # poppler-glib-demo, drop extraneous g_thread_init
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/poppler-0.18.1-glib.patch
 
-# fix poppler-glib.pc
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/poppler-0.18.1-pkgconfig_GLIB_REQUIRED.patch
-
 set +e +o pipefail

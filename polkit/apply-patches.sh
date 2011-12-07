@@ -12,6 +12,4 @@ for i in $(<debian/patches/series); do
   patch -p1 --verbose --backup --suffix=".pdeb" -i debian/patches/${i}
 done
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/polkit-0.102-neuter-stdout-and-stderr.patch
-
 set +e +o pipefail

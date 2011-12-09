@@ -37,6 +37,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.0-knewstuff2_gpg2.pat
 # https://git.reviewboard.kde.org/r/101231/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
 
+# Toggle solid upnp support at runtime via env var SOLID_UPNP=1 (disabled by default)
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.4-SOLID_UPNP.patch
+
 # make forcefully hal-free build
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.3-halectomy.patch
 

@@ -62,12 +62,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.80-kde\#
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.0-bz\#732830-login.patch
 
 ## upstream patches
-# battery plasmoid fixes (#753429)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.4-batteryplasmoid.patch
-# Crash in TaskManager::TaskItem::task (kde#272495)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-kdebug272495.patch
-# Crashes When Adding Weather Widgets (Geolocation) [gps_read, Gpsd::run] (kde#277036)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-kdebug277036.patch
 
 ## plasma active patches
 # adapted version of fix-wetab-power-button-freeze.patch

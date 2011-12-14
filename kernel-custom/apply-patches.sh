@@ -77,6 +77,7 @@ ApplyPatch oom-warning.patch
 ApplyPatch grab-swap-token-oops.patch
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 ApplyPatch oom-thaw-threads-if-oom-killed-thread-is-frozen-befo.patch
+ApplyPatch mm-Ensure-that-pfn_valid-is-called-once-per-pagebloc.patch
 
 # mm patches
 
@@ -112,7 +113,6 @@ ApplyPatch jbd-jbd2-validate-sb-s_first-in-journal_get_superblo.patch
 # ext3
 
 # xfs
-ApplyPatch xfs-Fix-possible-memory-corruption-in-xfs_readlink.patch
 
 # btrfs
 
@@ -212,7 +212,6 @@ ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-intel-make-lvds-work.patch
 ApplyPatch drm-i915-fbc-stfu.patch
 ApplyPatch drm-i915-sdvo-lvds-is-digital.patch
 
@@ -272,6 +271,12 @@ ApplyPatch ideapad-Check-if-acpi-already-handle-backlight.patch
 ApplyPatch sysfs-msi-irq-per-device.patch
 
 ApplyPatch pci-Rework-ASPM-disable-code.patch
+
+#rhbz #757839
+ApplyPatch net-sky2-88e8059-fix-link-speed.patch
+
+#rhbz 717735
+ApplyPatch nfs-client-freezer.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

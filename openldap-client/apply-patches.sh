@@ -13,6 +13,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-reentrant-gethostby.p
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-smbk5pwd-overlay.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-ldaprc-currentdir.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-userconfig-setgid.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-nss-free-peer-cert.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-dns-priority.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-syncrepl-unset-tls-options.patch
 
 set +e +o pipefail

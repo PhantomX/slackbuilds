@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://github.com/rubyripperdev/${module}.git"
+snaproot="https://code.google.com/p/${module}"
 
 tmp=$(mktemp -d)
 

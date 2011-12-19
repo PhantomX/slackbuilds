@@ -28,5 +28,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/libqzeitgeist08.patch
 # based on patch from ftp://ftp.kde.org/pub/kde/stable/active/1.0/src/
 # includes only the piece wrt additional nepomuk ontologies
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/active-development-4.7-diff-1.patch
+# 4.8 backport
+# https://projects.kde.org/projects/kde/kde-runtime/repository/revisions/e6e6fb53419ec212ccae083162999d66e7d5663b
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-kdebug288389.patch
 
 set +e +o pipefail

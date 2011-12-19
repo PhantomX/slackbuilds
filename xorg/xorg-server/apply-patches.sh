@@ -38,6 +38,8 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99-config-add-udev-systemd-mu
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.11.2-record-crasher.patch
 
 # misc
+patch -p1 --verbose -i ${SB_PATCHDIR}/u_OS-acpi-Reconnect-to-acpid-when-it-gets-restarted.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.11.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then

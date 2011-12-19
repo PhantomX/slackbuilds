@@ -34,8 +34,6 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-tp-multilib-optflags.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.0-beta1-uic_multilib.patch
 # enable ft lcdfilter
 ApplyPatch qt-x11-opensource-src-4.5.1-enable_ft_lcdfilter.patch.gz
-# include kde4 plugin path, http://bugzilla.redhat.com/498809
-#ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-kde4_plugins.patch 
 ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch 
 
 # may be upstreamable, not sure yet

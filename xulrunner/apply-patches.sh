@@ -8,7 +8,7 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/${NAME}-version.patch.gz | sed -e "s/__RPM_VERSION_INTERNAL__/${GECKO_DIR_VER}/" | patch -p1 -E --backup --verbose
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.0-chromium-types.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-6.0-secondary-ipc.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-9.0-secondary-ipc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-linux3.patch
 
 # Fedora specific patches
@@ -20,10 +20,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/crashreporter-remove-static.pa
 # Upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-network-link-service.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-2.0-NetworkManager09.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-670719.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-686280.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-589735.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-680917.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-696393.patch
+# https://bugzilla.mozilla.org/show_bug.cgi?id=707993
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-8.0-fix-maemo-checks-in-npapi.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-682832-proxy.patch
 
 # OpenSuse kde integration support
 install -m 644 ${SB_PATCHDIR}/kde.js browser/app/profile/kde.js

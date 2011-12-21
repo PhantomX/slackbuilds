@@ -11,4 +11,5 @@ pref("middlemouse.contentLoadURL", false);
 pref("general.useragent.vendor", "SM_SLK_DIST");
 pref("general.useragent.vendorSub", "SM_SLK_VR");
 pref("intl.locale.matchOS", true);
-pref("update_notifications.enabled", false);
+pref("extensions.shownSelectionUI", true);
+pref("extensions.autoDisableScope", 0);

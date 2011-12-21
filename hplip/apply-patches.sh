@@ -34,6 +34,8 @@ zcat ${SB_PATCHDIR}/hplip-discovery-method.patch.gz | patch -p1 -E --backup --ve
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpijs-marker-supply.patch
 # Clear old printer-state-reasons we used to manage.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-clear-old-state-reasons.patch
+# Catch DBusException in hp-systray (bug #746024).
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-systray-dbus-exception.patch
 # Avoid busy loop in hpcups when backend has exited.
 zcat ${SB_PATCHDIR}/hplip-hpcups-sigpipe.patch.gz | patch -p1 -E --backup --verbose
 # Use correct fax PPD name for Qt3 UI.
@@ -71,25 +73,20 @@ done
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-raw_deviceID-traceback.patch
 # Avoid UnicodeDecodeError in printsettingstoolbox.py
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-UnicodeDecodeError.patch
-# Don't emit SIGNALs in ui4.setupdialog.SetupDialog the PyQt3 way.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-emit-SIGNAL.patch
-# Prevent hp-fab traceback when run as root.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-fab-root-crash.patch
 # Call cupsSetUser in cupsext's addPrinter method before connecting so
 # that we can get an authentication callback.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-addprinter.patch
 # Catch D-Bus exceptions in fax dialog.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbus-exception.patch
-# Prevent hpaio segfaulting on invalid URIs.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpaio-segfault.patch
-# Another missing newline in filter output.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-newline.patch
-# Enable D-Bus threading (and require pygobject2).
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbus-threads.patch
 # Catch GError exception when notification showing failed.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-notification-exception.patch
 # Applied patch to fix CVE-2010-4267, remote stack overflow vulnerability.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-CVE-2010-4267.patch
 # Avoid KeyError in ui4/wifisetupdialog.py (bug #680939).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-wifisetup.patch
+# Don't run 'chgrp lp /var/log/hp' in makefile
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-makefile-chgrp.patch
+# Pay attention to the SANE localOnly flag in hpaio (bug #743593).
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpaio-localonly.patch
+
 set +e +o pipefail

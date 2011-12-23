@@ -22,6 +22,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-cups-rgbw.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-glyph-crash.patch
 # Applied patch to fix NULL dereference in JBIG2 decoder.
 zcat ${SB_PATCHDIR}/ghostscript-jbig2dec-nullderef.patch.gz | patch -p1 --verbose
+# Applied fix for type 1 font copying code SEAC scanner.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-SEAC.patch
 # Install CUPS filter convs files in the correct place.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-cups-filters.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patch

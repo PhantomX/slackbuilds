@@ -84,6 +84,8 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-QUrl_toLocalFile.patch
 # workaround
 # sql/drivers/tds/qsql_tds.cpp:341:49: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
 ApplyPatch qt-everywhere-opensource-src-4.7.4-tds_no_strict_aliasing.patch
+# don't spam if libicu is not present at runtime
+ApplyPatch qt-everywhere-opensource-src-4.8.0-icu_no_spam.patch
 
 # security patches
 

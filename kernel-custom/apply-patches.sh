@@ -77,7 +77,6 @@ ApplyPatch oom-warning.patch
 ApplyPatch grab-swap-token-oops.patch
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 ApplyPatch oom-thaw-threads-if-oom-killed-thread-is-frozen-befo.patch
-ApplyPatch mm-Ensure-that-pfn_valid-is-called-once-per-pagebloc.patch
 
 # mm patches
 
@@ -258,6 +257,9 @@ ApplyPatch mm-do-not-stall-in-synchronous-compaction-for-THP-allocations.patch
 ApplyPatch be2net-non-member-vlan-pkts-not-received-in-promisco.patch
 ApplyPatch benet-remove-bogus-unlikely-on-vlan-check.patch
 
+#rhbz 736815
+ApplyPatch x86-code-dump-fix-truncation.patch
+
 #rhbz 750402
 ApplyPatch oom-fix-integer-overflow-of-points.patch
 
@@ -277,6 +279,11 @@ ApplyPatch net-sky2-88e8059-fix-link-speed.patch
 
 #rhbz 717735
 ApplyPatch nfs-client-freezer.patch
+
+#rhbz 746097
+ApplyPatch tpm_tis-delay-after-aborting-cmd.patch
+
+ApplyPatch route-cache-garbage-collector.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

@@ -24,5 +24,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sane-backends-1.0.21-SCX4500W.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sane-backends-1.0.22-v4l.patch
 # may need rebuilding if one of the above changes:
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sane-backends-1.0.22-automake.patch
+# submitted upstream: c648a4411e5eacf19da2de726dac06ec07dae302
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sane-backends-1.0.22-av220-gray-modes.patch
 
 set +e +o pipefail

@@ -33,9 +33,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-honor-expired.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-noprefixavail.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-sharedlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-PPP.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-paranoia-pid.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-paranoia.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-lpf-ib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-improved-xid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-gpxe-cid.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-dhclient-decline-onetry.patch
 
 set +e +o pipefail

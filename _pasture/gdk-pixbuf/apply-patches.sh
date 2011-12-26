@@ -4,9 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.14.0-automake.patch
 zcat ${SB_PATCHDIR}/${NAME}-0.18.0-gmodulehack.patch.gz | patch -p1 -E --backup --verbose
-# Quote in configure.in appropriately for recent libtool
-zcat ${SB_PATCHDIR}/${NAME}-0.22.0-acquote.patch.gz | patch -p1 -E --backup --verbose
 
 ( cd gdk-pixbuf && tar -xvzf ${CWD}/local-hack-gmodule2.tar.gz )
 

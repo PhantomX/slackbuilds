@@ -86,6 +86,11 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-QUrl_toLocalFile.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.4-tds_no_strict_aliasing.patch
 # don't spam if libicu is not present at runtime
 ApplyPatch qt-everywhere-opensource-src-4.8.0-icu_no_spam.patch
+# avoid dropping events, which lead to "ghost entries in kde task manager" problem
+# https://bugs.kde.org/show_bug.cgi?id=275469
+ApplyPatch qt-everywhere-opensource-src-4.8.0-filter_event.patch
+# fix qvfb build
+ApplyPatch qt-everywhere-opensource-src-4.8.0-qvfb.patch
 
 # security patches
 

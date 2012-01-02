@@ -37,6 +37,10 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99-config-add-udev-systemd-mu
 # Bug #714746: Xorg crash in record when ProcDRI2WaitMSCReply called
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.11.2-record-crasher.patch
 
+# https://bugzilla.gnome.org/show_bug.cgi?id=655928, XI2 button state is
+# incorrect if the pointer is mapped
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.11.2-dix-button-state-must-show-the-logical-buttons-not-p.patch
+
 # misc
 patch -p1 --verbose -i ${SB_PATCHDIR}/u_OS-acpi-Reconnect-to-acpid-when-it-gets-restarted.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch

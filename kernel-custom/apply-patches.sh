@@ -283,6 +283,8 @@ ApplyPatch nfs-client-freezer.patch
 #rhbz 746097
 ApplyPatch tpm_tis-delay-after-aborting-cmd.patch
 
+ApplyPatch thp-reduce-khugepaged-freezing-latency.patch
+
 ApplyPatch route-cache-garbage-collector.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE

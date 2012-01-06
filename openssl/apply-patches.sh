@@ -27,12 +27,14 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta5-cipher-cha
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0b-ipv6-apps.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-0.9.8j-env-nozlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta4-dtls1-abi.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0e-version.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0f-version.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0b-aesni.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-name-hash.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0c-apps-ipv6listen.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0d-apps-dgst.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0d-xmpp-starttls.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0e-chil-fixes.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0e-pkgconfig-private.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0d-padlock64.patch
 
 # Upstream

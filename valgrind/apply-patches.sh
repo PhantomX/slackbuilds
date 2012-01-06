@@ -24,5 +24,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.1-gen_insn_test.pa
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.1-x86-ldso-strlen.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.1-ppc64-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.1-tests-_GNU_SOURCE.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0007-implement-extra-dwarf-ops-gcc-461.patch
 
 set +e +o pipefail

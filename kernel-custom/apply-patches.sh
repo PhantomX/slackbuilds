@@ -260,9 +260,6 @@ ApplyPatch benet-remove-bogus-unlikely-on-vlan-check.patch
 #rhbz 736815
 ApplyPatch x86-code-dump-fix-truncation.patch
 
-#rhbz 750402
-ApplyPatch oom-fix-integer-overflow-of-points.patch
-
 #rhbz 728607
 ApplyPatch elantech.patch
 
@@ -285,7 +282,17 @@ ApplyPatch tpm_tis-delay-after-aborting-cmd.patch
 
 ApplyPatch thp-reduce-khugepaged-freezing-latency.patch
 
-ApplyPatch route-cache-garbage-collector.patch
+#rhbz 771387
+ApplyPatch KVM-x86-Prevent-starting-PIT-timers-in-the-absence-of.patch
+
+#rhbz 770233
+ApplyPatch Bluetooth-Add-support-for-BCM20702A0.patch
+
+#rhbz 771678
+ApplyPatch KVM-fix-device-assignment-permissions.patch
+
+#rhbz 771058
+ApplyPatch msi-irq-sysfs-warning.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

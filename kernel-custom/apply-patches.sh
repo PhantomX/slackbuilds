@@ -104,10 +104,11 @@ ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
 ApplyPatch remount-no-shrink-dcache.patch
 
 # reisefs
-ApplyPatch reiserfs-force-inode-evictions-before-umount-to-avoid-crash.patch
 
 # ext4
 ApplyPatch jbd-jbd2-validate-sb-s_first-in-journal_get_superblo.patch
+ApplyPatch ext4-Support-check-none-nocheck-mount-options.patch
+ApplyPatch ext4-Fix-error-handling-on-inode-bitmap-corruption.patch
 
 # ext3
 

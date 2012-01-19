@@ -49,8 +49,6 @@ ApplyPatch glibc-2.14-free-initfini.patch
 # Add missing headers
 ApplyPatch glibc-2.14-fix-headers.patch
 ApplyPatch glibc-2.14-reexport-rpc-interface.patch
-# Fix potential heap overflow vulnerability
-ApplyPatch glibc-2.14.1-tzfile-overflow.patch
 
 if [ "${SB_BOOTSTRP}" = "YES" ] ;then
   # Multilib - Disable check for forced unwind (Patch from eglibc) since we
@@ -66,7 +64,10 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
   ApplyPatch 0030_all_glibc-respect-env-CPPFLAGS.patch
   ApplyPatch 0052_all_glibc-2.14-resolv-hp-assert.patch
   ApplyPatch 0061_all_glibc-2.13-static-memset.patch
+  ApplyPatch 0068_all_glibc-2.14-glibc-revert-fseek-on-fclose.patch
+  ApplyPatch 0080_all_glibc-2.14-tzfile-bz13506.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
+  ApplyPatch 0090_all_glibc-2.14-fix-up-regcomp-regexec.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
   ApplyPatch 1008_all_glibc-rwlock-assume.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch

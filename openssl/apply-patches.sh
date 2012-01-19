@@ -27,7 +27,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta5-cipher-cha
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0b-ipv6-apps.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-0.9.8j-env-nozlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta4-dtls1-abi.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0f-version.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0g-version.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0b-aesni.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-name-hash.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0c-apps-ipv6listen.patch

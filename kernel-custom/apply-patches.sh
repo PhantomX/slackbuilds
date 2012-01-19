@@ -76,7 +76,6 @@ ApplyPatch utrace.patch
 ApplyPatch oom-warning.patch
 ApplyPatch grab-swap-token-oops.patch
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
-ApplyPatch oom-thaw-threads-if-oom-killed-thread-is-frozen-befo.patch
 
 # mm patches
 
@@ -106,7 +105,6 @@ ApplyPatch remount-no-shrink-dcache.patch
 # reisefs
 
 # ext4
-ApplyPatch jbd-jbd2-validate-sb-s_first-in-journal_get_superblo.patch
 ApplyPatch ext4-Support-check-none-nocheck-mount-options.patch
 ApplyPatch ext4-Fix-error-handling-on-inode-bitmap-corruption.patch
 
@@ -120,6 +118,7 @@ ApplyPatch ext4-Fix-error-handling-on-inode-bitmap-corruption.patch
 
 # NFSv4
 ApplyPatch nfsv4-include-bitmap-in-nfsv4_get_acl_data.patch
+ApplyPatch linux-3.1-keys-remove-special-keyring.patch
 
 # USB
 
@@ -132,9 +131,6 @@ ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
 ApplyPatch acpi-ensure-thermal-limits-match-cpu-freq.patch
 # list acpi fixed events at /proc/acpi/fixed_events
 ApplyPatch acpi-add-proc-event-regs.patch
-
-# Various low-impact patches to aid debugging.
-ApplyPatch linux-2.6-debug-taint-vm.patch
 
 # cpufreq
 ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
@@ -153,9 +149,9 @@ ApplyPatch linux-2.6-defaults-aspm.patch.gz
 ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
-ApplyPatch 0001-block-prepare-I-O-context-code-for-BFQ-v3r1-for-3.1.patch
-ApplyPatch 0002-block-cgroups-kconfig-build-bits-for-BFQ-v3r1-3.1.patch
-ApplyPatch 0003-block-introduce-the-BFQ-v3r1-I-O-sched-for-3.1.patch
+ApplyPatch 0001-block-prepare-I-O-context-code-for-BFQ-v3r2-for-3.2.patch
+ApplyPatch 0002-block-cgroups-kconfig-build-bits-for-BFQ-v3r2-3.2.patch
+ApplyPatch 0003-block-introduce-the-BFQ-v3r2-I-O-sched-for-3.2.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -208,14 +204,10 @@ ApplyPatch fix_xen_guest_on_old_EC2.patch
 # DRM core
 
 # Nouveau DRM
-ApplyOptionalPatch drm-nouveau-updates.patch
+#ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-i915-fbc-stfu.patch
-ApplyPatch drm-i915-sdvo-lvds-is-digital.patch
-
-ApplyPatch drm-lower-severity-radeon-lockup.diff
 
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
@@ -228,15 +220,10 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
 ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
-# Avoid false quiescent states in rcu.
-ApplyPatch rcutree-avoid-false-quiescent-states.patch
-
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
-ApplyPatch udlfb-bind-framebuffer-to-interface.patch
 ApplyPatch epoll-limit-paths.patch
-ApplyPatch rcu-avoid-just-onlined-cpu-resched.patch
 ApplyPatch block-stray-block-put-after-teardown.patch
 
 # Runtime PM
@@ -247,53 +234,31 @@ ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 ApplyPatch revert-efi-rtclock.patch
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
-ApplyPatch hvcs_pi_buf_alloc.patch
-
-#rhbz #735946
-ApplyPatch 0001-mm-vmscan-Limit-direct-reclaim-for-higher-order-allo.patch
-ApplyPatch 0002-mm-Abort-reclaim-compaction-if-compaction-can-procee.patch
-ApplyPatch mm-do-not-stall-in-synchronous-compaction-for-THP-allocations.patch
-
-#rhbz 748691
-ApplyPatch be2net-non-member-vlan-pkts-not-received-in-promisco.patch
-ApplyPatch benet-remove-bogus-unlikely-on-vlan-check.patch
-
-#rhbz 736815
-ApplyPatch x86-code-dump-fix-truncation.patch
-
-#rhbz 728607
-ApplyPatch elantech.patch
-
-#rhbz 748210
-ApplyPatch ideapad-Check-if-acpi-already-handle-backlight.patch
-
 #rhbz 752176
 ApplyPatch sysfs-msi-irq-per-device.patch
 
 ApplyPatch pci-Rework-ASPM-disable-code.patch
 
-#rhbz #757839
-ApplyPatch net-sky2-88e8059-fix-link-speed.patch
+#rhbz 590880
+ApplyPatch alps.patch
 
 #rhbz 717735
 ApplyPatch nfs-client-freezer.patch
 
-#rhbz 746097
-ApplyPatch tpm_tis-delay-after-aborting-cmd.patch
+#rhbz 773392
+ApplyPatch KVM-x86-extend-struct-x86_emulate_ops-with-get_cpuid.patch
+ApplyPatch KVM-x86-fix-missing-checks-in-syscall-emulation.patch
 
-ApplyPatch thp-reduce-khugepaged-freezing-latency.patch
+#rhbz 782686
+ApplyPatch procfs-parse-mount-options.patch
+ApplyPatch procfs-add-hidepid-and-gid-mount-options.patch
+ApplyPatch proc-fix-null-pointer-deref-in-proc_pid_permission.patch
 
-#rhbz 771387
-ApplyPatch KVM-x86-Prevent-starting-PIT-timers-in-the-absence-of.patch
+#rhbz 782681
+ApplyPatch proc-clean-up-and-fix-proc-pid-mem-handling.patch
 
-#rhbz 770233
-ApplyPatch Bluetooth-Add-support-for-BCM20702A0.patch
-
-#rhbz 771678
-ApplyPatch KVM-fix-device-assignment-permissions.patch
-
-#rhbz 771058
-ApplyPatch msi-irq-sysfs-warning.patch
+#rhbz 782696
+ApplyPatch Unused-iocbs-in-a-batch-should-not-be-accounted-as-a.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

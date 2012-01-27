@@ -18,7 +18,7 @@ sed -e "s|_KDELIBS_SLK_DIST|${KDELIBS_SLK_DIST}|g" \
   ${SB_PATCHDIR}/kdelibs-4.6.80-branding-slk.patch | patch -p1 -E --backup --verbose
 
 # patch KStandardDirs to use /usr/libexec/kde4 instead of /usr/lib${LIBDIRSUFFIX}/kde4/libexec
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-libexecdir.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.0-libexecdir.patch
 # kstandarddirs changes: search /etc/kde, find /usr/libexec/kde4
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.90-kstandarddirs.patch
 zcat ${SB_PATCHDIR}/kdelibs-4.1.70-cmake.patch.gz | patch -p1 --verbose --backup --suffix=.orig

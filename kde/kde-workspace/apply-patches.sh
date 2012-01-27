@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ## Most patches are from Fedora
-patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.1-redhat_startkde.patch
+patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.97-redhat_startkde.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.0-plasma-konsole.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-systemsettings_onlyshowin_kde.patch
 # 441062: packagekit tools do not show icons correctly on KDE
@@ -22,7 +22,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.80-batte
 # allow adding a "Leave..." button which brings up the complete shutdown dialog
 # to the classic menu (as in KDE <= 4.2.x); the default is still the upstream
 # default Leave submenu
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.80-classicmenu-logout.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-classicmenu-logout.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-kdm_plymouth.patch
 # kubuntu kudos! bulletproof-X bits ripped out
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-kdm_plymouth081.patch
@@ -37,7 +37,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.2-startk
 # multilib QT_PLUGIN_PATH, http://bugzilla.redhat.com/704840
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.90-multilib_qt_plugin_path.patch
 # HALsectomy
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.85-no_HAL.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-no_HAL.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.90-no_HAL2.patch
 
 # plasmaclock displayEvents=false default, one more item to avoid
@@ -56,35 +56,28 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.2-bz\#74
 
 # upstreamable patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.80-kde\#171685.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-kde\#171685.patch
 
 # use /etc/login.defs to define a 'system' account instead of hard-coding 500 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.0-bz\#732830-login.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-bz\#732830-login.patch
+
+# kdm overwrites ~/.Xauthority with wrong SELinux context on logout
+# http://bugzilla.redhat.com/567914
+# http://bugs.kde.org/242065
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.95-kdm_xauth.patch
+
+# gcc47 fixes (missing headers mostly)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.97-gcc47.patch
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.5-batteryplasmoid.patch
-# http://bugs.kde.org/288802
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.5-kdebug288802.patch
-# followup ^^
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.5-kdebug288802-2.patch
+
 
 ## plasma active patches
-# adapted version of fix-wetab-power-button-freeze.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-fix-wetab-power-button-freeze.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nepomuksearch-566052f0.diff
-# adapted/fixed version of ksplash-qml.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-ksplash-qml.patch 
 # adapted version of wac-html-widgets.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.7.3-wac-html-widgets.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-wac-html-widgets.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kwin-check-opengl.diff
 
 ## trunk patches
-# Fix possible uninitialized variable use in ksplashx multi-screen code
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.3-ksplashx.patch
-# There are a bug in Kwin when using nVidia + TwinView + 2 monitors with
-# differents resolutions, see https://bugs.kde.org/show_bug.cgi?id=286146 and
-# https://bugs.kde.org/show_bug.cgi?id=285967
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.8.0-kwin-twinview.patch
 
 # Arch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/terminate-server.patch

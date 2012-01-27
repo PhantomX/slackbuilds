@@ -10,6 +10,7 @@ zcat ${SB_PATCHDIR}/${NAME}-4.2.98-kdrc-icon.patch.gz | patch -p1 -E --backup --
 zcat ${SB_PATCHDIR}/${NAME}-4.3.3-resolv-conf-path.patch.gz | patch -p1 -E --backup --verbose
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.6.2-gcc46.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.97-fix-for-g++47.patch
 
 ## security patches
 

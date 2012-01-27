@@ -1,0 +1,106 @@
+Path: news.gmane.org!not-for-mail
+From: Niels de Vos <ndevos@redhat.com>
+Newsgroups: gmane.linux.kernel,gmane.linux.file-systems
+Subject: [PATCH v2] fs: Invalidate the cache for a parent block-device if fsync() is called for a partition
+Date: Mon, 23 Jan 2012 10:38:29 +0000
+Lines: 58
+Approved: news@gmane.org
+Message-ID: <1327315109-7740-1-git-send-email-ndevos@redhat.com>
+References: <4F19356E.3020708@redhat.com>
+NNTP-Posting-Host: lo.gmane.org
+X-Trace: dough.gmane.org 1327315263 30652 80.91.229.12 (23 Jan 2012 10:41:03 GMT)
+X-Complaints-To: usenet@dough.gmane.org
+NNTP-Posting-Date: Mon, 23 Jan 2012 10:41:03 +0000 (UTC)
+Cc: linux-kernel@vger.kernel.org, Niels de Vos <ndevos@redhat.com>,
+	"Bryn M. Reeves" <bmr@redhat.com>,
+	Mikulas Patocka <mpatocka@redhat.com>
+To: linux-fsdevel@vger.kernel.org
+Original-X-From: linux-kernel-owner@vger.kernel.org Mon Jan 23 11:40:58 2012
+Return-path: <linux-kernel-owner@vger.kernel.org>
+Envelope-to: glk-linux-kernel-3@lo.gmane.org
+Original-Received: from vger.kernel.org ([209.132.180.67])
+	by lo.gmane.org with esmtp (Exim 4.69)
+	(envelope-from <linux-kernel-owner@vger.kernel.org>)
+	id 1RpHKb-0008Bu-Fh
+	for glk-linux-kernel-3@lo.gmane.org; Mon, 23 Jan 2012 11:40:57 +0100
+Original-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1753263Ab2AWKkt (ORCPT <rfc822;glk-linux-kernel-3@m.gmane.org>);
+	Mon, 23 Jan 2012 05:40:49 -0500
+Original-Received: from mx1.redhat.com ([209.132.183.28]:58739 "EHLO mx1.redhat.com"
+	rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP
+	id S1751990Ab2AWKks (ORCPT <rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 23 Jan 2012 05:40:48 -0500
+Original-Received: from int-mx12.intmail.prod.int.phx2.redhat.com (int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id q0NAelMx027033
+	(version=TLSv1/SSLv3 cipher=DHE-RSA-AES256-SHA bits=256 verify=OK);
+	Mon, 23 Jan 2012 05:40:47 -0500
+Original-Received: from ndevos.usersys.redhat.com (dhcp-1-51.fab.redhat.com [10.33.1.51])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP id q0NAejLn013691;
+	Mon, 23 Jan 2012 05:40:46 -0500
+In-Reply-To: <4F19356E.3020708@redhat.com>
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+Original-Sender: linux-kernel-owner@vger.kernel.org
+Precedence: bulk
+List-ID: <linux-kernel.vger.kernel.org>
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: news.gmane.org gmane.linux.kernel:1242432 gmane.linux.file-systems:60751
+Archived-At: <http://permalink.gmane.org/gmane.linux.kernel/1242432>
+
+Executing an fsync() on a file-descriptor of a partition flushes the
+caches for that partition by calling blkdev_issue_flush(). However, it
+seems that reading data through the parent device will still return the
+old cached data.
+
+The cache for the block-device is not synced if the block-device is kept
+open (due to a mounted partition, for example). Only when all users for
+the disk have exited, the cache for the disk is made consistent again.
+
+Calling invalidate_bdev() on the parent block-device in case
+blkdev_fsync() was called for a partition, fixes this.
+
+The problem can be worked around by forcing the caches to be flushed
+with either
+	# blockdev --flushbufs ${dev_disk}
+or
+	# echo 3 > /proc/sys/vm/drop_caches
+
+CC: Bryn M. Reeves <bmr@redhat.com>
+CC: Mikulas Patocka <mpatocka@redhat.com>
+Signed-off-by: Niels de Vos <ndevos@redhat.com>
+
+---
+v2:
+- Do not call invalidate_bdev() from blkdev_issue_flush() and prevent
+  performance degration with journalled filesystems.
+
+  Suggested was to call invalidate_bdev() in fsync_bdev(), but this is
+  not in the call-path of mkfs.ext3 and similar tools. Hence the issue
+  persists.
+
+- Correct phrasing a little, changing ioctl-BLKFLSBUF is not required.
+
+- This issue also occurs when doing an ioctl-BLKFLSBUF on a partition.
+  Reading the whole disk will still return cached data. If this is an
+  issue, it will need a seperate patch.
+---
+ fs/block_dev.c |    4 ++++
+ 1 files changed, 4 insertions(+), 0 deletions(-)
+
+diff --git a/fs/block_dev.c b/fs/block_dev.c
+index 0e575d1..433c4de 100644
+--- a/fs/block_dev.c
++++ b/fs/block_dev.c
+@@ -424,6 +424,10 @@ int blkdev_fsync(struct file *filp, loff_t start, loff_t end, int datasync)
+ 	if (error == -EOPNOTSUPP)
+ 		error = 0;
+ 
++	/* invalidate parent block_device */
++	if (!error && bdev != bdev->bd_contains)
++		invalidate_bdev(bdev->bd_contains);
++
+ 	return error;
+ }
+ EXPORT_SYMBOL(blkdev_fsync);
+-- 
+1.7.6.5
+

@@ -105,6 +105,8 @@ ApplyPatch remount-no-shrink-dcache.patch
 # reisefs
 
 # ext4
+#rhbz 753346
+ApplyPatch jbd-jbd2-validate-sb-s_first-in-journal_get_superblo.patch
 ApplyPatch ext4-Support-check-none-nocheck-mount-options.patch
 ApplyPatch ext4-Fix-error-handling-on-inode-bitmap-corruption.patch
 
@@ -117,7 +119,6 @@ ApplyPatch ext4-Fix-error-handling-on-inode-bitmap-corruption.patch
 # cifs
 
 # NFSv4
-ApplyPatch nfsv4-include-bitmap-in-nfsv4_get_acl_data.patch
 ApplyPatch linux-3.1-keys-remove-special-keyring.patch
 
 # USB
@@ -208,6 +209,7 @@ ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
+ApplyPatch drm-i915-fbc-stfu.patch
 
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
@@ -242,8 +244,11 @@ ApplyPatch pci-Rework-ASPM-disable-code.patch
 #rhbz 590880
 ApplyPatch alps.patch
 
-#rhbz 717735
-ApplyPatch nfs-client-freezer.patch
+#rhbz 746097
+ApplyPatch tpm_tis-delay-after-aborting-cmd.patch
+
+#rhbz 771058
+ApplyPatch msi-irq-sysfs-warning.patch
 
 #rhbz 773392
 ApplyPatch KVM-x86-extend-struct-x86_emulate_ops-with-get_cpuid.patch
@@ -254,11 +259,16 @@ ApplyPatch procfs-parse-mount-options.patch
 ApplyPatch procfs-add-hidepid-and-gid-mount-options.patch
 ApplyPatch proc-fix-null-pointer-deref-in-proc_pid_permission.patch
 
-#rhbz 782681
-ApplyPatch proc-clean-up-and-fix-proc-pid-mem-handling.patch
+ApplyPatch rcu-reintroduce-missing-calls.patch
 
-#rhbz 782696
-ApplyPatch Unused-iocbs-in-a-batch-should-not-be-accounted-as-a.patch
+#rhbz 718790
+ApplyPatch rds-Make-rds_sock_lock-BH-rather-than-IRQ-safe.patch
+
+#rhbz 783211
+ApplyPatch fs-Inval-cache-for-parent-block-device-if-fsync-called-on-part.patch
+
+#rhbz 784345
+ApplyPatch realtek_async_autopm.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

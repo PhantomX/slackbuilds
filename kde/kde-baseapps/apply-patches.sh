@@ -14,10 +14,9 @@ zcat ${SB_PATCHDIR}/kdebase-4.4.0-konqueror-kde\#228593.patch.gz | patch -p2 -E 
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-4.3.4-bz\#609039-chfn-parse.patch
 
 ## upstream patches
-# https://bugs.kde.org/270414
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.2-kdebug270414.patch
-
-# Mandriva
+# http://bugs.kde.org/292250, While holding Ctrl, clicking an item
+# to unselect it clears the selection
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-kde\#292250.patch
 
 #trunk patches
 

@@ -27,5 +27,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.2-segfault-open-wi
 # fix-7z-support.patch by taken from
 # https://sourceforge.net/tracker/?func=detail&aid=3137589&group_id=140153&atid=745602
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.2-fix_7z_support.patch
+# rhbz#784075 - extraction fails when the Drag'n'Drop target path contains spaces
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.2-drag-n-drop_escaped_path.patch
 
 set +e +o pipefail

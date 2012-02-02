@@ -91,6 +91,10 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-icu_no_spam.patch
 ApplyPatch qt-everywhere-opensource-src-4.8.0-filter_event.patch
 # fix qvfb build
 ApplyPatch qt-everywhere-opensource-src-4.8.0-qvfb.patch
+# gcc doesn't support flag -fuse-ld=gold
+ApplyPatch qt-everywhere-opensource-src-4.8.0-ld-gold.patch
+# gcc-4.7 build issue
+ApplyPatch qt-everywhere-opensource-src-4.8.0-gcc-4.7.patch
 
 # security patches
 

@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://git.atheme.org/${module}.git"
+snaproot="git://github.com/audacious-media-player/${module}.git"
 
 tmp=$(mktemp -d)
 

@@ -244,9 +244,6 @@ ApplyPatch pci-Rework-ASPM-disable-code.patch
 #rhbz 590880
 ApplyPatch alps.patch
 
-#rhbz 746097
-ApplyPatch tpm_tis-delay-after-aborting-cmd.patch
-
 #rhbz 771058
 ApplyPatch msi-irq-sysfs-warning.patch
 
@@ -258,17 +255,6 @@ ApplyPatch KVM-x86-fix-missing-checks-in-syscall-emulation.patch
 ApplyPatch procfs-parse-mount-options.patch
 ApplyPatch procfs-add-hidepid-and-gid-mount-options.patch
 ApplyPatch proc-fix-null-pointer-deref-in-proc_pid_permission.patch
-
-ApplyPatch rcu-reintroduce-missing-calls.patch
-
-#rhbz 718790
-ApplyPatch rds-Make-rds_sock_lock-BH-rather-than-IRQ-safe.patch
-
-#rhbz 783211
-ApplyPatch fs-Inval-cache-for-parent-block-device-if-fsync-called-on-part.patch
-
-#rhbz 784345
-ApplyPatch realtek_async_autopm.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

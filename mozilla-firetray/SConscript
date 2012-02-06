@@ -1,0 +1,111 @@
+import sys, os, string, re
+
+platform = sys.platform
+
+
+try:
+    FLAGS = os.environ['CXXFLAGS'];
+except:
+    FLAGS = '-O2';
+
+linking_options=' --libs ';
+try:
+    DYNAMIC_LINKING = os.environ['DYNAMIC_LINKING'];
+except:
+    linking_options=' --static '  
+
+print "linking: " + linking_options
+
+FLAGS += ' -include xpcom-config.h -include mozilla-config.h'
+FLAGS += ' -fno-rtti -fno-exceptions -fshort-wchar'
+FLAGS += ' -Wall -Wconversion -Wpointer-arith -Wcast-align -Woverloaded-virtual -Wsynth -Wno-ctor-dtor-privacy -Wno-non-virtual-dtor -Wno-long-long'
+FLAGS += ' -pedantic -pthread -pipe'
+
+try:
+    lib_arch = os.environ['LIB_ARCH'];
+except:
+    lib_arch = '';
+
+
+try: 
+    gecko_bin = os.environ['GECKO_SDK_BIN'];
+    if gecko_bin[-1] != os.sep: gecko_bin += os.sep
+
+    gecko_include = os.environ['GECKO_SDK_INCLUDE'];
+    if gecko_include[-1] != os.sep: gecko_include += os.sep
+
+    gecko_idl = os.environ['GECKO_SDK_IDL'];
+    if gecko_idl[-1] != os.sep: gecko_idl += os.sep
+
+    gecko_lib = os.environ['GECKO_SDK_LIB'];
+    if gecko_lib[-1] != os.sep: gecko_lib += os.sep
+
+except:
+    try:
+        geckosdk = os.environ['GECKO_SDK']
+        print "Using GECKO_SDK=" + geckosdk
+        if geckosdk[-1] != os.sep: geckosdk += os.sep
+        gecko_bin = geckosdk + 'bin'
+	gecko_sdk_bin = geckosdk + 'sdk/bin'
+        gecko_include = geckosdk + 'include'
+        gecko_idl = geckosdk + 'idl'
+        gecko_lib = geckosdk + 'lib'
+
+    except:
+        print "Please set environment variable GECKO_SDK first (or in alternative the variables GECKO_SDK_BIN, GECKO_SDK_INCLUDE, GECKO_SDK_IDL, GECKO_SDK_LIB)."
+        sys.exit(1)
+
+# Hack to detect Mozilla version
+version_re = re.compile('#define MOZILLA_VERSION "(.*?)"')
+xpcom_libs = ['xpcomglue_s']
+with open(gecko_include + os.sep + 'mozilla-config.h', 'r') as f:
+    for line in f:
+        version_match = version_re.match(line)
+        if version_match:
+            version = string.split(version_match.group(1), '.')
+            if int(version[0]) >= 2:
+                # OK, we're building with Mozilla 2.0
+                FLAGS += ' -DGECKO_2'
+                if 'GECKO_19_COMPAT' in os.environ:
+                    FLAGS += ' -DMOZ_NO_MOZALLOC'
+                    xpcom_libs = ['xpcomglue_s_nomozalloc']
+                else:
+                    xpcom_libs.append('mozalloc')
+            break
+
+# Create two builders to create xpt and header files from idl.
+bxpt = Builder(action = 'typelib.py --cachedir=. -Icomponents -I' + gecko_idl + ' -o $TARGET $SOURCE', suffix = '.xpt', src_suffix = '.idl')
+bhdr = Builder(action = 'header.py --cachedir=. -Icomponents -I' + gecko_idl + ' -o $TARGET $SOURCE', suffix = '.h', src_suffix = '.idl')
+
+
+# Create environment object for build
+env = Environment(
+    CPPPATH = [gecko_include],
+    LIBPATH = [gecko_lib],
+    LIBS = xpcom_libs,
+    ENV = os.environ)
+env.AppendENVPath('PATH', gecko_bin)
+env.AppendENVPath('PATH', gecko_sdk_bin)
+env.Append(BUILDERS = {'MozXPT' : bxpt, 'MozHeader' : bhdr })
+
+env.ParseConfig('pkg-config ' + linking_options + ' --cflags gtk+-2.0') # libnotify
+env.ParseConfig('pkg-config --cflags nspr')
+env.Append( CXXFLAGS = FLAGS )
+
+# Create headers and xpt files from idl
+xpts = [env.MozXPT('nsITray'), env.MozXPT('nsIFireTrayHandler')]
+headers = [env.MozHeader('nsITray')]
+
+parts = []
+parts.extend(['nsTray.cpp', 'nsTrayModule.cpp'])
+
+nptray_name = 'nptray' + lib_arch
+print "NPTRAY: " + nptray_name
+
+nptray = env.SharedLibrary(nptray_name, parts)
+
+r = env.Install('#dist/components', [nptray, xpts, 'nsFireTrayHandler.js']) 
+
+Default([xpts, headers, nptray])
+Return('r')
+

@@ -49,6 +49,7 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.0-kde_version_string.patch
 
 # Trunk patches
 

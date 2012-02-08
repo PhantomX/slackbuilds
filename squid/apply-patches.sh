@@ -17,7 +17,5 @@ zcat ${SB_PATCHDIR}/squid-3.0.STABLE1-perlpath.patch.gz | patch -p1 -E --backup 
 patch -p1 --backup -z .fpic --verbose -i ${SB_PATCHDIR}/squid-3.2.0.12-fpic.patch
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/squid-3.1.9-ltdl.patch
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/squid-3.2.0.13-errname.patch
-patch -p1 --backup --verbose -i ${SB_PATCHDIR}/squid-3.2-mem_node.patch
-patch -p1 --backup --verbose -i ${SB_PATCHDIR}/squid-3.2.0.14-gcc47.patch
 
 set +e +o pipefail

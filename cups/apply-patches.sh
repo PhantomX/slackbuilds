@@ -26,7 +26,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-filter-debug.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-uri-compat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-cups-get-classes.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-str3382.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-str3947.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-0755.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-snmp-quirks.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-hp-deviceid-oid.patch
@@ -41,10 +40,7 @@ patch -p1 -E --backup --verbose -z .avahi -i ${SB_PATCHDIR}/cups-avahi-5-service
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-icc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-systemd-socket.patch
-# Avoid GIF reader loop (CVE-2011-2896, STR #3914, bug #727800).
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-CVE-2011-2896.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-str3921.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cups-ps-command-filter.patch
+
 
 ## SECURITY PATCHES:
 

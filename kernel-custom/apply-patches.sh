@@ -226,7 +226,7 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch epoll-limit-paths.patch
-ApplyPatch block-stray-block-put-after-teardown.patch
+ApplyPatch block-readahead-block-plug.patch
 
 # Runtime PM
 
@@ -238,8 +238,6 @@ ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 #rhbz 752176
 ApplyPatch sysfs-msi-irq-per-device.patch
-
-ApplyPatch pci-Rework-ASPM-disable-code.patch
 
 #rhbz 590880
 ApplyPatch alps.patch

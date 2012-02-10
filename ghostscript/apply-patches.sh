@@ -17,13 +17,6 @@ zcat ${SB_PATCHDIR}/ghostscript-noopt.patch.gz | patch -p1 --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-ijs-automake-ver.patch
 # Define .runlibfileifexists.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-runlibfileifexists.patch
-# Applied upstream fix for gdevcups handling of RGBW (Ghostscript # bug #691922).
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-cups-rgbw.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-glyph-crash.patch
-# Applied patch to fix NULL dereference in JBIG2 decoder.
-zcat ${SB_PATCHDIR}/ghostscript-jbig2dec-nullderef.patch.gz | patch -p1 --verbose
-# Applied fix for type 1 font copying code SEAC scanner.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-SEAC.patch
 # Install CUPS filter convs files in the correct place.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-cups-filters.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patch
@@ -31,7 +24,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-iccprofiles-initdir.patch
 # gdevcups: don't use uninitialized variables in debugging output.
 patch -p1 -E --backup -z .gdevcups-debug-uninit --verbose -i ${SB_PATCHDIR}/ghostscript-gdevcups-debug-uninit.patch
-# pxl: match landscape page sizes (bug #692165).
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-pxl-landscape.patch
+
 
 set +e +o pipefail

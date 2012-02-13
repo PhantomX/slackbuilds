@@ -70,7 +70,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.95-kdm_xauth.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.97-gcc47.patch
 
 ## upstream patches
-
+# http://bugs.kde.org/289760
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-eDP.patch
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch

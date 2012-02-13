@@ -10,6 +10,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-5.0-asciidel.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-8.0-enable-addons.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-682832-proxy.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-722127.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-703633.patch
 
 # Upstream patches
 

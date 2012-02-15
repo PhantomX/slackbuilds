@@ -109,6 +109,8 @@ ApplyPatch remount-no-shrink-dcache.patch
 ApplyPatch jbd-jbd2-validate-sb-s_first-in-journal_get_superblo.patch
 ApplyPatch ext4-Support-check-none-nocheck-mount-options.patch
 ApplyPatch ext4-Fix-error-handling-on-inode-bitmap-corruption.patch
+#rhbz 788269
+ApplyPatch jbd2-clear-BH_Delay-and-BH_Unwritten-in-journal_unmap_buf.patch
 
 # ext3
 
@@ -226,7 +228,8 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch epoll-limit-paths.patch
-ApplyPatch block-readahead-block-plug.patch
+
+ApplyPatch bsg-fix-sysfs-link-remove-warning.patch
 
 # Runtime PM
 
@@ -253,6 +256,12 @@ ApplyPatch KVM-x86-fix-missing-checks-in-syscall-emulation.patch
 ApplyPatch procfs-parse-mount-options.patch
 ApplyPatch procfs-add-hidepid-and-gid-mount-options.patch
 ApplyPatch proc-fix-null-pointer-deref-in-proc_pid_permission.patch
+
+#rhbz 785806
+ApplyPatch e1000e-Avoid-wrong-check-on-TX-hang.patch
+
+#rhbz 754518
+ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

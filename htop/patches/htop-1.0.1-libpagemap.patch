@@ -1,0 +1,407 @@
+diff -up htop-1.0.1/Process.c.pgmap htop-1.0.1/Process.c
+--- htop-1.0.1/Process.c.pgmap	2011-12-26 19:54:07.000000000 -0200
++++ htop-1.0.1/Process.c	2012-02-16 22:41:26.071336766 -0200
+@@ -73,6 +73,9 @@ typedef enum ProcessField_ {
+    #ifdef HAVE_CGROUP
+    CGROUP,
+    #endif
++   #ifdef HAVE_LIBPAGEMAP 
++   M_USS, M_PSS, M_SWAP,
++   #endif
+    LAST_PROCESSFIELD
+ } ProcessField;
+ 
+@@ -116,7 +119,7 @@ typedef struct Process_ {
+    #ifdef DEBUG
+    long int itrealvalue;
+    unsigned long int vsize;
+-   long int rss;
++   long 1nt rss;
+    unsigned long int rlim;
+    unsigned long int startcode;
+    unsigned long int endcode;
+@@ -140,6 +143,9 @@ typedef struct Process_ {
+    int m_drs;
+    int m_lrs;
+    int m_dt;
++   unsigned int m_uss;
++   unsigned int m_pss;
++   unsigned int m_swap;
+    uid_t st_uid;
+    float percent_cpu;
+    float percent_mem;
+@@ -199,6 +205,9 @@ const char *Process_fieldNames[] = {
+ #ifdef HAVE_CGROUP
+    "CGROUP",
+ #endif
++#ifdef HAVE_LIBPAGEMAP
++   "M_USS", "M_PSS", "M_SWAP",
++#endif
+ "*** report bug! ***"
+ };
+ 
+@@ -224,6 +233,9 @@ const char *Process_fieldTitles[] = {
+ #ifdef HAVE_CGROUP
+    "    CGROUP ",
+ #endif
++#ifdef HAVE_LIBPAGEMAP
++   "  USS ", "  PSS ", " SWAP ",
++#endif
+ "*** report bug! ***"
+ };
+ 
+@@ -446,6 +458,32 @@ static void Process_writeField(Process*
+    case M_SIZE: Process_humanNumber(this, str, this->m_size * PAGE_SIZE_KB); return;
+    case M_RESIDENT: Process_humanNumber(this, str, this->m_resident * PAGE_SIZE_KB); return;
+    case M_SHARE: Process_humanNumber(this, str, this->m_share * PAGE_SIZE_KB); return;
++   #ifdef HAVE_LIBPAGEMAP
++   case M_USS:
++      if (Process_getuid == 0 && this->pl->pagemap_table != NULL) {
++          Process_humanNumber(this, str, this->m_uss * PAGE_SIZE_KB); 
++          return;
++      } else {
++          snprintf(buffer, n, "    - ");
++      }
++      break;
++   case M_PSS:
++      if (Process_getuid == 0 && this->pl->pagemap_table != NULL) {
++          Process_humanNumber(this, str, this->m_pss * PAGE_SIZE_KB); 
++          return;
++      } else {
++          snprintf(buffer, n, "    - ");
++      }
++      break;
++   case M_SWAP:
++      if ((Process_getuid == 0 || Process_getuid == this->st_uid) && this->pl->pagemap_table != NULL) {
++          Process_humanNumber(this, str, this->m_swap * PAGE_SIZE_KB); 
++          return;
++      } else {
++          snprintf(buffer, n, "    - ");
++      }
++      break;
++   #endif
+    case ST_UID: snprintf(buffer, n, "%4d ", this->st_uid); break;
+    case USER: {
+       if (Process_getuid != (int) this->st_uid)
+@@ -683,6 +721,14 @@ int Process_compare(const void* v1, cons
+       return (p2->m_resident - p1->m_resident);
+    case M_SHARE:
+       return (p2->m_share - p1->m_share);
++   #ifdef HAVE_LIBPAGEMAP
++   case M_USS:
++      return (p2->m_uss - p1->m_uss);
++   case M_PSS:
++      return (p2->m_pss - p1->m_pss);
++   case M_SWAP:
++      return (p2->m_swap - p1->m_swap);
++   #endif
+    case PERCENT_CPU:
+       return (p2->percent_cpu > p1->percent_cpu ? 1 : -1);
+    case PERCENT_MEM:
+diff -up htop-1.0.1/Process.h.pgmap htop-1.0.1/Process.h
+--- htop-1.0.1/Process.h.pgmap	2011-12-26 19:55:08.000000000 -0200
++++ htop-1.0.1/Process.h	2012-02-16 22:41:26.072336553 -0200
+@@ -53,6 +53,9 @@ typedef enum ProcessField_ {
+    #ifdef HAVE_CGROUP
+    CGROUP,
+    #endif
++   #ifdef HAVE_LIBPAGEMAP 
++   M_USS, M_PSS, M_SWAP,
++   #endif
+    LAST_PROCESSFIELD
+ } ProcessField;
+ 
+@@ -96,7 +99,7 @@ typedef struct Process_ {
+    #ifdef DEBUG
+    long int itrealvalue;
+    unsigned long int vsize;
+-   long int rss;
++   long 1nt rss;
+    unsigned long int rlim;
+    unsigned long int startcode;
+    unsigned long int endcode;
+@@ -120,6 +123,9 @@ typedef struct Process_ {
+    int m_drs;
+    int m_lrs;
+    int m_dt;
++   unsigned int m_uss;
++   unsigned int m_pss;
++   unsigned int m_swap;
+    uid_t st_uid;
+    float percent_cpu;
+    float percent_mem;
+diff -up htop-1.0.1/ProcessList.c.pgmap htop-1.0.1/ProcessList.c
+--- htop-1.0.1/ProcessList.c.pgmap	2012-02-02 21:45:11.000000000 -0200
++++ htop-1.0.1/ProcessList.c	2012-02-16 22:41:26.073336340 -0200
+@@ -5,6 +5,9 @@ Released under the GNU GPL, see the COPY
+ in the source distribution for its full text.
+ */
+ 
++#ifdef HAVE_LIBPAGEMAP
++#include "libpagemap.h"
++#endif
+ #include "ProcessList.h"
+ 
+ #include "CRT.h"
+@@ -24,6 +27,7 @@ in the source distribution for its full
+ #include <string.h>
+ #include <time.h>
+ #include <assert.h>
++#include <pthread.h>
+ 
+ /*{
+ #include "Vector.h"
+@@ -154,6 +158,10 @@ typedef struct ProcessList_ {
+    bool countCPUsFromZero;
+    const char **treeStr;
+ 
++#ifdef HAVE_LIBPAGEMAP
++   pagemap_tbl * pagemap_table;
++#endif
++
+ } ProcessList;
+ 
+ }*/
+@@ -236,6 +244,9 @@ ProcessList* ProcessList_new(UsersTable*
+    this->detailedCPUTime = false;
+    this->countCPUsFromZero = false;
+    this->treeStr = NULL;
++#ifdef HAVE_LIBPAGEMAP
++   this->pagemap_table = NULL;
++#endif   
+ 
+    return this;
+ }
+@@ -506,6 +517,29 @@ static bool ProcessList_readStatmFile(Pr
+    return (num == 7);
+ }
+ 
++#ifdef HAVE_LIBPAGEMAP
++
++static bool ProcessList_readPagemap(ProcessList* plist ,Process* process, const char * name) {
++
++   process_pagemap_t* p = NULL;
++   int pid = 0;
++
++   pid = atoi(name);
++
++   if ((p = get_single_pgmap(plist->pagemap_table,pid)) == NULL) {
++      process->m_uss = 0;
++      process->m_pss = 0;
++      process->m_swap = 0;
++   } else {
++      process->m_uss = p->uss;
++      process->m_pss = p->pss;
++      process->m_swap = p->swap;
++   }
++   return true;
++}
++
++#endif
++
+ #ifdef HAVE_OPENVZ
+ 
+ static void ProcessList_readOpenVZData(Process* process, const char* dirname, const char* name) {
+@@ -670,6 +704,11 @@ static bool ProcessList_processEntries(P
+       if (! ProcessList_readStatmFile(process, dirname, name))
+          goto errorReadingProcess;
+ 
++      #ifdef HAVE_LIBPAGEMAP
++      if (! ProcessList_readPagemap(this, process, name))
++         goto errorReadingProcess;
++      #endif
++
+       process->show = ! ((hideKernelThreads && Process_isKernelThread(process)) || (hideUserlandThreads && Process_isUserlandThread(process)));
+ 
+       char command[MAX_NAME+1];
+diff -up htop-1.0.1/ProcessList.h.pgmap htop-1.0.1/ProcessList.h
+--- htop-1.0.1/ProcessList.h.pgmap	2012-02-02 21:49:19.000000000 -0200
++++ htop-1.0.1/ProcessList.h	2012-02-16 22:48:31.073869382 -0200
+@@ -15,6 +15,10 @@ in the source distribution for its full
+ #include "Panel.h"
+ #include "Process.h"
+ #include <sys/types.h>
++#ifdef HAVE_LIBPAGEMAP
++#include "libpagemap.h"
++#include <pthread.h>
++#endif
+ 
+ #ifndef PROCDIR
+ #define PROCDIR "/proc"
+@@ -137,6 +141,10 @@ typedef struct ProcessList_ {
+    bool countCPUsFromZero;
+    const char **treeStr;
+ 
++#ifdef HAVE_LIBPAGEMAP
++   pagemap_tbl * pagemap_table;
++#endif
++
+ } ProcessList;
+ 
+ 
+@@ -164,6 +172,10 @@ void ProcessList_sort(ProcessList* this)
+ 
+ #endif
+ 
++#ifdef HAVE_LIBPAGEMAP
++
++#endif
++
+ #ifdef HAVE_OPENVZ
+ 
+ #endif
+diff -up htop-1.0.1/configure.ac.pgmap htop-1.0.1/configure.ac
+--- htop-1.0.1/configure.ac.pgmap	2011-12-26 19:46:57.000000000 -0200
++++ htop-1.0.1/configure.ac	2012-02-16 22:41:26.073336340 -0200
+@@ -23,11 +23,13 @@ AC_PROG_LIBTOOL
+ 
+ # Checks for libraries.
+ AC_CHECK_LIB([m], [ceil], [], [missing_libraries="$missing_libraries libm"])
++AC_CHECK_LIB([pagemap], [init_pgmap_table], [], [], [])
++AC_CHECK_LIB([pthread], [pthread_create], [], [], [])
+ 
+ # Checks for header files.
+ AC_HEADER_DIRENT
+ AC_HEADER_STDC
+-AC_CHECK_HEADERS([stdlib.h string.h strings.h sys/param.h sys/time.h unistd.h curses.h],[:],[
++AC_CHECK_HEADERS([stdlib.h string.h strings.h sys/param.h sys/time.h unistd.h curses.h pthread.h],[:],[
+   missing_headers="$missing_headers $ac_header"
+ ])
+ AC_CHECK_HEADERS([execinfo.h],[:],[:])
+diff -up htop-1.0.1/htop.1.in.pgmap htop-1.0.1/htop.1.in
+--- htop-1.0.1/htop.1.in.pgmap	2011-09-26 20:59:36.000000000 -0300
++++ htop-1.0.1/htop.1.in	2012-02-16 22:41:26.074336127 -0200
+@@ -32,6 +32,9 @@ Display a help message and exit
+ \fB\-u \-\-user=USERNAME\fR
+ Show only the processes of a given user
+ .TP
++\fB\-p\fR
++Start working thread for pagemap memory stats
++.TP
+ \fB\-s \-\-sort\-key COLUMN\fR
+ Sort by this column (use \-\-sort\-key help for a column list)
+ .TP
+diff -up htop-1.0.1/htop.1.pgmap htop-1.0.1/htop.1
+--- htop-1.0.1/htop.1.pgmap	2011-12-26 19:47:30.000000000 -0200
++++ htop-1.0.1/htop.1	2012-02-16 22:42:13.501243540 -0200
+@@ -32,6 +32,9 @@ Display a help message and exit
+ \fB\-u \-\-user=USERNAME\fR
+ Show only the processes of a given user
+ .TP
++\fB\-p\fR
++Start working thread for pagemap memory stats
++.TP
+ \fB\-s \-\-sort\-key COLUMN\fR
+ Sort by this column (use \-\-sort\-key help for a column list)
+ .TP
+diff -up htop-1.0.1/htop.c.pgmap htop-1.0.1/htop.c
+--- htop-1.0.1/htop.c.pgmap	2012-02-02 21:46:25.000000000 -0200
++++ htop-1.0.1/htop.c	2012-02-16 22:41:26.075335914 -0200
+@@ -34,6 +34,9 @@ in the source distribution for its full
+ #include <string.h>
+ #include <sys/param.h>
+ #include <sys/time.h>
++#ifdef HAVE_LIBPAGEMAP
++#include <pthread.h>
++#endif
+ 
+ //#link m
+ 
+@@ -54,6 +57,9 @@ static void printHelpFlag() {
+          "-C --no-color         Use a monochrome color scheme\n"
+          "-d --delay=DELAY      Set the delay between updates, in tenths of seconds\n"
+          "-h --help             Print this help screen\n"
++#ifdef HAVE_LIBPAGEMAP
++         "-p --pagemap          Count memory stats from pagemap kernel interface\n"
++#endif
+          "-s --sort-key=COLUMN  Sort by COLUMN (try --sort-key=help for a list)\n"
+          "-u --user=USERNAME    Show only processes of a given user\n"
+          "-v --version          Print version info\n"
+@@ -242,6 +248,16 @@ static inline void setSortKey(ProcessLis
+    ProcessList_printHeader(pl, Panel_getHeader(panel));
+ }
+ 
++#ifdef HAVE_LIBPAGEMAP
++static void * pagemapCnt(ProcessList * pl) {
++   while(1) {
++   pl->pagemap_table = init_pgmap_table(pl->pagemap_table);
++   open_pgmap_table(pl->pagemap_table,0);
++   }
++   return;
++}
++#endif
++
+ typedef struct IncBuffer_ {
+    char buffer[INCSEARCH_MAX];
+    int index;
+@@ -259,6 +275,7 @@ int main(int argc, char** argv) {
+    bool userOnly = false;
+    uid_t userId = 0;
+    int usecolors = 1;
++   int pagemap_enable = 0;
+    TreeType treeType = TREE_TYPE_AUTO;
+ 
+    int opt, opti=0;
+@@ -271,6 +288,9 @@ int main(int argc, char** argv) {
+       {"user",     required_argument,   0, 'u'},
+       {"no-color", no_argument,         0, 'C'},
+       {"no-colour",no_argument,         0, 'C'},
++#ifdef HAVE_LIBPAGEMAP
++      {"pagemap",  no_argument,         0, 'p'},
++#endif
+       {0,0,0,0}
+    };
+    int sortKey = 0;
+@@ -284,7 +304,7 @@ int main(int argc, char** argv) {
+       setlocale(LC_CTYPE, "");
+ 
+    /* Parse arguments */
+-   while ((opt = getopt_long(argc, argv, "hvCs:d:u:", long_opts, &opti))) {
++   while ((opt = getopt_long(argc, argv, "hpvCs:d:u:", long_opts, &opti))) {
+       if (opt == EOF) break;
+       switch (opt) {
+          case 'h':
+@@ -324,6 +344,11 @@ int main(int argc, char** argv) {
+          case 'C':
+             usecolors=0;
+             break;
++#ifdef HAVE_LIBPAGEMAP
++         case 'p':
++            pagemap_enable=1;
++            break;
++#endif
+          default:
+             exit(1);
+       }
+@@ -436,6 +461,18 @@ int main(int argc, char** argv) {
+    int ch = ERR;
+    int closeTimeout = 0;
+ 
++#ifdef HAVE_LIBPAGEMAP
++   // declare threading stuff
++   static pthread_t libpagemap_thread;
++   static pthread_attr_t t_attr;
++   if (pagemap_enable) {
++       // start thread
++       pthread_attr_init(&t_attr);
++       pthread_attr_setdetachstate(&t_attr, PTHREAD_CREATE_DETACHED);
++       pthread_create(&libpagemap_thread, &t_attr, (void * (*)(void *)) &pagemapCnt, (void *) pl);
++   }
++#endif
++
+    while (!quit) {
+       gettimeofday(&tv, NULL);
+       newTime = ((double)tv.tv_sec * 10) + ((double)tv.tv_usec / 100000);
+@@ -906,6 +943,12 @@ int main(int argc, char** argv) {
+    if (settings->changed)
+       Settings_write(settings);
+    Header_delete(header);
++#ifdef HAVE_LIBPAGEMAP
++   if (pagemap_enable) {
++      pthread_cancel(libpagemap_thread);
++      free_pgmap_table(pl->pagemap_table);
++   }
++#endif
+    ProcessList_delete(pl);
+    FunctionBar_delete((Object*)incFilter.bar);
+    FunctionBar_delete((Object*)incSearch.bar);

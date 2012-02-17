@@ -38,4 +38,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.4-phpize.patch
 # Fixes for tests
 zcat ${SB_PATCHDIR}/php-5.0.4-tests-wddx.patch.gz | patch -p1 -E --backup --verbose
 
+patch -p4 -E --backup --verbose -i ${SB_PATCHDIR}/016_all_libpcre-8.30-fix.patch
+
 set +e +o pipefail

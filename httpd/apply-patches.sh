@@ -15,6 +15,7 @@ zcat ${SB_PATCHDIR}/${NAME}-2.1.10-apxs.patch.gz | patch -p1 -E --backup --verbo
 zcat ${SB_PATCHDIR}/${NAME}-2.2.9-deplibs.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.1.10-disablemods.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.1.10-layout.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.2.22-pcre830.patch
 # Features/functional changes
 zcat ${SB_PATCHDIR}/${NAME}-2.2.11-xfsz.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.1.10-pod.patch.gz | patch -p1 -E --backup --verbose

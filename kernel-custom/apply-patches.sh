@@ -122,6 +122,10 @@ ApplyPatch jbd2-clear-BH_Delay-and-BH_Unwritten-in-journal_unmap_buf.patch
 
 # NFSv4
 ApplyPatch linux-3.1-keys-remove-special-keyring.patch
+#rhbz 717735
+ApplyPatch nfs-client-freezer.patch
+
+ApplyPatch nfs-oops-getacl.patch
 
 # USB
 
@@ -239,6 +243,9 @@ ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 ApplyPatch revert-efi-rtclock.patch
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
+ApplyPatch hibernate-freeze-filesystems.patch
+ApplyPatch lis3-improve-handling-of-null-rate.patch
+
 #rhbz 752176
 ApplyPatch sysfs-msi-irq-per-device.patch
 
@@ -261,7 +268,8 @@ ApplyPatch proc-fix-null-pointer-deref-in-proc_pid_permission.patch
 ApplyPatch e1000e-Avoid-wrong-check-on-TX-hang.patch
 
 #rhbz 754518
-ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
+#ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
+ApplyPatch scsi-fix-sd_revalidate_disk-oops.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

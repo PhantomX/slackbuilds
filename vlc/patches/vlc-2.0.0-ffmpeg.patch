@@ -1,0 +1,1575 @@
+diff -up vlc-2.0.0/modules/access/avio.c.ffmpeg vlc-2.0.0/modules/access/avio.c
+--- vlc-2.0.0/modules/access/avio.c.ffmpeg	2011-12-08 16:00:25.000000000 -0200
++++ vlc-2.0.0/modules/access/avio.c	2012-02-19 04:03:13.069883989 -0200
+@@ -2,7 +2,7 @@
+  * avio.c: access using libavformat library
+  *****************************************************************************
+  * Copyright (C) 2009 Laurent Aimar
+- * $Id: c6339ff0eb67b1eb8a22cb1e50594265f58f1740 $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir _AT_ videolan _DOT_ org>
+  *
+@@ -34,6 +34,20 @@
+ 
+ #include "avio.h"
+ 
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++# define AVIOContext URLContext
++
++# define avio_open url_open
++# define avio_close url_close
++# define avio_read url_read
++# define avio_seek url_seek
++# define avio_pause av_url_read_pause
++
++# define AVIO_FLAG_READ URL_RDONLY
++# define AVIO_FLAG_WRITE URL_WRONLY
++# define avio_size url_filesize
++#endif
++
+ /*****************************************************************************
+  * Module descriptor
+  *****************************************************************************/
+@@ -53,38 +67,58 @@ static ssize_t Write(sout_access_out_t *
+ static int     OutControl(sout_access_out_t *, int, va_list);
+ static int     OutSeek (sout_access_out_t *, off_t);
+ 
+-static int     SetupAvio(vlc_object_t *);
++static int UrlInterruptCallback(void *access)
++{
++    return !vlc_object_alive((vlc_object_t*)access);
++}
+ 
+ struct access_sys_t {
+-    URLContext *context;
++    AVIOContext *context;
+ };
+ 
+ struct sout_access_out_sys_t {
+-    URLContext *context;
++    AVIOContext *context;
+ };
+ 
++
+ /* */
+-int OpenAvio(vlc_object_t *object)
+-{
+-    access_t *access = (access_t*)object;
+-    access_sys_t *sys;
+ 
+-    /* */
+-    access->p_sys = sys = malloc(sizeof(*sys));
+-    if (!sys)
+-        return VLC_ENOMEM;
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++static vlc_object_t *current_access = NULL;
+ 
+-    /* We can either accept only one user (actually) or multiple ones
+-     * with an exclusive lock */
+-    if (SetupAvio(VLC_OBJECT(access))) {
+-        msg_Err(access, "Module aready in use");
++static int UrlInterruptCallbackSingle(void)
++{
++    return UrlInterruptCallback(current_access);
++}
++
++static int SetupAvioCb(vlc_object_t *access)
++{
++    static vlc_mutex_t avio_lock = VLC_STATIC_MUTEX;
++    vlc_mutex_lock(&avio_lock);
++    assert(!access != !current_access);
++    if (access && current_access) {
++        vlc_mutex_unlock(&avio_lock);
+         return VLC_EGENERIC;
+     }
++    url_set_interrupt_cb(access ? UrlInterruptCallbackSingle : NULL);
+ 
+-    /* */
+-    vlc_avcodec_lock();
+-    av_register_all();
+-    vlc_avcodec_unlock();
++    current_access = access;
++
++    vlc_mutex_unlock(&avio_lock);
++
++    return VLC_SUCCESS;
++}
++#endif
++
++/* */
++
++int OpenAvio(vlc_object_t *object)
++{
++    access_t *access = (access_t*)object;
++    access_sys_t *sys = malloc(sizeof(*sys));
++    if (!sys)
++        return VLC_ENOMEM;
++    sys->context = NULL;
+ 
+     /* We accept:
+      * - avio://full_url
+@@ -97,20 +131,51 @@ int OpenAvio(vlc_object_t *object)
+                       access->psz_location) < 0)
+         url = NULL;
+ 
+-    if (!url)
+-        goto error;
++    if (!url) {
++        free(sys);
++        return VLC_ENOMEM;
++    }
+ 
+-    msg_Dbg(access, "Opening '%s'", url);
+-    if (url_open(&sys->context, url, URL_RDONLY) < 0)
+-        sys->context = NULL;
++    /* */
++    vlc_avcodec_lock();
++    av_register_all();
++    vlc_avcodec_unlock();
++
++    int ret;
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++    ret = avio_open(&sys->context, url, AVIO_FLAG_READ);
++#else
++    AVIOInterruptCB cb = {
++        .callback = UrlInterruptCallback,
++        .opaque = access,
++    };
++    ret = avio_open2(&sys->context, url, AVIO_FLAG_READ, &cb, NULL /* options */);
++#endif
++    if (ret < 0) {
++        errno = AVUNERROR(ret);
++        msg_Err(access, "Failed to open %s: %m", url);
++        free(url);
++        goto error;
++    }
+     free(url);
+ 
+-    if (!sys->context) {
+-        msg_Err(access, "Failed to open url using libavformat");
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++    /* We can accept only one active user at any time */
++    if (SetupAvioCb(VLC_OBJECT(access))) {
++        msg_Err(access, "Module aready in use");
++        avio_close(sys->context);
+         goto error;
+     }
+-    const int64_t size = url_filesize(sys->context);
+-    msg_Dbg(access, "is_streamed=%d size=%"PRIi64, sys->context->is_streamed, size);
++#endif
++
++    int64_t size = avio_size(sys->context);
++    bool seekable;
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++    seekable = !sys->context->is_streamed;
++#else
++    seekable = sys->context->seekable;
++#endif
++    msg_Dbg(access, "%sseekable, size=%"PRIi64, seekable ? "" : "not ", size);
+ 
+     /* */
+     access_InitFields(access);
+@@ -125,7 +190,6 @@ int OpenAvio(vlc_object_t *object)
+     return VLC_SUCCESS;
+ 
+ error:
+-    SetupAvio(NULL);
+     free(sys);
+     return VLC_EGENERIC;
+ }
+@@ -134,42 +198,43 @@ error:
+ int OutOpenAvio(vlc_object_t *object)
+ {
+     sout_access_out_t *access = (sout_access_out_t*)object;
+-    sout_access_out_sys_t *sys;
+-
+-    /* */
+-    access->p_sys = sys = malloc(sizeof(*sys));
++    sout_access_out_sys_t *sys = malloc(sizeof(*sys));
+     if (!sys)
+         return VLC_ENOMEM;
+-
+-    /* We can either accept only one user (actually) or multiple ones
+-     * with an exclusive lock */
+-    if (SetupAvio(VLC_OBJECT(access))) {
+-        msg_Err(access, "Module aready in use");
+-        free(sys);
+-        return VLC_EGENERIC;
+-    }
++    sys->context = NULL;
+ 
+     /* */
+     vlc_avcodec_lock();
+     av_register_all();
+     vlc_avcodec_unlock();
+ 
+-    char *url = NULL;
+-    if (access->psz_path)
+-        url = strdup(access->psz_path);
+-
+-    if (!url)
++    if (!access->psz_path)
+         goto error;
+ 
+-    msg_Dbg(access, "avio_output Opening '%s'", url);
+-    if (url_open(&sys->context, url, URL_WRONLY) < 0)
+-        sys->context = NULL;
+-    free(url);
++    int ret;
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++    ret = avio_open(&sys->context, access->psz_path, AVIO_FLAG_WRITE);
++#else
++    AVIOInterruptCB cb = {
++        .callback = UrlInterruptCallback,
++        .opaque = access,
++    };
++    ret = avio_open2(&sys->context, access->psz_path, AVIO_FLAG_WRITE,
++                     &cb, NULL /* options */);
++#endif
++    if (ret < 0) {
++        errno = AVUNERROR(ret);
++        msg_Err(access, "Failed to open %s", access->psz_path);
++        goto error;
++    }
+ 
+-    if (!sys->context) {
+-        msg_Err(access, "Failed to open url using libavformat");
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++    /* We can accept only one active user at any time */
++    if (SetupAvioCb(VLC_OBJECT(access))) {
++        msg_Err(access, "Module aready in use");
+         goto error;
+     }
++#endif
+ 
+     access->pf_write = Write;
+     access->pf_control = OutControl;
+@@ -179,7 +244,6 @@ int OutOpenAvio(vlc_object_t *object)
+     return VLC_SUCCESS;
+ 
+ error:
+-    SetupAvio(NULL);
+     free(sys);
+     return VLC_EGENERIC;
+ }
+@@ -189,10 +253,11 @@ void CloseAvio(vlc_object_t *object)
+     access_t *access = (access_t*)object;
+     access_sys_t *sys = access->p_sys;
+ 
+-    url_close(sys->context);
+-
+-    SetupAvio(NULL);
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++    SetupAvioCb(NULL);
++#endif
+ 
++    avio_close(sys->context);
+     free(sys);
+ }
+ 
+@@ -201,23 +266,21 @@ void OutCloseAvio(vlc_object_t *object)
+     sout_access_out_t *access = (sout_access_out_t*)object;
+     sout_access_out_sys_t *sys = access->p_sys;
+ 
+-    url_close(sys->context);
+-
+-    SetupAvio(NULL);
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++    SetupAvioCb(NULL);
++#endif
+ 
++    avio_close(sys->context);
+     free(sys);
+ }
+ 
+ static ssize_t Read(access_t *access, uint8_t *data, size_t size)
+ {
+-    /* FIXME I am unsure of the meaning of the return value in case
+-     * of error.
+-     */
+-    int r = url_read(access->p_sys->context, data, size);
+-    access->info.b_eof = r <= 0;
+-    if (r < 0)
+-        return -1;
+-    access->info.i_pos += r;
++    int r = avio_read(access->p_sys->context, data, size);
++    if (r > 0)
++        access->info.i_pos += r;
++    else
++        access->info.b_eof = true;
+     return r;
+ }
+ 
+@@ -230,24 +293,55 @@ static ssize_t Write(sout_access_out_t *
+     size_t i_write = 0;
+ 
+     while (p_buffer != NULL) {
+-        block_t *p_next = p_buffer->p_next;;
++        block_t *p_next = p_buffer->p_next;
++
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++        int written = url_write(p_sys->context, p_buffer->p_buffer, p_buffer->i_buffer);
++        if (written < 0) {
++            errno = AVUNERROR(written);
++            goto error;
++        }
++        i_write += written;
++#else
++        avio_write(p_sys->context, p_buffer->p_buffer, p_buffer->i_buffer);
++        avio_flush(p_sys->context);
++        if (p_sys->context->error) {
++            errno = AVUNERROR(p_sys->context->error);
++            p_sys->context->error = 0; /* FIXME? */
++            goto error;
++        }
++        i_write += p_buffer->i_buffer;
++#endif
+ 
+-        i_write += url_write(p_sys->context, p_buffer->p_buffer, p_buffer->i_buffer);
+         block_Release(p_buffer);
+ 
+         p_buffer = p_next;
+     }
+ 
+     return i_write;
++
++error:
++    msg_Err(p_access, "Wrote only %zu bytes (%m)", i_write);
++    block_ChainRelease( p_buffer );
++    return i_write;
+ }
+ 
+ static int Seek(access_t *access, uint64_t position)
+ {
+     access_sys_t *sys = access->p_sys;
++    int ret;
++
++#ifndef EOVERFLOW
++# define EOVERFLOW EFBIG
++#endif
+ 
+-    if (position > INT64_MAX ||
+-        url_seek(sys->context, position, SEEK_SET) < 0) {
+-        msg_Err(access, "Seek to %"PRIu64" failed\n", position);
++    if (position > INT64_MAX)
++        ret = AVERROR(EOVERFLOW);
++    else
++        ret = avio_seek(sys->context, position, SEEK_SET);
++    if (ret < 0) {
++        errno = AVUNERROR(ret);
++        msg_Err(access, "Seek to %"PRIu64" failed: %m", position);
+         if (access->info.i_size <= 0 || position != access->info.i_size)
+             return VLC_EGENERIC;
+     }
+@@ -260,7 +354,7 @@ static int OutSeek(sout_access_out_t *p_
+ {
+     sout_access_out_sys_t *sys = p_access->p_sys;
+ 
+-    if (url_seek(sys->context, i_pos, SEEK_SET) < 0)
++    if (avio_seek(sys->context, i_pos, SEEK_SET) < 0)
+         return VLC_EGENERIC;
+     return VLC_SUCCESS;
+ }
+@@ -287,31 +381,38 @@ static int OutControl(sout_access_out_t
+ static int Control(access_t *access, int query, va_list args)
+ {
+     access_sys_t *sys = access->p_sys;
++    bool *b;
+ 
+     switch (query) {
+     case ACCESS_CAN_SEEK:
+-    case ACCESS_CAN_FASTSEEK: { /* FIXME how to do that ? */
+-        bool *b = va_arg(args, bool *);
++    case ACCESS_CAN_FASTSEEK: /* FIXME how to do that ? */
++        b = va_arg(args, bool *);
++#if LIBAVFORMAT_VERSION_MAJOR < 54
+         *b = !sys->context->is_streamed;
++#else
++        *b = sys->context->seekable;
++#endif
+         return VLC_SUCCESS;
+-    }
+-    case ACCESS_CAN_PAUSE: {
+-        bool *b = va_arg(args, bool *);
+-        *b = sys->context->prot->url_read_pause != NULL; /* FIXME Unsure */
++    case ACCESS_CAN_PAUSE:
++        b = va_arg(args, bool *);
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++        *b = sys->context->prot->url_read_pause != NULL;
++#else
++        *b = sys->context->read_pause != NULL;
++#endif
+         return VLC_SUCCESS;
+-    }
+-    case ACCESS_CAN_CONTROL_PACE: {
+-        bool *b = va_arg(args, bool *);
++    case ACCESS_CAN_CONTROL_PACE:
++        b = va_arg(args, bool *);
+         *b = true; /* FIXME */
+         return VLC_SUCCESS;
+-    }
+     case ACCESS_GET_PTS_DELAY: {
+         int64_t *delay = va_arg(args, int64_t *);
+         *delay = DEFAULT_PTS_DELAY; /* FIXME */
++        return VLC_SUCCESS;
+     }
+     case ACCESS_SET_PAUSE_STATE: {
+         bool is_paused = va_arg(args, int);
+-        if (av_url_read_pause(sys->context, is_paused)< 0)
++        if (avio_pause(sys->context, is_paused)< 0)
+             return VLC_EGENERIC;
+         return VLC_SUCCESS;
+     }
+@@ -328,30 +429,3 @@ static int Control(access_t *access, int
+         return VLC_EGENERIC;
+     }
+ }
+-
+-/* */
+-static vlc_mutex_t avio_lock = VLC_STATIC_MUTEX;
+-static vlc_object_t *current_access = NULL;
+-
+-
+-static int UrlInterruptCallback(void)
+-{
+-    assert(current_access);
+-    return !vlc_object_alive(current_access);
+-}
+-
+-
+-static int SetupAvio(vlc_object_t *access)
+-{
+-    vlc_mutex_lock(&avio_lock);
+-    assert(!access != !current_access);
+-    if (access && current_access) {
+-        vlc_mutex_unlock(&avio_lock);
+-        return VLC_EGENERIC;
+-    }
+-    url_set_interrupt_cb(access ? UrlInterruptCallback : NULL);
+-    current_access = access;
+-    vlc_mutex_unlock(&avio_lock);
+-
+-    return VLC_SUCCESS;
+-}
+diff -up vlc-2.0.0/modules/codec/avcodec.ffmpeg vlc-2.0.0/modules/codec/avcodec
+Somente em vlc-2.0.0/modules/codec/avcodec.ffmpeg: Makefile.am
+Somente em vlc-2.0.0/modules/codec/avcodec.ffmpeg: Makefile.in
+Somente em vlc-2.0.0/modules/codec/avcodec.ffmpeg: Modules.am
+diff -up vlc-2.0.0/modules/codec/avcodec.ffmpeg/audio.c vlc-2.0.0/modules/codec/avcodec/audio.c
+--- vlc-2.0.0/modules/codec/avcodec.ffmpeg/audio.c	2011-12-08 16:00:26.000000000 -0200
++++ vlc-2.0.0/modules/codec/avcodec/audio.c	2012-02-19 04:04:38.113850288 -0200
+@@ -2,7 +2,7 @@
+  * audio.c: audio decoder using ffmpeg library
+  *****************************************************************************
+  * Copyright (C) 1999-2003 the VideoLAN team
+- * $Id: 33e7418bf85bd998ef90e1701da03365a207ee70 $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
+  *          Gildas Bazin <gbazin@videolan.org>
+@@ -41,6 +41,10 @@
+ #   include <avcodec.h>
+ #endif
+ 
++#if LIBAVUTIL_VERSION_INT >= ((50<<16)+(38<<8)+0)
++# include "libavutil/audioconvert.h"
++#endif
++
+ #include "avcodec.h"
+ 
+ /*****************************************************************************
+@@ -415,24 +419,24 @@ void GetVlcAudioFormat( vlc_fourcc_t *pi
+ {
+     switch( i_sample_fmt )
+     {
+-    case SAMPLE_FMT_U8:
++    case AV_SAMPLE_FMT_U8:
+         *pi_codec = VLC_CODEC_U8;
+         *pi_bits = 8;
+         break;
+-    case SAMPLE_FMT_S32:
++    case AV_SAMPLE_FMT_S32:
+         *pi_codec = VLC_CODEC_S32N;
+         *pi_bits = 32;
+         break;
+-    case SAMPLE_FMT_FLT:
++    case AV_SAMPLE_FMT_FLT:
+         *pi_codec = VLC_CODEC_FL32;
+         *pi_bits = 32;
+         break;
+-    case SAMPLE_FMT_DBL:
++    case AV_SAMPLE_FMT_DBL:
+         *pi_codec = VLC_CODEC_FL64;
+         *pi_bits = 64;
+         break;
+ 
+-    case SAMPLE_FMT_S16:
++    case AV_SAMPLE_FMT_S16:
+     default:
+         *pi_codec = VLC_CODEC_S16N;
+         *pi_bits = 16;
+@@ -442,26 +446,26 @@ void GetVlcAudioFormat( vlc_fourcc_t *pi
+ 
+ static const uint64_t pi_channels_map[][2] =
+ {
+-    { CH_FRONT_LEFT,        AOUT_CHAN_LEFT },
+-    { CH_FRONT_RIGHT,       AOUT_CHAN_RIGHT },
+-    { CH_FRONT_CENTER,      AOUT_CHAN_CENTER },
+-    { CH_LOW_FREQUENCY,     AOUT_CHAN_LFE },
+-    { CH_BACK_LEFT,         AOUT_CHAN_REARLEFT },
+-    { CH_BACK_RIGHT,        AOUT_CHAN_REARRIGHT },
+-    { CH_FRONT_LEFT_OF_CENTER, 0 },
+-    { CH_FRONT_RIGHT_OF_CENTER, 0 },
+-    { CH_BACK_CENTER,       AOUT_CHAN_REARCENTER },
+-    { CH_SIDE_LEFT,         AOUT_CHAN_MIDDLELEFT },
+-    { CH_SIDE_RIGHT,        AOUT_CHAN_MIDDLERIGHT },
+-    { CH_TOP_CENTER,        0 },
+-    { CH_TOP_FRONT_LEFT,    0 },
+-    { CH_TOP_FRONT_CENTER,  0 },
+-    { CH_TOP_FRONT_RIGHT,   0 },
+-    { CH_TOP_BACK_LEFT,     0 },
+-    { CH_TOP_BACK_CENTER,   0 },
+-    { CH_TOP_BACK_RIGHT,    0 },
+-    { CH_STEREO_LEFT,       0 },
+-    { CH_STEREO_RIGHT,      0 },
++    { AV_CH_FRONT_LEFT,        AOUT_CHAN_LEFT },
++    { AV_CH_FRONT_RIGHT,       AOUT_CHAN_RIGHT },
++    { AV_CH_FRONT_CENTER,      AOUT_CHAN_CENTER },
++    { AV_CH_LOW_FREQUENCY,     AOUT_CHAN_LFE },
++    { AV_CH_BACK_LEFT,         AOUT_CHAN_REARLEFT },
++    { AV_CH_BACK_RIGHT,        AOUT_CHAN_REARRIGHT },
++    { AV_CH_FRONT_LEFT_OF_CENTER, 0 },
++    { AV_CH_FRONT_RIGHT_OF_CENTER, 0 },
++    { AV_CH_BACK_CENTER,       AOUT_CHAN_REARCENTER },
++    { AV_CH_SIDE_LEFT,         AOUT_CHAN_MIDDLELEFT },
++    { AV_CH_SIDE_RIGHT,        AOUT_CHAN_MIDDLERIGHT },
++    { AV_CH_TOP_CENTER,        0 },
++    { AV_CH_TOP_FRONT_LEFT,    0 },
++    { AV_CH_TOP_FRONT_CENTER,  0 },
++    { AV_CH_TOP_FRONT_RIGHT,   0 },
++    { AV_CH_TOP_BACK_LEFT,     0 },
++    { AV_CH_TOP_BACK_CENTER,   0 },
++    { AV_CH_TOP_BACK_RIGHT,    0 },
++    { AV_CH_STEREO_LEFT,       0 },
++    { AV_CH_STEREO_RIGHT,      0 },
+ };
+ 
+ static void SetupOutputFormat( decoder_t *p_dec, bool b_trust )
+diff -up vlc-2.0.0/modules/codec/avcodec.ffmpeg/avcodec.c vlc-2.0.0/modules/codec/avcodec/avcodec.c
+--- vlc-2.0.0/modules/codec/avcodec.ffmpeg/avcodec.c	2011-12-08 16:00:26.000000000 -0200
++++ vlc-2.0.0/modules/codec/avcodec/avcodec.c	2012-02-19 04:21:10.052176485 -0200
+@@ -2,7 +2,7 @@
+  * avcodec.c: video and audio decoder and encoder using libavcodec
+  *****************************************************************************
+  * Copyright (C) 1999-2008 the VideoLAN team
+- * $Id: c61eea92c55d5d533b51897d76b7a2f6dd9513d7 $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
+  *          Gildas Bazin <gbazin@videolan.org>
+@@ -44,7 +44,6 @@
+ #endif
+ 
+ #include "avcodec.h"
+-#include "avutil.h"
+ #include "chroma.h"
+ 
+ #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT( 52, 25, 0 )
+@@ -262,7 +261,11 @@ static int OpenDecoder( vlc_object_t *p_
+     }
+ 
+     /* *** get a p_context *** */
++#if LIBAVCODEC_VERSION_MAJOR >= 54
++    p_context = avcodec_alloc_context3(p_codec);
++#else
+     p_context = avcodec_alloc_context();
++#endif
+     if( !p_context )
+         return VLC_ENOMEM;
+     p_context->debug = var_InheritInteger( p_dec, "ffmpeg-debug" );
+@@ -390,9 +393,10 @@ void InitLibavcodec( vlc_object_t *p_obj
+     /* *** init ffmpeg library (libavcodec) *** */
+     if( !b_ffmpeginit )
+     {
++#if LIBAVCODEC_VERSION_MAJOR < 54
+         avcodec_init();
++#endif
+         avcodec_register_all();
+-        av_log_set_callback( LibavutilCallback );
+         b_ffmpeginit = true;
+ 
+         msg_Dbg( p_object, "libavcodec initialized (interface 0x%x)",
+@@ -442,7 +446,11 @@ int ffmpeg_OpenCodec( decoder_t *p_dec )
+     }
+     int ret;
+     vlc_avcodec_lock();
++#if LIBAVCODEC_VERSION_MAJOR >= 54
++    ret = avcodec_open2( p_sys->p_context, p_sys->p_codec, NULL /* options */ );
++#else
+     ret = avcodec_open( p_sys->p_context, p_sys->p_codec );
++#endif
+     vlc_avcodec_unlock();
+     if( ret < 0 )
+         return VLC_EGENERIC;
+diff -up vlc-2.0.0/modules/codec/avcodec.ffmpeg/avcodec.h vlc-2.0.0/modules/codec/avcodec/avcodec.h
+--- vlc-2.0.0/modules/codec/avcodec.ffmpeg/avcodec.h	2011-12-08 16:00:26.000000000 -0200
++++ vlc-2.0.0/modules/codec/avcodec/avcodec.h	2012-02-19 04:21:27.359495335 -0200
+@@ -2,7 +2,7 @@
+  * avcodec.h: decoder and encoder using libavcodec
+  *****************************************************************************
+  * Copyright (C) 2001-2008 the VideoLAN team
+- * $Id: c5399ab69ee412d6afd006e4ea2409055f774a7e $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
+  *
+@@ -309,6 +309,82 @@ int ffmpeg_OpenCodec( decoder_t *p_dec )
+ #   define AVMEDIA_TYPE_ATTACHMENT CODEC_TYPE_ATTACHMENT
+ #endif
+ 
++#if LIBAVCODEC_VERSION_MAJOR < 54
++#   define AV_PICTURE_TYPE_B        FF_B_TYPE
++#   define AV_PICTURE_TYPE_I        FF_I_TYPE
++#   define AV_PICTURE_TYPE_P        FF_P_TYPE
++
++#   define AV_SAMPLE_FMT_NONE       SAMPLE_FMT_NONE
++#   define AV_SAMPLE_FMT_U8         SAMPLE_FMT_U8
++#   define AV_SAMPLE_FMT_S16        SAMPLE_FMT_S16
++#   define AV_SAMPLE_FMT_S32        SAMPLE_FMT_S32
++#   define AV_SAMPLE_FMT_FLT        SAMPLE_FMT_FLT
++#   define AV_SAMPLE_FMT_DBL        SAMPLE_FMT_DBL
++
++#ifndef AV_CH_FRONT_LEFT
++#   define AV_CH_FRONT_LEFT         CH_FRONT_LEFT
++#endif
++#ifndef AV_CH_FRONT_RIGHT
++#   define AV_CH_FRONT_RIGHT        CH_FRONT_RIGHT
++#endif
++#ifndef AV_CH_FRONT_CENTER
++#   define AV_CH_FRONT_CENTER       CH_FRONT_CENTER
++#endif
++#ifndef AV_CH_LOW_FREQUENCY
++#   define AV_CH_LOW_FREQUENCY      CH_LOW_FREQUENCY
++#endif
++#ifndef AV_CH_BACK_LEFT
++#   define AV_CH_BACK_LEFT          CH_BACK_LEFT
++#endif
++#ifndef AV_CH_BACK_RIGHT
++#   define AV_CH_BACK_RIGHT         CH_BACK_RIGHT
++#endif
++#ifndef AV_CH_FRONT_LEFT_OF_CENTER
++#   define AV_CH_FRONT_LEFT_OF_CENTER  CH_FRONT_LEFT_OF_CENTER
++#endif
++#ifndef AV_CH_FRONT_RIGHT_OF_CENTER
++#   define AV_CH_FRONT_RIGHT_OF_CENTER CH_FRONT_RIGHT_OF_CENTER
++#endif
++#ifndef AV_CH_BACK_CENTER
++#   define AV_CH_BACK_CENTER        CH_BACK_CENTER
++#endif
++#ifndef AV_CH_SIDE_LEFT
++#   define AV_CH_SIDE_LEFT          CH_SIDE_LEFT
++#endif
++#ifndef AV_CH_SIDE_RIGHT
++#   define AV_CH_SIDE_RIGHT         CH_SIDE_RIGHT
++#endif
++#ifndef AV_CH_TOP_CENTER
++#   define AV_CH_TOP_CENTER         CH_TOP_CENTER
++#endif
++#ifndef AV_CH_TOP_FRONT_LEFT
++#   define AV_CH_TOP_FRONT_LEFT     CH_TOP_FRONT_LEFT
++#endif
++#ifndef AV_CH_TOP_FRONT_CENTER
++#   define AV_CH_TOP_FRONT_CENTER   CH_TOP_FRONT_CENTER
++#endif
++#ifndef AV_CH_TOP_FRONT_RIGHT
++#   define AV_CH_TOP_FRONT_RIGHT    CH_TOP_FRONT_RIGHT
++#endif
++#ifndef AV_CH_TOP_BACK_LEFT
++#   define AV_CH_TOP_BACK_LEFT      CH_TOP_BACK_LEFT
++#endif
++#ifndef AV_CH_TOP_BACK_CENTER
++#   define AV_CH_TOP_BACK_CENTER    CH_TOP_BACK_CENTER
++#endif
++#ifndef AV_CH_TOP_BACK_RIGHT
++#   define AV_CH_TOP_BACK_RIGHT     CH_TOP_BACK_RIGHT
++#endif
++#ifndef AV_CH_STEREO_LEFT
++#   define AV_CH_STEREO_LEFT        CH_STEREO_LEFT
++#endif
++#ifndef AV_CH_STEREO_RIGHT
++#   define AV_CH_STEREO_RIGHT       CH_STEREO_RIGHT
++#endif
++
++
++#endif
++
+ #ifndef AV_PKT_FLAG_KEY
+ #   define AV_PKT_FLAG_KEY         PKT_FLAG_KEY
+ #endif
+diff -up vlc-2.0.0/modules/codec/avcodec.ffmpeg/encoder.c vlc-2.0.0/modules/codec/avcodec/encoder.c
+--- vlc-2.0.0/modules/codec/avcodec.ffmpeg/encoder.c	2012-01-26 22:15:50.000000000 -0200
++++ vlc-2.0.0/modules/codec/avcodec/encoder.c	2012-02-19 04:08:06.313701170 -0200
+@@ -2,7 +2,7 @@
+  * encoder.c: video and audio encoder using the ffmpeg library
+  *****************************************************************************
+  * Copyright (C) 1999-2004 the VideoLAN team
+- * $Id: e036a0949172cc936146d6f7ce43d88a51521743 $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
+  *          Gildas Bazin <gbazin@videolan.org>
+@@ -304,7 +304,12 @@ int OpenEncoder( vlc_object_t *p_this )
+     p_sys->p_buffer_out = NULL;
+     p_sys->i_buffer_out = 0;
+ 
+-    p_sys->p_context = p_context = avcodec_alloc_context();
++#if LIBAVCODEC_VERSION_MAJOR < 54
++    p_context = avcodec_alloc_context();
++#else
++    p_context = avcodec_alloc_context3(p_codec);
++#endif
++    p_sys->p_context = p_context;
+     p_sys->p_context->codec_id = p_sys->p_codec->id;
+     p_context->debug = var_InheritInteger( p_enc, "ffmpeg-debug" );
+     p_context->opaque = (void *)p_this;
+@@ -604,7 +609,7 @@ int OpenEncoder( vlc_object_t *p_this )
+         p_context->codec_type  = AVMEDIA_TYPE_AUDIO;
+         p_context->sample_fmt  = p_codec->sample_fmts ?
+                                     p_codec->sample_fmts[0] :
+-                                    SAMPLE_FMT_S16;
++                                    AV_SAMPLE_FMT_S16;
+         p_enc->fmt_in.i_codec  = VLC_CODEC_S16N;
+         p_context->sample_rate = p_enc->fmt_out.audio.i_rate;
+         p_context->time_base.num = 1;
+@@ -694,7 +699,11 @@ int OpenEncoder( vlc_object_t *p_this )
+ 
+     int ret;
+     vlc_avcodec_lock();
++#if LIBAVCODEC_VERSION_MAJOR < 54
+     ret = avcodec_open( p_context, p_codec );
++#else
++    ret = avcodec_open2( p_context, p_codec, NULL /* options */ );
++#endif
+     vlc_avcodec_unlock();
+     if( ret )
+     {
+@@ -748,7 +757,11 @@ int OpenEncoder( vlc_object_t *p_this )
+ 
+             p_context->codec = NULL;
+             vlc_avcodec_lock();
++#if LIBAVCODEC_VERSION_MAJOR < 54
+             ret = avcodec_open( p_context, p_codec );
++#else
++            ret = avcodec_open2( p_context, p_codec, NULL /* options */ );
++#endif
+             vlc_avcodec_unlock();
+             if( ret )
+             {
+@@ -861,20 +874,10 @@ static block_t *EncodeVideo( encoder_t *
+      * This is done here instead of OpenEncoder() because we need the actual
+      * bits_per_pixel value, without having to assume anything.
+      */
+-    if ( p_sys->p_buffer_out == NULL )
+-    {
+-        int bytesPerPixel = p_enc->fmt_out.video.i_bits_per_pixel ?
+-                            p_enc->fmt_out.video.i_bits_per_pixel / 8 : 3;
+-
+-        p_sys->i_buffer_out = p_sys->p_context->height * p_sys->p_context->width
+-            * bytesPerPixel + 200;  /* some room for potential headers (such as BMP) */
+-
+-        if( p_sys->i_buffer_out < FF_MIN_BUFFER_SIZE )
+-            p_sys->i_buffer_out = FF_MIN_BUFFER_SIZE;
+-        p_sys->p_buffer_out = malloc( p_sys->i_buffer_out );
+-        if ( p_sys->p_buffer_out == NULL )
+-            return NULL;
+-    }
++    const int bytesPerPixel = p_enc->fmt_out.video.i_bits_per_pixel ?
++                         p_enc->fmt_out.video.i_bits_per_pixel / 8 : 3;
++    const int blocksize = __MAX( FF_MIN_BUFFER_SIZE,bytesPerPixel * p_sys->p_context->height * p_sys->p_context->width + 200 );
++    block_t *p_block = block_New( p_enc, blocksize );
+ 
+     if( likely(p_pict) ) {
+         AVFrame frame;
+@@ -929,7 +932,7 @@ static block_t *EncodeVideo( encoder_t *
+ 
+                 if ( current_date + HURRY_UP_GUARD1 > frame.pts )
+                 {
+-                    frame.pict_type = FF_P_TYPE;
++                    frame.pict_type = AV_PICTURE_TYPE_P;
+                     /* msg_Dbg( p_enc, "hurry up mode 1 %lld", current_date + HURRY_UP_GUARD1 - frame.pts ); */
+                 }
+             }
+@@ -971,20 +974,22 @@ static block_t *EncodeVideo( encoder_t *
+         frame.pts /= p_enc->fmt_in.video.i_frame_rate;
+         /* End work-around */
+ 
+-        i_out = avcodec_encode_video( p_sys->p_context, p_sys->p_buffer_out,
+-                                     p_sys->i_buffer_out, &frame );
++        i_out = avcodec_encode_video( p_sys->p_context, p_block->p_buffer,
++                                     p_block->i_buffer, &frame );
+     }
+     else
+     {
+-        i_out = avcodec_encode_video( p_sys->p_context, p_sys->p_buffer_out,
+-                                     p_sys->i_buffer_out, NULL);
++        i_out = avcodec_encode_video( p_sys->p_context, p_block->p_buffer,
++                                     p_block->i_buffer, NULL);
+     }
+ 
+     if( i_out <= 0 )
++    {
++        block_Release( p_block );
+         return NULL;
++    }
+ 
+-    block_t *p_block = block_New( p_enc, i_out );
+-    memcpy( p_block->p_buffer, p_sys->p_buffer_out, i_out );
++    p_block->i_buffer = i_out;
+ 
+     /* FIXME, 3-2 pulldown is not handled correctly */
+     p_block->i_length = INT64_C(1000000) *
+@@ -1015,8 +1020,8 @@ static block_t *EncodeVideo( encoder_t *
+         }
+         /* End work-around */
+ 
+-        if( p_sys->p_context->coded_frame->pict_type != FF_I_TYPE &&
+-            p_sys->p_context->coded_frame->pict_type != FF_P_TYPE )
++        if( p_sys->p_context->coded_frame->pict_type != AV_PICTURE_TYPE_I &&
++            p_sys->p_context->coded_frame->pict_type != AV_PICTURE_TYPE_P )
+         {
+             p_block->i_dts = p_block->i_pts;
+         }
+@@ -1044,15 +1049,16 @@ static block_t *EncodeVideo( encoder_t *
+ 
+     switch ( p_sys->p_context->coded_frame->pict_type )
+     {
+-    case FF_I_TYPE:
++    case AV_PICTURE_TYPE_I:
+         p_block->i_flags |= BLOCK_FLAG_TYPE_I;
+         break;
+-    case FF_P_TYPE:
++    case AV_PICTURE_TYPE_P:
+         p_block->i_flags |= BLOCK_FLAG_TYPE_P;
+         break;
+-    case FF_B_TYPE:
++    case AV_PICTURE_TYPE_B:
+         p_block->i_flags |= BLOCK_FLAG_TYPE_B;
+         break;
++
+     }
+ 
+     return p_block;
+@@ -1081,6 +1087,7 @@ static block_t *EncodeAudio( encoder_t *
+     {
+         void *p_samples;
+         int i_out;
++        p_block = block_New( p_enc, p_sys->i_buffer_out );
+ 
+         if( i_samples_delay )
+         {
+@@ -1102,8 +1109,8 @@ static block_t *EncodeAudio( encoder_t *
+             p_samples = p_buffer;
+         }
+ 
+-        i_out = avcodec_encode_audio( p_sys->p_context, p_sys->p_buffer_out,
+-                                      p_sys->i_buffer_out, p_samples );
++        i_out = avcodec_encode_audio( p_sys->p_context, p_block->p_buffer,
++                                      p_block->i_buffer, p_samples );
+ 
+ #if 0
+         msg_Warn( p_enc, "avcodec_encode_audio: %d", i_out );
+@@ -1113,10 +1120,12 @@ static block_t *EncodeAudio( encoder_t *
+         i_samples -= p_sys->i_frame_size;
+ 
+         if( i_out <= 0 )
++        {
++            block_Release( p_block );
+             continue;
++        }
+ 
+-        p_block = block_New( p_enc, i_out );
+-        memcpy( p_block->p_buffer, p_sys->p_buffer_out, i_out );
++        p_block->i_buffer = i_out;
+ 
+         p_block->i_length = (mtime_t)1000000 *
+             (mtime_t)p_sys->i_frame_size /
+diff -up vlc-2.0.0/modules/codec/avcodec.ffmpeg/fourcc.c vlc-2.0.0/modules/codec/avcodec/fourcc.c
+--- vlc-2.0.0/modules/codec/avcodec.ffmpeg/fourcc.c	2011-12-08 16:00:26.000000000 -0200
++++ vlc-2.0.0/modules/codec/avcodec/fourcc.c	2012-02-19 04:22:28.623465094 -0200
+@@ -354,7 +362,9 @@ static const struct
+ 
+     { VLC_CODEC_ATRAC3, CODEC_ID_ATRAC3, AUDIO_ES },
+ 
++#if LIBAVCODEC_VERSION_MAJOR < 54
+     { VLC_CODEC_SONIC, CODEC_ID_SONIC, AUDIO_ES },
++#endif
+ 
+     { VLC_CODEC_IMC, CODEC_ID_IMC, AUDIO_ES },
+ 
+diff -up vlc-2.0.0/modules/codec/avcodec.ffmpeg/subtitle.c vlc-2.0.0/modules/codec/avcodec/subtitle.c
+--- vlc-2.0.0/modules/codec/avcodec.ffmpeg/subtitle.c	2011-12-08 16:00:26.000000000 -0200
++++ vlc-2.0.0/modules/codec/avcodec/subtitle.c	2012-02-19 04:22:39.695110305 -0200
+@@ -2,7 +2,7 @@
+  * subtitle.c: subtitle decoder using ffmpeg library
+  *****************************************************************************
+  * Copyright (C) 2009 Laurent Aimar
+- * $Id: c9ccce677bd772dc5a797df955470d295684ccab $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir _AT_ videolan _DOT_ org>
+  *
+@@ -90,8 +90,14 @@ int InitSubtitleDec(decoder_t *dec, AVCo
+     context->extradata = NULL;
+ 
+     /* */
++    int ret;
+     vlc_avcodec_lock();
+-    if (avcodec_open(context, codec) < 0) {
++#if LIBAVCODEC_VERSION_MAJOR < 54
++    ret = avcodec_open(context, codec);
++#else
++    ret = avcodec_open2(context, codec, NULL /* options */);
++#endif
++    if (ret < 0) {
+         vlc_avcodec_unlock();
+         msg_Err(dec, "cannot open codec (%s)", namecodec);
+         free(context->extradata);
+diff -up vlc-2.0.0/modules/codec/avcodec.ffmpeg/video.c vlc-2.0.0/modules/codec/avcodec/video.c
+--- vlc-2.0.0/modules/codec/avcodec.ffmpeg/video.c	2012-02-12 20:55:15.000000000 -0200
++++ vlc-2.0.0/modules/codec/avcodec/video.c	2012-02-19 04:07:22.656958657 -0200
+@@ -2,7 +2,7 @@
+  * video.c: video decoder using the ffmpeg library
+  *****************************************************************************
+  * Copyright (C) 1999-2001 the VideoLAN team
+- * $Id: 49f94fc85dd678f76d5a8f7038af7fdfa449e99e $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
+  *          Gildas Bazin <gbazin@videolan.org>
+@@ -29,6 +29,14 @@
+ # include "config.h"
+ #endif
+ 
++#if defined(HAVE_LIBAVCODEC_AVCODEC_H) && defined(HAVE_AVCODEC_DXVA2)
++# if _WIN32_WINNT < 0x600
++/* dxva2 needs Vista support */
++#  undef _WIN32_WINNT
++#  define _WIN32_WINNT 0x600
++# endif
++#endif
++
+ #include <vlc_common.h>
+ #include <vlc_codec.h>
+ #include <vlc_avcodec.h>
+@@ -86,8 +94,13 @@ struct decoder_sys_t
+     /* Hack to force display of still pictures */
+     bool b_first_frame;
+ 
++
+     /* */
++#if LIBAVCODEC_VERSION_MAJOR < 54
+     AVPaletteControl palette;
++#else
++# warning FIXME
++#endif
+ 
+     /* */
+     bool b_flush;
+@@ -106,9 +119,6 @@ struct decoder_sys_t
+ #   define post_mt(s)
+ #endif
+ 
+-/* FIXME (dummy palette for now) */
+-static const AVPaletteControl palette_control;
+-
+ /*****************************************************************************
+  * Local prototypes
+  *****************************************************************************/
+@@ -225,8 +235,12 @@ int InitVideoDec( decoder_t *p_dec, AVCo
+     /*  ***** Get configuration of ffmpeg plugin ***** */
+     p_sys->p_context->workaround_bugs =
+         var_InheritInteger( p_dec, "ffmpeg-workaround-bugs" );
++#if LIBAVCODEC_VERSION_MAJOR < 54
+     p_sys->p_context->error_recognition =
+         var_InheritInteger( p_dec, "ffmpeg-error-resilience" );
++#else
++# warning FIXME (moved to AVFormat)
++#endif
+ 
+     if( var_CreateGetBool( p_dec, "grayscale" ) )
+         p_sys->p_context->flags |= CODEC_FLAG_GRAY;
+@@ -393,6 +407,7 @@ int InitVideoDec( decoder_t *p_dec, AVCo
+     }
+     p_dec->fmt_out.i_codec = p_dec->fmt_out.video.i_chroma;
+ 
++#if LIBAVCODEC_VERSION_MAJOR < 54
+     /* Setup palette */
+     memset( &p_sys->palette, 0, sizeof(p_sys->palette) );
+     if( p_dec->fmt_in.video.p_palette )
+@@ -422,6 +437,9 @@ int InitVideoDec( decoder_t *p_dec, AVCo
+     {
+         p_sys->p_context->palctrl = &p_sys->palette;
+     }
++#else
++# warning FIXME
++#endif
+ 
+     /* ***** init this codec with special data ***** */
+     ffmpeg_InitCodec( p_dec );
+@@ -643,7 +661,7 @@ picture_t *DecodeVideo( decoder_t *p_dec
+         }
+ 
+         /* Sanity check (seems to be needed for some streams) */
+-        if( p_sys->p_ff_pic->pict_type == FF_B_TYPE )
++        if( p_sys->p_ff_pic->pict_type == AV_PICTURE_TYPE_B)
+         {
+             p_sys->b_has_b_frames = true;
+         }
+@@ -976,8 +994,10 @@ static int ffmpeg_GetFrameBuf( struct AV
+ 
+         /* */
+         p_ff_pic->type = FF_BUFFER_TYPE_USER;
+-        /* FIXME what is that, should give good value */
+-        p_ff_pic->age = 256*256*256*64; // FIXME FIXME from ffmpeg
++
++#if LIBAVCODEC_VERSION_MAJOR < 54
++        p_ff_pic->age = 256*256*256*64;
++#endif
+ 
+         if( vlc_va_Get( p_sys->p_va, p_ff_pic ) )
+         {
+@@ -1067,8 +1087,9 @@ static int ffmpeg_GetFrameBuf( struct AV
+     p_ff_pic->linesize[2] = p_pic->p[2].i_pitch;
+     p_ff_pic->linesize[3] = 0;
+ 
+-    /* FIXME what is that, should give good value */
+-    p_ff_pic->age = 256*256*256*64; // FIXME FIXME from ffmpeg
++#if LIBAVCODEC_VERSION_MAJOR < 54
++    p_ff_pic->age = 256*256*256*64;
++#endif
+ 
+     post_mt( p_sys );
+     return 0;
+diff -up vlc-2.0.0/modules/demux/avformat.ffmpeg vlc-2.0.0/modules/demux/avformat
+diff -up vlc-2.0.0/modules/demux/avformat.ffmpeg/avformat.c vlc-2.0.0/modules/demux/avformat/avformat.c
+--- vlc-2.0.0/modules/demux/avformat.ffmpeg/avformat.c	2011-12-08 16:00:26.000000000 -0200
++++ vlc-2.0.0/modules/demux/avformat/avformat.c	2012-02-19 04:15:57.174728776 -0200
+@@ -2,7 +2,7 @@
+  * avformat.c: demuxer and muxer using libavformat library
+  *****************************************************************************
+  * Copyright (C) 1999-2008 the VideoLAN team
+- * $Id: 70ce57f303a4603d8926c1ec854890870a606bd4 $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
+  *          Gildas Bazin <gbazin@videolan.org>
+@@ -41,6 +41,7 @@ vlc_module_begin ()
+     set_shortname( N_("Avformat") )
+     set_capability( "demux", 2 )
+     set_callbacks( OpenDemux, CloseDemux )
++    add_string( "ffmpeg-format", NULL, FORMAT_TEXT, FORMAT_LONGTEXT, true )
+ 
+ #ifdef ENABLE_SOUT
+     /* mux submodule */
+diff -up vlc-2.0.0/modules/demux/avformat.ffmpeg/avformat.h vlc-2.0.0/modules/demux/avformat/avformat.h
+--- vlc-2.0.0/modules/demux/avformat.ffmpeg/avformat.h	2011-12-08 16:00:26.000000000 -0200
++++ vlc-2.0.0/modules/demux/avformat/avformat.h	2012-02-19 04:15:57.570644555 -0200
+@@ -2,7 +2,7 @@
+  * avformat.h: muxer and demuxer using libavformat
+  *****************************************************************************
+  * Copyright (C) 2001-2008 the VideoLAN team
+- * $Id: 62c8e9909e5253a7082d37c3e39a0e1b39376fea $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
+  *
+@@ -34,3 +34,5 @@ void CloseMux( vlc_object_t * );
+ 
+ #define MUX_TEXT N_("Avformat mux")
+ #define MUX_LONGTEXT N_("Force use of a specific avformat muxer.")
++#define FORMAT_TEXT N_( "Format name" )
++#define FORMAT_LONGTEXT N_( "Internal libavcodec format name" )
+diff -up vlc-2.0.0/modules/demux/avformat.ffmpeg/demux.c vlc-2.0.0/modules/demux/avformat/demux.c
+--- vlc-2.0.0/modules/demux/avformat.ffmpeg/demux.c	2011-12-22 08:38:28.000000000 -0200
++++ vlc-2.0.0/modules/demux/avformat/demux.c	2012-02-19 04:09:59.824630977 -0200
+@@ -2,7 +2,7 @@
+  * demux.c: demuxer using libavformat
+  *****************************************************************************
+  * Copyright (C) 2004-2009 the VideoLAN team
+- * $Id: 01f06d90c7ee166957597f194e08b359b243987e $
++ * $Id$
+  *
+  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
+  *          Gildas Bazin <gbazin@videolan.org>
+@@ -46,6 +46,13 @@
+ #include "../xiph.h"
+ #include "../vobsub.h"
+ 
++/* Support for deprecated APIs */
++
++#if LIBAVFORMAT_VERSION_MAJOR < 54
++# define AVDictionaryEntry AVMetadataTag
++# define av_dict_get av_metadata_get
++#endif
++
+ //#define AVFORMAT_DEBUG 1
+ 
+ /* Version checking */
+@@ -60,14 +67,15 @@
+  *****************************************************************************/
+ struct demux_sys_t
+ {
++#if LIBAVFORMAT_VERSION_INT < ((53<<16)+(2<<8)+0)
+     ByteIOContext   io;
++#endif
++
+     int             io_buffer_size;
+     uint8_t        *io_buffer;
+ 
+     AVInputFormat  *fmt;
+     AVFormatContext *ic;
+-    URLContext     url;
+-    URLProtocol    prot;
+ 
+     int             i_tk;
+     es_out_id_t     **tk;
+@@ -104,11 +112,12 @@ int OpenDemux( vlc_object_t *p_this )
+     demux_t       *p_demux = (demux_t*)p_this;
+     demux_sys_t   *p_sys;
+     AVProbeData   pd;
+-    AVInputFormat *fmt;
++    AVInputFormat *fmt = NULL;
+     unsigned int  i;
+     int64_t       i_start_time = -1;
+     bool          b_can_seek;
+     char         *psz_url;
++    int           error;
+ 
+     if( p_demux->psz_file )
+         psz_url = strdup( p_demux->psz_file );
+@@ -120,19 +129,28 @@ int OpenDemux( vlc_object_t *p_this )
+     msg_Dbg( p_demux, "trying url: %s", psz_url );
+     /* Init Probe data */
+     pd.filename = psz_url;
+-    if( ( pd.buf_size = stream_Peek( p_demux->s, &pd.buf, 2048 + 213 ) ) <= 0 )
++    if( ( pd.buf_size = stream_Peek( p_demux->s, (const uint8_t**)&pd.buf, 2048 + 213 ) ) <= 0 )
+     {
+         free( psz_url );
+         msg_Warn( p_demux, "cannot peek" );
+         return VLC_EGENERIC;
+     }
++    stream_Control( p_demux->s, STREAM_CAN_SEEK, &b_can_seek );
+ 
+     vlc_avcodec_lock();
+     av_register_all(); /* Can be called several times */
+     vlc_avcodec_unlock();
+ 
++    char *psz_format = var_InheritString( p_this, "ffmpeg-format" );
++    if( psz_format )
++    {
++        if( fmt = av_find_input_format(psz_format) )
++            msg_Dbg( p_demux, "forcing format: %s", fmt->name );
++        free( psz_format );
++    }
++
+     /* Guess format */
+-    if( !( fmt = av_probe_input_format( &pd, 1 ) ) )
++    if( !fmt && !( fmt = av_probe_input_format( &pd, 1 ) ) )
+     {
+         msg_Dbg( p_demux, "couldn't guess format" );
+         free( psz_url );
+@@ -206,52 +224,43 @@ int OpenDemux( vlc_object_t *p_this )
+     /* Create I/O wrapper */
+     p_sys->io_buffer_size = 32768;  /* FIXME */
+     p_sys->io_buffer = malloc( p_sys->io_buffer_size );
+-    p_sys->url.priv_data = p_demux;
+-    p_sys->url.prot = &p_sys->prot;
+-    p_sys->url.prot->name = "VLC I/O wrapper";
+-    p_sys->url.prot->url_open = 0;
+-    p_sys->url.prot->url_read =
+-                    (int (*) (URLContext *, unsigned char *, int))IORead;
+-    p_sys->url.prot->url_write = 0;
+-    p_sys->url.prot->url_seek =
+-                    (int64_t (*) (URLContext *, int64_t, int))IOSeek;
+-    p_sys->url.prot->url_close = 0;
+-    p_sys->url.prot->next = 0;
+-    init_put_byte( &p_sys->io, p_sys->io_buffer, p_sys->io_buffer_size,
+-                   0, &p_sys->url, IORead, NULL, IOSeek );
+ 
+-    stream_Control( p_demux->s, STREAM_CAN_SEEK, &b_can_seek );
+-    if( !b_can_seek )
+-    {
+-       /* Tell avformat that input is stream, so it doesn't get stuck
+-       when trying av_find_stream_info() trying to seek all the wrong places
+-       init_put_byte defaults io.is_streamed=0, so thats why we set them after it
+-       */
+-       p_sys->url.is_streamed = 1;
+-       p_sys->io.is_streamed = 1;
+-#if defined(AVIO_SEEKABLE_NORMAL)
+-       p_sys->io.seekable = 0;
++#if LIBAVFORMAT_VERSION_INT >= ((53<<16)+(2<<8)+0)
++    p_sys->ic = avformat_alloc_context();
++    p_sys->ic->pb = avio_alloc_context( p_sys->io_buffer,
++        p_sys->io_buffer_size, 0, p_demux, IORead, NULL, IOSeek );
++    p_sys->ic->pb->seekable = b_can_seek ? AVIO_SEEKABLE_NORMAL : 0;
++    error = avformat_open_input(&p_sys->ic, psz_url, p_sys->fmt, NULL);
++#else
++    init_put_byte( &p_sys->io, p_sys->io_buffer, p_sys->io_buffer_size, 0,
++        p_demux, IORead, NULL, IOSeek );
++    p_sys->io.is_streamed = !b_can_seek;
++# if defined(AVIO_SEEKABLE_NORMAL)
++    p_sys->io.seekable = !!b_can_seek;
++# endif
++    error = av_open_input_stream(&p_sys->ic, &p_sys->io, psz_url, p_sys->fmt, NULL);
+ #endif
+-    }
+-
+ 
+-    /* Open it */
+-    if( av_open_input_stream( &p_sys->ic, &p_sys->io, psz_url,
+-                              p_sys->fmt, NULL ) )
++    free( psz_url );
++    if( error < 0 )
+     {
+-        msg_Err( p_demux, "av_open_input_stream failed" );
++        errno = AVUNERROR(error);
++        msg_Err( p_demux, "Could not open %s: %m", psz_url );
+         p_sys->ic = NULL;
+-        free( psz_url );
+         CloseDemux( p_this );
+         return VLC_EGENERIC;
+     }
+-    free( psz_url );
+-    psz_url = NULL;
+ 
+     vlc_avcodec_lock(); /* avformat calls avcodec behind our back!!! */
+-    if( av_find_stream_info( p_sys->ic ) < 0 )
++#if LIBAVFORMAT_VERSION_INT >= ((53<<16)+(26<<8)+0)
++    error = avformat_find_stream_info( p_sys->ic, NULL /* options */ );
++#else
++    error = av_find_stream_info( p_sys->ic );
++#endif
++    if( error < 0 )
+     {
+-        msg_Warn( p_demux, "av_find_stream_info failed" );
++        errno = AVUNERROR(error);
++        msg_Warn( p_demux, "Could not find stream info: %m" );
+     }
+     vlc_avcodec_unlock();
+ 
+@@ -301,11 +310,15 @@ int OpenDemux( vlc_object_t *p_this )
+ 
+             fmt.video.i_width = cc->width;
+             fmt.video.i_height = cc->height;
++#if LIBAVCODEC_VERSION_MAJOR < 54
+             if( cc->palctrl )
+             {
+                 fmt.video.p_palette = malloc( sizeof(video_palette_t) );
+                 *fmt.video.p_palette = *(video_palette_t *)cc->palctrl;
+             }
++#else
++# warning FIXME: implement palette transmission
++#endif
+             psz_type = "video";
+             fmt.video.i_frame_rate = cc->time_base.den;
+             fmt.video.i_frame_rate_base = cc->time_base.num * __MAX( cc->ticks_per_frame, 1 );
+@@ -368,7 +381,7 @@ int OpenDemux( vlc_object_t *p_this )
+                 psz_type = "attachment";
+                 if( cc->codec_id == CODEC_ID_TTF )
+                 {
+-                    AVMetadataTag *filename = av_metadata_get( s->metadata, "filename", NULL, 0 );
++                    AVDictionaryEntry *filename = av_dict_get( s->metadata, "filename", NULL, 0 );
+                     if( filename && filename->value )
+                     {
+                         p_attachment = vlc_input_attachment_New(
+@@ -391,7 +404,7 @@ int OpenDemux( vlc_object_t *p_this )
+             break;
+         }
+ 
+-        AVMetadataTag *language = av_metadata_get( s->metadata, "language", NULL, 0 );
++        AVDictionaryEntry *language = av_dict_get( s->metadata, "language", NULL, 0 );
+         if ( language && language->value )
+             fmt.psz_language = strdup( language->value );
+ 
+@@ -495,7 +508,7 @@ int OpenDemux( vlc_object_t *p_this )
+     {
+         seekpoint_t *s = vlc_seekpoint_New();
+ 
+-        AVMetadataTag *title = av_metadata_get( p_sys->ic->metadata, "title", NULL, 0);
++        AVDictionaryEntry *title = av_dict_get( p_sys->ic->metadata, "title", NULL, 0);
+         if( title && title->value )
+         {
+             s->psz_name = strdup( title->value );
+@@ -524,7 +537,17 @@ void CloseDemux( vlc_object_t *p_this )
+     FREENULL( p_sys->tk );
+     free( p_sys->tk_pcr );
+ 
+-    if( p_sys->ic ) av_close_input_stream( p_sys->ic );
++    if( p_sys->ic )
++    {
++#if LIBAVFORMAT_VERSION_INT >= ((53<<16)+(2<<8)+0)
++        av_free( p_sys->ic->pb );
++#endif
++#if LIBAVFORMAT_VERSION_INT >= ((53<<16)+(26<<8)+0)
++        avformat_close_input( &p_sys->ic );
++#else
++        av_close_input_stream( p_sys->ic );
++#endif
++    }
+ 
+     for( int i = 0; i < p_sys->i_attachments; i++ )
+         free( p_sys->attachments[i] );
+@@ -809,11 +832,11 @@ static int Control( demux_t *p_demux, in
+         {
+             vlc_meta_t *p_meta = (vlc_meta_t*)va_arg( args, vlc_meta_t* );
+ 
+-            AVMetadataTag *title = av_metadata_get( p_sys->ic->metadata, "language", NULL, 0 );
+-            AVMetadataTag *artist = av_metadata_get( p_sys->ic->metadata, "artist", NULL, 0 );
+-            AVMetadataTag *copyright = av_metadata_get( p_sys->ic->metadata, "copyright", NULL, 0 );
+-            AVMetadataTag *comment = av_metadata_get( p_sys->ic->metadata, "comment", NULL, 0 );
+-            AVMetadataTag *genre = av_metadata_get( p_sys->ic->metadata, "genre", NULL, 0 );
++            AVDictionaryEntry *title = av_dict_get( p_sys->ic->metadata, "language", NULL, 0 );
++            AVDictionaryEntry *artist = av_dict_get( p_sys->ic->metadata, "artist", NULL, 0 );
++            AVDictionaryEntry *copyright = av_dict_get( p_sys->ic->metadata, "copyright", NULL, 0 );
++            AVDictionaryEntry *comment = av_dict_get( p_sys->ic->metadata, "comment", NULL, 0 );
++            AVDictionaryEntry *genre = av_dict_get( p_sys->ic->metadata, "genre", NULL, 0 );
+ 
+             if( title && title->value )
+                 vlc_meta_SetTitle( p_meta, title->value );
+@@ -899,8 +922,7 @@ static int Control( demux_t *p_demux, in
+  *****************************************************************************/
+ static int IORead( void *opaque, uint8_t *buf, int buf_size )
+ {
+-    URLContext *p_url = opaque;
+-    demux_t *p_demux = p_url->priv_data;
++    demux_t *p_demux = opaque;
+     if( buf_size < 0 ) return -1;
+     int i_ret = stream_Read( p_demux->s, buf, buf_size );
+     return i_ret ? i_ret : -1;
+@@ -908,8 +930,7 @@ static int IORead( void *opaque, uint8_t
+ 
+ static int64_t IOSeek( void *opaque, int64_t offset, int whence )
+ {
+-    URLContext *p_url = opaque;
+-    demux_t *p_demux = p_url->priv_data;
++    demux_t *p_demux = opaque;
+     int64_t i_absolute;
+     int64_t i_size = stream_Size( p_demux->s );
+ 
+diff -up vlc-2.0.0/modules/demux/avformat.ffmpeg/mux.c vlc-2.0.0/modules/demux/avformat/mux.c
+--- vlc-2.0.0/modules/demux/avformat.ffmpeg/mux.c	2012-01-29 15:56:23.000000000 -0200
++++ vlc-2.0.0/modules/demux/avformat/mux.c	2012-02-19 04:10:02.754009798 -0200
+@@ -2,7 +2,7 @@
+  * mux.c: muxer using libavformat
+  *****************************************************************************
+  * Copyright (C) 2006 the VideoLAN team
+- * $Id: d913bf191cdd484831f836a60799e7264966a2c1 $
++ * $Id$
+  *
+  * Authors: Gildas Bazin <gbazin@videolan.org>
+  *
+@@ -37,7 +37,11 @@
+ 
+ #include "avformat.h"
+ #include "../../codec/avcodec/avcodec.h"
+-#include "../../codec/avcodec/avutil.h"
++
++/* Support for deprecated APIs */
++#if LIBAVFORMAT_VERSION_INT < ((52<<16)+(105<<8)+0)
++# define avio_flush put_flush_packet
++#endif
+ 
+ //#define AVFORMAT_DEBUG 1
+ 
+@@ -50,13 +54,15 @@ static const char *const ppsz_mux_option
+  *****************************************************************************/
+ struct sout_mux_sys_t
+ {
++#if LIBAVFORMAT_VERSION_INT >= ((52<<16)+(105<<8)+0)
++    AVIOContext     *io;
++#else
+     ByteIOContext   io;
++#endif
+     int             io_buffer_size;
+     uint8_t        *io_buffer;
+ 
+     AVFormatContext *oc;
+-    URLContext     url;
+-    URLProtocol    prot;
+ 
+     bool     b_write_header;
+     bool     b_error;
+@@ -83,12 +89,10 @@ int OpenMux( vlc_object_t *p_this )
+     AVOutputFormat *file_oformat;
+     sout_mux_t *p_mux = (sout_mux_t*)p_this;
+     sout_mux_sys_t *p_sys;
+-    AVFormatParameters params, *ap = &params;
+     char *psz_mux;
+ 
+     /* Should we call it only once ? */
+     av_register_all();
+-    av_log_set_callback( LibavutilCallback );
+ 
+     config_ChainParse( p_mux, "ffmpeg-", ppsz_mux_options, p_mux->p_cfg );
+ 
+@@ -101,6 +105,7 @@ int OpenMux( vlc_object_t *p_this )
+ #else
+         file_oformat = guess_format( psz_mux, NULL, NULL );
+ #endif
++        free( psz_mux );
+     }
+     else
+     {
+@@ -130,20 +135,18 @@ int OpenMux( vlc_object_t *p_this )
+     /* Create I/O wrapper */
+     p_sys->io_buffer_size = 32768;  /* FIXME */
+     p_sys->io_buffer = malloc( p_sys->io_buffer_size );
+-    p_sys->url.priv_data = p_mux;
+-    p_sys->url.prot = &p_sys->prot;
+-    p_sys->url.prot->name = "VLC I/O wrapper";
+-    p_sys->url.prot->url_open = 0;
+-    p_sys->url.prot->url_read = 0;
+-    p_sys->url.prot->url_write =
+-                    (int (*) (URLContext *, unsigned char *, int))IOWrite;
+-    p_sys->url.prot->url_seek =
+-                    (int64_t (*) (URLContext *, int64_t, int))IOSeek;
+-    p_sys->url.prot->url_close = 0;
+-    p_sys->url.prot->next = 0;
+-    init_put_byte( &p_sys->io, p_sys->io_buffer, p_sys->io_buffer_size,
+-                   1, &p_sys->url, NULL, IOWrite, IOSeek );
+ 
++#if (LIBAVFORMAT_VERSION_INT >= ((52<<16)+(105<<8)+0))
++    p_sys->io = avio_alloc_context(
++#else
++    init_put_byte( &p_sys->io,
++#endif
++        p_sys->io_buffer, p_sys->io_buffer_size,
++        1, p_mux, NULL, IOWrite, IOSeek );
++
++
++#if (LIBAVFORMAT_VERSION_INT < ((52<<16)+(105<<8)+0))
++    AVFormatParameters params, *ap = &params;
+     memset( ap, 0, sizeof(*ap) );
+     if( av_set_parameters( p_sys->oc, ap ) < 0 )
+     {
+@@ -153,8 +156,13 @@ int OpenMux( vlc_object_t *p_this )
+         free( p_sys );
+         return VLC_EGENERIC;
+     }
++#endif
+ 
++#if (LIBAVFORMAT_VERSION_INT >= ((52<<16)+(105<<8)+0))
++    p_sys->oc->pb = p_sys->io;
++#else
+     p_sys->oc->pb = &p_sys->io;
++#endif
+     p_sys->oc->nb_streams = 0;
+ 
+     p_sys->b_write_header = true;
+@@ -171,21 +179,27 @@ void CloseMux( vlc_object_t *p_this )
+ {
+     sout_mux_t *p_mux = (sout_mux_t*)p_this;
+     sout_mux_sys_t *p_sys = p_mux->p_sys;
+-    unsigned int i;
+ 
+     if( !p_sys->b_write_header && !p_sys->b_error && av_write_trailer( p_sys->oc ) < 0 )
+     {
+         msg_Err( p_mux, "could not write trailer" );
+     }
+ 
+-    for( i = 0 ; i < p_sys->oc->nb_streams; i++ )
++#if( LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT( 52, 96, 0 ) )
++    avformat_free_context(p_sys->oc);
++#else
++    for( unsigned i = 0 ; i < p_sys->oc->nb_streams; i++ )
+     {
+-        if( p_sys->oc->streams[i]->codec->extradata )
+-            av_free( p_sys->oc->streams[i]->codec->extradata );
++        av_free( p_sys->oc->streams[i]->codec->extradata );
+         av_free( p_sys->oc->streams[i]->codec );
++#if( LIBAVFORMAT_VERSION_INT >= AV_VERSION_INT( 52, 81, 0 ) )
++        av_free( p_sys->oc->streams[i]->info );
++#endif
+         av_free( p_sys->oc->streams[i] );
+     }
++    av_free( p_sys->oc->streams );
+     av_free( p_sys->oc );
++#endif
+ 
+     free( p_sys->io_buffer );
+     free( p_sys );
+@@ -219,7 +233,11 @@ static int AddStream( sout_mux_t *p_mux,
+         return VLC_EGENERIC;
+     }
+ 
++#if (LIBAVFORMAT_VERSION_INT >= ((53<<16)+(10<<8)+0))
++    stream = avformat_new_stream( p_sys->oc, NULL);
++#else
+     stream = av_new_stream( p_sys->oc, p_sys->oc->nb_streams);
++#endif
+     if( !stream )
+     {
+         free( p_input->p_sys );
+@@ -227,8 +245,7 @@ static int AddStream( sout_mux_t *p_mux,
+     }
+     codec = stream->codec;
+ 
+-    /* This is used by LibavutilCallback (avutil.h) to print messages */
+-    codec->opaque = (void*)p_mux;
++    codec->opaque = p_mux;
+ 
+     switch( p_input->p_fmt->i_cat )
+     {
+@@ -360,20 +377,27 @@ static int Mux( sout_mux_t *p_mux )
+ 
+     if( p_sys->b_write_header )
+     {
++        int error;
+         msg_Dbg( p_mux, "writing header" );
+ 
+-        if( av_write_header( p_sys->oc ) < 0 )
++#if (LIBAVFORMAT_VERSION_INT >= ((53<<16)+(2<<8)+0))
++        error = avformat_write_header( p_sys->oc, NULL /* options */ );
++#else
++        error = av_write_header( p_sys->oc );
++#endif
++        if( error < 0 )
+         {
+-            msg_Err( p_mux, "could not write header" );
++            errno = AVUNERROR(error);
++            msg_Err( p_mux, "could not write header: %m" );
+             p_sys->b_write_header = false;
+             p_sys->b_error = true;
+             return VLC_EGENERIC;
+         }
+ 
+ #if LIBAVFORMAT_VERSION_INT >= ((52<<16)+(0<<8)+0)
+-        put_flush_packet( p_sys->oc->pb );
++        avio_flush( p_sys->oc->pb );
+ #else
+-        put_flush_packet( &p_sys->oc->pb );
++        avio_flush( &p_sys->oc->pb );
+ #endif
+         p_sys->b_write_header = false;
+     }
+@@ -431,8 +455,7 @@ static int Control( sout_mux_t *p_mux, i
+  *****************************************************************************/
+ static int IOWrite( void *opaque, uint8_t *buf, int buf_size )
+ {
+-    URLContext *p_url = opaque;
+-    sout_mux_t *p_mux = p_url->priv_data;
++    sout_mux_t *p_mux = opaque;
+     int i_ret;
+ 
+ #ifdef AVFORMAT_DEBUG
+@@ -451,8 +474,7 @@ static int IOWrite( void *opaque, uint8_
+ 
+ static int64_t IOSeek( void *opaque, int64_t offset, int whence )
+ {
+-    URLContext *p_url = opaque;
+-    sout_mux_t *p_mux = p_url->priv_data;
++    sout_mux_t *p_mux = opaque;
+ 
+ #ifdef AVFORMAT_DEBUG
+     msg_Dbg( p_mux, "IOSeek offset: %"PRId64", whence: %i", offset, whence );

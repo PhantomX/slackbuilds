@@ -10,5 +10,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.20.51.0.2-set-long-
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.20.51.0.10-copy-osabi.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.20.51.0.10-sec-merge-emit.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.1-weakdef.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.1-ld-13621.patch
 
 set +e +o pipefail

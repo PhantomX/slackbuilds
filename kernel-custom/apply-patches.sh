@@ -271,6 +271,9 @@ ApplyPatch e1000e-Avoid-wrong-check-on-TX-hang.patch
 #ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 ApplyPatch scsi-fix-sd_revalidate_disk-oops.patch
 
+#rhbz 727865 730007
+ApplyPatch ACPICA-Fix-regression-in-FADT-revision-checks.patch
+
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 
 set +e +o pipefail +o xtrace

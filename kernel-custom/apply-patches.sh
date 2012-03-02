@@ -119,13 +119,13 @@ ApplyPatch jbd2-clear-BH_Delay-and-BH_Unwritten-in-journal_unmap_buf.patch
 # btrfs
 
 # cifs
+#rhbz 798296
+ApplyPatch cifs-fix-dentry-refcount-leak-when-opening-a-FIFO.patch
 
 # NFSv4
 ApplyPatch linux-3.1-keys-remove-special-keyring.patch
 #rhbz 717735
 ApplyPatch nfs-client-freezer.patch
-
-ApplyPatch nfs-oops-getacl.patch
 
 # USB
 
@@ -230,8 +230,6 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
-
-ApplyPatch epoll-limit-paths.patch
 
 ApplyPatch bsg-fix-sysfs-link-remove-warning.patch
 

@@ -38,5 +38,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-lpf-ib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-improved-xid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-gpxe-cid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-dhclient-decline-onetry.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-P2-log_perror.patch
 
 set +e +o pipefail

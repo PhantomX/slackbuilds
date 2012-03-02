@@ -96,7 +96,11 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-ld-gold.patch
 # gcc-4.7 build issue
 ApplyPatch qt-everywhere-opensource-src-4.8.0-gcc-4.7.patch
 
+ApplyPatch fix-qgraphicsscene-regression.patch
+
 # security patches
+# CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code
+ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
 
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore

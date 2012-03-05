@@ -215,6 +215,7 @@ ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
+ApplyPatch drm-intel-crtc-dpms-fix.patch
 ApplyPatch drm-i915-fbc-stfu.patch
 
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
@@ -271,6 +272,11 @@ ApplyPatch scsi-fix-sd_revalidate_disk-oops.patch
 
 #rhbz 727865 730007
 ApplyPatch ACPICA-Fix-regression-in-FADT-revision-checks.patch
+
+#Disable threading in hibernate compression
+ApplyPatch disable-threading-in-compression-for-hibernate.patch
+
+ApplyPatch unhandled-irqs-switch-to-polling.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

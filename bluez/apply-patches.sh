@@ -18,5 +18,7 @@ zcat ${SB_PATCHDIR}/${NAME}-socket-mobile-cf-connection-kit.patch.gz | patch -p1
 patch -p1 -E --backup -z .cable-pairing --verbose -i ${SB_PATCHDIR}/0001-Add-sixaxis-cable-pairing-plugin.patch
 # http://thread.gmane.org/gmane.linux.bluez.kernel/8645
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-systemd-install-systemd-unit-files.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sbc_mmx.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cplusplus_void_cast.patch
 
 set +e +o pipefail

@@ -40,6 +40,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
 # Toggle solid upnp support at runtime via env var SOLID_UPNP=1 (disabled by default)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.4-SOLID_UPNP.patch
 
+# don't set rpath on multiarch dirs,  https://git.reviewboard.kde.org/r/103422
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.0-cmake_cxx_implicit_link_directories.patch
+
 # make forcefully hal-free build
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.3-halectomy.patch
 
@@ -49,13 +52,11 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.0-kde_version_string.patch
 
 # Trunk patches
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex
 zcat ${SB_PATCHDIR}/kdelibs-4.3.1-CVE-2009-2702.patch.gz | patch -p1 --verbose --backup --suffix=.orig
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.3-CVE-0046.patch
 
 set +e +o pipefail

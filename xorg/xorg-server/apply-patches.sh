@@ -19,9 +19,6 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.5.1-mode-debug.patch
 # don't build the (broken) acpi code
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.0-less-acpi-brokenness.patch
 
-# Make autoconfiguration chose nouveau driver for NVIDIA GPUs
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.1-nouveau.patch
-
 # ajax needs to upstream this
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.0-displayfd.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
@@ -29,10 +26,6 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
 
 # tests require Xorg
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99.1-test.patch
-
-# Multi-seat support through config/udev backend.
-# Submitted to upstream but not merged for 1.11
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99-config-add-udev-systemd-multi-seat-support.patch
 
 # misc
 patch -p1 --verbose -i ${SB_PATCHDIR}/u_OS-acpi-Reconnect-to-acpid-when-it-gets-restarted.patch

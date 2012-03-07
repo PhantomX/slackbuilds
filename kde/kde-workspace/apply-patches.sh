@@ -54,6 +54,9 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.71-notif
 # https://bugs.kde.org/show_bug.cgi?id=284628
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.2-bz\#747982-launchers.patch
 
+# add ktp_presence applet to default systray
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systray_ktp_presence.patch
+
 # upstreamable patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-kde\#171685.patch
@@ -66,12 +69,14 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-bz\#732830-logi
 # http://bugs.kde.org/242065
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.95-kdm_xauth.patch
 
-# gcc47 fixes (missing headers mostly)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.97-gcc47.patch
+# kwin/llvmpipe whitelist
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-kwin_llvmpipe_whitelist.patch
+
+# pam/systemd bogosity: kdm restart/shutdown does not work 
+# http://bugzilla.redhat.com/796969
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
 
 ## upstream patches
-# http://bugs.kde.org/289760
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-eDP.patch
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch

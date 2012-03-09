@@ -15,6 +15,8 @@ else
 fi
 
 # From upstream
+# fix regression in du -x with nondir argument
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/coreutils-8.15-du-x-nondir.patch
 
 # Fedora patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch

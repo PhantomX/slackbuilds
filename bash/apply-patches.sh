@@ -39,8 +39,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-broken_pipe.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-rc2-logout.patch
 # Static analyzis shows some issues in bash-2.05a-interpreter.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-coverity.patch
-# 715050, Don't crash when use `read' with associative array
-# Patch from upstream
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-read-assoc-array.patch
 
 set +e +o pipefail

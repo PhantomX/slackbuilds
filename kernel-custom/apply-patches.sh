@@ -119,8 +119,6 @@ ApplyPatch jbd2-clear-BH_Delay-and-BH_Unwritten-in-journal_unmap_buf.patch
 # btrfs
 
 # cifs
-#rhbz 798296
-ApplyPatch cifs-fix-dentry-refcount-leak-when-opening-a-FIFO.patch
 
 # NFSv4
 ApplyPatch linux-3.1-keys-remove-special-keyring.patch
@@ -215,7 +213,6 @@ ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-intel-crtc-dpms-fix.patch
 ApplyPatch drm-i915-fbc-stfu.patch
 
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
@@ -231,8 +228,6 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
-
-ApplyPatch bsg-fix-sysfs-link-remove-warning.patch
 
 # Runtime PM
 
@@ -277,6 +272,10 @@ ApplyPatch ACPICA-Fix-regression-in-FADT-revision-checks.patch
 ApplyPatch disable-threading-in-compression-for-hibernate.patch
 
 ApplyPatch unhandled-irqs-switch-to-polling.patch
+
+ApplyPatch weird-root-dentry-name-debug.patch
+
+ApplyPatch x86-ioapic-add-register-checks-for-bogus-io-apic-entries.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

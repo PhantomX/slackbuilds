@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="svn://svn.mplayerhq.hu/nut/src/trunk"
+snaproot="svn://svn.mplayerhq.hu/nut"
 
 tmp=$(mktemp -d)
 

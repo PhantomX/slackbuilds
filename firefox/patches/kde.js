@@ -1,1 +1,1 @@
-../../xulrunner/patches/kde.js
+pref("browser.preferences.instantApply", false);

@@ -121,9 +121,10 @@ ApplyPatch jbd2-clear-BH_Delay-and-BH_Unwritten-in-journal_unmap_buf.patch
 # cifs
 
 # NFSv4
-ApplyPatch linux-3.1-keys-remove-special-keyring.patch
 #rhbz 717735
 ApplyPatch nfs-client-freezer.patch
+ApplyPatch NFSv4-Reduce-the-footprint-of-the-idmapper.patch
+ApplyPatch NFSv4-Further-reduce-the-footprint-of-the-idmapper.patch
 
 # USB
 
@@ -261,21 +262,17 @@ ApplyPatch proc-fix-null-pointer-deref-in-proc_pid_permission.patch
 #rhbz 785806
 ApplyPatch e1000e-Avoid-wrong-check-on-TX-hang.patch
 
-#rhbz 754518
-#ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
-ApplyPatch scsi-fix-sd_revalidate_disk-oops.patch
-
 #rhbz 727865 730007
 ApplyPatch ACPICA-Fix-regression-in-FADT-revision-checks.patch
-
-#Disable threading in hibernate compression
-ApplyPatch disable-threading-in-compression-for-hibernate.patch
 
 ApplyPatch unhandled-irqs-switch-to-polling.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
 
 ApplyPatch x86-ioapic-add-register-checks-for-bogus-io-apic-entries.patch
+
+#rhbz 803809 CVE-2012-1179
+ApplyPatch mm-thp-fix-pmd_bad-triggering.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

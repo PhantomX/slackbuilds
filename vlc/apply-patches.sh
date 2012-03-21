@@ -11,6 +11,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/300_all_pic.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/320_all_cachegen.patch
 sed -i.dmo_pic -e 's/fno-PIC/fPIC/' modules/codec/loader/Makefile.in
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vlc-1.1.8-bugfix.opencv22.patch
-patch -p1 -E --backup -z .ffmpeg --verbose -i ${SB_PATCHDIR}/vlc-2.0.0-ffmpeg.patch
 
 set +e +o pipefail

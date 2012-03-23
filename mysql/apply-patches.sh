@@ -19,5 +19,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysqld-nowatch.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-va-list.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-netdevname.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-logrotate.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-plugin-test.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-cipherspec.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-file-contents.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-string-overflow.patch
 
 set +e +o pipefail

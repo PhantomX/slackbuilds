@@ -3,6 +3,7 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=496126
 zcat ${SB_PATCHDIR}/${NAME}-1.1.20-automake_1.10.patch.gz | patch -p1 -E --backup --verbose
 # Upstream bug:

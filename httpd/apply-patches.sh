@@ -4,29 +4,22 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-zcat ${SB_PATCHDIR}/config.layout.diff.gz | sed -e "s#lib/httpd#lib${LIBDIRSUFFIX}/httpd#" | patch --verbose -p1
-zcat ${SB_PATCHDIR}/${NAME}-2.2.14-confd.patch.gz | patch -p0 -E --backup --verbose
-# Fix aliasing issue exposed by gcc-4.5.1:
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd.brigade_move.__noinline__.gcc451.diff
+sed -e "s#lib/httpd#lib${LIBDIRSUFFIX}/httpd#" ${SB_PATCHDIR}/config.layout.diff | patch --verbose -p0
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4.1-confd.patch
 
 # build/scripts patches
-zcat ${SB_PATCHDIR}/${NAME}-2.1.10-apctl-l.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.1.10-apxs.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.2.9-deplibs.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.1.10-disablemods.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.1.10-layout.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.2.22-pcre830.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-apctl.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-apxs.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-deplibs.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-apr14.patch
 # Features/functional changes
-zcat ${SB_PATCHDIR}/${NAME}-2.2.11-xfsz.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.1.10-pod.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.0.45-export.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.2.11-corelimit.patch.gz | patch -p1 -E --backup --verbose
-#zcat ${SB_PATCHDIR}/${NAME}-2.2.11-selinux.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.2.9-suenable.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.2.19-logresolve-ipv6.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.2.21-mod_proxy-change-state.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-export.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-corelimit.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-selinux.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-suenable.patch
+
 # Bug fixes
-zcat ${SB_PATCHDIR}/${NAME}-2.2.0-authnoprov.patch.gz | patch -p1 -E --backup --verbose
+
 # Security fixes
 
 set +e +o pipefail

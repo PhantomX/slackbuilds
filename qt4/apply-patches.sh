@@ -64,9 +64,7 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-tp-qtreeview-kpackagekit-crash.pat
 
 # https://bugs.webkit.org/show_bug.cgi?id=63941
 # -Wall + -Werror = fail
-( cd src/3rdparty/webkit
-  ApplyPatch webkit-qtwebkit-2.2-no_Werror.patch
-)
+ApplyPatch qt-4.8.1-webkit-no_Werror.patch
 
 # revert qlist.h commit that seems to induce crashes in qDeleteAll<QList (QTBUG-22037)
 ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-22037.patch
@@ -77,26 +75,21 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-14724.patch
 # Buttons in Qt applications not clickable when run under gnome-shell (#742658, QTBUG-21900)
 ApplyPatch  qt-everywhere-opensource-src-4.8.0-QTBUG-21900.patch
 
-# restore Qt-4.7 behavior (which kde needs) to QUrl.toLocalfile
-# https://bugzilla.redhat.com/show_bug.cgi?id=749213
-ApplyPatch qt-everywhere-opensource-src-4.8.0-QUrl_toLocalFile.patch
+# QtWebKit wtf library: GMutex is a union rather than a struct in GLib >= 2.31
+# fixes FTBFS: https://bugs.webkit.org/show_bug.cgi?id=69840
+ApplyPatch qt-everywhere-opensource-src-4.8.0-qtwebkit-glib231.patch
 
 # workaround
 # sql/drivers/tds/qsql_tds.cpp:341:49: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
 ApplyPatch qt-everywhere-opensource-src-4.7.4-tds_no_strict_aliasing.patch
 # don't spam if libicu is not present at runtime
 ApplyPatch qt-everywhere-opensource-src-4.8.0-icu_no_spam.patch
-# avoid dropping events, which lead to "ghost entries in kde task manager" problem
-# https://bugs.kde.org/show_bug.cgi?id=275469
-ApplyPatch qt-everywhere-opensource-src-4.8.0-filter_event.patch
 # fix qvfb build
 ApplyPatch qt-everywhere-opensource-src-4.8.0-qvfb.patch
 # gcc doesn't support flag -fuse-ld=gold
 ApplyPatch qt-everywhere-opensource-src-4.8.0-ld-gold.patch
 # gcc-4.7 build issue
 ApplyPatch qt-everywhere-opensource-src-4.8.0-gcc-4.7.patch
-
-ApplyPatch fix-qgraphicsscene-regression.patch
 
 # security patches
 # CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code

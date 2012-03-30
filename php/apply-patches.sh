@@ -14,30 +14,23 @@ sed -e "/extension_dir/s|/lib/|/lib${LIBDIRSUFFIX}/|g" \
   | patch -p1 --verbose --backup --suffix=.orig
 
 # Build fixes
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.7-gnusrc.patch
-zcat ${SB_PATCHDIR}/php-5.3.0-install.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/php-5.2.4-norpath.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-httpd24.patch
 zcat ${SB_PATCHDIR}/php-5.2.0-includedir.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.2.4-embed.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/php-5.3.0-recode.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.8-aconf259.patch
-
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/004_all_strict_aliasing.patch
 
 # Fixes for extension modules
-zcat ${SB_PATCHDIR}/php-4.3.11-shutdown.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.3-macropen.patch
 
 # Functional changes
-zcat ${SB_PATCHDIR}/php-5.0.4-dlopen.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/php-5.3.0-easter.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/php-5.3.1-systzdata-v7.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-dlopen.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-easter.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.1-systzdata-v8.patch
 # See http://bugs.php.net/53436
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.4-phpize.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-phpize.patch
+# Use system libzip instead of bundled one
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-system-libzip.patch
 
 # Fixes for tests
-zcat ${SB_PATCHDIR}/php-5.0.4-tests-wddx.patch.gz | patch -p1 -E --backup --verbose
-
-patch -p4 -E --backup --verbose -i ${SB_PATCHDIR}/016_all_libpcre-8.30-fix.patch
 
 set +e +o pipefail

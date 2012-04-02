@@ -99,5 +99,7 @@ ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
 # adds debug support to webkit/JavaScriptCore
 # UPSTREAM ME
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
+# http://codereview.qt-project.org/#change,22006
+ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
 
 set +e +o pipefail

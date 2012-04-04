@@ -109,8 +109,6 @@ ApplyPatch remount-no-shrink-dcache.patch
 ApplyPatch jbd-jbd2-validate-sb-s_first-in-journal_get_superblo.patch
 ApplyPatch ext4-Support-check-none-nocheck-mount-options.patch
 ApplyPatch ext4-Fix-error-handling-on-inode-bitmap-corruption.patch
-#rhbz 788269
-ApplyPatch jbd2-clear-BH_Delay-and-BH_Unwritten-in-journal_unmap_buf.patch
 
 # ext3
 
@@ -250,17 +248,10 @@ ApplyPatch alps.patch
 #rhbz 771058
 ApplyPatch msi-irq-sysfs-warning.patch
 
-#rhbz 773392
-ApplyPatch KVM-x86-extend-struct-x86_emulate_ops-with-get_cpuid.patch
-ApplyPatch KVM-x86-fix-missing-checks-in-syscall-emulation.patch
-
 #rhbz 782686
 ApplyPatch procfs-parse-mount-options.patch
 ApplyPatch procfs-add-hidepid-and-gid-mount-options.patch
 ApplyPatch proc-fix-null-pointer-deref-in-proc_pid_permission.patch
-
-#rhbz 785806
-ApplyPatch e1000e-Avoid-wrong-check-on-TX-hang.patch
 
 #rhbz 727865 730007
 ApplyPatch ACPICA-Fix-regression-in-FADT-revision-checks.patch
@@ -268,11 +259,6 @@ ApplyPatch ACPICA-Fix-regression-in-FADT-revision-checks.patch
 ApplyPatch unhandled-irqs-switch-to-polling.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
-
-ApplyPatch x86-ioapic-add-register-checks-for-bogus-io-apic-entries.patch
-
-#rhbz 803809 CVE-2012-1179
-ApplyPatch mm-thp-fix-pmd_bad-triggering.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

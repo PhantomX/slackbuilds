@@ -62,7 +62,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systray_ktp_pres
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-kde\#171685.patch
 
 # use /etc/login.defs to define a 'system' account instead of hard-coding 500 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-bz\#732830-login.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.2-bz\#732830-login.patch
 
 # kdm overwrites ~/.Xauthority with wrong SELinux context on logout
 # http://bugzilla.redhat.com/567914

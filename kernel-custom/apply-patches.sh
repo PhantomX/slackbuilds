@@ -95,6 +95,7 @@ ApplyPatch x86_64-hpet-64bit-timer.patch
 #
 ApplyPatch linux-2.6-i386-nx-emulation.patch
 ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
+ApplyPatch nx-emu-remove-cpuinitdata-for-disable_nx-on-x86_32.patch
 
 #
 # bugfixes to drivers and filesystems
@@ -105,10 +106,7 @@ ApplyPatch remount-no-shrink-dcache.patch
 # reisefs
 
 # ext4
-#rhbz 753346
-ApplyPatch jbd-jbd2-validate-sb-s_first-in-journal_get_superblo.patch
 ApplyPatch ext4-Support-check-none-nocheck-mount-options.patch
-ApplyPatch ext4-Fix-error-handling-on-inode-bitmap-corruption.patch
 
 # ext3
 
@@ -120,16 +118,20 @@ ApplyPatch ext4-Fix-error-handling-on-inode-bitmap-corruption.patch
 
 # NFSv4
 #rhbz 717735
-ApplyPatch nfs-client-freezer.patch
+ApplyPatch linux-3.1-keys-remove-special-keyring.patch
+ApplyPatch linux-3.3-newidmapper-01.patch
+ApplyPatch linux-3.3-newidmapper-02.patch
+ApplyPatch linux-3.3-newidmapper-03.patch
 ApplyPatch NFSv4-Reduce-the-footprint-of-the-idmapper.patch
 ApplyPatch NFSv4-Further-reduce-the-footprint-of-the-idmapper.patch
+ApplyPatch nfs-Fix-length-of-buffer-copied-in-__nfs4_get_acl_uncached.patch
 
 # USB
 
 # WMI
 
 # ACPI
-ApplyPatch linux-2.6-defaults-acpi-video.patch.gz
+ApplyPatch linux-2.6-defaults-acpi-video.patch
 ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
 ApplyPatch acpi-ensure-thermal-limits-match-cpu-freq.patch
@@ -153,9 +155,8 @@ ApplyPatch linux-2.6-defaults-aspm.patch.gz
 ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
-ApplyPatch 0001-block-prepare-I-O-context-code-for-BFQ-v3r2-for-3.2.patch
-ApplyPatch 0002-block-cgroups-kconfig-build-bits-for-BFQ-v3r2-3.2.patch
-ApplyPatch 0003-block-introduce-the-BFQ-v3r2-I-O-sched-for-3.2.patch
+ApplyPatch 0001-block-cgroups-kconfig-build-bits-for-BFQ-v3r3-3.3.patch
+ApplyPatch 0002-block-introduce-the-BFQ-v3r3-I-O-sched-for-3.3.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -216,6 +217,9 @@ ApplyPatch drm-i915-fbc-stfu.patch
 
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
+ApplyPatch drm-i915-allow-to-select-rc6-modes-via-kernel-parame.patch
+ApplyPatch drm-i915-enable-plain-RC6-on-Sandy-Bridge-by-default.patch
+
 # silence the ACPI blacklist code
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 ApplyPatch quite-apm.patch
@@ -227,38 +231,62 @@ ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
 
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
+ApplyPatch linux-3.3-virtio-scsi.patch
 
 # Runtime PM
 
 # rhbz#605888
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
-ApplyPatch revert-efi-rtclock.patch
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
-ApplyPatch hibernate-freeze-filesystems.patch
+#ApplyPatch hibernate-freeze-filesystems.patch
+ApplyPatch hibernate-watermark.patch
+
 ApplyPatch lis3-improve-handling-of-null-rate.patch
+ApplyPatch bluetooth-use-after-free.patch
+ApplyPatch ips-noirq.patch
 
-#rhbz 752176
-ApplyPatch sysfs-msi-irq-per-device.patch
+#rhbz 772772
+ApplyPatch rt2x00_fix_MCU_request_failures.patch
 
-#rhbz 590880
-ApplyPatch alps.patch
+ApplyPatch hfsplus-Change-finder_info-to-u32.patch
+ApplyPatch hfsplus-Add-an-ioctl-to-bless-files.patch
 
-#rhbz 771058
-ApplyPatch msi-irq-sysfs-warning.patch
+#rhbz 754518
+ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
-#rhbz 782686
-ApplyPatch procfs-parse-mount-options.patch
-ApplyPatch procfs-add-hidepid-and-gid-mount-options.patch
-ApplyPatch proc-fix-null-pointer-deref-in-proc_pid_permission.patch
+ApplyPatch mcelog-rcu-splat.patch
 
 #rhbz 727865 730007
 ApplyPatch ACPICA-Fix-regression-in-FADT-revision-checks.patch
 
+#rhbz 804957 CVE-2012-1568
+ApplyPatch shlib_base_randomize.patch
+
 ApplyPatch unhandled-irqs-switch-to-polling.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
+
+#rhbz 804347
+ApplyPatch x86-add-io_apic_ops-to-allow-interception.patch
+ApplyPatch x86-apic_ops-Replace-apic_ops-with-x86_apic_ops.patch
+ApplyPatch xen-x86-Implement-x86_apic_ops.patch
+
+#Highbank clock functions
+ApplyPatch highbank-export-clock-functions.patch
+
+#rhbz 808207 CVE-2012-1601
+ApplyPatch KVM-Ensure-all-vcpus-are-consistent-with-in-kernel-i.patch
+
+#rhbz 806433
+ApplyPatch uvcvideo-Fix-race-induced-crash-in-uvc_video_clock_update.patch
+
+#rhbz 808603
+ApplyPatch wimax-i2400m-prevent-a-possible-kernel-bug-due-to-mi.patch
+
+#rhbz 806676 807632
+ApplyPatch libata-disable-runtime-pm-for-hotpluggable-port.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

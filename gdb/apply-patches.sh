@@ -14,7 +14,7 @@ fi
 if [ "${VERBOSE}" = "YES" ] ; then
   VERBOSE_OPT="--verbose"
 fi
-
+SVERBOSE=YES
 if [ "${SVERBOSE}" = "YES" ] ; then
   set -o xtrace
 fi
@@ -43,10 +43,6 @@ ApplyPatch gdb-archer.patch
 
 # Work around out-of-date dejagnu that does not have KFAIL
 ApplyPatch gdb-6.3-rh-dummykfail-20041202.patch.gz
-
-# Use convert_from_func_ptr_addr on the solib breakpoint address;
-# simplifies and makes more consistent the logic.
-ApplyPatch gdb-6.3-ppcdotsolib-20041022.patch.gz
 
 # Better parse 64-bit PPC system call prologues.
 ApplyPatch gdb-6.3-ppc64syscall-20040622.patch
@@ -168,7 +164,7 @@ ApplyPatch gdb-6.6-bz229517-gcore-without-terminal.patch
 ApplyPatch gdb-6.6-bz235197-fork-detach-info.patch
 
 # Avoid too long timeouts on failing cases of "annota1.exp annota3.exp".
-ApplyPatch gdb-6.6-testsuite-timeouts.patch.gz
+ApplyPatch gdb-6.6-testsuite-timeouts.patch
 
 # Support for stepping over PPC atomic instruction sequences (BZ 237572).
 ApplyPatch gdb-6.6-bz237572-ppc-atomic-sequence-test.patch.gz
@@ -179,16 +175,23 @@ ApplyPatch gdb-6.6-scheduler_locking-step-is-default.patch
 # Test kernel VDSO decoding while attaching to an i386 process.
 ApplyPatch gdb-6.3-attach-see-vdso-test.patch
 
-# Do not hang on exit of a thread group leader (BZ 247354).
-ApplyPatch gdb-6.6-bz247354-leader-exit-fix.patch.gz
-ApplyPatch gdb-6.6-bz247354-leader-exit-test.patch.gz
-
 # Test leftover zombie process (BZ 243845).
 ApplyPatch gdb-6.5-bz243845-stale-testing-zombie-test.patch
 
 # New locating of the matching binaries from the pure core file (build-id).
 #=push
 ApplyPatch gdb-6.6-buildid-locate.patch
+
+# Fix loading of core files without build-ids but with build-ids in executables.
+#=push
+ApplyPatch gdb-6.6-buildid-locate-solib-missing-ids.patch
+
+#=push
+ApplyPatch gdb-6.6-buildid-locate-rpm.patch
+
+# Add kernel vDSO workaround (`no loadable ...') on RHEL-5 (kernel BZ 765875).
+#=push
+ApplyPatch gdb-6.6-bfd-vdso8k.patch
 
 # Fix displaying of numeric char arrays as strings (BZ 224128).
 ApplyPatch gdb-6.7-charsign-test.patch
@@ -225,7 +228,7 @@ ApplyPatch gdb-6.3-focus-cmd-prev-test.patch.gz
 ApplyPatch gdb-6.8-bz442765-threaded-exec-test.patch
 
 # Silence memcpy check which returns false positive (sparc64)
-ApplyPatch gdb-6.8-sparc64-silence-memcpy-check.patch.gz
+ApplyPatch gdb-6.8-sparc64-silence-memcpy-check.patch
 
 # Test a crash on libraries missing the .text section.
 ApplyPatch gdb-6.5-section-num-fixup-test.patch.gz
@@ -241,9 +244,6 @@ ApplyPatch gdb-6.8-bz436037-reg-no-longer-active.patch.gz
 
 # Make the GDB quit processing non-abortable to cleanup everything properly.
 ApplyPatch gdb-6.8-quit-never-aborts.patch
-
-# Fix attaching to stopped processes and/or pending signals.
-ApplyPatch gdb-6.8-attach-signalled-detach-stopped.patch
 
 # Test the watchpoints conditionals works.
 ApplyPatch gdb-6.8-watchpoint-conditionals-test.patch.gz
@@ -330,10 +330,6 @@ ApplyPatch gdb-bz592031-siginfo-lost-5of5.patch
 #=fedoratest
 ApplyPatch gdb-bz634108-solib_address.patch
 
-# New testcase py-prettyprint.exp:print hint_error (for BZ 611569, BZ 629236).
-#=fedoratest
-ApplyPatch gdb-test-pp-hint-error.patch
-
 # New test gdb.arch/x86_64-pid0-core.exp for kernel PID 0 cores (BZ 611435).
 #=fedoratest
 ApplyPatch gdb-test-pid0-core.patch
@@ -346,36 +342,66 @@ ApplyPatch gdb-test-dw2-aranges.patch
 # =fedoratest
 ApplyPatch gdb-test-expr-cumulative-archer.patch
 
-# Temporary fix of F15 gcc-4.6 child DIEs of DW_TAG_typedef (BZ 672230).
-# =push
-ApplyPatch gdb-gcc46-typedef.patch
-
-# Workaround gcc-4.6 stdarg false prologue end (GDB PR 12435 + GCC PR 47471).
-# =push
-ApplyPatch gdb-gcc46-stdarg-prologue.patch
-
-# Fix attach/core-load of {,un}prelinked i386 libs (bugreport by Michal Toman).
-ApplyPatch gdb-prelink-rela.patch
-
-# Fix threading internal error on corrupted memory (BZ 677654).
-ApplyPatch gdb-core-thread-internalerr-1of3.patch
-ApplyPatch gdb-core-thread-internalerr-2of3.patch
-ApplyPatch gdb-core-thread-internalerr-3of3.patch
-
 ApplyPatch gdb-7.2.50-sparc-add-workaround-to-broken-debug-files.patch
 
-# Fix case insensitive symbols for Fortran by iFort (BZ 645773).
-ApplyPatch gdb-bz645773-case-insensitive-1of5.patch
-ApplyPatch gdb-bz645773-case-insensitive-2of5.patch
-ApplyPatch gdb-bz645773-case-insensitive-3of5.patch
-ApplyPatch gdb-bz645773-case-insensitive-4of5.patch
+# Fix dlopen of libpthread.so, patched glibc required (Gary Benson, BZ 669432).
+#=push
+ApplyPatch gdb-dlopen-stap-probe.patch
+ApplyPatch gdb-dlopen-stap-probe-test.patch
 
-# Bundle readline-6.2 with a workaround of skipped "ask" (BZ 701131).
-ApplyPatch gdb-bz701131-readline62-1of3.patch
-ApplyPatch gdb-bz701131-readline62-2of3.patch
-ApplyPatch gdb-bz701131-readline62-3of3.patch
+# Work around PR libc/13097 "linux-vdso.so.1" warning message.
+#=push
+ApplyPatch gdb-glibc-vdso-workaround.patch
 
-# [stap] Fix double free.
-ApplyPatch gdb-stap-double-free.patch
+# Hack for proper PIE run of the testsuite.
+#=push+work
+ApplyPatch gdb-runtest-pie-override.patch
+
+# Enable smaller %{_bindir}/gdb in future by no longer using -rdynamic.
+#=push
+ApplyPatch gdb-python-rdynamic.patch
+
+# Improve performance for C++ symbols expansion (Tom Tromey, BZ 787487).
+#=push
+ApplyPatch gdb-expand-cxx-accel.patch
+
+# Fix skipping of prologues on RHEL-5 gcc-4.1 -O2 -g code (BZ 797889).
+#=push
+ApplyPatch gdb-prologue-not-skipped.patch
+
+# Fix breakpoint warning during 'next' over exit() (Tom Tromey, BZ 797892).
+#=push
+ApplyPatch gdb-exit-warning.patch
+
+# [vla] Fix crash for dynamic.exp with gcc-gfortran-4.1.2-51.el5.x86_64.
+#=push+work
+ApplyPatch gdb-archer-vla-rhel5gcc.patch
+
+# Print reasons for failed attach/spawn incl. SELinux deny_ptrace (BZ 786878).
+#=push
+ApplyPatch gdb-attach-fail-reasons-1of5.patch
+ApplyPatch gdb-attach-fail-reasons-2of5.patch
+ApplyPatch gdb-attach-fail-reasons-3of5.patch
+ApplyPatch gdb-attach-fail-reasons-4of5.patch
+ApplyPatch gdb-attach-fail-reasons-5of5.patch
+ApplyPatch gdb-attach-fail-reasons-5of5configure.patch
+
+# Fix inferior calls, particularly uncaught thrown exceptions (BZ 799531).
+ApplyPatch gdb-x86-onstack-1of2.patch
+ApplyPatch gdb-x86-onstack-2of2.patch
+
+# Fix DWARF DIEs CU vs. section relative offsets (Joel Brobecker, me).
+ApplyPatch gdb-die-cu-offset-1of2.patch
+ApplyPatch gdb-die-cu-offset-2of2.patch
+
+# [vla] Fix regression on no type for subrange from IBM XLF Fortran (BZ 806920).
+ApplyPatch gdb-subrange-no-type.patch
+
+# Workaround crashes from stale frame_info pointer (BZ 804256).
+ApplyPatch gdb-stale-frame_info.patch
+
+# [RHEL5,RHEL6] Fix attaching to stopped processes.
+#=fedora
+ApplyPatch gdb-6.8-attach-signalled-detach-stopped.patch
 
 set +e +o pipefail

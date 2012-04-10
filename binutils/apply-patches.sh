@@ -15,5 +15,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-rh797752.patch
 #patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.1-relro-on-by-default.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.1-x86_64-hidden-ifunc.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.1-tsx.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.1-hidden-ifunc.patch
 
 set +e +o pipefail

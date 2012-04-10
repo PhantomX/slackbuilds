@@ -6,18 +6,20 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p0 -E --backup -z .hash-style --verbose -i ${SB_PATCHDIR}/gcc46-hash-style-both.patch
 
 # From Fedora
-patch -p0 -E --backup -z .hack --verbose -i ${SB_PATCHDIR}/gcc46-hack.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-c++-builtin-redecl.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-pr33763.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-rh330771.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-libgomp-omp_h-multilib.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-libtool-no-rpath.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-pr38757.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-no-add-needed.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc46-pr47858.patch
+patch -p0 -E --backup -z .hack --verbose -i ${SB_PATCHDIR}/gcc47-hack.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-c++-builtin-redecl.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr33763.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-rh330771.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libgomp-omp_h-multilib.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libtool-no-rpath.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr38757.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-no-add-needed.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libitm-fno-exceptions.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr52582.patch
+
+patch -p0 -E --backup -z .hash-style --verbose -i ${SB_PATCHDIR}/gcc47-hash-style-both.patch
 
 # From Gentoo
 patch -p0 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_gcc-default-fortify-source.patch

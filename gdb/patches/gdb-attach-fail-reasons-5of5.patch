@@ -1,0 +1,209 @@
+http://sourceware.org/ml/gdb-patches/2012-03/msg00171.html
+Subject: [patch 3/3] attach-fail-reasons: SELinux deny_ptrace
+
+Hi,
+
+and here is the last bit for new SELinux 'deny_ptrace':
+	https://bugzilla.redhat.com/show_bug.cgi?id=786878
+
+As even PTRACE_TRACEME fails in such case it needs to install hook for even
+that event.
+
+
+Thanks,
+Jan
+
+
+gdb/
+2012-03-06  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* common/linux-ptrace.c [HAVE_SELINUX_SELINUX_H]: include
+	selinux/selinux.h.
+	(linux_ptrace_attach_warnings): Call linux_ptrace_create_warnings.
+	(linux_ptrace_create_warnings): New.
+	* common/linux-ptrace.h (linux_ptrace_create_warnings): New declaration.
+	* config.in: Regenerate.
+	* configure: Regenerate.
+	* configure.ac: Check selinux/selinux.h and the selinux library.
+	* inf-ptrace.c (inf_ptrace_me): Check the ptrace result.
+	* linux-nat.c (linux_nat_create_inferior): New variable ex.  Wrap
+	to_create_inferior into TRY_CATCH, call linux_ptrace_create_warnings.
+
+gdb/gdbserver/
+	* config.in: Regenerate.
+	* configure: Regenerate.
+	* configure.ac: Check selinux/selinux.h and the selinux library.
+	* linux-low.c (linux_traceme): New function.
+	(linux_create_inferior, linux_tracefork_child): Call it instead of
+	direct ptrace.
+
+--- a/gdb/common/linux-ptrace.c
++++ b/gdb/common/linux-ptrace.c
+@@ -26,6 +26,10 @@
+ #include "linux-ptrace.h"
+ #include "linux-procfs.h"
+ 
++#ifdef HAVE_SELINUX_SELINUX_H
++# include <selinux/selinux.h>
++#endif /* HAVE_SELINUX_SELINUX_H */
++
+ /* Print all possible reasons we could fail to attach PID.  */
+ 
+ void
+@@ -41,4 +45,21 @@ linux_ptrace_attach_warnings (pid_t pid)
+   if (linux_proc_pid_is_zombie (pid))
+     warning (_("process %d is a zombie - the process has already terminated"),
+ 	     (int) pid);
++
++  linux_ptrace_create_warnings ();
++}
++
++/* Print all possible reasons we could fail to create a traced process.  */
++
++void
++linux_ptrace_create_warnings (void)
++{
++#ifdef HAVE_LIBSELINUX
++  /* -1 is returned for errors, 0 if it has no effect, 1 if PTRACE_ATTACH is
++     forbidden.  */
++  if (security_get_boolean_active ("deny_ptrace") == 1)
++    warning (_("the SELinux boolean 'deny_ptrace' is enabled, "
++	       "you can disable this process attach protection by: "
++	       "(gdb) shell sudo setsebool deny_ptrace=0"));
++#endif /* HAVE_LIBSELINUX */
+ }
+--- a/gdb/common/linux-ptrace.h
++++ b/gdb/common/linux-ptrace.h
+@@ -66,5 +66,6 @@
+ #endif
+ 
+ extern void linux_ptrace_attach_warnings (pid_t pid);
++extern void linux_ptrace_create_warnings (void);
+ 
+ #endif /* COMMON_LINUX_PTRACE_H */
+--- a/gdb/configure.ac
++++ b/gdb/configure.ac
+@@ -1748,6 +1748,10 @@ then
+ 	      [Define if you support the personality syscall.])
+ fi
+ 
++dnl Check security_get_boolean_active availability.
++AC_CHECK_HEADERS(selinux/selinux.h)
++AC_CHECK_LIB(selinux, security_get_boolean_active)
++
+ dnl Handle optional features that can be enabled.
+ 
+ # Support for --with-sysroot is a copy of GDB_AC_WITH_DIR,
+--- a/gdb/gdbserver/configure.ac
++++ b/gdb/gdbserver/configure.ac
+@@ -411,6 +411,10 @@ if $want_ipa ; then
+    fi
+ fi
+ 
++dnl Check security_get_boolean_active availability.
++AC_CHECK_HEADERS(selinux/selinux.h)
++AC_CHECK_LIB(selinux, security_get_boolean_active)
++
+ AC_SUBST(GDBSERVER_DEPFILES)
+ AC_SUBST(GDBSERVER_LIBS)
+ AC_SUBST(USE_THREAD_DB)
+--- a/gdb/gdbserver/linux-low.c
++++ b/gdb/gdbserver/linux-low.c
+@@ -550,6 +550,25 @@ add_lwp (ptid_t ptid)
+   return lwp;
+ }
+ 
++/* Execute PTRACE_TRACEME with error checking.  */
++
++static void
++linux_traceme (const char *program)
++{
++  int save_errno;
++
++  errno = 0;
++  if (ptrace (PTRACE_TRACEME, 0, NULL, NULL) == 0)
++    return;
++
++  save_errno = errno;
++  linux_ptrace_create_warnings ();
++  fprintf (stderr, _("Cannot trace created process %s: %s.\n"), program,
++	   strerror (save_errno));
++  fflush (stderr);
++  _exit (0177);
++}
++
+ /* Start an inferior process and returns its pid.
+    ALLARGS is a vector of program-name and args. */
+ 
+@@ -590,7 +609,7 @@ linux_create_inferior (char *program, char **allargs)
+ 
+   if (pid == 0)
+     {
+-      ptrace (PTRACE_TRACEME, 0, 0, 0);
++      linux_traceme (program);
+ 
+ #ifndef __ANDROID__ /* Bionic doesn't use SIGRTMIN the way glibc does.  */
+       signal (__SIGRTMIN + 1, SIG_DFL);
+@@ -4386,7 +4405,7 @@ linux_tracefork_grandchild (void *arg)
+ static int
+ linux_tracefork_child (void *arg)
+ {
+-  ptrace (PTRACE_TRACEME, 0, 0, 0);
++  linux_traceme ("PTRACE_O_TRACEFORK test");
+   kill (getpid (), SIGSTOP);
+ 
+ #if !(defined(__UCLIBC__) && defined(HAS_NOMMU))
+--- a/gdb/inf-ptrace.c
++++ b/gdb/inf-ptrace.c
+@@ -105,7 +105,15 @@ static void
+ inf_ptrace_me (void)
+ {
+   /* "Trace me, Dr. Memory!"  */
++  errno = 0;
+   ptrace (PT_TRACE_ME, 0, (PTRACE_TYPE_ARG3)0, 0);
++  if (errno != 0)
++    {
++      fprintf_unfiltered (gdb_stderr, _("Cannot create process: %s\n"),
++			  safe_strerror (errno));
++      gdb_flush (gdb_stderr);
++      _exit (0177);
++    }
+ }
+ 
+ /* Start a new inferior Unix child process.  EXEC_FILE is the file to
+--- a/gdb/linux-nat.c
++++ b/gdb/linux-nat.c
+@@ -1570,6 +1570,7 @@ linux_nat_create_inferior (struct target_ops *ops,
+ #ifdef HAVE_PERSONALITY
+   int personality_orig = 0, personality_set = 0;
+ #endif /* HAVE_PERSONALITY */
++  volatile struct gdb_exception ex;
+ 
+   /* The fork_child mechanism is synchronous and calls target_wait, so
+      we have to mask the async mode.  */
+@@ -1594,7 +1595,10 @@ linux_nat_create_inferior (struct target_ops *ops,
+   /* Make sure we report all signals during startup.  */
+   linux_nat_pass_signals (0, NULL);
+ 
+-  linux_ops->to_create_inferior (ops, exec_file, allargs, env, from_tty);
++  TRY_CATCH (ex, RETURN_MASK_ERROR)
++    {
++      linux_ops->to_create_inferior (ops, exec_file, allargs, env, from_tty);
++    }
+ 
+ #ifdef HAVE_PERSONALITY
+   if (personality_set)
+@@ -1606,6 +1610,12 @@ linux_nat_create_inferior (struct target_ops *ops,
+ 		 safe_strerror (errno));
+     }
+ #endif /* HAVE_PERSONALITY */
++
++  if (ex.reason < 0)
++    {
++      linux_ptrace_create_warnings ();
++      throw_exception (ex);
++    }
+ }
+ 
+ static void
+

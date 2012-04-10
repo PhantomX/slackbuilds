@@ -1,0 +1,174 @@
+http://sourceware.org/ml/gdb-patches/2012-04/msg00058.html
+Subject: [downstream patch FYI] workaround stale frame_info * (PR 13866)
+
+Hi,
+
+I did not look at which commit caused this regression but apparently it was
+introduced at least with multi-inferiors.
+
+I understand this fix is not right fix of the crash; but in most GDB cases one
+does not use multi-inferior so why to regress single-inferior by it.
+Some more simple solutions still fix the single-inferior mode but they
+regressed the multi-inferior mode
+	gdb.threads/no-unwaited-for-left.exp
+	gdb.multi/base.exp
+so I had to put there that sorting magic.
+
+With proper C++ sanity check of stale live frame_info references the testcase
+would be simple without the "frame_garbage_collection" reproducer below.
+It is also reproducible just with valgrind but regularly running the whole
+testsuite under valgrind I did not find feasible.
+
+No regressions on {x86_64,x86_64-m32,i686}-fedora17-linux-gnu.
+
+
+Thanks,
+Jan
+
+
+gdb/
+2012-04-04  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	Workaround PR backtrace/13866.
+	* progspace.c (switch_to_program_space_and_thread): Try not to call
+	switch_to_thread.
+
+--- a/gdb/progspace.c
++++ b/gdb/progspace.c
+@@ -481,17 +481,28 @@ save_current_space_and_thread (void)
+ void
+ switch_to_program_space_and_thread (struct program_space *pspace)
+ {
+-  struct inferior *inf;
++  struct inferior *inf = current_inferior ();
+ 
+-  inf = find_inferior_for_program_space (pspace);
++  if (inf->pspace != pspace)
++    inf = find_inferior_for_program_space (pspace);
+   if (inf != NULL)
+     {
+-      struct thread_info *tp;
++      struct thread_info *tp, *current_tp = NULL;
++
++      if (ptid_get_pid (inferior_ptid) == inf->pid)
++	current_tp = find_thread_ptid (inferior_ptid);
+ 
+       tp = any_live_thread_of_process (inf->pid);
+       if (tp != NULL)
+ 	{
+-	  switch_to_thread (tp->ptid);
++	  /* Prefer primarily thread not THREAD_EXITED and secondarily thread
++	     not EXECUTING.  */
++	  if (current_tp == NULL
++	      || (tp->state != THREAD_EXITED
++		  && current_tp->state == THREAD_EXITED)
++	      || (!tp->executing && current_tp->executing))
++	    switch_to_thread (tp->ptid);
++
+ 	  /* Switching thread switches pspace implicitly.  We're
+ 	     done.  */
+ 	  return;
+
+
+Reproducer with:
+./gdb -nx ~/t/thread -ex 'b 24' -ex r -ex 'until 25'
+Breakpoint 1, main () at /home/jkratoch/t/thread.c:24
+24	  v++;
+Segmentation fault (core dumped)
+
+#include <pthread.h>
+#include <assert.h>
+#include <unistd.h>
+
+static int v;
+
+static void *start (void *arg)
+{
+  v++;
+  v++;
+  v++;
+  v++;
+  sleep (100);
+  return arg;
+}
+
+int main (void)
+{
+  pthread_t thread1;
+  int i;
+
+  i = pthread_create (&thread1, NULL, start, NULL);
+  assert (i == 0);
+  v++;
+  v++;
+  v++;
+  v++;
+  i = pthread_join (thread1, NULL);
+  assert (i == 0);
+
+  return 0;
+}
+### --- a/gdb/frame.c
+### +++ b/gdb/frame.c
+### @@ -1522,12 +1522,30 @@ frame_observer_target_changed (struct target_ops *target)
+###    reinit_frame_cache ();
+###  }
+###  
+### +typedef struct obstack obstack_s;
+### +DEF_VEC_O (obstack_s);
+### +static VEC (obstack_s) *frame_poison_vec;
+### +
+### +void frame_garbage_collection (void);
+### +void
+### +frame_garbage_collection (void)
+### +{
+### +  struct obstack *obstack_p;
+### +  int ix;
+### +
+### +  for (ix = 0; VEC_iterate (obstack_s, frame_poison_vec, ix, obstack_p); ix++)
+### +    obstack_free (obstack_p, 0);
+### +
+### +  VEC_free (obstack_s, frame_poison_vec);
+### +  frame_poison_vec = NULL;
+### +}
+### +
+###  /* Flush the entire frame cache.  */
+###  
+###  void
+###  reinit_frame_cache (void)
+###  {
+### -  struct frame_info *fi;
+### +  struct frame_info *fi, *fi_prev;
+###  
+###    /* Tear down all frame caches.  */
+###    for (fi = current_frame; fi != NULL; fi = fi->prev)
+### @@ -1538,8 +1556,14 @@ reinit_frame_cache (void)
+###  	fi->base->unwind->dealloc_cache (fi, fi->base_cache);
+###      }
+###  
+### +  for (fi = current_frame; fi != NULL; fi = fi_prev)
+### +    {
+### +      fi_prev = fi->prev;
+### +      memset (fi, 0, sizeof (*fi));
+### +    }
+### +  VEC_safe_push (obstack_s, frame_poison_vec, &frame_cache_obstack);
+### +
+###    /* Since we can't really be sure what the first object allocated was.  */
+### -  obstack_free (&frame_cache_obstack, 0);
+###    obstack_init (&frame_cache_obstack);
+###  
+###    if (current_frame != NULL)
+### --- a/gdb/top.c
+### +++ b/gdb/top.c
+### @@ -359,6 +359,11 @@ prepare_execute_command (void)
+###    if (non_stop)
+###      target_dcache_invalidate ();
+###  
+### +  {
+### +    extern void frame_garbage_collection (void);
+### +    frame_garbage_collection ();
+### +  }
+### +
+###    return cleanup;
+###  }
+###  

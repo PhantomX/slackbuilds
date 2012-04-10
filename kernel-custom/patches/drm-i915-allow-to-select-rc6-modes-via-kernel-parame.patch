@@ -1,0 +1,133 @@
+From 639c55c706fbff840d95ea807a2949adf3779455 Mon Sep 17 00:00:00 2001
+From: Eugeni Dodonov <eugeni.dodonov@intel.com>
+Date: Fri, 23 Mar 2012 11:57:18 -0300
+Subject: [PATCH 1/2] drm/i915: allow to select rc6 modes via kernel parameter
+
+This allows to select which rc6 modes are to be used via kernel parameter,
+via a bitmask parameter. E.g.:
+
+- to enable rc6, i915_enable_rc6=1
+- to enable rc6 and deep rc6, i915_enable_rc6=3
+- to enable rc6 and deepest rc6, use i915_enable_rc6=5
+- to enable rc6, deep and deepest rc6, use i915_enable_rc6=7
+
+Please keep in mind that the deepest RC6 state really should NOT be used
+by default, as it could potentially worsen the issues with deep RC6. So do
+enable it only when you know what you are doing. However, having it around
+could help solving possible future rc6-related issues and their debugging
+on user machines.
+
+Note that this changes behavior - previously, value of 1 would enable both
+RC6 and deep RC6. Now it should only enable RC6 and deep/deepest RC6
+stages must be enabled manually.
+
+v2: address Chris Wilson comments and clean up the code.
+
+References: https://bugs.freedesktop.org/show_bug.cgi?id=42579
+Reviewed-by: Chris Wilson <chris@chris-wilson.co.uk>
+Reviewed-by: Ben Widawsky <benjamin.widawsky@intel.com>
+Signed-off-by: Eugeni Dodonov <eugeni.dodonov@intel.com>
+Signed-off-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+---
+ drivers/gpu/drm/i915/i915_drv.c      |    6 +++++-
+ drivers/gpu/drm/i915/i915_drv.h      |   21 +++++++++++++++++++++
+ drivers/gpu/drm/i915/intel_display.c |   20 ++++++++++++++++----
+ 3 files changed, 42 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/gpu/drm/i915/i915_drv.c b/drivers/gpu/drm/i915/i915_drv.c
+index 308f819..abb2248 100644
+--- a/drivers/gpu/drm/i915/i915_drv.c
++++ b/drivers/gpu/drm/i915/i915_drv.c
+@@ -66,7 +66,11 @@ MODULE_PARM_DESC(semaphores,
+ int i915_enable_rc6 __read_mostly = -1;
+ module_param_named(i915_enable_rc6, i915_enable_rc6, int, 0600);
+ MODULE_PARM_DESC(i915_enable_rc6,
+-		"Enable power-saving render C-state 6 (default: -1 (use per-chip default)");
++		"Enable power-saving render C-state 6. "
++		"Different stages can be selected via bitmask values "
++		"(0 = disable; 1 = enable rc6; 2 = enable deep rc6; 4 = enable deepest rc6). "
++		"For example, 3 would enable rc6 and deep rc6, and 7 would enable everything. "
++		"default: -1 (use per-chip default)");
+ 
+ int i915_enable_fbc __read_mostly = -1;
+ module_param_named(i915_enable_fbc, i915_enable_fbc, int, 0600);
+diff --git a/drivers/gpu/drm/i915/i915_drv.h b/drivers/gpu/drm/i915/i915_drv.h
+index 9689ca3..a7d488e 100644
+--- a/drivers/gpu/drm/i915/i915_drv.h
++++ b/drivers/gpu/drm/i915/i915_drv.h
+@@ -1006,6 +1006,27 @@ struct drm_i915_file_private {
+ 
+ #include "i915_trace.h"
+ 
++/**
++ * RC6 is a special power stage which allows the GPU to enter an very
++ * low-voltage mode when idle, using down to 0V while at this stage.  This
++ * stage is entered automatically when the GPU is idle when RC6 support is
++ * enabled, and as soon as new workload arises GPU wakes up automatically as well.
++ *
++ * There are different RC6 modes available in Intel GPU, which differentiate
++ * among each other with the latency required to enter and leave RC6 and
++ * voltage consumed by the GPU in different states.
++ *
++ * The combination of the following flags define which states GPU is allowed
++ * to enter, while RC6 is the normal RC6 state, RC6p is the deep RC6, and
++ * RC6pp is deepest RC6. Their support by hardware varies according to the
++ * GPU, BIOS, chipset and platform. RC6 is usually the safest one and the one
++ * which brings the most power savings; deeper states save more power, but
++ * require higher latency to switch to and wake up.
++ */
++#define INTEL_RC6_ENABLE			(1<<0)
++#define INTEL_RC6p_ENABLE			(1<<1)
++#define INTEL_RC6pp_ENABLE			(1<<2)
++
+ extern struct drm_ioctl_desc i915_ioctls[];
+ extern int i915_max_ioctl;
+ extern unsigned int i915_fbpercrtc __always_unused;
+diff --git a/drivers/gpu/drm/i915/intel_display.c b/drivers/gpu/drm/i915/intel_display.c
+index 397087c..1430f09 100644
+--- a/drivers/gpu/drm/i915/intel_display.c
++++ b/drivers/gpu/drm/i915/intel_display.c
+@@ -8132,7 +8132,7 @@ void intel_init_emon(struct drm_device *dev)
+ 	dev_priv->corr = (lcfuse & LCFUSE_HIV_MASK);
+ }
+ 
+-static bool intel_enable_rc6(struct drm_device *dev)
++static int intel_enable_rc6(struct drm_device *dev)
+ {
+ 	/*
+ 	 * Respect the kernel parameter if it is set
+@@ -8163,6 +8163,7 @@ void gen6_enable_rps(struct drm_i915_private *dev_priv)
+ 	u32 gt_perf_status = I915_READ(GEN6_GT_PERF_STATUS);
+ 	u32 pcu_mbox, rc6_mask = 0;
+ 	int cur_freq, min_freq, max_freq;
++	int rc6_mode;
+ 	int i;
+ 
+ 	/* Here begins a magic sequence of register writes to enable
+@@ -8193,9 +8194,20 @@ void gen6_enable_rps(struct drm_i915_private *dev_priv)
+ 	I915_WRITE(GEN6_RC6p_THRESHOLD, 100000);
+ 	I915_WRITE(GEN6_RC6pp_THRESHOLD, 64000); /* unused */
+ 
+-	if (intel_enable_rc6(dev_priv->dev))
+-		rc6_mask = GEN6_RC_CTL_RC6_ENABLE |
+-			((IS_GEN7(dev_priv->dev)) ? GEN6_RC_CTL_RC6p_ENABLE : 0);
++	rc6_mode = intel_enable_rc6(dev_priv->dev);
++	if (rc6_mode & INTEL_RC6_ENABLE)
++		rc6_mask |= GEN6_RC_CTL_RC6_ENABLE;
++
++	if (rc6_mode & INTEL_RC6p_ENABLE)
++		rc6_mask |= GEN6_RC_CTL_RC6p_ENABLE;
++
++	if (rc6_mode & INTEL_RC6pp_ENABLE)
++		rc6_mask |= GEN6_RC_CTL_RC6pp_ENABLE;
++
++	DRM_INFO("Enabling RC6 states: RC6 %s, RC6p %s, RC6pp %s\n",
++			(rc6_mode & INTEL_RC6_ENABLE) ? "on" : "off",
++			(rc6_mode & INTEL_RC6p_ENABLE) ? "on" : "off",
++			(rc6_mode & INTEL_RC6pp_ENABLE) ? "on" : "off");
+ 
+ 	I915_WRITE(GEN6_RC_CONTROL,
+ 		   rc6_mask |
+-- 
+1.7.9.3
+

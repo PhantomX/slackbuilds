@@ -38,17 +38,9 @@ ApplyPatch glibc-2.12.1-but-I-am-an-i686.patch
 # http://sources.redhat.com/bugzilla/show_bug.cgi?id=411
 # http://sourceware.org/ml/libc-alpha/2009-07/msg00072.html
 ApplyPatch glibc-__i686.patch
-# http://sourceware.org/bugzilla/show_bug.cgi?id=11929
-# using Fedora "fix" as patch in that bug report causes breakages...
-ApplyPatch glibc-2.12.1-static-shared-getpagesize.patch
 # http://www.exploit-db.com/exploits/15274/
 # http://sourceware.org/git/?p=glibc.git;a=patch;h=d14e6b09 (only fedora branch...)
 ApplyPatch glibc-2.12.2-ignore-origin-of-privileged-program.patch
-# Fixes segfaults with nvidia blob
-ApplyPatch glibc-2.14-free-initfini.patch
-# Add missing headers
-ApplyPatch glibc-2.14-fix-headers.patch
-ApplyPatch glibc-2.14-reexport-rpc-interface.patch
 
 if [ "${SB_BOOTSTRP}" = "YES" ] ;then
   # Multilib - Disable check for forced unwind (Patch from eglibc) since we
@@ -61,21 +53,20 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
 ( SB_PATCHDIR=patches
 
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
-  ApplyPatch 0030_all_glibc-respect-env-CPPFLAGS.patch
+  ApplyPatch 0050_all_glibc-2.14-leak-revert-crash.patch
   ApplyPatch 0052_all_glibc-2.14-resolv-hp-assert.patch
   ApplyPatch 0061_all_glibc-2.13-static-memset.patch
   ApplyPatch 0068_all_glibc-2.14-glibc-revert-fseek-on-fclose.patch
-  ApplyPatch 0080_all_glibc-2.14-tzfile-bz13506.patch
+  ApplyPatch 0070_all_glibc-2.14-rpc-export.patch
+  ApplyPatch 0080_all_glibc-2.15-revert-x86_64-eagain-pthread_cond_wait.patch
+  ApplyPatch 0081_all_glibc-2.15-math64crash.patch
+  ApplyPatch 0082_all_glibc-2.16-scanf.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
-  ApplyPatch 0090_all_glibc-2.14-fix-up-regcomp-regexec.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
-  ApplyPatch 1008_all_glibc-rwlock-assume.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch
-  ApplyPatch 1020_all_glibc-longjmp-chk-hidden-fortify.patch
   ApplyPatch 1030_all_glibc-manual-no-perl.patch
   ApplyPatch 1040_all_2.3.3-localedef-fix-trampoline.patch
   ApplyPatch 1055_all_glibc-resolv-dynamic.patch
-  ApplyPatch 1060_all_glibc-localedef-mmap.patch
   ApplyPatch 1070_all_glibc-fadvise64_64.patch
   ApplyPatch 1075_all_glibc-section-comments.patch
   ApplyPatch 1080_all_glibc-no-inline-gmon.patch
@@ -90,10 +81,25 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
 
 )
 
+# Arch
+ApplyPatch glibc-2.15-lddebug-scopes.patch
+ApplyPatch glibc-2.15-revert-netlink-cache.patch
+ApplyPatch glibc-2.15-negative-result-cache.patch
+ApplyPatch glibc-2.15-multiarch-x86-strcmp.patch
+ApplyPatch glibc-2.15-vdso.patch
+ApplyPatch glibc-2.15-feraiseexcept-plt.patch
+ApplyPatch glibc-2.15-vfprintf-nargs.patch
+ApplyPatch glibc-2.15-__libc_res_nquerydomain-out-of-bounds.patch
+ApplyPatch glibc-2.15-fmtmsg-locking.patch
+ApplyPatch glibc-2.15-non-signalling-comparisons.patch
+ApplyPatch glibc-2.15-rintf-rounding.patch
+ApplyPatch glibc-2.15-nearbyintf-rounding.patch
+ApplyPatch glibc-2.15-confstr-local-buffer-extent.patch
+
 # Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
 ApplyPatch glibc-2.9-ldd-non-exec.patch.gz
-ApplyPatch glibc-2.2-nss-upgrade.patch.gz
+ApplyPatch glibc-2.15-nss-upgrade.patch
 ApplyPatch glibc-2.4.90-compat-EUR-currencies.patch.gz
 ApplyPatch glibc-2.9-nscd-no-host-cache.patch.gz
 ApplyPatch glibc-2.3.2-tcsetattr-kernel-bug-workaround.patch.gz
@@ -102,10 +108,9 @@ ApplyPatch glibc-2.6-nice_fix.patch.gz
 ApplyPatch glibc-2.8-ENOTTY-fr-translation.patch.gz
 ApplyPatch glibc-2.4.90-gcc4-fortify.patch.gz
 ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
-ApplyPatch glibc-2.10.1-multiarch.patch.gz
+ApplyPatch glibc-2.15-multiarch.patch
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 # master
-ApplyPatch 0001-Work-around-limit-in-writev-in-2.6.38-kernels.patch
 
 set +e +o pipefail

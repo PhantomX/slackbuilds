@@ -23,8 +23,325 @@ instead.
 
 	Port to GDB-6.7.
 
+Index: gdb-7.4.50.20120120/gdb/amd64-linux-tdep.c
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/amd64-linux-tdep.c	2012-03-02 22:15:48.000000000 +0100
++++ gdb-7.4.50.20120120/gdb/amd64-linux-tdep.c	2012-03-02 22:16:13.526569163 +0100
+@@ -268,6 +268,80 @@ amd64_linux_register_reggroup_p (struct
+ 
+ /* Set the program counter for process PTID to PC.  */
+ 
++/* Detect the outermost frame; during unwind of
++   	#5  0x000000305cec68c3 in clone () from /lib64/tls/libc.so.6
++   avoid the additional bogus frame
++   	#6  0x0000000000000000 in ??
++   We compare if the `linux_clone_code' block is _before_ unwound PC.  */
++
++static const unsigned char linux_clone_code[] =
++{
++/* libc/sysdeps/unix/sysv/linux/x86_64/clone.S */
++/* #ifdef RESET_PID */
++/* ... */
++/* 	mov	$SYS_ify(getpid), %eax */
++/* 0xb8, 0x27, 0x00, 0x00, 0x00 */
++/* OR */
++/* 	mov	$SYS_ify(getpid), %rax */
++/* 0x48, 0xc7, 0xc0, 0x27, 0x00, 0x00, 0x00 */
++/* so just: */
++  0x27, 0x00, 0x00, 0x00,
++/* 	syscall */
++  0x0f, 0x05,
++/* 	movl	%eax, %fs:PID */
++  0x64, 0x89, 0x04, 0x25, 0x94, 0x00, 0x00, 0x00,
++/* 	movl	%eax, %fs:TID */
++  0x64, 0x89, 0x04, 0x25, 0x90, 0x00, 0x00, 0x00,
++/* #endif */
++/* 	|* Set up arguments for the function call.  *| */
++/* 	popq	%rax		|* Function to call.  *| */
++  0x58,
++/* 	popq	%rdi		|* Argument.  *| */
++  0x5f,
++/* 	call	*%rax$   */
++  0xff, 0xd0
++};
++
++#define LINUX_CLONE_LEN (sizeof linux_clone_code)
++
++static int
++amd64_linux_clone_running (struct frame_info *this_frame)
++{
++  CORE_ADDR pc = get_frame_pc (this_frame);
++  unsigned char buf[LINUX_CLONE_LEN];
++
++  if (!safe_frame_unwind_memory (this_frame, pc - LINUX_CLONE_LEN, buf,
++				 LINUX_CLONE_LEN))
++    return 0;
++
++  if (memcmp (buf, linux_clone_code, LINUX_CLONE_LEN) != 0)
++    return 0;
++
++  return 1;
++}
++
++static int
++amd64_linux_outermost_frame (struct frame_info *this_frame)
++{
++  CORE_ADDR pc = get_frame_pc (this_frame);
++  char *name;
++
++  find_pc_partial_function (pc, &name, NULL, NULL);
++
++  /* If we have NAME, we can optimize the search.
++     `clone' NAME still needs to have the code checked as its name may be
++     present in the user code.
++     `__clone' NAME should not be present in the user code but in the initial
++     parts of the `__clone' implementation the unwind still makes sense.
++     More detailed unwinding decision would be too much sensitive to possible
++     subtle changes in specific glibc revisions.  */
++  if (name == NULL || strcmp (name, "clone") == 0
++      || strcmp ("__clone", name) == 0)
++    return (amd64_linux_clone_running (this_frame) != 0);
++
++  return 0;
++}
++
+ static void
+ amd64_linux_write_pc (struct regcache *regcache, CORE_ADDR pc)
+ {
+@@ -1321,6 +1395,8 @@ amd64_linux_init_abi (struct gdbarch_inf
+ 
+   tdep->xsave_xcr0_offset = I386_LINUX_XSAVE_XCR0_OFFSET;
+ 
++  tdep->outermost_frame_p = amd64_linux_outermost_frame;
++
+   /* GNU/Linux uses SVR4-style shared libraries.  */
+   set_solib_svr4_fetch_link_map_offsets
+     (gdbarch, svr4_lp64_fetch_link_map_offsets);
+Index: gdb-7.4.50.20120120/gdb/amd64-tdep.c
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/amd64-tdep.c	2012-01-04 09:16:56.000000000 +0100
++++ gdb-7.4.50.20120120/gdb/amd64-tdep.c	2012-03-02 22:17:39.133287571 +0100
+@@ -2108,6 +2108,7 @@ amd64_frame_unwind_stop_reason (struct f
+ {
+   struct amd64_frame_cache *cache =
+     amd64_frame_cache (this_frame, this_cache);
++  struct gdbarch_tdep *tdep = gdbarch_tdep (get_frame_arch (this_frame));
+ 
+   if (!cache->base_p)
+     return UNWIND_UNAVAILABLE;
+@@ -2116,6 +2117,10 @@ amd64_frame_unwind_stop_reason (struct f
+   if (cache->base == 0)
+     return UNWIND_OUTERMOST;
+ 
++  /* Detect OS dependent outermost frames; such as `clone'.  */
++  if (tdep->outermost_frame_p && tdep->outermost_frame_p (this_frame))
++    return UNWIND_OUTERMOST;
++
+   return UNWIND_NO_REASON;
+ }
+ 
+@@ -2125,6 +2130,7 @@ amd64_frame_this_id (struct frame_info *
+ {
+   struct amd64_frame_cache *cache =
+     amd64_frame_cache (this_frame, this_cache);
++  struct gdbarch_tdep *tdep = gdbarch_tdep (get_frame_arch (this_frame));
+ 
+   if (!cache->base_p)
+     return;
+@@ -2133,6 +2139,10 @@ amd64_frame_this_id (struct frame_info *
+   if (cache->base == 0)
+     return;
+ 
++  /* Detect OS dependent outermost frames; such as `clone'.  */
++  if (tdep->outermost_frame_p && tdep->outermost_frame_p (this_frame))
++    return;
++
+   (*this_id) = frame_id_build (cache->base + 16, cache->pc);
+ }
+ 
+Index: gdb-7.4.50.20120120/gdb/i386-tdep.c
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/i386-tdep.c	2012-03-02 22:15:48.000000000 +0100
++++ gdb-7.4.50.20120120/gdb/i386-tdep.c	2012-03-02 22:16:13.528569157 +0100
+@@ -7613,6 +7613,9 @@ i386_gdbarch_init (struct gdbarch_info i
+ 
+   tdep->xsave_xcr0_offset = -1;
+ 
++  /* Unwinding stops on i386 automatically.  */
++  tdep->outermost_frame_p = NULL;
++
+   tdep->record_regmap = i386_record_regmap;
+ 
+   set_gdbarch_long_long_align_bit (gdbarch, 32);
+Index: gdb-7.4.50.20120120/gdb/i386-tdep.h
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/i386-tdep.h	2012-03-02 22:15:48.000000000 +0100
++++ gdb-7.4.50.20120120/gdb/i386-tdep.h	2012-03-02 22:16:13.529569154 +0100
+@@ -219,6 +219,9 @@ struct gdbarch_tdep
+   int (*i386_sysenter_record) (struct regcache *regcache);
+   /* Parse syscall args.  */
+   int (*i386_syscall_record) (struct regcache *regcache);
++
++  /* Detect OS dependent outermost frames; such as `clone'.  */
++  int (*outermost_frame_p) (struct frame_info *this_frame);
+ };
+ 
+ /* Floating-point registers.  */
+Index: gdb-7.4.50.20120120/gdb/ia64-tdep.c
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/ia64-tdep.c	2012-03-02 22:15:48.000000000 +0100
++++ gdb-7.4.50.20120120/gdb/ia64-tdep.c	2012-03-02 22:16:13.529569154 +0100
+@@ -2181,6 +2181,138 @@ static const struct frame_unwind ia64_fr
+   default_frame_sniffer
+ };
+ 
++/* Detect the outermost frame; during unwind of
++   	#6  0x2000000000347100 in __clone2 () from /lib/libc.so.6.1
++   avoid the additional bogus frame
++   	#7  0x0000000000000000 in ?? ()  */
++
++static char linux_clone2_code[] =
++{
++/* libc/sysdeps/unix/sysv/linux/ia64/clone2.S */
++  0x09, 0x00, 0x20, 0x12, 0x90, 0x11, 0x00, 0x40,
++  0x28, 0x20, 0x23, 0x00, 0x00, 0x00, 0x04, 0x00,
++/*         st4 [r9]=r8 */
++/*         st4 [r10]=r8 */
++/*         ;; */
++/* #endif */
++  0x02, 0x50, 0x21, 0x40, 0x18, 0x14, 0x90, 0x02,
++  0x90, 0x00, 0x42, 0x00, 0x00, 0x00, 0x04, 0x00,
++/* 1:      ld8 out1=[in0],8        |* Retrieve code pointer.       *| */
++/*         mov out0=in4            |* Pass proper argument to fn *| */
++/*         ;; */
++  0x11, 0x08, 0x00, 0x40, 0x18, 0x10, 0x60, 0x50,
++  0x05, 0x80, 0x03, 0x00, 0x68, 0x00, 0x80, 0x12,
++/*         ld8 gp=[in0]            |* Load function gp.            *| */
++/*         mov b6=out1 */
++/*         br.call.dptk.many rp=b6 |* Call fn(arg) in the child    *| */
++/*         ;; */
++  0x10, 0x48, 0x01, 0x10, 0x00, 0x21, 0x10, 0x00,
++  0xa0, 0x00, 0x42, 0x00, 0x98, 0xdf, 0xf7, 0x5b,
++/*         mov out0=r8             |* Argument to _exit            *| */
++/*         mov gp=loc0 */
++/*         .globl HIDDEN_JUMPTARGET(_exit) */
++/*         br.call.dpnt.many rp=HIDDEN_JUMPTARGET(_exit) */
++/*                                 |* call _exit with result from fn.      *| */
++  0x11, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
++  0x00, 0x02, 0x00, 0x80, 0x00, 0x00, 0x84, 0x00
++/*         ret                     |* Not reached.         *| */
++};
++
++#define LINUX_CLONE_PRE_SLOTS 3	/* Number of slots before PC.  */
++#define LINUX_CLONE_LEN (sizeof linux_clone2_code)
++
++static int
++ia64_linux_clone2_running (struct frame_info *this_frame)
++{
++  CORE_ADDR pc = get_frame_pc (this_frame);
++  char buf[LINUX_CLONE_LEN];
++  struct minimal_symbol *minsym;
++  long long instr;
++
++  if (!safe_frame_unwind_memory (this_frame, pc - LINUX_CLONE_PRE_SLOTS * 16,
++				 buf, LINUX_CLONE_LEN))
++    return 0;
++
++  if (memcmp (buf, linux_clone2_code, LINUX_CLONE_PRE_SLOTS * 16) != 0)
++    return 0;
++
++  /* Adjust the expected "_exit" address.  */
++  minsym = lookup_minimal_symbol_text ("_exit", NULL);
++  if (minsym == NULL)
++    return 0;
++
++  instr = slotN_contents (&linux_clone2_code[LINUX_CLONE_PRE_SLOTS * 16], 2);
++  instr &= ~(((1L << 20) - 1) << 13);
++  /* Address is relative to the jump instruction slot, not the next one.  */
++  instr |= (((SYMBOL_VALUE_ADDRESS (minsym) - (pc & ~0xfL)) >> 4)
++	    & ((1L << 20) - 1)) << 13;
++  replace_slotN_contents (&linux_clone2_code[LINUX_CLONE_PRE_SLOTS * 16], instr,
++			  2);
++
++  if (memcmp (&buf[LINUX_CLONE_PRE_SLOTS * 16],
++              &linux_clone2_code[LINUX_CLONE_PRE_SLOTS * 16],
++	      LINUX_CLONE_LEN - (LINUX_CLONE_PRE_SLOTS * 16)) != 0)
++    return 0;
++
++  return 1;
++}
++
++static int
++ia64_outermost_frame (struct frame_info *this_frame)
++{
++  CORE_ADDR pc = get_frame_pc (this_frame);
++  char *name;
++
++  find_pc_partial_function (pc, &name, NULL, NULL);
++
++  /* If we have NAME, we can optimize the search.
++     `clone' NAME still needs to have the code checked as its name may be
++     present in the user code.
++     `__clone' NAME should not be present in the user code but in the initial
++     parts of the `__clone' implementation the unwind still makes sense.
++     More detailed unwinding decision would be too much sensitive to possible
++     subtle changes in specific glibc revisions.  */
++  if (name == NULL || strcmp (name, "clone2") == 0
++      || strcmp ("__clone2", name) == 0)
++    return (ia64_linux_clone2_running (this_frame) != 0);
++
++  return 0;
++}
++
++static void
++ia64_clone2_frame_this_id (struct frame_info *this_frame, void **this_cache,
++			   struct frame_id *this_id)
++{
++  /* Leave the default outermost frame at *THIS_ID.  */
++}
++
++static struct value *
++ia64_clone2_frame_prev_register (struct frame_info *this_frame,
++				 void **this_cache, int regnum)
++{
++  return frame_unwind_got_register (this_frame, regnum, regnum);
++}
++
++static int
++ia64_clone2_frame_sniffer (const struct frame_unwind *self,
++			   struct frame_info *this_frame,
++			   void **this_prologue_cache)
++{
++  if (ia64_outermost_frame (this_frame))
++    return 1;
++
++  return 0;
++}
++
++static const struct frame_unwind ia64_clone2_frame_unwind =
++{
++  NORMAL_FRAME,
++  &ia64_clone2_frame_this_id,
++  &ia64_clone2_frame_prev_register,
++  NULL,
++  &ia64_clone2_frame_sniffer
++};
++
+ /* Signal trampolines.  */
+ 
+ static void
+@@ -4153,6 +4285,7 @@ ia64_gdbarch_init (struct gdbarch_info i
+   set_gdbarch_dummy_id (gdbarch, ia64_dummy_id);
+ 
+   set_gdbarch_unwind_pc (gdbarch, ia64_unwind_pc);
++  frame_unwind_append_unwinder (gdbarch, &ia64_clone2_frame_unwind);
+ #ifdef HAVE_LIBUNWIND_IA64_H
+   frame_unwind_append_unwinder (gdbarch,
+                                 &ia64_libunwind_sigtramp_frame_unwind);
+Index: gdb-7.4.50.20120120/gdb/testsuite/gdb.threads/bt-clone-stop.c
+===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ gdb-6.8.50.20090802/gdb/testsuite/gdb.threads/bt-clone-stop.c	2009-08-03 15:50:08.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/testsuite/gdb.threads/bt-clone-stop.c	2012-03-02 22:16:13.530569151 +0100
 @@ -0,0 +1,39 @@
 +/* This testcase is part of GDB, the GNU debugger.
 +
@@ -65,10 +382,10 @@ instead.
 +	for (;;)
 +		pause();
 +}
-Index: gdb-6.8.50.20090802/gdb/testsuite/gdb.threads/bt-clone-stop.exp
+Index: gdb-7.4.50.20120120/gdb/testsuite/gdb.threads/bt-clone-stop.exp
 ===================================================================
 --- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ gdb-6.8.50.20090802/gdb/testsuite/gdb.threads/bt-clone-stop.exp	2009-08-03 15:50:08.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/testsuite/gdb.threads/bt-clone-stop.exp	2012-03-02 22:16:13.530569151 +0100
 @@ -0,0 +1,61 @@
 +# Copyright 2006 Free Software Foundation, Inc.
 +

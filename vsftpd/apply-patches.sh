@@ -19,12 +19,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.1.0-userlist_log.patc
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.1.0-trim.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.1.1-daemonize_plus.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.2.0-openssl.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.2.0-wildchar.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.2.2-clone.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.3.4-sd.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.3.4-sqb.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.3.4-listen_ipv6.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vsftpd-2.3.5-aslim.patch
 
 set +e +o pipefail

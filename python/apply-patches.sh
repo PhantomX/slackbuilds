@@ -5,6 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}.readline.set_pre_input_hook.diff.gz | patch -p1 --verbose
+cp -f ${SB_PATCHDIR}/21_all_distutils_c++.patch ${PDIR}/21_all_distutils_c++.patch 
 
 # From Gentoo
 for patches in \
@@ -44,10 +45,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00113-more-configuration-flags
 # (rhbz:553020); partially upstream as http://bugs.python.org/issue7647
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00114-statvfs-f_flag-constants.patch
 
-# Make "pydoc -k" more robust in the face of broken modules
-# (rhbz:461419; patch sent upstream as http://bugs.python.org/issue7425 )
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/make-pydoc-more-robust-001.patch
-
 patch -p0 -R -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc2-r79310.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00125-less-verbose-COUNT_ALLOCS.patch
@@ -65,14 +62,10 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_structmember-on-64bit
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00141-fix-test_gc_with_COUNT_ALLOCS.patch
 
 # Backport of part of fix for http://bugs.python.org/issue12326
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00145-force-sys-platform-to-be-linux2.patch
+####patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00145-force-sys-platform-to-be-linux2.patch
 
 # Add a sys._debugmallocstats() function
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00147-add-debug-malloc-stats.patch
-
-# Cherrypick fix for dbm version detection to cope with gdbm-1.9's magic values
-# Taken from upstream http://bugs.python.org/issue13007 (rhbz#742242)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00148-gdbm-1.9-magic-values.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autotool-intermediates.patch
 

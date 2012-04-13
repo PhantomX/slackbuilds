@@ -18,7 +18,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Python-3.1.1-rpath.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2b2-remove-mimeaudio-tests.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00111-no-static-lib.patch
 if [ "${ARCH}" = "x86_64" ]; then
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2.1-lib64.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2.3-lib64.patch
 fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00113-more-configuration-flags.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00114-statvfs-f_flag-constants.patch
@@ -29,7 +29,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00134-fix-COUNT_ALLOCS-failure
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00135-fix-test-within-test_weakref-in-debug-build.patch
 # Add a sys._debugmallocstats() function
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00147-add-debug-malloc-stats.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00148-gdbm-1.9-magic-values.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00152-fix-test-gdb-regex.patch
+
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autotool-intermediates.patch
 
 set +e +o pipefail

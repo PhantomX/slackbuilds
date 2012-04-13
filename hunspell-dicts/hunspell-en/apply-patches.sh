@@ -13,5 +13,9 @@ zcat ${SB_PATCHDIR}/en_US-strippedabbrevs.patch.gz | patch -p1 -E --backup --ver
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-allow-non-typographical.marks.patch
 #See https://bugzilla.redhat.com/show_bug.cgi?id=619577 add SI and IEC prefixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-SI_and_IEC.patch
+#See https://sourceforge.net/tracker/?func=detail&aid=3175662&group_id=10079&atid=1014602 obscure Calender hides misspelling of Calendar
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-calender.patch
+#valid English words that are archaic or rare in en-GB but not in en-IE
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/en_IE.supplemental.patch
 
 set +e +o pipefail

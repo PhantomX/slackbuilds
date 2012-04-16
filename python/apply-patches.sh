@@ -5,7 +5,6 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}.readline.set_pre_input_hook.diff.gz | patch -p1 --verbose
-cp -f ${SB_PATCHDIR}/21_all_distutils_c++.patch ${PDIR}/21_all_distutils_c++.patch 
 
 # From Gentoo
 for patches in \
@@ -54,7 +53,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00125-less-verbose-COUNT_ALLOC
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fix-dbm_contains-on-64bit-bigendian.patch
 # Fix test_structmember on big-endian 64-bit
 # Sent upstream as http://bugs.python.org/issue9960
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_structmember-on-64bit-bigendian.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_structmember-on-64bit-bigendian.patch
 # 2.7.1 (in r84230) added a test to test_abc which fails if python is
 # configured with COUNT_ALLOCS, which is the case for our debug build
 # (the COUNT_ALLOCS instrumentation keeps "C" alive).
@@ -66,6 +65,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00141-fix-test_gc_with_COUNT_A
 
 # Add a sys._debugmallocstats() function
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00147-add-debug-malloc-stats.patch
+
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autotool-intermediates.patch
 

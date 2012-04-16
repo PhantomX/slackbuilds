@@ -1,7 +1,40 @@
+Hi Rafael,
 
---- a/kernel/power/swap.c	
-+++ a/kernel/power/swap.c	
-@@ -6,7 +6,7 @@ 
+One more version. Heeding Per's suggestion to optimise when
+CONFIG_HIGHMEM is not configured.
+
+---------------------------------------
+Hibernation/thaw fixes/improvements:
+
+1. Calculate the number of required free pages based on non-high memory
+pages only, because that is where the buffers will come from.
+
+2. Do not allocate memory for buffers from emergency pools, unless
+absolutely required. Do not warn about and do not retry non-essential
+failed allocations.
+
+3. Do not check the amount of free pages left on every single page
+write, but wait until one map is completely populated and then check.
+
+4. Set maximum number of pages for read buffering consistently, instead
+of inadvertently depending on the size of the sector type.
+
+5. Fix copyright line, which I missed when I submitted the hibernation
+threading patch.
+
+6. Dispense with bit shifting arithmetic to improve readability.
+
+Signed-off-by: Bojan Smojver <bojan@rexursive.com>
+Signed-off-by: Per Olofsson <pelle@debian.org>
+---
+ kernel/power/swap.c |   76 +++++++++++++++++++++++++++++++++++++++------------
+ 1 files changed, 58 insertions(+), 18 deletions(-)
+
+diff --git a/kernel/power/swap.c b/kernel/power/swap.c
+index 8742fd0..8a1c293 100644
+--- a/kernel/power/swap.c
++++ b/kernel/power/swap.c
+@@ -6,7 +6,7 @@
   *
   * Copyright (C) 1998,2001-2005 Pavel Machek <pavel@ucw.cz>
   * Copyright (C) 2006 Rafael J. Wysocki <rjw@sisk.pl>
@@ -10,23 +43,44 @@
   *
   * This file is released under the GPLv2.
   *
-@@ -51,6 +51,15 @@ 
+@@ -51,6 +51,36 @@
  
  #define MAP_PAGE_ENTRIES	(PAGE_SIZE / sizeof(sector_t) - 1)
  
 +/*
++ * Number of free pages that are not high.
++ */
++#ifdef CONFIG_HIGHMEM
++static unsigned long low_free_pages(void)
++{
++	struct zone *zone;
++	unsigned long free = 0;
++
++	for_each_populated_zone(zone)
++		if (!is_highmem(zone))
++			free += zone_page_state(zone, NR_FREE_PAGES);
++	return free;
++}
++#else
++static inline unsigned long low_free_pages(void)
++{
++	return nr_free_pages();
++}
++#endif
++
++/*
 + * Number of pages required to be kept free while writing the image. Always
-+ * three quarters of all available pages before the writing starts.
++ * half of all available low pages before the writing starts.
 + */
 +static inline unsigned long reqd_free_pages(void)
 +{
-+	return (nr_free_pages() / 4) * 3;
++	return low_free_pages() / 2;
 +}
 +
  struct swap_map_page {
  	sector_t entries[MAP_PAGE_ENTRIES];
  	sector_t next_swap;
-@@ -72,7 +81,7 @@ struct swap_map_handle {
+@@ -72,7 +102,7 @@ struct swap_map_handle {
  	sector_t cur_swap;
  	sector_t first_sector;
  	unsigned int k;
@@ -35,7 +89,27 @@
  	u32 crc32;
  };
  
-@@ -316,8 +325,7 @@ static int get_swap_writer(struct swap_map_handle *handle)
+@@ -265,14 +295,17 @@ static int write_page(void *buf, sector_t offset, struct bio **bio_chain)
+ 		return -ENOSPC;
+ 
+ 	if (bio_chain) {
+-		src = (void *)__get_free_page(__GFP_WAIT | __GFP_HIGH);
++		src = (void *)__get_free_page(__GFP_WAIT | __GFP_NOWARN |
++		                              __GFP_NORETRY);
+ 		if (src) {
+ 			copy_page(src, buf);
+ 		} else {
+ 			ret = hib_wait_on_bio_chain(bio_chain); /* Free pages */
+ 			if (ret)
+ 				return ret;
+-			src = (void *)__get_free_page(__GFP_WAIT | __GFP_HIGH);
++			src = (void *)__get_free_page(__GFP_WAIT |
++			                              __GFP_NOWARN |
++			                              __GFP_NORETRY);
+ 			if (src) {
+ 				copy_page(src, buf);
+ 			} else {
+@@ -316,8 +349,7 @@ static int get_swap_writer(struct swap_map_handle *handle)
  		goto err_rel;
  	}
  	handle->k = 0;
@@ -45,25 +119,31 @@
  	handle->first_sector = handle->cur_swap;
  	return 0;
  err_rel:
-@@ -352,11 +360,15 @@ static int swap_write_page(struct swap_map_handle *handle, void *buf,
+@@ -351,12 +383,17 @@ static int swap_write_page(struct swap_map_handle *handle, void *buf,
+ 		clear_page(handle->cur);
  		handle->cur_swap = offset;
  		handle->k = 0;
- 	}
+-	}
 -	if (bio_chain && ++handle->written > handle->nr_free_pages) {
-+	if (bio_chain && nr_free_pages() <= handle->reqd_free_pages) {
- 		error = hib_wait_on_bio_chain(bio_chain);
- 		if (error)
- 			goto out;
+-		error = hib_wait_on_bio_chain(bio_chain);
+-		if (error)
+-			goto out;
 -		handle->written = 0;
-+		/*
-+		 * Recalculate the number of required free pages, to make sure
-+		 * we never take more than a quarter.
-+		 */
-+		handle->reqd_free_pages = reqd_free_pages();
++
++		if (bio_chain && low_free_pages() <= handle->reqd_free_pages) {
++			error = hib_wait_on_bio_chain(bio_chain);
++			if (error)
++				goto out;
++			/*
++			 * Recalculate the number of required free pages, to
++			 * make sure we never take more than half.
++			 */
++			handle->reqd_free_pages = reqd_free_pages();
++		}
  	}
   out:
  	return error;
-@@ -404,7 +416,7 @@ static int swap_writer_finish(struct swap_map_handle *handle,
+@@ -404,7 +441,7 @@ static int swap_writer_finish(struct swap_map_handle *handle,
  #define LZO_THREADS	3
  
  /* Maximum number of pages for read buffering. */
@@ -72,7 +152,7 @@
  
  
  /**
-@@ -615,10 +627,10 @@ static int save_image_lzo(struct swap_map_handle *handle,
+@@ -615,10 +652,10 @@ static int save_image_lzo(struct swap_map_handle *handle,
  	}
  
  	/*
@@ -86,14 +166,33 @@
  
  	/*
  	 * Start the CRC32 thread.
-@@ -1129,8 +1141,9 @@ static int load_image_lzo(struct swap_map_handle *handle,
+@@ -1129,14 +1166,17 @@ static int load_image_lzo(struct swap_map_handle *handle,
  
  	/*
  	 * Adjust number of pages for read buffering, in case we are short.
-+	 * Never take more than a quarter of all available pages.
++	 * Never take more than half of all available low pages.
  	 */
 -	read_pages = (nr_free_pages() - snapshot_get_image_size()) >> 1;
-+	read_pages = (nr_free_pages() - snapshot_get_image_size()) / 4;
++	read_pages = (low_free_pages() - snapshot_get_image_size()) / 2;
  	read_pages = clamp_val(read_pages, LZO_CMP_PAGES, LZO_READ_PAGES);
  
  	for (i = 0; i < read_pages; i++) {
+ 		page[i] = (void *)__get_free_page(i < LZO_CMP_PAGES ?
+ 		                                  __GFP_WAIT | __GFP_HIGH :
+-		                                  __GFP_WAIT);
++		                                  __GFP_WAIT | __GFP_NOWARN |
++		                                  __GFP_NORETRY);
++
+ 		if (!page[i]) {
+ 			if (i < LZO_CMP_PAGES) {
+ 				ring_size = i;
+---------------------------------------
+
+-- 
+Bojan
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-kernel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+Please read the FAQ at  http://www.tux.org/lkml/

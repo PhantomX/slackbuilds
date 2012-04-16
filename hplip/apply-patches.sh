@@ -57,6 +57,8 @@ done
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-skip-blank-lines.patch
 # Added missing newline to string argument in dbglog() call.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbglog-newline.patch
+# Release parport if unsupported model connected (bug #699052).
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-release-parport.patch
 # Fix ImageableArea for Laserjet 8150/9000 (bug #596298).
 for ppd_file in $(grep '^diff' ${SB_PATCHDIR}/hplip-ppd-ImageableArea.patch | cut -d " " -f 4);
 do

@@ -124,7 +124,6 @@ ApplyPatch linux-3.3-newidmapper-02.patch
 ApplyPatch linux-3.3-newidmapper-03.patch
 ApplyPatch NFSv4-Reduce-the-footprint-of-the-idmapper.patch
 ApplyPatch NFSv4-Further-reduce-the-footprint-of-the-idmapper.patch
-ApplyPatch nfs-Fix-length-of-buffer-copied-in-__nfs4_get_acl_uncached.patch
 
 # USB
 
@@ -134,7 +133,6 @@ ApplyPatch nfs-Fix-length-of-buffer-copied-in-__nfs4_get_acl_uncached.patch
 ApplyPatch linux-2.6-defaults-acpi-video.patch
 ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
-ApplyPatch acpi-ensure-thermal-limits-match-cpu-freq.patch
 # list acpi fixed events at /proc/acpi/fixed_events
 ApplyPatch acpi-add-proc-event-regs.patch
 
@@ -224,10 +222,9 @@ ApplyPatch drm-i915-enable-plain-RC6-on-Sandy-Bridge-by-default.patch
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 ApplyPatch quite-apm.patch
 
-# V4L/DVB updates/fixes/experimental drivers
-ApplyOptionalPatch linux-2.6-v4l-dvb-fixes.patch
-ApplyOptionalPatch linux-2.6-v4l-dvb-update.patch
-ApplyOptionalPatch linux-2.6-v4l-dvb-experimental.patch
+# Media (V4L/DVB/IR) updates/fixes/experimental drivers
+ApplyPatch add-poll-requested-events.patch
+ApplyOptionalPatch drivers-media-update.patch
 
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
@@ -258,9 +255,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 ApplyPatch mcelog-rcu-splat.patch
 
-#rhbz 727865 730007
-ApplyPatch ACPICA-Fix-regression-in-FADT-revision-checks.patch
-
 #rhbz 804957 CVE-2012-1568
 ApplyPatch shlib_base_randomize.patch
 
@@ -279,14 +273,15 @@ ApplyPatch highbank-export-clock-functions.patch
 #rhbz 808207 CVE-2012-1601
 ApplyPatch KVM-Ensure-all-vcpus-are-consistent-with-in-kernel-i.patch
 
-#rhbz 806433
-ApplyPatch uvcvideo-Fix-race-induced-crash-in-uvc_video_clock_update.patch
-
 #rhbz 808603
 ApplyPatch wimax-i2400m-prevent-a-possible-kernel-bug-due-to-mi.patch
 
 #rhbz 806676 807632
 ApplyPatch libata-disable-runtime-pm-for-hotpluggable-port.patch
+
+#rhbz 809014
+ApplyPatch x86-Use-correct-byte-sized-register-constraint-in-__xchg_op.patch
+ApplyPatch x86-Use-correct-byte-sized-register-constraint-in-__add.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

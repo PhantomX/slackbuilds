@@ -4,6 +4,6 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.0.10-workaround-xrandr-error.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.0-fix-desktop.patch
 
 set +e +o pipefail

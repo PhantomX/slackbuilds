@@ -17,6 +17,10 @@ zcat ${SB_PATCHDIR}/kdebase-4.4.0-konqueror-kde\#228593.patch.gz | patch -p2 -E 
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-4.3.4-bz\#609039-chfn-parse.patch
 
 ## upstream patches
+# https://projects.kde.org/projects/kde/kde-baseapps/repository/revisions/d8732a59d3b1f2d0bebf43f294df7e9f333abde4
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.2-dolphin_timeout.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.2-drag-drop-cursor.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.2-file-sizes.patch
 
 #trunk patches
 

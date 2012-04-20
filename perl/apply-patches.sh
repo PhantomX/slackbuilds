@@ -53,4 +53,22 @@ ApplyPatch perl-5.14.1-offtest.patch
 # Fix code injection in Digest, rhbz #743010, RT#71390, fixed in Digest-1.17.
 ApplyPatch perl-5.14.2-digest_eval.patch
 
+# Fix leak with non-matching named captures. rhbz#767597, RT#78266, fixed
+# after 5.14.2.
+ApplyPatch perl-5.14.2-Don-t-leak-memory-when-accessing-named-capt.patch
+
+# Fix interrupted reading, rhbz#767931, fixed after 5.15.3.
+ApplyPatch perl-5.14.2-add-a-couple-missing-LEAVEs-in-perlio_async_run.patch
+
+# Fix searching for Unicode::Collate::Locale data, rhbz#756118, CPANRT#72666,
+# fixed in Unicode-Collate-0.87.
+ApplyPatch perl-5.14.2-locale-search-inc.patch
+
+# Run safe signal handlers before returning from sigsuspend() and pause(),
+# rhbz#771228, RT#107216, fixed after 5.15.6.
+ApplyPatch perl-5.14.2-Signal-handlers-must-run-before-sigsuspend-returns.patch
+
+# Stop !$^V from leaking, rhbz#787613, RT#109762, fixed after 5.15.7.
+ApplyPatch perl-5.14.2-Stop-V-from-leaking.patch
+
 set +e +o pipefail

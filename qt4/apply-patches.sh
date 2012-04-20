@@ -41,6 +41,9 @@ ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch
 ApplyPatch qt-everywhere-opensource-src-4.6.3-glib_eventloop_nullcheck.patch
 # workaround for a MOC issue with Boost 1.48 headers (#756395)
 ApplyPatch qt-everywhere-opensource-src-4.8.0-rc1-moc-boost148.patch
+# hack out largely useless (to users) warnings about qdbusconnection
+# (often in kde apps), keep an eye on https://git.reviewboard.kde.org/r/103699/
+ApplyPatch qt-everywhere-opensource-src-4.8.1-qdbusconnection_no_debug.patch
 
 ## upstreamable bits
 # fix invalid inline assembly in qatomic_{i386,x86_64}.h (de)ref implementations
@@ -83,7 +86,7 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-qtwebkit-glib231.patch
 # sql/drivers/tds/qsql_tds.cpp:341:49: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
 ApplyPatch qt-everywhere-opensource-src-4.7.4-tds_no_strict_aliasing.patch
 # don't spam if libicu is not present at runtime
-ApplyPatch qt-everywhere-opensource-src-4.8.0-icu_no_spam.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.1-icu_no_debug.patch
 # fix qvfb build
 ApplyPatch qt-everywhere-opensource-src-4.8.0-qvfb.patch
 # gcc doesn't support flag -fuse-ld=gold

@@ -1,0 +1,52 @@
+From 7402016d87474403eea5c52dc2c071f68cbbe25c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=C3=86var=20Arnfj=C3=B6r=C3=B0=20Bjarmason?= <avar@cpan.org>
+Date: Tue, 13 Dec 2011 14:43:12 +0000
+Subject: [PATCH] [RT #78266] Don't leak memory when accessing named captures
+ that didn't match
+
+Since 5.10 (probably 44a2ac759e) named captures have been leaking
+memory when they're used, don't actually match, but are later
+accessed. E.g.:
+
+    $ perl -wle 'for (1..10_000_000) { if ("foo" =~ /(foo|(?<capture>bar))?/) { my $capture = $+{capture} } } system "ps -o rss $$"'
+      RSS
+    238524
+
+Here we match the "foo" branch of our regex, but since we've used a
+name capture we'll end up running the code in
+Perl_reg_named_buff_fetch, which allocates a newSVsv(&PL_sv_undef) but
+never uses it unless it's trying to return an array.
+
+Just change that code not to allocate scalars we don't plan to
+return. With this fix we don't leak any memory since there's nothing
+to leak anymore.
+
+    $ ./perl -Ilib -wle 'for (1..10_000_000) { if ("foo" =~ /(foo|(?<capture>bar))?/) { my $capture = $+{capture} } } system "ps -o rss $$"'
+      RSS
+     3528
+
+This reverts commit b28f4af8cf94eb18c0cfde71e9625081912499a8 ("Fix
+allocating something in the first place is a better solution than
+allocating it, not using it, and then freeing it.
+
+Petr Pisar: perldelta and wrong fix (commit b28f4af8cf) removed.
+---
+ regcomp.c         |    7 ++-----
+
+diff --git a/regcomp.c b/regcomp.c
+index 9e9fac4..56b2b9c 100644
+--- a/regcomp.c
++++ b/regcomp.c
+@@ -5409,7 +5409,8 @@ Perl_reg_named_buff_fetch(pTHX_ REGEXP * const r, SV * const namesv,
+                     if (!retarray)
+                         return ret;
+                 } else {
+-                    ret = newSVsv(&PL_sv_undef);
++                    if (retarray)
++                        ret = newSVsv(&PL_sv_undef);
+                 }
+                 if (retarray)
+                     av_push(retarray, ret);
+-- 
+1.7.7.4
+

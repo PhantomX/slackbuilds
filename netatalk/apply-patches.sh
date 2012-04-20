@@ -8,7 +8,7 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/netatalk.etc2ps.diff.gz | patch -p1 -E --backup --verbose
 
 # Allow building without xfs quota support
-zcat ${SB_PATCHDIR}/netatalk-2.0.4-without_xfs.diff.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netatalk-2.2.2-without_xfs.patch
 
 # Disallow transmission of passwords via cleartext and with old version 1 of
 # the Diffie-Hellman protocol

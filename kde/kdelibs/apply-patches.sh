@@ -43,6 +43,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.4-SOLID_UPNP.patch
 # don't set rpath on multiarch dirs,  https://git.reviewboard.kde.org/r/103422
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.0-cmake_cxx_implicit_link_directories.patch
 
+# Load/Update filter lists only when AdBlock is enabled
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.2-filter.patch
+
 # make forcefully hal-free build
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.3-halectomy.patch
 

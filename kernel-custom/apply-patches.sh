@@ -124,6 +124,7 @@ ApplyPatch linux-3.3-newidmapper-02.patch
 ApplyPatch linux-3.3-newidmapper-03.patch
 ApplyPatch NFSv4-Reduce-the-footprint-of-the-idmapper.patch
 ApplyPatch NFSv4-Further-reduce-the-footprint-of-the-idmapper.patch
+ApplyPatch NFSv4-Minor-cleanups-for-nfs4_handle_exception-and-n.patch
 
 # USB
 
@@ -215,9 +216,6 @@ ApplyPatch drm-i915-fbc-stfu.patch
 
 ApplyPatch linux-2.6-intel-iommu-igfx.patch
 
-ApplyPatch drm-i915-allow-to-select-rc6-modes-via-kernel-parame.patch
-ApplyPatch drm-i915-enable-plain-RC6-on-Sandy-Bridge-by-default.patch
-
 # silence the ACPI blacklist code
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 ApplyPatch quite-apm.patch
@@ -249,6 +247,8 @@ ApplyPatch rt2x00_fix_MCU_request_failures.patch
 
 ApplyPatch hfsplus-Change-finder_info-to-u32.patch
 ApplyPatch hfsplus-Add-an-ioctl-to-bless-files.patch
+ApplyPatch hfsplus-initialise-userflags.patch
+ApplyPatch hfsplus-Fix-bless-ioctl-when-used-with-hardlinks.patch
 
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
@@ -276,12 +276,24 @@ ApplyPatch KVM-Ensure-all-vcpus-are-consistent-with-in-kernel-i.patch
 #rhbz 808603
 ApplyPatch wimax-i2400m-prevent-a-possible-kernel-bug-due-to-mi.patch
 
-#rhbz 806676 807632
-ApplyPatch libata-disable-runtime-pm-for-hotpluggable-port.patch
+#rhbz 807632
+ApplyPatch libata-forbid-port-runtime-pm-by-default.patch
 
-#rhbz 809014
-ApplyPatch x86-Use-correct-byte-sized-register-constraint-in-__xchg_op.patch
-ApplyPatch x86-Use-correct-byte-sized-register-constraint-in-__add.patch
+#vgaarb patches.  blame mjg59
+ApplyPatch vgaarb-vga_default_device.patch
+
+#rhbz 797559
+ApplyPatch x86-microcode-Fix-sysfs-warning-during-module-unload-on-unsupported-CPUs.patch
+ApplyPatch x86-microcode-Ensure-that-module-is-only-loaded-for-supported-AMD-CPUs.patch
+
+#rhbz 814149 814155 CVE-2012-2121
+ApplyPatch KVM-unmap-pages-from-the-iommu-when-slots-are-removed.patch
+
+#rhbz 814278 814289 CVE-2012-2119
+ApplyPatch macvtap-zerocopy-validate-vector-length.patch
+
+#rhbz 811225
+ApplyPatch memblock-memblock-should-be-able-to-handle-zero-leng.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

@@ -1,0 +1,228 @@
+From bd27836969912adbe6ae8d87f9bb6fe369772b88 Mon Sep 17 00:00:00 2001
+From: dgod <dgod.osa@gmail.com>
+Date: Sat, 25 Feb 2012 11:09:52 +0800
+Subject: [PATCH] deal GDK_KEY_Escape when input username or password
+
+---
+ src/greeter-utils.c |    8 ++++++
+ src/greeter.c       |   69 ++++++++++++++++++++++++++++++++------------------
+ src/lxdm.c          |   39 ++++++++++++++++++++++------
+ 3 files changed, 82 insertions(+), 34 deletions(-)
+
+diff --git a/src/greeter-utils.c b/src/greeter-utils.c
+index 78b71dd..28c80c6 100644
+--- a/src/greeter-utils.c
++++ b/src/greeter-utils.c
+@@ -139,12 +139,20 @@ void ui_add_cursor(void)
+     XDefineCursor(gdk_x11_get_default_xdisplay(),
+     	GDK_WINDOW_XID(gdk_get_default_root_window()),
+     	GDK_CURSOR_XCURSOR(cur));
++#if GTK_CHECK_VERSION(3,0,0)
++	g_object_unref(cur);
++#else
+     gdk_cursor_unref(cur);
++#endif
+ }
+ 
+ void ui_set_cursor(GdkWindow *win,int which)
+ {
+ 	GdkCursor *cursor=gdk_cursor_new(which);
+ 	gdk_window_set_cursor (win,cursor);
++#if GTK_CHECK_VERSION(3,0,0)
++	g_object_unref(cursor);
++#else
+ 	gdk_cursor_unref(cursor);
++#endif
+ }
+diff --git a/src/greeter.c b/src/greeter.c
+index fd76607..c0c150d 100644
+--- a/src/greeter.c
++++ b/src/greeter.c
+@@ -25,6 +25,10 @@
+ 
+ #include <gtk/gtk.h>
+ #include <gdk/gdkx.h>
++#include <gdk/gdkkeysyms.h>
++#ifdef ENABLE_GTK3
++#include <gdk/gdkkeysyms-compat.h>
++#endif
+ #include <glib/gi18n.h>
+ #include <X11/XKBlib.h>
+ 
+@@ -120,6 +124,33 @@ static char *get_session_exec(void)
+ 	return res;
+ }
+ 
++static void switch_to_input_user(void)
++{
++	if(user)
++	{
++		g_free(user);
++		user=NULL;
++	}
++	if(pass)
++	{
++		g_free(pass);
++		pass=NULL;
++	}
++	gtk_label_set_text( GTK_LABEL(prompt), _("User:"));
++	gtk_widget_show(prompt);
++	if(user_list)
++	{
++		gtk_widget_hide(login_entry);
++		gtk_widget_show(user_list);
++		gtk_widget_grab_focus(user_list);
++	}
++	else
++	{
++		gtk_widget_show(login_entry);
++		gtk_widget_grab_focus(login_entry);
++	}
++}
++
+ static void switch_to_input_passwd(void)
+ {
+ 	if(user_list!=NULL)
+@@ -142,8 +173,7 @@ static void try_login_user(const char *user)
+ 	g_free(session_lang);
+ 	g_free(session_exec);
+ 			
+-}
+-	
++}	
+ 
+ static void on_entry_activate(GtkEntry* entry)
+ {
+@@ -1025,6 +1055,13 @@ static void on_screen_size_changed(GdkScreen *screen,GtkWidget *win)
+ 	ui_set_bg(window,config);
+ }
+ 
++static gint login_entry_on_key_press (GtkWidget *widget,GdkEventKey *event)
++{
++	if(event->keyval == GDK_Escape)
++		switch_to_input_user();
++	return FALSE;
++}		     
++
+ static void create_win()
+ {
+     GSList* objs, *l;
+@@ -1077,6 +1114,10 @@ static void create_win()
+ 
+     prompt = (GtkWidget*)gtk_builder_get_object(builder, "prompt");
+     login_entry = (GtkWidget*)gtk_builder_get_object(builder, "login_entry");
++    if(login_entry!=NULL)
++    {
++		g_signal_connect_after(login_entry,"key-press-event",G_CALLBACK(login_entry_on_key_press),NULL);
++	}
+ 
+     g_signal_connect(login_entry, "activate", G_CALLBACK(on_entry_activate), NULL);
+ 
+@@ -1186,29 +1227,7 @@ static gboolean on_lxdm_command(GIOChannel *source, GIOCondition condition, gpoi
+ 	gtk_main_quit();
+ 	else if( !strncmp(str, "reset", 5) )
+ 	{
+-		if(user)
+-		{
+-			g_free(user);
+-			user=NULL;
+-		}
+-		if(pass)
+-		{
+-			g_free(pass);
+-			pass=NULL;
+-		}
+-		gtk_label_set_text( GTK_LABEL(prompt), _("User:"));
+-		gtk_widget_show(prompt);
+-		if(user_list)
+-		{
+-			gtk_widget_hide(login_entry);
+-			gtk_widget_show(user_list);
+-			gtk_widget_grab_focus(user_list);
+-		}
+-		else
+-		{
+-			gtk_widget_show(login_entry);
+-			gtk_widget_grab_focus(login_entry);
+-		}
++		switch_to_input_user();
+ 	}
+ 	else if( !strncmp(str, "password", 8))
+ 	{
+diff --git a/src/lxdm.c b/src/lxdm.c
+index 6d6f18e..8d98d37 100644
+--- a/src/lxdm.c
++++ b/src/lxdm.c
+@@ -654,6 +654,19 @@ static void replace_env(char** env, const char* name, const char* new_val)
+     *(penv + 1) = NULL;
+ }
+ 
++static const char *get_env(char **env, const char *name)
++{
++	register char** penv;
++    for(penv = env; *penv; ++penv)
++    {
++        if(g_str_has_prefix(*penv, name))
++        {
++            return *penv+strlen(name);
++        }
++    }
++    return NULL;
++}
++
+ #ifndef DISABLE_XAUTH
+ 
+ static inline void xauth_write_uint16(int fd,uint16_t data)
+@@ -707,7 +720,7 @@ static void create_server_auth(LXSession *s)
+ 
+ 	authfile = g_strdup_printf("/var/run/lxdm/lxdm-:%d.auth",s->display);
+ 
+-	setenv("XAUTHORITY",authfile,1);
++	//setenv("XAUTHORITY",authfile,1);
+ 	remove(authfile);
+ 	xauth_write_file(authfile,s->display,s->mcookie);
+ 	g_free(authfile);
+@@ -718,24 +731,32 @@ static void create_client_auth(char *home,char **env)
+ 	LXSession *s;
+ 	char *authfile;
+ 	uid_t user;
+-	char *path;
+ 	
+-	if((user=getuid())== 0 ) /* root don't need it */
++	if((user=getuid())==0) /* root don't need it */
+ 		return;
+         
+ 	s=lxsession_find_user(user);
+ 	if(!s)
+ 		return;
+-
+-	path=g_key_file_get_string(config,"base","xauth_path",NULL);
+-	if(path)
++	
++	/* pam_mktemp may provide XAUTHORITY to DM, just use it */
++	if((authfile=(char*)get_env(env,"XAUTHORITY="))!=NULL)
+ 	{
+-		authfile = g_strdup_printf("%s/.Xauth%d", path,getuid());
+-		g_free(path);
++		authfile=g_strdup(authfile);
+ 	}
+ 	else
+ 	{
+-		authfile = g_strdup_printf("%s/.Xauthority", home);
++		char *path;
++		path=g_key_file_get_string(config,"base","xauth_path",NULL);
++		if(path)
++		{
++			authfile = g_strdup_printf("%s/.Xauth%d", path,user);
++			g_free(path);
++		}
++		else
++		{
++			authfile = g_strdup_printf("%s/.Xauthority", home);
++		}
+ 	}
+ 	remove(authfile);
+ 	xauth_write_file(authfile,s->display,s->mcookie);
+-- 
+1.7.4.1
+

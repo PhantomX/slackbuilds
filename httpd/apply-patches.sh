@@ -17,6 +17,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-export.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-corelimit.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-selinux.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-suenable.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.2-restart.patch
 
 # Bug fixes
 

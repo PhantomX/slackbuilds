@@ -24,5 +24,6 @@ patch -p3 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.12.1.fixyoutube.patc
 # Fix for gcc 4.7 build errors
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.12.1.gcc47.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.12.1-libav7.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.12.1-libmp4v2.patch
 
 set +e +o pipefail

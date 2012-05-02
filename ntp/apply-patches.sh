@@ -33,7 +33,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p2-multiopts.patch
 # ntpbz #1670
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p3-broadcastdelay.patch
 # ntpbz #1671
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p3-delaycalib.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-delaycalib.patch
 
 ( cd ntpstat-${NSVER}
   # handle unknown clock types

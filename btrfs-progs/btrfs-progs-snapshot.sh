@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://git.kernel.org/pub/scm/linux/kernel/git/mason/${module}-unstable.git"
+snaproot="git://git.kernel.org/pub/scm/linux/kernel/git/mason/${module}.git"
 
 tmp=$(mktemp -d)
 

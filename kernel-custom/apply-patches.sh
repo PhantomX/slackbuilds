@@ -273,9 +273,6 @@ ApplyPatch highbank-export-clock-functions.patch
 #rhbz 808207 CVE-2012-1601
 ApplyPatch KVM-Ensure-all-vcpus-are-consistent-with-in-kernel-i.patch
 
-#rhbz 808603
-ApplyPatch wimax-i2400m-prevent-a-possible-kernel-bug-due-to-mi.patch
-
 #rhbz 807632
 ApplyPatch libata-forbid-port-runtime-pm-by-default.patch
 
@@ -286,14 +283,8 @@ ApplyPatch vgaarb-vga_default_device.patch
 ApplyPatch x86-microcode-Fix-sysfs-warning-during-module-unload-on-unsupported-CPUs.patch
 ApplyPatch x86-microcode-Ensure-that-module-is-only-loaded-for-supported-AMD-CPUs.patch
 
-#rhbz 814149 814155 CVE-2012-2121
-ApplyPatch KVM-unmap-pages-from-the-iommu-when-slots-are-removed.patch
-
 #rhbz 814278 814289 CVE-2012-2119
 ApplyPatch macvtap-zerocopy-validate-vector-length.patch
-
-#rhbz 811225
-ApplyPatch memblock-memblock-should-be-able-to-handle-zero-leng.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

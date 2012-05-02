@@ -9,5 +9,6 @@ patch -p1 --backup -z .flac-del --verbose -i ${SB_PATCHDIR}/${NAME}-2.1.7-flac-d
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.1.6-flac-picture.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.1.6-load-from-txt.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.1.6-defaults-675421.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.1.7-new_libmp4v2.patch
 
 set +e +o pipefail

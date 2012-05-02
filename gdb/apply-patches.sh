@@ -14,7 +14,7 @@ fi
 if [ "${VERBOSE}" = "YES" ] ; then
   VERBOSE_OPT="--verbose"
 fi
-SVERBOSE=YES
+
 if [ "${SVERBOSE}" = "YES" ] ; then
   set -o xtrace
 fi
@@ -399,6 +399,27 @@ ApplyPatch gdb-subrange-no-type.patch
 
 # Workaround crashes from stale frame_info pointer (BZ 804256).
 ApplyPatch gdb-stale-frame_info.patch
+
+# Security fix for loading untrusted inferiors, see "set auto-load" (BZ 756117).
+#=push
+ApplyPatch gdb-autoload-01of18.patch
+ApplyPatch gdb-autoload-02of18.patch
+ApplyPatch gdb-autoload-03of18.patch
+ApplyPatch gdb-autoload-04of18.patch
+ApplyPatch gdb-autoload-05of18.patch
+ApplyPatch gdb-autoload-06of18.patch
+ApplyPatch gdb-autoload-07of18.patch
+ApplyPatch gdb-autoload-08of18.patch
+ApplyPatch gdb-autoload-09of18.patch
+ApplyPatch gdb-autoload-10of18.patch
+ApplyPatch gdb-autoload-11of18.patch
+ApplyPatch gdb-autoload-12of18.patch
+ApplyPatch gdb-autoload-13of18.patch
+ApplyPatch gdb-autoload-14of18.patch
+ApplyPatch gdb-autoload-15of18.patch
+ApplyPatch gdb-autoload-16of18.patch
+ApplyPatch gdb-autoload-17of18.patch
+ApplyPatch gdb-autoload-18of18.patch
 
 # [RHEL5,RHEL6] Fix attaching to stopped processes.
 #=fedora

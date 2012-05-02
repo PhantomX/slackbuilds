@@ -1,0 +1,744 @@
+[patch#4 5/8] set auto-load safe-path
+http://sourceware.org/ml/gdb-patches/2012-04/msg00092.html
+http://sourceware.org/ml/gdb-cvs/2012-04/msg00114.html
+
+### src/gdb/ChangeLog	2012/04/17 15:51:41	1.14113
+### src/gdb/ChangeLog	2012/04/17 15:54:28	1.14114
+## -1,5 +1,39 @@
+ 2012-04-17  Jan Kratochvil  <jan.kratochvil@redhat.com>
+ 
++	New option "set auto-load safe-path".
++	* NEWS: New commands "set auto-load safe-path"
++	and "show auto-load safe-path".
++	* auto-load.c: Include gdb_vecs.h, readline/tilde.h and completer.h.
++	(auto_load_safe_path, auto_load_safe_path_vec)
++	(auto_load_safe_path_vec_update, set_auto_load_safe_path)
++	(show_auto_load_safe_path, add_auto_load_safe_path, filename_is_in_dir)
++	(filename_is_in_auto_load_safe_path_vec, file_is_auto_load_safe): New.
++	(source_gdb_script_for_objfile): New variable is_safe.  Call
++	file_is_auto_load_safe.  Return if it is not.
++	(struct loaded_script): New field loaded.
++	(maybe_add_script): Add parameter loaded.  Initialize SLOT with it.
++	(print_script): Use LOADED indicator instead of FULL_PATH.  Change
++	output "Missing" to "No".
++	(_initialize_auto_load): New variable cmd.  Initialize
++	auto_load_safe_path.  Register "set auto-load safe-path",
++	"show auto-load safe-path" and "add-auto-load-safe-path".
++	* auto-load.h (maybe_add_script): Add parameter loaded.
++	(file_is_auto_load_safe): New declaration.
++	* config.in: Regenerate.
++	* configure: Regenerate.
++	* configure.ac: New parameters --with-auto-load-safe-path
++	and --without-auto-load-safe-path.
++	* linux-thread-db.c (try_thread_db_load_from_pdir_1)
++	(try_thread_db_load_from_dir): Check file_is_auto_load_safe first.
++	* main.c (captured_main): Check file_is_auto_load_safe for
++	LOCAL_GDBINIT.
++	* python/py-auto-load.c (gdbpy_load_auto_script_for_objfile): New
++	variable is_safe.  Call file_is_auto_load_safe.  Return if it is not.
++	(source_section_scripts): Call file_is_auto_load_safe.  Return if it is
++	not.
++
++2012-04-17  Jan Kratochvil  <jan.kratochvil@redhat.com>
++
+ 	auto-load: Implementation.
+ 	* NEWS: New descriptions for "info auto-load",
+ 	"info auto-load gdb-scripts", "info auto-load python-scripts",
+Index: gdb-7.4.50.20120120/gdb/NEWS
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/NEWS	2012-04-18 00:49:02.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/NEWS	2012-04-18 00:49:33.282706319 +0200
+@@ -67,6 +67,11 @@ set auto-load libthread-db on|off
+ show auto-load libthread-db
+   Control auto-loading of inferior specific thread debugging shared library.
+ 
++set auto-load safe-path <dir1>[:<dir2>...]
++show auto-load safe-path
++  Set a list of directories from which it is safe to auto-load files.
++  The delimiter (':' above) may differ according to the host platform.
++
+ * New command line options
+ 
+ --init-command=FILE, -ix          Like --command, -x but execute it
+Index: gdb-7.4.50.20120120/gdb/auto-load.c
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/auto-load.c	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/auto-load.c	2012-04-18 00:49:21.607736020 +0200
+@@ -32,6 +32,9 @@
+ #include "gdbcmd.h"
+ #include "cli/cli-decode.h"
+ #include "cli/cli-setshow.h"
++#include "gdb_vecs.h"
++#include "readline/tilde.h"
++#include "completer.h"
+ 
+ /* The suffix of per-objfile scripts to auto-load as non-Python command files.
+    E.g. When the program loads libfoo.so, look for libfoo-gdb.gdb.  */
+@@ -90,6 +93,181 @@ show_auto_load_local_gdbinit (struct ui_
+ 		    value);
+ }
+ 
++/* Directory list safe to hold auto-loaded files.  It is not checked for
++   absolute paths but they are strongly recommended.  It is initialized by
++   _initialize_auto_load.  */
++static char *auto_load_safe_path;
++
++/* Vector of directory elements of AUTO_LOAD_SAFE_PATH with each one normalized
++   by tilde_expand and possibly each entries has added its gdb_realpath
++   counterpart.  */
++static VEC (char_ptr) *auto_load_safe_path_vec;
++
++/* Update auto_load_safe_path_vec from current AUTO_LOAD_SAFE_PATH.  */
++
++static void
++auto_load_safe_path_vec_update (void)
++{
++  VEC (char_ptr) *dir_vec = NULL;
++  unsigned len;
++  int ix;
++
++  free_char_ptr_vec (auto_load_safe_path_vec);
++
++  auto_load_safe_path_vec = dirnames_to_char_ptr_vec (auto_load_safe_path);
++  len = VEC_length (char_ptr, auto_load_safe_path_vec);
++
++  /* Apply tilde_expand and gdb_realpath to each AUTO_LOAD_SAFE_PATH_VEC
++     element.  */
++  for (ix = 0; ix < len; ix++)
++    {
++      char *dir = VEC_index (char_ptr, auto_load_safe_path_vec, ix);
++      char *expanded = tilde_expand (dir);
++      char *real_path = gdb_realpath (expanded);
++
++      /* Ensure the current entry is at least tilde_expand-ed.  */
++      xfree (dir);
++      VEC_replace (char_ptr, auto_load_safe_path_vec, ix, expanded);
++
++      /* If gdb_realpath returns a different content, append it.  */
++      if (strcmp (real_path, expanded) == 0)
++	xfree (real_path);
++      else
++	VEC_safe_push (char_ptr, auto_load_safe_path_vec, real_path);
++    }
++}
++
++/* "set" command for the auto_load_safe_path configuration variable.  */
++
++static void
++set_auto_load_safe_path (char *args, int from_tty, struct cmd_list_element *c)
++{
++  auto_load_safe_path_vec_update ();
++}
++
++/* "show" command for the auto_load_safe_path configuration variable.  */
++
++static void
++show_auto_load_safe_path (struct ui_file *file, int from_tty,
++			  struct cmd_list_element *c, const char *value)
++{
++  if (*value == 0)
++    fprintf_filtered (file, _("Auto-load files are safe to load from any "
++			      "directory.\n"));
++  else
++    fprintf_filtered (file, _("List of directories from which it is safe to "
++			      "auto-load files is %s.\n"),
++		      value);
++}
++
++/* "add-auto-load-safe-path" command for the auto_load_safe_path configuration
++   variable.  */
++
++static void
++add_auto_load_safe_path (char *args, int from_tty)
++{
++  char *s;
++
++  if (args == NULL || *args == 0)
++    error (_("\
++Adding empty directory element disables the auto-load safe-path security.  \
++Use 'set auto-load safe-path' instead if you mean that."));
++
++  s = xstrprintf ("%s%c%s", auto_load_safe_path, DIRNAME_SEPARATOR, args);
++  xfree (auto_load_safe_path);
++  auto_load_safe_path = s;
++
++  auto_load_safe_path_vec_update ();
++}
++
++/* Return 1 if FILENAME is equal to DIR or if FILENAME belongs to the
++   subdirectory DIR.  Return 0 otherwise.  gdb_realpath normalization is never
++   done here.  */
++
++static ATTRIBUTE_PURE int
++filename_is_in_dir (const char *filename, const char *dir)
++{
++  size_t dir_len = strlen (dir);
++
++  while (dir_len && IS_DIR_SEPARATOR (dir[dir_len - 1]))
++    dir_len--;
++
++  return (filename_ncmp (dir, filename, dir_len) == 0
++	  && (IS_DIR_SEPARATOR (filename[dir_len])
++	      || filename[dir_len] == '\0'));
++}
++
++/* Return 1 if FILENAME belongs to one of directory components of
++   AUTO_LOAD_SAFE_PATH_VEC.  Return 0 otherwise.
++   auto_load_safe_path_vec_update is never called.
++   *FILENAME_REALP may be updated by gdb_realpath of FILENAME - it has to be
++   freed by the caller.  */
++
++static int
++filename_is_in_auto_load_safe_path_vec (const char *filename,
++					char **filename_realp)
++{
++  char *dir;
++  int ix;
++
++  for (ix = 0; VEC_iterate (char_ptr, auto_load_safe_path_vec, ix, dir); ++ix)
++    if (*filename_realp == NULL && filename_is_in_dir (filename, dir))
++      break;
++  
++  if (dir == NULL)
++    {
++      if (*filename_realp == NULL)
++	*filename_realp = gdb_realpath (filename);
++
++      for (ix = 0; VEC_iterate (char_ptr, auto_load_safe_path_vec, ix, dir);
++	   ++ix)
++	if (filename_is_in_dir (*filename_realp, dir))
++	  break;
++    }
++
++  if (dir != NULL)
++    return 1;
++
++  return 0;
++}
++
++/* Return 1 if FILENAME is located in one of the directories of
++   AUTO_LOAD_SAFE_PATH.  Otherwise call warning and return 0.  FILENAME does
++   not have to be an absolute path.
++
++   Existence of FILENAME is not checked.  Function will still give a warning
++   even if the caller would quietly skip non-existing file in unsafe
++   directory.  */
++
++int
++file_is_auto_load_safe (const char *filename)
++{
++  char *filename_real = NULL;
++  struct cleanup *back_to;
++
++  back_to = make_cleanup (free_current_contents, &filename_real);
++
++  if (filename_is_in_auto_load_safe_path_vec (filename, &filename_real))
++    {
++      do_cleanups (back_to);
++      return 1;
++    }
++
++  auto_load_safe_path_vec_update ();
++  if (filename_is_in_auto_load_safe_path_vec (filename, &filename_real))
++    {
++      do_cleanups (back_to);
++      return 1;
++    }
++
++  warning (_("File \"%s\" auto-loading has been declined by your "
++	     "`auto-load safe-path' set to \"%s\"."),
++	   filename_real, auto_load_safe_path);
++
++  do_cleanups (back_to);
++  return 0;
++}
++
+ /* Definition of script language for GDB canned sequences of commands.  */
+ 
+ static const struct script_language script_language_gdb
+@@ -99,13 +277,20 @@ static void
+ source_gdb_script_for_objfile (struct objfile *objfile, FILE *file,
+ 			       const char *filename)
+ {
++  int is_safe;
+   struct auto_load_pspace_info *pspace_info;
+   volatile struct gdb_exception e;
+ 
++  is_safe = file_is_auto_load_safe (filename);
++
+   /* Add this script to the hash table too so "info auto-load gdb-scripts"
+      can print it.  */
+   pspace_info = get_auto_load_pspace_data_for_loading (current_program_space);
+-  maybe_add_script (pspace_info, filename, filename, &script_language_gdb);
++  maybe_add_script (pspace_info, is_safe, filename, filename,
++		    &script_language_gdb);
++
++  if (!is_safe)
++    return;
+ 
+   TRY_CATCH (e, RETURN_MASK_ALL)
+     {
+@@ -140,6 +325,9 @@ struct loaded_script
+      inaccessible).  */
+   const char *full_path;
+ 
++  /* Non-zero if this script has been loaded.  */
++  int loaded;
++
+   const struct script_language *language;
+ };
+ 
+@@ -232,12 +420,13 @@ get_auto_load_pspace_data_for_loading (s
+   return info;
+ }
+ 
+-/* Add script NAME in LANGUAGE to hash table of PSPACE_INFO.
+-   FULL_PATH is NULL if the script wasn't found.  The result is
++/* Add script NAME in LANGUAGE to hash table of PSPACE_INFO.  LOADED 1 if the
++   script has been (is going to) be loaded, 0 otherwise (such as if it has not
++   been found).  FULL_PATH is NULL if the script wasn't found.  The result is
+    true if the script was already in the hash table.  */
+ 
+ int
+-maybe_add_script (struct auto_load_pspace_info *pspace_info,
++maybe_add_script (struct auto_load_pspace_info *pspace_info, int loaded,
+ 		  const char *name, const char *full_path,
+ 		  const struct script_language *language)
+ {
+@@ -271,6 +460,7 @@ maybe_add_script (struct auto_load_pspac
+ 	}
+       else
+ 	(*slot)->full_path = NULL;
++      (*slot)->loaded = loaded;
+       (*slot)->language = language;
+     }
+ 
+@@ -432,7 +622,7 @@ print_script (struct loaded_script *scri
+ 
+   chain = make_cleanup_ui_out_tuple_begin_end (uiout, NULL);
+ 
+-  ui_out_field_string (uiout, "loaded", script->full_path ? "Yes" : "Missing");
++  ui_out_field_string (uiout, "loaded", script->loaded ? "Yes" : "No");
+   ui_out_field_string (uiout, "script", script->name);
+   ui_out_text (uiout, "\n");
+ 
+@@ -718,6 +908,8 @@ void _initialize_auto_load (void);
+ void
+ _initialize_auto_load (void)
+ {
++  struct cmd_list_element *cmd;
++
+   auto_load_pspace_data
+     = register_program_space_data_with_cleanup (auto_load_pspace_data_cleanup);
+ 
+@@ -757,4 +949,30 @@ This options has security implications f
+ 	   _("Print whether current directory .gdbinit file has been loaded.\n\
+ Usage: info auto-load local-gdbinit"),
+ 	   auto_load_info_cmdlist_get ());
++
++  auto_load_safe_path = xstrdup (DEFAULT_AUTO_LOAD_SAFE_PATH);
++  auto_load_safe_path_vec_update ();
++  add_setshow_optional_filename_cmd ("safe-path", class_support,
++				     &auto_load_safe_path, _("\
++Set the list of directories from which it is safe to auto-load files."), _("\
++Show the list of directories from which it is safe to auto-load files."), _("\
++Various files loaded automatically for the 'set auto-load ...' options must\n\
++be located in one of the directories listed by this option.  Warning will be\n\
++printed and file will not be used otherwise.  Use empty string (or even\n\
++empty directory entry) to allow any file for the 'set auto-load ...' options.\n\
++This option is ignored for the kinds of files having 'set auto-load ... off'.\n\
++This options has security implications for untrusted inferiors."),
++				     set_auto_load_safe_path,
++				     show_auto_load_safe_path,
++				     auto_load_set_cmdlist_get (),
++				     auto_load_show_cmdlist_get ());
++
++  cmd = add_cmd ("add-auto-load-safe-path", class_support,
++		 add_auto_load_safe_path,
++		 _("Add entries to the list of directories from which it is safe "
++		   "to auto-load files.\n\
++See the commands 'set auto-load safe-path' and 'show auto-load safe-path' to\n\
++access the current full list setting."),
++		 &cmdlist);
++  set_cmd_completer (cmd, filename_completer);
+ }
+Index: gdb-7.4.50.20120120/gdb/auto-load.h
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/auto-load.h	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/auto-load.h	2012-04-18 00:49:21.607736020 +0200
+@@ -39,7 +39,8 @@ extern int auto_load_local_gdbinit_loade
+ extern struct auto_load_pspace_info *
+   get_auto_load_pspace_data_for_loading (struct program_space *pspace);
+ extern int maybe_add_script (struct auto_load_pspace_info *pspace_info,
+-			     const char *name, const char *full_path,
++			     int loaded, const char *name,
++			     const char *full_path,
+ 			     const struct script_language *language);
+ extern void auto_load_objfile_script (struct objfile *objfile,
+ 				      const struct script_language *language);
+@@ -54,4 +55,6 @@ extern struct cmd_list_element **auto_lo
+ extern struct cmd_list_element **auto_load_show_cmdlist_get (void);
+ extern struct cmd_list_element **auto_load_info_cmdlist_get (void);
+ 
++extern int file_is_auto_load_safe (const char *filename);
++
+ #endif /* AUTO_LOAD_H */
+Index: gdb-7.4.50.20120120/gdb/config.in
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/config.in	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/config.in	2012-04-18 00:49:21.607736020 +0200
+@@ -43,6 +43,9 @@
+    moved. */
+ #undef DEBUGDIR_RELOCATABLE
+ 
++/* Directories safe to hold auto-loaded files. */
++#undef DEFAULT_AUTO_LOAD_SAFE_PATH
++
+ /* Define to BFD's default architecture. */
+ #undef DEFAULT_BFD_ARCH
+ 
+Index: gdb-7.4.50.20120120/gdb/configure
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/configure	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/configure	2012-04-18 00:49:21.611736010 +0200
+@@ -955,6 +955,7 @@ with_separate_debug_dir
+ with_gdb_datadir
+ with_relocated_sources
+ with_rpm
++with_auto_load_safe_path
+ enable_targets
+ enable_64_bit_bfd
+ enable_gdbcli
+@@ -1666,6 +1667,10 @@ Optional Packages:
+                           automatically relocate this path for source files
+   --with-rpm              query rpm database for missing debuginfos (yes/no,
+                           def. auto=librpm.so)
++  --with-auto-load-safe-path=PATH
++                          directories safe to hold auto-loaded files
++  --without-auto-load-safe-path
++                          do not restrict auto-loaded files locations
+   --with-libunwind        use libunwind frame unwinding support
+   --with-curses           use the curses library instead of the termcap
+                           library
+@@ -8477,6 +8482,32 @@ $as_echo "$as_me: WARNING: $RPM_PKG_ERRO
+   fi
+ fi
+ 
++{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for default auto-load safe-path" >&5
++$as_echo_n "checking for default auto-load safe-path... " >&6; }
++
++# Check whether --with-auto-load-safe-path was given.
++if test "${with_auto_load_safe_path+set}" = set; then :
++  withval=$with_auto_load_safe_path; if test "$with_auto_load_safe_path" = "no"; then
++   with_auto_load_safe_path=""
++ fi
++else
++  with_auto_load_safe_path="$prefix"
++fi
++
++
++  test "x$prefix" = xNONE && prefix="$ac_default_prefix"
++  test "x$exec_prefix" = xNONE && exec_prefix='${prefix}'
++  ac_define_dir=`eval echo $with_auto_load_safe_path`
++  ac_define_dir=`eval echo $ac_define_dir`
++
++cat >>confdefs.h <<_ACEOF
++#define DEFAULT_AUTO_LOAD_SAFE_PATH "$ac_define_dir"
++_ACEOF
++
++
++{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_auto_load_safe_path" >&5
++$as_echo "$with_auto_load_safe_path" >&6; }
++
+ 
+ 
+ subdirs="$subdirs testsuite"
+Index: gdb-7.4.50.20120120/gdb/configure.ac
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/configure.ac	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/configure.ac	2012-04-18 00:49:21.611736010 +0200
+@@ -339,6 +339,18 @@ extern rpmdbMatchIterator rpmtsInitItera
+   fi
+ fi
+  
++AC_MSG_CHECKING([for default auto-load safe-path])
++AC_ARG_WITH(auto-load-safe-path,
++AS_HELP_STRING([--with-auto-load-safe-path=PATH], [directories safe to hold auto-loaded files])
++AS_HELP_STRING([--without-auto-load-safe-path], [do not restrict auto-loaded files locations]),
++[if test "$with_auto_load_safe_path" = "no"; then
++   with_auto_load_safe_path=""
++ fi],
++[with_auto_load_safe_path="$prefix"])
++AC_DEFINE_DIR(DEFAULT_AUTO_LOAD_SAFE_PATH, with_auto_load_safe_path,
++	      [Directories safe to hold auto-loaded files.])
++AC_MSG_RESULT([$with_auto_load_safe_path])
++
+ AC_CONFIG_SUBDIRS(testsuite)
+ 
+ # Check whether to support alternative target configurations
+Index: gdb-7.4.50.20120120/gdb/linux-thread-db.c
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/linux-thread-db.c	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/linux-thread-db.c	2012-04-18 00:49:21.612736007 +0200
+@@ -868,7 +868,11 @@ try_thread_db_load_from_pdir_1 (struct o
+   /* This should at minimum hit the first character.  */
+   gdb_assert (cp != NULL);
+   strcpy (cp + 1, LIBTHREAD_DB_SO);
+-  result = try_thread_db_load (path);
++
++  if (!file_is_auto_load_safe (path))
++    result = 0;
++  else
++    result = try_thread_db_load (path);
+ 
+   do_cleanups (cleanup);
+   return result;
+@@ -934,7 +938,11 @@ try_thread_db_load_from_dir (const char
+   memcpy (path, dir, dir_len);
+   path[dir_len] = '/';
+   strcpy (path + dir_len + 1, LIBTHREAD_DB_SO);
+-  result = try_thread_db_load (path);
++
++  if (!file_is_auto_load_safe (path))
++    result = 0;
++  else
++    result = try_thread_db_load (path);
+ 
+   do_cleanups (cleanup);
+   return result;
+Index: gdb-7.4.50.20120120/gdb/main.c
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/main.c	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/main.c	2012-04-18 00:49:21.612736007 +0200
+@@ -1026,7 +1026,8 @@ captured_main (void *data)
+     {
+       auto_load_local_gdbinit_pathname = gdb_realpath (local_gdbinit);
+ 
+-      if (!inhibit_gdbinit && auto_load_local_gdbinit)
++      if (!inhibit_gdbinit && auto_load_local_gdbinit
++	  && file_is_auto_load_safe (local_gdbinit))
+ 	{
+ 	  auto_load_local_gdbinit_loaded = 1;
+ 
+Index: gdb-7.4.50.20120120/gdb/doc/gdb.texinfo
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/doc/gdb.texinfo	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/doc/gdb.texinfo	2012-04-18 00:49:21.620735987 +0200
+@@ -20801,6 +20801,8 @@ gdb-scripts:  Auto-loading of canned seq
+ libthread-db:  Auto-loading of inferior specific libthread_db is on.
+ local-gdbinit:  Auto-loading of .gdbinit script from current directory is on.
+ python-scripts:  Auto-loading of Python scripts is on.
++safe-path:  List of directories from which it is safe to auto-load files
++            is /usr/local.
+ @end smallexample
+ 
+ @anchor{info auto-load}
+@@ -20872,12 +20874,19 @@ These are @value{GDBN} control commands
+ @tab Show setting of thread debugging library.
+ @item @xref{info auto-load libthread-db}.
+ @tab Show state of thread debugging library.
++@item @xref{set auto-load safe-path}.
++@tab Control directories trusted for automatic loading.
++@item @xref{show auto-load safe-path}.
++@tab Show directories trusted for automatic loading.
++@item @xref{add-auto-load-safe-path}.
++@tab Add directory trusted for automatic loading.
+ @end multitable
+ 
+ @menu
+ * Init File in the Current Directory:: @samp{set/show/info auto-load local-gdbinit}
+ * libthread_db.so.1 file::             @samp{set/show/info auto-load libthread-db}
+ * objfile-gdb.gdb file::               @samp{set/show/info auto-load gdb-script}
++* Auto-loading safe path::             @samp{set/show/info auto-load safe-path}
+ @xref{Python Auto-loading}.
+ @end menu
+ 
+@@ -20978,6 +20987,104 @@ auto-loaded.
+ If @var{regexp} is supplied only canned sequences of commands scripts with
+ matching names are printed.
+ 
++@node Auto-loading safe path
++@subsection Security restriction for auto-loading
++@cindex auto-loading safe-path
++
++As the files of inferior can come from untrusted source (such as submitted by
++an application user) @value{GDBN} does not always load any files automatically.
++@value{GDBN} provides the @samp{set auto-load safe-path} setting to list
++directories trusted for loading files not explicitly requested by user.
++
++If the path is not set properly you will see a warning and the file will not
++get loaded:
++
++@smallexample
++$ ./gdb -q ./gdb
++Reading symbols from /home/user/gdb/gdb...done.
++warning: File "/home/user/gdb/gdb-gdb.gdb" auto-loading has been
++         declined by your `auto-load safe-path' set to "/usr/local".
++warning: File "/home/user/gdb/gdb-gdb.py" auto-loading has been
++         declined by your `auto-load safe-path' set to "/usr/local".
++@end smallexample
++
++The list of trusted directories is controlled by the following commands:
++
++@table @code
++@anchor{set auto-load safe-path}
++@kindex set auto-load safe-path
++@item set auto-load safe-path @var{directories}
++Set the list of directories (and their subdirectories) trusted for automatic
++loading and execution of scripts.  You can also enter a specific trusted file.
++The list of directories uses directory separator (@samp{:} on GNU and Unix
++systems, @samp{;} on MS-Windows and MS-DOS) to separate directories, similarly
++to the @env{PATH} environment variable.
++
++@anchor{show auto-load safe-path}
++@kindex show auto-load safe-path
++@item show auto-load safe-path
++Show the list of directories trusted for automatic loading and execution of
++scripts.
++
++@anchor{add-auto-load-safe-path}
++@kindex add-auto-load-safe-path
++@item add-auto-load-safe-path
++Add an entry (or list of entries) the list of directories trusted for automatic
++loading and execution of scripts.  Multiple entries may be delimited by the
++host platform directory separator in use.
++@end table
++
++Setting this variable to an empty string disables this security protection.
++This variable is supposed to be set to the system directories writable by the
++system superuser only.  Users can add their source directories in init files in
++their home directories (@pxref{Home Directory Init File}).  See also deprecated
++init file in the current directory
++(@pxref{Init File in the Current Directory during Startup}).
++
++To force @value{GDBN} to load the files it declined to load in the previous
++example, you could use one of the following ways:
++
++@itemize @bullet
++@item ~/.gdbinit: add-auto-load-safe-path ~/src/gdb
++Specify this trusted directory (or a file) as additional component of the list.
++You have to specify also any existing directories displayed by
++by @samp{show auto-load safe-path} (such as @samp{/usr:/bin} in this example).
++
++@item @kbd{gdb -iex "set auto-load safe-path /usr:/bin:~/src/gdb" [@dots{}]}
++Specify this directory as in the previous case but just for a single
++@value{GDBN} session.
++
++@item @kbd{gdb -iex "set auto-load safe-path" [@dots{}]}
++Disable auto-loading safety for a single @value{GDBN} session.
++This assumes all the files you debug during this @value{GDBN} session will come
++from trusted sources.
++
++@item @kbd{./configure --without-auto-load-safe-path}
++During compilation of @value{GDBN} you may disable any auto-loading safety.
++This assumes all the files you will ever debug with this @value{GDBN} come from
++trusted sources.
++@end itemize
++
++On the other hand you can also explicitly forbid automatic files loading which
++also suppresses any such warning messages:
++
++@itemize @bullet
++@item @kbd{gdb -iex "set auto-load no" [@dots{}]}
++You can use @value{GDBN} command-line option for a single @value{GDBN} session.
++
++@item @samp{~/.gdbinit}: @samp{set auto-load no}
++Disable auto-loading globally for the user
++(@pxref{Home Directory Init File}).  While it is improbable, you could also
++use system init file instead (@pxref{System-wide configuration}).
++@end itemize
++
++This setting applies to the file names as entered by user.  If no entry matches
++@value{GDBN} tries as a last resort to also resolve all the file names into
++their canonical form (typically resolving symbolic links) and compare the
++entries again.  @value{GDBN} already canonicalizes most of the filenames on its
++own before starting the comparison so a canonical form of directories is
++recommended to be entered.
++
+ @node Messages/Warnings
+ @section Optional Warnings and Messages
+ 
+@@ -24955,10 +25062,10 @@ Example:
+ 
+ @smallexample
+ (gdb) info auto-load python-scripts
+-Loaded  Script
+-Yes     py-section-script.py
+-        full name: /tmp/py-section-script.py
+-Missing my-foo-pretty-printers.py
++Loaded Script
++Yes    py-section-script.py
++       full name: /tmp/py-section-script.py
++No     my-foo-pretty-printers.py
+ @end smallexample
+ @end table
+ 
+Index: gdb-7.4.50.20120120/gdb/python/py-auto-load.c
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/python/py-auto-load.c	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/python/py-auto-load.c	2012-04-18 00:49:21.621735985 +0200
+@@ -72,14 +72,19 @@ static void
+ gdbpy_load_auto_script_for_objfile (struct objfile *objfile, FILE *file,
+ 				    const char *filename)
+ {
++  int is_safe;
+   struct auto_load_pspace_info *pspace_info;
+ 
++  is_safe = file_is_auto_load_safe (filename);
++
+   /* Add this script to the hash table too so "info auto-load python-scripts"
+      can print it.  */
+   pspace_info = get_auto_load_pspace_data_for_loading (current_program_space);
+-  maybe_add_script (pspace_info, filename, filename, &script_language_python);
++  maybe_add_script (pspace_info, is_safe, filename, filename,
++		    &script_language_python);
+ 
+-  source_python_script_for_objfile (objfile, file, filename);
++  if (is_safe)
++    source_python_script_for_objfile (objfile, file, filename);
+ }
+ 
+ /* Load scripts specified in OBJFILE.
+@@ -147,6 +152,9 @@ source_section_scripts (struct objfile *
+ 	{
+ 	  make_cleanup_fclose (stream);
+ 	  make_cleanup (xfree, full_path);
++
++	  if (!file_is_auto_load_safe (full_path))
++	    opened = 0;
+ 	}
+       else
+ 	{
+@@ -167,7 +175,7 @@ Use `info auto-load python [REGEXP]' to
+ 
+ 	 IWBN if complaints.c were more general-purpose.  */
+ 
+-      in_hash_table = maybe_add_script (pspace_info, file, full_path,
++      in_hash_table = maybe_add_script (pspace_info, opened, file, full_path,
+ 					&script_language_python);
+ 
+       /* If this file is not currently loaded, load it.  */
+Index: gdb-7.4.50.20120120/gdb/testsuite/gdb.python/py-objfile-script.exp
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/testsuite/gdb.python/py-objfile-script.exp	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/testsuite/gdb.python/py-objfile-script.exp	2012-04-18 00:49:21.621735985 +0200
+@@ -37,6 +37,7 @@ if { [skip_python_tests] } { continue }
+ set remote_python_file [remote_download host ${srcdir}/${subdir}/${testfile}-gdb.py.in ${subdir}/${testfile}-gdb.py]
+ 
+ gdb_reinitialize_dir $srcdir/$subdir
++gdb_test_no_output "set auto-load safe-path ${remote_python_file}" "set auto-load safe-path"
+ gdb_load ${binfile}
+ 
+ # Verify gdb loaded the script.
+Index: gdb-7.4.50.20120120/gdb/testsuite/gdb.python/py-section-script.exp
+===================================================================
+--- gdb-7.4.50.20120120.orig/gdb/testsuite/gdb.python/py-section-script.exp	2012-04-18 00:46:47.000000000 +0200
++++ gdb-7.4.50.20120120/gdb/testsuite/gdb.python/py-section-script.exp	2012-04-18 00:49:21.621735985 +0200
+@@ -49,6 +49,7 @@ if { [skip_python_tests] } { continue }
+ set remote_python_file [remote_download host ${srcdir}/${subdir}/${testfile}.py]
+ 
+ gdb_reinitialize_dir $srcdir/$subdir
++gdb_test_no_output "set auto-load safe-path ${remote_python_file}" "set auto-load safe-path"
+ gdb_load ${binfile}
+ 
+ # Verify gdb loaded the script.

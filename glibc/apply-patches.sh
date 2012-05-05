@@ -62,6 +62,8 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
   ApplyPatch 0081_all_glibc-2.15-math64crash.patch
   ApplyPatch 0082_all_glibc-2.16-scanf.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
+  ApplyPatch 0090_all_glibc-tftp-fortify.patch
+  ApplyPatch 0095_all_glibc-2.15-ctors-dtors-test.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch
   ApplyPatch 1030_all_glibc-manual-no-perl.patch
@@ -72,8 +74,6 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
   ApplyPatch 1080_all_glibc-no-inline-gmon.patch
   ApplyPatch 1090_all_glibc-2.3.6-fix-pr631.patch
   ApplyPatch 1095_all_glibc-2.14-assume-pipe2-dup3.patch
-  patch -p0 --verbose -i ${SB_PATCHDIR}/1103_all_glibc-new-valencian-locale.patch
-  patch -p0 --verbose -i ${SB_PATCHDIR}/1120_all_glibc-2.11-longjmp-chk-fallback.patch
   patch -p0 --verbose -i ${SB_PATCHDIR}/1130_all_glibc-2.4-undefine-__i686.patch
   ApplyPatch 1160_all_glibc-2.8-nscd-one-fork.patch
   ApplyPatch 3020_all_glibc-tests-sandbox-libdl-paths.patch
@@ -83,7 +83,10 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
 
 # Arch
 ApplyPatch glibc-2.15-lddebug-scopes.patch
+ApplyPatch glibc-2.15-avx.patch
+ApplyPatch glibc-2.15-strcasecmp-disable-avx.patch
 ApplyPatch glibc-2.15-revert-netlink-cache.patch
+ApplyPatch glibc-2.15-arena.patch
 ApplyPatch glibc-2.15-negative-result-cache.patch
 ApplyPatch glibc-2.15-multiarch-x86-strcmp.patch
 ApplyPatch glibc-2.15-vdso.patch

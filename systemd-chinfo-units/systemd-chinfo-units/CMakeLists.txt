@@ -24,8 +24,7 @@ set(SYSTEMDSRVSLKFILES slackware-depmod.service
                        slackware-lvm-init.service 
                        systemd-clean-dead-links.service )
 
-set(SYSTEMDSRVFILES display-manager.service
-                    network.service )
+set(SYSTEMDSRVFILES inet1.service )
 
 install(PROGRAMS ${SYSTEMDFILES} DESTINATION "${SYSTEMD_INSTALL_DIR}" )
 

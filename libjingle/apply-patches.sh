@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Patches/comments from Fedora
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.0-build-sanity.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.10-build-sanity.patch
 # talk/base/basictypes.h and talk/base/logging.h must be included 
 # before any header with __BEGIN_DECLS, notably, sys/types.h
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-C-linkage-fix.patch
@@ -33,22 +33,26 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-unixfilesystemfi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.8-system-expat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.8-system-srtp.patch
 # Fix devicemanager.cc to compile, alsa as linux default
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.0-devicemanager-fix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.6-devicemanager-fix.patch
 # Fix v4llookup.cc to compile
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.8-v4llookup-fix.patch
 # Fix type and definition conflicts with Chromium
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-fixconflict.patch
-# Fix 64bit typedefs to not conflict with Chromium, nspr
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.1-64bittypes.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.6-fixconflict.patch
 # From Chromium, make qname threadsafe
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.0-qname-threadsafe.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.0-qname-threadsafe.patch
 # Make sure linux.h/linux.cc pulls in config.h for LINUX define
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.8-config-linux.patch
 # Fix 0.5.2 compilation
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.2-compilefix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.6-compilefix.patch
 # Fix missing cstdlib for size_t
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.0-size_t.patch
 # Fix obsolete macro usage
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.8-fixmacro.patch
+# Work around their stupidity re time.h and timeutils.h
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.10-nextfix.patch
+# Gcc 4.7.0 no longer includes unistd.h by default
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.6-unistd.patch
+# Add missing fdwalk bits from svn
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.6.10-fdwalk.patch
 
 set +e +o pipefail

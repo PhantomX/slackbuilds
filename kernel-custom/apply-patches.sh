@@ -126,6 +126,11 @@ ApplyPatch NFSv4-Reduce-the-footprint-of-the-idmapper.patch
 ApplyPatch NFSv4-Further-reduce-the-footprint-of-the-idmapper.patch
 ApplyPatch NFSv4-Minor-cleanups-for-nfs4_handle_exception-and-n.patch
 
+# NFS Client Patch set from Upstream
+ApplyPatch NFS-optimise-away-unnecessary-setattrs-for-open-O_TRUNC.patch
+ApplyPatch NFSv4-fix-open-O_TRUNC-and-ftruncate-error-handling.patch
+ApplyPatch NFSv4-Rate-limit-the-state-manager-for-lock-reclaim-.patch
+
 # USB
 
 # WMI
@@ -225,6 +230,7 @@ ApplyPatch add-poll-requested-events.patch
 ApplyOptionalPatch drivers-media-update.patch
 
 # Patches headed upstream
+ApplyPatch fs-proc-devtree-remove_proc_entry.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 ApplyPatch linux-3.3-virtio-scsi.patch
 
@@ -234,9 +240,6 @@ ApplyPatch linux-3.3-virtio-scsi.patch
 ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
-
-#ApplyPatch hibernate-freeze-filesystems.patch
-ApplyPatch hibernate-watermark.patch
 
 ApplyPatch lis3-improve-handling-of-null-rate.patch
 ApplyPatch bluetooth-use-after-free.patch
@@ -279,12 +282,14 @@ ApplyPatch libata-forbid-port-runtime-pm-by-default.patch
 #vgaarb patches.  blame mjg59
 ApplyPatch vgaarb-vga_default_device.patch
 
-#rhbz 797559
-ApplyPatch x86-microcode-Fix-sysfs-warning-during-module-unload-on-unsupported-CPUs.patch
-ApplyPatch x86-microcode-Ensure-that-module-is-only-loaded-for-supported-AMD-CPUs.patch
-
 #rhbz 814278 814289 CVE-2012-2119
 ApplyPatch macvtap-zerocopy-validate-vector-length.patch
+
+#rhbz 818820
+ApplyPatch dl2k-Clean-up-rio_ioctl.patch
+
+#rhbz 726143
+ApplyPatch 0001-drm-radeon-don-t-mess-with-hot-plug-detect-for-eDP-o.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

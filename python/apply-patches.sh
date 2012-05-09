@@ -12,7 +12,7 @@ for patches in \
   06_all_non-zero_exit_status_on_failure.patch \
   21_all_distutils_c++.patch \
   ;do
-  patch -p0 --backup --verbose -i ${PDIR}/${patches}
+  patch -p0 --backup --verbose -i ${PVER}/${patches}
 done
 
 if [ "${ARCH}" = "x86_64" ]; then
@@ -68,6 +68,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00147-add-debug-malloc-stats.p
 
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autotool-intermediates.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
 
 set +e +o pipefail

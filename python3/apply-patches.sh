@@ -11,7 +11,7 @@ for patches in \
   06_all_non-zero_exit_status_on_failure.patch \
   21_all_distutils_c++.patch \
   ;do
-  patch -p0 --backup --verbose -i ${PDIR}/${patches}
+  patch -p0 --backup --verbose -i ${PVER}/${patches}
 done
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Python-3.1.1-rpath.patch

@@ -15,6 +15,7 @@ else
 fi
 
 # From upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.17-ls-rootdir-symlink.patch
 
 # Fedora patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch

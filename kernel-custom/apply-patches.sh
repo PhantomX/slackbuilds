@@ -273,9 +273,6 @@ ApplyPatch xen-x86-Implement-x86_apic_ops.patch
 #Highbank clock functions
 ApplyPatch highbank-export-clock-functions.patch
 
-#rhbz 808207 CVE-2012-1601
-ApplyPatch KVM-Ensure-all-vcpus-are-consistent-with-in-kernel-i.patch
-
 #rhbz 807632
 ApplyPatch libata-forbid-port-runtime-pm-by-default.patch
 

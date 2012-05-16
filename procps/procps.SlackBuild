@@ -24,6 +24,7 @@
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 # http://procps.sourceforge.net
+# http://gitorious.org/procps
 
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
@@ -43,7 +44,7 @@ fi
 NAME=procps
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-3.2.8}
+VERSION=${VERSION:-3.3.2}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-4}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -71,10 +72,17 @@ SRCARCHIVE=${SRCDIR}.tar.gz
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://procps.sourceforge.net/${SRCARCHIVE}"
+#DL_URL="http://procps.sourceforge.net/${SRCARCHIVE}"
+DL_URL="http://gitorious.org/${NAME}/${NAME}/archive-tarball/v${VERSION}"
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} -O ${CWD}/${SRCARCHIVE} || exit 1
+
+if ! test -s ${CWD}/${SRCARCHIVE} ;then
+  echo "${CWD}/${SRCARCHIVE} is empty"
+  echo "Delete ${CWD}/${SRCARCHIVE}, check VERSION and try again."
+  exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -104,23 +112,43 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
+mkdir -p ${SRCDIR}
 cd ${SRCDIR} || exit 1
+tar -xvf ${CWD}/${SRCARCHIVE} --strip-components 1 || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-make SHARED=1 CFLAGS="${SLKCFLAGS}" W_SHOWFROM=-DW_SHOWFROM lib64=/lib${LIBDIRSUFFIX} || exit 1
+if [ ! -r configure ]; then
+  sh ./autogen.sh || exit $?
+fi
 
-make -j${NJOBS} || make || exit 1
-make ldconfig=true DESTDIR=${PKG} install="install -D" \
-  SKIP="/bin/kill /usr/share/man/man1/kill.1" install || exit 1
+CFLAGS="${SLKCFLAGS}" \
+CXXFLAGS="${SLKCFLAGS}" \
+./configure \
+  --prefix=/usr \
+  --bindir=/bin \
+  --sbindir=/sbin \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --sysconfdir=/etc \
+  --localstatedir=/var/lib \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --docdir=/usr/doc/${NAME}-${VERSION} \
+  --disable-static \
+  --disable-rpath \
+  --disable-kill \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
 
-chmod -R u+w ${PKG}/sbin ${PKG}/bin ${PKG}/usr/bin ${PKG}/lib*
+make -j${NJOBS} || make || exit $?
+make install DESTDIR=${PKG} usrbin_execdir=/usr/bin || exit $?
+
+rm -f ${PKG}/usr/lib*/*.la
+
+chmod -R u+w ${PKG}/sbin ${PKG}/bin ${PKG}/usr/bin
 
 mv ${PKG}/usr/bin/free ${PKG}/bin/ || exit 1
 
@@ -132,15 +160,25 @@ mv ${PKG}/usr/bin/free ${PKG}/bin/ || exit 1
   ln -sf /bin/ps .
 ) || exit 1
 
+rmdir -p ${PKG}/usr/share
+
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+mv ${PKG}/etc/sysctl.conf ${PKG}/etc/sysctl.conf.new || exit 1
+
+mkdir -p ${PKG}/lib${LIBDIRSUFFIX}
+libname=libprocps
+mv ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so.* ${PKG}/lib${LIBDIRSUFFIX}/ || exit 1
+reldir=$(perl -e 'use File::Spec; print File::Spec->abs2rel($ARGV[0], $ARGV[1])' /lib${LIBDIRSUFFIX} /usr/lib${LIBDIRSUFFIX})
+oldlink=$(readlink ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so)
+ln -sf ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  COPYING* NEWS BUGS TODO ${CWD}/ChangeLog.SB \
+  AUTHORS BUGS COPYING* FAQ NEWS README top/README.top TODO ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
-zcat ${CWD}/FAQ.gz > ${DOCDIR}/FAQ
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
@@ -168,6 +206,36 @@ fi
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
+
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc

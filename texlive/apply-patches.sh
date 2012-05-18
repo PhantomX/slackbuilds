@@ -7,7 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
 zcat ${SB_PATCHDIR}/${NAME}-2007-png14.patch.gz | patch -p0 -E --backup --verbose
-patch -p0 -E --backup -z .png15 --verbose -i ${SB_PATCHDIR}/${NAME}-2007-libpng15.patch
+patch -p1 -E --backup -z .png15 --verbose -i ${SB_PATCHDIR}/${NAME}-2007-png15.patch
 patch -p0 -E --backup -z .fixtex --verbose -i ${SB_PATCHDIR}/${NAME}-2007-fixtex.patch
 patch -p0 -E --backup -z .newmake --verbose -i ${SB_PATCHDIR}/${NAME}-2007-newmake.patch
 patch -p0 -E --backup -z .rb19 --verbose -i ${SB_PATCHDIR}/${NAME}-2007-ruby19.patch
@@ -45,6 +45,7 @@ zcat ${SB_PATCHDIR}/${NAME}-dvipsconfig.patch.gz | patch -p1 -E --backup --verbo
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-CVE-2010-0829-dvipng-multiple-array-indexing-errors.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-CVE-2010-0739_1440-integer-overflows.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-execshield.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-poppler-0.20.0.patch
 
 ######
 # mpeters contributed patches

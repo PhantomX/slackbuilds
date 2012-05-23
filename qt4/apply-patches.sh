@@ -44,6 +44,10 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-rc1-moc-boost148.patch
 # hack out largely useless (to users) warnings about qdbusconnection
 # (often in kde apps), keep an eye on https://git.reviewboard.kde.org/r/103699/
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qdbusconnection_no_debug.patch
+# lrelease-qt4 tries to run qmake not qmake-qt4 (http://bugzilla.redhat.com/820767)
+ApplyPatch qt-everywhere-opensource-src-4.8.1-linguist_qmake-qt4.patch
+# enable debuginfo in libQt3Support
+ApplyPatch qt-everywhere-opensource-src-4.8.1-qt3support_debuginfo.patch
 
 ## upstreamable bits
 # fix invalid inline assembly in qatomic_{i386,x86_64}.h (de)ref implementations
@@ -87,12 +91,8 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-qtwebkit-glib231.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.4-tds_no_strict_aliasing.patch
 # don't spam if libicu is not present at runtime
 ApplyPatch qt-everywhere-opensource-src-4.8.1-icu_no_debug.patch
-# fix qvfb build
-ApplyPatch qt-everywhere-opensource-src-4.8.0-qvfb.patch
 # gcc doesn't support flag -fuse-ld=gold
 ApplyPatch qt-everywhere-opensource-src-4.8.0-ld-gold.patch
-# gcc-4.7 build issue
-ApplyPatch qt-everywhere-opensource-src-4.8.0-gcc-4.7.patch
 
 # security patches
 # CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code
@@ -104,7 +104,8 @@ ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
-# Fix a crash in cursorToX() when new block is added
-ApplyPatch qt-everywhere-opensource-src-4.8.1-QTBUG-24718.patch
+# fix crash on big endian machines
+# https://bugreports.qt-project.org/browse/QTBUG-22960
+ApplyPatch qt-everywhere-opensource-src-4.8.1-type.patch
 
 set +e +o pipefail

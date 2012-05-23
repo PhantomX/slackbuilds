@@ -14,7 +14,6 @@ zcat ${SB_PATCHDIR}/bind.so_bsdcompat.diff.gz | patch -p1 --verbose || exit
 # Common patches
 zcat ${SB_PATCHDIR}/bind-nonexec.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/bind-9.5-PIE.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/bind-9.5-overflow.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.5-dlz-64bit.patch
 zcat ${SB_PATCHDIR}/bind-9.5-parallel-build.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/bind-96-libtool2.patch.gz | patch -p1 -E --backup --verbose
@@ -25,14 +24,13 @@ zcat ${SB_PATCHDIR}/bind97-rh478718.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh570851.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-exportlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh645544.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh699951.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh693982.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh714049.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind98-rh735103.patch
 patch -p0 -E --backup --verbose -d bin/dig -i ${SB_PATCHDIR}/nslookup-norec.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-buildfix.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-v6only.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-forward.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind98-rh816164.patch
 
 # needs inpection
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-96-dyndb.patch

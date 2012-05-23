@@ -277,13 +277,10 @@ ApplyPatch highbank-export-clock-functions.patch
 ApplyPatch libata-forbid-port-runtime-pm-by-default.patch
 
 #vgaarb patches.  blame mjg59
-ApplyPatch vgaarb-vga_default_device.patch
+#ApplyPatch vgaarb-vga_default_device.patch
 
 #rhbz 814278 814289 CVE-2012-2119
 ApplyPatch macvtap-zerocopy-validate-vector-length.patch
-
-#rhbz 818820
-ApplyPatch dl2k-Clean-up-rio_ioctl.patch
 
 #rhbz 726143
 ApplyPatch 0001-drm-radeon-don-t-mess-with-hot-plug-detect-for-eDP-o.patch

@@ -33,6 +33,12 @@ for patch in \
   gfxterm_background.patch \
   probe_canonicalise.patch \
   mkconfig_skip_readme.patch \
+  xfs_invalid_bmap.patch \
+  handle_new_autotools.patch \
+  bash-completion_identifiers.patch \
+  gcc_4_6_space.patch \
+  lzo.patch \
+  fat_uuid.patch \
   ; do
   patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done

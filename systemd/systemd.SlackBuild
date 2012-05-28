@@ -30,7 +30,8 @@ PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
 
 # Set YES for native build with gcc >= 4.2
 SB_NATIVE=${SB_NATIVE:-NO}
-
+# Set YES to remove libtool .la files
+SB_RMLA=${SB_RMLA:-NO}
 # Set to YES to replicate slackbuild and patches
 SB_REP=${SB_REP:-YES}
 
@@ -43,7 +44,7 @@ fi
 NAME=systemd
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-44}
+VERSION=${VERSION:-183}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 SLKDIST=${SLKDIST:-Slackware}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -126,38 +127,78 @@ sed -i \
   -e 's|^Type=.*$|ExecStop=/etc/rc.d/rc.local_shutdown|g' \
   units/fedora/rc-local.service || exit 1
 
-autoreconf -ivf || exit 1
+sed -i -e '/^exec_prefix=/s|=.*$|=/|g' \
+  src/libudev/libudev.pc.in || exit 1
+sed -i -e '/^udevdir=/s|=.*$|=/lib/udev|g' \
+  src/udev/udev.pc.in || exit 1
+
+mkdir -p ${PKG}/lib/udev/rules.d
+mkdir -p ${PKG}/run
+
+find . -name "*.[1-8]" -exec touch '{}' ';'
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --libexecdir=/lib \
+  --with-rootprefix= \
+  --with-rootlibdir=/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
   --localstatedir=/var \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-silent-rules \
+  --enable-static \
   --with-distro=slackware \
-  --with-rootprefix= \
+  --enable-split-usr \
   --disable-pam \
   --disable-audit \
   --disable-tcpwrap \
   --disable-selinux \
-  --disable-gtk \
+  --disable-plymouth \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
 
 make -j${NJOBS} || make || exit $?
-make install DESTDIR=${PKG} pkgconfigdatadir=/usr/lib${LIBDIRSUFFIX}/pkgconfig || exit $?
+make install DESTDIR=${PKG} \
+  pkgconfigdatadir=/usr/lib${LIBDIRSUFFIX}/pkgconfig \
+  sharepkgconfigdir=/usr/lib${LIBDIRSUFFIX}/pkgconfig \
+  || exit $?
 
-find ${PKG} \( -name '*.a' -o -name '*.la' \) -exec rm {} ';'
+[ "${SB_RMLA}" = "YES" ] && find ${PKG} -name '*.la' -exec rm {} ';'
 
 rmdir -p ${PKG}/lib${LIBDIRSUFFIX}/security
 rmdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/security
 
+# Good to have on path
+mkdir -p ${PKG}/sbin
+( cd ${PKG}/sbin
+  ln -s ../lib/udev/scsi_id scsi_id || exit 1
+  ln -s ../lib/systemd/systemd-udevd udevd || exit 1
+) || exit 1
+
+ln -s ../systemd/systemd-udevd ${PKG}/lib/udev/udevd || exit 1
+
+ln -s ../../lib/udev \
+  ${PKG}/usr/lib/udev || exit 1
+
+ln -s ../../../lib/systemd/user-generators \
+  ${PKG}/usr/lib/systemd/user-generators || exit 1
+
+find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
+  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+################################### systemd ####################################
 # Slackware inittab compliance
 ln -sf graphical.target ${PKG}/lib/systemd/system/runlevel4.target || exit 1
+
+install -pm0644 ${CWD}/var-{lock,run}.mount ${PKG}/lib/systemd/system/ || exit 1
+ln -sf ../var-lock.mount \
+  ${PKG}/lib/systemd/system/local-fs.target.wants/var-lock.mount || exit 1
+ln -sf ../var-run.mount \
+  ${PKG}/lib/systemd/system/local-fs.target.wants/var-run.mount || exit 1
 
 # rc.local and rc.local_shutdown
 install -pm0644 units/fedora/rc-local.service \
@@ -174,9 +215,6 @@ cat > ${PKG}/etc/rc.d/rc.local_shutdown.new <<'EOF'
 exit 0
 EOF
 chmod 0755 ${PKG}/etc/rc.d/rc.local_shutdown.new || exit 1
-
-find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
-  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 mv ${PKG}/lib/systemd/systemd ${PKG}/lib/systemd/systemd.new || exit 1
 chmod 0755 ${PKG}/lib/systemd/systemd.new
@@ -227,8 +265,8 @@ echo 'd /var/run/console 755 root root' > ${PKG}/etc/tmpfiles.d/console.conf || 
 
 mv ${PKG}/etc/systemd/system.conf ${PKG}/etc/systemd/system.conf.new || exit 1
 mv ${PKG}/etc/systemd/user.conf ${PKG}/etc/systemd/user.conf.new || exit 1
-mv ${PKG}/etc/systemd/systemd-logind.conf ${PKG}/etc/systemd/systemd-logind.conf.new || exit 1
-mv ${PKG}/etc/systemd/systemd-journald.conf ${PKG}/etc/systemd/systemd-journald.conf.new || exit 1
+mv ${PKG}/etc/systemd/logind.conf ${PKG}/etc/systemd/logind.conf.new || exit 1
+mv ${PKG}/etc/systemd/journald.conf ${PKG}/etc/systemd/journald.conf.new || exit 1
 
 mkdir -p ${PKG}/etc/rpm
 cat > ${PKG}/etc/rpm/macros.${NAME} <<'EOF'
@@ -238,6 +276,37 @@ EOF
 mkdir -p ${PKG}/etc/rsyslog.d/
 echo '$SystemLogSocketName /run/systemd/journal/syslog' \
  > ${PKG}/etc/rsyslog.d/listen.conf.new || exit 1
+
+################################ End of systemd ################################
+
+##################################### udev #####################################
+
+mkdir -p ${PKG}/etc/udev/{keymaps,rules.d} \
+  ${PKG}/lib/firmware \
+  ${PKG}/etc/modprobe.d \
+  ${PKG}/etc/rc.d
+
+rm -f ${PKG}/etc/udev/udev.conf
+install -m0644 ${CWD}/config/udev.conf ${PKG}/etc/udev/udev.conf || exit 1
+# Copy Slackware custom rules
+install -m0644 ${CWD}/config/rules.d/* ${PKG}/lib/udev/rules.d/ || exit 1
+
+install -m0644 ${CWD}/config/keymaps/* ${PKG}/lib/udev/keymaps || exit 1
+
+install -m0755 ${CWD}/config/rc.d/rc.udev.new \
+  ${PKG}/etc/rc.d/rc.udev.new || exit 1
+for file in blacklist isapnp psmouse usb-controller ;do
+  install -m0644 ${CWD}/config/modprobe.d/${file}.conf.new \
+    ${PKG}/etc/modprobe.d/ || exit 1
+done
+
+# Add various helper scripts:
+for file in ${CWD}/config/scripts/* ; do
+  install -m0755 ${file} ${PKG}/lib/udev/ || exit 1
+done
+chmod 755 ${PKG}/lib/udev/*
+
+################################# End of udev ##################################
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -294,6 +363,12 @@ config() {
   fi
   # Otherwise, we leave the .new copy for the admin to consider...
 }
+
+# Keep same perms on rc.udev.new:
+if [ -r etc/rc.d/rc.udev -a -r etc/rc.d/rc.udev.new ]; then
+  chmod --reference=etc/rc.d/rc.udev etc/rc.d/rc.udev.new
+fi
+
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
@@ -316,8 +391,8 @@ function free_group_id {
 # Set up group.
 if ! grep --quiet '^lock:' etc/group ;then
   ${CHROOT} /usr/sbin/groupadd \
-            -g $(free_group_id) \
-            lock 2> /dev/null
+    -g $(free_group_id) \
+    lock 2> /dev/null
 fi
 
 # Try to read default runlevel from the old inittab if it exists
@@ -350,8 +425,10 @@ ${CHROOT} /bin/systemctl enable \
 ${CHROOT} /bin/systemd-machine-id-setup > /dev/null 2>&1
 ${CHROOT} /bin/systemctl daemon-reexec > /dev/null 2>&1
 sleep 1
-${CHROOT} /bin/systemctl --system daemon-reload > /dev/null 2>&1
 
+${CHROOT} /bin/systemctl stop systemd-udev.service systemd-udev-control.socket systemd-udev-kernel.socket >/dev/null 2>&1
+${CHROOT} /bin/systemctl --system daemon-reload  >/dev/null 2>&1
+${CHROOT} /bin/systemctl start systemd-udev.service >/dev/null 2>&1
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -361,9 +438,15 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${CWD}/${SLKDIST} ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${SLKDIST} ${CWD}/var-*.mount \
+    ${CWD}/udev-fixed-devices.tar.gz ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/config/*.conf ${SBDIR}/config/
+  for dir in keymaps modprobe.d rc.d rules.d scripts ;do
+    mkdir -p ${SBDIR}/config/${dir}
+    install -m0644 ${CWD}/config/${dir}/* ${SBDIR}/config/${dir}/
+  done
   install -m0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
   rmdir ${SBDIR}/patches
@@ -373,6 +456,7 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
+  tar xvf ${CWD}/udev-fixed-devices.tar.gz -C ./ ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}

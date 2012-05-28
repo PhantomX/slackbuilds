@@ -52,6 +52,13 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # fix kdeclarative install location (by wstephenson as found in kde-packager list)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.3-kdeclarative-install-location.patch
 
+# a bunch of kmessagewidget fixes
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.3-kmessagewidget_resizeEvent.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.3-kmessagewidget_heightForWidth.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.3-kmessagewidget_colors.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.3-kmessagewidget_icon_position.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.3-kmessagewidget_unbreak_abi.patch
+
 # Trunk patches
 
 # security fix

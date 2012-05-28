@@ -21,4 +21,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-systemd-install-systemd-u
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sbc_mmx.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cplusplus_void_cast.patch
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-udev-remove-deprecated-function.patch
+
 set +e +o pipefail

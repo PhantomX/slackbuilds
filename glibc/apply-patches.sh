@@ -63,6 +63,7 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
   ApplyPatch 0082_all_glibc-2.16-scanf.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 0090_all_glibc-tftp-fortify.patch
+  ApplyPatch 0094_all_glibc-2.15-nscd-race.patch
   ApplyPatch 0095_all_glibc-2.15-ctors-dtors-test.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
   ApplyPatch 1010_all_glibc-queue-header-updates.patch
@@ -85,7 +86,6 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/0070_all_glibc-i386-x86_64-revert-clone-cf
 ApplyPatch glibc-2.15-lddebug-scopes.patch
 ApplyPatch glibc-2.15-avx.patch
 ApplyPatch glibc-2.15-strcasecmp-disable-avx.patch
-ApplyPatch glibc-2.15-revert-netlink-cache.patch
 ApplyPatch glibc-2.15-arena.patch
 ApplyPatch glibc-2.15-negative-result-cache.patch
 ApplyPatch glibc-2.15-multiarch-x86-strcmp.patch

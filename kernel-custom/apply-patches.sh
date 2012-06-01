@@ -69,9 +69,6 @@ ApplyOptionalPatch linux-2.6-upstream-reverts.patch -R
 
 ApplyOptionalPatch linux-2.6-hotfixes.patch
 
-# utrace
-ApplyPatch utrace.patch
-
 # vm patches
 ApplyPatch oom-warning.patch
 ApplyPatch grab-swap-token-oops.patch
@@ -106,7 +103,6 @@ ApplyPatch remount-no-shrink-dcache.patch
 # reisefs
 
 # ext4
-ApplyPatch ext4-Support-check-none-nocheck-mount-options.patch
 
 # ext3
 
@@ -117,19 +113,6 @@ ApplyPatch ext4-Support-check-none-nocheck-mount-options.patch
 # cifs
 
 # NFSv4
-#rhbz 717735
-ApplyPatch linux-3.1-keys-remove-special-keyring.patch
-ApplyPatch linux-3.3-newidmapper-01.patch
-ApplyPatch linux-3.3-newidmapper-02.patch
-ApplyPatch linux-3.3-newidmapper-03.patch
-ApplyPatch NFSv4-Reduce-the-footprint-of-the-idmapper.patch
-ApplyPatch NFSv4-Further-reduce-the-footprint-of-the-idmapper.patch
-ApplyPatch NFSv4-Minor-cleanups-for-nfs4_handle_exception-and-n.patch
-
-# NFS Client Patch set from Upstream
-ApplyPatch NFS-optimise-away-unnecessary-setattrs-for-open-O_TRUNC.patch
-ApplyPatch NFSv4-fix-open-O_TRUNC-and-ftruncate-error-handling.patch
-ApplyPatch NFSv4-Rate-limit-the-state-manager-for-lock-reclaim-.patch
 
 # USB
 
@@ -139,6 +122,7 @@ ApplyPatch NFSv4-Rate-limit-the-state-manager-for-lock-reclaim-.patch
 ApplyPatch linux-2.6-defaults-acpi-video.patch
 ApplyPatch linux-2.6-acpi-video-dos.patch
 ApplyPatch linux-2.6-acpi-debug-infinite-loop.patch
+ApplyPatch acpi-sony-nonvs-blacklist.patch
 # list acpi fixed events at /proc/acpi/fixed_events
 ApplyPatch acpi-add-proc-event-regs.patch
 
@@ -150,8 +134,6 @@ ApplyPatch perf_timechart_fix_zero_timestamps.patch
 #
 # PCI
 #
-# enable ASPM by default on hardware we expect to work
-ApplyPatch linux-2.6-defaults-aspm.patch.gz
 
 #
 # SCSI / block Bits.
@@ -159,8 +141,8 @@ ApplyPatch linux-2.6-defaults-aspm.patch.gz
 ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
-ApplyPatch 0001-block-cgroups-kconfig-build-bits-for-BFQ-v3r3-3.3.patch
-ApplyPatch 0002-block-introduce-the-BFQ-v3r3-I-O-sched-for-3.3.patch
+ApplyPatch 0001-block-cgroups-kconfig-build-bits-for-BFQ-v3r4-3.4.patch
+ApplyPatch 0002-block-introduce-the-BFQ-v3r4-I-O-sched-for-3.4.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -176,7 +158,6 @@ ApplyPatch linux-2.6-input-kill-stupid-messages.patch
 
 # stop floppy.ko from autoloading during udev...
 ApplyPatch die-floppy-die.patch
-ApplyPatch floppy-drop-disable_hlt-warning.patch
 
 ApplyPatch linux-2.6.30-no-pcspkr-modalias.patch
 
@@ -188,13 +169,6 @@ ApplyPatch linux-2.6-silence-noise.patch
 
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
-
-# Changes to upstream defaults.
-# Turns pnpbios off by default, useful, since pnpbios
-# is know to cause problems (TTL: forever)
-ApplyPatch pnp-pnpbios-off-by-default.patch
-
-ApplyPatch pnp-isapnp-async-init.patch
 
 # libata
 
@@ -211,6 +185,7 @@ ApplyPatch linux-2.6-crash-driver.patch
 ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 # DRM core
+ApplyPatch drm-vgem.patch
 
 # Nouveau DRM
 #ApplyOptionalPatch drm-nouveau-updates.patch
@@ -226,13 +201,11 @@ ApplyPatch linux-2.6-silence-acpi-blacklist.patch
 ApplyPatch quite-apm.patch
 
 # Media (V4L/DVB/IR) updates/fixes/experimental drivers
-ApplyPatch add-poll-requested-events.patch
 ApplyOptionalPatch drivers-media-update.patch
 
 # Patches headed upstream
 ApplyPatch fs-proc-devtree-remove_proc_entry.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
-ApplyPatch linux-3.3-virtio-scsi.patch
 
 # Runtime PM
 
@@ -242,21 +215,11 @@ ApplyPatch dmar-disable-when-ricoh-multifunction.patch
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch lis3-improve-handling-of-null-rate.patch
-ApplyPatch bluetooth-use-after-free.patch
-ApplyPatch ips-noirq.patch
 
-#rhbz 772772
-ApplyPatch rt2x00_fix_MCU_request_failures.patch
-
-ApplyPatch hfsplus-Change-finder_info-to-u32.patch
-ApplyPatch hfsplus-Add-an-ioctl-to-bless-files.patch
-ApplyPatch hfsplus-initialise-userflags.patch
 ApplyPatch hfsplus-Fix-bless-ioctl-when-used-with-hardlinks.patch
 
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
-
-ApplyPatch mcelog-rcu-splat.patch
 
 #rhbz 804957 CVE-2012-1568
 ApplyPatch shlib_base_randomize.patch
@@ -265,25 +228,14 @@ ApplyPatch unhandled-irqs-switch-to-polling.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
 
-#rhbz 804347
-ApplyPatch x86-add-io_apic_ops-to-allow-interception.patch
-ApplyPatch x86-apic_ops-Replace-apic_ops-with-x86_apic_ops.patch
-ApplyPatch xen-x86-Implement-x86_apic_ops.patch
-
 #Highbank clock functions
 ApplyPatch highbank-export-clock-functions.patch
-
-#rhbz 807632
-ApplyPatch libata-forbid-port-runtime-pm-by-default.patch
 
 #vgaarb patches.  blame mjg59
 #ApplyPatch vgaarb-vga_default_device.patch
 
 #rhbz 814278 814289 CVE-2012-2119
 ApplyPatch macvtap-zerocopy-validate-vector-length.patch
-
-#rhbz 726143
-ApplyPatch 0001-drm-radeon-don-t-mess-with-hot-plug-detect-for-eDP-o.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

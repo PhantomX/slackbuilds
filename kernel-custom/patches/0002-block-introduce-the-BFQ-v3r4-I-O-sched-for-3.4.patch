@@ -1,9 +1,9 @@
-From 5b076950e5365542c37dff3750642a7d21b60488 Mon Sep 17 00:00:00 2001
+From 8768794381f48b1c1a5616bd4cd1dc07b96dc688 Mon Sep 17 00:00:00 2001
 From: Arianna Avanzini <avanzini.arianna@gmail.com>
 Date: Sun, 5 Feb 2012 01:04:27 +0100
-Subject: [PATCH 2/2] block: introduce the BFQ-v3r3 I/O sched for 3.3
+Subject: [PATCH 2/2] block: introduce the BFQ-v3r4 I/O sched for 3.4
 
-Add the BFQ-v3r3 I/O scheduler to 3.3.
+Add the BFQ-v3r4 I/O scheduler to 3.4.
 The general structure is borrowed from CFQ, as much of the code. A (bfq_)queue
 is associated to each task doing I/O on a device, and each time a scheduling
 decision has to be taken a queue is selected and it is served until it expires.
@@ -58,15 +58,15 @@ Regarding what has not changed it is worth noting:
     - The heuristics to assert that a task is worth an idle window (with
       minor modifications to hw_tag/CIC_SEEKY detection).
 
+Signed-off-by: Paolo Valente <paolo.valente@unimore.it>
 Signed-off-by: Arianna Avanzini <avanzini.arianna@gmail.com>
-Acked-by: Paolo Valente <paolo.valente@unimore.it>
 ---
- block/bfq-cgroup.c  |  775 ++++++++++++++
+ block/bfq-cgroup.c  |  838 +++++++++++++++
  block/bfq-ioc.c     |   34 +
- block/bfq-iosched.c | 2911 +++++++++++++++++++++++++++++++++++++++++++++++++++
- block/bfq-sched.c   | 1037 ++++++++++++++++++
+ block/bfq-iosched.c | 2907 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ block/bfq-sched.c   | 1070 +++++++++++++++++++
  block/bfq.h         |  596 +++++++++++
- 5 files changed, 5353 insertions(+), 0 deletions(-)
+ 5 files changed, 5445 insertions(+)
  create mode 100644 block/bfq-cgroup.c
  create mode 100644 block/bfq-ioc.c
  create mode 100644 block/bfq-iosched.c
@@ -75,10 +75,10 @@ Acked-by: Paolo Valente <paolo.valente@unimore.it>
 
 diff --git a/block/bfq-cgroup.c b/block/bfq-cgroup.c
 new file mode 100644
-index 0000000..36fdec2
+index 0000000..e0d7884
 --- /dev/null
 +++ b/block/bfq-cgroup.c
-@@ -0,0 +1,775 @@
+@@ -0,0 +1,838 @@
 +/*
 + * BFQ: CGROUPS support.
 + *
@@ -477,6 +477,48 @@ index 0000000..36fdec2
 +}
 +
 +/**
++ * bfq_reparent_leaf_entity - move leaf entity to the root_group.
++ * @bfqd: the device data structure with the root group.
++ * @entity: the entity to move.
++ */
++static inline void bfq_reparent_leaf_entity(struct bfq_data *bfqd,
++					    struct bfq_entity *entity)
++{
++	struct bfq_queue *bfqq = bfq_entity_to_bfqq(entity);
++
++	BUG_ON(bfqq == NULL);
++	bfq_bfqq_move(bfqd, bfqq, entity, bfqd->root_group);
++	return;
++}
++
++/**
++ * bfq_reparent_active_entities - move to the root group all active entities.
++ * @bfqd: the device data structure with the root group.
++ * @bfqg: the group to move from.
++ * @st: the service tree with the entities.
++ *
++ * Needs queue_lock to be taken and reference to be valid over the call.
++ */
++static inline void bfq_reparent_active_entities(struct bfq_data *bfqd,
++						struct bfq_group *bfqg,
++						struct bfq_service_tree *st)
++{
++	struct rb_root *active = &st->active;
++	struct bfq_entity *entity = NULL;
++
++	if (!RB_EMPTY_ROOT(&st->active))
++		entity = bfq_entity_of(rb_first(active));
++
++	for (; entity != NULL ; entity = bfq_entity_of(rb_first(active)))
++		bfq_reparent_leaf_entity(bfqd, entity);
++
++	if (bfqg->sched_data.active_entity != NULL)
++		bfq_reparent_leaf_entity(bfqd, bfqg->sched_data.active_entity);
++
++	return;
++}
++
++/**
 + * bfq_destroy_group - destroy @bfqg.
 + * @bgrp: the bfqio_cgroup containing @bfqg.
 + * @bfqg: the group being destroyed.
@@ -494,17 +536,9 @@ index 0000000..36fdec2
 +	hlist_del(&bfqg->group_node);
 +
 +	/*
-+	 * We may race with device destruction, take extra care when
-+	 * dereferencing bfqg->bfqd.
++	 * Empty all service_trees belonging to this group before deactivating
++	 * the group itself.
 +	 */
-+	bfqd = bfq_get_bfqd_locked(&bfqg->bfqd, &flags);
-+	if (bfqd != NULL) {
-+		hlist_del(&bfqg->bfqd_node);
-+		__bfq_deactivate_entity(entity, 0);
-+		bfq_put_async_queues(bfqd, bfqg);
-+		bfq_put_bfqd_unlock(bfqd, &flags);
-+	}
-+
 +	for (i = 0; i < BFQ_IOPRIO_CLASSES; i++) {
 +		st = bfqg->sched_data.service_tree + i;
 +
@@ -516,11 +550,40 @@ index 0000000..36fdec2
 +		 */
 +		bfq_flush_idle_tree(st);
 +
++		/*
++		 * It may happen that some queues are still active
++		 * (busy) upon group destruction (if the corresponding
++		 * processes have been forced to terminate). We move
++		 * all the leaf entities corresponding to these queues
++		 * to the root_group.
++		 * Also, it may happen that the group has an entity
++		 * under service, which is disconnected from the active
++		 * tree: it must be moved, too.
++		 * There is no need to put the sync queues, as the
++		 * scheduler has taken no reference.
++		 */
++		bfqd = bfq_get_bfqd_locked(&bfqg->bfqd, &flags);
++		if (bfqd != NULL) {
++			bfq_reparent_active_entities(bfqd, bfqg, st);
++			bfq_put_bfqd_unlock(bfqd, &flags);
++		}
 +		BUG_ON(!RB_EMPTY_ROOT(&st->active));
 +		BUG_ON(!RB_EMPTY_ROOT(&st->idle));
 +	}
 +	BUG_ON(bfqg->sched_data.next_active != NULL);
 +	BUG_ON(bfqg->sched_data.active_entity != NULL);
++
++	/*
++	 * We may race with device destruction, take extra care when
++	 * dereferencing bfqg->bfqd.
++	 */
++	bfqd = bfq_get_bfqd_locked(&bfqg->bfqd, &flags);
++	if (bfqd != NULL) {
++		hlist_del(&bfqg->bfqd_node);
++		__bfq_deactivate_entity(entity, 0);
++		bfq_put_async_queues(bfqd, bfqg);
++		bfq_put_bfqd_unlock(bfqd, &flags);
++	}
 +	BUG_ON(entity->tree != NULL);
 +
 +	/*
@@ -692,8 +755,7 @@ index 0000000..36fdec2
 +				ARRAY_SIZE(bfqio_files));
 +}
 +
-+static struct cgroup_subsys_state *bfqio_create(struct cgroup_subsys *subsys,
-+						struct cgroup *cgroup)
++static struct cgroup_subsys_state *bfqio_create(struct cgroup *cgroup)
 +{
 +	struct bfqio_cgroup *bgrp;
 +
@@ -720,8 +782,7 @@ index 0000000..36fdec2
 + * behavior is that a group containing a task that forked using CLONE_IO
 + * will not be destroyed until the tasks sharing the ioc die.
 + */
-+static int bfqio_can_attach(struct cgroup_subsys *subsys, struct cgroup *cgroup,
-+			    struct cgroup_taskset *tset)
++static int bfqio_can_attach(struct cgroup *cgroup, struct cgroup_taskset *tset)
 +{
 +	struct task_struct *task;
 +	struct io_context *ioc;
@@ -747,8 +808,7 @@ index 0000000..36fdec2
 +	return ret;
 +}
 +
-+static void bfqio_attach(struct cgroup_subsys *subsys, struct cgroup *cgroup,
-+			 struct cgroup_taskset *tset)
++static void bfqio_attach(struct cgroup *cgroup, struct cgroup_taskset *tset)
 +{
 +	struct task_struct *task;
 +	struct io_context *ioc;
@@ -767,14 +827,17 @@ index 0000000..36fdec2
 +			 */
 +			rcu_read_lock();
 +			hlist_for_each_entry_rcu(icq, n, &ioc->icq_list, ioc_node)
-+				bfq_bic_change_cgroup(icq_to_bic(icq), cgroup);
++				if (!strncmp(icq->q->elevator->type->elevator_name,
++					     "bfq", ELV_NAME_MAX))
++					bfq_bic_change_cgroup(icq_to_bic(icq),
++							      cgroup);
 +			rcu_read_unlock();
 +			put_io_context(ioc);
 +		}
 +	}
 +}
 +
-+static void bfqio_destroy(struct cgroup_subsys *subsys, struct cgroup *cgroup)
++static void bfqio_destroy(struct cgroup *cgroup)
 +{
 +	struct bfqio_cgroup *bgrp = cgroup_to_bfqio(cgroup);
 +	struct hlist_node *n, *tmp;
@@ -896,10 +959,10 @@ index 0000000..af791d2
 +}
 diff --git a/block/bfq-iosched.c b/block/bfq-iosched.c
 new file mode 100644
-index 0000000..81cc977
+index 0000000..eb9f72b
 --- /dev/null
 +++ b/block/bfq-iosched.c
-@@ -0,0 +1,2911 @@
+@@ -0,0 +1,2907 @@
 +/*
 + * BFQ, or Budget Fair Queueing, disk scheduler.
 + *
@@ -1594,23 +1657,12 @@ index 0000000..81cc977
 + * bfqd->last_position, or if rq is closer to bfqd->last_position than
 + * bfqq->next_rq
 + */
-+static inline int bfq_rq_close(struct bfq_data *bfqd, struct bfq_queue *bfqq,
-+			       struct request *rq)
++static inline int bfq_rq_close(struct bfq_data *bfqd, struct request *rq)
 +{
-+	sector_t sdist = bfqq->seek_mean;
-+
-+	if (!bfq_sample_valid(bfqq->seek_samples))
-+		sdist = BFQQ_SEEK_THR;
-+
-+	/* If seek_mean is large, using it as close criteria is meaningless */
-+	if (sdist > BFQQ_SEEK_THR)
-+		sdist = BFQQ_SEEK_THR;
-+
-+	return bfq_dist_from_last(bfqd, rq) <= sdist;
++	return bfq_dist_from_last(bfqd, rq) <= BFQQ_SEEK_THR;
 +}
 +
-+static struct bfq_queue *bfqq_close(struct bfq_data *bfqd,
-+				    struct bfq_queue *cur_bfqq)
++static struct bfq_queue *bfqq_close(struct bfq_data *bfqd)
 +{
 +	struct rb_root *root = &bfqd->rq_pos_tree;
 +	struct rb_node *parent, *node;
@@ -1634,7 +1686,7 @@ index 0000000..81cc977
 +	 * position).
 +	 */
 +	__bfqq = rb_entry(parent, struct bfq_queue, pos_node);
-+	if (bfq_rq_close(bfqd, cur_bfqq, __bfqq->next_rq))
++	if (bfq_rq_close(bfqd, __bfqq->next_rq))
 +		return __bfqq;
 +
 +	if (blk_rq_pos(__bfqq->next_rq) < sector)
@@ -1645,7 +1697,7 @@ index 0000000..81cc977
 +		return NULL;
 +
 +	__bfqq = rb_entry(node, struct bfq_queue, pos_node);
-+	if (bfq_rq_close(bfqd, cur_bfqq, __bfqq->next_rq))
++	if (bfq_rq_close(bfqd, __bfqq->next_rq))
 +		return __bfqq;
 +
 +	return NULL;
@@ -1681,7 +1733,7 @@ index 0000000..81cc977
 +	 * working closely on the same area of the disk. In that case,
 +	 * we can group them together and don't waste time idling.
 +	 */
-+	bfqq = bfqq_close(bfqd, cur_bfqq);
++	bfqq = bfqq_close(bfqd);
 +	if (bfqq == NULL || bfqq == cur_bfqq)
 +		return NULL;
 +
@@ -1841,7 +1893,7 @@ index 0000000..81cc977
 +	int process_refs, io_refs;
 +
 +	io_refs = bfqq->allocated[READ] + bfqq->allocated[WRITE];
-+	process_refs = atomic_read(&bfqq->ref) - io_refs;
++	process_refs = atomic_read(&bfqq->ref) - io_refs - bfqq->entity.on_st;
 +	BUG_ON(process_refs < 0);
 +	return process_refs;
 +}
@@ -3558,16 +3610,23 @@ index 0000000..81cc977
 +	struct bfq_data *bfqd = e->elevator_data;
 +	ssize_t num_char = 0;
 +
++	num_char += sprintf(page + num_char, "Tot reqs queued %d\n\n",
++			    bfqd->queued);
++
 +	num_char += sprintf(page + num_char, "Active:\n");
 +	list_for_each_entry(bfqq, &bfqd->active_list, bfqq_list) {
-+		num_char += sprintf(page + num_char,
-+			"pid%d: weight %hu, dur %d/%u\n",
-+			bfqq->pid,
-+			bfqq->entity.weight,
++	  num_char += sprintf(page + num_char,
++			      "pid%d: weight %hu, nr_queued %d %d,"
++			      " dur %d/%u\n",
++			      bfqq->pid,
++			      bfqq->entity.weight,
++			      bfqq->queued[0],
++			      bfqq->queued[1],
 +			jiffies_to_msecs(jiffies -
 +				bfqq->last_rais_start_finish),
 +			jiffies_to_msecs(bfqq->raising_cur_max_time));
 +	}
++
 +	num_char += sprintf(page + num_char, "Idle:\n");
 +	list_for_each_entry(bfqq, &bfqd->idle_list, bfqq_list) {
 +			num_char += sprintf(page + num_char,
@@ -3813,10 +3872,10 @@ index 0000000..81cc977
 +MODULE_DESCRIPTION("Budget Fair Queueing IO scheduler");
 diff --git a/block/bfq-sched.c b/block/bfq-sched.c
 new file mode 100644
-index 0000000..3e20c4f
+index 0000000..87bea97
 --- /dev/null
 +++ b/block/bfq-sched.c
-@@ -0,0 +1,1037 @@
+@@ -0,0 +1,1070 @@
 +/*
 + * BFQ: Hierarchical B-WF2Q+ scheduler.
 + *
@@ -3838,10 +3897,30 @@ index 0000000..3e20c4f
 +						 int extract,
 +						 struct bfq_data *bfqd);
 +
++static inline void bfq_update_budget(struct bfq_entity *next_active)
++{
++	struct bfq_entity *bfqg_entity;
++	struct bfq_group *bfqg;
++	struct bfq_sched_data *group_sd;
++
++	BUG_ON(next_active == NULL);
++
++	group_sd = next_active->sched_data;
++
++	bfqg = container_of(group_sd, struct bfq_group, sched_data);
++	/*
++	 * bfq_group's my_entity field is not NULL only if the group
++	 * is not the root group. We must not touch the root entity
++	 * as it must never become an active entity.
++	 */
++	bfqg_entity = bfqg->my_entity;
++	if (bfqg_entity != NULL)
++		bfqg_entity->budget = next_active->budget;
++}
++
 +static int bfq_update_next_active(struct bfq_sched_data *sd)
 +{
-+	struct bfq_group *bfqg;
-+	struct bfq_entity *entity, *next_active;
++	struct bfq_entity *next_active;
 +
 +	if (sd->active_entity != NULL)
 +		/* will update/requeue at the end of service */
@@ -3857,12 +3936,8 @@ index 0000000..3e20c4f
 +	next_active = bfq_lookup_next_entity(sd, 0, NULL);
 +	sd->next_active = next_active;
 +
-+	if (next_active != NULL) {
-+		bfqg = container_of(sd, struct bfq_group, sched_data);
-+		entity = bfqg->my_entity;
-+		if (entity != NULL)
-+			entity->budget = next_active->budget;
-+	}
++	if (next_active != NULL)
++		bfq_update_budget(next_active);
 +
 +	return 1;
 +}
@@ -3886,6 +3961,10 @@ index 0000000..3e20c4f
 +
 +static inline void bfq_check_next_active(struct bfq_sched_data *sd,
 +					 struct bfq_entity *entity)
++{
++}
++
++static inline void bfq_update_budget(struct bfq_entity *next_active)
 +{
 +}
 +#endif
@@ -4394,7 +4473,7 @@ index 0000000..3e20c4f
 +		st = bfq_entity_service_tree(entity);
 +
 +		entity->service += served;
-+		WARN_ON_ONCE(entity->service > entity->budget);
++		BUG_ON(entity->service > entity->budget);
 +		BUG_ON(st->wsum == 0);
 +
 +		st->vtime += bfq_delta(served, st->wsum);
@@ -4676,9 +4755,10 @@ index 0000000..3e20c4f
 + * Update the virtual time in @st and return the first eligible entity
 + * it contains.
 + */
-+static struct bfq_entity *__bfq_lookup_next_entity(struct bfq_service_tree *st)
++static struct bfq_entity *__bfq_lookup_next_entity(struct bfq_service_tree *st,
++						   bool force)
 +{
-+	struct bfq_entity *entity;
++	struct bfq_entity *entity, *new_next_active = NULL;
 +
 +	if (RB_EMPTY_ROOT(&st->active))
 +		return NULL;
@@ -4686,6 +4766,17 @@ index 0000000..3e20c4f
 +	bfq_update_vtime(st);
 +	entity = bfq_first_active_entity(st);
 +	BUG_ON(bfq_gt(entity->start, st->vtime));
++
++	/*
++	 * If the chosen entity does not match with the sched_data's
++	 * next_active and we are forcedly serving the IDLE priority
++	 * class tree, bubble up budget update.
++	 */
++	if (unlikely(force && entity != entity->sched_data->next_active)) {
++		new_next_active = entity;
++		for_each_entity(new_next_active)
++			bfq_update_budget(new_next_active);
++	}
 +
 +	return entity;
 +}
@@ -4713,7 +4804,7 @@ index 0000000..3e20c4f
 +
 +	if (bfqd != NULL &&
 +	    jiffies - bfqd->bfq_class_idle_last_service > BFQ_CL_IDLE_TIMEOUT) {
-+		entity = __bfq_lookup_next_entity(st + BFQ_IOPRIO_CLASSES - 1);
++		entity = __bfq_lookup_next_entity(st + BFQ_IOPRIO_CLASSES - 1, true);
 +		if (entity != NULL) {
 +			i = BFQ_IOPRIO_CLASSES - 1;
 +			bfqd->bfq_class_idle_last_service = jiffies;
@@ -4721,7 +4812,7 @@ index 0000000..3e20c4f
 +		}
 +	}
 +	for (; i < BFQ_IOPRIO_CLASSES; i++) {
-+		entity = __bfq_lookup_next_entity(st + i);
++		entity = __bfq_lookup_next_entity(st + i, false);
 +		if (entity != NULL) {
 +			if (extract) {
 +				bfq_check_next_active(sd, entity);
@@ -4780,6 +4871,7 @@ index 0000000..3e20c4f
 +	*/
 +	for_each_entity(entity) {
 +		sd = entity->sched_data;
++		bfq_update_budget(entity);
 +		bfq_update_vtime(bfq_entity_service_tree(entity));
 +		bfq_active_extract(bfq_entity_service_tree(entity), entity);
 +		sd->active_entity = entity;
@@ -4856,12 +4948,12 @@ index 0000000..3e20c4f
 +}
 diff --git a/block/bfq.h b/block/bfq.h
 new file mode 100644
-index 0000000..d5b82f0
+index 0000000..8dae00e
 --- /dev/null
 +++ b/block/bfq.h
 @@ -0,0 +1,596 @@
 +/*
-+ * BFQ-v3r3 for 3.3.0: data structures and common functions prototypes.
++ * BFQ-v3r4 for 3.4.0: data structures and common functions prototypes.
 + *
 + * Based on ideas and code from CFQ:
 + * Copyright (C) 2003 Jens Axboe <axboe@kernel.dk>
@@ -5457,5 +5549,5 @@ index 0000000..d5b82f0
 +static void bfq_exit_bfqq(struct bfq_data *bfqd, struct bfq_queue *bfqq);
 +#endif
 -- 
-1.7.2.5
+1.7.10
 

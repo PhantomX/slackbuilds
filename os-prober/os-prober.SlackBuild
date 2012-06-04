@@ -1,10 +1,11 @@
 #!/bin/sh
-#-- mercurial for Slackware --
+#-- os-prober for Slackware --
 # Build script by Phantom X <megaphantomx at bol.com.br>
-# Suggested usage: $ mercurial.SlackBuild 2>&1 | tee build.log
+# Suggested usage: $ os-prober.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008, 2009, 2010, 2011, 2012 Phantom X, Goiania, Brazil.
+# Copyright 2008-2012 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
+# All rights reserved.
 #
 # Redistribution and use of this script, with or without modification, is
 # permitted provided that the following conditions are met:
@@ -23,7 +24,7 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# http://www.selenic.com/mercurial/wiki/
+# http://kitenet.net/~joey/code/os-prober/
 
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
@@ -40,10 +41,10 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
-NAME=mercurial
+NAME=os-prober
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.2.2}
+VERSION=${VERSION:-1.53}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -63,22 +64,16 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
-PYSITEARCH=$(python -c 'from distutils import sysconfig; print sysconfig.get_python_lib(1)')
-PYSITELIB=$(python -c 'from distutils import sysconfig; print sysconfig.get_python_lib()')
-PYVER=$(python -c 'import sys; print sys.version.split(" ")[0]')
-
-emacs_lispdir="$(pkg-config emacs --variable sitepkglispdir || echo /usr/share/emacs/site-lisp)"
-emacs_startdir="$(pkg-config emacs --variable sitestartdir || echo /usr/share/emacs/site-lisp/site-start.d)"
-
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+SRCARCHIVE=${NAME}_${VERSION}.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://www.selenic.com/${NAME}/release/${SRCARCHIVE}"
+DEB_MIRROR=${DEB_MIRROR:-http://ftp.debian.org}
+DL_URL="${DEB_MIRROR}/debian/pool/main/$(echo ${NAME} | sed -e 's/\(.\).*/\1/')/${NAME}/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
@@ -120,71 +115,53 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-CFLAGS="${SLKCFLAGS}" \
-python setup.py build || exit 1
+find -type f -exec sed -i -e 's|usr/lib|usr/libexec|g' {} ';'
+sed -i -e 's|grub-probe|grub2-probe|g' os-probes/common/50mounted-tests \
+  linux-boot-probes/common/50mounted-tests
 
-python setup.py install -O1 --skip-build --root ${PKG} || exit 1
+sed -i -e 's|^CFLAGS :=|CFLAGS ?=|g' Makefile || exit 1
+
+export CFLAGS="${SLKCFLAGS} ${LDFLAGS}"
+
+make -j${NJOBS} || make || exit $?
+
+mkdir -p ${PKG}/usr/bin
+install -pm 0755 os-prober linux-boot-prober ${PKG}/usr/bin/ || exit 1
+
+mkdir -p ${PKG}/usr/libexec
+install -pm 0755 newns ${PKG}/usr/libexec/newns || exit 1
+
+mkdir -p ${PKG}/usr/share/${NAME}
+install -pm 0644 common.sh ${PKG}/usr/share/${NAME}/common.sh || exit 1
+
+for probes in \
+  os-probes os-probes/mounted os-probes/init \
+  linux-boot-probes linux-boot-probes/mounted
+  do
+    mkdir -p ${PKG}/usr/libexec/${probes}
+    cp -a ${probes}/common/* ${PKG}/usr/libexec/${probes}/ || exit 1
+    if [ -e "${probes}/x86" ]; then 
+      cp -a ${probes}/x86/* ${PKG}/usr/libexec/${probes}/ || exit 1 
+    fi
+done
+
+install -m 755 -p os-probes/mounted/powerpc/20macosx \
+  ${PKG}/usr/libexec/os-probes/mounted || exit 1
+
+mkdir -p ${PKG}/var/lib/${NAME}
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-mkdir -p ${PKG}/usr/libexec/mercurial
-install -m 755 contrib/hgk ${PKG}/usr/libexec/mercurial/hgk || exit 1
-install -m 755 contrib/hg-ssh ${PKG}/usr/bin/ || exit 1
-
-bash_completion_dir=${PKG}/etc/bash_completion.d
-mkdir -p ${bash_completion_dir}
-install -m 644 contrib/bash_completion ${bash_completion_dir}/mercurial.sh || exit 1
-
-zsh_completion_dir=${PKG}/usr/share/zsh/site-functions
-mkdir -p ${zsh_completion_dir}
-install -m 644 contrib/zsh_completion ${zsh_completion_dir}/_mercurial || exit 1
-
-mkdir -p ${PKG}/${emacs_lispdir}
-
-( cd contrib || exit 1
-  for file in mercurial.el mq.el; do
-    emacs -batch -l mercurial.el --no-site-file -f batch-byte-compile ${file}
-    install -p -m 644 ${file} ${file}c ${PKG}/${emacs_lispdir} || exit 1
-    rm -f ${file}c
-  done
-) || exit 1
-
-mkdir -p ${PKG}/${emacs_startdir}
-install -m644 ${CWD}/mercurial-site-start.el ${PKG}/${emacs_startdir}/ || exit 1
-
-mkdir -p ${PKG}/etc/mercurial/hgrc.d
-cat > ${PKG}/etc/mercurial/hgrc.d/hgk.rc <<EOF
-[extensions]
-# enable hgk extension ('hg help' shows 'view' as a command)
-hgk=
-
-[hgk]
-path=/usr/libexec/mercurial/hgk
-EOF
-
-install -m 644 contrib/mergetools.hgrc \
-  ${PKG}/etc/mercurial/hgrc.d/mergetools.rc || exit 1
-
-mv ${PKG}/${PYSITEARCH}/mercurial/locale ${PKG}/usr/share/locale || exit 1
-rm -rf ${PKG}/${PYSITEARCH}/mercurial/locale
-
-( cd doc
-  for dir in 1 5 ; do
-    mkdir -p ${PKG}/usr/man/man${dir}
-    for file in *.${dir} ; do
-      install -pm0644 ${file} ${PKG}/usr/man/man${dir}/${file}
-    done
-  done
-)
-
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  CONTRIBUTORS COPYING* PKG-INFO README* ${CWD}/ChangeLog.SB \
+  README TODO debian/copyright debian/changelog ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r debian/changelog ] && head -n 1000 debian/changelog > ${DOCDIR}/changelog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -207,19 +184,18 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
-       ${PKG}/install/slack-desc
+  ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${CWD}/*.el ${SBDIR}/
+    ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \

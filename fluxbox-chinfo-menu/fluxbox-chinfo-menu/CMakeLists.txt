@@ -10,4 +10,5 @@ if(NOT DEFINED SHARE_INSTALL_PREFIX)
 endif()
 
 add_subdirectory(bin)
+add_subdirectory(po)
 add_subdirectory(share)

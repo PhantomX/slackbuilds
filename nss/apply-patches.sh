@@ -23,6 +23,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bz784672-protect-against-calls
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-fix-gcc47-secmodt.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/Bug-800674-Unable-to-contact-LDAP-Server-during-winsync.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/Bug-800682-Qpid-AMQP-daemon-fails-to-load-after-nss-update.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Bug-772628-nss_Init-leaks-memory.patch
 
 # Uncomment this if builds stops with -lz error
 #zcat ${SB_PATCHDIR}/nss-fix-zlib.patch.gz | patch -p0 -E --backup --verbose

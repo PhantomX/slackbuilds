@@ -71,4 +71,7 @@ ApplyPatch perl-5.14.2-Signal-handlers-must-run-before-sigsuspend-returns.patch
 # Stop !$^V from leaking, rhbz#787613, RT#109762, fixed after 5.15.7.
 ApplyPatch perl-5.14.2-Stop-V-from-leaking.patch
 
+# Fix find2perl to translate ? glob properly, rhbz#825701, RT#113054
+ApplyPatch perl-5.14.2-find2perl-transtate-question-mark-properly.patch
+
 set +e +o pipefail

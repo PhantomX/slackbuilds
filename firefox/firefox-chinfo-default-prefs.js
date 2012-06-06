@@ -5,6 +5,7 @@ pref("browser.backspace_action",            2);
 pref("browser.display.use_system_colors",   true);
 pref("browser.download.folderList",         1);
 pref("browser.link.open_external",          3);
+pref("browser.newtabpage.enabled", false);
 pref("browser.shell.checkDefaultBrowser",   false);
 pref("browser.urlbar.clickSelectsAll", false);
 pref("browser.urlbar.doubleClickSelectsAll", true);

@@ -1,1 +1,0 @@
-../../xulrunner/patches/kde.js

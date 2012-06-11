@@ -19,7 +19,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xchat-2.8.6-freenode-ports.pat
 # work with libnotify 0.7
 # https://sourceforge.net/tracker/?func=detail&aid=3109838&group_id=239&atid=100239
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xchat-2.8.8-libnotify07.patch
-
-#zcat ${SB_PATCHDIR}/${NAME}-new-gtk-type.patch.gz | patch -p1 -E --backup --verbose
+# link against libnotify
+# https://sourceforge.net/tracker/?func=detail&aid=3280223&group_id=239&atid=100239
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xchat-2.8.8-link-against-libnotify.patch
+# Only glib.h can be included and g_thread_init  should no longer be used
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/xchat-2.8.8-glib.patch
 
 set +e +o pipefail

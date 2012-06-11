@@ -188,6 +188,7 @@ ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 # DRM core
 ApplyPatch drm-vgem.patch
+ApplyPatch drm-edid-Make-the-header-fixup-threshold-tunable.patch
 
 # Nouveau DRM
 #ApplyOptionalPatch drm-nouveau-updates.patch

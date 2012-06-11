@@ -77,8 +77,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-kwin_llvmpipe_wh
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.3-plasma_clock_widget_locale.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/calendartable-locale-crash.patch
+# ksysguard fixes
+# https://projects.kde.org/projects/kde/kde-workspace/repository/revisions/b6fa43be9d86a577dd103dc4fa727770725e2d85
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.5-ksysguard-1.patch
+# https://projects.kde.org/projects/kde/kde-workspace/repository/revisions/4ccec1a6623426ad7b3672ce85424ad9201e5b73
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.5-ksysguard-2.patch
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch

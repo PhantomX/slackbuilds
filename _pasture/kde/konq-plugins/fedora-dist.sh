@@ -1,1 +1,0 @@
-../../fedora-dist.sh

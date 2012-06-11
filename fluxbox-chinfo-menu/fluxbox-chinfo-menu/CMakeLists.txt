@@ -3,6 +3,8 @@ set(PACKAGE fluxbox-chinfo-menu)
 
 cmake_minimum_required (VERSION 2.8)
 
+set(FCM_VERSION "3.1.0")
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 if(NOT DEFINED SHARE_INSTALL_PREFIX)

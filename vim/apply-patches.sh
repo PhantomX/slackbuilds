@@ -24,7 +24,6 @@ fi
 
 mkdir -p patches
 cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
-cp -f ${SB_PATCHDIR}/7.3.527-fixed patches/7.3.527
 
 ( SB_PATCHDIR=patches
   for i in $( seq -w ${PATCHLEVEL} ) ; do

@@ -13,6 +13,5 @@ perl -pi -e \
 zcat ${SB_PATCHDIR}/perl-Tk-debian.patch.gz | patch -p1 -E --backup --verbose
 # fix segfaults as in #235666 because of broken cashing code
 zcat ${SB_PATCHDIR}/perl-Tk-seg.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/804.029-X11_XLIB_H.patch
 
 set +e +o pipefail

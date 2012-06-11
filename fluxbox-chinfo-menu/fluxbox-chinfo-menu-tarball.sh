@@ -17,8 +17,8 @@ unset CDPATH
 pwd=$(pwd)
 
 [ -d "$(pwd)/${module}" ]
-[ -f "$(pwd)/${module}/VERSION" ]
-version=$(head -n1 "$(pwd)/${module}/VERSION")
+[ -f "$(pwd)/${module}/CMakeLists.txt" ]
+version=$(grep FCM_VERSION "$(pwd)/${module}/CMakeLists.txt" | cut -d\" -f2)
 
 pushd "${tmp}"
   mkdir ${module}-${version}

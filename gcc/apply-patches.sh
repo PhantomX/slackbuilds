@@ -17,6 +17,10 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libtool-no-rpath.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr38757.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-no-add-needed.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libitm-fno-exceptions.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-gnatlibs-picflags.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr53621.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr52558.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/libgo-hardening.diff
 
 # From Gentoo
 patch -p0 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_gcc-default-fortify-source.patch

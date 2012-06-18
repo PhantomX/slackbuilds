@@ -6,12 +6,9 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
 # Patch ini files:
-sed -e "/extension_dir/s|/lib/|/lib${LIBDIRSUFFIX}/|g" \
-  ${SB_PATCHDIR}/php.ini.diff \
-  | patch -p1 --verbose --backup --suffix=.orig
-sed -e "/extension_dir/s|/lib/|/lib${LIBDIRSUFFIX}/|g" \
-  ${SB_PATCHDIR}/php.development.ini.diff \
-  | patch -p1 --verbose --backup --suffix=.orig
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php.ini-development.diff
+patch -p1 -E --backup --verbose php.ini-production -i ${SB_PATCHDIR}/php.ini-development.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-fpm.conf.diff
 
 # Build fixes
 zcat ${SB_PATCHDIR}/php-5.2.0-includedir.patch.gz | patch -p1 -E --backup --verbose

@@ -44,7 +44,7 @@ fi
 NAME=php
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-5.4.3}
+VERSION=${VERSION:-5.4.4}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -166,8 +166,7 @@ php_configure() {
 EXTENSION_DIR=/usr/lib${LIBDIRSUFFIX}/php/extensions \
 PEAR_INSTALLDIR=/usr/share/pear \
 CFLAGS="${SLKCFLAGS} -fno-strict-aliasing -Wno-pointer-sign" \
-./configure \
-  $* \
+../configure \
   --prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
   --with-libdir=lib${LIBDIRSUFFIX} \
@@ -176,7 +175,7 @@ CFLAGS="${SLKCFLAGS} -fno-strict-aliasing -Wno-pointer-sign" \
   --mandir=/usr/man \
   --disable-safe-mode \
   --disable-magic-quotes \
-  --enable-zend-multibyte \
+  --enable-maintainer-zts \
   --enable-mbregex \
   --enable-tokenizer=shared \
   --with-config-file-scan-dir=/etc/php \
@@ -228,13 +227,10 @@ CFLAGS="${SLKCFLAGS} -fno-strict-aliasing -Wno-pointer-sign" \
   --enable-mbstring=shared \
   --enable-hash \
   --with-mhash=shared,/usr \
-  --with-mysql=shared,/usr \
-  --with-mysqli=shared,/usr/bin/mysql_config \
-  --enable-pdo=shared \
-  --with-pdo-mysql=shared,/usr \
-  --with-pdo-sqlite=shared,/usr \
+  --with-mysql=shared,mysqlnd \
+  --with-mysqli=shared,mysqlnd \
+  --with-mysql-sock=/var/run/mysql/mysql.sock \
   --with-pspell=shared,/usr \
-  --with-mm=/usr \
   --enable-shmop=shared \
   --with-snmp=shared,/usr \
   --enable-soap=shared \
@@ -256,24 +252,12 @@ CFLAGS="${SLKCFLAGS} -fno-strict-aliasing -Wno-pointer-sign" \
   --with-gnu-ld \
   --with-pic \
   --disable-rpath \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux
+  --build=${SLKTARGET}-${SLKDTARGET}-linux $@
 }
 
-# Make the Apache2 module version of PHP:
-php_configure \
-  --with-apxs2=/usr/bin/apxs || exit 1
-make -j${NJOBS} || make || exit 1
-make install INSTALL_ROOT=${PKG} || exit 1
-
-# Make the embedded version of PHP:
-make distclean
-php_configure \
-  --enable-embed \
-  --without-mysql \
-  --without-gd \
+without_shared="--without-gd \
   --without-unixODBC \
   --disable-dba \
-  --disable-pdo \
   --disable-xmlreader \
   --disable-xmlwriter \
   --disable-json \
@@ -283,31 +267,84 @@ php_configure \
   --disable-posix \
   --disable-sysvmsg \
   --disable-sysvshm \
-  --disable-sysvsem || exit 1
+  --disable-sysvsem"
+
+pdo_shared="--enable-pdo=shared \
+  --with-pdo-odbc=shared,unixODBC,/usr \
+  --with-pdo-mysql=shared,mysqlnd \
+  --with-pdo-pgsql=shared,/usr \
+  --with-pdo-sqlite=shared,/usr \
+  --with-pdo-dblib=shared,/usr \
+  --with-sqlite3=shared,/usr"
+
+# Make the Apache2 module version of PHP:
+mkdir build-apache
+( cd build-apache
+
+php_configure \
+  --with-apxs2=/usr/bin/apxs \
+  --enable-pdo=shared \
+  --with-mysql=shared,/usr \
+  --with-mysqli=shared,/usr/bin/mysql_config \
+  --with-pdo-mysql=shared,/usr/bin/mysql_config \
+  --with-pdo-sqlite=shared,/usr \
+  ${without_shared} || exit $?
+make -j${NJOBS} || make || exit 1
+make install INSTALL_ROOT=${PKG} || exit 1
+) || exit $?
+
+mkdir build-fpm
+( cd build-fpm
+php_configure \
+  --enable-fpm \
+  --without-mysql \
+  --disable-pdo \
+  --with-fpm-user=apache \
+  --with-fpm-group=apache \
+  ${without_shared} || exit $?
+make -j${NJOBS} || make || exit $?
+make install-fpm INSTALL_ROOT=${PKG} || exit $?
+) || exit $?
+
+# Make the embedded version of PHP:
+mkdir build-embedded
+( cd build-embedded
+php_configure \
+  --enable-embed \
+  --without-mysql \
+  --disable-pdo \
+  ${without_shared} || exit $?
 make -j${NJOBS} || make || exit 1
 make install-sapi install-headers INSTALL_ROOT=${PKG} || exit 1
+) || exit $?
 
 # Make the CLI version of PHP:
-make distclean
+mkdir build-cli
+( cd build-cli
 php_configure \
   --enable-force-cgi-redirect \
   --enable-pcntl \
-  --enable-sigchild || exit 1
+  --enable-sigchild \
+   ${pdo_shared} || exit $?
 make -j${NJOBS} || make || exit 1
 mkdir -p ${PKG}/usr/bin
 cat ./sapi/cli/php > ${PKG}/usr/bin/php || exit 1
 chmod 0755 ${PKG}/usr/bin/php
+) || exit $?
 
 # Make the FastCGI interpreter:
-make distclean
+mkdir build-fastcgi
+( cd build-fastcgi
 php_configure \
   --enable-fastcgi \
   --enable-pcntl \
-  --enable-sigchild || exit 1
+  --enable-sigchild \
+  ${pdo_shared} || exit $?
 make -j${NJOBS} || make || exit 1
 mkdir -p ${PKG}/usr/bin
 cat sapi/cgi/php-cgi > ${PKG}/usr/bin/php-cgi || exit 1
 chmod 0755 ${PKG}/usr/bin/php-cgi
+) || exit $?
 
 # PHP (used to) install Pear with some strange permissions.
 chmod 0755 ${PKG}/usr/bin/pear
@@ -348,6 +385,22 @@ rm -f ${PKG}/etc/httpd/httpd*
 # Session directory for PHP:
 mkdir -p ${PKG}/var/lib/php
 chmod 770 ${PKG}/var/lib/php
+
+mkdir -p ${PKG}/etc/{rc.d,php-fpm}
+install -pm0644 build-fpm/sapi/fpm/init.d.php-fpm ${PKG}/etc/rc.d/rc.php-fpm.new || exit 1
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/php-fpm.service ${PKG}/lib/systemd/system/ || exit 1
+
+mkdir -p ${PKG}/etc/default
+cat >  ${PKG}/etc/default/php-fpm.new <<'EOF'
+# Additional environment file for php-fpm
+
+EOF
+
+mkdir -p ${PKG}/usr/lib/tmpfiles.d
+echo 'd /var/run/php-fpm 755 root root' \
+  > ${PKG}/usr/lib/tmpfiles.d/php-fpm.conf || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -401,7 +454,40 @@ if [ ! -r etc/httpd/php.ini ]; then
    cp -a etc/httpd/php.ini-recommended etc/httpd/php.ini
 fi
 
+# Keep same perms on rc.php-fpm.new:
+if [ -r etc/rc.d/rc.php-fpm -a -r etc/rc.d/rc.php-fpm.new ]; then
+  chmod --reference=etc/rc.d/rc.php-fpm etc/rc.d/rc.php-fpm.new
+fi
+
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
 ${CHROOT} /bin/chown root.apache /var/lib/php
+
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
+fi
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -411,13 +497,13 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/{channels,patches}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/mod_php.conf.example ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/mod_php.conf.example ${CWD}/*.service ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/channels/*.reg \
-                 ${SBDIR}/channels/
+    ${SBDIR}/channels/
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
   rmdir ${SBDIR}/patches
 fi
 

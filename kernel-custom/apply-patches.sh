@@ -237,6 +237,10 @@ ApplyPatch highbank-export-clock-functions.patch
 #rhbz 814278 814289 CVE-2012-2119
 ApplyPatch macvtap-zerocopy-validate-vector-length.patch
 
+#rhbz 830862
+ApplyPatch SUNRPC-new-svc_bind-routine-introduced.patch
+ApplyPatch SUNRPC-move-per-net-operations-from-svc_destroy.patch
+
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 
 set +e +o pipefail +o xtrace

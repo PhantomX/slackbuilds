@@ -19,8 +19,12 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.0-displayfd.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
 #zcat ${SB_PATCHDIR}/xserver-1.6.99-hush-prerelease-warning.patch.gz | patch -p1 --verbose
 
-# tests require Xorg
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.10.99.1-test.patch
+# backport pci slot claiming fix for kms drivers
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-fix-pci-slot-claims.patch
+# backport modesetting fallback driver
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12-modesetting-fallback.patch
+# needed when building without xorg (aka s390x)
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12.2-xorg-touch-test.patch
 
 # misc
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch

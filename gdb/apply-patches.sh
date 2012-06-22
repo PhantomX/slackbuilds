@@ -77,10 +77,6 @@ ApplyPatch gdb-6.3-test-movedir-20050125.patch
 # Fix gcore for threads
 ApplyPatch gdb-6.3-gcore-thread-20050204.patch.gz
 
-# Stop while intentionally stepping and the thread exit is met.
-ApplyPatch gdb-6.6-step-thread-exit.patch
-ApplyPatch gdb-6.3-step-thread-exit-20050211-test.patch
-
 # Prevent gdb from being pushed into background
 ApplyPatch gdb-6.3-terminal-fix-20050214.patch.gz
 
@@ -288,9 +284,6 @@ ApplyPatch gdb-lineno-makeup-test.patch
 # Test power7 ppc disassembly.
 ApplyPatch gdb-ppc-power7-test.patch
 
-# Revert: Add -Wunused-function to compile flags.
-ApplyPatch gdb-unused-revert.patch
-
 # Fix i386+x86_64 rwatch+awatch before run, regression against 6.8 (BZ 541866).
 ApplyPatch gdb-bz541866-rwatch-before-run.patch
 
@@ -302,9 +295,6 @@ ApplyPatch gdb-archer-next-over-throw-cxx-exec.patch
 
 # Backport DWARF-4 support (BZ 601887, Tom Tromey).
 ApplyPatch gdb-bz601887-dwarf4-rh-test.patch
-
-# Print 2D C++ vectors as matrices (BZ 562763, sourceware10659, Chris Moller).
-ApplyPatch gdb-bz562763-pretty-print-2d-vectors.patch
 
 # [delayed-symfile] Test a backtrace regression on CFIs without DIE (BZ 614604).
 #=fedoratest
@@ -361,28 +351,8 @@ ApplyPatch gdb-runtest-pie-override.patch
 #=push
 ApplyPatch gdb-python-rdynamic.patch
 
-# Improve performance for C++ symbols expansion (Tom Tromey, BZ 787487).
-#=push
-ApplyPatch gdb-expand-cxx-accel.patch
-
-# Fix skipping of prologues on RHEL-5 gcc-4.1 -O2 -g code (BZ 797889).
-#=push
-ApplyPatch gdb-prologue-not-skipped.patch
-
-# Fix breakpoint warning during 'next' over exit() (Tom Tromey, BZ 797892).
-#=push
-ApplyPatch gdb-exit-warning.patch
-
-# [vla] Fix crash for dynamic.exp with gcc-gfortran-4.1.2-51.el5.x86_64.
-#=push+work
-ApplyPatch gdb-archer-vla-rhel5gcc.patch
-
 # Print reasons for failed attach/spawn incl. SELinux deny_ptrace (BZ 786878).
 #=push
-ApplyPatch gdb-attach-fail-reasons-1of5.patch
-ApplyPatch gdb-attach-fail-reasons-2of5.patch
-ApplyPatch gdb-attach-fail-reasons-3of5.patch
-ApplyPatch gdb-attach-fail-reasons-4of5.patch
 ApplyPatch gdb-attach-fail-reasons-5of5.patch
 ApplyPatch gdb-attach-fail-reasons-5of5configure.patch
 
@@ -390,39 +360,28 @@ ApplyPatch gdb-attach-fail-reasons-5of5configure.patch
 ApplyPatch gdb-x86-onstack-1of2.patch
 ApplyPatch gdb-x86-onstack-2of2.patch
 
-# Fix DWARF DIEs CU vs. section relative offsets (Joel Brobecker, me).
-ApplyPatch gdb-die-cu-offset-1of2.patch
-ApplyPatch gdb-die-cu-offset-2of2.patch
-
-# [vla] Fix regression on no type for subrange from IBM XLF Fortran (BZ 806920).
-ApplyPatch gdb-subrange-no-type.patch
-
 # Workaround crashes from stale frame_info pointer (BZ 804256).
 ApplyPatch gdb-stale-frame_info.patch
 
-# Security fix for loading untrusted inferiors, see "set auto-load" (BZ 756117).
-#=push
-ApplyPatch gdb-autoload-01of18.patch
-ApplyPatch gdb-autoload-02of18.patch
-ApplyPatch gdb-autoload-03of18.patch
-ApplyPatch gdb-autoload-04of18.patch
-ApplyPatch gdb-autoload-05of18.patch
-ApplyPatch gdb-autoload-06of18.patch
-ApplyPatch gdb-autoload-07of18.patch
-ApplyPatch gdb-autoload-08of18.patch
-ApplyPatch gdb-autoload-09of18.patch
-ApplyPatch gdb-autoload-10of18.patch
-ApplyPatch gdb-autoload-11of18.patch
-ApplyPatch gdb-autoload-12of18.patch
-ApplyPatch gdb-autoload-13of18.patch
-ApplyPatch gdb-autoload-14of18.patch
-ApplyPatch gdb-autoload-15of18.patch
-ApplyPatch gdb-autoload-16of18.patch
-ApplyPatch gdb-autoload-17of18.patch
-ApplyPatch gdb-autoload-18of18.patch
+# Workaround PR libc/14166 for inferior calls of strstr.
+#=push+work: But push it to glibc.
+ApplyPatch gdb-glibc-strstr-workaround.patch
 
-# [RHEL5,RHEL6] Fix attaching to stopped processes.
-#=fedora
-ApplyPatch gdb-6.8-attach-signalled-detach-stopped.patch
+# Fix dejagnu-1.5-4.fc17 compatibility for Go (for BZ 635651).
+#=fedoratest
+ApplyPatch gdb-dejagnu-go.patch
+
+# Revert recent breakage of UNIX objfiles order for symbols lookup.
+ApplyPatch gdb-objfile-order.patch
+
+# Disable -lmcheck in the development builds.
+ApplyPatch gdb-disable-mcheck.patch
+
+# Fix assertion on some files as glibc-2.15.90-8.fc18 (Doug Evans).
+ApplyPatch gdb-index-assert.patch
+
+# Support DW_OP_GNU_parameter_ref for -O2 -g inferiors (BZ 827375).
+ApplyPatch gdb-parameterref-1of2.patch
+ApplyPatch gdb-parameterref-2of2.patch
 
 set +e +o pipefail

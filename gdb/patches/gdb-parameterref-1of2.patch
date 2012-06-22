@@ -1,0 +1,416 @@
+http://sourceware.org/ml/gdb-patches/2012-06/msg00458.html
+Subject: [patch 1/2] Generalize call_site.parameter key ("code cleanup")
+
+Hi,
+
+previously parameter could be identified either via DW_OP_reg or via
+DW_OP_fbreg (both in DW_AT_location).  As [patch 2/2] adds new identification
+via DW_AT_abstract_origin generalize this two state deciding into more general
+enum.
+
+
+Thanks,
+Jan
+
+
+gdb/
+2012-06-14  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	Code cleanup: Generalize call_site.parameter key.
+	* dwarf2expr.c (execute_stack_op) <DW_OP_GNU_entry_value>: Remove
+	variable dwarf_reg.  New variable kind_u.  Update parameters to
+	push_dwarf_reg_entry_value.
+	(ctx_no_push_dwarf_reg_entry_value): Update parameters.
+	* dwarf2expr.h (enum call_site_parameter_kind)
+	(union call_site_parameter_u): Forward declarations.
+	(struct dwarf_expr_context_funcs): Update parameters and their
+	description for push_dwarf_reg_entry_value.
+	(ctx_no_push_dwarf_reg_entry_value): Update parameters.
+	* dwarf2loc.c (call_site_parameter_matches): New function.
+	(dwarf_expr_reg_to_entry_parameter): Update parameters and their
+	description.  Use call_site_parameter_matches.
+	(dwarf_expr_push_dwarf_reg_entry_value, value_of_dwarf_reg_entry):
+	Update parameters and their description.
+	(value_of_dwarf_block_entry): Remove variables dwarf_reg and fb_offset.
+	New variable kind_u.  Adjust the caller for updated parameters.
+	(needs_dwarf_reg_entry_value): Update parameters.
+	* dwarf2read.c (read_call_site_scope): New variable loc.  Use it
+	instead of attr.  Update for the changed fields of struct
+	call_site_parameter.
+	* gdbtypes.h: Include dwarf2expr.h.
+	(enum call_site_parameter_kind): New.
+	(struct call_site.parameter): New field kind.  Wrap dwarf_reg and
+	fb_offset into new union u.
+
+--- a/gdb/dwarf2expr.c
++++ b/gdb/dwarf2expr.c
+@@ -1355,33 +1355,35 @@ execute_stack_op (struct dwarf_expr_context *ctx,
+ 	case DW_OP_GNU_entry_value:
+ 	  {
+ 	    uint64_t len;
+-	    int dwarf_reg;
+ 	    CORE_ADDR deref_size;
++	    union call_site_parameter_u kind_u;
+ 
+ 	    op_ptr = safe_read_uleb128 (op_ptr, op_end, &len);
+ 	    if (op_ptr + len > op_end)
+ 	      error (_("DW_OP_GNU_entry_value: too few bytes available."));
+ 
+-	    dwarf_reg = dwarf_block_to_dwarf_reg (op_ptr, op_ptr + len);
+-	    if (dwarf_reg != -1)
++	    kind_u.dwarf_reg = dwarf_block_to_dwarf_reg (op_ptr, op_ptr + len);
++	    if (kind_u.dwarf_reg != -1)
+ 	      {
+ 		op_ptr += len;
+-		ctx->funcs->push_dwarf_reg_entry_value (ctx, dwarf_reg,
+-							0 /* unused */,
++		ctx->funcs->push_dwarf_reg_entry_value (ctx,
++						  CALL_SITE_PARAMETER_DWARF_REG,
++							kind_u,
+ 							-1 /* deref_size */);
+ 		goto no_push;
+ 	      }
+ 
+-	    dwarf_reg = dwarf_block_to_dwarf_reg_deref (op_ptr, op_ptr + len,
+-							&deref_size);
+-	    if (dwarf_reg != -1)
++	    kind_u.dwarf_reg = dwarf_block_to_dwarf_reg_deref (op_ptr,
++							       op_ptr + len,
++							       &deref_size);
++	    if (kind_u.dwarf_reg != -1)
+ 	      {
+ 		if (deref_size == -1)
+ 		  deref_size = ctx->addr_size;
+ 		op_ptr += len;
+-		ctx->funcs->push_dwarf_reg_entry_value (ctx, dwarf_reg,
+-							0 /* unused */,
+-							deref_size);
++		ctx->funcs->push_dwarf_reg_entry_value (ctx,
++						  CALL_SITE_PARAMETER_DWARF_REG,
++							kind_u, deref_size);
+ 		goto no_push;
+ 	      }
+ 
+@@ -1533,7 +1535,8 @@ ctx_no_get_base_type (struct dwarf_expr_context *ctx, cu_offset die)
+ 
+ void
+ ctx_no_push_dwarf_reg_entry_value (struct dwarf_expr_context *ctx,
+-				   int dwarf_reg, CORE_ADDR fb_offset,
++				   enum call_site_parameter_kind kind,
++				   union call_site_parameter_u kind_u,
+ 				   int deref_size)
+ {
+   internal_error (__FILE__, __LINE__,
+--- a/gdb/dwarf2expr.h
++++ b/gdb/dwarf2expr.h
+@@ -26,6 +26,8 @@
+ #include "leb128.h"
+ 
+ struct dwarf_expr_context;
++enum call_site_parameter_kind;
++union call_site_parameter_u;
+ 
+ /* Offset relative to the start of its containing CU (compilation unit).  */
+ typedef struct
+@@ -77,14 +79,12 @@ struct dwarf_expr_context_funcs
+   struct type *(*get_base_type) (struct dwarf_expr_context *ctx, cu_offset die);
+ 
+   /* Push on DWARF stack an entry evaluated for DW_TAG_GNU_call_site's
+-     DWARF_REG/FB_OFFSET at the caller of specified BATON.  If DWARF register
+-     number DWARF_REG specifying the push_dwarf_reg_entry_value parameter is
+-     not -1 FB_OFFSET is ignored.  Otherwise FB_OFFSET specifies stack
+-     parameter offset against caller's stack pointer (which equals the callee's
+-     frame base).  If DEREF_SIZE is not -1 then use
+-     DW_AT_GNU_call_site_data_value instead of DW_AT_GNU_call_site_value.  */
++     parameter matching KIND and KIND_U at the caller of specified BATON.
++     If DEREF_SIZE is not -1 then use DW_AT_GNU_call_site_data_value instead of
++     DW_AT_GNU_call_site_value.  */
+   void (*push_dwarf_reg_entry_value) (struct dwarf_expr_context *ctx,
+-				      int dwarf_reg, CORE_ADDR fb_offset,
++				      enum call_site_parameter_kind kind,
++				      union call_site_parameter_u kind_u,
+ 				      int deref_size);
+ 
+   /* Return the address indexed by DW_OP_GNU_addr_index.
+@@ -289,7 +289,8 @@ void ctx_no_dwarf_call (struct dwarf_expr_context *ctx, cu_offset die_offset);
+ struct type *ctx_no_get_base_type (struct dwarf_expr_context *ctx,
+ 				   cu_offset die);
+ void ctx_no_push_dwarf_reg_entry_value (struct dwarf_expr_context *ctx,
+-					int dwarf_reg, CORE_ADDR fb_offset,
++					enum call_site_parameter_kind kind,
++					union call_site_parameter_u kind_u,
+ 					int deref_size);
+ CORE_ADDR ctx_no_get_addr_index (void *baton, unsigned int index);
+ 
+--- a/gdb/dwarf2loc.c
++++ b/gdb/dwarf2loc.c
+@@ -929,16 +929,34 @@ call_site_find_chain (struct gdbarch *gdbarch, CORE_ADDR caller_pc,
+   return retval;
+ }
+ 
+-/* Fetch call_site_parameter from caller matching the parameters.  FRAME is for
+-   callee.  See DWARF_REG and FB_OFFSET description at struct
+-   dwarf_expr_context_funcs->push_dwarf_reg_entry_value.
++/* Return 1 if KIND and KIND_U match PARAMETER.  Return 0 otherwise.  */
++
++static int
++call_site_parameter_matches (struct call_site_parameter *parameter,
++			     enum call_site_parameter_kind kind,
++			     union call_site_parameter_u kind_u)
++{
++  if (kind == parameter->kind)
++    switch (kind)
++      {
++      case CALL_SITE_PARAMETER_DWARF_REG:
++	return kind_u.dwarf_reg == parameter->u.dwarf_reg;
++      case CALL_SITE_PARAMETER_FB_OFFSET:
++	return kind_u.fb_offset == parameter->u.fb_offset;
++      }
++  return 0;
++}
++
++/* Fetch call_site_parameter from caller matching KIND and KIND_U.
++   FRAME is for callee.
+ 
+    Function always returns non-NULL, it throws NO_ENTRY_VALUE_ERROR
+    otherwise.  */
+ 
+ static struct call_site_parameter *
+-dwarf_expr_reg_to_entry_parameter (struct frame_info *frame, int dwarf_reg,
+-				   CORE_ADDR fb_offset,
++dwarf_expr_reg_to_entry_parameter (struct frame_info *frame,
++				   enum call_site_parameter_kind kind,
++				   union call_site_parameter_u kind_u,
+ 				   struct dwarf2_per_cu_data **per_cu_return)
+ {
+   CORE_ADDR func_addr = get_frame_func (frame);
+@@ -1001,12 +1019,7 @@ dwarf_expr_reg_to_entry_parameter (struct frame_info *frame, int dwarf_reg,
+   for (iparams = 0; iparams < call_site->parameter_count; iparams++)
+     {
+       parameter = &call_site->parameter[iparams];
+-      if (parameter->dwarf_reg == -1 && dwarf_reg == -1)
+-	{
+-	  if (parameter->fb_offset == fb_offset)
+-	    break;
+-	}
+-      else if (parameter->dwarf_reg == dwarf_reg)
++      if (call_site_parameter_matches (parameter, kind, kind_u))
+ 	break;
+     }
+   if (iparams == call_site->parameter_count)
+@@ -1063,17 +1076,17 @@ dwarf_entry_parameter_to_value (struct call_site_parameter *parameter,
+   return dwarf2_evaluate_loc_desc (type, caller_frame, data, size + 1, per_cu);
+ }
+ 
+-/* Execute call_site_parameter's DWARF block matching DEREF_SIZE for caller of
+-   the CTX's frame.  CTX must be of dwarf_expr_ctx_funcs kind.  See DWARF_REG
+-   and FB_OFFSET description at struct
+-   dwarf_expr_context_funcs->push_dwarf_reg_entry_value.
++/* Execute DWARF block of call_site_parameter which matches KIND and KIND_U.
++   Choose DEREF_SIZE value of that parameter.  Search caller of the CTX's
++   frame.  CTX must be of dwarf_expr_ctx_funcs kind.
+ 
+    The CTX caller can be from a different CU - per_cu_dwarf_call implementation
+    can be more simple as it does not support cross-CU DWARF executions.  */
+ 
+ static void
+ dwarf_expr_push_dwarf_reg_entry_value (struct dwarf_expr_context *ctx,
+-				       int dwarf_reg, CORE_ADDR fb_offset,
++				       enum call_site_parameter_kind kind,
++				       union call_site_parameter_u kind_u,
+ 				       int deref_size)
+ {
+   struct dwarf_expr_baton *debaton;
+@@ -1090,7 +1103,7 @@ dwarf_expr_push_dwarf_reg_entry_value (struct dwarf_expr_context *ctx,
+   frame = debaton->frame;
+   caller_frame = get_prev_frame (frame);
+ 
+-  parameter = dwarf_expr_reg_to_entry_parameter (frame, dwarf_reg, fb_offset,
++  parameter = dwarf_expr_reg_to_entry_parameter (frame, kind, kind_u,
+ 						 &caller_per_cu);
+   data_src = deref_size == -1 ? parameter->value : parameter->data_value;
+   size = deref_size == -1 ? parameter->value_size : parameter->data_value_size;
+@@ -1187,17 +1200,17 @@ static const struct lval_funcs entry_data_value_funcs =
+   entry_data_value_free_closure
+ };
+ 
+-/* Read parameter of TYPE at (callee) FRAME's function entry.  DWARF_REG and
+-   FB_OFFSET are used to match DW_AT_location at the caller's
+-   DW_TAG_GNU_call_site_parameter.  See DWARF_REG and FB_OFFSET description at
+-   struct dwarf_expr_context_funcs->push_dwarf_reg_entry_value.
++/* Read parameter of TYPE at (callee) FRAME's function entry.  KIND and KIND_U
++   are used to match DW_AT_location at the caller's
++   DW_TAG_GNU_call_site_parameter.
+ 
+    Function always returns non-NULL value.  It throws NO_ENTRY_VALUE_ERROR if it
+    cannot resolve the parameter for any reason.  */
+ 
+ static struct value *
+ value_of_dwarf_reg_entry (struct type *type, struct frame_info *frame,
+-			  int dwarf_reg, CORE_ADDR fb_offset)
++			  enum call_site_parameter_kind kind,
++			  union call_site_parameter_u kind_u)
+ {
+   struct type *checked_type = check_typedef (type);
+   struct type *target_type = TYPE_TARGET_TYPE (checked_type);
+@@ -1207,7 +1220,7 @@ value_of_dwarf_reg_entry (struct type *type, struct frame_info *frame,
+   struct dwarf2_per_cu_data *caller_per_cu;
+   CORE_ADDR addr;
+ 
+-  parameter = dwarf_expr_reg_to_entry_parameter (frame, dwarf_reg, fb_offset,
++  parameter = dwarf_expr_reg_to_entry_parameter (frame, kind, kind_u,
+ 						 &caller_per_cu);
+ 
+   outer_val = dwarf_entry_parameter_to_value (parameter, -1 /* deref_size */,
+@@ -1259,15 +1272,16 @@ static struct value *
+ value_of_dwarf_block_entry (struct type *type, struct frame_info *frame,
+ 			    const gdb_byte *block, size_t block_len)
+ {
+-  int dwarf_reg;
+-  CORE_ADDR fb_offset;
++  union call_site_parameter_u kind_u;
+ 
+-  dwarf_reg = dwarf_block_to_dwarf_reg (block, block + block_len);
+-  if (dwarf_reg != -1)
+-    return value_of_dwarf_reg_entry (type, frame, dwarf_reg, 0 /* unused */);
++  kind_u.dwarf_reg = dwarf_block_to_dwarf_reg (block, block + block_len);
++  if (kind_u.dwarf_reg != -1)
++    return value_of_dwarf_reg_entry (type, frame, CALL_SITE_PARAMETER_DWARF_REG,
++				     kind_u);
+ 
+-  if (dwarf_block_to_fb_offset (block, block + block_len, &fb_offset))
+-    return value_of_dwarf_reg_entry (type, frame, -1, fb_offset);
++  if (dwarf_block_to_fb_offset (block, block + block_len, &kind_u.fb_offset))
++    return value_of_dwarf_reg_entry (type, frame, CALL_SITE_PARAMETER_FB_OFFSET,
++                                     kind_u);
+ 
+   /* This can normally happen - throw NO_ENTRY_VALUE_ERROR to get the message
+      suppressed during normal operation.  The expression can be arbitrary if
+@@ -2358,7 +2372,8 @@ needs_frame_dwarf_call (struct dwarf_expr_context *ctx, cu_offset die_offset)
+ 
+ static void
+ needs_dwarf_reg_entry_value (struct dwarf_expr_context *ctx,
+-			     int dwarf_reg, CORE_ADDR fb_offset, int deref_size)
++			     enum call_site_parameter_kind kind,
++			     union call_site_parameter_u kind_u, int deref_size)
+ {
+   struct needs_frame_baton *nf_baton = ctx->baton;
+ 
+--- a/gdb/dwarf2read.c
++++ b/gdb/dwarf2read.c
+@@ -7816,6 +7816,7 @@ read_call_site_scope (struct die_info *die, struct dwarf2_cu *cu)
+        child_die = sibling_die (child_die))
+     {
+       struct call_site_parameter *parameter;
++      struct attribute *loc;
+ 
+       if (child_die->tag != DW_TAG_GNU_call_site_parameter)
+ 	{
+@@ -7829,8 +7830,8 @@ read_call_site_scope (struct die_info *die, struct dwarf2_cu *cu)
+       /* DW_AT_location specifies the register number.  Value of the data
+ 	 assumed for the register is contained in DW_AT_GNU_call_site_value.  */
+ 
+-      attr = dwarf2_attr (child_die, DW_AT_location, cu);
+-      if (!attr || !attr_form_is_block (attr))
++      loc = dwarf2_attr (child_die, DW_AT_location, cu);
++      if (loc == NULL || !attr_form_is_block (loc))
+ 	{
+ 	  complaint (&symfile_complaints,
+ 		     _("No DW_FORM_block* DW_AT_location for "
+@@ -7838,19 +7839,26 @@ read_call_site_scope (struct die_info *die, struct dwarf2_cu *cu)
+ 		     child_die->offset.sect_off, objfile->name);
+ 	  continue;
+ 	}
+-      parameter->dwarf_reg = dwarf_block_to_dwarf_reg (DW_BLOCK (attr)->data,
+-				 &DW_BLOCK (attr)->data[DW_BLOCK (attr)->size]);
+-      if (parameter->dwarf_reg == -1
+-	  && !dwarf_block_to_sp_offset (gdbarch, DW_BLOCK (attr)->data,
+-				  &DW_BLOCK (attr)->data[DW_BLOCK (attr)->size],
+-					&parameter->fb_offset))
++      else
+ 	{
+-	  complaint (&symfile_complaints,
+-		     _("Only single DW_OP_reg or DW_OP_fbreg is supported "
+-		       "for DW_FORM_block* DW_AT_location for "
+-		       "DW_TAG_GNU_call_site child DIE 0x%x [in module %s]"),
+-		     child_die->offset.sect_off, objfile->name);
+-	  continue;
++	  parameter->u.dwarf_reg = dwarf_block_to_dwarf_reg
++	    (DW_BLOCK (loc)->data, &DW_BLOCK (loc)->data[DW_BLOCK (loc)->size]);
++	  if (parameter->u.dwarf_reg != -1)
++	    parameter->kind = CALL_SITE_PARAMETER_DWARF_REG;
++	  else if (dwarf_block_to_sp_offset (gdbarch, DW_BLOCK (loc)->data,
++				    &DW_BLOCK (loc)->data[DW_BLOCK (loc)->size],
++					     &parameter->u.fb_offset))
++	    parameter->kind = CALL_SITE_PARAMETER_FB_OFFSET;
++	  else
++	    {
++	      complaint (&symfile_complaints,
++			 _("Only single DW_OP_reg or DW_OP_fbreg is supported "
++			   "for DW_FORM_block* DW_AT_location is supported for "
++			   "DW_TAG_GNU_call_site child DIE 0x%x "
++			   "[in module %s]"),
++			 child_die->offset.sect_off, objfile->name);
++	      continue;
++	    }
+ 	}
+ 
+       attr = dwarf2_attr (child_die, DW_AT_GNU_call_site_value, cu);
+--- a/gdb/gdbtypes.h
++++ b/gdb/gdbtypes.h
+@@ -23,6 +23,7 @@
+ #define GDBTYPES_H 1
+ 
+ #include "hashtab.h"
++#include "dwarf2expr.h"
+ 
+ /* Forward declarations for prototypes.  */
+ struct field;
+@@ -915,6 +916,17 @@ struct func_type
+     struct call_site *tail_call_list;
+   };
+ 
++/* struct call_site_parameter can be referenced in callees by several ways.  */
++
++enum call_site_parameter_kind
++{
++  /* Use field call_site_parameter.u.dwarf_reg.  */
++  CALL_SITE_PARAMETER_DWARF_REG,
++
++  /* Use field call_site_parameter.u.fb_offset.  */
++  CALL_SITE_PARAMETER_FB_OFFSET
++};
++
+ /* A place where a function gets called from, represented by
+    DW_TAG_GNU_call_site.  It can be looked up from symtab->call_site_htab.  */
+ 
+@@ -948,15 +960,19 @@ struct call_site
+     /* Describe DW_TAG_GNU_call_site's DW_TAG_formal_parameter.  */
+     struct call_site_parameter
+       {
+-	/* DW_TAG_formal_parameter's DW_AT_location's DW_OP_regX as DWARF
+-	   register number, for register passed parameters.  If -1 then use
+-	   fb_offset.  */
+-	int dwarf_reg;
+-
+-	/* Offset from the callee's frame base, for stack passed parameters.
+-	   This equals offset from the caller's stack pointer.  Valid only if
+-	   DWARF_REGNUM is -1.  */
+-	CORE_ADDR fb_offset;
++	ENUM_BITFIELD (call_site_parameter_kind) kind : 2;
++
++	union call_site_parameter_u
++	  {
++	    /* DW_TAG_formal_parameter's DW_AT_location's DW_OP_regX as DWARF
++	       register number, for register passed parameters.  */
++	    int dwarf_reg;
++
++	    /* Offset from the callee's frame base, for stack passed parameters.
++	       This equals offset from the caller's stack pointer.  */
++	    CORE_ADDR fb_offset;
++	  }
++	u;
+ 
+ 	/* DW_TAG_formal_parameter's DW_AT_GNU_call_site_value.  It is never
+ 	   NULL.  */
+

@@ -24,5 +24,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-noppmtompeg.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-cmuwtopbm.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pamtojpeg2k.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-manfix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-ppmtopict.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pnmtopclxl.patch
 
 set +e +o pipefail

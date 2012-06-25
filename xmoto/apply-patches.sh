@@ -11,7 +11,6 @@ zcat ${SB_PATCHDIR}/${NAME}-0.4.0-Environment-string.patch.gz | patch -p0 -E --b
 zcat ${SB_PATCHDIR}/${NAME}-0.5.0-xmargs-include.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-0.5.0-helpers-text-includes.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-0.5.0-helpers-log-include.patch.gz | patch -p0 -E --backup --verbose
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.8-libpng15.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.9-gcc470.patch
 
 set +e +o pipefail

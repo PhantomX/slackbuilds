@@ -15,6 +15,6 @@ if [ "${SB_COMPAT}" = "YES" ] ;then
   #autoconf -f || exit 1
 fi
 #sed -i.scanf-m -e 's/%m/%a/' src/addr2line.c tests/line2addr.c || exit 1
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.153-dwfl_segment_report_module.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.154-binutils-pr-ld-13621.patch
 
 set +e +o pipefail

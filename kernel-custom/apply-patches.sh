@@ -219,7 +219,9 @@ ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch lis3-improve-handling-of-null-rate.patch
 
-ApplyPatch hfsplus-Fix-bless-ioctl-when-used-with-hardlinks.patch
+# Uprobes (rhbz 832083)
+ApplyPatch uprobes-3.4-backport.patch
+ApplyPatch uprobes-3.4-tip.patch
 
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
@@ -240,6 +242,12 @@ ApplyPatch macvtap-zerocopy-validate-vector-length.patch
 #rhbz 830862
 ApplyPatch SUNRPC-new-svc_bind-routine-introduced.patch
 ApplyPatch SUNRPC-move-per-net-operations-from-svc_destroy.patch
+
+#rhbz 832741
+ApplyPatch cifs-fix-parsing-of-password-mount-option.patch
+
+#rhbz 831807
+ApplyPatch usb-storage-try-read_capacity-10-first.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

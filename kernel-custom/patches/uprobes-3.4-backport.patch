@@ -1,0 +1,6983 @@
+Modification of the kernel config is needed:
+  +CONFIG_ARCH_SUPPORTS_UPROBES=y
+  +CONFIG_UPROBES=y
+  +CONFIG_UPROBE_EVENT=y
+  +CONFIG_PROBE_EVENTS=y
+
+The split-out series is available in the git repository at: 
+
+  git://fedorapeople.org/home/fedora/aarapov/public_git/kernel-uprobes.git f17_uprobes_upstream
+
+Ingo Molnar (3):
+      uprobes/core: Clean up, refactor and improve the code
+      uprobes: Move to kernel/events/
+      uprobes: Update copyright notices
+
+Srikar Dronamraju (20):
+      uprobes, mm, x86: Add the ability to install and remove uprobes breakpoints
+      uprobes/core: Make instruction tables volatile
+      uprobes/core: Remove uprobe_opcode_sz
+      uprobes/core: Move insn to arch specific structure
+      uprobes/core: Make macro names consistent
+      uprobes/core: Make order of function parameters consistent across functions
+      uprobes/core: Rename bkpt to swbp
+      uprobes/core: Handle breakpoint and singlestep exceptions
+      uprobes/core: Allocate XOL slots for uprobes use
+      uprobes/core: Optimize probe hits with the help of a counter
+      uprobes/core: Make background page replacement logic account for rss_stat counters
+      uprobes/core: Decrement uprobe count before the pages are unmapped
+      tracing: Modify is_delete, is_return from int to bool
+      tracing: Extract out common code for kprobes/uprobes trace events
+      tracing: Provide trace events interface for uprobes
+      tracing: Fix kconfig warning due to a typo
+      perf probe: Provide perf interface for uprobes
+      perf probe: Detect probe target when m/x options are absent
+      perf symbols: Check for valid dso before creating map
+      perf uprobes: Remove unnecessary check before strlist__delete
+
+Signed-off-by: Anton Arapov <anton@redhat.com>
+---
+ Documentation/trace/uprobetracer.txt    |  113 +++
+ arch/Kconfig                            |   17 +
+ arch/x86/Kconfig                        |    5 +-
+ arch/x86/include/asm/thread_info.h      |    2 +
+ arch/x86/include/asm/uprobes.h          |   57 ++
+ arch/x86/kernel/Makefile                |    1 +
+ arch/x86/kernel/signal.c                |    6 +
+ arch/x86/kernel/uprobes.c               |  674 +++++++++++++
+ include/linux/mm_types.h                |    2 +
+ include/linux/sched.h                   |    4 +
+ include/linux/uprobes.h                 |  165 +++
+ kernel/events/Makefile                  |    3 +
+ kernel/events/uprobes.c                 | 1667 +++++++++++++++++++++++++++++++
+ kernel/fork.c                           |    9 +
+ kernel/signal.c                         |    4 +
+ kernel/trace/Kconfig                    |   20 +
+ kernel/trace/Makefile                   |    2 +
+ kernel/trace/trace.h                    |    5 +
+ kernel/trace/trace_kprobe.c             |  899 +----------------
+ kernel/trace/trace_probe.c              |  839 ++++++++++++++++
+ kernel/trace/trace_probe.h              |  161 +++
+ kernel/trace/trace_uprobe.c             |  788 +++++++++++++++
+ mm/memory.c                             |    3 +
+ mm/mmap.c                               |   33 +-
+ tools/perf/Documentation/perf-probe.txt |   19 +-
+ tools/perf/builtin-probe.c              |   86 +-
+ tools/perf/util/probe-event.c           |  418 ++++++--
+ tools/perf/util/probe-event.h           |   12 +-
+ tools/perf/util/symbol.c                |   11 +
+ tools/perf/util/symbol.h                |    1 +
+ 30 files changed, 5047 insertions(+), 979 deletions(-)
+ create mode 100644 Documentation/trace/uprobetracer.txt
+ create mode 100644 arch/x86/include/asm/uprobes.h
+ create mode 100644 arch/x86/kernel/uprobes.c
+ create mode 100644 include/linux/uprobes.h
+ create mode 100644 kernel/events/uprobes.c
+ create mode 100644 kernel/trace/trace_probe.c
+ create mode 100644 kernel/trace/trace_probe.h
+ create mode 100644 kernel/trace/trace_uprobe.c
+
+diff --git a/Documentation/trace/uprobetracer.txt b/Documentation/trace/uprobetracer.txt
+new file mode 100644
+index 0000000..24ce682
+--- /dev/null
++++ b/Documentation/trace/uprobetracer.txt
+@@ -0,0 +1,113 @@
++		Uprobe-tracer: Uprobe-based Event Tracing
++		=========================================
++                 Documentation written by Srikar Dronamraju
++
++Overview
++--------
++Uprobe based trace events are similar to kprobe based trace events.
++To enable this feature, build your kernel with CONFIG_UPROBE_EVENT=y.
++
++Similar to the kprobe-event tracer, this doesn't need to be activated via
++current_tracer. Instead of that, add probe points via
++/sys/kernel/debug/tracing/uprobe_events, and enable it via
++/sys/kernel/debug/tracing/events/uprobes/<EVENT>/enabled.
++
++However unlike kprobe-event tracer, the uprobe event interface expects the
++user to calculate the offset of the probepoint in the object
++
++Synopsis of uprobe_tracer
++-------------------------
++  p[:[GRP/]EVENT] PATH:SYMBOL[+offs] [FETCHARGS]	: Set a probe
++
++ GRP		: Group name. If omitted, use "uprobes" for it.
++ EVENT		: Event name. If omitted, the event name is generated
++		  based on SYMBOL+offs.
++ PATH		: path to an executable or a library.
++ SYMBOL[+offs]	: Symbol+offset where the probe is inserted.
++
++ FETCHARGS	: Arguments. Each probe can have up to 128 args.
++  %REG		: Fetch register REG
++
++Event Profiling
++---------------
++ You can check the total number of probe hits and probe miss-hits via
++/sys/kernel/debug/tracing/uprobe_profile.
++ The first column is event name, the second is the number of probe hits,
++the third is the number of probe miss-hits.
++
++Usage examples
++--------------
++To add a probe as a new event, write a new definition to uprobe_events
++as below.
++
++  echo 'p: /bin/bash:0x4245c0' > /sys/kernel/debug/tracing/uprobe_events
++
++ This sets a uprobe at an offset of 0x4245c0 in the executable /bin/bash
++
++  echo > /sys/kernel/debug/tracing/uprobe_events
++
++ This clears all probe points.
++
++The following example shows how to dump the instruction pointer and %ax
++a register at the probed text address.  Here we are trying to probe
++function zfree in /bin/zsh
++
++    # cd /sys/kernel/debug/tracing/
++    # cat /proc/`pgrep  zsh`/maps | grep /bin/zsh | grep r-xp
++    00400000-0048a000 r-xp 00000000 08:03 130904 /bin/zsh
++    # objdump -T /bin/zsh | grep -w zfree
++    0000000000446420 g    DF .text  0000000000000012  Base        zfree
++
++0x46420 is the offset of zfree in object /bin/zsh that is loaded at
++0x00400000. Hence the command to probe would be :
++
++    # echo 'p /bin/zsh:0x46420 %ip %ax' > uprobe_events
++
++Please note: User has to explicitly calculate the offset of the probepoint
++in the object. We can see the events that are registered by looking at the
++uprobe_events file.
++
++    # cat uprobe_events
++    p:uprobes/p_zsh_0x46420 /bin/zsh:0x00046420 arg1=%ip arg2=%ax
++
++The format of events can be seen by viewing the file events/uprobes/p_zsh_0x46420/format
++
++    # cat events/uprobes/p_zsh_0x46420/format
++    name: p_zsh_0x46420
++    ID: 922
++    format:
++	field:unsigned short common_type;	offset:0;	size:2;	signed:0;
++	field:unsigned char common_flags;	offset:2;	size:1;	signed:0;
++	field:unsigned char common_preempt_count;	offset:3;	size:1;	signed:0;
++	field:int common_pid;	offset:4;	size:4;	signed:1;
++	field:int common_padding;	offset:8;	size:4;	signed:1;
++
++	field:unsigned long __probe_ip;	offset:12;	size:4;	signed:0;
++	field:u32 arg1;	offset:16;	size:4;	signed:0;
++	field:u32 arg2;	offset:20;	size:4;	signed:0;
++
++    print fmt: "(%lx) arg1=%lx arg2=%lx", REC->__probe_ip, REC->arg1, REC->arg2
++
++Right after definition, each event is disabled by default. For tracing these
++events, you need to enable it by:
++
++    # echo 1 > events/uprobes/enable
++
++Lets disable the event after sleeping for some time.
++    # sleep 20
++    # echo 0 > events/uprobes/enable
++
++And you can see the traced information via /sys/kernel/debug/tracing/trace.
++
++    # cat trace
++    # tracer: nop
++    #
++    #           TASK-PID    CPU#    TIMESTAMP  FUNCTION
++    #              | |       |          |         |
++                 zsh-24842 [006] 258544.995456: p_zsh_0x46420: (0x446420) arg1=446421 arg2=79
++                 zsh-24842 [007] 258545.000270: p_zsh_0x46420: (0x446420) arg1=446421 arg2=79
++                 zsh-24842 [002] 258545.043929: p_zsh_0x46420: (0x446420) arg1=446421 arg2=79
++                 zsh-24842 [004] 258547.046129: p_zsh_0x46420: (0x446420) arg1=446421 arg2=79
++
++Each line shows us probes were triggered for a pid 24842 with ip being
++0x446421 and contents of ax register being 79.
+diff --git a/arch/Kconfig b/arch/Kconfig
+index 684eb5a..2880abf 100644
+--- a/arch/Kconfig
++++ b/arch/Kconfig
+@@ -76,6 +76,23 @@ config OPTPROBES
+ 	depends on KPROBES && HAVE_OPTPROBES
+ 	depends on !PREEMPT
+ 
++config UPROBES
++	bool "Transparent user-space probes (EXPERIMENTAL)"
++	depends on UPROBE_EVENT && PERF_EVENTS
++	default n
++	help
++	  Uprobes is the user-space counterpart to kprobes: they
++	  enable instrumentation applications (such as 'perf probe')
++	  to establish unintrusive probes in user-space binaries and
++	  libraries, by executing handler functions when the probes
++	  are hit by user-space applications.
++
++	  ( These probes come in the form of single-byte breakpoints,
++	    managed by the kernel and kept transparent to the probed
++	    application. )
++
++	  If in doubt, say "N".
++
+ config HAVE_EFFICIENT_UNALIGNED_ACCESS
+ 	bool
+ 	help
+diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
+index c9866b0..1f5c307 100644
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -84,7 +84,7 @@ config X86
+ 	select DCACHE_WORD_ACCESS
+ 
+ config INSTRUCTION_DECODER
+-	def_bool (KPROBES || PERF_EVENTS)
++	def_bool (KPROBES || PERF_EVENTS || UPROBES)
+ 
+ config OUTPUT_FORMAT
+ 	string
+@@ -243,6 +243,9 @@ config ARCH_CPU_PROBE_RELEASE
+ 	def_bool y
+ 	depends on HOTPLUG_CPU
+ 
++config ARCH_SUPPORTS_UPROBES
++	def_bool y
++
+ source "init/Kconfig"
+ source "kernel/Kconfig.freezer"
+ 
+diff --git a/arch/x86/include/asm/thread_info.h b/arch/x86/include/asm/thread_info.h
+index ad6df8c..0710c11 100644
+--- a/arch/x86/include/asm/thread_info.h
++++ b/arch/x86/include/asm/thread_info.h
+@@ -85,6 +85,7 @@ struct thread_info {
+ #define TIF_SECCOMP		8	/* secure computing */
+ #define TIF_MCE_NOTIFY		10	/* notify userspace of an MCE */
+ #define TIF_USER_RETURN_NOTIFY	11	/* notify kernel of userspace return */
++#define TIF_UPROBE		12	/* breakpointed or singlestepping */
+ #define TIF_NOTSC		16	/* TSC is not accessible in userland */
+ #define TIF_IA32		17	/* IA32 compatibility process */
+ #define TIF_FORK		18	/* ret_from_fork */
+@@ -109,6 +110,7 @@ struct thread_info {
+ #define _TIF_SECCOMP		(1 << TIF_SECCOMP)
+ #define _TIF_MCE_NOTIFY		(1 << TIF_MCE_NOTIFY)
+ #define _TIF_USER_RETURN_NOTIFY	(1 << TIF_USER_RETURN_NOTIFY)
++#define _TIF_UPROBE		(1 << TIF_UPROBE)
+ #define _TIF_NOTSC		(1 << TIF_NOTSC)
+ #define _TIF_IA32		(1 << TIF_IA32)
+ #define _TIF_FORK		(1 << TIF_FORK)
+diff --git a/arch/x86/include/asm/uprobes.h b/arch/x86/include/asm/uprobes.h
+new file mode 100644
+index 0000000..1e9bed1
+--- /dev/null
++++ b/arch/x86/include/asm/uprobes.h
+@@ -0,0 +1,57 @@
++#ifndef _ASM_UPROBES_H
++#define _ASM_UPROBES_H
++/*
++ * User-space Probes (UProbes) for x86
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ *
++ * Copyright (C) IBM Corporation, 2008-2011
++ * Authors:
++ *	Srikar Dronamraju
++ *	Jim Keniston
++ */
++
++#include <linux/notifier.h>
++
++typedef u8 uprobe_opcode_t;
++
++#define MAX_UINSN_BYTES			  16
++#define UPROBE_XOL_SLOT_BYTES		 128	/* to keep it cache aligned */
++
++#define UPROBE_SWBP_INSN		0xcc
++#define UPROBE_SWBP_INSN_SIZE		   1
++
++struct arch_uprobe {
++	u16				fixups;
++	u8				insn[MAX_UINSN_BYTES];
++#ifdef CONFIG_X86_64
++	unsigned long			rip_rela_target_address;
++#endif
++};
++
++struct arch_uprobe_task {
++	unsigned long			saved_trap_nr;
++#ifdef CONFIG_X86_64
++	unsigned long			saved_scratch_register;
++#endif
++};
++
++extern int  arch_uprobe_analyze_insn(struct arch_uprobe *aup, struct mm_struct *mm);
++extern int  arch_uprobe_pre_xol(struct arch_uprobe *aup, struct pt_regs *regs);
++extern int  arch_uprobe_post_xol(struct arch_uprobe *aup, struct pt_regs *regs);
++extern bool arch_uprobe_xol_was_trapped(struct task_struct *tsk);
++extern int  arch_uprobe_exception_notify(struct notifier_block *self, unsigned long val, void *data);
++extern void arch_uprobe_abort_xol(struct arch_uprobe *aup, struct pt_regs *regs);
++#endif	/* _ASM_UPROBES_H */
+diff --git a/arch/x86/kernel/Makefile b/arch/x86/kernel/Makefile
+index 532d2e0..d23d835 100644
+--- a/arch/x86/kernel/Makefile
++++ b/arch/x86/kernel/Makefile
+@@ -101,6 +101,7 @@ obj-$(CONFIG_X86_CHECK_BIOS_CORRUPTION) += check.o
+ 
+ obj-$(CONFIG_SWIOTLB)			+= pci-swiotlb.o
+ obj-$(CONFIG_OF)			+= devicetree.o
++obj-$(CONFIG_UPROBES)			+= uprobes.o
+ 
+ ###
+ # 64 bit specific files
+diff --git a/arch/x86/kernel/signal.c b/arch/x86/kernel/signal.c
+index 115eac4..041af2f 100644
+--- a/arch/x86/kernel/signal.c
++++ b/arch/x86/kernel/signal.c
+@@ -18,6 +18,7 @@
+ #include <linux/personality.h>
+ #include <linux/uaccess.h>
+ #include <linux/user-return-notifier.h>
++#include <linux/uprobes.h>
+ 
+ #include <asm/processor.h>
+ #include <asm/ucontext.h>
+@@ -824,6 +825,11 @@ do_notify_resume(struct pt_regs *regs, void *unused, __u32 thread_info_flags)
+ 		mce_notify_process();
+ #endif /* CONFIG_X86_64 && CONFIG_X86_MCE */
+ 
++	if (thread_info_flags & _TIF_UPROBE) {
++		clear_thread_flag(TIF_UPROBE);
++		uprobe_notify_resume(regs);
++	}
++
+ 	/* deal with pending signal delivery */
+ 	if (thread_info_flags & _TIF_SIGPENDING)
+ 		do_signal(regs);
+diff --git a/arch/x86/kernel/uprobes.c b/arch/x86/kernel/uprobes.c
+new file mode 100644
+index 0000000..dc4e910
+--- /dev/null
++++ b/arch/x86/kernel/uprobes.c
+@@ -0,0 +1,674 @@
++/*
++ * User-space Probes (UProbes) for x86
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ *
++ * Copyright (C) IBM Corporation, 2008-2011
++ * Authors:
++ *	Srikar Dronamraju
++ *	Jim Keniston
++ */
++#include <linux/kernel.h>
++#include <linux/sched.h>
++#include <linux/ptrace.h>
++#include <linux/uprobes.h>
++#include <linux/uaccess.h>
++
++#include <linux/kdebug.h>
++#include <asm/processor.h>
++#include <asm/insn.h>
++
++/* Post-execution fixups. */
++
++/* No fixup needed */
++#define UPROBE_FIX_NONE		0x0
++
++/* Adjust IP back to vicinity of actual insn */
++#define UPROBE_FIX_IP		0x1
++
++/* Adjust the return address of a call insn */
++#define UPROBE_FIX_CALL	0x2
++
++#define UPROBE_FIX_RIP_AX	0x8000
++#define UPROBE_FIX_RIP_CX	0x4000
++
++#define	UPROBE_TRAP_NR		UINT_MAX
++
++/* Adaptations for mhiramat x86 decoder v14. */
++#define OPCODE1(insn)		((insn)->opcode.bytes[0])
++#define OPCODE2(insn)		((insn)->opcode.bytes[1])
++#define OPCODE3(insn)		((insn)->opcode.bytes[2])
++#define MODRM_REG(insn)		X86_MODRM_REG(insn->modrm.value)
++
++#define W(row, b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, ba, bb, bc, bd, be, bf)\
++	(((b0##UL << 0x0)|(b1##UL << 0x1)|(b2##UL << 0x2)|(b3##UL << 0x3) |   \
++	  (b4##UL << 0x4)|(b5##UL << 0x5)|(b6##UL << 0x6)|(b7##UL << 0x7) |   \
++	  (b8##UL << 0x8)|(b9##UL << 0x9)|(ba##UL << 0xa)|(bb##UL << 0xb) |   \
++	  (bc##UL << 0xc)|(bd##UL << 0xd)|(be##UL << 0xe)|(bf##UL << 0xf))    \
++	 << (row % 32))
++
++/*
++ * Good-instruction tables for 32-bit apps.  This is non-const and volatile
++ * to keep gcc from statically optimizing it out, as variable_test_bit makes
++ * some versions of gcc to think only *(unsigned long*) is used.
++ */
++static volatile u32 good_insns_32[256 / 32] = {
++	/*      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f         */
++	/*      ----------------------------------------------         */
++	W(0x00, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0) | /* 00 */
++	W(0x10, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0) , /* 10 */
++	W(0x20, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1) | /* 20 */
++	W(0x30, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1) , /* 30 */
++	W(0x40, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* 40 */
++	W(0x50, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* 50 */
++	W(0x60, 1, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0) | /* 60 */
++	W(0x70, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* 70 */
++	W(0x80, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* 80 */
++	W(0x90, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* 90 */
++	W(0xa0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* a0 */
++	W(0xb0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* b0 */
++	W(0xc0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0) | /* c0 */
++	W(0xd0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* d0 */
++	W(0xe0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0) | /* e0 */
++	W(0xf0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1)   /* f0 */
++	/*      ----------------------------------------------         */
++	/*      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f         */
++};
++
++/* Using this for both 64-bit and 32-bit apps */
++static volatile u32 good_2byte_insns[256 / 32] = {
++	/*      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f         */
++	/*      ----------------------------------------------         */
++	W(0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1) | /* 00 */
++	W(0x10, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1) , /* 10 */
++	W(0x20, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1) | /* 20 */
++	W(0x30, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) , /* 30 */
++	W(0x40, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* 40 */
++	W(0x50, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* 50 */
++	W(0x60, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* 60 */
++	W(0x70, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1) , /* 70 */
++	W(0x80, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* 80 */
++	W(0x90, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* 90 */
++	W(0xa0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1) | /* a0 */
++	W(0xb0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1) , /* b0 */
++	W(0xc0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* c0 */
++	W(0xd0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* d0 */
++	W(0xe0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* e0 */
++	W(0xf0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0)   /* f0 */
++	/*      ----------------------------------------------         */
++	/*      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f         */
++};
++
++#ifdef CONFIG_X86_64
++/* Good-instruction tables for 64-bit apps */
++static volatile u32 good_insns_64[256 / 32] = {
++	/*      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f         */
++	/*      ----------------------------------------------         */
++	W(0x00, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0) | /* 00 */
++	W(0x10, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0) , /* 10 */
++	W(0x20, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0) | /* 20 */
++	W(0x30, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0) , /* 30 */
++	W(0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) | /* 40 */
++	W(0x50, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* 50 */
++	W(0x60, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0) | /* 60 */
++	W(0x70, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* 70 */
++	W(0x80, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* 80 */
++	W(0x90, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* 90 */
++	W(0xa0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) | /* a0 */
++	W(0xb0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* b0 */
++	W(0xc0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0) | /* c0 */
++	W(0xd0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1) , /* d0 */
++	W(0xe0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0) | /* e0 */
++	W(0xf0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1)   /* f0 */
++	/*      ----------------------------------------------         */
++	/*      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f         */
++};
++#endif
++#undef W
++
++/*
++ * opcodes we'll probably never support:
++ *
++ *  6c-6d, e4-e5, ec-ed - in
++ *  6e-6f, e6-e7, ee-ef - out
++ *  cc, cd - int3, int
++ *  cf - iret
++ *  d6 - illegal instruction
++ *  f1 - int1/icebp
++ *  f4 - hlt
++ *  fa, fb - cli, sti
++ *  0f - lar, lsl, syscall, clts, sysret, sysenter, sysexit, invd, wbinvd, ud2
++ *
++ * invalid opcodes in 64-bit mode:
++ *
++ *  06, 0e, 16, 1e, 27, 2f, 37, 3f, 60-62, 82, c4-c5, d4-d5
++ *  63 - we support this opcode in x86_64 but not in i386.
++ *
++ * opcodes we may need to refine support for:
++ *
++ *  0f - 2-byte instructions: For many of these instructions, the validity
++ *  depends on the prefix and/or the reg field.  On such instructions, we
++ *  just consider the opcode combination valid if it corresponds to any
++ *  valid instruction.
++ *
++ *  8f - Group 1 - only reg = 0 is OK
++ *  c6-c7 - Group 11 - only reg = 0 is OK
++ *  d9-df - fpu insns with some illegal encodings
++ *  f2, f3 - repnz, repz prefixes.  These are also the first byte for
++ *  certain floating-point instructions, such as addsd.
++ *
++ *  fe - Group 4 - only reg = 0 or 1 is OK
++ *  ff - Group 5 - only reg = 0-6 is OK
++ *
++ * others -- Do we need to support these?
++ *
++ *  0f - (floating-point?) prefetch instructions
++ *  07, 17, 1f - pop es, pop ss, pop ds
++ *  26, 2e, 36, 3e - es:, cs:, ss:, ds: segment prefixes --
++ *	but 64 and 65 (fs: and gs:) seem to be used, so we support them
++ *  67 - addr16 prefix
++ *  ce - into
++ *  f0 - lock prefix
++ */
++
++/*
++ * TODO:
++ * - Where necessary, examine the modrm byte and allow only valid instructions
++ * in the different Groups and fpu instructions.
++ */
++
++static bool is_prefix_bad(struct insn *insn)
++{
++	int i;
++
++	for (i = 0; i < insn->prefixes.nbytes; i++) {
++		switch (insn->prefixes.bytes[i]) {
++		case 0x26:	/* INAT_PFX_ES   */
++		case 0x2E:	/* INAT_PFX_CS   */
++		case 0x36:	/* INAT_PFX_DS   */
++		case 0x3E:	/* INAT_PFX_SS   */
++		case 0xF0:	/* INAT_PFX_LOCK */
++			return true;
++		}
++	}
++	return false;
++}
++
++static int validate_insn_32bits(struct arch_uprobe *auprobe, struct insn *insn)
++{
++	insn_init(insn, auprobe->insn, false);
++
++	/* Skip good instruction prefixes; reject "bad" ones. */
++	insn_get_opcode(insn);
++	if (is_prefix_bad(insn))
++		return -ENOTSUPP;
++
++	if (test_bit(OPCODE1(insn), (unsigned long *)good_insns_32))
++		return 0;
++
++	if (insn->opcode.nbytes == 2) {
++		if (test_bit(OPCODE2(insn), (unsigned long *)good_2byte_insns))
++			return 0;
++	}
++
++	return -ENOTSUPP;
++}
++
++/*
++ * Figure out which fixups arch_uprobe_post_xol() will need to perform, and
++ * annotate arch_uprobe->fixups accordingly.  To start with,
++ * arch_uprobe->fixups is either zero or it reflects rip-related fixups.
++ */
++static void prepare_fixups(struct arch_uprobe *auprobe, struct insn *insn)
++{
++	bool fix_ip = true, fix_call = false;	/* defaults */
++	int reg;
++
++	insn_get_opcode(insn);	/* should be a nop */
++
++	switch (OPCODE1(insn)) {
++	case 0xc3:		/* ret/lret */
++	case 0xcb:
++	case 0xc2:
++	case 0xca:
++		/* ip is correct */
++		fix_ip = false;
++		break;
++	case 0xe8:		/* call relative - Fix return addr */
++		fix_call = true;
++		break;
++	case 0x9a:		/* call absolute - Fix return addr, not ip */
++		fix_call = true;
++		fix_ip = false;
++		break;
++	case 0xff:
++		insn_get_modrm(insn);
++		reg = MODRM_REG(insn);
++		if (reg == 2 || reg == 3) {
++			/* call or lcall, indirect */
++			/* Fix return addr; ip is correct. */
++			fix_call = true;
++			fix_ip = false;
++		} else if (reg == 4 || reg == 5) {
++			/* jmp or ljmp, indirect */
++			/* ip is correct. */
++			fix_ip = false;
++		}
++		break;
++	case 0xea:		/* jmp absolute -- ip is correct */
++		fix_ip = false;
++		break;
++	default:
++		break;
++	}
++	if (fix_ip)
++		auprobe->fixups |= UPROBE_FIX_IP;
++	if (fix_call)
++		auprobe->fixups |= UPROBE_FIX_CALL;
++}
++
++#ifdef CONFIG_X86_64
++/*
++ * If arch_uprobe->insn doesn't use rip-relative addressing, return
++ * immediately.  Otherwise, rewrite the instruction so that it accesses
++ * its memory operand indirectly through a scratch register.  Set
++ * arch_uprobe->fixups and arch_uprobe->rip_rela_target_address
++ * accordingly.  (The contents of the scratch register will be saved
++ * before we single-step the modified instruction, and restored
++ * afterward.)
++ *
++ * We do this because a rip-relative instruction can access only a
++ * relatively small area (+/- 2 GB from the instruction), and the XOL
++ * area typically lies beyond that area.  At least for instructions
++ * that store to memory, we can't execute the original instruction
++ * and "fix things up" later, because the misdirected store could be
++ * disastrous.
++ *
++ * Some useful facts about rip-relative instructions:
++ *
++ *  - There's always a modrm byte.
++ *  - There's never a SIB byte.
++ *  - The displacement is always 4 bytes.
++ */
++static void
++handle_riprel_insn(struct arch_uprobe *auprobe, struct mm_struct *mm, struct insn *insn)
++{
++	u8 *cursor;
++	u8 reg;
++
++	if (mm->context.ia32_compat)
++		return;
++
++	auprobe->rip_rela_target_address = 0x0;
++	if (!insn_rip_relative(insn))
++		return;
++
++	/*
++	 * insn_rip_relative() would have decoded rex_prefix, modrm.
++	 * Clear REX.b bit (extension of MODRM.rm field):
++	 * we want to encode rax/rcx, not r8/r9.
++	 */
++	if (insn->rex_prefix.nbytes) {
++		cursor = auprobe->insn + insn_offset_rex_prefix(insn);
++		*cursor &= 0xfe;	/* Clearing REX.B bit */
++	}
++
++	/*
++	 * Point cursor at the modrm byte.  The next 4 bytes are the
++	 * displacement.  Beyond the displacement, for some instructions,
++	 * is the immediate operand.
++	 */
++	cursor = auprobe->insn + insn_offset_modrm(insn);
++	insn_get_length(insn);
++
++	/*
++	 * Convert from rip-relative addressing to indirect addressing
++	 * via a scratch register.  Change the r/m field from 0x5 (%rip)
++	 * to 0x0 (%rax) or 0x1 (%rcx), and squeeze out the offset field.
++	 */
++	reg = MODRM_REG(insn);
++	if (reg == 0) {
++		/*
++		 * The register operand (if any) is either the A register
++		 * (%rax, %eax, etc.) or (if the 0x4 bit is set in the
++		 * REX prefix) %r8.  In any case, we know the C register
++		 * is NOT the register operand, so we use %rcx (register
++		 * #1) for the scratch register.
++		 */
++		auprobe->fixups = UPROBE_FIX_RIP_CX;
++		/* Change modrm from 00 000 101 to 00 000 001. */
++		*cursor = 0x1;
++	} else {
++		/* Use %rax (register #0) for the scratch register. */
++		auprobe->fixups = UPROBE_FIX_RIP_AX;
++		/* Change modrm from 00 xxx 101 to 00 xxx 000 */
++		*cursor = (reg << 3);
++	}
++
++	/* Target address = address of next instruction + (signed) offset */
++	auprobe->rip_rela_target_address = (long)insn->length + insn->displacement.value;
++
++	/* Displacement field is gone; slide immediate field (if any) over. */
++	if (insn->immediate.nbytes) {
++		cursor++;
++		memmove(cursor, cursor + insn->displacement.nbytes, insn->immediate.nbytes);
++	}
++	return;
++}
++
++static int validate_insn_64bits(struct arch_uprobe *auprobe, struct insn *insn)
++{
++	insn_init(insn, auprobe->insn, true);
++
++	/* Skip good instruction prefixes; reject "bad" ones. */
++	insn_get_opcode(insn);
++	if (is_prefix_bad(insn))
++		return -ENOTSUPP;
++
++	if (test_bit(OPCODE1(insn), (unsigned long *)good_insns_64))
++		return 0;
++
++	if (insn->opcode.nbytes == 2) {
++		if (test_bit(OPCODE2(insn), (unsigned long *)good_2byte_insns))
++			return 0;
++	}
++	return -ENOTSUPP;
++}
++
++static int validate_insn_bits(struct arch_uprobe *auprobe, struct mm_struct *mm, struct insn *insn)
++{
++	if (mm->context.ia32_compat)
++		return validate_insn_32bits(auprobe, insn);
++	return validate_insn_64bits(auprobe, insn);
++}
++#else /* 32-bit: */
++static void handle_riprel_insn(struct arch_uprobe *auprobe, struct mm_struct *mm, struct insn *insn)
++{
++	/* No RIP-relative addressing on 32-bit */
++}
++
++static int validate_insn_bits(struct arch_uprobe *auprobe, struct mm_struct *mm,  struct insn *insn)
++{
++	return validate_insn_32bits(auprobe, insn);
++}
++#endif /* CONFIG_X86_64 */
++
++/**
++ * arch_uprobe_analyze_insn - instruction analysis including validity and fixups.
++ * @mm: the probed address space.
++ * @arch_uprobe: the probepoint information.
++ * Return 0 on success or a -ve number on error.
++ */
++int arch_uprobe_analyze_insn(struct arch_uprobe *auprobe, struct mm_struct *mm)
++{
++	int ret;
++	struct insn insn;
++
++	auprobe->fixups = 0;
++	ret = validate_insn_bits(auprobe, mm, &insn);
++	if (ret != 0)
++		return ret;
++
++	handle_riprel_insn(auprobe, mm, &insn);
++	prepare_fixups(auprobe, &insn);
++
++	return 0;
++}
++
++#ifdef CONFIG_X86_64
++/*
++ * If we're emulating a rip-relative instruction, save the contents
++ * of the scratch register and store the target address in that register.
++ */
++static void
++pre_xol_rip_insn(struct arch_uprobe *auprobe, struct pt_regs *regs,
++				struct arch_uprobe_task *autask)
++{
++	if (auprobe->fixups & UPROBE_FIX_RIP_AX) {
++		autask->saved_scratch_register = regs->ax;
++		regs->ax = current->utask->vaddr;
++		regs->ax += auprobe->rip_rela_target_address;
++	} else if (auprobe->fixups & UPROBE_FIX_RIP_CX) {
++		autask->saved_scratch_register = regs->cx;
++		regs->cx = current->utask->vaddr;
++		regs->cx += auprobe->rip_rela_target_address;
++	}
++}
++#else
++static void
++pre_xol_rip_insn(struct arch_uprobe *auprobe, struct pt_regs *regs,
++				struct arch_uprobe_task *autask)
++{
++	/* No RIP-relative addressing on 32-bit */
++}
++#endif
++
++/*
++ * arch_uprobe_pre_xol - prepare to execute out of line.
++ * @auprobe: the probepoint information.
++ * @regs: reflects the saved user state of current task.
++ */
++int arch_uprobe_pre_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
++{
++	struct arch_uprobe_task *autask;
++
++	autask = &current->utask->autask;
++	autask->saved_trap_nr = current->thread.trap_nr;
++	current->thread.trap_nr = UPROBE_TRAP_NR;
++	regs->ip = current->utask->xol_vaddr;
++	pre_xol_rip_insn(auprobe, regs, autask);
++
++	return 0;
++}
++
++/*
++ * This function is called by arch_uprobe_post_xol() to adjust the return
++ * address pushed by a call instruction executed out of line.
++ */
++static int adjust_ret_addr(unsigned long sp, long correction)
++{
++	int rasize, ncopied;
++	long ra = 0;
++
++	if (is_ia32_task())
++		rasize = 4;
++	else
++		rasize = 8;
++
++	ncopied = copy_from_user(&ra, (void __user *)sp, rasize);
++	if (unlikely(ncopied))
++		return -EFAULT;
++
++	ra += correction;
++	ncopied = copy_to_user((void __user *)sp, &ra, rasize);
++	if (unlikely(ncopied))
++		return -EFAULT;
++
++	return 0;
++}
++
++#ifdef CONFIG_X86_64
++static bool is_riprel_insn(struct arch_uprobe *auprobe)
++{
++	return ((auprobe->fixups & (UPROBE_FIX_RIP_AX | UPROBE_FIX_RIP_CX)) != 0);
++}
++
++static void
++handle_riprel_post_xol(struct arch_uprobe *auprobe, struct pt_regs *regs, long *correction)
++{
++	if (is_riprel_insn(auprobe)) {
++		struct arch_uprobe_task *autask;
++
++		autask = &current->utask->autask;
++		if (auprobe->fixups & UPROBE_FIX_RIP_AX)
++			regs->ax = autask->saved_scratch_register;
++		else
++			regs->cx = autask->saved_scratch_register;
++
++		/*
++		 * The original instruction includes a displacement, and so
++		 * is 4 bytes longer than what we've just single-stepped.
++		 * Fall through to handle stuff like "jmpq *...(%rip)" and
++		 * "callq *...(%rip)".
++		 */
++		if (correction)
++			*correction += 4;
++	}
++}
++#else
++static void
++handle_riprel_post_xol(struct arch_uprobe *auprobe, struct pt_regs *regs, long *correction)
++{
++	/* No RIP-relative addressing on 32-bit */
++}
++#endif
++
++/*
++ * If xol insn itself traps and generates a signal(Say,
++ * SIGILL/SIGSEGV/etc), then detect the case where a singlestepped
++ * instruction jumps back to its own address. It is assumed that anything
++ * like do_page_fault/do_trap/etc sets thread.trap_nr != -1.
++ *
++ * arch_uprobe_pre_xol/arch_uprobe_post_xol save/restore thread.trap_nr,
++ * arch_uprobe_xol_was_trapped() simply checks that ->trap_nr is not equal to
++ * UPROBE_TRAP_NR == -1 set by arch_uprobe_pre_xol().
++ */
++bool arch_uprobe_xol_was_trapped(struct task_struct *t)
++{
++	if (t->thread.trap_nr != UPROBE_TRAP_NR)
++		return true;
++
++	return false;
++}
++
++/*
++ * Called after single-stepping. To avoid the SMP problems that can
++ * occur when we temporarily put back the original opcode to
++ * single-step, we single-stepped a copy of the instruction.
++ *
++ * This function prepares to resume execution after the single-step.
++ * We have to fix things up as follows:
++ *
++ * Typically, the new ip is relative to the copied instruction.  We need
++ * to make it relative to the original instruction (FIX_IP).  Exceptions
++ * are return instructions and absolute or indirect jump or call instructions.
++ *
++ * If the single-stepped instruction was a call, the return address that
++ * is atop the stack is the address following the copied instruction.  We
++ * need to make it the address following the original instruction (FIX_CALL).
++ *
++ * If the original instruction was a rip-relative instruction such as
++ * "movl %edx,0xnnnn(%rip)", we have instead executed an equivalent
++ * instruction using a scratch register -- e.g., "movl %edx,(%rax)".
++ * We need to restore the contents of the scratch register and adjust
++ * the ip, keeping in mind that the instruction we executed is 4 bytes
++ * shorter than the original instruction (since we squeezed out the offset
++ * field).  (FIX_RIP_AX or FIX_RIP_CX)
++ */
++int arch_uprobe_post_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
++{
++	struct uprobe_task *utask;
++	long correction;
++	int result = 0;
++
++	WARN_ON_ONCE(current->thread.trap_nr != UPROBE_TRAP_NR);
++
++	utask = current->utask;
++	current->thread.trap_nr = utask->autask.saved_trap_nr;
++	correction = (long)(utask->vaddr - utask->xol_vaddr);
++	handle_riprel_post_xol(auprobe, regs, &correction);
++	if (auprobe->fixups & UPROBE_FIX_IP)
++		regs->ip += correction;
++
++	if (auprobe->fixups & UPROBE_FIX_CALL)
++		result = adjust_ret_addr(regs->sp, correction);
++
++	return result;
++}
++
++/* callback routine for handling exceptions. */
++int arch_uprobe_exception_notify(struct notifier_block *self, unsigned long val, void *data)
++{
++	struct die_args *args = data;
++	struct pt_regs *regs = args->regs;
++	int ret = NOTIFY_DONE;
++
++	/* We are only interested in userspace traps */
++	if (regs && !user_mode_vm(regs))
++		return NOTIFY_DONE;
++
++	switch (val) {
++	case DIE_INT3:
++		if (uprobe_pre_sstep_notifier(regs))
++			ret = NOTIFY_STOP;
++
++		break;
++
++	case DIE_DEBUG:
++		if (uprobe_post_sstep_notifier(regs))
++			ret = NOTIFY_STOP;
++
++	default:
++		break;
++	}
++
++	return ret;
++}
++
++/*
++ * This function gets called when XOL instruction either gets trapped or
++ * the thread has a fatal signal, so reset the instruction pointer to its
++ * probed address.
++ */
++void arch_uprobe_abort_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
++{
++	struct uprobe_task *utask = current->utask;
++
++	current->thread.trap_nr = utask->autask.saved_trap_nr;
++	handle_riprel_post_xol(auprobe, regs, NULL);
++	instruction_pointer_set(regs, utask->vaddr);
++}
++
++/*
++ * Skip these instructions as per the currently known x86 ISA.
++ * 0x66* { 0x90 | 0x0f 0x1f | 0x0f 0x19 | 0x87 0xc0 }
++ */
++bool arch_uprobe_skip_sstep(struct arch_uprobe *auprobe, struct pt_regs *regs)
++{
++	int i;
++
++	for (i = 0; i < MAX_UINSN_BYTES; i++) {
++		if ((auprobe->insn[i] == 0x66))
++			continue;
++
++		if (auprobe->insn[i] == 0x90)
++			return true;
++
++		if (i == (MAX_UINSN_BYTES - 1))
++			break;
++
++		if ((auprobe->insn[i] == 0x0f) && (auprobe->insn[i+1] == 0x1f))
++			return true;
++
++		if ((auprobe->insn[i] == 0x0f) && (auprobe->insn[i+1] == 0x19))
++			return true;
++
++		if ((auprobe->insn[i] == 0x87) && (auprobe->insn[i+1] == 0xc0))
++			return true;
++
++		break;
++	}
++	return false;
++}
+diff --git a/include/linux/mm_types.h b/include/linux/mm_types.h
+index 3cc3062..26574c7 100644
+--- a/include/linux/mm_types.h
++++ b/include/linux/mm_types.h
+@@ -12,6 +12,7 @@
+ #include <linux/completion.h>
+ #include <linux/cpumask.h>
+ #include <linux/page-debug-flags.h>
++#include <linux/uprobes.h>
+ #include <asm/page.h>
+ #include <asm/mmu.h>
+ 
+@@ -388,6 +389,7 @@ struct mm_struct {
+ #ifdef CONFIG_CPUMASK_OFFSTACK
+ 	struct cpumask cpumask_allocation;
+ #endif
++	struct uprobes_state uprobes_state;
+ };
+ 
+ static inline void mm_init_cpumask(struct mm_struct *mm)
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 81a173c..cff94cd 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1617,6 +1617,10 @@ struct task_struct {
+ #ifdef CONFIG_HAVE_HW_BREAKPOINT
+ 	atomic_t ptrace_bp_refcnt;
+ #endif
++#ifdef CONFIG_UPROBES
++	struct uprobe_task *utask;
++	int uprobe_srcu_id;
++#endif
+ };
+ 
+ /* Future-safe accessor for struct task_struct's cpus_allowed. */
+diff --git a/include/linux/uprobes.h b/include/linux/uprobes.h
+new file mode 100644
+index 0000000..efe4b33
+--- /dev/null
++++ b/include/linux/uprobes.h
+@@ -0,0 +1,165 @@
++#ifndef _LINUX_UPROBES_H
++#define _LINUX_UPROBES_H
++/*
++ * User-space Probes (UProbes)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ *
++ * Copyright (C) IBM Corporation, 2008-2012
++ * Authors:
++ *	Srikar Dronamraju
++ *	Jim Keniston
++ * Copyright (C) 2011-2012 Red Hat, Inc., Peter Zijlstra <pzijlstr@redhat.com>
++ */
++
++#include <linux/errno.h>
++#include <linux/rbtree.h>
++
++struct vm_area_struct;
++struct mm_struct;
++struct inode;
++
++#ifdef CONFIG_ARCH_SUPPORTS_UPROBES
++# include <asm/uprobes.h>
++#endif
++
++/* flags that denote/change uprobes behaviour */
++
++/* Have a copy of original instruction */
++#define UPROBE_COPY_INSN	0x1
++
++/* Dont run handlers when first register/ last unregister in progress*/
++#define UPROBE_RUN_HANDLER	0x2
++/* Can skip singlestep */
++#define UPROBE_SKIP_SSTEP	0x4
++
++struct uprobe_consumer {
++	int (*handler)(struct uprobe_consumer *self, struct pt_regs *regs);
++	/*
++	 * filter is optional; If a filter exists, handler is run
++	 * if and only if filter returns true.
++	 */
++	bool (*filter)(struct uprobe_consumer *self, struct task_struct *task);
++
++	struct uprobe_consumer *next;
++};
++
++#ifdef CONFIG_UPROBES
++enum uprobe_task_state {
++	UTASK_RUNNING,
++	UTASK_BP_HIT,
++	UTASK_SSTEP,
++	UTASK_SSTEP_ACK,
++	UTASK_SSTEP_TRAPPED,
++};
++
++/*
++ * uprobe_task: Metadata of a task while it singlesteps.
++ */
++struct uprobe_task {
++	enum uprobe_task_state		state;
++	struct arch_uprobe_task		autask;
++
++	struct uprobe			*active_uprobe;
++
++	unsigned long			xol_vaddr;
++	unsigned long			vaddr;
++};
++
++/*
++ * On a breakpoint hit, thread contests for a slot.  It frees the
++ * slot after singlestep. Currently a fixed number of slots are
++ * allocated.
++ */
++struct xol_area {
++	wait_queue_head_t 	wq;		/* if all slots are busy */
++	atomic_t 		slot_count;	/* number of in-use slots */
++	unsigned long 		*bitmap;	/* 0 = free slot */
++	struct page 		*page;
++
++	/*
++	 * We keep the vma's vm_start rather than a pointer to the vma
++	 * itself.  The probed process or a naughty kernel module could make
++	 * the vma go away, and we must handle that reasonably gracefully.
++	 */
++	unsigned long 		vaddr;		/* Page(s) of instruction slots */
++};
++
++struct uprobes_state {
++	struct xol_area		*xol_area;
++	atomic_t		count;
++};
++extern int __weak set_swbp(struct arch_uprobe *aup, struct mm_struct *mm, unsigned long vaddr);
++extern int __weak set_orig_insn(struct arch_uprobe *aup, struct mm_struct *mm,  unsigned long vaddr, bool verify);
++extern bool __weak is_swbp_insn(uprobe_opcode_t *insn);
++extern int uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *uc);
++extern void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *uc);
++extern int uprobe_mmap(struct vm_area_struct *vma);
++extern void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned long end);
++extern void uprobe_free_utask(struct task_struct *t);
++extern void uprobe_copy_process(struct task_struct *t);
++extern unsigned long __weak uprobe_get_swbp_addr(struct pt_regs *regs);
++extern int uprobe_post_sstep_notifier(struct pt_regs *regs);
++extern int uprobe_pre_sstep_notifier(struct pt_regs *regs);
++extern void uprobe_notify_resume(struct pt_regs *regs);
++extern bool uprobe_deny_signal(void);
++extern bool __weak arch_uprobe_skip_sstep(struct arch_uprobe *aup, struct pt_regs *regs);
++extern void uprobe_clear_state(struct mm_struct *mm);
++extern void uprobe_reset_state(struct mm_struct *mm);
++#else /* !CONFIG_UPROBES */
++struct uprobes_state {
++};
++static inline int
++uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *uc)
++{
++	return -ENOSYS;
++}
++static inline void
++uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *uc)
++{
++}
++static inline int uprobe_mmap(struct vm_area_struct *vma)
++{
++	return 0;
++}
++static inline void
++uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned long end)
++{
++}
++static inline void uprobe_notify_resume(struct pt_regs *regs)
++{
++}
++static inline bool uprobe_deny_signal(void)
++{
++	return false;
++}
++static inline unsigned long uprobe_get_swbp_addr(struct pt_regs *regs)
++{
++	return 0;
++}
++static inline void uprobe_free_utask(struct task_struct *t)
++{
++}
++static inline void uprobe_copy_process(struct task_struct *t)
++{
++}
++static inline void uprobe_clear_state(struct mm_struct *mm)
++{
++}
++static inline void uprobe_reset_state(struct mm_struct *mm)
++{
++}
++#endif /* !CONFIG_UPROBES */
++#endif	/* _LINUX_UPROBES_H */
+diff --git a/kernel/events/Makefile b/kernel/events/Makefile
+index 22d901f..103f5d1 100644
+--- a/kernel/events/Makefile
++++ b/kernel/events/Makefile
+@@ -3,4 +3,7 @@ CFLAGS_REMOVE_core.o = -pg
+ endif
+ 
+ obj-y := core.o ring_buffer.o callchain.o
++
+ obj-$(CONFIG_HAVE_HW_BREAKPOINT) += hw_breakpoint.o
++obj-$(CONFIG_UPROBES) += uprobes.o
++
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+new file mode 100644
+index 0000000..985be4d
+--- /dev/null
++++ b/kernel/events/uprobes.c
+@@ -0,0 +1,1667 @@
++/*
++ * User-space Probes (UProbes)
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
++ *
++ * Copyright (C) IBM Corporation, 2008-2012
++ * Authors:
++ *	Srikar Dronamraju
++ *	Jim Keniston
++ * Copyright (C) 2011-2012 Red Hat, Inc., Peter Zijlstra <pzijlstr@redhat.com>
++ */
++
++#include <linux/kernel.h>
++#include <linux/highmem.h>
++#include <linux/pagemap.h>	/* read_mapping_page */
++#include <linux/slab.h>
++#include <linux/sched.h>
++#include <linux/rmap.h>		/* anon_vma_prepare */
++#include <linux/mmu_notifier.h>	/* set_pte_at_notify */
++#include <linux/swap.h>		/* try_to_free_swap */
++#include <linux/ptrace.h>	/* user_enable_single_step */
++#include <linux/kdebug.h>	/* notifier mechanism */
++
++#include <linux/uprobes.h>
++
++#define UINSNS_PER_PAGE			(PAGE_SIZE/UPROBE_XOL_SLOT_BYTES)
++#define MAX_UPROBE_XOL_SLOTS		UINSNS_PER_PAGE
++
++static struct srcu_struct uprobes_srcu;
++static struct rb_root uprobes_tree = RB_ROOT;
++
++static DEFINE_SPINLOCK(uprobes_treelock);	/* serialize rbtree access */
++
++#define UPROBES_HASH_SZ	13
++
++/* serialize (un)register */
++static struct mutex uprobes_mutex[UPROBES_HASH_SZ];
++
++#define uprobes_hash(v)		(&uprobes_mutex[((unsigned long)(v)) % UPROBES_HASH_SZ])
++
++/* serialize uprobe->pending_list */
++static struct mutex uprobes_mmap_mutex[UPROBES_HASH_SZ];
++#define uprobes_mmap_hash(v)	(&uprobes_mmap_mutex[((unsigned long)(v)) % UPROBES_HASH_SZ])
++
++/*
++ * uprobe_events allows us to skip the uprobe_mmap if there are no uprobe
++ * events active at this time.  Probably a fine grained per inode count is
++ * better?
++ */
++static atomic_t uprobe_events = ATOMIC_INIT(0);
++
++/*
++ * Maintain a temporary per vma info that can be used to search if a vma
++ * has already been handled. This structure is introduced since extending
++ * vm_area_struct wasnt recommended.
++ */
++struct vma_info {
++	struct list_head	probe_list;
++	struct mm_struct	*mm;
++	loff_t			vaddr;
++};
++
++struct uprobe {
++	struct rb_node		rb_node;	/* node in the rb tree */
++	atomic_t		ref;
++	struct rw_semaphore	consumer_rwsem;
++	struct list_head	pending_list;
++	struct uprobe_consumer	*consumers;
++	struct inode		*inode;		/* Also hold a ref to inode */
++	loff_t			offset;
++	int			flags;
++	struct arch_uprobe	arch;
++};
++
++/*
++ * valid_vma: Verify if the specified vma is an executable vma
++ * Relax restrictions while unregistering: vm_flags might have
++ * changed after breakpoint was inserted.
++ *	- is_register: indicates if we are in register context.
++ *	- Return 1 if the specified virtual address is in an
++ *	  executable vma.
++ */
++static bool valid_vma(struct vm_area_struct *vma, bool is_register)
++{
++	if (!vma->vm_file)
++		return false;
++
++	if (!is_register)
++		return true;
++
++	if ((vma->vm_flags & (VM_READ|VM_WRITE|VM_EXEC|VM_SHARED)) == (VM_READ|VM_EXEC))
++		return true;
++
++	return false;
++}
++
++static loff_t vma_address(struct vm_area_struct *vma, loff_t offset)
++{
++	loff_t vaddr;
++
++	vaddr = vma->vm_start + offset;
++	vaddr -= vma->vm_pgoff << PAGE_SHIFT;
++
++	return vaddr;
++}
++
++/**
++ * __replace_page - replace page in vma by new page.
++ * based on replace_page in mm/ksm.c
++ *
++ * @vma:      vma that holds the pte pointing to page
++ * @page:     the cowed page we are replacing by kpage
++ * @kpage:    the modified page we replace page by
++ *
++ * Returns 0 on success, -EFAULT on failure.
++ */
++static int __replace_page(struct vm_area_struct *vma, struct page *page, struct page *kpage)
++{
++	struct mm_struct *mm = vma->vm_mm;
++	pgd_t *pgd;
++	pud_t *pud;
++	pmd_t *pmd;
++	pte_t *ptep;
++	spinlock_t *ptl;
++	unsigned long addr;
++	int err = -EFAULT;
++
++	addr = page_address_in_vma(page, vma);
++	if (addr == -EFAULT)
++		goto out;
++
++	pgd = pgd_offset(mm, addr);
++	if (!pgd_present(*pgd))
++		goto out;
++
++	pud = pud_offset(pgd, addr);
++	if (!pud_present(*pud))
++		goto out;
++
++	pmd = pmd_offset(pud, addr);
++	if (!pmd_present(*pmd))
++		goto out;
++
++	ptep = pte_offset_map_lock(mm, pmd, addr, &ptl);
++	if (!ptep)
++		goto out;
++
++	get_page(kpage);
++	page_add_new_anon_rmap(kpage, vma, addr);
++
++	if (!PageAnon(page)) {
++		dec_mm_counter(mm, MM_FILEPAGES);
++		inc_mm_counter(mm, MM_ANONPAGES);
++	}
++
++	flush_cache_page(vma, addr, pte_pfn(*ptep));
++	ptep_clear_flush(vma, addr, ptep);
++	set_pte_at_notify(mm, addr, ptep, mk_pte(kpage, vma->vm_page_prot));
++
++	page_remove_rmap(page);
++	if (!page_mapped(page))
++		try_to_free_swap(page);
++	put_page(page);
++	pte_unmap_unlock(ptep, ptl);
++	err = 0;
++
++out:
++	return err;
++}
++
++/**
++ * is_swbp_insn - check if instruction is breakpoint instruction.
++ * @insn: instruction to be checked.
++ * Default implementation of is_swbp_insn
++ * Returns true if @insn is a breakpoint instruction.
++ */
++bool __weak is_swbp_insn(uprobe_opcode_t *insn)
++{
++	return *insn == UPROBE_SWBP_INSN;
++}
++
++/*
++ * NOTE:
++ * Expect the breakpoint instruction to be the smallest size instruction for
++ * the architecture. If an arch has variable length instruction and the
++ * breakpoint instruction is not of the smallest length instruction
++ * supported by that architecture then we need to modify read_opcode /
++ * write_opcode accordingly. This would never be a problem for archs that
++ * have fixed length instructions.
++ */
++
++/*
++ * write_opcode - write the opcode at a given virtual address.
++ * @auprobe: arch breakpointing information.
++ * @mm: the probed process address space.
++ * @vaddr: the virtual address to store the opcode.
++ * @opcode: opcode to be written at @vaddr.
++ *
++ * Called with mm->mmap_sem held (for read and with a reference to
++ * mm).
++ *
++ * For mm @mm, write the opcode at @vaddr.
++ * Return 0 (success) or a negative errno.
++ */
++static int write_opcode(struct arch_uprobe *auprobe, struct mm_struct *mm,
++			unsigned long vaddr, uprobe_opcode_t opcode)
++{
++	struct page *old_page, *new_page;
++	struct address_space *mapping;
++	void *vaddr_old, *vaddr_new;
++	struct vm_area_struct *vma;
++	struct uprobe *uprobe;
++	loff_t addr;
++	int ret;
++
++	/* Read the page with vaddr into memory */
++	ret = get_user_pages(NULL, mm, vaddr, 1, 0, 0, &old_page, &vma);
++	if (ret <= 0)
++		return ret;
++
++	ret = -EINVAL;
++
++	/*
++	 * We are interested in text pages only. Our pages of interest
++	 * should be mapped for read and execute only. We desist from
++	 * adding probes in write mapped pages since the breakpoints
++	 * might end up in the file copy.
++	 */
++	if (!valid_vma(vma, is_swbp_insn(&opcode)))
++		goto put_out;
++
++	uprobe = container_of(auprobe, struct uprobe, arch);
++	mapping = uprobe->inode->i_mapping;
++	if (mapping != vma->vm_file->f_mapping)
++		goto put_out;
++
++	addr = vma_address(vma, uprobe->offset);
++	if (vaddr != (unsigned long)addr)
++		goto put_out;
++
++	ret = -ENOMEM;
++	new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vaddr);
++	if (!new_page)
++		goto put_out;
++
++	__SetPageUptodate(new_page);
++
++	/*
++	 * lock page will serialize against do_wp_page()'s
++	 * PageAnon() handling
++	 */
++	lock_page(old_page);
++	/* copy the page now that we've got it stable */
++	vaddr_old = kmap_atomic(old_page);
++	vaddr_new = kmap_atomic(new_page);
++
++	memcpy(vaddr_new, vaddr_old, PAGE_SIZE);
++
++	/* poke the new insn in, ASSUMES we don't cross page boundary */
++	vaddr &= ~PAGE_MASK;
++	BUG_ON(vaddr + UPROBE_SWBP_INSN_SIZE > PAGE_SIZE);
++	memcpy(vaddr_new + vaddr, &opcode, UPROBE_SWBP_INSN_SIZE);
++
++	kunmap_atomic(vaddr_new);
++	kunmap_atomic(vaddr_old);
++
++	ret = anon_vma_prepare(vma);
++	if (ret)
++		goto unlock_out;
++
++	lock_page(new_page);
++	ret = __replace_page(vma, old_page, new_page);
++	unlock_page(new_page);
++
++unlock_out:
++	unlock_page(old_page);
++	page_cache_release(new_page);
++
++put_out:
++	put_page(old_page);
++
++	return ret;
++}
++
++/**
++ * read_opcode - read the opcode at a given virtual address.
++ * @mm: the probed process address space.
++ * @vaddr: the virtual address to read the opcode.
++ * @opcode: location to store the read opcode.
++ *
++ * Called with mm->mmap_sem held (for read and with a reference to
++ * mm.
++ *
++ * For mm @mm, read the opcode at @vaddr and store it in @opcode.
++ * Return 0 (success) or a negative errno.
++ */
++static int read_opcode(struct mm_struct *mm, unsigned long vaddr, uprobe_opcode_t *opcode)
++{
++	struct page *page;
++	void *vaddr_new;
++	int ret;
++
++	ret = get_user_pages(NULL, mm, vaddr, 1, 0, 0, &page, NULL);
++	if (ret <= 0)
++		return ret;
++
++	lock_page(page);
++	vaddr_new = kmap_atomic(page);
++	vaddr &= ~PAGE_MASK;
++	memcpy(opcode, vaddr_new + vaddr, UPROBE_SWBP_INSN_SIZE);
++	kunmap_atomic(vaddr_new);
++	unlock_page(page);
++
++	put_page(page);
++
++	return 0;
++}
++
++static int is_swbp_at_addr(struct mm_struct *mm, unsigned long vaddr)
++{
++	uprobe_opcode_t opcode;
++	int result;
++
++	result = read_opcode(mm, vaddr, &opcode);
++	if (result)
++		return result;
++
++	if (is_swbp_insn(&opcode))
++		return 1;
++
++	return 0;
++}
++
++/**
++ * set_swbp - store breakpoint at a given address.
++ * @auprobe: arch specific probepoint information.
++ * @mm: the probed process address space.
++ * @vaddr: the virtual address to insert the opcode.
++ *
++ * For mm @mm, store the breakpoint instruction at @vaddr.
++ * Return 0 (success) or a negative errno.
++ */
++int __weak set_swbp(struct arch_uprobe *auprobe, struct mm_struct *mm, unsigned long vaddr)
++{
++	int result;
++
++	result = is_swbp_at_addr(mm, vaddr);
++	if (result == 1)
++		return -EEXIST;
++
++	if (result)
++		return result;
++
++	return write_opcode(auprobe, mm, vaddr, UPROBE_SWBP_INSN);
++}
++
++/**
++ * set_orig_insn - Restore the original instruction.
++ * @mm: the probed process address space.
++ * @auprobe: arch specific probepoint information.
++ * @vaddr: the virtual address to insert the opcode.
++ * @verify: if true, verify existance of breakpoint instruction.
++ *
++ * For mm @mm, restore the original opcode (opcode) at @vaddr.
++ * Return 0 (success) or a negative errno.
++ */
++int __weak
++set_orig_insn(struct arch_uprobe *auprobe, struct mm_struct *mm, unsigned long vaddr, bool verify)
++{
++	if (verify) {
++		int result;
++
++		result = is_swbp_at_addr(mm, vaddr);
++		if (!result)
++			return -EINVAL;
++
++		if (result != 1)
++			return result;
++	}
++	return write_opcode(auprobe, mm, vaddr, *(uprobe_opcode_t *)auprobe->insn);
++}
++
++static int match_uprobe(struct uprobe *l, struct uprobe *r)
++{
++	if (l->inode < r->inode)
++		return -1;
++
++	if (l->inode > r->inode)
++		return 1;
++
++	if (l->offset < r->offset)
++		return -1;
++
++	if (l->offset > r->offset)
++		return 1;
++
++	return 0;
++}
++
++static struct uprobe *__find_uprobe(struct inode *inode, loff_t offset)
++{
++	struct uprobe u = { .inode = inode, .offset = offset };
++	struct rb_node *n = uprobes_tree.rb_node;
++	struct uprobe *uprobe;
++	int match;
++
++	while (n) {
++		uprobe = rb_entry(n, struct uprobe, rb_node);
++		match = match_uprobe(&u, uprobe);
++		if (!match) {
++			atomic_inc(&uprobe->ref);
++			return uprobe;
++		}
++
++		if (match < 0)
++			n = n->rb_left;
++		else
++			n = n->rb_right;
++	}
++	return NULL;
++}
++
++/*
++ * Find a uprobe corresponding to a given inode:offset
++ * Acquires uprobes_treelock
++ */
++static struct uprobe *find_uprobe(struct inode *inode, loff_t offset)
++{
++	struct uprobe *uprobe;
++	unsigned long flags;
++
++	spin_lock_irqsave(&uprobes_treelock, flags);
++	uprobe = __find_uprobe(inode, offset);
++	spin_unlock_irqrestore(&uprobes_treelock, flags);
++
++	return uprobe;
++}
++
++static struct uprobe *__insert_uprobe(struct uprobe *uprobe)
++{
++	struct rb_node **p = &uprobes_tree.rb_node;
++	struct rb_node *parent = NULL;
++	struct uprobe *u;
++	int match;
++
++	while (*p) {
++		parent = *p;
++		u = rb_entry(parent, struct uprobe, rb_node);
++		match = match_uprobe(uprobe, u);
++		if (!match) {
++			atomic_inc(&u->ref);
++			return u;
++		}
++
++		if (match < 0)
++			p = &parent->rb_left;
++		else
++			p = &parent->rb_right;
++
++	}
++
++	u = NULL;
++	rb_link_node(&uprobe->rb_node, parent, p);
++	rb_insert_color(&uprobe->rb_node, &uprobes_tree);
++	/* get access + creation ref */
++	atomic_set(&uprobe->ref, 2);
++
++	return u;
++}
++
++/*
++ * Acquire uprobes_treelock.
++ * Matching uprobe already exists in rbtree;
++ *	increment (access refcount) and return the matching uprobe.
++ *
++ * No matching uprobe; insert the uprobe in rb_tree;
++ *	get a double refcount (access + creation) and return NULL.
++ */
++static struct uprobe *insert_uprobe(struct uprobe *uprobe)
++{
++	unsigned long flags;
++	struct uprobe *u;
++
++	spin_lock_irqsave(&uprobes_treelock, flags);
++	u = __insert_uprobe(uprobe);
++	spin_unlock_irqrestore(&uprobes_treelock, flags);
++
++	/* For now assume that the instruction need not be single-stepped */
++	uprobe->flags |= UPROBE_SKIP_SSTEP;
++
++	return u;
++}
++
++static void put_uprobe(struct uprobe *uprobe)
++{
++	if (atomic_dec_and_test(&uprobe->ref))
++		kfree(uprobe);
++}
++
++static struct uprobe *alloc_uprobe(struct inode *inode, loff_t offset)
++{
++	struct uprobe *uprobe, *cur_uprobe;
++
++	uprobe = kzalloc(sizeof(struct uprobe), GFP_KERNEL);
++	if (!uprobe)
++		return NULL;
++
++	uprobe->inode = igrab(inode);
++	uprobe->offset = offset;
++	init_rwsem(&uprobe->consumer_rwsem);
++	INIT_LIST_HEAD(&uprobe->pending_list);
++
++	/* add to uprobes_tree, sorted on inode:offset */
++	cur_uprobe = insert_uprobe(uprobe);
++
++	/* a uprobe exists for this inode:offset combination */
++	if (cur_uprobe) {
++		kfree(uprobe);
++		uprobe = cur_uprobe;
++		iput(inode);
++	} else {
++		atomic_inc(&uprobe_events);
++	}
++
++	return uprobe;
++}
++
++static void handler_chain(struct uprobe *uprobe, struct pt_regs *regs)
++{
++	struct uprobe_consumer *uc;
++
++	if (!(uprobe->flags & UPROBE_RUN_HANDLER))
++		return;
++
++	down_read(&uprobe->consumer_rwsem);
++	for (uc = uprobe->consumers; uc; uc = uc->next) {
++		if (!uc->filter || uc->filter(uc, current))
++			uc->handler(uc, regs);
++	}
++	up_read(&uprobe->consumer_rwsem);
++}
++
++/* Returns the previous consumer */
++static struct uprobe_consumer *
++consumer_add(struct uprobe *uprobe, struct uprobe_consumer *uc)
++{
++	down_write(&uprobe->consumer_rwsem);
++	uc->next = uprobe->consumers;
++	uprobe->consumers = uc;
++	up_write(&uprobe->consumer_rwsem);
++
++	return uc->next;
++}
++
++/*
++ * For uprobe @uprobe, delete the consumer @uc.
++ * Return true if the @uc is deleted successfully
++ * or return false.
++ */
++static bool consumer_del(struct uprobe *uprobe, struct uprobe_consumer *uc)
++{
++	struct uprobe_consumer **con;
++	bool ret = false;
++
++	down_write(&uprobe->consumer_rwsem);
++	for (con = &uprobe->consumers; *con; con = &(*con)->next) {
++		if (*con == uc) {
++			*con = uc->next;
++			ret = true;
++			break;
++		}
++	}
++	up_write(&uprobe->consumer_rwsem);
++
++	return ret;
++}
++
++static int
++__copy_insn(struct address_space *mapping, struct vm_area_struct *vma, char *insn,
++			unsigned long nbytes, unsigned long offset)
++{
++	struct file *filp = vma->vm_file;
++	struct page *page;
++	void *vaddr;
++	unsigned long off1;
++	unsigned long idx;
++
++	if (!filp)
++		return -EINVAL;
++
++	idx = (unsigned long)(offset >> PAGE_CACHE_SHIFT);
++	off1 = offset &= ~PAGE_MASK;
++
++	/*
++	 * Ensure that the page that has the original instruction is
++	 * populated and in page-cache.
++	 */
++	page = read_mapping_page(mapping, idx, filp);
++	if (IS_ERR(page))
++		return PTR_ERR(page);
++
++	vaddr = kmap_atomic(page);
++	memcpy(insn, vaddr + off1, nbytes);
++	kunmap_atomic(vaddr);
++	page_cache_release(page);
++
++	return 0;
++}
++
++static int
++copy_insn(struct uprobe *uprobe, struct vm_area_struct *vma, unsigned long addr)
++{
++	struct address_space *mapping;
++	unsigned long nbytes;
++	int bytes;
++
++	addr &= ~PAGE_MASK;
++	nbytes = PAGE_SIZE - addr;
++	mapping = uprobe->inode->i_mapping;
++
++	/* Instruction at end of binary; copy only available bytes */
++	if (uprobe->offset + MAX_UINSN_BYTES > uprobe->inode->i_size)
++		bytes = uprobe->inode->i_size - uprobe->offset;
++	else
++		bytes = MAX_UINSN_BYTES;
++
++	/* Instruction at the page-boundary; copy bytes in second page */
++	if (nbytes < bytes) {
++		if (__copy_insn(mapping, vma, uprobe->arch.insn + nbytes,
++				bytes - nbytes, uprobe->offset + nbytes))
++			return -ENOMEM;
++
++		bytes = nbytes;
++	}
++	return __copy_insn(mapping, vma, uprobe->arch.insn, bytes, uprobe->offset);
++}
++
++/*
++ * How mm->uprobes_state.count gets updated
++ * uprobe_mmap() increments the count if
++ * 	- it successfully adds a breakpoint.
++ * 	- it cannot add a breakpoint, but sees that there is a underlying
++ * 	  breakpoint (via a is_swbp_at_addr()).
++ *
++ * uprobe_munmap() decrements the count if
++ * 	- it sees a underlying breakpoint, (via is_swbp_at_addr)
++ * 	  (Subsequent uprobe_unregister wouldnt find the breakpoint
++ * 	  unless a uprobe_mmap kicks in, since the old vma would be
++ * 	  dropped just after uprobe_munmap.)
++ *
++ * uprobe_register increments the count if:
++ * 	- it successfully adds a breakpoint.
++ *
++ * uprobe_unregister decrements the count if:
++ * 	- it sees a underlying breakpoint and removes successfully.
++ * 	  (via is_swbp_at_addr)
++ * 	  (Subsequent uprobe_munmap wouldnt find the breakpoint
++ * 	  since there is no underlying breakpoint after the
++ * 	  breakpoint removal.)
++ */
++static int
++install_breakpoint(struct uprobe *uprobe, struct mm_struct *mm,
++			struct vm_area_struct *vma, loff_t vaddr)
++{
++	unsigned long addr;
++	int ret;
++
++	/*
++	 * If probe is being deleted, unregister thread could be done with
++	 * the vma-rmap-walk through. Adding a probe now can be fatal since
++	 * nobody will be able to cleanup. Also we could be from fork or
++	 * mremap path, where the probe might have already been inserted.
++	 * Hence behave as if probe already existed.
++	 */
++	if (!uprobe->consumers)
++		return -EEXIST;
++
++	addr = (unsigned long)vaddr;
++
++	if (!(uprobe->flags & UPROBE_COPY_INSN)) {
++		ret = copy_insn(uprobe, vma, addr);
++		if (ret)
++			return ret;
++
++		if (is_swbp_insn((uprobe_opcode_t *)uprobe->arch.insn))
++			return -EEXIST;
++
++		ret = arch_uprobe_analyze_insn(&uprobe->arch, mm);
++		if (ret)
++			return ret;
++
++		uprobe->flags |= UPROBE_COPY_INSN;
++	}
++
++	/*
++	 * Ideally, should be updating the probe count after the breakpoint
++	 * has been successfully inserted. However a thread could hit the
++	 * breakpoint we just inserted even before the probe count is
++	 * incremented. If this is the first breakpoint placed, breakpoint
++	 * notifier might ignore uprobes and pass the trap to the thread.
++	 * Hence increment before and decrement on failure.
++	 */
++	atomic_inc(&mm->uprobes_state.count);
++	ret = set_swbp(&uprobe->arch, mm, addr);
++	if (ret)
++		atomic_dec(&mm->uprobes_state.count);
++
++	return ret;
++}
++
++static void
++remove_breakpoint(struct uprobe *uprobe, struct mm_struct *mm, loff_t vaddr)
++{
++	if (!set_orig_insn(&uprobe->arch, mm, (unsigned long)vaddr, true))
++		atomic_dec(&mm->uprobes_state.count);
++}
++
++/*
++ * There could be threads that have hit the breakpoint and are entering the
++ * notifier code and trying to acquire the uprobes_treelock. The thread
++ * calling delete_uprobe() that is removing the uprobe from the rb_tree can
++ * race with these threads and might acquire the uprobes_treelock compared
++ * to some of the breakpoint hit threads. In such a case, the breakpoint
++ * hit threads will not find the uprobe. The current unregistering thread
++ * waits till all other threads have hit a breakpoint, to acquire the
++ * uprobes_treelock before the uprobe is removed from the rbtree.
++ */
++static void delete_uprobe(struct uprobe *uprobe)
++{
++	unsigned long flags;
++
++	synchronize_srcu(&uprobes_srcu);
++	spin_lock_irqsave(&uprobes_treelock, flags);
++	rb_erase(&uprobe->rb_node, &uprobes_tree);
++	spin_unlock_irqrestore(&uprobes_treelock, flags);
++	iput(uprobe->inode);
++	put_uprobe(uprobe);
++	atomic_dec(&uprobe_events);
++}
++
++static struct vma_info *
++__find_next_vma_info(struct address_space *mapping, struct list_head *head,
++			struct vma_info *vi, loff_t offset, bool is_register)
++{
++	struct prio_tree_iter iter;
++	struct vm_area_struct *vma;
++	struct vma_info *tmpvi;
++	unsigned long pgoff;
++	int existing_vma;
++	loff_t vaddr;
++
++	pgoff = offset >> PAGE_SHIFT;
++
++	vma_prio_tree_foreach(vma, &iter, &mapping->i_mmap, pgoff, pgoff) {
++		if (!valid_vma(vma, is_register))
++			continue;
++
++		existing_vma = 0;
++		vaddr = vma_address(vma, offset);
++
++		list_for_each_entry(tmpvi, head, probe_list) {
++			if (tmpvi->mm == vma->vm_mm && tmpvi->vaddr == vaddr) {
++				existing_vma = 1;
++				break;
++			}
++		}
++
++		/*
++		 * Another vma needs a probe to be installed. However skip
++		 * installing the probe if the vma is about to be unlinked.
++		 */
++		if (!existing_vma && atomic_inc_not_zero(&vma->vm_mm->mm_users)) {
++			vi->mm = vma->vm_mm;
++			vi->vaddr = vaddr;
++			list_add(&vi->probe_list, head);
++
++			return vi;
++		}
++	}
++
++	return NULL;
++}
++
++/*
++ * Iterate in the rmap prio tree  and find a vma where a probe has not
++ * yet been inserted.
++ */
++static struct vma_info *
++find_next_vma_info(struct address_space *mapping, struct list_head *head,
++		loff_t offset, bool is_register)
++{
++	struct vma_info *vi, *retvi;
++
++	vi = kzalloc(sizeof(struct vma_info), GFP_KERNEL);
++	if (!vi)
++		return ERR_PTR(-ENOMEM);
++
++	mutex_lock(&mapping->i_mmap_mutex);
++	retvi = __find_next_vma_info(mapping, head, vi, offset, is_register);
++	mutex_unlock(&mapping->i_mmap_mutex);
++
++	if (!retvi)
++		kfree(vi);
++
++	return retvi;
++}
++
++static int register_for_each_vma(struct uprobe *uprobe, bool is_register)
++{
++	struct list_head try_list;
++	struct vm_area_struct *vma;
++	struct address_space *mapping;
++	struct vma_info *vi, *tmpvi;
++	struct mm_struct *mm;
++	loff_t vaddr;
++	int ret;
++
++	mapping = uprobe->inode->i_mapping;
++	INIT_LIST_HEAD(&try_list);
++
++	ret = 0;
++
++	for (;;) {
++		vi = find_next_vma_info(mapping, &try_list, uprobe->offset, is_register);
++		if (!vi)
++			break;
++
++		if (IS_ERR(vi)) {
++			ret = PTR_ERR(vi);
++			break;
++		}
++
++		mm = vi->mm;
++		down_read(&mm->mmap_sem);
++		vma = find_vma(mm, (unsigned long)vi->vaddr);
++		if (!vma || !valid_vma(vma, is_register)) {
++			list_del(&vi->probe_list);
++			kfree(vi);
++			up_read(&mm->mmap_sem);
++			mmput(mm);
++			continue;
++		}
++		vaddr = vma_address(vma, uprobe->offset);
++		if (vma->vm_file->f_mapping->host != uprobe->inode ||
++						vaddr != vi->vaddr) {
++			list_del(&vi->probe_list);
++			kfree(vi);
++			up_read(&mm->mmap_sem);
++			mmput(mm);
++			continue;
++		}
++
++		if (is_register)
++			ret = install_breakpoint(uprobe, mm, vma, vi->vaddr);
++		else
++			remove_breakpoint(uprobe, mm, vi->vaddr);
++
++		up_read(&mm->mmap_sem);
++		mmput(mm);
++		if (is_register) {
++			if (ret && ret == -EEXIST)
++				ret = 0;
++			if (ret)
++				break;
++		}
++	}
++
++	list_for_each_entry_safe(vi, tmpvi, &try_list, probe_list) {
++		list_del(&vi->probe_list);
++		kfree(vi);
++	}
++
++	return ret;
++}
++
++static int __uprobe_register(struct uprobe *uprobe)
++{
++	return register_for_each_vma(uprobe, true);
++}
++
++static void __uprobe_unregister(struct uprobe *uprobe)
++{
++	if (!register_for_each_vma(uprobe, false))
++		delete_uprobe(uprobe);
++
++	/* TODO : cant unregister? schedule a worker thread */
++}
++
++/*
++ * uprobe_register - register a probe
++ * @inode: the file in which the probe has to be placed.
++ * @offset: offset from the start of the file.
++ * @uc: information on howto handle the probe..
++ *
++ * Apart from the access refcount, uprobe_register() takes a creation
++ * refcount (thro alloc_uprobe) if and only if this @uprobe is getting
++ * inserted into the rbtree (i.e first consumer for a @inode:@offset
++ * tuple).  Creation refcount stops uprobe_unregister from freeing the
++ * @uprobe even before the register operation is complete. Creation
++ * refcount is released when the last @uc for the @uprobe
++ * unregisters.
++ *
++ * Return errno if it cannot successully install probes
++ * else return 0 (success)
++ */
++int uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *uc)
++{
++	struct uprobe *uprobe;
++	int ret;
++
++	if (!inode || !uc || uc->next)
++		return -EINVAL;
++
++	if (offset > i_size_read(inode))
++		return -EINVAL;
++
++	ret = 0;
++	mutex_lock(uprobes_hash(inode));
++	uprobe = alloc_uprobe(inode, offset);
++
++	if (uprobe && !consumer_add(uprobe, uc)) {
++		ret = __uprobe_register(uprobe);
++		if (ret) {
++			uprobe->consumers = NULL;
++			__uprobe_unregister(uprobe);
++		} else {
++			uprobe->flags |= UPROBE_RUN_HANDLER;
++		}
++	}
++
++	mutex_unlock(uprobes_hash(inode));
++	put_uprobe(uprobe);
++
++	return ret;
++}
++
++/*
++ * uprobe_unregister - unregister a already registered probe.
++ * @inode: the file in which the probe has to be removed.
++ * @offset: offset from the start of the file.
++ * @uc: identify which probe if multiple probes are colocated.
++ */
++void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *uc)
++{
++	struct uprobe *uprobe;
++
++	if (!inode || !uc)
++		return;
++
++	uprobe = find_uprobe(inode, offset);
++	if (!uprobe)
++		return;
++
++	mutex_lock(uprobes_hash(inode));
++
++	if (consumer_del(uprobe, uc)) {
++		if (!uprobe->consumers) {
++			__uprobe_unregister(uprobe);
++			uprobe->flags &= ~UPROBE_RUN_HANDLER;
++		}
++	}
++
++	mutex_unlock(uprobes_hash(inode));
++	if (uprobe)
++		put_uprobe(uprobe);
++}
++
++/*
++ * Of all the nodes that correspond to the given inode, return the node
++ * with the least offset.
++ */
++static struct rb_node *find_least_offset_node(struct inode *inode)
++{
++	struct uprobe u = { .inode = inode, .offset = 0};
++	struct rb_node *n = uprobes_tree.rb_node;
++	struct rb_node *close_node = NULL;
++	struct uprobe *uprobe;
++	int match;
++
++	while (n) {
++		uprobe = rb_entry(n, struct uprobe, rb_node);
++		match = match_uprobe(&u, uprobe);
++
++		if (uprobe->inode == inode)
++			close_node = n;
++
++		if (!match)
++			return close_node;
++
++		if (match < 0)
++			n = n->rb_left;
++		else
++			n = n->rb_right;
++	}
++
++	return close_node;
++}
++
++/*
++ * For a given inode, build a list of probes that need to be inserted.
++ */
++static void build_probe_list(struct inode *inode, struct list_head *head)
++{
++	struct uprobe *uprobe;
++	unsigned long flags;
++	struct rb_node *n;
++
++	spin_lock_irqsave(&uprobes_treelock, flags);
++
++	n = find_least_offset_node(inode);
++
++	for (; n; n = rb_next(n)) {
++		uprobe = rb_entry(n, struct uprobe, rb_node);
++		if (uprobe->inode != inode)
++			break;
++
++		list_add(&uprobe->pending_list, head);
++		atomic_inc(&uprobe->ref);
++	}
++
++	spin_unlock_irqrestore(&uprobes_treelock, flags);
++}
++
++/*
++ * Called from mmap_region.
++ * called with mm->mmap_sem acquired.
++ *
++ * Return -ve no if we fail to insert probes and we cannot
++ * bail-out.
++ * Return 0 otherwise. i.e:
++ *
++ *	- successful insertion of probes
++ *	- (or) no possible probes to be inserted.
++ *	- (or) insertion of probes failed but we can bail-out.
++ */
++int uprobe_mmap(struct vm_area_struct *vma)
++{
++	struct list_head tmp_list;
++	struct uprobe *uprobe, *u;
++	struct inode *inode;
++	int ret, count;
++
++	if (!atomic_read(&uprobe_events) || !valid_vma(vma, true))
++		return 0;
++
++	inode = vma->vm_file->f_mapping->host;
++	if (!inode)
++		return 0;
++
++	INIT_LIST_HEAD(&tmp_list);
++	mutex_lock(uprobes_mmap_hash(inode));
++	build_probe_list(inode, &tmp_list);
++
++	ret = 0;
++	count = 0;
++
++	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
++		loff_t vaddr;
++
++		list_del(&uprobe->pending_list);
++		if (!ret) {
++			vaddr = vma_address(vma, uprobe->offset);
++
++			if (vaddr < vma->vm_start || vaddr >= vma->vm_end) {
++				put_uprobe(uprobe);
++				continue;
++			}
++
++			ret = install_breakpoint(uprobe, vma->vm_mm, vma, vaddr);
++
++			/* Ignore double add: */
++			if (ret == -EEXIST) {
++				ret = 0;
++
++				if (!is_swbp_at_addr(vma->vm_mm, vaddr))
++					continue;
++
++				/*
++				 * Unable to insert a breakpoint, but
++				 * breakpoint lies underneath. Increment the
++				 * probe count.
++				 */
++				atomic_inc(&vma->vm_mm->uprobes_state.count);
++			}
++
++			if (!ret)
++				count++;
++		}
++		put_uprobe(uprobe);
++	}
++
++	mutex_unlock(uprobes_mmap_hash(inode));
++
++	if (ret)
++		atomic_sub(count, &vma->vm_mm->uprobes_state.count);
++
++	return ret;
++}
++
++/*
++ * Called in context of a munmap of a vma.
++ */
++void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned long end)
++{
++	struct list_head tmp_list;
++	struct uprobe *uprobe, *u;
++	struct inode *inode;
++
++	if (!atomic_read(&uprobe_events) || !valid_vma(vma, false))
++		return;
++
++	if (!atomic_read(&vma->vm_mm->uprobes_state.count))
++		return;
++
++	inode = vma->vm_file->f_mapping->host;
++	if (!inode)
++		return;
++
++	INIT_LIST_HEAD(&tmp_list);
++	mutex_lock(uprobes_mmap_hash(inode));
++	build_probe_list(inode, &tmp_list);
++
++	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
++		loff_t vaddr;
++
++		list_del(&uprobe->pending_list);
++		vaddr = vma_address(vma, uprobe->offset);
++
++		if (vaddr >= start && vaddr < end) {
++			/*
++			 * An unregister could have removed the probe before
++			 * unmap. So check before we decrement the count.
++			 */
++			if (is_swbp_at_addr(vma->vm_mm, vaddr) == 1)
++				atomic_dec(&vma->vm_mm->uprobes_state.count);
++		}
++		put_uprobe(uprobe);
++	}
++	mutex_unlock(uprobes_mmap_hash(inode));
++}
++
++/* Slot allocation for XOL */
++static int xol_add_vma(struct xol_area *area)
++{
++	struct mm_struct *mm;
++	int ret;
++
++	area->page = alloc_page(GFP_HIGHUSER);
++	if (!area->page)
++		return -ENOMEM;
++
++	ret = -EALREADY;
++	mm = current->mm;
++
++	down_write(&mm->mmap_sem);
++	if (mm->uprobes_state.xol_area)
++		goto fail;
++
++	ret = -ENOMEM;
++
++	/* Try to map as high as possible, this is only a hint. */
++	area->vaddr = get_unmapped_area(NULL, TASK_SIZE - PAGE_SIZE, PAGE_SIZE, 0, 0);
++	if (area->vaddr & ~PAGE_MASK) {
++		ret = area->vaddr;
++		goto fail;
++	}
++
++	ret = install_special_mapping(mm, area->vaddr, PAGE_SIZE,
++				VM_EXEC|VM_MAYEXEC|VM_DONTCOPY|VM_IO, &area->page);
++	if (ret)
++		goto fail;
++
++	smp_wmb();	/* pairs with get_xol_area() */
++	mm->uprobes_state.xol_area = area;
++	ret = 0;
++
++fail:
++	up_write(&mm->mmap_sem);
++	if (ret)
++		__free_page(area->page);
++
++	return ret;
++}
++
++static struct xol_area *get_xol_area(struct mm_struct *mm)
++{
++	struct xol_area *area;
++
++	area = mm->uprobes_state.xol_area;
++	smp_read_barrier_depends();	/* pairs with wmb in xol_add_vma() */
++
++	return area;
++}
++
++/*
++ * xol_alloc_area - Allocate process's xol_area.
++ * This area will be used for storing instructions for execution out of
++ * line.
++ *
++ * Returns the allocated area or NULL.
++ */
++static struct xol_area *xol_alloc_area(void)
++{
++	struct xol_area *area;
++
++	area = kzalloc(sizeof(*area), GFP_KERNEL);
++	if (unlikely(!area))
++		return NULL;
++
++	area->bitmap = kzalloc(BITS_TO_LONGS(UINSNS_PER_PAGE) * sizeof(long), GFP_KERNEL);
++
++	if (!area->bitmap)
++		goto fail;
++
++	init_waitqueue_head(&area->wq);
++	if (!xol_add_vma(area))
++		return area;
++
++fail:
++	kfree(area->bitmap);
++	kfree(area);
++
++	return get_xol_area(current->mm);
++}
++
++/*
++ * uprobe_clear_state - Free the area allocated for slots.
++ */
++void uprobe_clear_state(struct mm_struct *mm)
++{
++	struct xol_area *area = mm->uprobes_state.xol_area;
++
++	if (!area)
++		return;
++
++	put_page(area->page);
++	kfree(area->bitmap);
++	kfree(area);
++}
++
++/*
++ * uprobe_reset_state - Free the area allocated for slots.
++ */
++void uprobe_reset_state(struct mm_struct *mm)
++{
++	mm->uprobes_state.xol_area = NULL;
++	atomic_set(&mm->uprobes_state.count, 0);
++}
++
++/*
++ *  - search for a free slot.
++ */
++static unsigned long xol_take_insn_slot(struct xol_area *area)
++{
++	unsigned long slot_addr;
++	int slot_nr;
++
++	do {
++		slot_nr = find_first_zero_bit(area->bitmap, UINSNS_PER_PAGE);
++		if (slot_nr < UINSNS_PER_PAGE) {
++			if (!test_and_set_bit(slot_nr, area->bitmap))
++				break;
++
++			slot_nr = UINSNS_PER_PAGE;
++			continue;
++		}
++		wait_event(area->wq, (atomic_read(&area->slot_count) < UINSNS_PER_PAGE));
++	} while (slot_nr >= UINSNS_PER_PAGE);
++
++	slot_addr = area->vaddr + (slot_nr * UPROBE_XOL_SLOT_BYTES);
++	atomic_inc(&area->slot_count);
++
++	return slot_addr;
++}
++
++/*
++ * xol_get_insn_slot - If was not allocated a slot, then
++ * allocate a slot.
++ * Returns the allocated slot address or 0.
++ */
++static unsigned long xol_get_insn_slot(struct uprobe *uprobe, unsigned long slot_addr)
++{
++	struct xol_area *area;
++	unsigned long offset;
++	void *vaddr;
++
++	area = get_xol_area(current->mm);
++	if (!area) {
++		area = xol_alloc_area();
++		if (!area)
++			return 0;
++	}
++	current->utask->xol_vaddr = xol_take_insn_slot(area);
++
++	/*
++	 * Initialize the slot if xol_vaddr points to valid
++	 * instruction slot.
++	 */
++	if (unlikely(!current->utask->xol_vaddr))
++		return 0;
++
++	current->utask->vaddr = slot_addr;
++	offset = current->utask->xol_vaddr & ~PAGE_MASK;
++	vaddr = kmap_atomic(area->page);
++	memcpy(vaddr + offset, uprobe->arch.insn, MAX_UINSN_BYTES);
++	kunmap_atomic(vaddr);
++
++	return current->utask->xol_vaddr;
++}
++
++/*
++ * xol_free_insn_slot - If slot was earlier allocated by
++ * @xol_get_insn_slot(), make the slot available for
++ * subsequent requests.
++ */
++static void xol_free_insn_slot(struct task_struct *tsk)
++{
++	struct xol_area *area;
++	unsigned long vma_end;
++	unsigned long slot_addr;
++
++	if (!tsk->mm || !tsk->mm->uprobes_state.xol_area || !tsk->utask)
++		return;
++
++	slot_addr = tsk->utask->xol_vaddr;
++
++	if (unlikely(!slot_addr || IS_ERR_VALUE(slot_addr)))
++		return;
++
++	area = tsk->mm->uprobes_state.xol_area;
++	vma_end = area->vaddr + PAGE_SIZE;
++	if (area->vaddr <= slot_addr && slot_addr < vma_end) {
++		unsigned long offset;
++		int slot_nr;
++
++		offset = slot_addr - area->vaddr;
++		slot_nr = offset / UPROBE_XOL_SLOT_BYTES;
++		if (slot_nr >= UINSNS_PER_PAGE)
++			return;
++
++		clear_bit(slot_nr, area->bitmap);
++		atomic_dec(&area->slot_count);
++		if (waitqueue_active(&area->wq))
++			wake_up(&area->wq);
++
++		tsk->utask->xol_vaddr = 0;
++	}
++}
++
++/**
++ * uprobe_get_swbp_addr - compute address of swbp given post-swbp regs
++ * @regs: Reflects the saved state of the task after it has hit a breakpoint
++ * instruction.
++ * Return the address of the breakpoint instruction.
++ */
++unsigned long __weak uprobe_get_swbp_addr(struct pt_regs *regs)
++{
++	return instruction_pointer(regs) - UPROBE_SWBP_INSN_SIZE;
++}
++
++/*
++ * Called with no locks held.
++ * Called in context of a exiting or a exec-ing thread.
++ */
++void uprobe_free_utask(struct task_struct *t)
++{
++	struct uprobe_task *utask = t->utask;
++
++	if (t->uprobe_srcu_id != -1)
++		srcu_read_unlock_raw(&uprobes_srcu, t->uprobe_srcu_id);
++
++	if (!utask)
++		return;
++
++	if (utask->active_uprobe)
++		put_uprobe(utask->active_uprobe);
++
++	xol_free_insn_slot(t);
++	kfree(utask);
++	t->utask = NULL;
++}
++
++/*
++ * Called in context of a new clone/fork from copy_process.
++ */
++void uprobe_copy_process(struct task_struct *t)
++{
++	t->utask = NULL;
++	t->uprobe_srcu_id = -1;
++}
++
++/*
++ * Allocate a uprobe_task object for the task.
++ * Called when the thread hits a breakpoint for the first time.
++ *
++ * Returns:
++ * - pointer to new uprobe_task on success
++ * - NULL otherwise
++ */
++static struct uprobe_task *add_utask(void)
++{
++	struct uprobe_task *utask;
++
++	utask = kzalloc(sizeof *utask, GFP_KERNEL);
++	if (unlikely(!utask))
++		return NULL;
++
++	utask->active_uprobe = NULL;
++	current->utask = utask;
++	return utask;
++}
++
++/* Prepare to single-step probed instruction out of line. */
++static int
++pre_ssout(struct uprobe *uprobe, struct pt_regs *regs, unsigned long vaddr)
++{
++	if (xol_get_insn_slot(uprobe, vaddr) && !arch_uprobe_pre_xol(&uprobe->arch, regs))
++		return 0;
++
++	return -EFAULT;
++}
++
++/*
++ * If we are singlestepping, then ensure this thread is not connected to
++ * non-fatal signals until completion of singlestep.  When xol insn itself
++ * triggers the signal,  restart the original insn even if the task is
++ * already SIGKILL'ed (since coredump should report the correct ip).  This
++ * is even more important if the task has a handler for SIGSEGV/etc, The
++ * _same_ instruction should be repeated again after return from the signal
++ * handler, and SSTEP can never finish in this case.
++ */
++bool uprobe_deny_signal(void)
++{
++	struct task_struct *t = current;
++	struct uprobe_task *utask = t->utask;
++
++	if (likely(!utask || !utask->active_uprobe))
++		return false;
++
++	WARN_ON_ONCE(utask->state != UTASK_SSTEP);
++
++	if (signal_pending(t)) {
++		spin_lock_irq(&t->sighand->siglock);
++		clear_tsk_thread_flag(t, TIF_SIGPENDING);
++		spin_unlock_irq(&t->sighand->siglock);
++
++		if (__fatal_signal_pending(t) || arch_uprobe_xol_was_trapped(t)) {
++			utask->state = UTASK_SSTEP_TRAPPED;
++			set_tsk_thread_flag(t, TIF_UPROBE);
++			set_tsk_thread_flag(t, TIF_NOTIFY_RESUME);
++		}
++	}
++
++	return true;
++}
++
++/*
++ * Avoid singlestepping the original instruction if the original instruction
++ * is a NOP or can be emulated.
++ */
++static bool can_skip_sstep(struct uprobe *uprobe, struct pt_regs *regs)
++{
++	if (arch_uprobe_skip_sstep(&uprobe->arch, regs))
++		return true;
++
++	uprobe->flags &= ~UPROBE_SKIP_SSTEP;
++	return false;
++}
++
++/*
++ * Run handler and ask thread to singlestep.
++ * Ensure all non-fatal signals cannot interrupt thread while it singlesteps.
++ */
++static void handle_swbp(struct pt_regs *regs)
++{
++	struct vm_area_struct *vma;
++	struct uprobe_task *utask;
++	struct uprobe *uprobe;
++	struct mm_struct *mm;
++	unsigned long bp_vaddr;
++
++	uprobe = NULL;
++	bp_vaddr = uprobe_get_swbp_addr(regs);
++	mm = current->mm;
++	down_read(&mm->mmap_sem);
++	vma = find_vma(mm, bp_vaddr);
++
++	if (vma && vma->vm_start <= bp_vaddr && valid_vma(vma, false)) {
++		struct inode *inode;
++		loff_t offset;
++
++		inode = vma->vm_file->f_mapping->host;
++		offset = bp_vaddr - vma->vm_start;
++		offset += (vma->vm_pgoff << PAGE_SHIFT);
++		uprobe = find_uprobe(inode, offset);
++	}
++
++	srcu_read_unlock_raw(&uprobes_srcu, current->uprobe_srcu_id);
++	current->uprobe_srcu_id = -1;
++	up_read(&mm->mmap_sem);
++
++	if (!uprobe) {
++		/* No matching uprobe; signal SIGTRAP. */
++		send_sig(SIGTRAP, current, 0);
++		return;
++	}
++
++	utask = current->utask;
++	if (!utask) {
++		utask = add_utask();
++		/* Cannot allocate; re-execute the instruction. */
++		if (!utask)
++			goto cleanup_ret;
++	}
++	utask->active_uprobe = uprobe;
++	handler_chain(uprobe, regs);
++	if (uprobe->flags & UPROBE_SKIP_SSTEP && can_skip_sstep(uprobe, regs))
++		goto cleanup_ret;
++
++	utask->state = UTASK_SSTEP;
++	if (!pre_ssout(uprobe, regs, bp_vaddr)) {
++		user_enable_single_step(current);
++		return;
++	}
++
++cleanup_ret:
++	if (utask) {
++		utask->active_uprobe = NULL;
++		utask->state = UTASK_RUNNING;
++	}
++	if (uprobe) {
++		if (!(uprobe->flags & UPROBE_SKIP_SSTEP))
++
++			/*
++			 * cannot singlestep; cannot skip instruction;
++			 * re-execute the instruction.
++			 */
++			instruction_pointer_set(regs, bp_vaddr);
++
++		put_uprobe(uprobe);
++	}
++}
++
++/*
++ * Perform required fix-ups and disable singlestep.
++ * Allow pending signals to take effect.
++ */
++static void handle_singlestep(struct uprobe_task *utask, struct pt_regs *regs)
++{
++	struct uprobe *uprobe;
++
++	uprobe = utask->active_uprobe;
++	if (utask->state == UTASK_SSTEP_ACK)
++		arch_uprobe_post_xol(&uprobe->arch, regs);
++	else if (utask->state == UTASK_SSTEP_TRAPPED)
++		arch_uprobe_abort_xol(&uprobe->arch, regs);
++	else
++		WARN_ON_ONCE(1);
++
++	put_uprobe(uprobe);
++	utask->active_uprobe = NULL;
++	utask->state = UTASK_RUNNING;
++	user_disable_single_step(current);
++	xol_free_insn_slot(current);
++
++	spin_lock_irq(&current->sighand->siglock);
++	recalc_sigpending(); /* see uprobe_deny_signal() */
++	spin_unlock_irq(&current->sighand->siglock);
++}
++
++/*
++ * On breakpoint hit, breakpoint notifier sets the TIF_UPROBE flag.  (and on
++ * subsequent probe hits on the thread sets the state to UTASK_BP_HIT) and
++ * allows the thread to return from interrupt.
++ *
++ * On singlestep exception, singlestep notifier sets the TIF_UPROBE flag and
++ * also sets the state to UTASK_SSTEP_ACK and allows the thread to return from
++ * interrupt.
++ *
++ * While returning to userspace, thread notices the TIF_UPROBE flag and calls
++ * uprobe_notify_resume().
++ */
++void uprobe_notify_resume(struct pt_regs *regs)
++{
++	struct uprobe_task *utask;
++
++	utask = current->utask;
++	if (!utask || utask->state == UTASK_BP_HIT)
++		handle_swbp(regs);
++	else
++		handle_singlestep(utask, regs);
++}
++
++/*
++ * uprobe_pre_sstep_notifier gets called from interrupt context as part of
++ * notifier mechanism. Set TIF_UPROBE flag and indicate breakpoint hit.
++ */
++int uprobe_pre_sstep_notifier(struct pt_regs *regs)
++{
++	struct uprobe_task *utask;
++
++	if (!current->mm || !atomic_read(&current->mm->uprobes_state.count))
++		/* task is currently not uprobed */
++		return 0;
++
++	utask = current->utask;
++	if (utask)
++		utask->state = UTASK_BP_HIT;
++
++	set_thread_flag(TIF_UPROBE);
++	current->uprobe_srcu_id = srcu_read_lock_raw(&uprobes_srcu);
++
++	return 1;
++}
++
++/*
++ * uprobe_post_sstep_notifier gets called in interrupt context as part of notifier
++ * mechanism. Set TIF_UPROBE flag and indicate completion of singlestep.
++ */
++int uprobe_post_sstep_notifier(struct pt_regs *regs)
++{
++	struct uprobe_task *utask = current->utask;
++
++	if (!current->mm || !utask || !utask->active_uprobe)
++		/* task is currently not uprobed */
++		return 0;
++
++	utask->state = UTASK_SSTEP_ACK;
++	set_thread_flag(TIF_UPROBE);
++	return 1;
++}
++
++static struct notifier_block uprobe_exception_nb = {
++	.notifier_call		= arch_uprobe_exception_notify,
++	.priority		= INT_MAX-1,	/* notified after kprobes, kgdb */
++};
++
++static int __init init_uprobes(void)
++{
++	int i;
++
++	for (i = 0; i < UPROBES_HASH_SZ; i++) {
++		mutex_init(&uprobes_mutex[i]);
++		mutex_init(&uprobes_mmap_mutex[i]);
++	}
++	init_srcu_struct(&uprobes_srcu);
++
++	return register_die_notifier(&uprobe_exception_nb);
++}
++module_init(init_uprobes);
++
++static void __exit exit_uprobes(void)
++{
++}
++module_exit(exit_uprobes);
+diff --git a/kernel/fork.c b/kernel/fork.c
+index c3eafd8..5b87e9f 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -68,6 +68,7 @@
+ #include <linux/oom.h>
+ #include <linux/khugepaged.h>
+ #include <linux/signalfd.h>
++#include <linux/uprobes.h>
+ 
+ #include <asm/pgtable.h>
+ #include <asm/pgalloc.h>
+@@ -423,6 +424,9 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
+ 
+ 		if (retval)
+ 			goto out;
++
++		if (file && uprobe_mmap(tmp))
++			goto out;
+ 	}
+ 	/* a new mm has just been created */
+ 	arch_dup_mmap(oldmm, mm);
+@@ -571,6 +575,7 @@ void mmput(struct mm_struct *mm)
+ 	might_sleep();
+ 
+ 	if (atomic_dec_and_test(&mm->mm_users)) {
++		uprobe_clear_state(mm);
+ 		exit_aio(mm);
+ 		ksm_exit(mm);
+ 		khugepaged_exit(mm); /* must run before exit_mmap */
+@@ -749,6 +754,8 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
+ 		exit_pi_state_list(tsk);
+ #endif
+ 
++	uprobe_free_utask(tsk);
++
+ 	/* Get rid of any cached register state */
+ 	deactivate_mm(tsk, mm);
+ 
+@@ -803,6 +810,7 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
+ #ifdef CONFIG_TRANSPARENT_HUGEPAGE
+ 	mm->pmd_huge_pte = NULL;
+ #endif
++	uprobe_reset_state(mm);
+ 
+ 	if (!mm_init(mm, tsk))
+ 		goto fail_nomem;
+@@ -1344,6 +1352,7 @@ static struct task_struct *copy_process(unsigned long clone_flags,
+ 	INIT_LIST_HEAD(&p->pi_state_list);
+ 	p->pi_state_cache = NULL;
+ #endif
++	uprobe_copy_process(p);
+ 	/*
+ 	 * sigaltstack should be cleared when sharing the same VM
+ 	 */
+diff --git a/kernel/signal.c b/kernel/signal.c
+index 17afcaf..60d80ab 100644
+--- a/kernel/signal.c
++++ b/kernel/signal.c
+@@ -29,6 +29,7 @@
+ #include <linux/pid_namespace.h>
+ #include <linux/nsproxy.h>
+ #include <linux/user_namespace.h>
++#include <linux/uprobes.h>
+ #define CREATE_TRACE_POINTS
+ #include <trace/events/signal.h>
+ 
+@@ -2202,6 +2203,9 @@ int get_signal_to_deliver(siginfo_t *info, struct k_sigaction *return_ka,
+ 	struct signal_struct *signal = current->signal;
+ 	int signr;
+ 
++	if (unlikely(uprobe_deny_signal()))
++		return 0;
++
+ relock:
+ 	/*
+ 	 * We'll jump back here after any time we were stopped in TASK_STOPPED.
+diff --git a/kernel/trace/Kconfig b/kernel/trace/Kconfig
+index a1d2849..ea4bff6 100644
+--- a/kernel/trace/Kconfig
++++ b/kernel/trace/Kconfig
+@@ -373,6 +373,7 @@ config KPROBE_EVENT
+ 	depends on HAVE_REGS_AND_STACK_ACCESS_API
+ 	bool "Enable kprobes-based dynamic events"
+ 	select TRACING
++	select PROBE_EVENTS
+ 	default y
+ 	help
+ 	  This allows the user to add tracing events (similar to tracepoints)
+@@ -385,6 +386,25 @@ config KPROBE_EVENT
+ 	  This option is also required by perf-probe subcommand of perf tools.
+ 	  If you want to use perf tools, this option is strongly recommended.
+ 
++config UPROBE_EVENT
++	bool "Enable uprobes-based dynamic events"
++	depends on ARCH_SUPPORTS_UPROBES
++	depends on MMU
++	select UPROBES
++	select PROBE_EVENTS
++	select TRACING
++	default n
++	help
++	  This allows the user to add tracing events on top of userspace
++	  dynamic events (similar to tracepoints) on the fly via the trace
++	  events interface. Those events can be inserted wherever uprobes
++	  can probe, and record various registers.
++	  This option is required if you plan to use perf-probe subcommand
++	  of perf tools on user space applications.
++
++config PROBE_EVENTS
++	def_bool n
++
+ config DYNAMIC_FTRACE
+ 	bool "enable/disable ftrace tracepoints dynamically"
+ 	depends on FUNCTION_TRACER
+diff --git a/kernel/trace/Makefile b/kernel/trace/Makefile
+index 5f39a07..1734c03 100644
+--- a/kernel/trace/Makefile
++++ b/kernel/trace/Makefile
+@@ -61,5 +61,7 @@ endif
+ ifeq ($(CONFIG_TRACING),y)
+ obj-$(CONFIG_KGDB_KDB) += trace_kdb.o
+ endif
++obj-$(CONFIG_PROBE_EVENTS) += trace_probe.o
++obj-$(CONFIG_UPROBE_EVENT) += trace_uprobe.o
+ 
+ libftrace-y := ftrace.o
+diff --git a/kernel/trace/trace.h b/kernel/trace/trace.h
+index f95d65d..a6bf705 100644
+--- a/kernel/trace/trace.h
++++ b/kernel/trace/trace.h
+@@ -103,6 +103,11 @@ struct kretprobe_trace_entry_head {
+ 	unsigned long		ret_ip;
+ };
+ 
++struct uprobe_trace_entry_head {
++	struct trace_entry	ent;
++	unsigned long		ip;
++};
++
+ /*
+  * trace_flag_type is an enumeration that holds different
+  * states when a trace occurs. These are:
+diff --git a/kernel/trace/trace_kprobe.c b/kernel/trace/trace_kprobe.c
+index 580a05e..b31d3d5 100644
+--- a/kernel/trace/trace_kprobe.c
++++ b/kernel/trace/trace_kprobe.c
+@@ -19,547 +19,15 @@
+ 
+ #include <linux/module.h>
+ #include <linux/uaccess.h>
+-#include <linux/kprobes.h>
+-#include <linux/seq_file.h>
+-#include <linux/slab.h>
+-#include <linux/smp.h>
+-#include <linux/debugfs.h>
+-#include <linux/types.h>
+-#include <linux/string.h>
+-#include <linux/ctype.h>
+-#include <linux/ptrace.h>
+-#include <linux/perf_event.h>
+-#include <linux/stringify.h>
+-#include <linux/limits.h>
+-#include <asm/bitsperlong.h>
+-
+-#include "trace.h"
+-#include "trace_output.h"
+-
+-#define MAX_TRACE_ARGS 128
+-#define MAX_ARGSTR_LEN 63
+-#define MAX_EVENT_NAME_LEN 64
+-#define MAX_STRING_SIZE PATH_MAX
+-#define KPROBE_EVENT_SYSTEM "kprobes"
+-
+-/* Reserved field names */
+-#define FIELD_STRING_IP "__probe_ip"
+-#define FIELD_STRING_RETIP "__probe_ret_ip"
+-#define FIELD_STRING_FUNC "__probe_func"
+-
+-const char *reserved_field_names[] = {
+-	"common_type",
+-	"common_flags",
+-	"common_preempt_count",
+-	"common_pid",
+-	"common_tgid",
+-	FIELD_STRING_IP,
+-	FIELD_STRING_RETIP,
+-	FIELD_STRING_FUNC,
+-};
+-
+-/* Printing function type */
+-typedef int (*print_type_func_t)(struct trace_seq *, const char *, void *,
+-				 void *);
+-#define PRINT_TYPE_FUNC_NAME(type)	print_type_##type
+-#define PRINT_TYPE_FMT_NAME(type)	print_type_format_##type
+-
+-/* Printing  in basic type function template */
+-#define DEFINE_BASIC_PRINT_TYPE_FUNC(type, fmt, cast)			\
+-static __kprobes int PRINT_TYPE_FUNC_NAME(type)(struct trace_seq *s,	\
+-						const char *name,	\
+-						void *data, void *ent)\
+-{									\
+-	return trace_seq_printf(s, " %s=" fmt, name, (cast)*(type *)data);\
+-}									\
+-static const char PRINT_TYPE_FMT_NAME(type)[] = fmt;
+-
+-DEFINE_BASIC_PRINT_TYPE_FUNC(u8, "%x", unsigned int)
+-DEFINE_BASIC_PRINT_TYPE_FUNC(u16, "%x", unsigned int)
+-DEFINE_BASIC_PRINT_TYPE_FUNC(u32, "%lx", unsigned long)
+-DEFINE_BASIC_PRINT_TYPE_FUNC(u64, "%llx", unsigned long long)
+-DEFINE_BASIC_PRINT_TYPE_FUNC(s8, "%d", int)
+-DEFINE_BASIC_PRINT_TYPE_FUNC(s16, "%d", int)
+-DEFINE_BASIC_PRINT_TYPE_FUNC(s32, "%ld", long)
+-DEFINE_BASIC_PRINT_TYPE_FUNC(s64, "%lld", long long)
+-
+-/* data_rloc: data relative location, compatible with u32 */
+-#define make_data_rloc(len, roffs)	\
+-	(((u32)(len) << 16) | ((u32)(roffs) & 0xffff))
+-#define get_rloc_len(dl)	((u32)(dl) >> 16)
+-#define get_rloc_offs(dl)	((u32)(dl) & 0xffff)
+-
+-static inline void *get_rloc_data(u32 *dl)
+-{
+-	return (u8 *)dl + get_rloc_offs(*dl);
+-}
+-
+-/* For data_loc conversion */
+-static inline void *get_loc_data(u32 *dl, void *ent)
+-{
+-	return (u8 *)ent + get_rloc_offs(*dl);
+-}
+-
+-/*
+- * Convert data_rloc to data_loc:
+- *  data_rloc stores the offset from data_rloc itself, but data_loc
+- *  stores the offset from event entry.
+- */
+-#define convert_rloc_to_loc(dl, offs)	((u32)(dl) + (offs))
+-
+-/* For defining macros, define string/string_size types */
+-typedef u32 string;
+-typedef u32 string_size;
+-
+-/* Print type function for string type */
+-static __kprobes int PRINT_TYPE_FUNC_NAME(string)(struct trace_seq *s,
+-						  const char *name,
+-						  void *data, void *ent)
+-{
+-	int len = *(u32 *)data >> 16;
+-
+-	if (!len)
+-		return trace_seq_printf(s, " %s=(fault)", name);
+-	else
+-		return trace_seq_printf(s, " %s=\"%s\"", name,
+-					(const char *)get_loc_data(data, ent));
+-}
+-static const char PRINT_TYPE_FMT_NAME(string)[] = "\\\"%s\\\"";
+-
+-/* Data fetch function type */
+-typedef	void (*fetch_func_t)(struct pt_regs *, void *, void *);
+-
+-struct fetch_param {
+-	fetch_func_t	fn;
+-	void *data;
+-};
+-
+-static __kprobes void call_fetch(struct fetch_param *fprm,
+-				 struct pt_regs *regs, void *dest)
+-{
+-	return fprm->fn(regs, fprm->data, dest);
+-}
+-
+-#define FETCH_FUNC_NAME(method, type)	fetch_##method##_##type
+-/*
+- * Define macro for basic types - we don't need to define s* types, because
+- * we have to care only about bitwidth at recording time.
+- */
+-#define DEFINE_BASIC_FETCH_FUNCS(method) \
+-DEFINE_FETCH_##method(u8)		\
+-DEFINE_FETCH_##method(u16)		\
+-DEFINE_FETCH_##method(u32)		\
+-DEFINE_FETCH_##method(u64)
+-
+-#define CHECK_FETCH_FUNCS(method, fn)			\
+-	(((FETCH_FUNC_NAME(method, u8) == fn) ||	\
+-	  (FETCH_FUNC_NAME(method, u16) == fn) ||	\
+-	  (FETCH_FUNC_NAME(method, u32) == fn) ||	\
+-	  (FETCH_FUNC_NAME(method, u64) == fn) ||	\
+-	  (FETCH_FUNC_NAME(method, string) == fn) ||	\
+-	  (FETCH_FUNC_NAME(method, string_size) == fn)) \
+-	 && (fn != NULL))
+-
+-/* Data fetch function templates */
+-#define DEFINE_FETCH_reg(type)						\
+-static __kprobes void FETCH_FUNC_NAME(reg, type)(struct pt_regs *regs,	\
+-					void *offset, void *dest)	\
+-{									\
+-	*(type *)dest = (type)regs_get_register(regs,			\
+-				(unsigned int)((unsigned long)offset));	\
+-}
+-DEFINE_BASIC_FETCH_FUNCS(reg)
+-/* No string on the register */
+-#define fetch_reg_string NULL
+-#define fetch_reg_string_size NULL
+-
+-#define DEFINE_FETCH_stack(type)					\
+-static __kprobes void FETCH_FUNC_NAME(stack, type)(struct pt_regs *regs,\
+-					  void *offset, void *dest)	\
+-{									\
+-	*(type *)dest = (type)regs_get_kernel_stack_nth(regs,		\
+-				(unsigned int)((unsigned long)offset));	\
+-}
+-DEFINE_BASIC_FETCH_FUNCS(stack)
+-/* No string on the stack entry */
+-#define fetch_stack_string NULL
+-#define fetch_stack_string_size NULL
+-
+-#define DEFINE_FETCH_retval(type)					\
+-static __kprobes void FETCH_FUNC_NAME(retval, type)(struct pt_regs *regs,\
+-					  void *dummy, void *dest)	\
+-{									\
+-	*(type *)dest = (type)regs_return_value(regs);			\
+-}
+-DEFINE_BASIC_FETCH_FUNCS(retval)
+-/* No string on the retval */
+-#define fetch_retval_string NULL
+-#define fetch_retval_string_size NULL
+-
+-#define DEFINE_FETCH_memory(type)					\
+-static __kprobes void FETCH_FUNC_NAME(memory, type)(struct pt_regs *regs,\
+-					  void *addr, void *dest)	\
+-{									\
+-	type retval;							\
+-	if (probe_kernel_address(addr, retval))				\
+-		*(type *)dest = 0;					\
+-	else								\
+-		*(type *)dest = retval;					\
+-}
+-DEFINE_BASIC_FETCH_FUNCS(memory)
+-/*
+- * Fetch a null-terminated string. Caller MUST set *(u32 *)dest with max
+- * length and relative data location.
+- */
+-static __kprobes void FETCH_FUNC_NAME(memory, string)(struct pt_regs *regs,
+-						      void *addr, void *dest)
+-{
+-	long ret;
+-	int maxlen = get_rloc_len(*(u32 *)dest);
+-	u8 *dst = get_rloc_data(dest);
+-	u8 *src = addr;
+-	mm_segment_t old_fs = get_fs();
+-	if (!maxlen)
+-		return;
+-	/*
+-	 * Try to get string again, since the string can be changed while
+-	 * probing.
+-	 */
+-	set_fs(KERNEL_DS);
+-	pagefault_disable();
+-	do
+-		ret = __copy_from_user_inatomic(dst++, src++, 1);
+-	while (dst[-1] && ret == 0 && src - (u8 *)addr < maxlen);
+-	dst[-1] = '\0';
+-	pagefault_enable();
+-	set_fs(old_fs);
+-
+-	if (ret < 0) {	/* Failed to fetch string */
+-		((u8 *)get_rloc_data(dest))[0] = '\0';
+-		*(u32 *)dest = make_data_rloc(0, get_rloc_offs(*(u32 *)dest));
+-	} else
+-		*(u32 *)dest = make_data_rloc(src - (u8 *)addr,
+-					      get_rloc_offs(*(u32 *)dest));
+-}
+-/* Return the length of string -- including null terminal byte */
+-static __kprobes void FETCH_FUNC_NAME(memory, string_size)(struct pt_regs *regs,
+-							void *addr, void *dest)
+-{
+-	int ret, len = 0;
+-	u8 c;
+-	mm_segment_t old_fs = get_fs();
+-
+-	set_fs(KERNEL_DS);
+-	pagefault_disable();
+-	do {
+-		ret = __copy_from_user_inatomic(&c, (u8 *)addr + len, 1);
+-		len++;
+-	} while (c && ret == 0 && len < MAX_STRING_SIZE);
+-	pagefault_enable();
+-	set_fs(old_fs);
+-
+-	if (ret < 0)	/* Failed to check the length */
+-		*(u32 *)dest = 0;
+-	else
+-		*(u32 *)dest = len;
+-}
+-
+-/* Memory fetching by symbol */
+-struct symbol_cache {
+-	char *symbol;
+-	long offset;
+-	unsigned long addr;
+-};
+-
+-static unsigned long update_symbol_cache(struct symbol_cache *sc)
+-{
+-	sc->addr = (unsigned long)kallsyms_lookup_name(sc->symbol);
+-	if (sc->addr)
+-		sc->addr += sc->offset;
+-	return sc->addr;
+-}
+-
+-static void free_symbol_cache(struct symbol_cache *sc)
+-{
+-	kfree(sc->symbol);
+-	kfree(sc);
+-}
+-
+-static struct symbol_cache *alloc_symbol_cache(const char *sym, long offset)
+-{
+-	struct symbol_cache *sc;
+-
+-	if (!sym || strlen(sym) == 0)
+-		return NULL;
+-	sc = kzalloc(sizeof(struct symbol_cache), GFP_KERNEL);
+-	if (!sc)
+-		return NULL;
+-
+-	sc->symbol = kstrdup(sym, GFP_KERNEL);
+-	if (!sc->symbol) {
+-		kfree(sc);
+-		return NULL;
+-	}
+-	sc->offset = offset;
+ 
+-	update_symbol_cache(sc);
+-	return sc;
+-}
+-
+-#define DEFINE_FETCH_symbol(type)					\
+-static __kprobes void FETCH_FUNC_NAME(symbol, type)(struct pt_regs *regs,\
+-					  void *data, void *dest)	\
+-{									\
+-	struct symbol_cache *sc = data;					\
+-	if (sc->addr)							\
+-		fetch_memory_##type(regs, (void *)sc->addr, dest);	\
+-	else								\
+-		*(type *)dest = 0;					\
+-}
+-DEFINE_BASIC_FETCH_FUNCS(symbol)
+-DEFINE_FETCH_symbol(string)
+-DEFINE_FETCH_symbol(string_size)
+-
+-/* Dereference memory access function */
+-struct deref_fetch_param {
+-	struct fetch_param orig;
+-	long offset;
+-};
+-
+-#define DEFINE_FETCH_deref(type)					\
+-static __kprobes void FETCH_FUNC_NAME(deref, type)(struct pt_regs *regs,\
+-					    void *data, void *dest)	\
+-{									\
+-	struct deref_fetch_param *dprm = data;				\
+-	unsigned long addr;						\
+-	call_fetch(&dprm->orig, regs, &addr);				\
+-	if (addr) {							\
+-		addr += dprm->offset;					\
+-		fetch_memory_##type(regs, (void *)addr, dest);		\
+-	} else								\
+-		*(type *)dest = 0;					\
+-}
+-DEFINE_BASIC_FETCH_FUNCS(deref)
+-DEFINE_FETCH_deref(string)
+-DEFINE_FETCH_deref(string_size)
+-
+-static __kprobes void update_deref_fetch_param(struct deref_fetch_param *data)
+-{
+-	if (CHECK_FETCH_FUNCS(deref, data->orig.fn))
+-		update_deref_fetch_param(data->orig.data);
+-	else if (CHECK_FETCH_FUNCS(symbol, data->orig.fn))
+-		update_symbol_cache(data->orig.data);
+-}
+-
+-static __kprobes void free_deref_fetch_param(struct deref_fetch_param *data)
+-{
+-	if (CHECK_FETCH_FUNCS(deref, data->orig.fn))
+-		free_deref_fetch_param(data->orig.data);
+-	else if (CHECK_FETCH_FUNCS(symbol, data->orig.fn))
+-		free_symbol_cache(data->orig.data);
+-	kfree(data);
+-}
+-
+-/* Bitfield fetch function */
+-struct bitfield_fetch_param {
+-	struct fetch_param orig;
+-	unsigned char hi_shift;
+-	unsigned char low_shift;
+-};
++#include "trace_probe.h"
+ 
+-#define DEFINE_FETCH_bitfield(type)					\
+-static __kprobes void FETCH_FUNC_NAME(bitfield, type)(struct pt_regs *regs,\
+-					    void *data, void *dest)	\
+-{									\
+-	struct bitfield_fetch_param *bprm = data;			\
+-	type buf = 0;							\
+-	call_fetch(&bprm->orig, regs, &buf);				\
+-	if (buf) {							\
+-		buf <<= bprm->hi_shift;					\
+-		buf >>= bprm->low_shift;				\
+-	}								\
+-	*(type *)dest = buf;						\
+-}
+-DEFINE_BASIC_FETCH_FUNCS(bitfield)
+-#define fetch_bitfield_string NULL
+-#define fetch_bitfield_string_size NULL
+-
+-static __kprobes void
+-update_bitfield_fetch_param(struct bitfield_fetch_param *data)
+-{
+-	/*
+-	 * Don't check the bitfield itself, because this must be the
+-	 * last fetch function.
+-	 */
+-	if (CHECK_FETCH_FUNCS(deref, data->orig.fn))
+-		update_deref_fetch_param(data->orig.data);
+-	else if (CHECK_FETCH_FUNCS(symbol, data->orig.fn))
+-		update_symbol_cache(data->orig.data);
+-}
+-
+-static __kprobes void
+-free_bitfield_fetch_param(struct bitfield_fetch_param *data)
+-{
+-	/*
+-	 * Don't check the bitfield itself, because this must be the
+-	 * last fetch function.
+-	 */
+-	if (CHECK_FETCH_FUNCS(deref, data->orig.fn))
+-		free_deref_fetch_param(data->orig.data);
+-	else if (CHECK_FETCH_FUNCS(symbol, data->orig.fn))
+-		free_symbol_cache(data->orig.data);
+-	kfree(data);
+-}
+-
+-/* Default (unsigned long) fetch type */
+-#define __DEFAULT_FETCH_TYPE(t) u##t
+-#define _DEFAULT_FETCH_TYPE(t) __DEFAULT_FETCH_TYPE(t)
+-#define DEFAULT_FETCH_TYPE _DEFAULT_FETCH_TYPE(BITS_PER_LONG)
+-#define DEFAULT_FETCH_TYPE_STR __stringify(DEFAULT_FETCH_TYPE)
+-
+-/* Fetch types */
+-enum {
+-	FETCH_MTD_reg = 0,
+-	FETCH_MTD_stack,
+-	FETCH_MTD_retval,
+-	FETCH_MTD_memory,
+-	FETCH_MTD_symbol,
+-	FETCH_MTD_deref,
+-	FETCH_MTD_bitfield,
+-	FETCH_MTD_END,
+-};
+-
+-#define ASSIGN_FETCH_FUNC(method, type)	\
+-	[FETCH_MTD_##method] = FETCH_FUNC_NAME(method, type)
+-
+-#define __ASSIGN_FETCH_TYPE(_name, ptype, ftype, _size, sign, _fmttype)	\
+-	{.name = _name,				\
+-	 .size = _size,					\
+-	 .is_signed = sign,				\
+-	 .print = PRINT_TYPE_FUNC_NAME(ptype),		\
+-	 .fmt = PRINT_TYPE_FMT_NAME(ptype),		\
+-	 .fmttype = _fmttype,				\
+-	 .fetch = {					\
+-ASSIGN_FETCH_FUNC(reg, ftype),				\
+-ASSIGN_FETCH_FUNC(stack, ftype),			\
+-ASSIGN_FETCH_FUNC(retval, ftype),			\
+-ASSIGN_FETCH_FUNC(memory, ftype),			\
+-ASSIGN_FETCH_FUNC(symbol, ftype),			\
+-ASSIGN_FETCH_FUNC(deref, ftype),			\
+-ASSIGN_FETCH_FUNC(bitfield, ftype),			\
+-	  }						\
+-	}
+-
+-#define ASSIGN_FETCH_TYPE(ptype, ftype, sign)			\
+-	__ASSIGN_FETCH_TYPE(#ptype, ptype, ftype, sizeof(ftype), sign, #ptype)
+-
+-#define FETCH_TYPE_STRING 0
+-#define FETCH_TYPE_STRSIZE 1
+-
+-/* Fetch type information table */
+-static const struct fetch_type {
+-	const char	*name;		/* Name of type */
+-	size_t		size;		/* Byte size of type */
+-	int		is_signed;	/* Signed flag */
+-	print_type_func_t	print;	/* Print functions */
+-	const char	*fmt;		/* Fromat string */
+-	const char	*fmttype;	/* Name in format file */
+-	/* Fetch functions */
+-	fetch_func_t	fetch[FETCH_MTD_END];
+-} fetch_type_table[] = {
+-	/* Special types */
+-	[FETCH_TYPE_STRING] = __ASSIGN_FETCH_TYPE("string", string, string,
+-					sizeof(u32), 1, "__data_loc char[]"),
+-	[FETCH_TYPE_STRSIZE] = __ASSIGN_FETCH_TYPE("string_size", u32,
+-					string_size, sizeof(u32), 0, "u32"),
+-	/* Basic types */
+-	ASSIGN_FETCH_TYPE(u8,  u8,  0),
+-	ASSIGN_FETCH_TYPE(u16, u16, 0),
+-	ASSIGN_FETCH_TYPE(u32, u32, 0),
+-	ASSIGN_FETCH_TYPE(u64, u64, 0),
+-	ASSIGN_FETCH_TYPE(s8,  u8,  1),
+-	ASSIGN_FETCH_TYPE(s16, u16, 1),
+-	ASSIGN_FETCH_TYPE(s32, u32, 1),
+-	ASSIGN_FETCH_TYPE(s64, u64, 1),
+-};
+-
+-static const struct fetch_type *find_fetch_type(const char *type)
+-{
+-	int i;
+-
+-	if (!type)
+-		type = DEFAULT_FETCH_TYPE_STR;
+-
+-	/* Special case: bitfield */
+-	if (*type == 'b') {
+-		unsigned long bs;
+-		type = strchr(type, '/');
+-		if (!type)
+-			goto fail;
+-		type++;
+-		if (strict_strtoul(type, 0, &bs))
+-			goto fail;
+-		switch (bs) {
+-		case 8:
+-			return find_fetch_type("u8");
+-		case 16:
+-			return find_fetch_type("u16");
+-		case 32:
+-			return find_fetch_type("u32");
+-		case 64:
+-			return find_fetch_type("u64");
+-		default:
+-			goto fail;
+-		}
+-	}
+-
+-	for (i = 0; i < ARRAY_SIZE(fetch_type_table); i++)
+-		if (strcmp(type, fetch_type_table[i].name) == 0)
+-			return &fetch_type_table[i];
+-fail:
+-	return NULL;
+-}
+-
+-/* Special function : only accept unsigned long */
+-static __kprobes void fetch_stack_address(struct pt_regs *regs,
+-					  void *dummy, void *dest)
+-{
+-	*(unsigned long *)dest = kernel_stack_pointer(regs);
+-}
+-
+-static fetch_func_t get_fetch_size_function(const struct fetch_type *type,
+-					    fetch_func_t orig_fn)
+-{
+-	int i;
+-
+-	if (type != &fetch_type_table[FETCH_TYPE_STRING])
+-		return NULL;	/* Only string type needs size function */
+-	for (i = 0; i < FETCH_MTD_END; i++)
+-		if (type->fetch[i] == orig_fn)
+-			return fetch_type_table[FETCH_TYPE_STRSIZE].fetch[i];
+-
+-	WARN_ON(1);	/* This should not happen */
+-	return NULL;
+-}
++#define KPROBE_EVENT_SYSTEM "kprobes"
+ 
+ /**
+  * Kprobe event core functions
+  */
+ 
+-struct probe_arg {
+-	struct fetch_param	fetch;
+-	struct fetch_param	fetch_size;
+-	unsigned int		offset;	/* Offset from argument entry */
+-	const char		*name;	/* Name of this argument */
+-	const char		*comm;	/* Command of this argument */
+-	const struct fetch_type	*type;	/* Type of this argument */
+-};
+-
+-/* Flags for trace_probe */
+-#define TP_FLAG_TRACE	1
+-#define TP_FLAG_PROFILE	2
+-#define TP_FLAG_REGISTERED 4
+-
+ struct trace_probe {
+ 	struct list_head	list;
+ 	struct kretprobe	rp;	/* Use rp.kp for kprobe use */
+@@ -631,18 +99,6 @@ static int kprobe_dispatcher(struct kprobe *kp, struct pt_regs *regs);
+ static int kretprobe_dispatcher(struct kretprobe_instance *ri,
+ 				struct pt_regs *regs);
+ 
+-/* Check the name is good for event/group/fields */
+-static int is_good_name(const char *name)
+-{
+-	if (!isalpha(*name) && *name != '_')
+-		return 0;
+-	while (*++name != '\0') {
+-		if (!isalpha(*name) && !isdigit(*name) && *name != '_')
+-			return 0;
+-	}
+-	return 1;
+-}
+-
+ /*
+  * Allocate new trace_probe and initialize it (including kprobes).
+  */
+@@ -651,7 +107,7 @@ static struct trace_probe *alloc_trace_probe(const char *group,
+ 					     void *addr,
+ 					     const char *symbol,
+ 					     unsigned long offs,
+-					     int nargs, int is_return)
++					     int nargs, bool is_return)
+ {
+ 	struct trace_probe *tp;
+ 	int ret = -ENOMEM;
+@@ -702,34 +158,12 @@ error:
+ 	return ERR_PTR(ret);
+ }
+ 
+-static void update_probe_arg(struct probe_arg *arg)
+-{
+-	if (CHECK_FETCH_FUNCS(bitfield, arg->fetch.fn))
+-		update_bitfield_fetch_param(arg->fetch.data);
+-	else if (CHECK_FETCH_FUNCS(deref, arg->fetch.fn))
+-		update_deref_fetch_param(arg->fetch.data);
+-	else if (CHECK_FETCH_FUNCS(symbol, arg->fetch.fn))
+-		update_symbol_cache(arg->fetch.data);
+-}
+-
+-static void free_probe_arg(struct probe_arg *arg)
+-{
+-	if (CHECK_FETCH_FUNCS(bitfield, arg->fetch.fn))
+-		free_bitfield_fetch_param(arg->fetch.data);
+-	else if (CHECK_FETCH_FUNCS(deref, arg->fetch.fn))
+-		free_deref_fetch_param(arg->fetch.data);
+-	else if (CHECK_FETCH_FUNCS(symbol, arg->fetch.fn))
+-		free_symbol_cache(arg->fetch.data);
+-	kfree(arg->name);
+-	kfree(arg->comm);
+-}
+-
+ static void free_trace_probe(struct trace_probe *tp)
+ {
+ 	int i;
+ 
+ 	for (i = 0; i < tp->nr_args; i++)
+-		free_probe_arg(&tp->args[i]);
++		traceprobe_free_probe_arg(&tp->args[i]);
+ 
+ 	kfree(tp->call.class->system);
+ 	kfree(tp->call.name);
+@@ -787,7 +221,7 @@ static int __register_trace_probe(struct trace_probe *tp)
+ 		return -EINVAL;
+ 
+ 	for (i = 0; i < tp->nr_args; i++)
+-		update_probe_arg(&tp->args[i]);
++		traceprobe_update_arg(&tp->args[i]);
+ 
+ 	/* Set/clear disabled flag according to tp->flag */
+ 	if (trace_probe_is_enabled(tp))
+@@ -919,227 +353,6 @@ static struct notifier_block trace_probe_module_nb = {
+ 	.priority = 1	/* Invoked after kprobe module callback */
+ };
+ 
+-/* Split symbol and offset. */
+-static int split_symbol_offset(char *symbol, unsigned long *offset)
+-{
+-	char *tmp;
+-	int ret;
+-
+-	if (!offset)
+-		return -EINVAL;
+-
+-	tmp = strchr(symbol, '+');
+-	if (tmp) {
+-		/* skip sign because strict_strtol doesn't accept '+' */
+-		ret = strict_strtoul(tmp + 1, 0, offset);
+-		if (ret)
+-			return ret;
+-		*tmp = '\0';
+-	} else
+-		*offset = 0;
+-	return 0;
+-}
+-
+-#define PARAM_MAX_ARGS 16
+-#define PARAM_MAX_STACK (THREAD_SIZE / sizeof(unsigned long))
+-
+-static int parse_probe_vars(char *arg, const struct fetch_type *t,
+-			    struct fetch_param *f, int is_return)
+-{
+-	int ret = 0;
+-	unsigned long param;
+-
+-	if (strcmp(arg, "retval") == 0) {
+-		if (is_return)
+-			f->fn = t->fetch[FETCH_MTD_retval];
+-		else
+-			ret = -EINVAL;
+-	} else if (strncmp(arg, "stack", 5) == 0) {
+-		if (arg[5] == '\0') {
+-			if (strcmp(t->name, DEFAULT_FETCH_TYPE_STR) == 0)
+-				f->fn = fetch_stack_address;
+-			else
+-				ret = -EINVAL;
+-		} else if (isdigit(arg[5])) {
+-			ret = strict_strtoul(arg + 5, 10, &param);
+-			if (ret || param > PARAM_MAX_STACK)
+-				ret = -EINVAL;
+-			else {
+-				f->fn = t->fetch[FETCH_MTD_stack];
+-				f->data = (void *)param;
+-			}
+-		} else
+-			ret = -EINVAL;
+-	} else
+-		ret = -EINVAL;
+-	return ret;
+-}
+-
+-/* Recursive argument parser */
+-static int __parse_probe_arg(char *arg, const struct fetch_type *t,
+-			     struct fetch_param *f, int is_return)
+-{
+-	int ret = 0;
+-	unsigned long param;
+-	long offset;
+-	char *tmp;
+-
+-	switch (arg[0]) {
+-	case '$':
+-		ret = parse_probe_vars(arg + 1, t, f, is_return);
+-		break;
+-	case '%':	/* named register */
+-		ret = regs_query_register_offset(arg + 1);
+-		if (ret >= 0) {
+-			f->fn = t->fetch[FETCH_MTD_reg];
+-			f->data = (void *)(unsigned long)ret;
+-			ret = 0;
+-		}
+-		break;
+-	case '@':	/* memory or symbol */
+-		if (isdigit(arg[1])) {
+-			ret = strict_strtoul(arg + 1, 0, &param);
+-			if (ret)
+-				break;
+-			f->fn = t->fetch[FETCH_MTD_memory];
+-			f->data = (void *)param;
+-		} else {
+-			ret = split_symbol_offset(arg + 1, &offset);
+-			if (ret)
+-				break;
+-			f->data = alloc_symbol_cache(arg + 1, offset);
+-			if (f->data)
+-				f->fn = t->fetch[FETCH_MTD_symbol];
+-		}
+-		break;
+-	case '+':	/* deref memory */
+-		arg++;	/* Skip '+', because strict_strtol() rejects it. */
+-	case '-':
+-		tmp = strchr(arg, '(');
+-		if (!tmp)
+-			break;
+-		*tmp = '\0';
+-		ret = strict_strtol(arg, 0, &offset);
+-		if (ret)
+-			break;
+-		arg = tmp + 1;
+-		tmp = strrchr(arg, ')');
+-		if (tmp) {
+-			struct deref_fetch_param *dprm;
+-			const struct fetch_type *t2 = find_fetch_type(NULL);
+-			*tmp = '\0';
+-			dprm = kzalloc(sizeof(struct deref_fetch_param),
+-				       GFP_KERNEL);
+-			if (!dprm)
+-				return -ENOMEM;
+-			dprm->offset = offset;
+-			ret = __parse_probe_arg(arg, t2, &dprm->orig,
+-						is_return);
+-			if (ret)
+-				kfree(dprm);
+-			else {
+-				f->fn = t->fetch[FETCH_MTD_deref];
+-				f->data = (void *)dprm;
+-			}
+-		}
+-		break;
+-	}
+-	if (!ret && !f->fn) {	/* Parsed, but do not find fetch method */
+-		pr_info("%s type has no corresponding fetch method.\n",
+-			t->name);
+-		ret = -EINVAL;
+-	}
+-	return ret;
+-}
+-
+-#define BYTES_TO_BITS(nb)	((BITS_PER_LONG * (nb)) / sizeof(long))
+-
+-/* Bitfield type needs to be parsed into a fetch function */
+-static int __parse_bitfield_probe_arg(const char *bf,
+-				      const struct fetch_type *t,
+-				      struct fetch_param *f)
+-{
+-	struct bitfield_fetch_param *bprm;
+-	unsigned long bw, bo;
+-	char *tail;
+-
+-	if (*bf != 'b')
+-		return 0;
+-
+-	bprm = kzalloc(sizeof(*bprm), GFP_KERNEL);
+-	if (!bprm)
+-		return -ENOMEM;
+-	bprm->orig = *f;
+-	f->fn = t->fetch[FETCH_MTD_bitfield];
+-	f->data = (void *)bprm;
+-
+-	bw = simple_strtoul(bf + 1, &tail, 0);	/* Use simple one */
+-	if (bw == 0 || *tail != '@')
+-		return -EINVAL;
+-
+-	bf = tail + 1;
+-	bo = simple_strtoul(bf, &tail, 0);
+-	if (tail == bf || *tail != '/')
+-		return -EINVAL;
+-
+-	bprm->hi_shift = BYTES_TO_BITS(t->size) - (bw + bo);
+-	bprm->low_shift = bprm->hi_shift + bo;
+-	return (BYTES_TO_BITS(t->size) < (bw + bo)) ? -EINVAL : 0;
+-}
+-
+-/* String length checking wrapper */
+-static int parse_probe_arg(char *arg, struct trace_probe *tp,
+-			   struct probe_arg *parg, int is_return)
+-{
+-	const char *t;
+-	int ret;
+-
+-	if (strlen(arg) > MAX_ARGSTR_LEN) {
+-		pr_info("Argument is too long.: %s\n",  arg);
+-		return -ENOSPC;
+-	}
+-	parg->comm = kstrdup(arg, GFP_KERNEL);
+-	if (!parg->comm) {
+-		pr_info("Failed to allocate memory for command '%s'.\n", arg);
+-		return -ENOMEM;
+-	}
+-	t = strchr(parg->comm, ':');
+-	if (t) {
+-		arg[t - parg->comm] = '\0';
+-		t++;
+-	}
+-	parg->type = find_fetch_type(t);
+-	if (!parg->type) {
+-		pr_info("Unsupported type: %s\n", t);
+-		return -EINVAL;
+-	}
+-	parg->offset = tp->size;
+-	tp->size += parg->type->size;
+-	ret = __parse_probe_arg(arg, parg->type, &parg->fetch, is_return);
+-	if (ret >= 0 && t != NULL)
+-		ret = __parse_bitfield_probe_arg(t, parg->type, &parg->fetch);
+-	if (ret >= 0) {
+-		parg->fetch_size.fn = get_fetch_size_function(parg->type,
+-							      parg->fetch.fn);
+-		parg->fetch_size.data = parg->fetch.data;
+-	}
+-	return ret;
+-}
+-
+-/* Return 1 if name is reserved or already used by another argument */
+-static int conflict_field_name(const char *name,
+-			       struct probe_arg *args, int narg)
+-{
+-	int i;
+-	for (i = 0; i < ARRAY_SIZE(reserved_field_names); i++)
+-		if (strcmp(reserved_field_names[i], name) == 0)
+-			return 1;
+-	for (i = 0; i < narg; i++)
+-		if (strcmp(args[i].name, name) == 0)
+-			return 1;
+-	return 0;
+-}
+-
+ static int create_trace_probe(int argc, char **argv)
+ {
+ 	/*
+@@ -1162,7 +375,7 @@ static int create_trace_probe(int argc, char **argv)
+ 	 */
+ 	struct trace_probe *tp;
+ 	int i, ret = 0;
+-	int is_return = 0, is_delete = 0;
++	bool is_return = false, is_delete = false;
+ 	char *symbol = NULL, *event = NULL, *group = NULL;
+ 	char *arg;
+ 	unsigned long offset = 0;
+@@ -1171,11 +384,11 @@ static int create_trace_probe(int argc, char **argv)
+ 
+ 	/* argc must be >= 1 */
+ 	if (argv[0][0] == 'p')
+-		is_return = 0;
++		is_return = false;
+ 	else if (argv[0][0] == 'r')
+-		is_return = 1;
++		is_return = true;
+ 	else if (argv[0][0] == '-')
+-		is_delete = 1;
++		is_delete = true;
+ 	else {
+ 		pr_info("Probe definition must be started with 'p', 'r' or"
+ 			" '-'.\n");
+@@ -1240,7 +453,7 @@ static int create_trace_probe(int argc, char **argv)
+ 		/* a symbol specified */
+ 		symbol = argv[1];
+ 		/* TODO: support .init module functions */
+-		ret = split_symbol_offset(symbol, &offset);
++		ret = traceprobe_split_symbol_offset(symbol, &offset);
+ 		if (ret) {
+ 			pr_info("Failed to parse symbol.\n");
+ 			return ret;
+@@ -1302,7 +515,8 @@ static int create_trace_probe(int argc, char **argv)
+ 			goto error;
+ 		}
+ 
+-		if (conflict_field_name(tp->args[i].name, tp->args, i)) {
++		if (traceprobe_conflict_field_name(tp->args[i].name,
++							tp->args, i)) {
+ 			pr_info("Argument[%d] name '%s' conflicts with "
+ 				"another field.\n", i, argv[i]);
+ 			ret = -EINVAL;
+@@ -1310,7 +524,8 @@ static int create_trace_probe(int argc, char **argv)
+ 		}
+ 
+ 		/* Parse fetch argument */
+-		ret = parse_probe_arg(arg, tp, &tp->args[i], is_return);
++		ret = traceprobe_parse_probe_arg(arg, &tp->size, &tp->args[i],
++						is_return, true);
+ 		if (ret) {
+ 			pr_info("Parse error at argument[%d]. (%d)\n", i, ret);
+ 			goto error;
+@@ -1412,70 +627,11 @@ static int probes_open(struct inode *inode, struct file *file)
+ 	return seq_open(file, &probes_seq_op);
+ }
+ 
+-static int command_trace_probe(const char *buf)
+-{
+-	char **argv;
+-	int argc = 0, ret = 0;
+-
+-	argv = argv_split(GFP_KERNEL, buf, &argc);
+-	if (!argv)
+-		return -ENOMEM;
+-
+-	if (argc)
+-		ret = create_trace_probe(argc, argv);
+-
+-	argv_free(argv);
+-	return ret;
+-}
+-
+-#define WRITE_BUFSIZE 4096
+-
+ static ssize_t probes_write(struct file *file, const char __user *buffer,
+ 			    size_t count, loff_t *ppos)
+ {
+-	char *kbuf, *tmp;
+-	int ret;
+-	size_t done;
+-	size_t size;
+-
+-	kbuf = kmalloc(WRITE_BUFSIZE, GFP_KERNEL);
+-	if (!kbuf)
+-		return -ENOMEM;
+-
+-	ret = done = 0;
+-	while (done < count) {
+-		size = count - done;
+-		if (size >= WRITE_BUFSIZE)
+-			size = WRITE_BUFSIZE - 1;
+-		if (copy_from_user(kbuf, buffer + done, size)) {
+-			ret = -EFAULT;
+-			goto out;
+-		}
+-		kbuf[size] = '\0';
+-		tmp = strchr(kbuf, '\n');
+-		if (tmp) {
+-			*tmp = '\0';
+-			size = tmp - kbuf + 1;
+-		} else if (done + size < count) {
+-			pr_warning("Line length is too long: "
+-				   "Should be less than %d.", WRITE_BUFSIZE);
+-			ret = -EINVAL;
+-			goto out;
+-		}
+-		done += size;
+-		/* Remove comments */
+-		tmp = strchr(kbuf, '#');
+-		if (tmp)
+-			*tmp = '\0';
+-
+-		ret = command_trace_probe(kbuf);
+-		if (ret)
+-			goto out;
+-	}
+-	ret = done;
+-out:
+-	kfree(kbuf);
+-	return ret;
++	return traceprobe_probes_write(file, buffer, count, ppos,
++			create_trace_probe);
+ }
+ 
+ static const struct file_operations kprobe_events_ops = {
+@@ -1711,16 +867,6 @@ partial:
+ 	return TRACE_TYPE_PARTIAL_LINE;
+ }
+ 
+-#undef DEFINE_FIELD
+-#define DEFINE_FIELD(type, item, name, is_signed)			\
+-	do {								\
+-		ret = trace_define_field(event_call, #type, name,	\
+-					 offsetof(typeof(field), item),	\
+-					 sizeof(field.item), is_signed, \
+-					 FILTER_OTHER);			\
+-		if (ret)						\
+-			return ret;					\
+-	} while (0)
+ 
+ static int kprobe_event_define_fields(struct ftrace_event_call *event_call)
+ {
+@@ -2051,8 +1197,9 @@ static __init int kprobe_trace_self_tests_init(void)
+ 
+ 	pr_info("Testing kprobe tracing: ");
+ 
+-	ret = command_trace_probe("p:testprobe kprobe_trace_selftest_target "
+-				  "$stack $stack0 +0($stack)");
++	ret = traceprobe_command("p:testprobe kprobe_trace_selftest_target "
++				  "$stack $stack0 +0($stack)",
++				  create_trace_probe);
+ 	if (WARN_ON_ONCE(ret)) {
+ 		pr_warning("error on probing function entry.\n");
+ 		warn++;
+@@ -2066,8 +1213,8 @@ static __init int kprobe_trace_self_tests_init(void)
+ 			enable_trace_probe(tp, TP_FLAG_TRACE);
+ 	}
+ 
+-	ret = command_trace_probe("r:testprobe2 kprobe_trace_selftest_target "
+-				  "$retval");
++	ret = traceprobe_command("r:testprobe2 kprobe_trace_selftest_target "
++				  "$retval", create_trace_probe);
+ 	if (WARN_ON_ONCE(ret)) {
+ 		pr_warning("error on probing function return.\n");
+ 		warn++;
+@@ -2101,13 +1248,13 @@ static __init int kprobe_trace_self_tests_init(void)
+ 	} else
+ 		disable_trace_probe(tp, TP_FLAG_TRACE);
+ 
+-	ret = command_trace_probe("-:testprobe");
++	ret = traceprobe_command("-:testprobe", create_trace_probe);
+ 	if (WARN_ON_ONCE(ret)) {
+ 		pr_warning("error on deleting a probe.\n");
+ 		warn++;
+ 	}
+ 
+-	ret = command_trace_probe("-:testprobe2");
++	ret = traceprobe_command("-:testprobe2", create_trace_probe);
+ 	if (WARN_ON_ONCE(ret)) {
+ 		pr_warning("error on deleting a probe.\n");
+ 		warn++;
+diff --git a/kernel/trace/trace_probe.c b/kernel/trace/trace_probe.c
+new file mode 100644
+index 0000000..daa9980
+--- /dev/null
++++ b/kernel/trace/trace_probe.c
+@@ -0,0 +1,839 @@
++/*
++ * Common code for probe-based Dynamic events.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This code was copied from kernel/trace/trace_kprobe.c written by
++ * Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
++ *
++ * Updates to make this generic:
++ * Copyright (C) IBM Corporation, 2010-2011
++ * Author:     Srikar Dronamraju
++ */
++
++#include "trace_probe.h"
++
++const char *reserved_field_names[] = {
++	"common_type",
++	"common_flags",
++	"common_preempt_count",
++	"common_pid",
++	"common_tgid",
++	FIELD_STRING_IP,
++	FIELD_STRING_RETIP,
++	FIELD_STRING_FUNC,
++};
++
++/* Printing function type */
++#define PRINT_TYPE_FUNC_NAME(type)	print_type_##type
++#define PRINT_TYPE_FMT_NAME(type)	print_type_format_##type
++
++/* Printing  in basic type function template */
++#define DEFINE_BASIC_PRINT_TYPE_FUNC(type, fmt, cast)			\
++static __kprobes int PRINT_TYPE_FUNC_NAME(type)(struct trace_seq *s,	\
++						const char *name,	\
++						void *data, void *ent)\
++{									\
++	return trace_seq_printf(s, " %s=" fmt, name, (cast)*(type *)data);\
++}									\
++static const char PRINT_TYPE_FMT_NAME(type)[] = fmt;
++
++DEFINE_BASIC_PRINT_TYPE_FUNC(u8, "%x", unsigned int)
++DEFINE_BASIC_PRINT_TYPE_FUNC(u16, "%x", unsigned int)
++DEFINE_BASIC_PRINT_TYPE_FUNC(u32, "%lx", unsigned long)
++DEFINE_BASIC_PRINT_TYPE_FUNC(u64, "%llx", unsigned long long)
++DEFINE_BASIC_PRINT_TYPE_FUNC(s8, "%d", int)
++DEFINE_BASIC_PRINT_TYPE_FUNC(s16, "%d", int)
++DEFINE_BASIC_PRINT_TYPE_FUNC(s32, "%ld", long)
++DEFINE_BASIC_PRINT_TYPE_FUNC(s64, "%lld", long long)
++
++static inline void *get_rloc_data(u32 *dl)
++{
++	return (u8 *)dl + get_rloc_offs(*dl);
++}
++
++/* For data_loc conversion */
++static inline void *get_loc_data(u32 *dl, void *ent)
++{
++	return (u8 *)ent + get_rloc_offs(*dl);
++}
++
++/* For defining macros, define string/string_size types */
++typedef u32 string;
++typedef u32 string_size;
++
++/* Print type function for string type */
++static __kprobes int PRINT_TYPE_FUNC_NAME(string)(struct trace_seq *s,
++						  const char *name,
++						  void *data, void *ent)
++{
++	int len = *(u32 *)data >> 16;
++
++	if (!len)
++		return trace_seq_printf(s, " %s=(fault)", name);
++	else
++		return trace_seq_printf(s, " %s=\"%s\"", name,
++					(const char *)get_loc_data(data, ent));
++}
++
++static const char PRINT_TYPE_FMT_NAME(string)[] = "\\\"%s\\\"";
++
++#define FETCH_FUNC_NAME(method, type)	fetch_##method##_##type
++/*
++ * Define macro for basic types - we don't need to define s* types, because
++ * we have to care only about bitwidth at recording time.
++ */
++#define DEFINE_BASIC_FETCH_FUNCS(method) \
++DEFINE_FETCH_##method(u8)		\
++DEFINE_FETCH_##method(u16)		\
++DEFINE_FETCH_##method(u32)		\
++DEFINE_FETCH_##method(u64)
++
++#define CHECK_FETCH_FUNCS(method, fn)			\
++	(((FETCH_FUNC_NAME(method, u8) == fn) ||	\
++	  (FETCH_FUNC_NAME(method, u16) == fn) ||	\
++	  (FETCH_FUNC_NAME(method, u32) == fn) ||	\
++	  (FETCH_FUNC_NAME(method, u64) == fn) ||	\
++	  (FETCH_FUNC_NAME(method, string) == fn) ||	\
++	  (FETCH_FUNC_NAME(method, string_size) == fn)) \
++	 && (fn != NULL))
++
++/* Data fetch function templates */
++#define DEFINE_FETCH_reg(type)						\
++static __kprobes void FETCH_FUNC_NAME(reg, type)(struct pt_regs *regs,	\
++					void *offset, void *dest)	\
++{									\
++	*(type *)dest = (type)regs_get_register(regs,			\
++				(unsigned int)((unsigned long)offset));	\
++}
++DEFINE_BASIC_FETCH_FUNCS(reg)
++/* No string on the register */
++#define fetch_reg_string	NULL
++#define fetch_reg_string_size	NULL
++
++#define DEFINE_FETCH_stack(type)					\
++static __kprobes void FETCH_FUNC_NAME(stack, type)(struct pt_regs *regs,\
++					  void *offset, void *dest)	\
++{									\
++	*(type *)dest = (type)regs_get_kernel_stack_nth(regs,		\
++				(unsigned int)((unsigned long)offset));	\
++}
++DEFINE_BASIC_FETCH_FUNCS(stack)
++/* No string on the stack entry */
++#define fetch_stack_string	NULL
++#define fetch_stack_string_size	NULL
++
++#define DEFINE_FETCH_retval(type)					\
++static __kprobes void FETCH_FUNC_NAME(retval, type)(struct pt_regs *regs,\
++					  void *dummy, void *dest)	\
++{									\
++	*(type *)dest = (type)regs_return_value(regs);			\
++}
++DEFINE_BASIC_FETCH_FUNCS(retval)
++/* No string on the retval */
++#define fetch_retval_string		NULL
++#define fetch_retval_string_size	NULL
++
++#define DEFINE_FETCH_memory(type)					\
++static __kprobes void FETCH_FUNC_NAME(memory, type)(struct pt_regs *regs,\
++					  void *addr, void *dest)	\
++{									\
++	type retval;							\
++	if (probe_kernel_address(addr, retval))				\
++		*(type *)dest = 0;					\
++	else								\
++		*(type *)dest = retval;					\
++}
++DEFINE_BASIC_FETCH_FUNCS(memory)
++/*
++ * Fetch a null-terminated string. Caller MUST set *(u32 *)dest with max
++ * length and relative data location.
++ */
++static __kprobes void FETCH_FUNC_NAME(memory, string)(struct pt_regs *regs,
++						      void *addr, void *dest)
++{
++	long ret;
++	int maxlen = get_rloc_len(*(u32 *)dest);
++	u8 *dst = get_rloc_data(dest);
++	u8 *src = addr;
++	mm_segment_t old_fs = get_fs();
++
++	if (!maxlen)
++		return;
++
++	/*
++	 * Try to get string again, since the string can be changed while
++	 * probing.
++	 */
++	set_fs(KERNEL_DS);
++	pagefault_disable();
++
++	do
++		ret = __copy_from_user_inatomic(dst++, src++, 1);
++	while (dst[-1] && ret == 0 && src - (u8 *)addr < maxlen);
++
++	dst[-1] = '\0';
++	pagefault_enable();
++	set_fs(old_fs);
++
++	if (ret < 0) {	/* Failed to fetch string */
++		((u8 *)get_rloc_data(dest))[0] = '\0';
++		*(u32 *)dest = make_data_rloc(0, get_rloc_offs(*(u32 *)dest));
++	} else {
++		*(u32 *)dest = make_data_rloc(src - (u8 *)addr,
++					      get_rloc_offs(*(u32 *)dest));
++	}
++}
++
++/* Return the length of string -- including null terminal byte */
++static __kprobes void FETCH_FUNC_NAME(memory, string_size)(struct pt_regs *regs,
++							void *addr, void *dest)
++{
++	mm_segment_t old_fs;
++	int ret, len = 0;
++	u8 c;
++
++	old_fs = get_fs();
++	set_fs(KERNEL_DS);
++	pagefault_disable();
++
++	do {
++		ret = __copy_from_user_inatomic(&c, (u8 *)addr + len, 1);
++		len++;
++	} while (c && ret == 0 && len < MAX_STRING_SIZE);
++
++	pagefault_enable();
++	set_fs(old_fs);
++
++	if (ret < 0)	/* Failed to check the length */
++		*(u32 *)dest = 0;
++	else
++		*(u32 *)dest = len;
++}
++
++/* Memory fetching by symbol */
++struct symbol_cache {
++	char		*symbol;
++	long		offset;
++	unsigned long	addr;
++};
++
++static unsigned long update_symbol_cache(struct symbol_cache *sc)
++{
++	sc->addr = (unsigned long)kallsyms_lookup_name(sc->symbol);
++
++	if (sc->addr)
++		sc->addr += sc->offset;
++
++	return sc->addr;
++}
++
++static void free_symbol_cache(struct symbol_cache *sc)
++{
++	kfree(sc->symbol);
++	kfree(sc);
++}
++
++static struct symbol_cache *alloc_symbol_cache(const char *sym, long offset)
++{
++	struct symbol_cache *sc;
++
++	if (!sym || strlen(sym) == 0)
++		return NULL;
++
++	sc = kzalloc(sizeof(struct symbol_cache), GFP_KERNEL);
++	if (!sc)
++		return NULL;
++
++	sc->symbol = kstrdup(sym, GFP_KERNEL);
++	if (!sc->symbol) {
++		kfree(sc);
++		return NULL;
++	}
++	sc->offset = offset;
++	update_symbol_cache(sc);
++
++	return sc;
++}
++
++#define DEFINE_FETCH_symbol(type)					\
++static __kprobes void FETCH_FUNC_NAME(symbol, type)(struct pt_regs *regs,\
++					  void *data, void *dest)	\
++{									\
++	struct symbol_cache *sc = data;					\
++	if (sc->addr)							\
++		fetch_memory_##type(regs, (void *)sc->addr, dest);	\
++	else								\
++		*(type *)dest = 0;					\
++}
++DEFINE_BASIC_FETCH_FUNCS(symbol)
++DEFINE_FETCH_symbol(string)
++DEFINE_FETCH_symbol(string_size)
++
++/* Dereference memory access function */
++struct deref_fetch_param {
++	struct fetch_param	orig;
++	long			offset;
++};
++
++#define DEFINE_FETCH_deref(type)					\
++static __kprobes void FETCH_FUNC_NAME(deref, type)(struct pt_regs *regs,\
++					    void *data, void *dest)	\
++{									\
++	struct deref_fetch_param *dprm = data;				\
++	unsigned long addr;						\
++	call_fetch(&dprm->orig, regs, &addr);				\
++	if (addr) {							\
++		addr += dprm->offset;					\
++		fetch_memory_##type(regs, (void *)addr, dest);		\
++	} else								\
++		*(type *)dest = 0;					\
++}
++DEFINE_BASIC_FETCH_FUNCS(deref)
++DEFINE_FETCH_deref(string)
++DEFINE_FETCH_deref(string_size)
++
++static __kprobes void update_deref_fetch_param(struct deref_fetch_param *data)
++{
++	if (CHECK_FETCH_FUNCS(deref, data->orig.fn))
++		update_deref_fetch_param(data->orig.data);
++	else if (CHECK_FETCH_FUNCS(symbol, data->orig.fn))
++		update_symbol_cache(data->orig.data);
++}
++
++static __kprobes void free_deref_fetch_param(struct deref_fetch_param *data)
++{
++	if (CHECK_FETCH_FUNCS(deref, data->orig.fn))
++		free_deref_fetch_param(data->orig.data);
++	else if (CHECK_FETCH_FUNCS(symbol, data->orig.fn))
++		free_symbol_cache(data->orig.data);
++	kfree(data);
++}
++
++/* Bitfield fetch function */
++struct bitfield_fetch_param {
++	struct fetch_param	orig;
++	unsigned char		hi_shift;
++	unsigned char		low_shift;
++};
++
++#define DEFINE_FETCH_bitfield(type)					\
++static __kprobes void FETCH_FUNC_NAME(bitfield, type)(struct pt_regs *regs,\
++					    void *data, void *dest)	\
++{									\
++	struct bitfield_fetch_param *bprm = data;			\
++	type buf = 0;							\
++	call_fetch(&bprm->orig, regs, &buf);				\
++	if (buf) {							\
++		buf <<= bprm->hi_shift;					\
++		buf >>= bprm->low_shift;				\
++	}								\
++	*(type *)dest = buf;						\
++}
++
++DEFINE_BASIC_FETCH_FUNCS(bitfield)
++#define fetch_bitfield_string		NULL
++#define fetch_bitfield_string_size	NULL
++
++static __kprobes void
++update_bitfield_fetch_param(struct bitfield_fetch_param *data)
++{
++	/*
++	 * Don't check the bitfield itself, because this must be the
++	 * last fetch function.
++	 */
++	if (CHECK_FETCH_FUNCS(deref, data->orig.fn))
++		update_deref_fetch_param(data->orig.data);
++	else if (CHECK_FETCH_FUNCS(symbol, data->orig.fn))
++		update_symbol_cache(data->orig.data);
++}
++
++static __kprobes void
++free_bitfield_fetch_param(struct bitfield_fetch_param *data)
++{
++	/*
++	 * Don't check the bitfield itself, because this must be the
++	 * last fetch function.
++	 */
++	if (CHECK_FETCH_FUNCS(deref, data->orig.fn))
++		free_deref_fetch_param(data->orig.data);
++	else if (CHECK_FETCH_FUNCS(symbol, data->orig.fn))
++		free_symbol_cache(data->orig.data);
++
++	kfree(data);
++}
++
++/* Default (unsigned long) fetch type */
++#define __DEFAULT_FETCH_TYPE(t) u##t
++#define _DEFAULT_FETCH_TYPE(t) __DEFAULT_FETCH_TYPE(t)
++#define DEFAULT_FETCH_TYPE _DEFAULT_FETCH_TYPE(BITS_PER_LONG)
++#define DEFAULT_FETCH_TYPE_STR __stringify(DEFAULT_FETCH_TYPE)
++
++#define ASSIGN_FETCH_FUNC(method, type)	\
++	[FETCH_MTD_##method] = FETCH_FUNC_NAME(method, type)
++
++#define __ASSIGN_FETCH_TYPE(_name, ptype, ftype, _size, sign, _fmttype)	\
++	{.name = _name,				\
++	 .size = _size,					\
++	 .is_signed = sign,				\
++	 .print = PRINT_TYPE_FUNC_NAME(ptype),		\
++	 .fmt = PRINT_TYPE_FMT_NAME(ptype),		\
++	 .fmttype = _fmttype,				\
++	 .fetch = {					\
++ASSIGN_FETCH_FUNC(reg, ftype),				\
++ASSIGN_FETCH_FUNC(stack, ftype),			\
++ASSIGN_FETCH_FUNC(retval, ftype),			\
++ASSIGN_FETCH_FUNC(memory, ftype),			\
++ASSIGN_FETCH_FUNC(symbol, ftype),			\
++ASSIGN_FETCH_FUNC(deref, ftype),			\
++ASSIGN_FETCH_FUNC(bitfield, ftype),			\
++	  }						\
++	}
++
++#define ASSIGN_FETCH_TYPE(ptype, ftype, sign)			\
++	__ASSIGN_FETCH_TYPE(#ptype, ptype, ftype, sizeof(ftype), sign, #ptype)
++
++#define FETCH_TYPE_STRING	0
++#define FETCH_TYPE_STRSIZE	1
++
++/* Fetch type information table */
++static const struct fetch_type fetch_type_table[] = {
++	/* Special types */
++	[FETCH_TYPE_STRING] = __ASSIGN_FETCH_TYPE("string", string, string,
++					sizeof(u32), 1, "__data_loc char[]"),
++	[FETCH_TYPE_STRSIZE] = __ASSIGN_FETCH_TYPE("string_size", u32,
++					string_size, sizeof(u32), 0, "u32"),
++	/* Basic types */
++	ASSIGN_FETCH_TYPE(u8,  u8,  0),
++	ASSIGN_FETCH_TYPE(u16, u16, 0),
++	ASSIGN_FETCH_TYPE(u32, u32, 0),
++	ASSIGN_FETCH_TYPE(u64, u64, 0),
++	ASSIGN_FETCH_TYPE(s8,  u8,  1),
++	ASSIGN_FETCH_TYPE(s16, u16, 1),
++	ASSIGN_FETCH_TYPE(s32, u32, 1),
++	ASSIGN_FETCH_TYPE(s64, u64, 1),
++};
++
++static const struct fetch_type *find_fetch_type(const char *type)
++{
++	int i;
++
++	if (!type)
++		type = DEFAULT_FETCH_TYPE_STR;
++
++	/* Special case: bitfield */
++	if (*type == 'b') {
++		unsigned long bs;
++
++		type = strchr(type, '/');
++		if (!type)
++			goto fail;
++
++		type++;
++		if (strict_strtoul(type, 0, &bs))
++			goto fail;
++
++		switch (bs) {
++		case 8:
++			return find_fetch_type("u8");
++		case 16:
++			return find_fetch_type("u16");
++		case 32:
++			return find_fetch_type("u32");
++		case 64:
++			return find_fetch_type("u64");
++		default:
++			goto fail;
++		}
++	}
++
++	for (i = 0; i < ARRAY_SIZE(fetch_type_table); i++)
++		if (strcmp(type, fetch_type_table[i].name) == 0)
++			return &fetch_type_table[i];
++
++fail:
++	return NULL;
++}
++
++/* Special function : only accept unsigned long */
++static __kprobes void fetch_stack_address(struct pt_regs *regs,
++					void *dummy, void *dest)
++{
++	*(unsigned long *)dest = kernel_stack_pointer(regs);
++}
++
++static fetch_func_t get_fetch_size_function(const struct fetch_type *type,
++					fetch_func_t orig_fn)
++{
++	int i;
++
++	if (type != &fetch_type_table[FETCH_TYPE_STRING])
++		return NULL;	/* Only string type needs size function */
++
++	for (i = 0; i < FETCH_MTD_END; i++)
++		if (type->fetch[i] == orig_fn)
++			return fetch_type_table[FETCH_TYPE_STRSIZE].fetch[i];
++
++	WARN_ON(1);	/* This should not happen */
++
++	return NULL;
++}
++
++/* Split symbol and offset. */
++int traceprobe_split_symbol_offset(char *symbol, unsigned long *offset)
++{
++	char *tmp;
++	int ret;
++
++	if (!offset)
++		return -EINVAL;
++
++	tmp = strchr(symbol, '+');
++	if (tmp) {
++		/* skip sign because strict_strtol doesn't accept '+' */
++		ret = strict_strtoul(tmp + 1, 0, offset);
++		if (ret)
++			return ret;
++
++		*tmp = '\0';
++	} else
++		*offset = 0;
++
++	return 0;
++}
++
++#define PARAM_MAX_STACK (THREAD_SIZE / sizeof(unsigned long))
++
++static int parse_probe_vars(char *arg, const struct fetch_type *t,
++			    struct fetch_param *f, bool is_return)
++{
++	int ret = 0;
++	unsigned long param;
++
++	if (strcmp(arg, "retval") == 0) {
++		if (is_return)
++			f->fn = t->fetch[FETCH_MTD_retval];
++		else
++			ret = -EINVAL;
++	} else if (strncmp(arg, "stack", 5) == 0) {
++		if (arg[5] == '\0') {
++			if (strcmp(t->name, DEFAULT_FETCH_TYPE_STR) == 0)
++				f->fn = fetch_stack_address;
++			else
++				ret = -EINVAL;
++		} else if (isdigit(arg[5])) {
++			ret = strict_strtoul(arg + 5, 10, &param);
++			if (ret || param > PARAM_MAX_STACK)
++				ret = -EINVAL;
++			else {
++				f->fn = t->fetch[FETCH_MTD_stack];
++				f->data = (void *)param;
++			}
++		} else
++			ret = -EINVAL;
++	} else
++		ret = -EINVAL;
++
++	return ret;
++}
++
++/* Recursive argument parser */
++static int parse_probe_arg(char *arg, const struct fetch_type *t,
++		     struct fetch_param *f, bool is_return, bool is_kprobe)
++{
++	unsigned long param;
++	long offset;
++	char *tmp;
++	int ret;
++
++	ret = 0;
++
++	/* Until uprobe_events supports only reg arguments */
++	if (!is_kprobe && arg[0] != '%')
++		return -EINVAL;
++
++	switch (arg[0]) {
++	case '$':
++		ret = parse_probe_vars(arg + 1, t, f, is_return);
++		break;
++
++	case '%':	/* named register */
++		ret = regs_query_register_offset(arg + 1);
++		if (ret >= 0) {
++			f->fn = t->fetch[FETCH_MTD_reg];
++			f->data = (void *)(unsigned long)ret;
++			ret = 0;
++		}
++		break;
++
++	case '@':	/* memory or symbol */
++		if (isdigit(arg[1])) {
++			ret = strict_strtoul(arg + 1, 0, &param);
++			if (ret)
++				break;
++
++			f->fn = t->fetch[FETCH_MTD_memory];
++			f->data = (void *)param;
++		} else {
++			ret = traceprobe_split_symbol_offset(arg + 1, &offset);
++			if (ret)
++				break;
++
++			f->data = alloc_symbol_cache(arg + 1, offset);
++			if (f->data)
++				f->fn = t->fetch[FETCH_MTD_symbol];
++		}
++		break;
++
++	case '+':	/* deref memory */
++		arg++;	/* Skip '+', because strict_strtol() rejects it. */
++	case '-':
++		tmp = strchr(arg, '(');
++		if (!tmp)
++			break;
++
++		*tmp = '\0';
++		ret = strict_strtol(arg, 0, &offset);
++
++		if (ret)
++			break;
++
++		arg = tmp + 1;
++		tmp = strrchr(arg, ')');
++
++		if (tmp) {
++			struct deref_fetch_param	*dprm;
++			const struct fetch_type		*t2;
++
++			t2 = find_fetch_type(NULL);
++			*tmp = '\0';
++			dprm = kzalloc(sizeof(struct deref_fetch_param), GFP_KERNEL);
++
++			if (!dprm)
++				return -ENOMEM;
++
++			dprm->offset = offset;
++			ret = parse_probe_arg(arg, t2, &dprm->orig, is_return,
++							is_kprobe);
++			if (ret)
++				kfree(dprm);
++			else {
++				f->fn = t->fetch[FETCH_MTD_deref];
++				f->data = (void *)dprm;
++			}
++		}
++		break;
++	}
++	if (!ret && !f->fn) {	/* Parsed, but do not find fetch method */
++		pr_info("%s type has no corresponding fetch method.\n", t->name);
++		ret = -EINVAL;
++	}
++
++	return ret;
++}
++
++#define BYTES_TO_BITS(nb)	((BITS_PER_LONG * (nb)) / sizeof(long))
++
++/* Bitfield type needs to be parsed into a fetch function */
++static int __parse_bitfield_probe_arg(const char *bf,
++				      const struct fetch_type *t,
++				      struct fetch_param *f)
++{
++	struct bitfield_fetch_param *bprm;
++	unsigned long bw, bo;
++	char *tail;
++
++	if (*bf != 'b')
++		return 0;
++
++	bprm = kzalloc(sizeof(*bprm), GFP_KERNEL);
++	if (!bprm)
++		return -ENOMEM;
++
++	bprm->orig = *f;
++	f->fn = t->fetch[FETCH_MTD_bitfield];
++	f->data = (void *)bprm;
++	bw = simple_strtoul(bf + 1, &tail, 0);	/* Use simple one */
++
++	if (bw == 0 || *tail != '@')
++		return -EINVAL;
++
++	bf = tail + 1;
++	bo = simple_strtoul(bf, &tail, 0);
++
++	if (tail == bf || *tail != '/')
++		return -EINVAL;
++
++	bprm->hi_shift = BYTES_TO_BITS(t->size) - (bw + bo);
++	bprm->low_shift = bprm->hi_shift + bo;
++
++	return (BYTES_TO_BITS(t->size) < (bw + bo)) ? -EINVAL : 0;
++}
++
++/* String length checking wrapper */
++int traceprobe_parse_probe_arg(char *arg, ssize_t *size,
++		struct probe_arg *parg, bool is_return, bool is_kprobe)
++{
++	const char *t;
++	int ret;
++
++	if (strlen(arg) > MAX_ARGSTR_LEN) {
++		pr_info("Argument is too long.: %s\n",  arg);
++		return -ENOSPC;
++	}
++	parg->comm = kstrdup(arg, GFP_KERNEL);
++	if (!parg->comm) {
++		pr_info("Failed to allocate memory for command '%s'.\n", arg);
++		return -ENOMEM;
++	}
++	t = strchr(parg->comm, ':');
++	if (t) {
++		arg[t - parg->comm] = '\0';
++		t++;
++	}
++	parg->type = find_fetch_type(t);
++	if (!parg->type) {
++		pr_info("Unsupported type: %s\n", t);
++		return -EINVAL;
++	}
++	parg->offset = *size;
++	*size += parg->type->size;
++	ret = parse_probe_arg(arg, parg->type, &parg->fetch, is_return, is_kprobe);
++
++	if (ret >= 0 && t != NULL)
++		ret = __parse_bitfield_probe_arg(t, parg->type, &parg->fetch);
++
++	if (ret >= 0) {
++		parg->fetch_size.fn = get_fetch_size_function(parg->type,
++							      parg->fetch.fn);
++		parg->fetch_size.data = parg->fetch.data;
++	}
++
++	return ret;
++}
++
++/* Return 1 if name is reserved or already used by another argument */
++int traceprobe_conflict_field_name(const char *name,
++			       struct probe_arg *args, int narg)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(reserved_field_names); i++)
++		if (strcmp(reserved_field_names[i], name) == 0)
++			return 1;
++
++	for (i = 0; i < narg; i++)
++		if (strcmp(args[i].name, name) == 0)
++			return 1;
++
++	return 0;
++}
++
++void traceprobe_update_arg(struct probe_arg *arg)
++{
++	if (CHECK_FETCH_FUNCS(bitfield, arg->fetch.fn))
++		update_bitfield_fetch_param(arg->fetch.data);
++	else if (CHECK_FETCH_FUNCS(deref, arg->fetch.fn))
++		update_deref_fetch_param(arg->fetch.data);
++	else if (CHECK_FETCH_FUNCS(symbol, arg->fetch.fn))
++		update_symbol_cache(arg->fetch.data);
++}
++
++void traceprobe_free_probe_arg(struct probe_arg *arg)
++{
++	if (CHECK_FETCH_FUNCS(bitfield, arg->fetch.fn))
++		free_bitfield_fetch_param(arg->fetch.data);
++	else if (CHECK_FETCH_FUNCS(deref, arg->fetch.fn))
++		free_deref_fetch_param(arg->fetch.data);
++	else if (CHECK_FETCH_FUNCS(symbol, arg->fetch.fn))
++		free_symbol_cache(arg->fetch.data);
++
++	kfree(arg->name);
++	kfree(arg->comm);
++}
++
++int traceprobe_command(const char *buf, int (*createfn)(int, char **))
++{
++	char **argv;
++	int argc, ret;
++
++	argc = 0;
++	ret = 0;
++	argv = argv_split(GFP_KERNEL, buf, &argc);
++	if (!argv)
++		return -ENOMEM;
++
++	if (argc)
++		ret = createfn(argc, argv);
++
++	argv_free(argv);
++
++	return ret;
++}
++
++#define WRITE_BUFSIZE  4096
++
++ssize_t traceprobe_probes_write(struct file *file, const char __user *buffer,
++				size_t count, loff_t *ppos,
++				int (*createfn)(int, char **))
++{
++	char *kbuf, *tmp;
++	int ret = 0;
++	size_t done = 0;
++	size_t size;
++
++	kbuf = kmalloc(WRITE_BUFSIZE, GFP_KERNEL);
++	if (!kbuf)
++		return -ENOMEM;
++
++	while (done < count) {
++		size = count - done;
++
++		if (size >= WRITE_BUFSIZE)
++			size = WRITE_BUFSIZE - 1;
++
++		if (copy_from_user(kbuf, buffer + done, size)) {
++			ret = -EFAULT;
++			goto out;
++		}
++		kbuf[size] = '\0';
++		tmp = strchr(kbuf, '\n');
++
++		if (tmp) {
++			*tmp = '\0';
++			size = tmp - kbuf + 1;
++		} else if (done + size < count) {
++			pr_warning("Line length is too long: "
++				   "Should be less than %d.", WRITE_BUFSIZE);
++			ret = -EINVAL;
++			goto out;
++		}
++		done += size;
++		/* Remove comments */
++		tmp = strchr(kbuf, '#');
++
++		if (tmp)
++			*tmp = '\0';
++
++		ret = traceprobe_command(kbuf, createfn);
++		if (ret)
++			goto out;
++	}
++	ret = done;
++
++out:
++	kfree(kbuf);
++
++	return ret;
++}
+diff --git a/kernel/trace/trace_probe.h b/kernel/trace/trace_probe.h
+new file mode 100644
+index 0000000..9337086
+--- /dev/null
++++ b/kernel/trace/trace_probe.h
+@@ -0,0 +1,161 @@
++/*
++ * Common header file for probe-based Dynamic events.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * This code was copied from kernel/trace/trace_kprobe.h written by
++ * Masami Hiramatsu <masami.hiramatsu.pt@hitachi.com>
++ *
++ * Updates to make this generic:
++ * Copyright (C) IBM Corporation, 2010-2011
++ * Author:     Srikar Dronamraju
++ */
++
++#include <linux/seq_file.h>
++#include <linux/slab.h>
++#include <linux/smp.h>
++#include <linux/debugfs.h>
++#include <linux/types.h>
++#include <linux/string.h>
++#include <linux/ctype.h>
++#include <linux/ptrace.h>
++#include <linux/perf_event.h>
++#include <linux/kprobes.h>
++#include <linux/stringify.h>
++#include <linux/limits.h>
++#include <linux/uaccess.h>
++#include <asm/bitsperlong.h>
++
++#include "trace.h"
++#include "trace_output.h"
++
++#define MAX_TRACE_ARGS		128
++#define MAX_ARGSTR_LEN		63
++#define MAX_EVENT_NAME_LEN	64
++#define MAX_STRING_SIZE		PATH_MAX
++
++/* Reserved field names */
++#define FIELD_STRING_IP		"__probe_ip"
++#define FIELD_STRING_RETIP	"__probe_ret_ip"
++#define FIELD_STRING_FUNC	"__probe_func"
++
++#undef DEFINE_FIELD
++#define DEFINE_FIELD(type, item, name, is_signed)			\
++	do {								\
++		ret = trace_define_field(event_call, #type, name,	\
++					 offsetof(typeof(field), item),	\
++					 sizeof(field.item), is_signed, \
++					 FILTER_OTHER);			\
++		if (ret)						\
++			return ret;					\
++	} while (0)
++
++
++/* Flags for trace_probe */
++#define TP_FLAG_TRACE		1
++#define TP_FLAG_PROFILE		2
++#define TP_FLAG_REGISTERED	4
++#define TP_FLAG_UPROBE		8
++
++
++/* data_rloc: data relative location, compatible with u32 */
++#define make_data_rloc(len, roffs)	\
++	(((u32)(len) << 16) | ((u32)(roffs) & 0xffff))
++#define get_rloc_len(dl)		((u32)(dl) >> 16)
++#define get_rloc_offs(dl)		((u32)(dl) & 0xffff)
++
++/*
++ * Convert data_rloc to data_loc:
++ *  data_rloc stores the offset from data_rloc itself, but data_loc
++ *  stores the offset from event entry.
++ */
++#define convert_rloc_to_loc(dl, offs)	((u32)(dl) + (offs))
++
++/* Data fetch function type */
++typedef	void (*fetch_func_t)(struct pt_regs *, void *, void *);
++/* Printing function type */
++typedef int (*print_type_func_t)(struct trace_seq *, const char *, void *, void *);
++
++/* Fetch types */
++enum {
++	FETCH_MTD_reg = 0,
++	FETCH_MTD_stack,
++	FETCH_MTD_retval,
++	FETCH_MTD_memory,
++	FETCH_MTD_symbol,
++	FETCH_MTD_deref,
++	FETCH_MTD_bitfield,
++	FETCH_MTD_END,
++};
++
++/* Fetch type information table */
++struct fetch_type {
++	const char		*name;		/* Name of type */
++	size_t			size;		/* Byte size of type */
++	int			is_signed;	/* Signed flag */
++	print_type_func_t	print;		/* Print functions */
++	const char		*fmt;		/* Fromat string */
++	const char		*fmttype;	/* Name in format file */
++	/* Fetch functions */
++	fetch_func_t		fetch[FETCH_MTD_END];
++};
++
++struct fetch_param {
++	fetch_func_t		fn;
++	void 			*data;
++};
++
++struct probe_arg {
++	struct fetch_param	fetch;
++	struct fetch_param	fetch_size;
++	unsigned int		offset;	/* Offset from argument entry */
++	const char		*name;	/* Name of this argument */
++	const char		*comm;	/* Command of this argument */
++	const struct fetch_type	*type;	/* Type of this argument */
++};
++
++static inline __kprobes void call_fetch(struct fetch_param *fprm,
++				 struct pt_regs *regs, void *dest)
++{
++	return fprm->fn(regs, fprm->data, dest);
++}
++
++/* Check the name is good for event/group/fields */
++static inline int is_good_name(const char *name)
++{
++	if (!isalpha(*name) && *name != '_')
++		return 0;
++	while (*++name != '\0') {
++		if (!isalpha(*name) && !isdigit(*name) && *name != '_')
++			return 0;
++	}
++	return 1;
++}
++
++extern int traceprobe_parse_probe_arg(char *arg, ssize_t *size,
++		   struct probe_arg *parg, bool is_return, bool is_kprobe);
++
++extern int traceprobe_conflict_field_name(const char *name,
++			       struct probe_arg *args, int narg);
++
++extern void traceprobe_update_arg(struct probe_arg *arg);
++extern void traceprobe_free_probe_arg(struct probe_arg *arg);
++
++extern int traceprobe_split_symbol_offset(char *symbol, unsigned long *offset);
++
++extern ssize_t traceprobe_probes_write(struct file *file,
++		const char __user *buffer, size_t count, loff_t *ppos,
++		int (*createfn)(int, char**));
++
++extern int traceprobe_command(const char *buf, int (*createfn)(int, char**));
+diff --git a/kernel/trace/trace_uprobe.c b/kernel/trace/trace_uprobe.c
+new file mode 100644
+index 0000000..2b36ac6
+--- /dev/null
++++ b/kernel/trace/trace_uprobe.c
+@@ -0,0 +1,788 @@
++/*
++ * uprobes-based tracing events
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * Copyright (C) IBM Corporation, 2010-2012
++ * Author:	Srikar Dronamraju <srikar@linux.vnet.ibm.com>
++ */
++
++#include <linux/module.h>
++#include <linux/uaccess.h>
++#include <linux/uprobes.h>
++#include <linux/namei.h>
++
++#include "trace_probe.h"
++
++#define UPROBE_EVENT_SYSTEM	"uprobes"
++
++/*
++ * uprobe event core functions
++ */
++struct trace_uprobe;
++struct uprobe_trace_consumer {
++	struct uprobe_consumer		cons;
++	struct trace_uprobe		*tu;
++};
++
++struct trace_uprobe {
++	struct list_head		list;
++	struct ftrace_event_class	class;
++	struct ftrace_event_call	call;
++	struct uprobe_trace_consumer	*consumer;
++	struct inode			*inode;
++	char				*filename;
++	unsigned long			offset;
++	unsigned long			nhit;
++	unsigned int			flags;	/* For TP_FLAG_* */
++	ssize_t				size;	/* trace entry size */
++	unsigned int			nr_args;
++	struct probe_arg		args[];
++};
++
++#define SIZEOF_TRACE_UPROBE(n)			\
++	(offsetof(struct trace_uprobe, args) +	\
++	(sizeof(struct probe_arg) * (n)))
++
++static int register_uprobe_event(struct trace_uprobe *tu);
++static void unregister_uprobe_event(struct trace_uprobe *tu);
++
++static DEFINE_MUTEX(uprobe_lock);
++static LIST_HEAD(uprobe_list);
++
++static int uprobe_dispatcher(struct uprobe_consumer *con, struct pt_regs *regs);
++
++/*
++ * Allocate new trace_uprobe and initialize it (including uprobes).
++ */
++static struct trace_uprobe *
++alloc_trace_uprobe(const char *group, const char *event, int nargs)
++{
++	struct trace_uprobe *tu;
++
++	if (!event || !is_good_name(event))
++		return ERR_PTR(-EINVAL);
++
++	if (!group || !is_good_name(group))
++		return ERR_PTR(-EINVAL);
++
++	tu = kzalloc(SIZEOF_TRACE_UPROBE(nargs), GFP_KERNEL);
++	if (!tu)
++		return ERR_PTR(-ENOMEM);
++
++	tu->call.class = &tu->class;
++	tu->call.name = kstrdup(event, GFP_KERNEL);
++	if (!tu->call.name)
++		goto error;
++
++	tu->class.system = kstrdup(group, GFP_KERNEL);
++	if (!tu->class.system)
++		goto error;
++
++	INIT_LIST_HEAD(&tu->list);
++	return tu;
++
++error:
++	kfree(tu->call.name);
++	kfree(tu);
++
++	return ERR_PTR(-ENOMEM);
++}
++
++static void free_trace_uprobe(struct trace_uprobe *tu)
++{
++	int i;
++
++	for (i = 0; i < tu->nr_args; i++)
++		traceprobe_free_probe_arg(&tu->args[i]);
++
++	iput(tu->inode);
++	kfree(tu->call.class->system);
++	kfree(tu->call.name);
++	kfree(tu->filename);
++	kfree(tu);
++}
++
++static struct trace_uprobe *find_probe_event(const char *event, const char *group)
++{
++	struct trace_uprobe *tu;
++
++	list_for_each_entry(tu, &uprobe_list, list)
++		if (strcmp(tu->call.name, event) == 0 &&
++		    strcmp(tu->call.class->system, group) == 0)
++			return tu;
++
++	return NULL;
++}
++
++/* Unregister a trace_uprobe and probe_event: call with locking uprobe_lock */
++static void unregister_trace_uprobe(struct trace_uprobe *tu)
++{
++	list_del(&tu->list);
++	unregister_uprobe_event(tu);
++	free_trace_uprobe(tu);
++}
++
++/* Register a trace_uprobe and probe_event */
++static int register_trace_uprobe(struct trace_uprobe *tu)
++{
++	struct trace_uprobe *old_tp;
++	int ret;
++
++	mutex_lock(&uprobe_lock);
++
++	/* register as an event */
++	old_tp = find_probe_event(tu->call.name, tu->call.class->system);
++	if (old_tp)
++		/* delete old event */
++		unregister_trace_uprobe(old_tp);
++
++	ret = register_uprobe_event(tu);
++	if (ret) {
++		pr_warning("Failed to register probe event(%d)\n", ret);
++		goto end;
++	}
++
++	list_add_tail(&tu->list, &uprobe_list);
++
++end:
++	mutex_unlock(&uprobe_lock);
++
++	return ret;
++}
++
++/*
++ * Argument syntax:
++ *  - Add uprobe: p[:[GRP/]EVENT] PATH:SYMBOL[+offs] [FETCHARGS]
++ *
++ *  - Remove uprobe: -:[GRP/]EVENT
++ */
++static int create_trace_uprobe(int argc, char **argv)
++{
++	struct trace_uprobe *tu;
++	struct inode *inode;
++	char *arg, *event, *group, *filename;
++	char buf[MAX_EVENT_NAME_LEN];
++	struct path path;
++	unsigned long offset;
++	bool is_delete;
++	int i, ret;
++
++	inode = NULL;
++	ret = 0;
++	is_delete = false;
++	event = NULL;
++	group = NULL;
++
++	/* argc must be >= 1 */
++	if (argv[0][0] == '-')
++		is_delete = true;
++	else if (argv[0][0] != 'p') {
++		pr_info("Probe definition must be started with 'p', 'r' or" " '-'.\n");
++		return -EINVAL;
++	}
++
++	if (argv[0][1] == ':') {
++		event = &argv[0][2];
++		arg = strchr(event, '/');
++
++		if (arg) {
++			group = event;
++			event = arg + 1;
++			event[-1] = '\0';
++
++			if (strlen(group) == 0) {
++				pr_info("Group name is not specified\n");
++				return -EINVAL;
++			}
++		}
++		if (strlen(event) == 0) {
++			pr_info("Event name is not specified\n");
++			return -EINVAL;
++		}
++	}
++	if (!group)
++		group = UPROBE_EVENT_SYSTEM;
++
++	if (is_delete) {
++		if (!event) {
++			pr_info("Delete command needs an event name.\n");
++			return -EINVAL;
++		}
++		mutex_lock(&uprobe_lock);
++		tu = find_probe_event(event, group);
++
++		if (!tu) {
++			mutex_unlock(&uprobe_lock);
++			pr_info("Event %s/%s doesn't exist.\n", group, event);
++			return -ENOENT;
++		}
++		/* delete an event */
++		unregister_trace_uprobe(tu);
++		mutex_unlock(&uprobe_lock);
++		return 0;
++	}
++
++	if (argc < 2) {
++		pr_info("Probe point is not specified.\n");
++		return -EINVAL;
++	}
++	if (isdigit(argv[1][0])) {
++		pr_info("probe point must be have a filename.\n");
++		return -EINVAL;
++	}
++	arg = strchr(argv[1], ':');
++	if (!arg)
++		goto fail_address_parse;
++
++	*arg++ = '\0';
++	filename = argv[1];
++	ret = kern_path(filename, LOOKUP_FOLLOW, &path);
++	if (ret)
++		goto fail_address_parse;
++
++	ret = strict_strtoul(arg, 0, &offset);
++	if (ret)
++		goto fail_address_parse;
++
++	inode = igrab(path.dentry->d_inode);
++
++	argc -= 2;
++	argv += 2;
++
++	/* setup a probe */
++	if (!event) {
++		char *tail = strrchr(filename, '/');
++		char *ptr;
++
++		ptr = kstrdup((tail ? tail + 1 : filename), GFP_KERNEL);
++		if (!ptr) {
++			ret = -ENOMEM;
++			goto fail_address_parse;
++		}
++
++		tail = ptr;
++		ptr = strpbrk(tail, ".-_");
++		if (ptr)
++			*ptr = '\0';
++
++		snprintf(buf, MAX_EVENT_NAME_LEN, "%c_%s_0x%lx", 'p', tail, offset);
++		event = buf;
++		kfree(tail);
++	}
++
++	tu = alloc_trace_uprobe(group, event, argc);
++	if (IS_ERR(tu)) {
++		pr_info("Failed to allocate trace_uprobe.(%d)\n", (int)PTR_ERR(tu));
++		ret = PTR_ERR(tu);
++		goto fail_address_parse;
++	}
++	tu->offset = offset;
++	tu->inode = inode;
++	tu->filename = kstrdup(filename, GFP_KERNEL);
++
++	if (!tu->filename) {
++		pr_info("Failed to allocate filename.\n");
++		ret = -ENOMEM;
++		goto error;
++	}
++
++	/* parse arguments */
++	ret = 0;
++	for (i = 0; i < argc && i < MAX_TRACE_ARGS; i++) {
++		/* Increment count for freeing args in error case */
++		tu->nr_args++;
++
++		/* Parse argument name */
++		arg = strchr(argv[i], '=');
++		if (arg) {
++			*arg++ = '\0';
++			tu->args[i].name = kstrdup(argv[i], GFP_KERNEL);
++		} else {
++			arg = argv[i];
++			/* If argument name is omitted, set "argN" */
++			snprintf(buf, MAX_EVENT_NAME_LEN, "arg%d", i + 1);
++			tu->args[i].name = kstrdup(buf, GFP_KERNEL);
++		}
++
++		if (!tu->args[i].name) {
++			pr_info("Failed to allocate argument[%d] name.\n", i);
++			ret = -ENOMEM;
++			goto error;
++		}
++
++		if (!is_good_name(tu->args[i].name)) {
++			pr_info("Invalid argument[%d] name: %s\n", i, tu->args[i].name);
++			ret = -EINVAL;
++			goto error;
++		}
++
++		if (traceprobe_conflict_field_name(tu->args[i].name, tu->args, i)) {
++			pr_info("Argument[%d] name '%s' conflicts with "
++				"another field.\n", i, argv[i]);
++			ret = -EINVAL;
++			goto error;
++		}
++
++		/* Parse fetch argument */
++		ret = traceprobe_parse_probe_arg(arg, &tu->size, &tu->args[i], false, false);
++		if (ret) {
++			pr_info("Parse error at argument[%d]. (%d)\n", i, ret);
++			goto error;
++		}
++	}
++
++	ret = register_trace_uprobe(tu);
++	if (ret)
++		goto error;
++	return 0;
++
++error:
++	free_trace_uprobe(tu);
++	return ret;
++
++fail_address_parse:
++	if (inode)
++		iput(inode);
++
++	pr_info("Failed to parse address.\n");
++
++	return ret;
++}
++
++static void cleanup_all_probes(void)
++{
++	struct trace_uprobe *tu;
++
++	mutex_lock(&uprobe_lock);
++	while (!list_empty(&uprobe_list)) {
++		tu = list_entry(uprobe_list.next, struct trace_uprobe, list);
++		unregister_trace_uprobe(tu);
++	}
++	mutex_unlock(&uprobe_lock);
++}
++
++/* Probes listing interfaces */
++static void *probes_seq_start(struct seq_file *m, loff_t *pos)
++{
++	mutex_lock(&uprobe_lock);
++	return seq_list_start(&uprobe_list, *pos);
++}
++
++static void *probes_seq_next(struct seq_file *m, void *v, loff_t *pos)
++{
++	return seq_list_next(v, &uprobe_list, pos);
++}
++
++static void probes_seq_stop(struct seq_file *m, void *v)
++{
++	mutex_unlock(&uprobe_lock);
++}
++
++static int probes_seq_show(struct seq_file *m, void *v)
++{
++	struct trace_uprobe *tu = v;
++	int i;
++
++	seq_printf(m, "p:%s/%s", tu->call.class->system, tu->call.name);
++	seq_printf(m, " %s:0x%p", tu->filename, (void *)tu->offset);
++
++	for (i = 0; i < tu->nr_args; i++)
++		seq_printf(m, " %s=%s", tu->args[i].name, tu->args[i].comm);
++
++	seq_printf(m, "\n");
++	return 0;
++}
++
++static const struct seq_operations probes_seq_op = {
++	.start	= probes_seq_start,
++	.next	= probes_seq_next,
++	.stop	= probes_seq_stop,
++	.show	= probes_seq_show
++};
++
++static int probes_open(struct inode *inode, struct file *file)
++{
++	if ((file->f_mode & FMODE_WRITE) && (file->f_flags & O_TRUNC))
++		cleanup_all_probes();
++
++	return seq_open(file, &probes_seq_op);
++}
++
++static ssize_t probes_write(struct file *file, const char __user *buffer,
++			    size_t count, loff_t *ppos)
++{
++	return traceprobe_probes_write(file, buffer, count, ppos, create_trace_uprobe);
++}
++
++static const struct file_operations uprobe_events_ops = {
++	.owner		= THIS_MODULE,
++	.open		= probes_open,
++	.read		= seq_read,
++	.llseek		= seq_lseek,
++	.release	= seq_release,
++	.write		= probes_write,
++};
++
++/* Probes profiling interfaces */
++static int probes_profile_seq_show(struct seq_file *m, void *v)
++{
++	struct trace_uprobe *tu = v;
++
++	seq_printf(m, "  %s %-44s %15lu\n", tu->filename, tu->call.name, tu->nhit);
++	return 0;
++}
++
++static const struct seq_operations profile_seq_op = {
++	.start	= probes_seq_start,
++	.next	= probes_seq_next,
++	.stop	= probes_seq_stop,
++	.show	= probes_profile_seq_show
++};
++
++static int profile_open(struct inode *inode, struct file *file)
++{
++	return seq_open(file, &profile_seq_op);
++}
++
++static const struct file_operations uprobe_profile_ops = {
++	.owner		= THIS_MODULE,
++	.open		= profile_open,
++	.read		= seq_read,
++	.llseek		= seq_lseek,
++	.release	= seq_release,
++};
++
++/* uprobe handler */
++static void uprobe_trace_func(struct trace_uprobe *tu, struct pt_regs *regs)
++{
++	struct uprobe_trace_entry_head *entry;
++	struct ring_buffer_event *event;
++	struct ring_buffer *buffer;
++	u8 *data;
++	int size, i, pc;
++	unsigned long irq_flags;
++	struct ftrace_event_call *call = &tu->call;
++
++	tu->nhit++;
++
++	local_save_flags(irq_flags);
++	pc = preempt_count();
++
++	size = sizeof(*entry) + tu->size;
++
++	event = trace_current_buffer_lock_reserve(&buffer, call->event.type,
++						  size, irq_flags, pc);
++	if (!event)
++		return;
++
++	entry = ring_buffer_event_data(event);
++	entry->ip = uprobe_get_swbp_addr(task_pt_regs(current));
++	data = (u8 *)&entry[1];
++	for (i = 0; i < tu->nr_args; i++)
++		call_fetch(&tu->args[i].fetch, regs, data + tu->args[i].offset);
++
++	if (!filter_current_check_discard(buffer, call, entry, event))
++		trace_buffer_unlock_commit(buffer, event, irq_flags, pc);
++}
++
++/* Event entry printers */
++static enum print_line_t
++print_uprobe_event(struct trace_iterator *iter, int flags, struct trace_event *event)
++{
++	struct uprobe_trace_entry_head *field;
++	struct trace_seq *s = &iter->seq;
++	struct trace_uprobe *tu;
++	u8 *data;
++	int i;
++
++	field = (struct uprobe_trace_entry_head *)iter->ent;
++	tu = container_of(event, struct trace_uprobe, call.event);
++
++	if (!trace_seq_printf(s, "%s: (", tu->call.name))
++		goto partial;
++
++	if (!seq_print_ip_sym(s, field->ip, flags | TRACE_ITER_SYM_OFFSET))
++		goto partial;
++
++	if (!trace_seq_puts(s, ")"))
++		goto partial;
++
++	data = (u8 *)&field[1];
++	for (i = 0; i < tu->nr_args; i++) {
++		if (!tu->args[i].type->print(s, tu->args[i].name,
++					     data + tu->args[i].offset, field))
++			goto partial;
++	}
++
++	if (trace_seq_puts(s, "\n"))
++		return TRACE_TYPE_HANDLED;
++
++partial:
++	return TRACE_TYPE_PARTIAL_LINE;
++}
++
++static int probe_event_enable(struct trace_uprobe *tu, int flag)
++{
++	struct uprobe_trace_consumer *utc;
++	int ret = 0;
++
++	if (!tu->inode || tu->consumer)
++		return -EINTR;
++
++	utc = kzalloc(sizeof(struct uprobe_trace_consumer), GFP_KERNEL);
++	if (!utc)
++		return -EINTR;
++
++	utc->cons.handler = uprobe_dispatcher;
++	utc->cons.filter = NULL;
++	ret = uprobe_register(tu->inode, tu->offset, &utc->cons);
++	if (ret) {
++		kfree(utc);
++		return ret;
++	}
++
++	tu->flags |= flag;
++	utc->tu = tu;
++	tu->consumer = utc;
++
++	return 0;
++}
++
++static void probe_event_disable(struct trace_uprobe *tu, int flag)
++{
++	if (!tu->inode || !tu->consumer)
++		return;
++
++	uprobe_unregister(tu->inode, tu->offset, &tu->consumer->cons);
++	tu->flags &= ~flag;
++	kfree(tu->consumer);
++	tu->consumer = NULL;
++}
++
++static int uprobe_event_define_fields(struct ftrace_event_call *event_call)
++{
++	int ret, i;
++	struct uprobe_trace_entry_head field;
++	struct trace_uprobe *tu = (struct trace_uprobe *)event_call->data;
++
++	DEFINE_FIELD(unsigned long, ip, FIELD_STRING_IP, 0);
++	/* Set argument names as fields */
++	for (i = 0; i < tu->nr_args; i++) {
++		ret = trace_define_field(event_call, tu->args[i].type->fmttype,
++					 tu->args[i].name,
++					 sizeof(field) + tu->args[i].offset,
++					 tu->args[i].type->size,
++					 tu->args[i].type->is_signed,
++					 FILTER_OTHER);
++
++		if (ret)
++			return ret;
++	}
++	return 0;
++}
++
++#define LEN_OR_ZERO		(len ? len - pos : 0)
++static int __set_print_fmt(struct trace_uprobe *tu, char *buf, int len)
++{
++	const char *fmt, *arg;
++	int i;
++	int pos = 0;
++
++	fmt = "(%lx)";
++	arg = "REC->" FIELD_STRING_IP;
++
++	/* When len=0, we just calculate the needed length */
++
++	pos += snprintf(buf + pos, LEN_OR_ZERO, "\"%s", fmt);
++
++	for (i = 0; i < tu->nr_args; i++) {
++		pos += snprintf(buf + pos, LEN_OR_ZERO, " %s=%s",
++				tu->args[i].name, tu->args[i].type->fmt);
++	}
++
++	pos += snprintf(buf + pos, LEN_OR_ZERO, "\", %s", arg);
++
++	for (i = 0; i < tu->nr_args; i++) {
++		pos += snprintf(buf + pos, LEN_OR_ZERO, ", REC->%s",
++				tu->args[i].name);
++	}
++
++	return pos;	/* return the length of print_fmt */
++}
++#undef LEN_OR_ZERO
++
++static int set_print_fmt(struct trace_uprobe *tu)
++{
++	char *print_fmt;
++	int len;
++
++	/* First: called with 0 length to calculate the needed length */
++	len = __set_print_fmt(tu, NULL, 0);
++	print_fmt = kmalloc(len + 1, GFP_KERNEL);
++	if (!print_fmt)
++		return -ENOMEM;
++
++	/* Second: actually write the @print_fmt */
++	__set_print_fmt(tu, print_fmt, len + 1);
++	tu->call.print_fmt = print_fmt;
++
++	return 0;
++}
++
++#ifdef CONFIG_PERF_EVENTS
++/* uprobe profile handler */
++static void uprobe_perf_func(struct trace_uprobe *tu, struct pt_regs *regs)
++{
++	struct ftrace_event_call *call = &tu->call;
++	struct uprobe_trace_entry_head *entry;
++	struct hlist_head *head;
++	u8 *data;
++	int size, __size, i;
++	int rctx;
++
++	__size = sizeof(*entry) + tu->size;
++	size = ALIGN(__size + sizeof(u32), sizeof(u64));
++	size -= sizeof(u32);
++	if (WARN_ONCE(size > PERF_MAX_TRACE_SIZE, "profile buffer not large enough"))
++		return;
++
++	preempt_disable();
++
++	entry = perf_trace_buf_prepare(size, call->event.type, regs, &rctx);
++	if (!entry)
++		goto out;
++
++	entry->ip = uprobe_get_swbp_addr(task_pt_regs(current));
++	data = (u8 *)&entry[1];
++	for (i = 0; i < tu->nr_args; i++)
++		call_fetch(&tu->args[i].fetch, regs, data + tu->args[i].offset);
++
++	head = this_cpu_ptr(call->perf_events);
++	perf_trace_buf_submit(entry, size, rctx, entry->ip, 1, regs, head);
++
++ out:
++	preempt_enable();
++}
++#endif	/* CONFIG_PERF_EVENTS */
++
++static
++int trace_uprobe_register(struct ftrace_event_call *event, enum trace_reg type, void *data)
++{
++	struct trace_uprobe *tu = (struct trace_uprobe *)event->data;
++
++	switch (type) {
++	case TRACE_REG_REGISTER:
++		return probe_event_enable(tu, TP_FLAG_TRACE);
++
++	case TRACE_REG_UNREGISTER:
++		probe_event_disable(tu, TP_FLAG_TRACE);
++		return 0;
++
++#ifdef CONFIG_PERF_EVENTS
++	case TRACE_REG_PERF_REGISTER:
++		return probe_event_enable(tu, TP_FLAG_PROFILE);
++
++	case TRACE_REG_PERF_UNREGISTER:
++		probe_event_disable(tu, TP_FLAG_PROFILE);
++		return 0;
++#endif
++	default:
++		return 0;
++	}
++	return 0;
++}
++
++static int uprobe_dispatcher(struct uprobe_consumer *con, struct pt_regs *regs)
++{
++	struct uprobe_trace_consumer *utc;
++	struct trace_uprobe *tu;
++
++	utc = container_of(con, struct uprobe_trace_consumer, cons);
++	tu = utc->tu;
++	if (!tu || tu->consumer != utc)
++		return 0;
++
++	if (tu->flags & TP_FLAG_TRACE)
++		uprobe_trace_func(tu, regs);
++
++#ifdef CONFIG_PERF_EVENTS
++	if (tu->flags & TP_FLAG_PROFILE)
++		uprobe_perf_func(tu, regs);
++#endif
++	return 0;
++}
++
++static struct trace_event_functions uprobe_funcs = {
++	.trace		= print_uprobe_event
++};
++
++static int register_uprobe_event(struct trace_uprobe *tu)
++{
++	struct ftrace_event_call *call = &tu->call;
++	int ret;
++
++	/* Initialize ftrace_event_call */
++	INIT_LIST_HEAD(&call->class->fields);
++	call->event.funcs = &uprobe_funcs;
++	call->class->define_fields = uprobe_event_define_fields;
++
++	if (set_print_fmt(tu) < 0)
++		return -ENOMEM;
++
++	ret = register_ftrace_event(&call->event);
++	if (!ret) {
++		kfree(call->print_fmt);
++		return -ENODEV;
++	}
++	call->flags = 0;
++	call->class->reg = trace_uprobe_register;
++	call->data = tu;
++	ret = trace_add_event_call(call);
++
++	if (ret) {
++		pr_info("Failed to register uprobe event: %s\n", call->name);
++		kfree(call->print_fmt);
++		unregister_ftrace_event(&call->event);
++	}
++
++	return ret;
++}
++
++static void unregister_uprobe_event(struct trace_uprobe *tu)
++{
++	/* tu->event is unregistered in trace_remove_event_call() */
++	trace_remove_event_call(&tu->call);
++	kfree(tu->call.print_fmt);
++	tu->call.print_fmt = NULL;
++}
++
++/* Make a trace interface for controling probe points */
++static __init int init_uprobe_trace(void)
++{
++	struct dentry *d_tracer;
++
++	d_tracer = tracing_init_dentry();
++	if (!d_tracer)
++		return 0;
++
++	trace_create_file("uprobe_events", 0644, d_tracer,
++				    NULL, &uprobe_events_ops);
++	/* Profile interface */
++	trace_create_file("uprobe_profile", 0444, d_tracer,
++				    NULL, &uprobe_profile_ops);
++	return 0;
++}
++
++fs_initcall(init_uprobe_trace);
+diff --git a/mm/memory.c b/mm/memory.c
+index 6105f47..bf8b403 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -1307,6 +1307,9 @@ static void unmap_single_vma(struct mmu_gather *tlb,
+ 	if (end <= vma->vm_start)
+ 		return;
+ 
++	if (vma->vm_file)
++		uprobe_munmap(vma, start, end);
++
+ 	if (vma->vm_flags & VM_ACCOUNT)
+ 		*nr_accounted += (end - start) >> PAGE_SHIFT;
+ 
+diff --git a/mm/mmap.c b/mm/mmap.c
+index 848ef52..b8c4072 100644
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -30,6 +30,7 @@
+ #include <linux/perf_event.h>
+ #include <linux/audit.h>
+ #include <linux/khugepaged.h>
++#include <linux/uprobes.h>
+ 
+ #include <asm/uaccess.h>
+ #include <asm/cacheflush.h>
+@@ -546,8 +547,15 @@ again:			remove_next = 1 + (end > next->vm_end);
+ 
+ 	if (file) {
+ 		mapping = file->f_mapping;
+-		if (!(vma->vm_flags & VM_NONLINEAR))
++		if (!(vma->vm_flags & VM_NONLINEAR)) {
+ 			root = &mapping->i_mmap;
++			uprobe_munmap(vma, vma->vm_start, vma->vm_end);
++
++			if (adjust_next)
++				uprobe_munmap(next, next->vm_start,
++							next->vm_end);
++		}
++
+ 		mutex_lock(&mapping->i_mmap_mutex);
+ 		if (insert) {
+ 			/*
+@@ -617,8 +625,16 @@ again:			remove_next = 1 + (end > next->vm_end);
+ 	if (mapping)
+ 		mutex_unlock(&mapping->i_mmap_mutex);
+ 
++	if (root) {
++		uprobe_mmap(vma);
++
++		if (adjust_next)
++			uprobe_mmap(next);
++	}
++
+ 	if (remove_next) {
+ 		if (file) {
++			uprobe_munmap(next, next->vm_start, next->vm_end);
+ 			fput(file);
+ 			if (next->vm_flags & VM_EXECUTABLE)
+ 				removed_exe_file_vma(mm);
+@@ -638,6 +654,8 @@ again:			remove_next = 1 + (end > next->vm_end);
+ 			goto again;
+ 		}
+ 	}
++	if (insert && file)
++		uprobe_mmap(insert);
+ 
+ 	validate_mm(mm);
+ 
+@@ -1371,6 +1389,11 @@ out:
+ 			mm->locked_vm += (len >> PAGE_SHIFT);
+ 	} else if ((flags & MAP_POPULATE) && !(flags & MAP_NONBLOCK))
+ 		make_pages_present(addr, addr + len);
++
++	if (file && uprobe_mmap(vma))
++		/* matching probes but cannot insert */
++		goto unmap_and_free_vma;
++
+ 	return addr;
+ 
+ unmap_and_free_vma:
+@@ -2352,6 +2375,10 @@ int insert_vm_struct(struct mm_struct * mm, struct vm_area_struct * vma)
+ 	if ((vma->vm_flags & VM_ACCOUNT) &&
+ 	     security_vm_enough_memory_mm(mm, vma_pages(vma)))
+ 		return -ENOMEM;
++
++	if (vma->vm_file && uprobe_mmap(vma))
++		return -EINVAL;
++
+ 	vma_link(mm, vma, prev, rb_link, rb_parent);
+ 	return 0;
+ }
+@@ -2421,6 +2448,10 @@ struct vm_area_struct *copy_vma(struct vm_area_struct **vmap,
+ 			new_vma->vm_pgoff = pgoff;
+ 			if (new_vma->vm_file) {
+ 				get_file(new_vma->vm_file);
++
++				if (uprobe_mmap(new_vma))
++					goto out_free_mempol;
++
+ 				if (vma->vm_flags & VM_EXECUTABLE)
+ 					added_exe_file_vma(mm);
+ 			}
+diff --git a/tools/perf/Documentation/perf-probe.txt b/tools/perf/Documentation/perf-probe.txt
+index 2780d9c..b715cb7 100644
+--- a/tools/perf/Documentation/perf-probe.txt
++++ b/tools/perf/Documentation/perf-probe.txt
+@@ -77,7 +77,8 @@ OPTIONS
+ 
+ -F::
+ --funcs::
+-	Show available functions in given module or kernel.
++	Show available functions in given module or kernel. With -x/--exec,
++	can also list functions in a user space executable / shared library.
+ 
+ --filter=FILTER::
+ 	(Only for --vars and --funcs) Set filter. FILTER is a combination of glob
+@@ -98,6 +99,15 @@ OPTIONS
+ --max-probes::
+ 	Set the maximum number of probe points for an event. Default is 128.
+ 
++-x::
++--exec=PATH::
++	Specify path to the executable or shared library file for user
++	space tracing. Can also be used with --funcs option.
++
++In absence of -m/-x options, perf probe checks if the first argument after
++the options is an absolute path name. If its an absolute path, perf probe
++uses it as a target module/target user space binary to probe.
++
+ PROBE SYNTAX
+ ------------
+ Probe points are defined by following syntax.
+@@ -182,6 +192,13 @@ Delete all probes on schedule().
+ 
+  ./perf probe --del='schedule*'
+ 
++Add probes at zfree() function on /bin/zsh
++
++ ./perf probe -x /bin/zsh zfree or ./perf probe /bin/zsh zfree
++
++Add probes at malloc() function on libc
++
++ ./perf probe -x /lib/libc.so.6 malloc or ./perf probe /lib/libc.so.6 malloc
+ 
+ SEE ALSO
+ --------
+diff --git a/tools/perf/builtin-probe.c b/tools/perf/builtin-probe.c
+index 4935c09..e215ae6 100644
+--- a/tools/perf/builtin-probe.c
++++ b/tools/perf/builtin-probe.c
+@@ -54,6 +54,7 @@ static struct {
+ 	bool show_ext_vars;
+ 	bool show_funcs;
+ 	bool mod_events;
++	bool uprobes;
+ 	int nevents;
+ 	struct perf_probe_event events[MAX_PROBES];
+ 	struct strlist *dellist;
+@@ -75,6 +76,8 @@ static int parse_probe_event(const char *str)
+ 		return -1;
+ 	}
+ 
++	pev->uprobes = params.uprobes;
++
+ 	/* Parse a perf-probe command into event */
+ 	ret = parse_perf_probe_command(str, pev);
+ 	pr_debug("%d arguments\n", pev->nargs);
+@@ -82,21 +85,58 @@ static int parse_probe_event(const char *str)
+ 	return ret;
+ }
+ 
++static int set_target(const char *ptr)
++{
++	int found = 0;
++	const char *buf;
++
++	/*
++	 * The first argument after options can be an absolute path
++	 * to an executable / library or kernel module.
++	 *
++	 * TODO: Support relative path, and $PATH, $LD_LIBRARY_PATH,
++	 * short module name.
++	 */
++	if (!params.target && ptr && *ptr == '/') {
++		params.target = ptr;
++		found = 1;
++		buf = ptr + (strlen(ptr) - 3);
++
++		if (strcmp(buf, ".ko"))
++			params.uprobes = true;
++
++	}
++
++	return found;
++}
++
+ static int parse_probe_event_argv(int argc, const char **argv)
+ {
+-	int i, len, ret;
++	int i, len, ret, found_target;
+ 	char *buf;
+ 
++	found_target = set_target(argv[0]);
++	if (found_target && argc == 1)
++		return 0;
++
+ 	/* Bind up rest arguments */
+ 	len = 0;
+-	for (i = 0; i < argc; i++)
++	for (i = 0; i < argc; i++) {
++		if (i == 0 && found_target)
++			continue;
++
+ 		len += strlen(argv[i]) + 1;
++	}
+ 	buf = zalloc(len + 1);
+ 	if (buf == NULL)
+ 		return -ENOMEM;
+ 	len = 0;
+-	for (i = 0; i < argc; i++)
++	for (i = 0; i < argc; i++) {
++		if (i == 0 && found_target)
++			continue;
++
+ 		len += sprintf(&buf[len], "%s ", argv[i]);
++	}
+ 	params.mod_events = true;
+ 	ret = parse_probe_event(buf);
+ 	free(buf);
+@@ -125,6 +165,28 @@ static int opt_del_probe_event(const struct option *opt __used,
+ 	return 0;
+ }
+ 
++static int opt_set_target(const struct option *opt, const char *str,
++			int unset __used)
++{
++	int ret = -ENOENT;
++
++	if  (str && !params.target) {
++		if (!strcmp(opt->long_name, "exec"))
++			params.uprobes = true;
++#ifdef DWARF_SUPPORT
++		else if (!strcmp(opt->long_name, "module"))
++			params.uprobes = false;
++#endif
++		else
++			return ret;
++
++		params.target = str;
++		ret = 0;
++	}
++
++	return ret;
++}
++
+ #ifdef DWARF_SUPPORT
+ static int opt_show_lines(const struct option *opt __used,
+ 			  const char *str, int unset __used)
+@@ -246,9 +308,9 @@ static const struct option options[] = {
+ 		   "file", "vmlinux pathname"),
+ 	OPT_STRING('s', "source", &symbol_conf.source_prefix,
+ 		   "directory", "path to kernel source"),
+-	OPT_STRING('m', "module", &params.target,
+-		   "modname|path",
+-		   "target module name (for online) or path (for offline)"),
++	OPT_CALLBACK('m', "module", NULL, "modname|path",
++		"target module name (for online) or path (for offline)",
++		opt_set_target),
+ #endif
+ 	OPT__DRY_RUN(&probe_event_dry_run),
+ 	OPT_INTEGER('\0', "max-probes", &params.max_probe_points,
+@@ -260,6 +322,8 @@ static const struct option options[] = {
+ 		     "\t\t\t(default: \"" DEFAULT_VAR_FILTER "\" for --vars,\n"
+ 		     "\t\t\t \"" DEFAULT_FUNC_FILTER "\" for --funcs)",
+ 		     opt_set_filter),
++	OPT_CALLBACK('x', "exec", NULL, "executable|path",
++			"target executable name or path", opt_set_target),
+ 	OPT_END()
+ };
+ 
+@@ -310,6 +374,10 @@ int cmd_probe(int argc, const char **argv, const char *prefix __used)
+ 			pr_err("  Error: Don't use --list with --funcs.\n");
+ 			usage_with_options(probe_usage, options);
+ 		}
++		if (params.uprobes) {
++			pr_warning("  Error: Don't use --list with --exec.\n");
++			usage_with_options(probe_usage, options);
++		}
+ 		ret = show_perf_probe_events();
+ 		if (ret < 0)
+ 			pr_err("  Error: Failed to show event list. (%d)\n",
+@@ -333,8 +401,8 @@ int cmd_probe(int argc, const char **argv, const char *prefix __used)
+ 		if (!params.filter)
+ 			params.filter = strfilter__new(DEFAULT_FUNC_FILTER,
+ 						       NULL);
+-		ret = show_available_funcs(params.target,
+-					   params.filter);
++		ret = show_available_funcs(params.target, params.filter,
++					params.uprobes);
+ 		strfilter__delete(params.filter);
+ 		if (ret < 0)
+ 			pr_err("  Error: Failed to show functions."
+@@ -343,7 +411,7 @@ int cmd_probe(int argc, const char **argv, const char *prefix __used)
+ 	}
+ 
+ #ifdef DWARF_SUPPORT
+-	if (params.show_lines) {
++	if (params.show_lines && !params.uprobes) {
+ 		if (params.mod_events) {
+ 			pr_err("  Error: Don't use --line with"
+ 			       " --add/--del.\n");
+diff --git a/tools/perf/util/probe-event.c b/tools/perf/util/probe-event.c
+index 8a8ee64..0dda25d 100644
+--- a/tools/perf/util/probe-event.c
++++ b/tools/perf/util/probe-event.c
+@@ -44,6 +44,7 @@
+ #include "trace-event.h"	/* For __unused */
+ #include "probe-event.h"
+ #include "probe-finder.h"
++#include "session.h"
+ 
+ #define MAX_CMDLEN 256
+ #define MAX_PROBE_ARGS 128
+@@ -70,6 +71,8 @@ static int e_snprintf(char *str, size_t size, const char *format, ...)
+ }
+ 
+ static char *synthesize_perf_probe_point(struct perf_probe_point *pp);
++static int convert_name_to_addr(struct perf_probe_event *pev,
++				const char *exec);
+ static struct machine machine;
+ 
+ /* Initialize symbol maps and path of vmlinux/modules */
+@@ -170,6 +173,34 @@ const char *kernel_get_module_path(const char *module)
+ 	return (dso) ? dso->long_name : NULL;
+ }
+ 
++static int init_user_exec(void)
++{
++	int ret = 0;
++
++	symbol_conf.try_vmlinux_path = false;
++	symbol_conf.sort_by_name = true;
++	ret = symbol__init();
++
++	if (ret < 0)
++		pr_debug("Failed to init symbol map.\n");
++
++	return ret;
++}
++
++static int convert_to_perf_probe_point(struct probe_trace_point *tp,
++					struct perf_probe_point *pp)
++{
++	pp->function = strdup(tp->symbol);
++
++	if (pp->function == NULL)
++		return -ENOMEM;
++
++	pp->offset = tp->offset;
++	pp->retprobe = tp->retprobe;
++
++	return 0;
++}
++
+ #ifdef DWARF_SUPPORT
+ /* Open new debuginfo of given module */
+ static struct debuginfo *open_debuginfo(const char *module)
+@@ -224,10 +255,7 @@ static int kprobe_convert_to_perf_probe(struct probe_trace_point *tp,
+ 	if (ret <= 0) {
+ 		pr_debug("Failed to find corresponding probes from "
+ 			 "debuginfo. Use kprobe event information.\n");
+-		pp->function = strdup(tp->symbol);
+-		if (pp->function == NULL)
+-			return -ENOMEM;
+-		pp->offset = tp->offset;
++		return convert_to_perf_probe_point(tp, pp);
+ 	}
+ 	pp->retprobe = tp->retprobe;
+ 
+@@ -275,9 +303,20 @@ static int try_to_find_probe_trace_events(struct perf_probe_event *pev,
+ 					  int max_tevs, const char *target)
+ {
+ 	bool need_dwarf = perf_probe_event_need_dwarf(pev);
+-	struct debuginfo *dinfo = open_debuginfo(target);
++	struct debuginfo *dinfo;
+ 	int ntevs, ret = 0;
+ 
++	if (pev->uprobes) {
++		if (need_dwarf) {
++			pr_warning("Debuginfo-analysis is not yet supported"
++					" with -x/--exec option.\n");
++			return -ENOSYS;
++		}
++		return convert_name_to_addr(pev, target);
++	}
++
++	dinfo = open_debuginfo(target);
++
+ 	if (!dinfo) {
+ 		if (need_dwarf) {
+ 			pr_warning("Failed to open debuginfo file.\n");
+@@ -603,23 +642,22 @@ static int kprobe_convert_to_perf_probe(struct probe_trace_point *tp,
+ 		pr_err("Failed to find symbol %s in kernel.\n", tp->symbol);
+ 		return -ENOENT;
+ 	}
+-	pp->function = strdup(tp->symbol);
+-	if (pp->function == NULL)
+-		return -ENOMEM;
+-	pp->offset = tp->offset;
+-	pp->retprobe = tp->retprobe;
+ 
+-	return 0;
++	return convert_to_perf_probe_point(tp, pp);
+ }
+ 
+ static int try_to_find_probe_trace_events(struct perf_probe_event *pev,
+ 				struct probe_trace_event **tevs __unused,
+-				int max_tevs __unused, const char *mod __unused)
++				int max_tevs __unused, const char *target)
+ {
+ 	if (perf_probe_event_need_dwarf(pev)) {
+ 		pr_warning("Debuginfo-analysis is not supported.\n");
+ 		return -ENOSYS;
+ 	}
++
++	if (pev->uprobes)
++		return convert_name_to_addr(pev, target);
++
+ 	return 0;
+ }
+ 
+@@ -1341,11 +1379,18 @@ char *synthesize_probe_trace_command(struct probe_trace_event *tev)
+ 	if (buf == NULL)
+ 		return NULL;
+ 
+-	len = e_snprintf(buf, MAX_CMDLEN, "%c:%s/%s %s%s%s+%lu",
+-			 tp->retprobe ? 'r' : 'p',
+-			 tev->group, tev->event,
+-			 tp->module ?: "", tp->module ? ":" : "",
+-			 tp->symbol, tp->offset);
++	if (tev->uprobes)
++		len = e_snprintf(buf, MAX_CMDLEN, "%c:%s/%s %s:%s",
++				 tp->retprobe ? 'r' : 'p',
++				 tev->group, tev->event,
++				 tp->module, tp->symbol);
++	else
++		len = e_snprintf(buf, MAX_CMDLEN, "%c:%s/%s %s%s%s+%lu",
++				 tp->retprobe ? 'r' : 'p',
++				 tev->group, tev->event,
++				 tp->module ?: "", tp->module ? ":" : "",
++				 tp->symbol, tp->offset);
++
+ 	if (len <= 0)
+ 		goto error;
+ 
+@@ -1364,7 +1409,7 @@ error:
+ }
+ 
+ static int convert_to_perf_probe_event(struct probe_trace_event *tev,
+-				       struct perf_probe_event *pev)
++			       struct perf_probe_event *pev, bool is_kprobe)
+ {
+ 	char buf[64] = "";
+ 	int i, ret;
+@@ -1376,7 +1421,11 @@ static int convert_to_perf_probe_event(struct probe_trace_event *tev,
+ 		return -ENOMEM;
+ 
+ 	/* Convert trace_point to probe_point */
+-	ret = kprobe_convert_to_perf_probe(&tev->point, &pev->point);
++	if (is_kprobe)
++		ret = kprobe_convert_to_perf_probe(&tev->point, &pev->point);
++	else
++		ret = convert_to_perf_probe_point(&tev->point, &pev->point);
++
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -1472,7 +1521,26 @@ static void clear_probe_trace_event(struct probe_trace_event *tev)
+ 	memset(tev, 0, sizeof(*tev));
+ }
+ 
+-static int open_kprobe_events(bool readwrite)
++static void print_warn_msg(const char *file, bool is_kprobe)
++{
++
++	if (errno == ENOENT) {
++		const char *config;
++
++		if (!is_kprobe)
++			config = "CONFIG_UPROBE_EVENTS";
++		else
++			config = "CONFIG_KPROBE_EVENTS";
++
++		pr_warning("%s file does not exist - please rebuild kernel"
++				" with %s.\n", file, config);
++	} else
++		pr_warning("Failed to open %s file: %s\n", file,
++				strerror(errno));
++}
++
++static int open_probe_events(const char *trace_file, bool readwrite,
++				bool is_kprobe)
+ {
+ 	char buf[PATH_MAX];
+ 	const char *__debugfs;
+@@ -1484,27 +1552,31 @@ static int open_kprobe_events(bool readwrite)
+ 		return -ENOENT;
+ 	}
+ 
+-	ret = e_snprintf(buf, PATH_MAX, "%stracing/kprobe_events", __debugfs);
++	ret = e_snprintf(buf, PATH_MAX, "%s/%s", __debugfs, trace_file);
+ 	if (ret >= 0) {
+ 		pr_debug("Opening %s write=%d\n", buf, readwrite);
+ 		if (readwrite && !probe_event_dry_run)
+ 			ret = open(buf, O_RDWR, O_APPEND);
+ 		else
+ 			ret = open(buf, O_RDONLY, 0);
+-	}
+ 
+-	if (ret < 0) {
+-		if (errno == ENOENT)
+-			pr_warning("kprobe_events file does not exist - please"
+-				 " rebuild kernel with CONFIG_KPROBE_EVENT.\n");
+-		else
+-			pr_warning("Failed to open kprobe_events file: %s\n",
+-				   strerror(errno));
++		if (ret < 0)
++			print_warn_msg(buf, is_kprobe);
+ 	}
+ 	return ret;
+ }
+ 
+-/* Get raw string list of current kprobe_events */
++static int open_kprobe_events(bool readwrite)
++{
++	return open_probe_events("tracing/kprobe_events", readwrite, true);
++}
++
++static int open_uprobe_events(bool readwrite)
++{
++	return open_probe_events("tracing/uprobe_events", readwrite, false);
++}
++
++/* Get raw string list of current kprobe_events  or uprobe_events */
+ static struct strlist *get_probe_trace_command_rawlist(int fd)
+ {
+ 	int ret, idx;
+@@ -1569,36 +1641,26 @@ static int show_perf_probe_event(struct perf_probe_event *pev)
+ 	return ret;
+ }
+ 
+-/* List up current perf-probe events */
+-int show_perf_probe_events(void)
++static int __show_perf_probe_events(int fd, bool is_kprobe)
+ {
+-	int fd, ret;
++	int ret = 0;
+ 	struct probe_trace_event tev;
+ 	struct perf_probe_event pev;
+ 	struct strlist *rawlist;
+ 	struct str_node *ent;
+ 
+-	setup_pager();
+-	ret = init_vmlinux();
+-	if (ret < 0)
+-		return ret;
+-
+ 	memset(&tev, 0, sizeof(tev));
+ 	memset(&pev, 0, sizeof(pev));
+ 
+-	fd = open_kprobe_events(false);
+-	if (fd < 0)
+-		return fd;
+-
+ 	rawlist = get_probe_trace_command_rawlist(fd);
+-	close(fd);
+ 	if (!rawlist)
+ 		return -ENOENT;
+ 
+ 	strlist__for_each(ent, rawlist) {
+ 		ret = parse_probe_trace_command(ent->s, &tev);
+ 		if (ret >= 0) {
+-			ret = convert_to_perf_probe_event(&tev, &pev);
++			ret = convert_to_perf_probe_event(&tev, &pev,
++								is_kprobe);
+ 			if (ret >= 0)
+ 				ret = show_perf_probe_event(&pev);
+ 		}
+@@ -1612,6 +1674,33 @@ int show_perf_probe_events(void)
+ 	return ret;
+ }
+ 
++/* List up current perf-probe events */
++int show_perf_probe_events(void)
++{
++	int fd, ret;
++
++	setup_pager();
++	fd = open_kprobe_events(false);
++
++	if (fd < 0)
++		return fd;
++
++	ret = init_vmlinux();
++	if (ret < 0)
++		return ret;
++
++	ret = __show_perf_probe_events(fd, true);
++	close(fd);
++
++	fd = open_uprobe_events(false);
++	if (fd >= 0) {
++		ret = __show_perf_probe_events(fd, false);
++		close(fd);
++	}
++
++	return ret;
++}
++
+ /* Get current perf-probe event names */
+ static struct strlist *get_probe_trace_event_names(int fd, bool include_group)
+ {
+@@ -1717,7 +1806,11 @@ static int __add_probe_trace_events(struct perf_probe_event *pev,
+ 	const char *event, *group;
+ 	struct strlist *namelist;
+ 
+-	fd = open_kprobe_events(true);
++	if (pev->uprobes)
++		fd = open_uprobe_events(true);
++	else
++		fd = open_kprobe_events(true);
++
+ 	if (fd < 0)
+ 		return fd;
+ 	/* Get current event names */
+@@ -1829,6 +1922,8 @@ static int convert_to_probe_trace_events(struct perf_probe_event *pev,
+ 	tev->point.offset = pev->point.offset;
+ 	tev->point.retprobe = pev->point.retprobe;
+ 	tev->nargs = pev->nargs;
++	tev->uprobes = pev->uprobes;
++
+ 	if (tev->nargs) {
+ 		tev->args = zalloc(sizeof(struct probe_trace_arg)
+ 				   * tev->nargs);
+@@ -1859,6 +1954,9 @@ static int convert_to_probe_trace_events(struct perf_probe_event *pev,
+ 		}
+ 	}
+ 
++	if (pev->uprobes)
++		return 1;
++
+ 	/* Currently just checking function name from symbol map */
+ 	sym = __find_kernel_function_by_name(tev->point.symbol, NULL);
+ 	if (!sym) {
+@@ -1894,12 +1992,18 @@ int add_perf_probe_events(struct perf_probe_event *pevs, int npevs,
+ 	int i, j, ret;
+ 	struct __event_package *pkgs;
+ 
++	ret = 0;
+ 	pkgs = zalloc(sizeof(struct __event_package) * npevs);
++
+ 	if (pkgs == NULL)
+ 		return -ENOMEM;
+ 
+-	/* Init vmlinux path */
+-	ret = init_vmlinux();
++	if (!pevs->uprobes)
++		/* Init vmlinux path */
++		ret = init_vmlinux();
++	else
++		ret = init_user_exec();
++
+ 	if (ret < 0) {
+ 		free(pkgs);
+ 		return ret;
+@@ -1971,23 +2075,15 @@ error:
+ 	return ret;
+ }
+ 
+-static int del_trace_probe_event(int fd, const char *group,
+-				  const char *event, struct strlist *namelist)
++static int del_trace_probe_event(int fd, const char *buf,
++						  struct strlist *namelist)
+ {
+-	char buf[128];
+ 	struct str_node *ent, *n;
+-	int found = 0, ret = 0;
+-
+-	ret = e_snprintf(buf, 128, "%s:%s", group, event);
+-	if (ret < 0) {
+-		pr_err("Failed to copy event.\n");
+-		return ret;
+-	}
++	int ret = -1;
+ 
+ 	if (strpbrk(buf, "*?")) { /* Glob-exp */
+ 		strlist__for_each_safe(ent, n, namelist)
+ 			if (strglobmatch(ent->s, buf)) {
+-				found++;
+ 				ret = __del_trace_probe_event(fd, ent);
+ 				if (ret < 0)
+ 					break;
+@@ -1996,40 +2092,43 @@ static int del_trace_probe_event(int fd, const char *group,
+ 	} else {
+ 		ent = strlist__find(namelist, buf);
+ 		if (ent) {
+-			found++;
+ 			ret = __del_trace_probe_event(fd, ent);
+ 			if (ret >= 0)
+ 				strlist__remove(namelist, ent);
+ 		}
+ 	}
+-	if (found == 0 && ret >= 0)
+-		pr_info("Info: Event \"%s\" does not exist.\n", buf);
+ 
+ 	return ret;
+ }
+ 
+ int del_perf_probe_events(struct strlist *dellist)
+ {
+-	int fd, ret = 0;
++	int ret = -1, ufd = -1, kfd = -1;
++	char buf[128];
+ 	const char *group, *event;
+ 	char *p, *str;
+ 	struct str_node *ent;
+-	struct strlist *namelist;
+-
+-	fd = open_kprobe_events(true);
+-	if (fd < 0)
+-		return fd;
++	struct strlist *namelist = NULL, *unamelist = NULL;
+ 
+ 	/* Get current event names */
+-	namelist = get_probe_trace_event_names(fd, true);
+-	if (namelist == NULL)
+-		return -EINVAL;
++	kfd = open_kprobe_events(true);
++	if (kfd < 0)
++		return kfd;
++
++	namelist = get_probe_trace_event_names(kfd, true);
++	ufd = open_uprobe_events(true);
++
++	if (ufd >= 0)
++		unamelist = get_probe_trace_event_names(ufd, true);
++
++	if (namelist == NULL && unamelist == NULL)
++		goto error;
+ 
+ 	strlist__for_each(ent, dellist) {
+ 		str = strdup(ent->s);
+ 		if (str == NULL) {
+ 			ret = -ENOMEM;
+-			break;
++			goto error;
+ 		}
+ 		pr_debug("Parsing: %s\n", str);
+ 		p = strchr(str, ':');
+@@ -2041,17 +2140,42 @@ int del_perf_probe_events(struct strlist *dellist)
+ 			group = "*";
+ 			event = str;
+ 		}
++
++		ret = e_snprintf(buf, 128, "%s:%s", group, event);
++		if (ret < 0) {
++			pr_err("Failed to copy event.");
++			free(str);
++			goto error;
++		}
++
+ 		pr_debug("Group: %s, Event: %s\n", group, event);
+-		ret = del_trace_probe_event(fd, group, event, namelist);
++
++		if (namelist)
++			ret = del_trace_probe_event(kfd, buf, namelist);
++
++		if (unamelist && ret != 0)
++			ret = del_trace_probe_event(ufd, buf, unamelist);
++
++		if (ret != 0)
++			pr_info("Info: Event \"%s\" does not exist.\n", buf);
++
+ 		free(str);
+-		if (ret < 0)
+-			break;
+ 	}
+-	strlist__delete(namelist);
+-	close(fd);
++
++error:
++	if (kfd >= 0) {
++		strlist__delete(namelist);
++		close(kfd);
++	}
++
++	if (ufd >= 0) {
++		strlist__delete(unamelist);
++		close(ufd);
++	}
+ 
+ 	return ret;
+ }
++
+ /* TODO: don't use a global variable for filter ... */
+ static struct strfilter *available_func_filter;
+ 
+@@ -2068,30 +2192,152 @@ static int filter_available_functions(struct map *map __unused,
+ 	return 1;
+ }
+ 
+-int show_available_funcs(const char *target, struct strfilter *_filter)
++static int __show_available_funcs(struct map *map)
++{
++	if (map__load(map, filter_available_functions)) {
++		pr_err("Failed to load map.\n");
++		return -EINVAL;
++	}
++	if (!dso__sorted_by_name(map->dso, map->type))
++		dso__sort_by_name(map->dso, map->type);
++
++	dso__fprintf_symbols_by_name(map->dso, map->type, stdout);
++	return 0;
++}
++
++static int available_kernel_funcs(const char *module)
+ {
+ 	struct map *map;
+ 	int ret;
+ 
+-	setup_pager();
+-
+ 	ret = init_vmlinux();
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	map = kernel_get_module_map(target);
++	map = kernel_get_module_map(module);
+ 	if (!map) {
+-		pr_err("Failed to find %s map.\n", (target) ? : "kernel");
++		pr_err("Failed to find %s map.\n", (module) ? : "kernel");
+ 		return -EINVAL;
+ 	}
++	return __show_available_funcs(map);
++}
++
++static int available_user_funcs(const char *target)
++{
++	struct map *map;
++	int ret;
++
++	ret = init_user_exec();
++	if (ret < 0)
++		return ret;
++
++	map = dso__new_map(target);
++	ret = __show_available_funcs(map);
++	dso__delete(map->dso);
++	map__delete(map);
++	return ret;
++}
++
++int show_available_funcs(const char *target, struct strfilter *_filter,
++					bool user)
++{
++	setup_pager();
+ 	available_func_filter = _filter;
++
++	if (!user)
++		return available_kernel_funcs(target);
++
++	return available_user_funcs(target);
++}
++
++/*
++ * uprobe_events only accepts address:
++ * Convert function and any offset to address
++ */
++static int convert_name_to_addr(struct perf_probe_event *pev, const char *exec)
++{
++	struct perf_probe_point *pp = &pev->point;
++	struct symbol *sym;
++	struct map *map = NULL;
++	char *function = NULL, *name = NULL;
++	int ret = -EINVAL;
++	unsigned long long vaddr = 0;
++
++	if (!pp->function) {
++		pr_warning("No function specified for uprobes");
++		goto out;
++	}
++
++	function = strdup(pp->function);
++	if (!function) {
++		pr_warning("Failed to allocate memory by strdup.\n");
++		ret = -ENOMEM;
++		goto out;
++	}
++
++	name = realpath(exec, NULL);
++	if (!name) {
++		pr_warning("Cannot find realpath for %s.\n", exec);
++		goto out;
++	}
++	map = dso__new_map(name);
++	if (!map) {
++		pr_warning("Cannot find appropriate DSO for %s.\n", exec);
++		goto out;
++	}
++	available_func_filter = strfilter__new(function, NULL);
+ 	if (map__load(map, filter_available_functions)) {
+ 		pr_err("Failed to load map.\n");
+-		return -EINVAL;
++		goto out;
+ 	}
+-	if (!dso__sorted_by_name(map->dso, map->type))
+-		dso__sort_by_name(map->dso, map->type);
+ 
+-	dso__fprintf_symbols_by_name(map->dso, map->type, stdout);
+-	return 0;
++	sym = map__find_symbol_by_name(map, function, NULL);
++	if (!sym) {
++		pr_warning("Cannot find %s in DSO %s\n", function, exec);
++		goto out;
++	}
++
++	if (map->start > sym->start)
++		vaddr = map->start;
++	vaddr += sym->start + pp->offset + map->pgoff;
++	pp->offset = 0;
++
++	if (!pev->event) {
++		pev->event = function;
++		function = NULL;
++	}
++	if (!pev->group) {
++		char *ptr1, *ptr2;
++
++		pev->group = zalloc(sizeof(char *) * 64);
++		ptr1 = strdup(basename(exec));
++		if (ptr1) {
++			ptr2 = strpbrk(ptr1, "-._");
++			if (ptr2)
++				*ptr2 = '\0';
++			e_snprintf(pev->group, 64, "%s_%s", PERFPROBE_GROUP,
++					ptr1);
++			free(ptr1);
++		}
++	}
++	free(pp->function);
++	pp->function = zalloc(sizeof(char *) * MAX_PROBE_ARGS);
++	if (!pp->function) {
++		ret = -ENOMEM;
++		pr_warning("Failed to allocate memory by zalloc.\n");
++		goto out;
++	}
++	e_snprintf(pp->function, MAX_PROBE_ARGS, "0x%llx", vaddr);
++	ret = 0;
++
++out:
++	if (map) {
++		dso__delete(map->dso);
++		map__delete(map);
++	}
++	if (function)
++		free(function);
++	if (name)
++		free(name);
++	return ret;
+ }
+diff --git a/tools/perf/util/probe-event.h b/tools/perf/util/probe-event.h
+index a7dee83..f9f3de8 100644
+--- a/tools/perf/util/probe-event.h
++++ b/tools/perf/util/probe-event.h
+@@ -7,7 +7,7 @@
+ 
+ extern bool probe_event_dry_run;
+ 
+-/* kprobe-tracer tracing point */
++/* kprobe-tracer and uprobe-tracer tracing point */
+ struct probe_trace_point {
+ 	char		*symbol;	/* Base symbol */
+ 	char		*module;	/* Module name */
+@@ -21,7 +21,7 @@ struct probe_trace_arg_ref {
+ 	long				offset;	/* Offset value */
+ };
+ 
+-/* kprobe-tracer tracing argument */
++/* kprobe-tracer and uprobe-tracer tracing argument */
+ struct probe_trace_arg {
+ 	char				*name;	/* Argument name */
+ 	char				*value;	/* Base value */
+@@ -29,12 +29,13 @@ struct probe_trace_arg {
+ 	struct probe_trace_arg_ref	*ref;	/* Referencing offset */
+ };
+ 
+-/* kprobe-tracer tracing event (point + arg) */
++/* kprobe-tracer and uprobe-tracer tracing event (point + arg) */
+ struct probe_trace_event {
+ 	char				*event;	/* Event name */
+ 	char				*group;	/* Group name */
+ 	struct probe_trace_point	point;	/* Trace point */
+ 	int				nargs;	/* Number of args */
++	bool				uprobes;	/* uprobes only */
+ 	struct probe_trace_arg		*args;	/* Arguments */
+ };
+ 
+@@ -70,6 +71,7 @@ struct perf_probe_event {
+ 	char			*group;	/* Group name */
+ 	struct perf_probe_point	point;	/* Probe point */
+ 	int			nargs;	/* Number of arguments */
++	bool			uprobes;
+ 	struct perf_probe_arg	*args;	/* Arguments */
+ };
+ 
+@@ -129,8 +131,8 @@ extern int show_line_range(struct line_range *lr, const char *module);
+ extern int show_available_vars(struct perf_probe_event *pevs, int npevs,
+ 			       int max_probe_points, const char *module,
+ 			       struct strfilter *filter, bool externs);
+-extern int show_available_funcs(const char *module, struct strfilter *filter);
+-
++extern int show_available_funcs(const char *module, struct strfilter *filter,
++				bool user);
+ 
+ /* Maximum index number of event-name postfix */
+ #define MAX_EVENT_INDEX	1024
+diff --git a/tools/perf/util/symbol.c b/tools/perf/util/symbol.c
+index ab9867b..0ef529e 100644
+--- a/tools/perf/util/symbol.c
++++ b/tools/perf/util/symbol.c
+@@ -2783,3 +2783,14 @@ int machine__load_vmlinux_path(struct machine *machine, enum map_type type,
+ 
+ 	return ret;
+ }
++
++struct map *dso__new_map(const char *name)
++{
++	struct map *map = NULL;
++	struct dso *dso = dso__new(name);
++
++	if (dso)
++		map = map__new2(0, dso, MAP__FUNCTION);
++
++	return map;
++}
+diff --git a/tools/perf/util/symbol.h b/tools/perf/util/symbol.h
+index ac49ef2..9e7742c 100644
+--- a/tools/perf/util/symbol.h
++++ b/tools/perf/util/symbol.h
+@@ -237,6 +237,7 @@ void dso__set_long_name(struct dso *dso, char *name);
+ void dso__set_build_id(struct dso *dso, void *build_id);
+ void dso__read_running_kernel_build_id(struct dso *dso,
+ 				       struct machine *machine);
++struct map *dso__new_map(const char *name);
+ struct symbol *dso__find_symbol(struct dso *dso, enum map_type type,
+ 				u64 addr);
+ struct symbol *dso__find_symbol_by_name(struct dso *dso, enum map_type type,

@@ -13,10 +13,12 @@ zcat ${SB_PATCHDIR}/${NAME}.electricsheep.diff.gz | patch -p1 --verbose --backup
 
 # Patches from Fedora
 # Change webcollage not to access to net
-patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-webcollage-default-nonet.patch
+patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.16-webcollage-default-nonet.patch
 # Remove "AC_PROG_CC' was expanded before it was required" warning
 patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-conf264.patch
 ## Patches which must be discussed with upstream
+# lament now uses a larger xpm file
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.17-lament-newxpm.patch
 # driver/test-passwd tty segfaults
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.12-test-passwd-segv-tty.patch
 # patch to compile driver/test-xdpms

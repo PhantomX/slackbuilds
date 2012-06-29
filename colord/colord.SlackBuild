@@ -43,7 +43,7 @@ fi
 NAME=colord
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.1.21}
+VERSION=${VERSION:-0.1.22}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -62,6 +62,9 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+grep --quiet '^colord:' /etc/group && SB_HGROUP=1
+grep --quiet '^colord:' /etc/passwd && SB_HUSER=1
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -131,6 +134,7 @@ CXXFLAGS="${SLKCFLAGS}" \
   --disable-rpath \
   --disable-examples \
   --disable-dependency-tracking \
+  --with-daemon-user=colord \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
 
 make -j${NJOBS} || make || exit $?
@@ -145,8 +149,8 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 # databases
-touch ${PKG}/var/lib/colord/mapping.db
-touch ${PKG}/var/lib/colord/storage.db
+touch ${PKG}/var/lib/colord/mapping.db.new
+touch ${PKG}/var/lib/colord/storage.db.new
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -183,14 +187,74 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<EOF
+cat > ${PKG}/install/doinst.sh <<'EOF'
+function free_user_id {
+  # Find a free user-ID >= 100 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
 # Figure out our root directory
-ROOTDIR=\$(pwd)
+ROOTDIR=$(pwd)
 unset CHROOT
-if test "\${ROOTDIR}" != "/"; then
-  CHROOT="chroot \${ROOTDIR} "
-  ROOTDIR="\${ROOTDIR}/"
+if test "${ROOTDIR}" != "/"; then
+ CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
+
+# Set up groups.
+if ! grep --quiet '^colord:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    colord 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^colord:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/lib/colord:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "colord"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/var/lib/colord' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g colord \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'User for colord' \
+    -u $(free_user_id) \
+    -g colord \
+    -s /bin/false \
+    -d '/var/lib/colord' \
+    colord 2> /dev/null
+fi
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -207,12 +271,16 @@ config() {
 EOF
 
 ( cd ${PKG}
-  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
 cat >> ${PKG}/install/doinst.sh <<'EOF'
+# Fix permissions
+${CHROOT} /bin/chown colord.colord /var/lib/colord
+${CHROOT} /bin/chown colord.colord /var/lib/colord/icc
+
 if [ -x bin/systemctl ] ; then
   ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
 fi
@@ -237,7 +305,8 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown colord.colord ./var/lib/colord ./var/lib/colord/icc ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

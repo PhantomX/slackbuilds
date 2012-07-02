@@ -1,0 +1,10 @@
+
+set -e -o pipefail
+
+SB_PATCHDIR=${CWD}/patches
+
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.0.14-array-out-of-bounds.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.0.14-sane-backends-1.0.20.patch
+
+set +e +o pipefail

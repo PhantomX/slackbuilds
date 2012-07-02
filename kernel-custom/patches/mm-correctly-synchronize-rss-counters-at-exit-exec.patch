@@ -1,0 +1,125 @@
+From davej  Wed Jun 20 11:37:32 2012
+Return-Path: oleg@redhat.com
+X-Spam-Checker-Version: SpamAssassin 3.3.2 (2011-06-06) on
+	gelk.kernelslacker.org
+X-Spam-Level: 
+X-Spam-Status: No, score=-1.9 required=5.0 tests=BAYES_00,T_RP_MATCHES_RCVD,
+	UNPARSEABLE_RELAY autolearn=ham version=3.3.2
+Received: from mail.corp.redhat.com [10.4.128.1]
+	by gelk.kernelslacker.org with IMAP (fetchmail-6.3.21)
+	for <davej@localhost> (single-drop); Wed, 20 Jun 2012 11:37:32 -0400 (EDT)
+Received: from zmta05.collab.prod.int.phx2.redhat.com (LHLO
+ zmta05.collab.prod.int.phx2.redhat.com) (10.5.81.12) by
+ zmail11.collab.prod.int.phx2.redhat.com with LMTP; Wed, 20 Jun 2012
+ 11:37:18 -0400 (EDT)
+Received: from int-mx09.intmail.prod.int.phx2.redhat.com (int-mx09.intmail.prod.int.phx2.redhat.com [10.5.11.22])
+	by zmta05.collab.prod.int.phx2.redhat.com (Postfix) with ESMTP id 539B1F2080
+	for <davej@mail.corp.redhat.com>; Wed, 20 Jun 2012 11:37:18 -0400 (EDT)
+Received: from tranklukator.englab.brq.redhat.com (dhcp-1-232.brq.redhat.com [10.34.1.232])
+	by int-mx09.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with SMTP id q5KFbGde008148;
+	Wed, 20 Jun 2012 11:37:17 -0400
+Received: by tranklukator.englab.brq.redhat.com (nbSMTP-1.00) for uid 500
+	oleg@redhat.com; Wed, 20 Jun 2012 17:35:20 +0200 (CEST)
+Date: Wed, 20 Jun 2012 17:35:19 +0200
+From: Oleg Nesterov <oleg@redhat.com>
+To: Dave Jones <davej@redhat.com>
+Cc: Fedora Kernel Team <kernel-team@fedoraproject.org>
+Subject: Re: [Bug 832867] BUG: Bad rss-counter state mm:xxxxxxxx idx:1
+	val:-2 output in console
+Message-ID: <20120620153519.GA17642@redhat.com>
+References: <bug-832867-176318@bugzilla.redhat.com> <bug-832867-176318-mTgNUmpuHi@bugzilla.redhat.com> <20120619172633.GG26103@redhat.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline
+In-Reply-To: <20120619172633.GG26103@redhat.com>
+User-Agent: Mutt/1.5.18 (2008-05-17)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.22
+Status: RO
+Content-Length: 2687
+Lines: 84
+
+Hi Dave,
+
+sorry for delay
+
+On 06/19, Dave Jones wrote:
+>
+>  > https://bugzilla.redhat.com/show_bug.cgi?id=832867
+>  >
+>  > --- Comment #11 from Bojan Smojver <bojan@rexursive.com> ---
+>  > Patches for this:
+>  >
+>  > http://comments.gmane.org/gmane.linux.kernel/1306252
+>
+> Oleg,
+>
+> are these patches final ? Are they headed for stable ?
+
+No. And 1/2 was wrong actually, see
+http://marc.info/?l=linux-kernel&m=133911852215275
+
+Konstantin sent the minimal fix,
+mm-correctly-synchronize-rss-counters-at-exit-exec.patch in -mm tree,
+attached below.
+
+Oleg.
+
+------------------------------------------------------
+From: Konstantin Khlebnikov <khlebnikov@openvz.org>
+Subject: mm: correctly synchronize rss-counters at exit/exec
+
+do_exit() and exec_mmap() call sync_mm_rss() before mm_release() does
+put_user(clear_child_tid) which can update task->rss_stat and thus make
+mm->rss_stat inconsistent.  This triggers the "BUG:" printk in check_mm().
+
+Let's fix this bug in the safest way, and optimize/cleanup this later.
+
+Reported-by: Markus Trippelsdorf <markus@trippelsdorf.de>
+Signed-off-by: Konstantin Khlebnikov <khlebnikov@openvz.org>
+Cc: Oleg Nesterov <oleg@redhat.com>
+Cc: KAMEZAWA Hiroyuki <kamezawa.hiroyu@jp.fujitsu.com>
+Cc: Hugh Dickins <hughd@google.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+---
+
+ fs/exec.c     |    2 +-
+ kernel/exit.c |    1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff -puN fs/exec.c~mm-correctly-synchronize-rss-counters-at-exit-exec fs/exec.c
+--- a/fs/exec.c~mm-correctly-synchronize-rss-counters-at-exit-exec
++++ a/fs/exec.c
+@@ -819,10 +819,10 @@ static int exec_mmap(struct mm_struct *m
+ 	/* Notify parent that we're no longer interested in the old VM */
+ 	tsk = current;
+ 	old_mm = current->mm;
+-	sync_mm_rss(old_mm);
+ 	mm_release(tsk, old_mm);
+ 
+ 	if (old_mm) {
++		sync_mm_rss(old_mm);
+ 		/*
+ 		 * Make sure that if there is a core dump in progress
+ 		 * for the old mm, we get out and die instead of going
+diff -puN kernel/exit.c~mm-correctly-synchronize-rss-counters-at-exit-exec kernel/exit.c
+--- a/kernel/exit.c~mm-correctly-synchronize-rss-counters-at-exit-exec
++++ a/kernel/exit.c
+@@ -643,6 +643,7 @@ static void exit_mm(struct task_struct *
+ 	mm_release(tsk, mm);
+ 	if (!mm)
+ 		return;
++	sync_mm_rss(mm);
+ 	/*
+ 	 * Serialize with any possible pending coredump.
+ 	 * We must hold mmap_sem around checking core_state
+_
+Subject: From: Konstantin Khlebnikov <khlebnikov@openvz.org>
+
+Patches currently in -mm which might be from khlebnikov@openvz.org are
+
+linux-next.patch
+memcg-fix-use_hierarchy-css_is_ancestor-oops-regression.patch
+mm-correctly-synchronize-rss-counters-at-exit-exec.patch
+
+

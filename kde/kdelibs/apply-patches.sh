@@ -51,6 +51,10 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # Branch upstream
 # fix kdeclarative install location (by wstephenson as found in kde-packager list)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.3-kdeclarative-install-location.patch
+# bz#830178
+# http://commits.kde.org/kdelibs/76e0376d7582cfe5b898c56bf3779ca2279dace8
+# http://commits.kde.org/kdelibs/bde5aad1e9f7bfb6f8d5c60197797de4a315158d
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-nepomuk-regression.patch
 
 # Trunk patches
 

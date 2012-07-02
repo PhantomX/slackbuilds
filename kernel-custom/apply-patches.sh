@@ -222,6 +222,7 @@ ApplyPatch lis3-improve-handling-of-null-rate.patch
 # Uprobes (rhbz 832083)
 ApplyPatch uprobes-3.4-backport.patch
 ApplyPatch uprobes-3.4-tip.patch
+ApplyPatch uprobes-task_work_add-generic-process-context-callbacks.patch
 
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
@@ -248,6 +249,12 @@ ApplyPatch cifs-fix-parsing-of-password-mount-option.patch
 
 #rhbz 831807
 ApplyPatch usb-storage-try-read_capacity-10-first.patch
+
+#rhbz 835019
+ApplyPatch block-fix-infinite-loop-in-__getblk_slow.patch
+
+#rhbz 832867
+ApplyPatch mm-correctly-synchronize-rss-counters-at-exit-exec.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

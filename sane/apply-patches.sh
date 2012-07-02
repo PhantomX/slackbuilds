@@ -26,5 +26,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sane-backends-1.0.22-v4l.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sane-backends-1.0.22-automake.patch
 # submitted upstream: c648a4411e5eacf19da2de726dac06ec07dae302
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sane-backends-1.0.22-av220-gray-modes.patch
+# backported from upstream: cef28b4d46a0faa4d4acb60d815ac9a49036ba85
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sane-backends-1.0.22-Lexmark-X1100.patch
+# backported from upstream: 33bb529c5f8ca013fb499addc14c7fb229203ea8
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sane-backends-1.0.22-avision-init-devices.patch
 
 set +e +o pipefail

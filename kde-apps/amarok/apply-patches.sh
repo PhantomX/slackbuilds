@@ -12,5 +12,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.0-kde48_context_vi
 # Load all tracks from XSPF using MetaProxy.
 # https://bugs.kde.org/show_bug.cgi?id=295199
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.0-proxy_loading.patch 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-liblastfm1.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.0-ffmpeg-0.11.patch
+
 
 set +e +o pipefail

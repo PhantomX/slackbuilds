@@ -93,6 +93,8 @@ ApplyPatch qt-everywhere-opensource-src-4.7.4-tds_no_strict_aliasing.patch
 ApplyPatch qt-everywhere-opensource-src-4.8.1-icu_no_debug.patch
 # gcc doesn't support flag -fuse-ld=gold
 ApplyPatch qt-everywhere-opensource-src-4.8.0-ld-gold.patch
+# https://bugzilla.redhat.com/show_bug.cgi?id=810500
+ApplyPatch qt-everywhere-opensource-src-4.8.2--assistant-crash.patch
 
 # security patches
 # CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code
@@ -104,6 +106,8 @@ ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
+# text cursor blinks not in the current cell (kde#296490)
+ApplyPatch qt-Fix-cursor-truncate-to-include-line-position.patch
 # fix crash on big endian machines
 # https://bugreports.qt-project.org/browse/QTBUG-22960
 ApplyPatch qt-everywhere-opensource-src-4.8.1-type.patch

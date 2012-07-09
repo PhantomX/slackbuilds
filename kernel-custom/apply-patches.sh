@@ -256,6 +256,14 @@ ApplyPatch block-fix-infinite-loop-in-__getblk_slow.patch
 #rhbz 832867
 ApplyPatch mm-correctly-synchronize-rss-counters-at-exit-exec.patch
 
+#rhbz 834910
+ApplyPatch ACPI-video-Still-use-ACPI-backlight-control-if-_DOS-doesnt-exist.patch
+
+#rhbz 830359
+ApplyPatch drm-nouveau-fbcon-using-nv_two_heads-is-not-a-good-i.patch
+
+ApplyPatch ACPI-APEI-Avoid-too-much-error-reporting.patch
+
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 
 set +e +o pipefail +o xtrace

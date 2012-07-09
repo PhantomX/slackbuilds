@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="https://electricsheep.svn.sourceforge.net/svnroot/${module}/trunk/client"
+snaproot="http://electricsheep.googlecode.com/svn/trunk/client_generic"
 
 tmp=$(mktemp -d)
 
@@ -21,9 +21,14 @@ snap=${snap:-$(date +%Y%m%d)}
 [ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
 
 pushd "${tmp}"
-  svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   svn co --depth=files --force ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
+    for dir in \
+      Client Common ContentDecoder ContentDownloader DisplayOutput MSVC Networking \
+      Runtime TupleStorage menu-entries mk tinyXml
+    do
+      svn export ${SNAP_COOPTS} ${snaproot}/${dir}
+    done
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}

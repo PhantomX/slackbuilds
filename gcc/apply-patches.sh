@@ -20,6 +20,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libitm-fno-exceptions.pa
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-gnatlibs-picflags.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr53621.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr52558.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libgo-mksysinfo.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/libgo-hardening.diff
 
 # From Gentoo

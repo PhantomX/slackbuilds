@@ -14,7 +14,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fontconfig.dejavu.diff
 # Hardcode the default font search path rather than having
 # fontconfig figure it out (and possibly follow symlinks, or
 # index ugly bitmapped fonts):
-zcat ${SB_PATCHDIR}/fontconfig.font.dir.list.diff.gz | patch -p0 --verbose --backup
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fontconfig.font.dir.list.diff
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fontconfig-2.8.0-sleep-less.patch
 

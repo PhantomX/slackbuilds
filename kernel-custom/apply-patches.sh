@@ -237,32 +237,12 @@ ApplyPatch highbank-export-clock-functions.patch
 #vgaarb patches.  blame mjg59
 #ApplyPatch vgaarb-vga_default_device.patch
 
-#rhbz 814278 814289 CVE-2012-2119
-ApplyPatch macvtap-zerocopy-validate-vector-length.patch
-
-#rhbz 830862
-ApplyPatch SUNRPC-new-svc_bind-routine-introduced.patch
-ApplyPatch SUNRPC-move-per-net-operations-from-svc_destroy.patch
-
-#rhbz 832741
-ApplyPatch cifs-fix-parsing-of-password-mount-option.patch
-
-#rhbz 831807
-ApplyPatch usb-storage-try-read_capacity-10-first.patch
-
 #rhbz 835019
 ApplyPatch block-fix-infinite-loop-in-__getblk_slow.patch
 
-#rhbz 832867
-ApplyPatch mm-correctly-synchronize-rss-counters-at-exit-exec.patch
+#rhbz 834318
+ApplyPatch ACPICA-Fix-possible-fault-in-return-package-object-repair-code.patch
 
-#rhbz 834910
-ApplyPatch ACPI-video-Still-use-ACPI-backlight-control-if-_DOS-doesnt-exist.patch
-
-#rhbz 830359
-ApplyPatch drm-nouveau-fbcon-using-nv_two_heads-is-not-a-good-i.patch
-
-ApplyPatch ACPI-APEI-Avoid-too-much-error-reporting.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

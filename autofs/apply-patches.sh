@@ -12,9 +12,6 @@ if [ "$C" -gt 0 ]; then
   done
 fi
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autofs-5.0.6-fix-initialization-in-rpc-create_client.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autofs-5.0.6-fix-libtirpc-name-clash.patch
-
 ### Patches from gentoo
 # Accumulated fixes for bugs
 #    #154797: Respect CC and CFLAGS

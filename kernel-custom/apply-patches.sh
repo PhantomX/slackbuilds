@@ -237,12 +237,8 @@ ApplyPatch highbank-export-clock-functions.patch
 #vgaarb patches.  blame mjg59
 #ApplyPatch vgaarb-vga_default_device.patch
 
-#rhbz 835019
-ApplyPatch block-fix-infinite-loop-in-__getblk_slow.patch
-
-#rhbz 834318
-ApplyPatch ACPICA-Fix-possible-fault-in-return-package-object-repair-code.patch
-
+#rhbz 772730
+ApplyPatch ACPI-AC-check-the-return-value-of-power_supply_register.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

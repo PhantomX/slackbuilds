@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}-time.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-message.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-message.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-security-scripts.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-security-code.patch
 zcat ${SB_PATCHDIR}/${NAME}-nodoc.patch.gz | patch -p1 -E --backup --verbose

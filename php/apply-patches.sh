@@ -25,7 +25,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.1-systzdata-v8.patch
 # See http://bugs.php.net/53436
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-phpize.patch
 # Use system libzip instead of bundled one
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.1-system-libzip.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.5-system-libzip.patch
 
 # Fixes for tests
 

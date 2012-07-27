@@ -27,5 +27,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xsane-0.998-xsane_update_param
 # fix from: https://bugs.launchpad.net/ubuntu/+source/xsane/+bug/370818
 # submitted to upstream (Oliver Rauch) via email, 2011-06-01
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xsane-0.998-preview-selection.patch
+# https://bugzilla.redhat.com/show_bug.cgi?id=795085
+# distro-specific: set program name/wmclass so GNOME shell picks appropriate
+# high resolution icon file
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xsane-0.998-wmclass.patch
 
 set +e +o pipefail

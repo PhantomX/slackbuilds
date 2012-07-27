@@ -85,5 +85,14 @@ ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 ApplyPatch 0001-Add-cosh-tests-for-bug-14273.patch
 ApplyPatch 0002-Fix-float-range-reduction-problems-bug-14283.patch
 ApplyPatch 0003-Avoid-use-of-libgcc_s-and-libgcc_eh-when-building-gl.patch
+ApplyPatch 0001-Fix-ctan-ctanh-of-subnormals-in-round-upwards-mode-b.patch
+ApplyPatch 0001-Fix-csqrt-underflow-bugs-14157-14331.patch
+ApplyPatch 0001-Fix-expm1-spurious-underflow-exceptions-bug-6778.patch
+ApplyPatch 0001-Fix-tanf-underflow-close-to-pi-4-bug-14154.patch
+ApplyPatch 0001-Fix-clog-clog10-spurious-underflow-exceptions-bug-14.patch
+ApplyPatch 0001-Merge-_sigsys-changes-from-Linux-3.5.patch
+ApplyPatch 0002-Merge-Linux-3.5-epoll-changes.patch
+ApplyPatch 0003-Merge-Linux-3.5-ptrace-changes.patch
+ApplyPatch 0001-Improve-clog-clog10-handling-of-values-with-real-or-.patch
 
 set +e +o pipefail

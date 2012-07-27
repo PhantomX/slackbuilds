@@ -71,7 +71,6 @@ ApplyOptionalPatch linux-2.6-hotfixes.patch
 
 # vm patches
 ApplyPatch oom-warning.patch
-ApplyPatch grab-swap-token-oops.patch
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 
 # mm patches
@@ -143,8 +142,8 @@ ApplyPatch perf_timechart_fix_zero_timestamps.patch
 ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
-ApplyPatch 0001-block-cgroups-kconfig-build-bits-for-BFQ-v3r4-3.4.patch
-ApplyPatch 0002-block-introduce-the-BFQ-v3r4-I-O-sched-for-3.4.patch
+ApplyPatch 0001-block-cgroups-kconfig-build-bits-for-BFQ-v4-3.5.patch
+ApplyPatch 0002-block-introduce-the-BFQ-v4-I-O-sched-for-3.5.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -188,16 +187,13 @@ ApplyPatch fix_xen_guest_on_old_EC2.patch
 
 # DRM core
 ApplyPatch drm-vgem.patch
-ApplyPatch drm-edid-Make-the-header-fixup-threshold-tunable.patch
 
 # Nouveau DRM
 #ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-i915-fbc-stfu.patch
-
-ApplyPatch linux-2.6-intel-iommu-igfx.patch
+ApplyPatch drm-i915-dp-stfu.patch
 
 # silence the ACPI blacklist code
 ApplyPatch linux-2.6-silence-acpi-blacklist.patch
@@ -219,10 +215,7 @@ ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch lis3-improve-handling-of-null-rate.patch
 
-# Uprobes (rhbz 832083)
-ApplyPatch uprobes-3.4-backport.patch
-ApplyPatch uprobes-3.4-tip.patch
-ApplyPatch uprobes-task_work_add-generic-process-context-callbacks.patch
+ApplyPatch uprobes-3.5-tip.patch
 
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
@@ -231,14 +224,17 @@ ApplyPatch unhandled-irqs-switch-to-polling.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
 
-#Highbank clock functions
-ApplyPatch highbank-export-clock-functions.patch
-
-#vgaarb patches.  blame mjg59
-#ApplyPatch vgaarb-vga_default_device.patch
-
 #rhbz 772730
 ApplyPatch ACPI-AC-check-the-return-value-of-power_supply_register.patch
+
+#rhbz 836742
+ApplyPatch uvcvideo-Reset-bytesused-field-when-recycling-erroneous-buffer.patch
+
+#rhbz 714271
+ApplyPatch CPU-hotplug-cpusets-suspend-Dont-modify-cpusets-during.patch
+
+#rhbz 820039 843554
+ApplyPatch rds-set-correct-msg_namelen.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

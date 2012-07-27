@@ -1,14 +1,13 @@
-From 8768794381f48b1c1a5616bd4cd1dc07b96dc688 Mon Sep 17 00:00:00 2001
+From 853bf507b0b699a33522d5dfdac8bef40f6c50e1 Mon Sep 17 00:00:00 2001
 From: Arianna Avanzini <avanzini.arianna@gmail.com>
 Date: Sun, 5 Feb 2012 01:04:27 +0100
-Subject: [PATCH 2/2] block: introduce the BFQ-v3r4 I/O sched for 3.4
+Subject: [PATCH 2/2] block: introduce the BFQ-v4 I/O sched for 3.5
 
-Add the BFQ-v3r4 I/O scheduler to 3.4.
-The general structure is borrowed from CFQ, as much of the code. A (bfq_)queue
-is associated to each task doing I/O on a device, and each time a scheduling
+Add the BFQ-v4 I/O scheduler to 3.5.
+The general structure is borrowed from CFQ, as much code. A (bfq_)queue is
+associated to each task doing I/O on a device, and each time a scheduling
 decision has to be taken a queue is selected and it is served until it expires.
 
-The main differences are:
     - Slices are given in the service domain: tasks are assigned budgets,
       measured in number of sectors. Once got the disk, a task must
       however consume its assigned budget within a configurable maximum time
@@ -24,6 +23,9 @@ The main differences are:
       real-time applications are guaranteed very low latency.
 
     - Latency guarantees are preserved also in presence of NCQ.
+
+    - High throughput with flash-based devices, while still preserving
+      latency guarantees.
 
     - Useful features borrowed from CFQ: cooperating-queues merging (with
       some additional optimizations with respect to the original CFQ version),
@@ -43,30 +45,15 @@ The main differences are:
       in proportion to the weights of each queue. A very thin extra bandwidth
       is however guaranteed to the Idle class, to prevent it from starving.
 
-Regarding what has not changed it is worth noting:
-    - the handling of cfq_io_contexts to associate queues to tasks.
-      Much of the code has been reused just renaming it.  (There is room for
-      code sharing with CFQ but we wanted to minimize the impact of this
-      patch.)
-
-    - The handling of async queues.
-
-    - The handling of idle windows.
-
-    - The handling of merging.
-
-    - The heuristics to assert that a task is worth an idle window (with
-      minor modifications to hw_tag/CIC_SEEKY detection).
-
 Signed-off-by: Paolo Valente <paolo.valente@unimore.it>
 Signed-off-by: Arianna Avanzini <avanzini.arianna@gmail.com>
 ---
- block/bfq-cgroup.c  |  838 +++++++++++++++
+ block/bfq-cgroup.c  |  833 +++++++++++++++
  block/bfq-ioc.c     |   34 +
- block/bfq-iosched.c | 2907 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ block/bfq-iosched.c | 2914 +++++++++++++++++++++++++++++++++++++++++++++++++++
  block/bfq-sched.c   | 1070 +++++++++++++++++++
  block/bfq.h         |  596 +++++++++++
- 5 files changed, 5445 insertions(+)
+ 5 files changed, 5447 insertions(+)
  create mode 100644 block/bfq-cgroup.c
  create mode 100644 block/bfq-ioc.c
  create mode 100644 block/bfq-iosched.c
@@ -75,10 +62,10 @@ Signed-off-by: Arianna Avanzini <avanzini.arianna@gmail.com>
 
 diff --git a/block/bfq-cgroup.c b/block/bfq-cgroup.c
 new file mode 100644
-index 0000000..e0d7884
+index 0000000..30f99b9
 --- /dev/null
 +++ b/block/bfq-cgroup.c
-@@ -0,0 +1,838 @@
+@@ -0,0 +1,833 @@
 +/*
 + * BFQ: CGROUPS support.
 + *
@@ -747,13 +734,8 @@ index 0000000..e0d7884
 +		.read_u64 = bfqio_cgroup_ioprio_class_read,
 +		.write_u64 = bfqio_cgroup_ioprio_class_write,
 +	},
++	{ },	/* terminate */
 +};
-+
-+static int bfqio_populate(struct cgroup_subsys *subsys, struct cgroup *cgroup)
-+{
-+	return cgroup_add_files(cgroup, subsys, bfqio_files,
-+				ARRAY_SIZE(bfqio_files));
-+}
 +
 +static struct cgroup_subsys_state *bfqio_create(struct cgroup *cgroup)
 +{
@@ -864,8 +846,8 @@ index 0000000..e0d7884
 +	.can_attach = bfqio_can_attach,
 +	.attach = bfqio_attach,
 +	.destroy = bfqio_destroy,
-+	.populate = bfqio_populate,
 +	.subsys_id = bfqio_subsys_id,
++	.base_cftypes = bfqio_files,
 +};
 +#else
 +static inline void bfq_init_entity(struct bfq_entity *entity,
@@ -959,10 +941,10 @@ index 0000000..af791d2
 +}
 diff --git a/block/bfq-iosched.c b/block/bfq-iosched.c
 new file mode 100644
-index 0000000..eb9f72b
+index 0000000..989b2c9
 --- /dev/null
 +++ b/block/bfq-iosched.c
-@@ -0,0 +1,2907 @@
+@@ -0,0 +1,2914 @@
 +/*
 + * BFQ, or Budget Fair Queueing, disk scheduler.
 + *
@@ -1795,7 +1777,7 @@ index 0000000..eb9f72b
 +
 +	/* Tasks have exited, don't wait. */
 +	bic = bfqd->active_bic;
-+	if (bic == NULL || atomic_read(&bic->icq.ioc->nr_tasks) == 0)
++	if (bic == NULL || atomic_read(&bic->icq.ioc->active_ref) == 0)
 +		return;
 +
 +	bfq_mark_bfqq_wait_request(bfqq);
@@ -2753,7 +2735,7 @@ index 0000000..eb9f72b
 + * Update the entity prio values; note that the new values will not
 + * be used until the next (re)activation.
 + */
-+static void bfq_init_prio_data(struct bfq_queue *bfqq, struct io_context *ioc)
++static void bfq_init_prio_data(struct bfq_queue *bfqq, struct bfq_io_cq *bic)
 +{
 +	struct task_struct *tsk = current;
 +	int ioprio_class;
@@ -2761,7 +2743,7 @@ index 0000000..eb9f72b
 +	if (!bfq_bfqq_prio_changed(bfqq))
 +		return;
 +
-+	ioprio_class = IOPRIO_PRIO_CLASS(ioc->ioprio);
++	ioprio_class = IOPRIO_PRIO_CLASS(bic->ioprio);
 +	switch (ioprio_class) {
 +	default:
 +		printk(KERN_ERR "bfq: bad prio %x\n", ioprio_class);
@@ -2773,11 +2755,11 @@ index 0000000..eb9f72b
 +		bfqq->entity.new_ioprio_class = task_nice_ioclass(tsk);
 +		break;
 +	case IOPRIO_CLASS_RT:
-+		bfqq->entity.new_ioprio = task_ioprio(ioc);
++		bfqq->entity.new_ioprio = IOPRIO_PRIO_DATA(bic->ioprio);
 +		bfqq->entity.new_ioprio_class = IOPRIO_CLASS_RT;
 +		break;
 +	case IOPRIO_CLASS_BE:
-+		bfqq->entity.new_ioprio = task_ioprio(ioc);
++		bfqq->entity.new_ioprio = IOPRIO_PRIO_DATA(bic->ioprio);
 +		bfqq->entity.new_ioprio_class = IOPRIO_CLASS_BE;
 +		break;
 +	case IOPRIO_CLASS_IDLE:
@@ -2797,23 +2779,27 @@ index 0000000..eb9f72b
 +	bfq_clear_bfqq_prio_changed(bfqq);
 +}
 +
-+static void bfq_changed_ioprio(struct io_context *ioc,
-+			       struct bfq_io_cq *bic)
++static void bfq_changed_ioprio(struct bfq_io_cq *bic)
 +{
 +	struct bfq_data *bfqd;
 +	struct bfq_queue *bfqq, *new_bfqq;
 +	struct bfq_group *bfqg;
 +	unsigned long uninitialized_var(flags);
++	int ioprio = bic->icq.ioc->ioprio;
 +
 +	bfqd = bfq_get_bfqd_locked(&(bic->icq.q->elevator->elevator_data), &flags);
-+	if (unlikely(bfqd == NULL))
-+		return;
++	/*
++	 * This condition may trigger on a newly created bic, be sure to drop the
++	 * lock before returning.
++	 */
++	if (unlikely(bfqd == NULL) || likely(bic->ioprio == ioprio))
++		goto out;
 +
 +	bfqq = bic->bfqq[BLK_RW_ASYNC];
 +	if (bfqq != NULL) {
 +		bfqg = container_of(bfqq->entity.sched_data, struct bfq_group,
 +				    sched_data);
-+		new_bfqq = bfq_get_queue(bfqd, bfqg, BLK_RW_ASYNC, bic->icq.ioc,
++		new_bfqq = bfq_get_queue(bfqd, bfqg, BLK_RW_ASYNC, bic,
 +					 GFP_ATOMIC);
 +		if (new_bfqq != NULL) {
 +			bic->bfqq[BLK_RW_ASYNC] = new_bfqq;
@@ -2828,6 +2814,9 @@ index 0000000..eb9f72b
 +	if (bfqq != NULL)
 +		bfq_mark_bfqq_prio_changed(bfqq);
 +
++	bic->ioprio = ioprio;
++
++out:
 +	bfq_put_bfqd_unlock(bfqd, &flags);
 +}
 +
@@ -2860,14 +2849,12 @@ index 0000000..eb9f72b
 +static struct bfq_queue *bfq_find_alloc_queue(struct bfq_data *bfqd,
 +					      struct bfq_group *bfqg,
 +					      int is_sync,
-+					      struct io_context *ioc,
++					      struct bfq_io_cq *bic,
 +					      gfp_t gfp_mask)
 +{
 +	struct bfq_queue *bfqq, *new_bfqq = NULL;
-+	struct bfq_io_cq *bic;
 +
 +retry:
-+	bic = bfq_bic_lookup(bfqd, ioc);
 +	/* bic always exists here */
 +	bfqq = bic_to_bfqq(bic, is_sync);
 +
@@ -2902,7 +2889,7 @@ index 0000000..eb9f72b
 +			bfq_log_bfqq(bfqd, bfqq, "using oom bfqq");
 +		}
 +
-+		bfq_init_prio_data(bfqq, ioc);
++		bfq_init_prio_data(bfqq, bic);
 +		bfq_init_entity(&bfqq->entity, bfqg);
 +	}
 +
@@ -2919,6 +2906,9 @@ index 0000000..eb9f72b
 +	switch (ioprio_class) {
 +	case IOPRIO_CLASS_RT:
 +		return &bfqg->async_bfqq[0][ioprio];
++	case IOPRIO_CLASS_NONE:
++		ioprio = IOPRIO_NORM;
++		/* fall through */
 +	case IOPRIO_CLASS_BE:
 +		return &bfqg->async_bfqq[1][ioprio];
 +	case IOPRIO_CLASS_IDLE:
@@ -2930,10 +2920,10 @@ index 0000000..eb9f72b
 +
 +static struct bfq_queue *bfq_get_queue(struct bfq_data *bfqd,
 +				       struct bfq_group *bfqg, int is_sync,
-+				       struct io_context *ioc, gfp_t gfp_mask)
++				       struct bfq_io_cq *bic, gfp_t gfp_mask)
 +{
-+	const int ioprio = task_ioprio(ioc);
-+	const int ioprio_class = task_ioprio_class(ioc);
++	const int ioprio = IOPRIO_PRIO_DATA(bic->ioprio);
++	const int ioprio_class = IOPRIO_PRIO_CLASS(bic->ioprio);
 +	struct bfq_queue **async_bfqq = NULL;
 +	struct bfq_queue *bfqq = NULL;
 +
@@ -2944,7 +2934,7 @@ index 0000000..eb9f72b
 +	}
 +
 +	if (bfqq == NULL)
-+		bfqq = bfq_find_alloc_queue(bfqd, bfqg, is_sync, ioc, gfp_mask);
++		bfqq = bfq_find_alloc_queue(bfqd, bfqg, is_sync, bic, gfp_mask);
 +
 +	/*
 +	 * Pin the queue now that it's allocated, scheduler exit will prune it.
@@ -3035,7 +3025,7 @@ index 0000000..eb9f72b
 +
 +	enable_idle = bfq_bfqq_idle_window(bfqq);
 +
-+	if (atomic_read(&bic->icq.ioc->nr_tasks) == 0 ||
++	if (atomic_read(&bic->icq.ioc->active_ref) == 0 ||
 +	    bfqd->bfq_slice_idle == 0 ||
 +		(bfqd->hw_tag && BFQQ_SEEKY(bfqq) &&
 +			bfqq->raising_coeff == 1))
@@ -3127,7 +3117,7 @@ index 0000000..eb9f72b
 +	struct bfq_queue *bfqq = RQ_BFQQ(rq);
 +
 +	assert_spin_locked(bfqd->queue->queue_lock);
-+	bfq_init_prio_data(bfqq, RQ_BIC(rq)->icq.ioc);
++	bfq_init_prio_data(bfqq, RQ_BIC(rq));
 +
 +	bfq_add_rq_rb(rq);
 +
@@ -3243,7 +3233,7 @@ index 0000000..eb9f72b
 +
 +	bfqq = bic_to_bfqq(bic, rw_is_sync(rw));
 +	if (bfqq != NULL) {
-+		bfq_init_prio_data(bfqq, bic->icq.ioc);
++		bfq_init_prio_data(bfqq, bic);
 +
 +		return __bfq_may_queue(bfqq);
 +	}
@@ -3313,7 +3303,7 @@ index 0000000..eb9f72b
 + * Allocate bfq data structures associated with this request.
 + */
 +static int bfq_set_request(struct request_queue *q, struct request *rq,
-+			   gfp_t gfp_mask)
++			   struct bio *bio, gfp_t gfp_mask)
 +{
 +	struct bfq_data *bfqd = q->elevator->elevator_data;
 +	struct bfq_io_cq *bic = icq_to_bic(rq->elv.icq);
@@ -3323,11 +3313,9 @@ index 0000000..eb9f72b
 +	struct bfq_group *bfqg;
 +	unsigned long flags;
 +
-+	/* handle changed prio notifications; cgroup change is handled separately */
-+	if (unlikely(icq_get_changed(&bic->icq) & ICQ_IOPRIO_CHANGED))
-+		bfq_changed_ioprio(bic->icq.ioc, bic);
-+
 +	might_sleep_if(gfp_mask & __GFP_WAIT);
++
++	bfq_changed_ioprio(bic);
 +
 +	spin_lock_irqsave(q->queue_lock, flags);
 +
@@ -3339,7 +3327,7 @@ index 0000000..eb9f72b
 +new_queue:
 +	bfqq = bic_to_bfqq(bic, is_sync);
 +	if (bfqq == NULL || bfqq == &bfqd->oom_bfqq) {
-+		bfqq = bfq_get_queue(bfqd, bfqg, is_sync, bic->icq.ioc, gfp_mask);
++		bfqq = bfq_get_queue(bfqd, bfqg, is_sync, bic, gfp_mask);
 +		bic_set_bfqq(bic, bfqq, is_sync);
 +	} else {
 +		/*
@@ -3509,14 +3497,14 @@ index 0000000..eb9f72b
 +	kfree(bfqd);
 +}
 +
-+static void *bfq_init_queue(struct request_queue *q)
++static int bfq_init_queue(struct request_queue *q)
 +{
 +	struct bfq_group *bfqg;
 +	struct bfq_data *bfqd;
 +
 +	bfqd = kmalloc_node(sizeof(*bfqd), GFP_KERNEL | __GFP_ZERO, q->node);
 +	if (bfqd == NULL)
-+		return NULL;
++		return -ENOMEM;
 +
 +	/*
 +	 * Our fallback bfqq if bfq_find_alloc_queue() runs into OOM issues.
@@ -3527,11 +3515,12 @@ index 0000000..eb9f72b
 +	atomic_inc(&bfqd->oom_bfqq.ref);
 +
 +	bfqd->queue = q;
++	q->elevator->elevator_data = bfqd;
 +
 +	bfqg = bfq_alloc_root_group(bfqd, q->node);
 +	if (bfqg == NULL) {
 +		kfree(bfqd);
-+		return NULL;
++		return -ENOMEM;
 +	}
 +
 +	bfqd->root_group = bfqg;
@@ -3571,7 +3560,7 @@ index 0000000..eb9f72b
 +	bfqd->bfq_raising_min_inter_arr_async = msecs_to_jiffies(500);
 +	bfqd->bfq_raising_max_softrt_rate = 7000;
 +
-+	return bfqd;
++	return 0;
 +}
 +
 +static void bfq_slab_kill(void)
@@ -4948,12 +4937,12 @@ index 0000000..87bea97
 +}
 diff --git a/block/bfq.h b/block/bfq.h
 new file mode 100644
-index 0000000..8dae00e
+index 0000000..24d1257
 --- /dev/null
 +++ b/block/bfq.h
 @@ -0,0 +1,596 @@
 +/*
-+ * BFQ-v3r4 for 3.4.0: data structures and common functions prototypes.
++ * BFQ-v4 for 3.5.0: data structures and common functions prototypes.
 + *
 + * Based on ideas and code from CFQ:
 + * Copyright (C) 2003 Jens Axboe <axboe@kernel.dk>
@@ -5214,6 +5203,7 @@ index 0000000..8dae00e
 +	struct io_cq icq; /* must be the first member */
 +	struct bfq_queue *bfqq[2];
 +	struct bfq_ttime ttime;
++	int ioprio;
 +};
 +
 +/**
@@ -5538,16 +5528,15 @@ index 0000000..8dae00e
 +	spin_unlock_irqrestore(bfqd->queue->queue_lock, *flags);
 +}
 +
-+static void bfq_changed_ioprio(struct io_context *ioc,
-+			       struct bfq_io_cq *bic);
++static void bfq_changed_ioprio(struct bfq_io_cq *bic);
 +static void bfq_put_queue(struct bfq_queue *bfqq);
 +static void bfq_dispatch_insert(struct request_queue *q, struct request *rq);
 +static struct bfq_queue *bfq_get_queue(struct bfq_data *bfqd,
 +				       struct bfq_group *bfqg, int is_sync,
-+				       struct io_context *ioc, gfp_t gfp_mask);
++				       struct bfq_io_cq *bic, gfp_t gfp_mask);
 +static void bfq_put_async_queues(struct bfq_data *bfqd, struct bfq_group *bfqg);
 +static void bfq_exit_bfqq(struct bfq_data *bfqd, struct bfq_queue *bfqq);
 +#endif
 -- 
-1.7.10
+1.7.10.4
 

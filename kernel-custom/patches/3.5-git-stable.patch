@@ -1,0 +1,4108 @@
+From f7e1d088463a21eb85b535a02aa7bb97e5a11902 Mon Sep 17 00:00:00 2001
+From: "J. Bruce Fields" <bfields@fieldses.org>
+Date: Mon, 23 Jul 2012 15:17:17 -0400
+Subject: [PATCH 01/56] locks: fix checking of fcntl_setlease argument
+
+The only checks of the long argument passed to fcntl(fd,F_SETLEASE,.)
+are done after converting the long to an int.  Thus some illegal values
+may be let through and cause problems in later code.
+
+[ They actually *don't* cause problems in mainline, as of Dave Jones's
+  commit 8d657eb3b438 "Remove easily user-triggerable BUG from
+  generic_setlease", but we should fix this anyway.  And this patch will
+  be necessary to fix real bugs on earlier kernels. ]
+
+Cc: stable@vger.kernel.org
+Signed-off-by: J. Bruce Fields <bfields@redhat.com>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+---
+ fs/locks.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/fs/locks.c b/fs/locks.c
+index fce6238..82c3533 100644
+--- a/fs/locks.c
++++ b/fs/locks.c
+@@ -308,7 +308,7 @@ static int flock_make_lock(struct file *filp, struct file_lock **lock,
+ 	return 0;
+ }
+ 
+-static int assign_type(struct file_lock *fl, int type)
++static int assign_type(struct file_lock *fl, long type)
+ {
+ 	switch (type) {
+ 	case F_RDLCK:
+@@ -445,7 +445,7 @@ static const struct lock_manager_operations lease_manager_ops = {
+ /*
+  * Initialize a lease, use the default lock manager operations
+  */
+-static int lease_init(struct file *filp, int type, struct file_lock *fl)
++static int lease_init(struct file *filp, long type, struct file_lock *fl)
+  {
+ 	if (assign_type(fl, type) != 0)
+ 		return -EINVAL;
+@@ -463,7 +463,7 @@ static int lease_init(struct file *filp, int type, struct file_lock *fl)
+ }
+ 
+ /* Allocate a file_lock initialised to this type of lease */
+-static struct file_lock *lease_alloc(struct file *filp, int type)
++static struct file_lock *lease_alloc(struct file *filp, long type)
+ {
+ 	struct file_lock *fl = locks_alloc_lock();
+ 	int error = -ENOMEM;
+-- 
+1.7.11.2
+
+
+From 326293d28166b139220660de28374efa74a93f4f Mon Sep 17 00:00:00 2001
+From: Aaron Lu <aaron.lu@amd.com>
+Date: Tue, 3 Jul 2012 17:27:49 +0800
+Subject: [PATCH 02/56] mmc: sdhci: fix incorrect command used in tuning
+
+For SD hosts using retuning mode 1, when retuning timer expired, it will
+need to do retuning in sdhci_request before processing the actual
+request. But the retuning command is fixed: cmd19 for SD card and cmd21
+for eMMC card, so we can't use the original request's command to do the
+tuning.
+
+And since the tuning command depends on the card type attached to the
+host, we will need to know the card type to use the correct tuning
+command.
+
+Signed-off-by: Aaron Lu <aaron.lu@amd.com>
+Reviewed-by: Philip Rakity <prakity@marvell.com>
+Cc: stable <stable@vger.kernel.org> [3.3+]
+Signed-off-by: Chris Ball <cjb@laptop.org>
+---
+ drivers/mmc/host/sdhci.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/mmc/host/sdhci.c b/drivers/mmc/host/sdhci.c
+index f4b8b4d..1dffebe 100644
+--- a/drivers/mmc/host/sdhci.c
++++ b/drivers/mmc/host/sdhci.c
+@@ -27,6 +27,7 @@
+ 
+ #include <linux/mmc/mmc.h>
+ #include <linux/mmc/host.h>
++#include <linux/mmc/card.h>
+ 
+ #include "sdhci.h"
+ 
+@@ -1245,6 +1246,7 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
+ 	struct sdhci_host *host;
+ 	bool present;
+ 	unsigned long flags;
++	u32 tuning_opcode;
+ 
+ 	host = mmc_priv(mmc);
+ 
+@@ -1292,8 +1294,12 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
+ 		 */
+ 		if ((host->flags & SDHCI_NEEDS_RETUNING) &&
+ 		    !(present_state & (SDHCI_DOING_WRITE | SDHCI_DOING_READ))) {
++			/* eMMC uses cmd21 while sd and sdio use cmd19 */
++			tuning_opcode = mmc->card->type == MMC_TYPE_MMC ?
++				MMC_SEND_TUNING_BLOCK_HS200 :
++				MMC_SEND_TUNING_BLOCK;
+ 			spin_unlock_irqrestore(&host->lock, flags);
+-			sdhci_execute_tuning(mmc, mrq->cmd->opcode);
++			sdhci_execute_tuning(mmc, tuning_opcode);
+ 			spin_lock_irqsave(&host->lock, flags);
+ 
+ 			/* Restore original mmc_request structure */
+-- 
+1.7.11.2
+
+
+From b55dc8b3a7f4a29dd9ffc23a41529ff552cd6a19 Mon Sep 17 00:00:00 2001
+From: Daniel Drake <dsd@laptop.org>
+Date: Tue, 3 Jul 2012 23:13:39 +0100
+Subject: [PATCH 03/56] mmc: sdhci-pci: CaFe has broken card detection
+
+At http://dev.laptop.org/ticket/11980 we have determined that the
+Marvell CaFe SDHCI controller reports bad card presence during
+resume. It reports that no card is present even when it is.
+This is a regression -- resume worked back around 2.6.37.
+
+Around 400ms after resuming, a "card inserted" interrupt is
+generated, at which point it starts reporting presence.
+
+Work around this hardware oddity by setting the
+SDHCI_QUIRK_BROKEN_CARD_DETECTION flag.
+Thanks to Chris Ball for helping with diagnosis.
+
+Signed-off-by: Daniel Drake <dsd@laptop.org>
+[stable@: please apply to 3.0+]
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Chris Ball <cjb@laptop.org>
+---
+ drivers/mmc/host/sdhci-pci.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/mmc/host/sdhci-pci.c b/drivers/mmc/host/sdhci-pci.c
+index 69ef0be..504da71 100644
+--- a/drivers/mmc/host/sdhci-pci.c
++++ b/drivers/mmc/host/sdhci-pci.c
+@@ -157,6 +157,7 @@ static const struct sdhci_pci_fixes sdhci_ene_714 = {
+ static const struct sdhci_pci_fixes sdhci_cafe = {
+ 	.quirks		= SDHCI_QUIRK_NO_SIMULT_VDD_AND_POWER |
+ 			  SDHCI_QUIRK_NO_BUSY_IRQ |
++			  SDHCI_QUIRK_BROKEN_CARD_DETECTION |
+ 			  SDHCI_QUIRK_BROKEN_TIMEOUT_VAL,
+ };
+ 
+-- 
+1.7.11.2
+
+
+From 944f1134146eec216574ca23177d78de26010390 Mon Sep 17 00:00:00 2001
+From: Al Viro <viro@ZenIV.linux.org.uk>
+Date: Sat, 21 Jul 2012 08:55:18 +0100
+Subject: [PATCH 04/56] iscsi-target: Drop bogus struct file usage for
+ iSCSI/SCTP
+
+From Al Viro:
+
+	BTW, speaking of struct file treatment related to sockets -
+        there's this piece of code in iscsi:
+        /*
+         * The SCTP stack needs struct socket->file.
+         */
+        if ((np->np_network_transport == ISCSI_SCTP_TCP) ||
+            (np->np_network_transport == ISCSI_SCTP_UDP)) {
+                if (!new_sock->file) {
+                        new_sock->file = kzalloc(
+                                        sizeof(struct file), GFP_KERNEL);
+
+For one thing, as far as I can see it'not true - sctp does *not* depend on
+socket->file being non-NULL; it does, in one place, check socket->file->f_flags
+for O_NONBLOCK, but there it treats NULL socket->file as "flag not set".
+Which is the case here anyway - the fake struct file created in
+__iscsi_target_login_thread() (and in iscsi_target_setup_login_socket(), with
+the same excuse) do *not* get that flag set.
+
+Moreover, it's a bloody serious violation of a bunch of asserts in VFS;
+all struct file instances should come from filp_cachep, via get_empty_filp()
+(or alloc_file(), which is a wrapper for it).  FWIW, I'm very tempted to
+do this and be done with the entire mess:
+
+Signed-off-by: Al Viro <viro@zeniv.linux.org.uk>
+Cc: Andy Grover <agrover@redhat.com>
+Cc: Hannes Reinecke <hare@suse.de>
+Cc: Christoph Hellwig <hch@lst.de>
+Cc: stable@vger.kernel.org
+Signed-off-by: Nicholas Bellinger <nab@linux-iscsi.org>
+---
+ drivers/target/iscsi/iscsi_target.c       | 22 ++----------
+ drivers/target/iscsi/iscsi_target_core.h  |  2 --
+ drivers/target/iscsi/iscsi_target_login.c | 60 ++-----------------------------
+ 3 files changed, 6 insertions(+), 78 deletions(-)
+
+diff --git a/drivers/target/iscsi/iscsi_target.c b/drivers/target/iscsi/iscsi_target.c
+index d57d10c..d7dcd67 100644
+--- a/drivers/target/iscsi/iscsi_target.c
++++ b/drivers/target/iscsi/iscsi_target.c
+@@ -429,19 +429,8 @@ int iscsit_reset_np_thread(
+ 
+ int iscsit_del_np_comm(struct iscsi_np *np)
+ {
+-	if (!np->np_socket)
+-		return 0;
+-
+-	/*
+-	 * Some network transports allocate their own struct sock->file,
+-	 * see  if we need to free any additional allocated resources.
+-	 */
+-	if (np->np_flags & NPF_SCTP_STRUCT_FILE) {
+-		kfree(np->np_socket->file);
+-		np->np_socket->file = NULL;
+-	}
+-
+-	sock_release(np->np_socket);
++	if (np->np_socket)
++		sock_release(np->np_socket);
+ 	return 0;
+ }
+ 
+@@ -4077,13 +4066,8 @@ int iscsit_close_connection(
+ 	kfree(conn->conn_ops);
+ 	conn->conn_ops = NULL;
+ 
+-	if (conn->sock) {
+-		if (conn->conn_flags & CONNFLAG_SCTP_STRUCT_FILE) {
+-			kfree(conn->sock->file);
+-			conn->sock->file = NULL;
+-		}
++	if (conn->sock)
+ 		sock_release(conn->sock);
+-	}
+ 	conn->thread_set = NULL;
+ 
+ 	pr_debug("Moving to TARG_CONN_STATE_FREE.\n");
+diff --git a/drivers/target/iscsi/iscsi_target_core.h b/drivers/target/iscsi/iscsi_target_core.h
+index 1c70144..1dd5716 100644
+--- a/drivers/target/iscsi/iscsi_target_core.h
++++ b/drivers/target/iscsi/iscsi_target_core.h
+@@ -224,7 +224,6 @@ enum iscsi_timer_flags_table {
+ /* Used for struct iscsi_np->np_flags */
+ enum np_flags_table {
+ 	NPF_IP_NETWORK		= 0x00,
+-	NPF_SCTP_STRUCT_FILE	= 0x01 /* Bugfix */
+ };
+ 
+ /* Used for struct iscsi_np->np_thread_state */
+@@ -503,7 +502,6 @@ struct iscsi_conn {
+ 	u16			local_port;
+ 	int			net_size;
+ 	u32			auth_id;
+-#define CONNFLAG_SCTP_STRUCT_FILE			0x01
+ 	u32			conn_flags;
+ 	/* Used for iscsi_tx_login_rsp() */
+ 	u32			login_itt;
+diff --git a/drivers/target/iscsi/iscsi_target_login.c b/drivers/target/iscsi/iscsi_target_login.c
+index a3656c9..ae30424 100644
+--- a/drivers/target/iscsi/iscsi_target_login.c
++++ b/drivers/target/iscsi/iscsi_target_login.c
+@@ -795,22 +795,6 @@ int iscsi_target_setup_login_socket(
+ 	}
+ 	np->np_socket = sock;
+ 	/*
+-	 * The SCTP stack needs struct socket->file.
+-	 */
+-	if ((np->np_network_transport == ISCSI_SCTP_TCP) ||
+-	    (np->np_network_transport == ISCSI_SCTP_UDP)) {
+-		if (!sock->file) {
+-			sock->file = kzalloc(sizeof(struct file), GFP_KERNEL);
+-			if (!sock->file) {
+-				pr_err("Unable to allocate struct"
+-						" file for SCTP\n");
+-				ret = -ENOMEM;
+-				goto fail;
+-			}
+-			np->np_flags |= NPF_SCTP_STRUCT_FILE;
+-		}
+-	}
+-	/*
+ 	 * Setup the np->np_sockaddr from the passed sockaddr setup
+ 	 * in iscsi_target_configfs.c code..
+ 	 */
+@@ -869,21 +853,15 @@ int iscsi_target_setup_login_socket(
+ 
+ fail:
+ 	np->np_socket = NULL;
+-	if (sock) {
+-		if (np->np_flags & NPF_SCTP_STRUCT_FILE) {
+-			kfree(sock->file);
+-			sock->file = NULL;
+-		}
+-
++	if (sock)
+ 		sock_release(sock);
+-	}
+ 	return ret;
+ }
+ 
+ static int __iscsi_target_login_thread(struct iscsi_np *np)
+ {
+ 	u8 buffer[ISCSI_HDR_LEN], iscsi_opcode, zero_tsih = 0;
+-	int err, ret = 0, set_sctp_conn_flag, stop;
++	int err, ret = 0, stop;
+ 	struct iscsi_conn *conn = NULL;
+ 	struct iscsi_login *login;
+ 	struct iscsi_portal_group *tpg = NULL;
+@@ -894,7 +872,6 @@ static int __iscsi_target_login_thread(struct iscsi_np *np)
+ 	struct sockaddr_in6 sock_in6;
+ 
+ 	flush_signals(current);
+-	set_sctp_conn_flag = 0;
+ 	sock = np->np_socket;
+ 
+ 	spin_lock_bh(&np->np_thread_lock);
+@@ -917,35 +894,12 @@ static int __iscsi_target_login_thread(struct iscsi_np *np)
+ 		spin_unlock_bh(&np->np_thread_lock);
+ 		goto out;
+ 	}
+-	/*
+-	 * The SCTP stack needs struct socket->file.
+-	 */
+-	if ((np->np_network_transport == ISCSI_SCTP_TCP) ||
+-	    (np->np_network_transport == ISCSI_SCTP_UDP)) {
+-		if (!new_sock->file) {
+-			new_sock->file = kzalloc(
+-					sizeof(struct file), GFP_KERNEL);
+-			if (!new_sock->file) {
+-				pr_err("Unable to allocate struct"
+-						" file for SCTP\n");
+-				sock_release(new_sock);
+-				/* Get another socket */
+-				return 1;
+-			}
+-			set_sctp_conn_flag = 1;
+-		}
+-	}
+-
+ 	iscsi_start_login_thread_timer(np);
+ 
+ 	conn = kzalloc(sizeof(struct iscsi_conn), GFP_KERNEL);
+ 	if (!conn) {
+ 		pr_err("Could not allocate memory for"
+ 			" new connection\n");
+-		if (set_sctp_conn_flag) {
+-			kfree(new_sock->file);
+-			new_sock->file = NULL;
+-		}
+ 		sock_release(new_sock);
+ 		/* Get another socket */
+ 		return 1;
+@@ -955,9 +909,6 @@ static int __iscsi_target_login_thread(struct iscsi_np *np)
+ 	conn->conn_state = TARG_CONN_STATE_FREE;
+ 	conn->sock = new_sock;
+ 
+-	if (set_sctp_conn_flag)
+-		conn->conn_flags |= CONNFLAG_SCTP_STRUCT_FILE;
+-
+ 	pr_debug("Moving to TARG_CONN_STATE_XPT_UP.\n");
+ 	conn->conn_state = TARG_CONN_STATE_XPT_UP;
+ 
+@@ -1205,13 +1156,8 @@ old_sess_out:
+ 		iscsi_release_param_list(conn->param_list);
+ 		conn->param_list = NULL;
+ 	}
+-	if (conn->sock) {
+-		if (conn->conn_flags & CONNFLAG_SCTP_STRUCT_FILE) {
+-			kfree(conn->sock->file);
+-			conn->sock->file = NULL;
+-		}
++	if (conn->sock)
+ 		sock_release(conn->sock);
+-	}
+ 	kfree(conn);
+ 
+ 	if (tpg) {
+-- 
+1.7.11.2
+
+
+From f61bb8409e4c87408779598b1d47897dff2658f4 Mon Sep 17 00:00:00 2001
+From: Cloud Ren <cjren@qca.qualcomm.com>
+Date: Thu, 19 Jul 2012 17:01:58 +0000
+Subject: [PATCH 05/56] atl1c: fix issue of io access mode for AR8152 v2.1
+
+When io access mode is enabled by BOOTROM or BIOS for AR8152 v2.1,
+the register can't be read/write by memory access mode.
+Clearing Bit 8  of Register 0x21c could fixed the issue.
+
+Signed-off-by: Cloud Ren <cjren@qca.qualcomm.com>
+Cc: stable <stable@vger.kernel.org>
+Signed-off-by: xiong <xiong@qca.qualcomm.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ drivers/net/ethernet/atheros/atl1c/atl1c_hw.h   |  5 +++++
+ drivers/net/ethernet/atheros/atl1c/atl1c_main.c | 16 +++++++++++++++-
+ 2 files changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/atheros/atl1c/atl1c_hw.h b/drivers/net/ethernet/atheros/atl1c/atl1c_hw.h
+index 17d935b..21d8c4d 100644
+--- a/drivers/net/ethernet/atheros/atl1c/atl1c_hw.h
++++ b/drivers/net/ethernet/atheros/atl1c/atl1c_hw.h
+@@ -74,6 +74,8 @@ void atl1c_post_phy_linkchg(struct atl1c_hw *hw, u16 link_speed);
+ #define PCI_DEVICE_ID_ATHEROS_L1D_2_0	0x1083 /* AR8151 v2.0 Gigabit 1000 */
+ #define L2CB_V10			0xc0
+ #define L2CB_V11			0xc1
++#define L2CB_V20			0xc0
++#define L2CB_V21			0xc1
+ 
+ /* register definition */
+ #define REG_DEVICE_CAP              	0x5C
+@@ -87,6 +89,9 @@ void atl1c_post_phy_linkchg(struct atl1c_hw *hw, u16 link_speed);
+ #define LINK_CTRL_L1_EN			0x02
+ #define LINK_CTRL_EXT_SYNC		0x80
+ 
++#define REG_PCIE_IND_ACC_ADDR		0x80
++#define REG_PCIE_IND_ACC_DATA		0x84
++
+ #define REG_DEV_SERIALNUM_CTRL		0x200
+ #define REG_DEV_MAC_SEL_MASK		0x0 /* 0:EUI; 1:MAC */
+ #define REG_DEV_MAC_SEL_SHIFT		0
+diff --git a/drivers/net/ethernet/atheros/atl1c/atl1c_main.c b/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
+index 1f78b63..f602623f 100644
+--- a/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
++++ b/drivers/net/ethernet/atheros/atl1c/atl1c_main.c
+@@ -739,6 +739,8 @@ static const struct atl1c_platform_patch plats[] __devinitdata = {
+ 
+ static void __devinit atl1c_patch_assign(struct atl1c_hw *hw)
+ {
++	struct pci_dev	*pdev = hw->adapter->pdev;
++	u32 misc_ctrl;
+ 	int i = 0;
+ 
+ 	hw->msi_lnkpatch = false;
+@@ -753,6 +755,18 @@ static void __devinit atl1c_patch_assign(struct atl1c_hw *hw)
+ 		}
+ 		i++;
+ 	}
++
++	if (hw->device_id == PCI_DEVICE_ID_ATHEROS_L2C_B2 &&
++	    hw->revision_id == L2CB_V21) {
++		/* config acess mode */
++		pci_write_config_dword(pdev, REG_PCIE_IND_ACC_ADDR,
++				       REG_PCIE_DEV_MISC_CTRL);
++		pci_read_config_dword(pdev, REG_PCIE_IND_ACC_DATA, &misc_ctrl);
++		misc_ctrl &= ~0x100;
++		pci_write_config_dword(pdev, REG_PCIE_IND_ACC_ADDR,
++				       REG_PCIE_DEV_MISC_CTRL);
++		pci_write_config_dword(pdev, REG_PCIE_IND_ACC_DATA, misc_ctrl);
++	}
+ }
+ /*
+  * atl1c_sw_init - Initialize general software structures (struct atl1c_adapter)
+@@ -780,7 +794,7 @@ static int __devinit atl1c_sw_init(struct atl1c_adapter *adapter)
+ 	hw->device_id = pdev->device;
+ 	hw->subsystem_vendor_id = pdev->subsystem_vendor;
+ 	hw->subsystem_id = pdev->subsystem_device;
+-	AT_READ_REG(hw, PCI_CLASS_REVISION, &revision);
++	pci_read_config_dword(pdev, PCI_CLASS_REVISION, &revision);
+ 	hw->revision_id = revision & 0xFF;
+ 	/* before link up, we assume hibernate is true */
+ 	hw->hibernate = true;
+-- 
+1.7.11.2
+
+
+From cef1d46442d1a98f57f4172f33e7a957ff2eb107 Mon Sep 17 00:00:00 2001
+From: Mikulas Patocka <mikulas@artax.karlin.mff.cuni.cz>
+Date: Thu, 19 Jul 2012 06:13:36 +0000
+Subject: [PATCH 06/56] tun: fix a crash bug and a memory leak
+
+This patch fixes a crash
+tun_chr_close -> netdev_run_todo -> tun_free_netdev -> sk_release_kernel ->
+sock_release -> iput(SOCK_INODE(sock))
+introduced by commit 1ab5ecb90cb6a3df1476e052f76a6e8f6511cb3d
+
+The problem is that this socket is embedded in struct tun_struct, it has
+no inode, iput is called on invalid inode, which modifies invalid memory
+and optionally causes a crash.
+
+sock_release also decrements sockets_in_use, this causes a bug that
+"sockets: used" field in /proc/*/net/sockstat keeps on decreasing when
+creating and closing tun devices.
+
+This patch introduces a flag SOCK_EXTERNALLY_ALLOCATED that instructs
+sock_release to not free the inode and not decrement sockets_in_use,
+fixing both memory corruption and sockets_in_use underflow.
+
+It should be backported to 3.3 an 3.4 stabke.
+
+Signed-off-by: Mikulas Patocka <mikulas@artax.karlin.mff.cuni.cz>
+Cc: stable@kernel.org
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ drivers/net/tun.c   | 3 +++
+ include/linux/net.h | 1 +
+ net/socket.c        | 3 +++
+ 3 files changed, 7 insertions(+)
+
+diff --git a/drivers/net/tun.c b/drivers/net/tun.c
+index 987aeef..66e9ebb 100644
+--- a/drivers/net/tun.c
++++ b/drivers/net/tun.c
+@@ -358,6 +358,8 @@ static void tun_free_netdev(struct net_device *dev)
+ {
+ 	struct tun_struct *tun = netdev_priv(dev);
+ 
++	BUG_ON(!test_bit(SOCK_EXTERNALLY_ALLOCATED, &tun->socket.flags));
++
+ 	sk_release_kernel(tun->socket.sk);
+ }
+ 
+@@ -1115,6 +1117,7 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
+ 		tun->flags = flags;
+ 		tun->txflt.count = 0;
+ 		tun->vnet_hdr_sz = sizeof(struct virtio_net_hdr);
++		set_bit(SOCK_EXTERNALLY_ALLOCATED, &tun->socket.flags);
+ 
+ 		err = -ENOMEM;
+ 		sk = sk_alloc(&init_net, AF_UNSPEC, GFP_KERNEL, &tun_proto);
+diff --git a/include/linux/net.h b/include/linux/net.h
+index e9ac2df..dc95700 100644
+--- a/include/linux/net.h
++++ b/include/linux/net.h
+@@ -72,6 +72,7 @@ struct net;
+ #define SOCK_NOSPACE		2
+ #define SOCK_PASSCRED		3
+ #define SOCK_PASSSEC		4
++#define SOCK_EXTERNALLY_ALLOCATED 5
+ 
+ #ifndef ARCH_HAS_SOCKET_TYPES
+ /**
+diff --git a/net/socket.c b/net/socket.c
+index 6e0ccc0..0452dca 100644
+--- a/net/socket.c
++++ b/net/socket.c
+@@ -522,6 +522,9 @@ void sock_release(struct socket *sock)
+ 	if (rcu_dereference_protected(sock->wq, 1)->fasync_list)
+ 		printk(KERN_ERR "sock_release: fasync list not empty!\n");
+ 
++	if (test_bit(SOCK_EXTERNALLY_ALLOCATED, &sock->flags))
++		return;
++
+ 	this_cpu_sub(sockets_in_use, 1);
+ 	if (!sock->file) {
+ 		iput(SOCK_INODE(sock));
+-- 
+1.7.11.2
+
+
+From 3393b6336d83f68380eb839c0122b28b18a2e56a Mon Sep 17 00:00:00 2001
+From: David Henningsson <david.henningsson@canonical.com>
+Date: Fri, 20 Jul 2012 10:37:25 +0200
+Subject: [PATCH 07/56] ALSA: hda - add dock support for Thinkpad X230 Tablet
+
+Also add a model/fixup string "lenovo-dock", so that other Thinkpad
+users will be able to test this fixup easily, to see if it enables
+dock I/O for them as well.
+
+Cc: stable@kernel.org
+BugLink: https://bugs.launchpad.net/bugs/1026953
+Tested-by: John McCarron <john.mccarron@canonical.com>
+Signed-off-by: David Henningsson <david.henningsson@canonical.com>
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+---
+ sound/pci/hda/patch_realtek.c | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/sound/pci/hda/patch_realtek.c b/sound/pci/hda/patch_realtek.c
+index aa4c25e..222c1f5 100644
+--- a/sound/pci/hda/patch_realtek.c
++++ b/sound/pci/hda/patch_realtek.c
+@@ -5704,6 +5704,15 @@ static int alc269_resume(struct hda_codec *codec)
+ }
+ #endif /* CONFIG_PM */
+ 
++static void alc269_fixup_pincfg_no_hp_to_lineout(struct hda_codec *codec,
++						 const struct alc_fixup *fix, int action)
++{
++	struct alc_spec *spec = codec->spec;
++
++	if (action == ALC_FIXUP_ACT_PRE_PROBE)
++		spec->parse_flags = HDA_PINCFG_NO_HP_FIXUP;
++}
++
+ static void alc269_fixup_hweq(struct hda_codec *codec,
+ 			       const struct alc_fixup *fix, int action)
+ {
+@@ -5828,6 +5837,8 @@ enum {
+ 	ALC269VB_FIXUP_AMIC,
+ 	ALC269VB_FIXUP_DMIC,
+ 	ALC269_FIXUP_MIC2_MUTE_LED,
++	ALC269_FIXUP_LENOVO_DOCK,
++	ALC269_FIXUP_PINCFG_NO_HP_TO_LINEOUT,
+ };
+ 
+ static const struct alc_fixup alc269_fixups[] = {
+@@ -5952,6 +5963,20 @@ static const struct alc_fixup alc269_fixups[] = {
+ 		.type = ALC_FIXUP_FUNC,
+ 		.v.func = alc269_fixup_mic2_mute,
+ 	},
++	[ALC269_FIXUP_LENOVO_DOCK] = {
++		.type = ALC_FIXUP_PINS,
++		.v.pins = (const struct alc_pincfg[]) {
++			{ 0x19, 0x23a11040 }, /* dock mic */
++			{ 0x1b, 0x2121103f }, /* dock headphone */
++			{ }
++		},
++		.chained = true,
++		.chain_id = ALC269_FIXUP_PINCFG_NO_HP_TO_LINEOUT
++	},
++	[ALC269_FIXUP_PINCFG_NO_HP_TO_LINEOUT] = {
++		.type = ALC_FIXUP_FUNC,
++		.v.func = alc269_fixup_pincfg_no_hp_to_lineout,
++	},
+ };
+ 
+ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
+@@ -5975,6 +6000,7 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
+ 	SND_PCI_QUIRK(0x17aa, 0x21b8, "Thinkpad Edge 14", ALC269_FIXUP_SKU_IGNORE),
+ 	SND_PCI_QUIRK(0x17aa, 0x21ca, "Thinkpad L412", ALC269_FIXUP_SKU_IGNORE),
+ 	SND_PCI_QUIRK(0x17aa, 0x21e9, "Thinkpad Edge 15", ALC269_FIXUP_SKU_IGNORE),
++	SND_PCI_QUIRK(0x17aa, 0x2203, "Thinkpad X230 Tablet", ALC269_FIXUP_LENOVO_DOCK),
+ 	SND_PCI_QUIRK(0x17aa, 0x3bf8, "Quanta FL1", ALC269_FIXUP_QUANTA_MUTE),
+ 	SND_PCI_QUIRK(0x17aa, 0x3bf8, "Lenovo Ideapd", ALC269_FIXUP_PCM_44K),
+ 	SND_PCI_QUIRK(0x17aa, 0x9e54, "LENOVO NB", ALC269_FIXUP_LENOVO_EAPD),
+@@ -6033,6 +6059,7 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
+ static const struct alc_model_fixup alc269_fixup_models[] = {
+ 	{.id = ALC269_FIXUP_AMIC, .name = "laptop-amic"},
+ 	{.id = ALC269_FIXUP_DMIC, .name = "laptop-dmic"},
++	{.id = ALC269_FIXUP_LENOVO_DOCK, .name = "lenovo-dock"},
+ 	{}
+ };
+ 
+-- 
+1.7.11.2
+
+
+From 57194363c31032c15d213ff5716d188f8c7e31c4 Mon Sep 17 00:00:00 2001
+From: Dan Williams <dan.j.williams@intel.com>
+Date: Thu, 21 Jun 2012 23:36:20 -0700
+Subject: [PATCH 08/56] libsas: fix sas_discover_devices return code handling
+
+commit 198439e4 [SCSI] libsas: do not set res = 0 in sas_ex_discover_dev()
+commit 19252de6 [SCSI] libsas: fix wide port hotplug issues
+
+The above commits seem to have confused the return value of
+sas_ex_discover_dev which is non-zero on failure and
+sas_ex_join_wide_port which just indicates short circuiting discovery on
+already established ports.  The result is random discovery failures
+depending on configuration.
+
+Calls to sas_ex_join_wide_port are the source of the trouble as its
+return value is errantly assigned to 'res'.  Convert it to bool and stop
+returning its result up the stack.
+
+Cc: <stable@vger.kernel.org>
+Tested-by: Dan Melnic <dan.melnic@amd.com>
+Reported-by: Dan Melnic <dan.melnic@amd.com>
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Reviewed-by: Jack Wang <jack_wang@usish.com>
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+---
+ drivers/scsi/libsas/sas_expander.c | 39 ++++++++++++--------------------------
+ 1 file changed, 12 insertions(+), 27 deletions(-)
+
+diff --git a/drivers/scsi/libsas/sas_expander.c b/drivers/scsi/libsas/sas_expander.c
+index caa0525..7b93816 100644
+--- a/drivers/scsi/libsas/sas_expander.c
++++ b/drivers/scsi/libsas/sas_expander.c
+@@ -868,7 +868,7 @@ static struct domain_device *sas_ex_discover_end_dev(
+ }
+ 
+ /* See if this phy is part of a wide port */
+-static int sas_ex_join_wide_port(struct domain_device *parent, int phy_id)
++static bool sas_ex_join_wide_port(struct domain_device *parent, int phy_id)
+ {
+ 	struct ex_phy *phy = &parent->ex_dev.ex_phy[phy_id];
+ 	int i;
+@@ -884,11 +884,11 @@ static int sas_ex_join_wide_port(struct domain_device *parent, int phy_id)
+ 			sas_port_add_phy(ephy->port, phy->phy);
+ 			phy->port = ephy->port;
+ 			phy->phy_state = PHY_DEVICE_DISCOVERED;
+-			return 0;
++			return true;
+ 		}
+ 	}
+ 
+-	return -ENODEV;
++	return false;
+ }
+ 
+ static struct domain_device *sas_ex_discover_expander(
+@@ -1030,8 +1030,7 @@ static int sas_ex_discover_dev(struct domain_device *dev, int phy_id)
+ 		return res;
+ 	}
+ 
+-	res = sas_ex_join_wide_port(dev, phy_id);
+-	if (!res) {
++	if (sas_ex_join_wide_port(dev, phy_id)) {
+ 		SAS_DPRINTK("Attaching ex phy%d to wide port %016llx\n",
+ 			    phy_id, SAS_ADDR(ex_phy->attached_sas_addr));
+ 		return res;
+@@ -1077,8 +1076,7 @@ static int sas_ex_discover_dev(struct domain_device *dev, int phy_id)
+ 			if (SAS_ADDR(ex->ex_phy[i].attached_sas_addr) ==
+ 			    SAS_ADDR(child->sas_addr)) {
+ 				ex->ex_phy[i].phy_state= PHY_DEVICE_DISCOVERED;
+-				res = sas_ex_join_wide_port(dev, i);
+-				if (!res)
++				if (sas_ex_join_wide_port(dev, i))
+ 					SAS_DPRINTK("Attaching ex phy%d to wide port %016llx\n",
+ 						    i, SAS_ADDR(ex->ex_phy[i].attached_sas_addr));
+ 
+@@ -1943,32 +1941,20 @@ static int sas_discover_new(struct domain_device *dev, int phy_id)
+ {
+ 	struct ex_phy *ex_phy = &dev->ex_dev.ex_phy[phy_id];
+ 	struct domain_device *child;
+-	bool found = false;
+-	int res, i;
++	int res;
+ 
+ 	SAS_DPRINTK("ex %016llx phy%d new device attached\n",
+ 		    SAS_ADDR(dev->sas_addr), phy_id);
+ 	res = sas_ex_phy_discover(dev, phy_id);
+ 	if (res)
+-		goto out;
+-	/* to support the wide port inserted */
+-	for (i = 0; i < dev->ex_dev.num_phys; i++) {
+-		struct ex_phy *ex_phy_temp = &dev->ex_dev.ex_phy[i];
+-		if (i == phy_id)
+-			continue;
+-		if (SAS_ADDR(ex_phy_temp->attached_sas_addr) ==
+-		    SAS_ADDR(ex_phy->attached_sas_addr)) {
+-			found = true;
+-			break;
+-		}
+-	}
+-	if (found) {
+-		sas_ex_join_wide_port(dev, phy_id);
++		return res;
++
++	if (sas_ex_join_wide_port(dev, phy_id))
+ 		return 0;
+-	}
++
+ 	res = sas_ex_discover_devices(dev, phy_id);
+-	if (!res)
+-		goto out;
++	if (res)
++		return res;
+ 	list_for_each_entry(child, &dev->ex_dev.children, siblings) {
+ 		if (SAS_ADDR(child->sas_addr) ==
+ 		    SAS_ADDR(ex_phy->attached_sas_addr)) {
+@@ -1978,7 +1964,6 @@ static int sas_discover_new(struct domain_device *dev, int phy_id)
+ 			break;
+ 		}
+ 	}
+-out:
+ 	return res;
+ }
+ 
+-- 
+1.7.11.2
+
+
+From 5ee57a5597bbf3b237b380930f9249b5632fea36 Mon Sep 17 00:00:00 2001
+From: Dan Williams <dan.j.williams@intel.com>
+Date: Thu, 21 Jun 2012 23:36:15 -0700
+Subject: [PATCH 09/56] libsas: continue revalidation
+
+Continue running revalidation until no more broadcast devices are
+discovered.  Fixes cases where re-discovery completes too early in a
+domain with multiple expanders with pending re-discovery events.
+Servicing BCNs can get backed up behind error recovery.
+
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+---
+ drivers/scsi/libsas/sas_expander.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/scsi/libsas/sas_expander.c b/drivers/scsi/libsas/sas_expander.c
+index 7b93816..101b28e 100644
+--- a/drivers/scsi/libsas/sas_expander.c
++++ b/drivers/scsi/libsas/sas_expander.c
+@@ -2094,9 +2094,7 @@ int sas_ex_revalidate_domain(struct domain_device *port_dev)
+ 	struct domain_device *dev = NULL;
+ 
+ 	res = sas_find_bcast_dev(port_dev, &dev);
+-	if (res)
+-		goto out;
+-	if (dev) {
++	while (res == 0 && dev) {
+ 		struct expander_device *ex = &dev->ex_dev;
+ 		int i = 0, phy_id;
+ 
+@@ -2108,8 +2106,10 @@ int sas_ex_revalidate_domain(struct domain_device *port_dev)
+ 			res = sas_rediscover(dev, phy_id);
+ 			i = phy_id + 1;
+ 		} while (i < ex->num_phys);
++
++		dev = NULL;
++		res = sas_find_bcast_dev(port_dev, &dev);
+ 	}
+-out:
+ 	return res;
+ }
+ 
+-- 
+1.7.11.2
+
+
+From 2365b7fb4973b709d5322cdb8a3a0291e1aa07af Mon Sep 17 00:00:00 2001
+From: Dan Williams <dan.j.williams@intel.com>
+Date: Thu, 21 Jun 2012 23:25:32 -0700
+Subject: [PATCH 10/56] fix eh wakeup (scsi_schedule_eh vs
+ scsi_restart_operations)
+
+Rapid ata hotplug on a libsas controller results in cases where libsas
+is waiting indefinitely on eh to perform an ata probe.
+
+A race exists between scsi_schedule_eh() and scsi_restart_operations()
+in the case when scsi_restart_operations() issues i/o to other devices
+in the sas domain.  When this happens the host state transitions from
+SHOST_RECOVERY (set by scsi_schedule_eh) back to SHOST_RUNNING and
+->host_busy is non-zero so we put the eh thread to sleep even though
+->host_eh_scheduled is active.
+
+Before putting the error handler to sleep we need to check if the
+host_state needs to return to SHOST_RECOVERY for another trip through
+eh.  Since i/o that is released by scsi_restart_operations has been
+blocked for at least one eh cycle, this implementation allows those
+i/o's to run before another eh cycle starts to discourage hung task
+timeouts.
+
+Cc: <stable@vger.kernel.org>
+Reported-by: Tom Jackson <thomas.p.jackson@intel.com>
+Tested-by: Tom Jackson <thomas.p.jackson@intel.com>
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+---
+ drivers/scsi/scsi_error.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/scsi/scsi_error.c b/drivers/scsi/scsi_error.c
+index d0f71e5..804f632 100644
+--- a/drivers/scsi/scsi_error.c
++++ b/drivers/scsi/scsi_error.c
+@@ -1687,6 +1687,20 @@ static void scsi_restart_operations(struct Scsi_Host *shost)
+ 	 * requests are started.
+ 	 */
+ 	scsi_run_host_queues(shost);
++
++	/*
++	 * if eh is active and host_eh_scheduled is pending we need to re-run
++	 * recovery.  we do this check after scsi_run_host_queues() to allow
++	 * everything pent up since the last eh run a chance to make forward
++	 * progress before we sync again.  Either we'll immediately re-run
++	 * recovery or scsi_device_unbusy() will wake us again when these
++	 * pending commands complete.
++	 */
++	spin_lock_irqsave(shost->host_lock, flags);
++	if (shost->host_eh_scheduled)
++		if (scsi_host_set_state(shost, SHOST_RECOVERY))
++			WARN_ON(scsi_host_set_state(shost, SHOST_CANCEL_RECOVERY));
++	spin_unlock_irqrestore(shost->host_lock, flags);
+ }
+ 
+ /**
+-- 
+1.7.11.2
+
+
+From b2bc407a33b77c705ce93c1116cfb580d5b67c94 Mon Sep 17 00:00:00 2001
+From: Dan Williams <dan.j.williams@intel.com>
+Date: Thu, 21 Jun 2012 23:47:28 -0700
+Subject: [PATCH 11/56] fix hot unplug vs async scan race
+
+The following crash results from cases where the end_device has been
+removed before scsi_sysfs_add_sdev has had a chance to run.
+
+ BUG: unable to handle kernel NULL pointer dereference at 0000000000000098
+ IP: [<ffffffff8115e100>] sysfs_create_dir+0x32/0xb6
+ ...
+ Call Trace:
+  [<ffffffff8125e4a8>] kobject_add_internal+0x120/0x1e3
+  [<ffffffff81075149>] ? trace_hardirqs_on+0xd/0xf
+  [<ffffffff8125e641>] kobject_add_varg+0x41/0x50
+  [<ffffffff8125e70b>] kobject_add+0x64/0x66
+  [<ffffffff8131122b>] device_add+0x12d/0x63a
+  [<ffffffff814b65ea>] ? _raw_spin_unlock_irqrestore+0x47/0x56
+  [<ffffffff8107de15>] ? module_refcount+0x89/0xa0
+  [<ffffffff8132f348>] scsi_sysfs_add_sdev+0x4e/0x28a
+  [<ffffffff8132dcbb>] do_scan_async+0x9c/0x145
+
+...teach scsi_sysfs_add_devices() to check for deleted devices() before
+trying to add them, and teach scsi_remove_target() how to remove targets
+that have not been added via device_add().
+
+Cc: <stable@vger.kernel.org>
+Reported-by: Dariusz Majchrzak <dariusz.majchrzak@intel.com>
+Signed-off-by: Dan Williams <dan.j.williams@intel.com>
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+---
+ drivers/scsi/scsi_scan.c  |  3 +++
+ drivers/scsi/scsi_sysfs.c | 41 ++++++++++++++++++++++++++---------------
+ 2 files changed, 29 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/scsi/scsi_scan.c b/drivers/scsi/scsi_scan.c
+index 2e5fe58..f55e5f1 100644
+--- a/drivers/scsi/scsi_scan.c
++++ b/drivers/scsi/scsi_scan.c
+@@ -1717,6 +1717,9 @@ static void scsi_sysfs_add_devices(struct Scsi_Host *shost)
+ {
+ 	struct scsi_device *sdev;
+ 	shost_for_each_device(sdev, shost) {
++		/* target removed before the device could be added */
++		if (sdev->sdev_state == SDEV_DEL)
++			continue;
+ 		if (!scsi_host_scan_allowed(shost) ||
+ 		    scsi_sysfs_add_sdev(sdev) != 0)
+ 			__scsi_remove_device(sdev);
+diff --git a/drivers/scsi/scsi_sysfs.c b/drivers/scsi/scsi_sysfs.c
+index 04c2a27..f888aad 100644
+--- a/drivers/scsi/scsi_sysfs.c
++++ b/drivers/scsi/scsi_sysfs.c
+@@ -1000,7 +1000,6 @@ static void __scsi_remove_target(struct scsi_target *starget)
+ 	struct scsi_device *sdev;
+ 
+ 	spin_lock_irqsave(shost->host_lock, flags);
+-	starget->reap_ref++;
+  restart:
+ 	list_for_each_entry(sdev, &shost->__devices, siblings) {
+ 		if (sdev->channel != starget->channel ||
+@@ -1014,14 +1013,6 @@ static void __scsi_remove_target(struct scsi_target *starget)
+ 		goto restart;
+ 	}
+ 	spin_unlock_irqrestore(shost->host_lock, flags);
+-	scsi_target_reap(starget);
+-}
+-
+-static int __remove_child (struct device * dev, void * data)
+-{
+-	if (scsi_is_target_device(dev))
+-		__scsi_remove_target(to_scsi_target(dev));
+-	return 0;
+ }
+ 
+ /**
+@@ -1034,14 +1025,34 @@ static int __remove_child (struct device * dev, void * data)
+  */
+ void scsi_remove_target(struct device *dev)
+ {
+-	if (scsi_is_target_device(dev)) {
+-		__scsi_remove_target(to_scsi_target(dev));
+-		return;
++	struct Scsi_Host *shost = dev_to_shost(dev->parent);
++	struct scsi_target *starget, *found;
++	unsigned long flags;
++
++ restart:
++	found = NULL;
++	spin_lock_irqsave(shost->host_lock, flags);
++	list_for_each_entry(starget, &shost->__targets, siblings) {
++		if (starget->state == STARGET_DEL)
++			continue;
++		if (starget->dev.parent == dev || &starget->dev == dev) {
++			found = starget;
++			found->reap_ref++;
++			break;
++		}
+ 	}
++	spin_unlock_irqrestore(shost->host_lock, flags);
+ 
+-	get_device(dev);
+-	device_for_each_child(dev, NULL, __remove_child);
+-	put_device(dev);
++	if (found) {
++		__scsi_remove_target(found);
++		scsi_target_reap(found);
++		/* in the case where @dev has multiple starget children,
++		 * continue removing.
++		 *
++		 * FIXME: does such a case exist?
++		 */
++		goto restart;
++	}
+ }
+ EXPORT_SYMBOL(scsi_remove_target);
+ 
+-- 
+1.7.11.2
+
+
+From eb2f9cff761f767111f2ee53487efca3859cbf8e Mon Sep 17 00:00:00 2001
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Fri, 29 Jun 2012 15:34:26 +0000
+Subject: [PATCH 12/56] Avoid dangling pointer in scsi_requeue_command()
+
+When we call scsi_unprep_request() the command associated with the request
+gets destroyed and therefore drops its reference on the device.  If this was
+the only reference, the device may get released and we end up with a NULL
+pointer deref when we call blk_requeue_request.
+
+Reported-by: Mike Christie <michaelc@cs.wisc.edu>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Reviewed-by: Mike Christie <michaelc@cs.wisc.edu>
+Reviewed-by: Tejun Heo <tj@kernel.org>
+Cc: <stable@kernel.org>
+[jejb: enhance commend and add commit log for stable]
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+---
+ drivers/scsi/scsi_lib.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/drivers/scsi/scsi_lib.c b/drivers/scsi/scsi_lib.c
+index 6dfb978..21b6078 100644
+--- a/drivers/scsi/scsi_lib.c
++++ b/drivers/scsi/scsi_lib.c
+@@ -483,15 +483,26 @@ void scsi_requeue_run_queue(struct work_struct *work)
+  */
+ static void scsi_requeue_command(struct request_queue *q, struct scsi_cmnd *cmd)
+ {
++	struct scsi_device *sdev = cmd->device;
+ 	struct request *req = cmd->request;
+ 	unsigned long flags;
+ 
++	/*
++	 * We need to hold a reference on the device to avoid the queue being
++	 * killed after the unlock and before scsi_run_queue is invoked which
++	 * may happen because scsi_unprep_request() puts the command which
++	 * releases its reference on the device.
++	 */
++	get_device(&sdev->sdev_gendev);
++
+ 	spin_lock_irqsave(q->queue_lock, flags);
+ 	scsi_unprep_request(req);
+ 	blk_requeue_request(q, req);
+ 	spin_unlock_irqrestore(q->queue_lock, flags);
+ 
+ 	scsi_run_queue(q);
++
++	put_device(&sdev->sdev_gendev);
+ }
+ 
+ void scsi_next_command(struct scsi_cmnd *cmd)
+-- 
+1.7.11.2
+
+
+From b009db40482cafbbee925e236a2cfffc5c46c431 Mon Sep 17 00:00:00 2001
+From: Bart Van Assche <bvanassche@acm.org>
+Date: Fri, 29 Jun 2012 15:33:22 +0000
+Subject: [PATCH 13/56] Fix device removal NULL pointer dereference
+
+Use blk_queue_dead() to test whether the queue is dead instead
+of !sdev. Since scsi_prep_fn() may be invoked concurrently with
+__scsi_remove_device(), keep the queuedata (sdev) pointer in
+__scsi_remove_device(). This patch fixes a kernel oops that
+can be triggered by USB device removal. See also
+http://www.spinics.net/lists/linux-scsi/msg56254.html.
+
+Other changes included in this patch:
+- Swap the blk_cleanup_queue() and kfree() calls in
+  scsi_host_dev_release() to make that code easier to grasp.
+- Remove the queue dead check from scsi_run_queue() since the
+  queue state can change anyway at any point in that function
+  where the queue lock is not held.
+- Remove the queue dead check from the start of scsi_request_fn()
+  since it is redundant with the scsi_device_online() check.
+
+Reported-by: Jun'ichi Nomura <j-nomura@ce.jp.nec.com>
+Signed-off-by: Bart Van Assche <bvanassche@acm.org>
+Reviewed-by: Mike Christie <michaelc@cs.wisc.edu>
+Reviewed-by: Tejun Heo <tj@kernel.org>
+Cc: <stable@kernel.org>
+Signed-off-by: James Bottomley <JBottomley@Parallels.com>
+---
+ drivers/scsi/hosts.c      |  7 ++++---
+ drivers/scsi/scsi_lib.c   | 32 ++++----------------------------
+ drivers/scsi/scsi_priv.h  |  1 -
+ drivers/scsi/scsi_sysfs.c |  5 +----
+ 4 files changed, 9 insertions(+), 36 deletions(-)
+
+diff --git a/drivers/scsi/hosts.c b/drivers/scsi/hosts.c
+index a3a056a..b48c24f 100644
+--- a/drivers/scsi/hosts.c
++++ b/drivers/scsi/hosts.c
+@@ -290,6 +290,7 @@ static void scsi_host_dev_release(struct device *dev)
+ 	struct Scsi_Host *shost = dev_to_shost(dev);
+ 	struct device *parent = dev->parent;
+ 	struct request_queue *q;
++	void *queuedata;
+ 
+ 	scsi_proc_hostdir_rm(shost->hostt);
+ 
+@@ -299,9 +300,9 @@ static void scsi_host_dev_release(struct device *dev)
+ 		destroy_workqueue(shost->work_q);
+ 	q = shost->uspace_req_q;
+ 	if (q) {
+-		kfree(q->queuedata);
+-		q->queuedata = NULL;
+-		scsi_free_queue(q);
++		queuedata = q->queuedata;
++		blk_cleanup_queue(q);
++		kfree(queuedata);
+ 	}
+ 
+ 	scsi_destroy_command_freelist(shost);
+diff --git a/drivers/scsi/scsi_lib.c b/drivers/scsi/scsi_lib.c
+index 21b6078..495db80 100644
+--- a/drivers/scsi/scsi_lib.c
++++ b/drivers/scsi/scsi_lib.c
+@@ -406,10 +406,6 @@ static void scsi_run_queue(struct request_queue *q)
+ 	LIST_HEAD(starved_list);
+ 	unsigned long flags;
+ 
+-	/* if the device is dead, sdev will be NULL, so no queue to run */
+-	if (!sdev)
+-		return;
+-
+ 	shost = sdev->host;
+ 	if (scsi_target(sdev)->single_lun)
+ 		scsi_single_lun_run(sdev);
+@@ -1381,16 +1377,16 @@ static inline int scsi_host_queue_ready(struct request_queue *q,
+  * may be changed after request stacking drivers call the function,
+  * regardless of taking lock or not.
+  *
+- * When scsi can't dispatch I/Os anymore and needs to kill I/Os
+- * (e.g. !sdev), scsi needs to return 'not busy'.
+- * Otherwise, request stacking drivers may hold requests forever.
++ * When scsi can't dispatch I/Os anymore and needs to kill I/Os scsi
++ * needs to return 'not busy'. Otherwise, request stacking drivers
++ * may hold requests forever.
+  */
+ static int scsi_lld_busy(struct request_queue *q)
+ {
+ 	struct scsi_device *sdev = q->queuedata;
+ 	struct Scsi_Host *shost;
+ 
+-	if (!sdev)
++	if (blk_queue_dead(q))
+ 		return 0;
+ 
+ 	shost = sdev->host;
+@@ -1501,12 +1497,6 @@ static void scsi_request_fn(struct request_queue *q)
+ 	struct scsi_cmnd *cmd;
+ 	struct request *req;
+ 
+-	if (!sdev) {
+-		while ((req = blk_peek_request(q)) != NULL)
+-			scsi_kill_request(req, q);
+-		return;
+-	}
+-
+ 	if(!get_device(&sdev->sdev_gendev))
+ 		/* We must be tearing the block queue down already */
+ 		return;
+@@ -1708,20 +1698,6 @@ struct request_queue *scsi_alloc_queue(struct scsi_device *sdev)
+ 	return q;
+ }
+ 
+-void scsi_free_queue(struct request_queue *q)
+-{
+-	unsigned long flags;
+-
+-	WARN_ON(q->queuedata);
+-
+-	/* cause scsi_request_fn() to kill all non-finished requests */
+-	spin_lock_irqsave(q->queue_lock, flags);
+-	q->request_fn(q);
+-	spin_unlock_irqrestore(q->queue_lock, flags);
+-
+-	blk_cleanup_queue(q);
+-}
+-
+ /*
+  * Function:    scsi_block_requests()
+  *
+diff --git a/drivers/scsi/scsi_priv.h b/drivers/scsi/scsi_priv.h
+index 07ce3f5..2b8d8b5 100644
+--- a/drivers/scsi/scsi_priv.h
++++ b/drivers/scsi/scsi_priv.h
+@@ -84,7 +84,6 @@ extern void scsi_next_command(struct scsi_cmnd *cmd);
+ extern void scsi_io_completion(struct scsi_cmnd *, unsigned int);
+ extern void scsi_run_host_queues(struct Scsi_Host *shost);
+ extern struct request_queue *scsi_alloc_queue(struct scsi_device *sdev);
+-extern void scsi_free_queue(struct request_queue *q);
+ extern int scsi_init_queue(void);
+ extern void scsi_exit_queue(void);
+ struct request_queue;
+diff --git a/drivers/scsi/scsi_sysfs.c b/drivers/scsi/scsi_sysfs.c
+index f888aad..bb7c482 100644
+--- a/drivers/scsi/scsi_sysfs.c
++++ b/drivers/scsi/scsi_sysfs.c
+@@ -971,11 +971,8 @@ void __scsi_remove_device(struct scsi_device *sdev)
+ 		sdev->host->hostt->slave_destroy(sdev);
+ 	transport_destroy_device(dev);
+ 
+-	/* cause the request function to reject all I/O requests */
+-	sdev->request_queue->queuedata = NULL;
+-
+ 	/* Freeing the queue signals to block that we're done */
+-	scsi_free_queue(sdev->request_queue);
++	blk_cleanup_queue(sdev->request_queue);
+ 	put_device(dev);
+ }
+ 
+-- 
+1.7.11.2
+
+
+From 2f641fec6b190ecbbb998050f5eabd03008b01ed Mon Sep 17 00:00:00 2001
+From: Dylan Reid <dgreid@chromium.org>
+Date: Thu, 19 Jul 2012 17:52:58 -0700
+Subject: [PATCH 14/56] ALSA: hda - Turn on PIN_OUT from hdmi playback
+ prepare.
+
+Turn on the pin widget's PIN_OUT bit from playback prepare. The pin is
+enabled in open, but is disabled in hdmi_init_pin which is called during
+system resume.  This causes a system suspend/resume during playback to
+mute HDMI/DP. Enabling the pin in prepare instead of open allows calling
+snd_pcm_prepare after a system resume to restore audio.
+
+Signed-off-by: Dylan Reid <dgreid@chromium.org>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+---
+ sound/pci/hda/patch_hdmi.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/sound/pci/hda/patch_hdmi.c b/sound/pci/hda/patch_hdmi.c
+index ad319d4..5d52332 100644
+--- a/sound/pci/hda/patch_hdmi.c
++++ b/sound/pci/hda/patch_hdmi.c
+@@ -876,7 +876,6 @@ static int hdmi_pcm_open(struct hda_pcm_stream *hinfo,
+ 	struct hdmi_spec_per_pin *per_pin;
+ 	struct hdmi_eld *eld;
+ 	struct hdmi_spec_per_cvt *per_cvt = NULL;
+-	int pinctl;
+ 
+ 	/* Validate hinfo */
+ 	pin_idx = hinfo_to_pin_index(spec, hinfo);
+@@ -912,11 +911,6 @@ static int hdmi_pcm_open(struct hda_pcm_stream *hinfo,
+ 	snd_hda_codec_write(codec, per_pin->pin_nid, 0,
+ 			    AC_VERB_SET_CONNECT_SEL,
+ 			    mux_idx);
+-	pinctl = snd_hda_codec_read(codec, per_pin->pin_nid, 0,
+-				    AC_VERB_GET_PIN_WIDGET_CONTROL, 0);
+-	snd_hda_codec_write(codec, per_pin->pin_nid, 0,
+-			    AC_VERB_SET_PIN_WIDGET_CONTROL,
+-			    pinctl | PIN_OUT);
+ 	snd_hda_spdif_ctls_assign(codec, pin_idx, per_cvt->cvt_nid);
+ 
+ 	/* Initially set the converter's capabilities */
+@@ -1153,11 +1147,17 @@ static int generic_hdmi_playback_pcm_prepare(struct hda_pcm_stream *hinfo,
+ 	struct hdmi_spec *spec = codec->spec;
+ 	int pin_idx = hinfo_to_pin_index(spec, hinfo);
+ 	hda_nid_t pin_nid = spec->pins[pin_idx].pin_nid;
++	int pinctl;
+ 
+ 	hdmi_set_channel_count(codec, cvt_nid, substream->runtime->channels);
+ 
+ 	hdmi_setup_audio_infoframe(codec, pin_idx, substream);
+ 
++	pinctl = snd_hda_codec_read(codec, pin_nid, 0,
++				    AC_VERB_GET_PIN_WIDGET_CONTROL, 0);
++	snd_hda_codec_write(codec, pin_nid, 0,
++			    AC_VERB_SET_PIN_WIDGET_CONTROL, pinctl | PIN_OUT);
++
+ 	return hdmi_setup_stream(codec, cvt_nid, pin_nid, stream_tag, format);
+ }
+ 
+-- 
+1.7.11.2
+
+
+From 3c65f8b4276702cbcd76c7c8806786982dc513a1 Mon Sep 17 00:00:00 2001
+From: Joerg Roedel <joerg.roedel@amd.com>
+Date: Thu, 19 Jul 2012 13:42:54 +0200
+Subject: [PATCH 15/56] iommu/amd: Fix hotplug with iommu=pt
+
+This did not work because devices are not put into the
+pt_domain. Fix this.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Joerg Roedel <joerg.roedel@amd.com>
+---
+ drivers/iommu/amd_iommu.c | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/iommu/amd_iommu.c b/drivers/iommu/amd_iommu.c
+index 6256263..3f365ab 100644
+--- a/drivers/iommu/amd_iommu.c
++++ b/drivers/iommu/amd_iommu.c
+@@ -2254,6 +2254,18 @@ static int device_change_notifier(struct notifier_block *nb,
+ 
+ 		iommu_init_device(dev);
+ 
++		/*
++		 * dev_data is still NULL and
++		 * got initialized in iommu_init_device
++		 */
++		dev_data = get_dev_data(dev);
++
++		if (iommu_pass_through || dev_data->iommu_v2) {
++			dev_data->passthrough = true;
++			attach_device(dev, pt_domain);
++			break;
++		}
++
+ 		domain = domain_for_device(dev);
+ 
+ 		/* allocate a protection domain if a device is added */
+@@ -2271,10 +2283,7 @@ static int device_change_notifier(struct notifier_block *nb,
+ 
+ 		dev_data = get_dev_data(dev);
+ 
+-		if (!dev_data->passthrough)
+-			dev->archdata.dma_ops = &amd_iommu_dma_ops;
+-		else
+-			dev->archdata.dma_ops = &nommu_dma_ops;
++		dev->archdata.dma_ops = &amd_iommu_dma_ops;
+ 
+ 		break;
+ 	case BUS_NOTIFY_DEL_DEVICE:
+-- 
+1.7.11.2
+
+
+From 41d6724e18bceae0898c42bb97d680684490ec55 Mon Sep 17 00:00:00 2001
+From: Joerg Roedel <joerg.roedel@amd.com>
+Date: Thu, 19 Jul 2012 10:56:10 +0200
+Subject: [PATCH 16/56] iommu/amd: Add missing spin_lock initialization
+
+Add missing spin_lock initialization in
+amd_iommu_bind_pasid() function and make lockdep happy
+again.
+
+Cc: stable@vger.kernel.org # >= v3.3
+Signed-off-by: Joerg Roedel <joerg.roedel@amd.com>
+---
+ drivers/iommu/amd_iommu_v2.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/iommu/amd_iommu_v2.c b/drivers/iommu/amd_iommu_v2.c
+index 036fe9b..a1f1bc8 100644
+--- a/drivers/iommu/amd_iommu_v2.c
++++ b/drivers/iommu/amd_iommu_v2.c
+@@ -681,6 +681,8 @@ int amd_iommu_bind_pasid(struct pci_dev *pdev, int pasid,
+ 
+ 	atomic_set(&pasid_state->count, 1);
+ 	init_waitqueue_head(&pasid_state->wq);
++	spin_lock_init(&pasid_state->lock);
++
+ 	pasid_state->task         = task;
+ 	pasid_state->mm           = get_task_mm(task);
+ 	pasid_state->device_state = dev_state;
+-- 
+1.7.11.2
+
+
+From ced417bd5b4c22840c2effd8bc296cae4fe30e15 Mon Sep 17 00:00:00 2001
+From: Colin Cross <ccross@android.com>
+Date: Thu, 19 Jul 2012 10:38:06 +0200
+Subject: [PATCH 17/56] PM / Sleep: call early resume handlers when
+ suspend_noirq fails
+
+Commit cf579dfb82550e34de7ccf3ef090d8b834ccd3a9 (PM / Sleep: Introduce
+"late suspend" and "early resume" of devices) introduced a bug where
+suspend_late handlers would be called, but if dpm_suspend_noirq returned
+an error the early_resume handlers would never be called.  All devices
+would end up on the dpm_late_early_list, and would never be resumed
+again.
+
+Fix it by calling dpm_resume_early when dpm_suspend_noirq returns
+an error.
+
+Signed-off-by: Colin Cross <ccross@android.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ drivers/base/power/main.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/base/power/main.c b/drivers/base/power/main.c
+index 9cb845e..742fcbe 100644
+--- a/drivers/base/power/main.c
++++ b/drivers/base/power/main.c
+@@ -989,8 +989,16 @@ static int dpm_suspend_late(pm_message_t state)
+ int dpm_suspend_end(pm_message_t state)
+ {
+ 	int error = dpm_suspend_late(state);
++	if (error)
++		return error;
+ 
+-	return error ? : dpm_suspend_noirq(state);
++	error = dpm_suspend_noirq(state);
++	if (error) {
++		dpm_resume_early(state);
++		return error;
++	}
++
++	return 0;
+ }
+ EXPORT_SYMBOL_GPL(dpm_suspend_end);
+ 
+-- 
+1.7.11.2
+
+
+From dffc32602efdba71c6b9e44ffacb026c9460d9ad Mon Sep 17 00:00:00 2001
+From: "Rafael J. Wysocki" <rjw@sisk.pl>
+Date: Thu, 19 Jul 2012 00:00:58 +0200
+Subject: [PATCH 18/56] PM / Sleep: Require CAP_BLOCK_SUSPEND to use
+ wake_lock/wake_unlock
+
+Require processes wanting to use the wake_lock/wake_unlock sysfs
+files to have the CAP_BLOCK_SUSPEND capability, which also is
+required for the eventpoll EPOLLWAKEUP flag to be effective, so that
+all interfaces related to blocking autosleep depend on the same
+capability.
+
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+Cc: stable@vger.kernel.org
+Acked-by: Michael Kerrisk <mtk.man-pages@gmail.com>
+---
+ kernel/power/wakelock.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/kernel/power/wakelock.c b/kernel/power/wakelock.c
+index c8fba33..8f50de3 100644
+--- a/kernel/power/wakelock.c
++++ b/kernel/power/wakelock.c
+@@ -9,6 +9,7 @@
+  * manipulate wakelocks on Android.
+  */
+ 
++#include <linux/capability.h>
+ #include <linux/ctype.h>
+ #include <linux/device.h>
+ #include <linux/err.h>
+@@ -188,6 +189,9 @@ int pm_wake_lock(const char *buf)
+ 	size_t len;
+ 	int ret = 0;
+ 
++	if (!capable(CAP_BLOCK_SUSPEND))
++		return -EPERM;
++
+ 	while (*str && !isspace(*str))
+ 		str++;
+ 
+@@ -231,6 +235,9 @@ int pm_wake_unlock(const char *buf)
+ 	size_t len;
+ 	int ret = 0;
+ 
++	if (!capable(CAP_BLOCK_SUSPEND))
++		return -EPERM;
++
+ 	len = strlen(buf);
+ 	if (!len)
+ 		return -EINVAL;
+-- 
+1.7.11.2
+
+
+From 404d2358d1e5d553acd8fd48c83cb6f3d0a303ad Mon Sep 17 00:00:00 2001
+From: David Henningsson <david.henningsson@canonical.com>
+Date: Wed, 18 Jul 2012 07:38:46 +0200
+Subject: [PATCH 19/56] ALSA: hda - Add support for Realtek ALC282
+
+This codec has a separate dmic path (separate dmic only ADC),
+and thus it looks mostly like ALC275.
+
+Cc: stable@kernel.org
+BugLink: https://bugs.launchpad.net/bugs/1025377
+Tested-by: Ray Chen <ray.chen@canonical.com>
+Signed-off-by: David Henningsson <david.henningsson@canonical.com>
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+---
+ sound/pci/hda/patch_realtek.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sound/pci/hda/patch_realtek.c b/sound/pci/hda/patch_realtek.c
+index 222c1f5..0f54a4f 100644
+--- a/sound/pci/hda/patch_realtek.c
++++ b/sound/pci/hda/patch_realtek.c
+@@ -6858,6 +6858,7 @@ static const struct hda_codec_preset snd_hda_preset_realtek[] = {
+ 	{ .id = 0x10ec0275, .name = "ALC275", .patch = patch_alc269 },
+ 	{ .id = 0x10ec0276, .name = "ALC276", .patch = patch_alc269 },
+ 	{ .id = 0x10ec0280, .name = "ALC280", .patch = patch_alc269 },
++	{ .id = 0x10ec0282, .name = "ALC282", .patch = patch_alc269 },
+ 	{ .id = 0x10ec0861, .rev = 0x100340, .name = "ALC660",
+ 	  .patch = patch_alc861 },
+ 	{ .id = 0x10ec0660, .name = "ALC660-VD", .patch = patch_alc861vd },
+-- 
+1.7.11.2
+
+
+From 7f2fdf23da667b993a7e05d77d9a33970fb9c588 Mon Sep 17 00:00:00 2001
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Tue, 17 Jul 2012 17:12:29 +0200
+Subject: [PATCH 20/56] b43: fix crash with OpenFWWF
+
+b43 with open firmware crashes mac80211 because
+it changes the number of queues at runtime which,
+while it was never really supported, now crashes
+mac80211 due to the new hardware queue logic.
+
+Fix this by detecting open vs. proprietary fw
+earlier and registering with mac80211 with the
+right number of queues.
+
+Tested-by: Stefan Lippers-Hollmann <s.l-h@gmx.de>
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Cc: stable@vger.kernel.org (depends on commit a6f38ac3)
+Signed-off-by: John W. Linville <linville@tuxdriver.com>
+---
+ drivers/net/wireless/b43/b43.h  |  7 -------
+ drivers/net/wireless/b43/main.c | 32 ++++++++++----------------------
+ 2 files changed, 10 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/net/wireless/b43/b43.h b/drivers/net/wireless/b43/b43.h
+index c06b6cb..7c899fc 100644
+--- a/drivers/net/wireless/b43/b43.h
++++ b/drivers/net/wireless/b43/b43.h
+@@ -870,13 +870,6 @@ struct b43_wl {
+ 	 * handler, only. This basically is just the IRQ mask register. */
+ 	spinlock_t hardirq_lock;
+ 
+-	/* The number of queues that were registered with the mac80211 subsystem
+-	 * initially. This is a backup copy of hw->queues in case hw->queues has
+-	 * to be dynamically lowered at runtime (Firmware does not support QoS).
+-	 * hw->queues has to be restored to the original value before unregistering
+-	 * from the mac80211 subsystem. */
+-	u16 mac80211_initially_registered_queues;
+-
+ 	/* Set this if we call ieee80211_register_hw() and check if we call
+ 	 * ieee80211_unregister_hw(). */
+ 	bool hw_registred;
+diff --git a/drivers/net/wireless/b43/main.c b/drivers/net/wireless/b43/main.c
+index 1b988f2..b80352b 100644
+--- a/drivers/net/wireless/b43/main.c
++++ b/drivers/net/wireless/b43/main.c
+@@ -2359,6 +2359,8 @@ static int b43_try_request_fw(struct b43_request_fw_context *ctx)
+ 	if (err)
+ 		goto err_load;
+ 
++	fw->opensource = (ctx->req_type == B43_FWTYPE_OPENSOURCE);
++
+ 	return 0;
+ 
+ err_no_ucode:
+@@ -2434,6 +2436,10 @@ static void b43_request_firmware(struct work_struct *work)
+ 	goto out;
+ 
+ start_ieee80211:
++	wl->hw->queues = B43_QOS_QUEUE_NUM;
++	if (!modparam_qos || dev->fw.opensource)
++		wl->hw->queues = 1;
++
+ 	err = ieee80211_register_hw(wl->hw);
+ 	if (err)
+ 		goto err_one_core_detach;
+@@ -2537,11 +2543,9 @@ static int b43_upload_microcode(struct b43_wldev *dev)
+ 		dev->fw.hdr_format = B43_FW_HDR_410;
+ 	else
+ 		dev->fw.hdr_format = B43_FW_HDR_351;
+-	dev->fw.opensource = (fwdate == 0xFFFF);
++	WARN_ON(dev->fw.opensource != (fwdate == 0xFFFF));
+ 
+-	/* Default to use-all-queues. */
+-	dev->wl->hw->queues = dev->wl->mac80211_initially_registered_queues;
+-	dev->qos_enabled = !!modparam_qos;
++	dev->qos_enabled = dev->wl->hw->queues > 1;
+ 	/* Default to firmware/hardware crypto acceleration. */
+ 	dev->hwcrypto_enabled = true;
+ 
+@@ -2559,14 +2563,8 @@ static int b43_upload_microcode(struct b43_wldev *dev)
+ 			/* Disable hardware crypto and fall back to software crypto. */
+ 			dev->hwcrypto_enabled = false;
+ 		}
+-		if (!(fwcapa & B43_FWCAPA_QOS)) {
+-			b43info(dev->wl, "QoS not supported by firmware\n");
+-			/* Disable QoS. Tweak hw->queues to 1. It will be restored before
+-			 * ieee80211_unregister to make sure the networking core can
+-			 * properly free possible resources. */
+-			dev->wl->hw->queues = 1;
+-			dev->qos_enabled = false;
+-		}
++		/* adding QoS support should use an offline discovery mechanism */
++		WARN(fwcapa & B43_FWCAPA_QOS, "QoS in OpenFW not supported\n");
+ 	} else {
+ 		b43info(dev->wl, "Loading firmware version %u.%u "
+ 			"(20%.2i-%.2i-%.2i %.2i:%.2i:%.2i)\n",
+@@ -5298,8 +5296,6 @@ static struct b43_wl *b43_wireless_init(struct b43_bus_dev *dev)
+ 
+ 	hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
+ 
+-	hw->queues = modparam_qos ? B43_QOS_QUEUE_NUM : 1;
+-	wl->mac80211_initially_registered_queues = hw->queues;
+ 	wl->hw_registred = false;
+ 	hw->max_rates = 2;
+ 	SET_IEEE80211_DEV(hw, dev->dev);
+@@ -5374,10 +5370,6 @@ static void b43_bcma_remove(struct bcma_device *core)
+ 
+ 	B43_WARN_ON(!wl);
+ 	if (wl->current_dev == wldev && wl->hw_registred) {
+-		/* Restore the queues count before unregistering, because firmware detect
+-		 * might have modified it. Restoring is important, so the networking
+-		 * stack can properly free resources. */
+-		wl->hw->queues = wl->mac80211_initially_registered_queues;
+ 		b43_leds_stop(wldev);
+ 		ieee80211_unregister_hw(wl->hw);
+ 	}
+@@ -5452,10 +5444,6 @@ static void b43_ssb_remove(struct ssb_device *sdev)
+ 
+ 	B43_WARN_ON(!wl);
+ 	if (wl->current_dev == wldev && wl->hw_registred) {
+-		/* Restore the queues count before unregistering, because firmware detect
+-		 * might have modified it. Restoring is important, so the networking
+-		 * stack can properly free resources. */
+-		wl->hw->queues = wl->mac80211_initially_registered_queues;
+ 		b43_leds_stop(wldev);
+ 		ieee80211_unregister_hw(wl->hw);
+ 	}
+-- 
+1.7.11.2
+
+
+From 9b36ddb697b0748e8ed74d96877b706cfcfdad12 Mon Sep 17 00:00:00 2001
+From: Forest Bond <forest.bond@rapidrollout.com>
+Date: Fri, 13 Jul 2012 12:26:06 -0400
+Subject: [PATCH 21/56] rtlwifi: rtl8192de: Fix phy-based version calculation
+
+Commit d83579e2a50ac68389e6b4c58b845c702cf37516 incorporated some
+changes from the vendor driver that made it newly important that the
+calculated hardware version correctly include the CHIP_92D bit, as all
+of the IS_92D_* macros were changed to depend on it.  However, this bit
+was being unset for dual-mac, dual-phy devices.  The vendor driver
+behavior was modified to not do this, but unfortunately this change was
+not picked up along with the others.  This caused scanning in the 2.4GHz
+band to be broken, and possibly other bugs as well.
+
+This patch brings the version calculation logic in parity with the
+vendor driver in this regard, and in doing so fixes the regression.
+However, the version calculation code in general continues to be largely
+incoherent and messy, and needs to be cleaned up.
+
+Signed-off-by: Forest Bond <forest.bond@rapidrollout.com>
+Cc: Stable <stable@vger.kernel.org> [v3.2+]
+Signed-off-by: Larry Finger <Larry.Finger@lwfinger.net>
+Signed-off-by: John W. Linville <linville@tuxdriver.com>
+---
+ drivers/net/wireless/rtlwifi/rtl8192de/phy.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/wireless/rtlwifi/rtl8192de/phy.c b/drivers/net/wireless/rtlwifi/rtl8192de/phy.c
+index 18380a7..4420312 100644
+--- a/drivers/net/wireless/rtlwifi/rtl8192de/phy.c
++++ b/drivers/net/wireless/rtlwifi/rtl8192de/phy.c
+@@ -3345,21 +3345,21 @@ void rtl92d_phy_config_macphymode_info(struct ieee80211_hw *hw)
+ 	switch (rtlhal->macphymode) {
+ 	case DUALMAC_SINGLEPHY:
+ 		rtlphy->rf_type = RF_2T2R;
+-		rtlhal->version |= CHIP_92D_SINGLEPHY;
++		rtlhal->version |= RF_TYPE_2T2R;
+ 		rtlhal->bandset = BAND_ON_BOTH;
+ 		rtlhal->current_bandtype = BAND_ON_2_4G;
+ 		break;
+ 
+ 	case SINGLEMAC_SINGLEPHY:
+ 		rtlphy->rf_type = RF_2T2R;
+-		rtlhal->version |= CHIP_92D_SINGLEPHY;
++		rtlhal->version |= RF_TYPE_2T2R;
+ 		rtlhal->bandset = BAND_ON_BOTH;
+ 		rtlhal->current_bandtype = BAND_ON_2_4G;
+ 		break;
+ 
+ 	case DUALMAC_DUALPHY:
+ 		rtlphy->rf_type = RF_1T1R;
+-		rtlhal->version &= (~CHIP_92D_SINGLEPHY);
++		rtlhal->version &= RF_TYPE_1T1R;
+ 		/* Now we let MAC0 run on 5G band. */
+ 		if (rtlhal->interfaceindex == 0) {
+ 			rtlhal->bandset = BAND_ON_5G;
+-- 
+1.7.11.2
+
+
+From 082d80b5b03948ebfbd44a85b776133e45856c2d Mon Sep 17 00:00:00 2001
+From: Heiko Carstens <heiko.carstens@de.ibm.com>
+Date: Fri, 13 Jul 2012 15:45:33 +0200
+Subject: [PATCH 22/56] s390/idle: fix sequence handling vs cpu hotplug
+
+The s390 idle accounting code uses a sequence counter which gets used
+when the per cpu idle statistics get updated and read.
+
+One assumption on read access is that only when the sequence counter is
+even and did not change while reading all values the result is valid.
+On cpu hotplug however the per cpu data structure gets initialized via
+a cpu hotplug notifier on CPU_ONLINE.
+CPU_ONLINE however is too late, since the onlined cpu is already running
+and might access the per cpu data. Worst case is that the data structure
+gets initialized while an idle thread is updating its idle statistics.
+This will result in an uneven sequence counter after an update.
+
+As a result user space tools like top, which access /proc/stat in order
+to get idle stats, will busy loop waiting for the sequence counter to
+become even again, which will never happen until the queried cpu will
+update its idle statistics again. And even then the sequence counter
+will only have an even value for a couple of cpu cycles.
+
+Fix this by moving the initialization of the per cpu idle statistics
+to cpu_init(). I prefer that solution in favor of changing the
+notifier to CPU_UP_PREPARE, which would be a different solution to
+the problem.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Heiko Carstens <heiko.carstens@de.ibm.com>
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+---
+ arch/s390/kernel/processor.c | 2 ++
+ arch/s390/kernel/smp.c       | 3 ---
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/arch/s390/kernel/processor.c b/arch/s390/kernel/processor.c
+index 6e0073e..07c7bf4 100644
+--- a/arch/s390/kernel/processor.c
++++ b/arch/s390/kernel/processor.c
+@@ -26,12 +26,14 @@ static DEFINE_PER_CPU(struct cpuid, cpu_id);
+ void __cpuinit cpu_init(void)
+ {
+ 	struct cpuid *id = &per_cpu(cpu_id, smp_processor_id());
++	struct s390_idle_data *idle = &__get_cpu_var(s390_idle);
+ 
+ 	get_cpu_id(id);
+ 	atomic_inc(&init_mm.mm_count);
+ 	current->active_mm = &init_mm;
+ 	BUG_ON(current->mm);
+ 	enter_lazy_tlb(&init_mm, current);
++	memset(idle, 0, sizeof(*idle));
+ }
+ 
+ /*
+diff --git a/arch/s390/kernel/smp.c b/arch/s390/kernel/smp.c
+index 15cca26..25e3f3e 100644
+--- a/arch/s390/kernel/smp.c
++++ b/arch/s390/kernel/smp.c
+@@ -984,14 +984,11 @@ static int __cpuinit smp_cpu_notify(struct notifier_block *self,
+ 	unsigned int cpu = (unsigned int)(long)hcpu;
+ 	struct cpu *c = &pcpu_devices[cpu].cpu;
+ 	struct device *s = &c->dev;
+-	struct s390_idle_data *idle;
+ 	int err = 0;
+ 
+ 	switch (action) {
+ 	case CPU_ONLINE:
+ 	case CPU_ONLINE_FROZEN:
+-		idle = &per_cpu(s390_idle, cpu);
+-		memset(idle, 0, sizeof(struct s390_idle_data));
+ 		err = sysfs_create_group(&s->kobj, &cpu_online_attr_group);
+ 		break;
+ 	case CPU_DEAD:
+-- 
+1.7.11.2
+
+
+From c560296292192419c914742c5ef010b4576bc2a4 Mon Sep 17 00:00:00 2001
+From: Roland Dreier <roland@purestorage.com>
+Date: Mon, 16 Jul 2012 15:34:21 -0700
+Subject: [PATCH 23/56] target: Add generation of LOGICAL BLOCK ADDRESS OUT OF
+ RANGE
+
+Many SCSI commands are defined to return a CHECK CONDITION / ILLEGAL
+REQUEST with ASC set to LOGICAL BLOCK ADDRESS OUT OF RANGE if the
+initiator sends a command that accesses a too-big LBA.  Add an enum
+value and case entries so that target code can return this status.
+
+Signed-off-by: Roland Dreier <roland@purestorage.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Nicholas Bellinger <nab@linux-iscsi.org>
+---
+ drivers/target/target_core_transport.c | 10 ++++++++++
+ include/target/target_core_base.h      |  1 +
+ 2 files changed, 11 insertions(+)
+
+diff --git a/drivers/target/target_core_transport.c b/drivers/target/target_core_transport.c
+index 634d0f3..c6c385f 100644
+--- a/drivers/target/target_core_transport.c
++++ b/drivers/target/target_core_transport.c
+@@ -1797,6 +1797,7 @@ void transport_generic_request_failure(struct se_cmd *cmd)
+ 	case TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE:
+ 	case TCM_UNKNOWN_MODE_PAGE:
+ 	case TCM_WRITE_PROTECTED:
++	case TCM_ADDRESS_OUT_OF_RANGE:
+ 	case TCM_CHECK_CONDITION_ABORT_CMD:
+ 	case TCM_CHECK_CONDITION_UNIT_ATTENTION:
+ 	case TCM_CHECK_CONDITION_NOT_READY:
+@@ -4212,6 +4213,15 @@ int transport_send_check_condition_and_sense(
+ 		/* WRITE PROTECTED */
+ 		buffer[offset+SPC_ASC_KEY_OFFSET] = 0x27;
+ 		break;
++	case TCM_ADDRESS_OUT_OF_RANGE:
++		/* CURRENT ERROR */
++		buffer[offset] = 0x70;
++		buffer[offset+SPC_ADD_SENSE_LEN_OFFSET] = 10;
++		/* ILLEGAL REQUEST */
++		buffer[offset+SPC_SENSE_KEY_OFFSET] = ILLEGAL_REQUEST;
++		/* LOGICAL BLOCK ADDRESS OUT OF RANGE */
++		buffer[offset+SPC_ASC_KEY_OFFSET] = 0x21;
++		break;
+ 	case TCM_CHECK_CONDITION_UNIT_ATTENTION:
+ 		/* CURRENT ERROR */
+ 		buffer[offset] = 0x70;
+diff --git a/include/target/target_core_base.h b/include/target/target_core_base.h
+index dc35d86..362e0d9 100644
+--- a/include/target/target_core_base.h
++++ b/include/target/target_core_base.h
+@@ -220,6 +220,7 @@ enum tcm_sense_reason_table {
+ 	TCM_CHECK_CONDITION_UNIT_ATTENTION	= 0x0e,
+ 	TCM_CHECK_CONDITION_NOT_READY		= 0x0f,
+ 	TCM_RESERVATION_CONFLICT		= 0x10,
++	TCM_ADDRESS_OUT_OF_RANGE		= 0x11,
+ };
+ 
+ enum target_sc_flags_table {
+-- 
+1.7.11.2
+
+
+From 2c8f2633a7cff10b13be476bc474b262e2da7b78 Mon Sep 17 00:00:00 2001
+From: Kleber Sacilotto de Souza <klebers@linux.vnet.ibm.com>
+Date: Thu, 12 Jul 2012 17:14:36 +0000
+Subject: [PATCH 24/56] powerpc/eeh: Check handle_eeh_events() return value
+
+Function eeh_event_handler() dereferences the pointer returned by
+handle_eeh_events() without checking, causing a crash if NULL was
+returned, which is expected in some situations.
+
+This patch fixes this bug by checking for the value returned by
+handle_eeh_events() before dereferencing it.
+
+Signed-off-by: Kleber Sacilotto de Souza <klebers@linux.vnet.ibm.com>
+Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+CC: stable@vger.kernel.org [v3.4+]
+---
+ arch/powerpc/platforms/pseries/eeh_event.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/arch/powerpc/platforms/pseries/eeh_event.c b/arch/powerpc/platforms/pseries/eeh_event.c
+index 4cb375c..fb50631 100644
+--- a/arch/powerpc/platforms/pseries/eeh_event.c
++++ b/arch/powerpc/platforms/pseries/eeh_event.c
+@@ -85,8 +85,10 @@ static int eeh_event_handler(void * dummy)
+ 	set_current_state(TASK_INTERRUPTIBLE);	/* Don't add to load average */
+ 	edev = handle_eeh_events(event);
+ 
+-	eeh_clear_slot(eeh_dev_to_of_node(edev), EEH_MODE_RECOVERING);
+-	pci_dev_put(edev->pdev);
++	if (edev) {
++		eeh_clear_slot(eeh_dev_to_of_node(edev), EEH_MODE_RECOVERING);
++		pci_dev_put(edev->pdev);
++	}
+ 
+ 	kfree(event);
+ 	mutex_unlock(&eeh_event_mutex);
+-- 
+1.7.11.2
+
+
+From 96129a12c2914370ad8fcf6cc5c3b68ccd765b85 Mon Sep 17 00:00:00 2001
+From: Larry Finger <Larry.Finger@lwfinger.net>
+Date: Wed, 11 Jul 2012 14:37:28 -0500
+Subject: [PATCH 25/56] rtlwifi: rtl8192cu: Change buffer allocation for
+ synchronous reads
+
+In commit a7959c1, the USB part of rtlwifi was switched to convert
+_usb_read_sync() to using a preallocated buffer rather than one
+that has been acquired using kmalloc. Although this routine is named
+as though it were synchronous, there seem to be simultaneous users,
+and the selection of the index to the data buffer is not multi-user
+safe. This situation is addressed by adding a new spinlock. The routine
+cannot sleep, thus a mutex is not allowed.
+
+Signed-off-by: Larry Finger <Larry.Finger@lwfinger.net>
+Cc: Stable <stable@vger.kernel.org>
+Signed-off-by: John W. Linville <linville@tuxdriver.com>
+---
+ drivers/net/wireless/rtlwifi/usb.c  | 14 +++++++++++---
+ drivers/net/wireless/rtlwifi/wifi.h |  1 +
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/wireless/rtlwifi/usb.c b/drivers/net/wireless/rtlwifi/usb.c
+index a6049d7..aa970fc 100644
+--- a/drivers/net/wireless/rtlwifi/usb.c
++++ b/drivers/net/wireless/rtlwifi/usb.c
+@@ -131,15 +131,19 @@ static u32 _usb_read_sync(struct rtl_priv *rtlpriv, u32 addr, u16 len)
+ 	u8 request;
+ 	u16 wvalue;
+ 	u16 index;
+-	__le32 *data = &rtlpriv->usb_data[rtlpriv->usb_data_index];
++	__le32 *data;
++	unsigned long flags;
+ 
++	spin_lock_irqsave(&rtlpriv->locks.usb_lock, flags);
++	if (++rtlpriv->usb_data_index >= RTL_USB_MAX_RX_COUNT)
++		rtlpriv->usb_data_index = 0;
++	data = &rtlpriv->usb_data[rtlpriv->usb_data_index];
++	spin_unlock_irqrestore(&rtlpriv->locks.usb_lock, flags);
+ 	request = REALTEK_USB_VENQT_CMD_REQ;
+ 	index = REALTEK_USB_VENQT_CMD_IDX; /* n/a */
+ 
+ 	wvalue = (u16)addr;
+ 	_usbctrl_vendorreq_sync_read(udev, request, wvalue, index, data, len);
+-	if (++rtlpriv->usb_data_index >= RTL_USB_MAX_RX_COUNT)
+-		rtlpriv->usb_data_index = 0;
+ 	return le32_to_cpu(*data);
+ }
+ 
+@@ -951,6 +955,10 @@ int __devinit rtl_usb_probe(struct usb_interface *intf,
+ 				    GFP_KERNEL);
+ 	if (!rtlpriv->usb_data)
+ 		return -ENOMEM;
++
++	/* this spin lock must be initialized early */
++	spin_lock_init(&rtlpriv->locks.usb_lock);
++
+ 	rtlpriv->usb_data_index = 0;
+ 	init_completion(&rtlpriv->firmware_loading_complete);
+ 	SET_IEEE80211_DEV(hw, &intf->dev);
+diff --git a/drivers/net/wireless/rtlwifi/wifi.h b/drivers/net/wireless/rtlwifi/wifi.h
+index bd816ae..cdaa21f 100644
+--- a/drivers/net/wireless/rtlwifi/wifi.h
++++ b/drivers/net/wireless/rtlwifi/wifi.h
+@@ -1555,6 +1555,7 @@ struct rtl_locks {
+ 	spinlock_t rf_ps_lock;
+ 	spinlock_t rf_lock;
+ 	spinlock_t waitq_lock;
++	spinlock_t usb_lock;
+ 
+ 	/*Dual mac*/
+ 	spinlock_t cck_and_rw_pagea_lock;
+-- 
+1.7.11.2
+
+
+From 29c0a952727b65922bfa09d44d67c8b71e618524 Mon Sep 17 00:00:00 2001
+From: Amitkumar Karwar <akarwar@marvell.com>
+Date: Wed, 11 Jul 2012 18:12:57 -0700
+Subject: [PATCH 26/56] mwifiex: correction in mcs index check
+
+mwifiex driver supports 2x2 chips as well. Hence valid mcs values
+are 0 to 15. The check for mcs index is corrected in this patch.
+
+For example: if 40MHz is enabled and mcs index is 11, "iw link"
+command would show "tx bitrate: 108.0 MBit/s" without this patch.
+Now it shows "tx bitrate: 108.0 MBit/s MCS 11 40Mhz" with the patch.
+
+Cc: "3.2.y, 3.3.y, 3.4.y" <stable@vger.kernel.org>
+Signed-off-by: Amitkumar Karwar <akarwar@marvell.com>
+Signed-off-by: Bing Zhao <bzhao@marvell.com>
+Signed-off-by: John W. Linville <linville@tuxdriver.com>
+---
+ drivers/net/wireless/mwifiex/cfg80211.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/wireless/mwifiex/cfg80211.c b/drivers/net/wireless/mwifiex/cfg80211.c
+index 5c7fd18..76b5c0f 100644
+--- a/drivers/net/wireless/mwifiex/cfg80211.c
++++ b/drivers/net/wireless/mwifiex/cfg80211.c
+@@ -634,9 +634,9 @@ mwifiex_dump_station_info(struct mwifiex_private *priv,
+ 
+ 	/*
+ 	 * Bit 0 in tx_htinfo indicates that current Tx rate is 11n rate. Valid
+-	 * MCS index values for us are 0 to 7.
++	 * MCS index values for us are 0 to 15.
+ 	 */
+-	if ((priv->tx_htinfo & BIT(0)) && (priv->tx_rate < 8)) {
++	if ((priv->tx_htinfo & BIT(0)) && (priv->tx_rate < 16)) {
+ 		sinfo->txrate.mcs = priv->tx_rate;
+ 		sinfo->txrate.flags |= RATE_INFO_FLAGS_MCS;
+ 		/* 40MHz rate */
+-- 
+1.7.11.2
+
+
+From 0b38368ce7515d33241a3387dcffc3bc9b03662f Mon Sep 17 00:00:00 2001
+From: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Date: Wed, 11 Jul 2012 19:03:48 +0100
+Subject: [PATCH 27/56] ASoC: wm8962: Redo early init of the part on resume
+
+Ensure robust startup of the part by going through the reset procedure
+prior to resyncing the full register cache, avoiding potential intermittent
+faults in some designs.
+
+Signed-off-by: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Cc: stable@vger.kernel.org
+---
+ sound/soc/codecs/wm8962.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/sound/soc/codecs/wm8962.c b/sound/soc/codecs/wm8962.c
+index 0cfce99..21a6727 100644
+--- a/sound/soc/codecs/wm8962.c
++++ b/sound/soc/codecs/wm8962.c
+@@ -3722,6 +3722,9 @@ static int wm8962_runtime_resume(struct device *dev)
+ 	}
+ 
+ 	regcache_cache_only(wm8962->regmap, false);
++
++	wm8962_reset(wm8962);
++
+ 	regcache_sync(wm8962->regmap);
+ 
+ 	regmap_update_bits(wm8962->regmap, WM8962_ANTI_POP,
+-- 
+1.7.11.2
+
+
+From b9ceaf9236681e27132772a33215aeb2cad4dca4 Mon Sep 17 00:00:00 2001
+From: Tony Luck <tony.luck@intel.com>
+Date: Wed, 11 Jul 2012 10:20:47 -0700
+Subject: [PATCH 28/56] x86/mce: Fix siginfo_t->si_addr value for
+ non-recoverable memory faults
+
+In commit dad1743e5993f1 ("x86/mce: Only restart instruction after machine
+check recovery if it is safe") we fixed mce_notify_process() to force a
+signal to the current process if it was not restartable (RIPV bit not
+set in MCG_STATUS). But doing it here means that the process doesn't
+get told the virtual address of the fault via siginfo_t->si_addr. This
+would prevent application level recovery from the fault.
+
+Make a new MF_MUST_KILL flag bit for memory_failure() et al. to use so
+that we will provide the right information with the signal.
+
+Signed-off-by: Tony Luck <tony.luck@intel.com>
+Acked-by: Borislav Petkov <borislav.petkov@amd.com>
+Cc: stable@kernel.org    # 3.4+
+---
+ arch/x86/kernel/cpu/mcheck/mce.c |  6 ++++--
+ include/linux/mm.h               |  1 +
+ mm/memory-failure.c              | 14 ++++++++------
+ 3 files changed, 13 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/kernel/cpu/mcheck/mce.c b/arch/x86/kernel/cpu/mcheck/mce.c
+index da27c5d..c46ed49 100644
+--- a/arch/x86/kernel/cpu/mcheck/mce.c
++++ b/arch/x86/kernel/cpu/mcheck/mce.c
+@@ -1186,6 +1186,7 @@ void mce_notify_process(void)
+ {
+ 	unsigned long pfn;
+ 	struct mce_info *mi = mce_find_info();
++	int flags = MF_ACTION_REQUIRED;
+ 
+ 	if (!mi)
+ 		mce_panic("Lost physical address for unconsumed uncorrectable error", NULL, NULL);
+@@ -1200,8 +1201,9 @@ void mce_notify_process(void)
+ 	 * doomed. We still need to mark the page as poisoned and alert any
+ 	 * other users of the page.
+ 	 */
+-	if (memory_failure(pfn, MCE_VECTOR, MF_ACTION_REQUIRED) < 0 ||
+-			   mi->restartable == 0) {
++	if (!mi->restartable)
++		flags |= MF_MUST_KILL;
++	if (memory_failure(pfn, MCE_VECTOR, flags) < 0) {
+ 		pr_err("Memory error not recovered");
+ 		force_sig(SIGBUS, current);
+ 	}
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index b36d08c..f9f279c 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -1591,6 +1591,7 @@ void vmemmap_populate_print_last(void);
+ enum mf_flags {
+ 	MF_COUNT_INCREASED = 1 << 0,
+ 	MF_ACTION_REQUIRED = 1 << 1,
++	MF_MUST_KILL = 1 << 2,
+ };
+ extern int memory_failure(unsigned long pfn, int trapno, int flags);
+ extern void memory_failure_queue(unsigned long pfn, int trapno, int flags);
+diff --git a/mm/memory-failure.c b/mm/memory-failure.c
+index ab1e714..de4ce70 100644
+--- a/mm/memory-failure.c
++++ b/mm/memory-failure.c
+@@ -345,14 +345,14 @@ static void add_to_kill(struct task_struct *tsk, struct page *p,
+  * Also when FAIL is set do a force kill because something went
+  * wrong earlier.
+  */
+-static void kill_procs(struct list_head *to_kill, int doit, int trapno,
++static void kill_procs(struct list_head *to_kill, int forcekill, int trapno,
+ 			  int fail, struct page *page, unsigned long pfn,
+ 			  int flags)
+ {
+ 	struct to_kill *tk, *next;
+ 
+ 	list_for_each_entry_safe (tk, next, to_kill, nd) {
+-		if (doit) {
++		if (forcekill) {
+ 			/*
+ 			 * In case something went wrong with munmapping
+ 			 * make sure the process doesn't catch the
+@@ -858,7 +858,7 @@ static int hwpoison_user_mappings(struct page *p, unsigned long pfn,
+ 	struct address_space *mapping;
+ 	LIST_HEAD(tokill);
+ 	int ret;
+-	int kill = 1;
++	int kill = 1, forcekill;
+ 	struct page *hpage = compound_head(p);
+ 	struct page *ppage;
+ 
+@@ -888,7 +888,7 @@ static int hwpoison_user_mappings(struct page *p, unsigned long pfn,
+ 	 * be called inside page lock (it's recommended but not enforced).
+ 	 */
+ 	mapping = page_mapping(hpage);
+-	if (!PageDirty(hpage) && mapping &&
++	if (!(flags & MF_MUST_KILL) && !PageDirty(hpage) && mapping &&
+ 	    mapping_cap_writeback_dirty(mapping)) {
+ 		if (page_mkclean(hpage)) {
+ 			SetPageDirty(hpage);
+@@ -965,12 +965,14 @@ static int hwpoison_user_mappings(struct page *p, unsigned long pfn,
+ 	 * Now that the dirty bit has been propagated to the
+ 	 * struct page and all unmaps done we can decide if
+ 	 * killing is needed or not.  Only kill when the page
+-	 * was dirty, otherwise the tokill list is merely
++	 * was dirty or the process is not restartable,
++	 * otherwise the tokill list is merely
+ 	 * freed.  When there was a problem unmapping earlier
+ 	 * use a more force-full uncatchable kill to prevent
+ 	 * any accesses to the poisoned memory.
+ 	 */
+-	kill_procs(&tokill, !!PageDirty(ppage), trapno,
++	forcekill = PageDirty(ppage) || (flags & MF_MUST_KILL);
++	kill_procs(&tokill, forcekill, trapno,
+ 		      ret != SWAP_SUCCESS, p, pfn, flags);
+ 
+ 	return ret;
+-- 
+1.7.11.2
+
+
+From 6880328b6a1b043cc0ab80992057f1072c69fc3d Mon Sep 17 00:00:00 2001
+From: Tiejun Chen <tiejun.chen@windriver.com>
+Date: Wed, 11 Jul 2012 14:22:46 +1000
+Subject: [PATCH 29/56] powerpc: Add "memory" attribute for mfmsr()
+
+Add "memory" attribute in inline assembly language as a compiler
+barrier to make sure 4.6.x GCC don't reorder mfmsr().
+
+Signed-off-by: Tiejun Chen <tiejun.chen@windriver.com>
+Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+CC: stable@vger.kernel.org
+---
+ arch/powerpc/include/asm/reg.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/powerpc/include/asm/reg.h b/arch/powerpc/include/asm/reg.h
+index f0cb7f4..360585d 100644
+--- a/arch/powerpc/include/asm/reg.h
++++ b/arch/powerpc/include/asm/reg.h
+@@ -1024,7 +1024,8 @@
+ /* Macros for setting and retrieving special purpose registers */
+ #ifndef __ASSEMBLY__
+ #define mfmsr()		({unsigned long rval; \
+-			asm volatile("mfmsr %0" : "=r" (rval)); rval;})
++			asm volatile("mfmsr %0" : "=r" (rval) : \
++						: "memory"); rval;})
+ #ifdef CONFIG_PPC_BOOK3S_64
+ #define __mtmsrd(v, l)	asm volatile("mtmsrd %0," __stringify(l) \
+ 				     : : "r" (v) : "memory")
+-- 
+1.7.11.2
+
+
+From b9cd6b446991bbf334731a07c129429de145b056 Mon Sep 17 00:00:00 2001
+From: roger blofeld <blofeldus@yahoo.com>
+Date: Thu, 21 Jun 2012 05:27:14 +0000
+Subject: [PATCH 30/56] powerpc/ftrace: Fix assembly trampoline register usage
+
+Just like the module loader, ftrace needs to be updated to use r12
+instead of r11 with newer gcc's.
+
+Signed-off-by: Roger Blofeld <blofeldus@yahoo.com>
+Signed-off-by: Benjamin Herrenschmidt <benh@kernel.crashing.org>
+CC: stable@vger.kernel.org
+---
+ arch/powerpc/kernel/ftrace.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/arch/powerpc/kernel/ftrace.c b/arch/powerpc/kernel/ftrace.c
+index bf99cfa..6324008 100644
+--- a/arch/powerpc/kernel/ftrace.c
++++ b/arch/powerpc/kernel/ftrace.c
+@@ -245,9 +245,9 @@ __ftrace_make_nop(struct module *mod,
+ 
+ 	/*
+ 	 * On PPC32 the trampoline looks like:
+-	 *  0x3d, 0x60, 0x00, 0x00  lis r11,sym@ha
+-	 *  0x39, 0x6b, 0x00, 0x00  addi r11,r11,sym@l
+-	 *  0x7d, 0x69, 0x03, 0xa6  mtctr r11
++	 *  0x3d, 0x80, 0x00, 0x00  lis r12,sym@ha
++	 *  0x39, 0x8c, 0x00, 0x00  addi r12,r12,sym@l
++	 *  0x7d, 0x89, 0x03, 0xa6  mtctr r12
+ 	 *  0x4e, 0x80, 0x04, 0x20  bctr
+ 	 */
+ 
+@@ -262,9 +262,9 @@ __ftrace_make_nop(struct module *mod,
+ 	pr_devel(" %08x %08x ", jmp[0], jmp[1]);
+ 
+ 	/* verify that this is what we expect it to be */
+-	if (((jmp[0] & 0xffff0000) != 0x3d600000) ||
+-	    ((jmp[1] & 0xffff0000) != 0x396b0000) ||
+-	    (jmp[2] != 0x7d6903a6) ||
++	if (((jmp[0] & 0xffff0000) != 0x3d800000) ||
++	    ((jmp[1] & 0xffff0000) != 0x398c0000) ||
++	    (jmp[2] != 0x7d8903a6) ||
+ 	    (jmp[3] != 0x4e800420)) {
+ 		printk(KERN_ERR "Not a trampoline\n");
+ 		return -EINVAL;
+-- 
+1.7.11.2
+
+
+From 6db826a72a24ab64bb74a6638b4b344d19ea6967 Mon Sep 17 00:00:00 2001
+From: Jan Kara <jack@suse.cz>
+Date: Tue, 10 Jul 2012 17:58:04 +0200
+Subject: [PATCH 31/56] udf: Improve table length check to avoid possible
+ overflow
+
+When a partition table length is corrupted to be close to 1 << 32, the
+check for its length may overflow on 32-bit systems and we will think
+the length is valid. Later on the kernel can crash trying to read beyond
+end of buffer. Fix the check to avoid possible overflow.
+
+CC: stable@vger.kernel.org
+Reported-by: Ben Hutchings <ben@decadent.org.uk>
+Signed-off-by: Jan Kara <jack@suse.cz>
+---
+ fs/udf/super.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fs/udf/super.c b/fs/udf/super.c
+index 8d86a87..e660ffd 100644
+--- a/fs/udf/super.c
++++ b/fs/udf/super.c
+@@ -1283,7 +1283,7 @@ static int udf_load_logicalvol(struct super_block *sb, sector_t block,
+ 	BUG_ON(ident != TAG_IDENT_LVD);
+ 	lvd = (struct logicalVolDesc *)bh->b_data;
+ 	table_len = le32_to_cpu(lvd->mapTableLength);
+-	if (sizeof(*lvd) + table_len > sb->s_blocksize) {
++	if (table_len > sb->s_blocksize - sizeof(*lvd)) {
+ 		udf_err(sb, "error loading logical volume descriptor: "
+ 			"Partition table too long (%u > %lu)\n", table_len,
+ 			sb->s_blocksize - sizeof(*lvd));
+-- 
+1.7.11.2
+
+
+From 8ac46f8b75f5325ab71be6c983d4e7682b151ee8 Mon Sep 17 00:00:00 2001
+From: Christian Lamparter <chunkeey@googlemail.com>
+Date: Sat, 7 Jul 2012 15:07:13 +0200
+Subject: [PATCH 32/56] mac80211: fix read outside array bounds
+
+ieee802_1d_to_ac is defined as a const int[8],
+but the tid parameter has a range from 0 to 15.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Christian Lamparter <chunkeey@googlemail.com>
+Signed-off-by: John W. Linville <linville@tuxdriver.com>
+---
+ net/mac80211/tx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/mac80211/tx.c b/net/mac80211/tx.c
+index e453212..85cf32d 100644
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -2733,7 +2733,7 @@ EXPORT_SYMBOL(ieee80211_get_buffered_bc);
+ void ieee80211_tx_skb_tid(struct ieee80211_sub_if_data *sdata,
+ 			  struct sk_buff *skb, int tid)
+ {
+-	int ac = ieee802_1d_to_ac[tid];
++	int ac = ieee802_1d_to_ac[tid & 7];
+ 
+ 	skb_set_mac_header(skb, 0);
+ 	skb_set_network_header(skb, 0);
+-- 
+1.7.11.2
+
+
+From 5e32e0302f39e983736f890489bce39a3659c9f7 Mon Sep 17 00:00:00 2001
+From: Tejun Heo <tj@kernel.org>
+Date: Tue, 3 Jul 2012 10:38:06 -0700
+Subject: [PATCH 33/56] cgroup: cgroup_rm_files() was calling simple_unlink()
+ with the wrong inode
+
+While refactoring cgroup file removal path, 05ef1d7c4a "cgroup:
+introduce struct cfent" incorrectly changed the @dir argument of
+simple_unlink() to the inode of the file being deleted instead of that
+of the containing directory.
+
+The effect of this bug is minor - ctime and mtime of the parent
+weren't properly updated on file deletion.
+
+Fix it by using @cgrp->dentry->d_inode instead.
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Reported-by: Al Viro <viro@ZenIV.linux.org.uk>
+Acked-by: Li Zefan <lizefan@huawei.com>
+Cc: stable@vger.kernel.org
+---
+ kernel/cgroup.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/cgroup.c b/kernel/cgroup.c
+index b303dfc..15462a0 100644
+--- a/kernel/cgroup.c
++++ b/kernel/cgroup.c
+@@ -954,7 +954,7 @@ static int cgroup_rm_file(struct cgroup *cgrp, const struct cftype *cft)
+ 
+ 		dget(d);
+ 		d_delete(d);
+-		simple_unlink(d->d_inode, d);
++		simple_unlink(cgrp->dentry->d_inode, d);
+ 		list_del_init(&cfe->node);
+ 		dput(d);
+ 
+-- 
+1.7.11.2
+
+
+From 40b24fd48ed2160b7e4329ecd9d0340604b0f8d9 Mon Sep 17 00:00:00 2001
+From: Liam Girdwood <lrg@ti.com>
+Date: Fri, 6 Jul 2012 16:57:05 +0100
+Subject: [PATCH 34/56] ASoC: dapm: Fix locking during codec shutdown
+
+Codec shutdown performs a DAPM power sequence that might cause conflicts
+and/or race conditions if another stream power event is running simultaneously.
+Use card's dapm mutex to protect any potential race condition between them.
+
+Signed-off-by: Misael Lopez Cruz <misael.lopez@ti.com>
+Signed-off-by: Liam Girdwood <lrg@ti.com>
+Signed-off-by: Mark Brown <broonie@opensource.wolfsonmicro.com>
+Cc: stable@vger.kernel.org
+---
+ sound/soc/soc-dapm.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/sound/soc/soc-dapm.c b/sound/soc/soc-dapm.c
+index 89eae93..11b7320 100644
+--- a/sound/soc/soc-dapm.c
++++ b/sound/soc/soc-dapm.c
+@@ -3538,10 +3538,13 @@ EXPORT_SYMBOL_GPL(snd_soc_dapm_free);
+ 
+ static void soc_dapm_shutdown_codec(struct snd_soc_dapm_context *dapm)
+ {
++	struct snd_soc_card *card = dapm->card;
+ 	struct snd_soc_dapm_widget *w;
+ 	LIST_HEAD(down_list);
+ 	int powerdown = 0;
+ 
++	mutex_lock(&card->dapm_mutex);
++
+ 	list_for_each_entry(w, &dapm->card->widgets, list) {
+ 		if (w->dapm != dapm)
+ 			continue;
+@@ -3564,6 +3567,8 @@ static void soc_dapm_shutdown_codec(struct snd_soc_dapm_context *dapm)
+ 			snd_soc_dapm_set_bias_level(dapm,
+ 						    SND_SOC_BIAS_STANDBY);
+ 	}
++
++	mutex_unlock(&card->dapm_mutex);
+ }
+ 
+ /*
+-- 
+1.7.11.2
+
+
+From 149a4cffe13fe3433b4c0130d0444abe200deb53 Mon Sep 17 00:00:00 2001
+From: Borislav Petkov <borislav.petkov@amd.com>
+Date: Thu, 21 Jun 2012 14:07:16 +0200
+Subject: [PATCH 35/56] x86, microcode: Sanitize per-cpu microcode reloading
+ interface
+
+Microcode reloading in a per-core manner is a very bad idea for both
+major x86 vendors. And the thing is, we have such interface with which
+we can end up with different microcode versions applied on different
+cores of an otherwise homogeneous wrt (family,model,stepping) system.
+
+So turn off the possibility of doing that per core and allow it only
+system-wide.
+
+This is a minimal fix which we'd like to see in stable too thus the
+more-or-less arbitrary decision to allow system-wide reloading only on
+the BSP:
+
+$ echo 1 > /sys/devices/system/cpu/cpu0/microcode/reload
+...
+
+and disable the interface on the other cores:
+
+$ echo 1 > /sys/devices/system/cpu/cpu23/microcode/reload
+-bash: echo: write error: Invalid argument
+
+Also, allowing the reload only from one CPU (the BSP in
+that case) doesn't allow the reload procedure to degenerate
+into an O(n^2) deal when triggering reloads from all
+/sys/devices/system/cpu/cpuX/microcode/reload sysfs nodes
+simultaneously.
+
+A more generic fix will follow.
+
+Cc: Henrique de Moraes Holschuh <hmh@hmh.eng.br>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Signed-off-by: Borislav Petkov <borislav.petkov@amd.com>
+Link: http://lkml.kernel.org/r/1340280437-7718-2-git-send-email-bp@amd64.org
+Signed-off-by: H. Peter Anvin <hpa@zytor.com>
+Cc: <stable@vger.kernel.org>
+---
+ arch/x86/kernel/microcode_core.c | 26 +++++++++++++++++++-------
+ 1 file changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/arch/x86/kernel/microcode_core.c b/arch/x86/kernel/microcode_core.c
+index fbdfc69..24b852b 100644
+--- a/arch/x86/kernel/microcode_core.c
++++ b/arch/x86/kernel/microcode_core.c
+@@ -298,19 +298,31 @@ static ssize_t reload_store(struct device *dev,
+ 			    const char *buf, size_t size)
+ {
+ 	unsigned long val;
+-	int cpu = dev->id;
+-	ssize_t ret = 0;
++	int cpu;
++	ssize_t ret = 0, tmp_ret;
++
++	/* allow reload only from the BSP */
++	if (boot_cpu_data.cpu_index != dev->id)
++		return -EINVAL;
+ 
+ 	ret = kstrtoul(buf, 0, &val);
+ 	if (ret)
+ 		return ret;
+ 
+-	if (val == 1) {
+-		get_online_cpus();
+-		if (cpu_online(cpu))
+-			ret = reload_for_cpu(cpu);
+-		put_online_cpus();
++	if (val != 1)
++		return size;
++
++	get_online_cpus();
++	for_each_online_cpu(cpu) {
++		tmp_ret = reload_for_cpu(cpu);
++		if (tmp_ret != 0)
++			pr_warn("Error reloading microcode on CPU %d\n", cpu);
++
++		/* save retval of the first encountered reload error */
++		if (!ret)
++			ret = tmp_ret;
+ 	}
++	put_online_cpus();
+ 
+ 	if (!ret)
+ 		ret = size;
+-- 
+1.7.11.2
+
+
+From fa49af20ae9897a720dde40817052f1cef05de0a Mon Sep 17 00:00:00 2001
+From: "Srivatsa S. Bhat" <srivatsa.bhat@linux.vnet.ibm.com>
+Date: Sat, 16 Jun 2012 15:30:45 +0200
+Subject: [PATCH 36/56] ftrace: Disable function tracing during suspend/resume
+ and hibernation, again
+
+If function tracing is enabled for some of the low-level suspend/resume
+functions, it leads to triple fault during resume from suspend, ultimately
+ending up in a reboot instead of a resume (or a total refusal to come out
+of suspended state, on some machines).
+
+This issue was explained in more detail in commit f42ac38c59e0a03d (ftrace:
+disable tracing for suspend to ram). However, the changes made by that commit
+got reverted by commit cbe2f5a6e84eebb (tracing: allow tracing of
+suspend/resume & hibernation code again). So, unfortunately since things are
+not yet robust enough to allow tracing of low-level suspend/resume functions,
+suspend/resume is still broken when ftrace is enabled.
+
+So fix this by disabling function tracing during suspend/resume & hibernation.
+
+Signed-off-by: Srivatsa S. Bhat <srivatsa.bhat@linux.vnet.ibm.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Rafael J. Wysocki <rjw@sisk.pl>
+---
+ kernel/power/hibernate.c | 6 ++++++
+ kernel/power/suspend.c   | 3 +++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/kernel/power/hibernate.c b/kernel/power/hibernate.c
+index 238025f..4d46daf 100644
+--- a/kernel/power/hibernate.c
++++ b/kernel/power/hibernate.c
+@@ -353,6 +353,7 @@ int hibernation_snapshot(int platform_mode)
+ 	}
+ 
+ 	suspend_console();
++	ftrace_stop();
+ 	pm_restrict_gfp_mask();
+ 
+ 	error = dpm_suspend(PMSG_FREEZE);
+@@ -378,6 +379,7 @@ int hibernation_snapshot(int platform_mode)
+ 	if (error || !in_suspend)
+ 		pm_restore_gfp_mask();
+ 
++	ftrace_start();
+ 	resume_console();
+ 	dpm_complete(msg);
+ 
+@@ -480,6 +482,7 @@ int hibernation_restore(int platform_mode)
+ 
+ 	pm_prepare_console();
+ 	suspend_console();
++	ftrace_stop();
+ 	pm_restrict_gfp_mask();
+ 	error = dpm_suspend_start(PMSG_QUIESCE);
+ 	if (!error) {
+@@ -487,6 +490,7 @@ int hibernation_restore(int platform_mode)
+ 		dpm_resume_end(PMSG_RECOVER);
+ 	}
+ 	pm_restore_gfp_mask();
++	ftrace_start();
+ 	resume_console();
+ 	pm_restore_console();
+ 	return error;
+@@ -513,6 +517,7 @@ int hibernation_platform_enter(void)
+ 
+ 	entering_platform_hibernation = true;
+ 	suspend_console();
++	ftrace_stop();
+ 	error = dpm_suspend_start(PMSG_HIBERNATE);
+ 	if (error) {
+ 		if (hibernation_ops->recover)
+@@ -556,6 +561,7 @@ int hibernation_platform_enter(void)
+  Resume_devices:
+ 	entering_platform_hibernation = false;
+ 	dpm_resume_end(PMSG_RESTORE);
++	ftrace_start();
+ 	resume_console();
+ 
+  Close:
+diff --git a/kernel/power/suspend.c b/kernel/power/suspend.c
+index 396d262..c8b7446 100644
+--- a/kernel/power/suspend.c
++++ b/kernel/power/suspend.c
+@@ -24,6 +24,7 @@
+ #include <linux/export.h>
+ #include <linux/suspend.h>
+ #include <linux/syscore_ops.h>
++#include <linux/ftrace.h>
+ #include <trace/events/power.h>
+ 
+ #include "power.h"
+@@ -212,6 +213,7 @@ int suspend_devices_and_enter(suspend_state_t state)
+ 			goto Close;
+ 	}
+ 	suspend_console();
++	ftrace_stop();
+ 	suspend_test_start();
+ 	error = dpm_suspend_start(PMSG_SUSPEND);
+ 	if (error) {
+@@ -231,6 +233,7 @@ int suspend_devices_and_enter(suspend_state_t state)
+ 	suspend_test_start();
+ 	dpm_resume_end(PMSG_RESUME);
+ 	suspend_test_finish("resume devices");
++	ftrace_start();
+ 	resume_console();
+  Close:
+ 	if (suspend_ops->end)
+-- 
+1.7.11.2
+
+
+From f0a76b7618bbfdb4d9a40d38ed9f6d485a21d872 Mon Sep 17 00:00:00 2001
+From: Nishanth Menon <nm@ti.com>
+Date: Fri, 18 May 2012 12:26:19 -0500
+Subject: [PATCH 37/56] ARM: OMAP2+: OPP: Fix to ensure check of right oppdef
+ after bad one
+
+Commit 9fa2df6b90786301b175e264f5fa9846aba81a65
+(ARM: OMAP2+: OPP: allow OPP enumeration to continue if device is not present)
+makes the logic:
+for (i = 0; i < opp_def_size; i++) {
+	<snip>
+	if (!oh || !oh->od) {
+		<snip>
+		continue;
+	}
+<snip>
+opp_def++;
+}
+
+In short, the moment we hit a "Bad OPP", we end up looping the list
+comparing against the bad opp definition pointer for the rest of the
+iteration count. Instead, increment opp_def in the for loop itself
+and allow continue to be used in code without much thought so that
+we check the next set of OPP definition pointers :)
+
+Cc: Steve Sakoman <steve@sakoman.com>
+Cc: Tony Lindgren <tony@atomide.com>
+Cc: stable@vger.kernel.org
+Signed-off-by: Nishanth Menon <nm@ti.com>
+Signed-off-by: Kevin Hilman <khilman@ti.com>
+---
+ arch/arm/mach-omap2/opp.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-omap2/opp.c b/arch/arm/mach-omap2/opp.c
+index de6d464..d8f6dbf 100644
+--- a/arch/arm/mach-omap2/opp.c
++++ b/arch/arm/mach-omap2/opp.c
+@@ -53,7 +53,7 @@ int __init omap_init_opp_table(struct omap_opp_def *opp_def,
+ 	omap_table_init = 1;
+ 
+ 	/* Lets now register with OPP library */
+-	for (i = 0; i < opp_def_size; i++) {
++	for (i = 0; i < opp_def_size; i++, opp_def++) {
+ 		struct omap_hwmod *oh;
+ 		struct device *dev;
+ 
+@@ -86,7 +86,6 @@ int __init omap_init_opp_table(struct omap_opp_def *opp_def,
+ 					__func__, opp_def->freq,
+ 					opp_def->hwmod_name, i, r);
+ 		}
+-		opp_def++;
+ 	}
+ 
+ 	return 0;
+-- 
+1.7.11.2
+
+
+From d526cb9340b5480ba0955a79c2df3b805b4c69d8 Mon Sep 17 00:00:00 2001
+From: Rajiv Andrade <srajiv@linux.vnet.ibm.com>
+Date: Tue, 24 Apr 2012 17:38:17 -0300
+Subject: [PATCH 38/56] TPM: chip disabled state erronously being reported as
+ error
+
+tpm_do_selftest() attempts to read a PCR in order to
+decide if one can rely on the TPM being used or not.
+The function that's used by __tpm_pcr_read() does not
+expect the TPM to be disabled or deactivated, and if so,
+reports an error.
+
+It's fine if the TPM returns this error when trying to
+use it for the first time after a power cycle, but it's
+definitely not if it already returned success for a
+previous attempt to read one of its PCRs.
+
+The tpm_do_selftest() was modified so that the driver only
+reports this return code as an error when it really is.
+
+Reported-and-tested-by: Paul Bolle <pebolle@tiscali.nl>
+Cc: Stable <stable@vger.kernel.org>
+Signed-off-by: Rajiv Andrade <srajiv@linux.vnet.ibm.com>
+---
+ drivers/char/tpm/tpm.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/char/tpm/tpm.c b/drivers/char/tpm/tpm.c
+index ad7c732..08427ab 100644
+--- a/drivers/char/tpm/tpm.c
++++ b/drivers/char/tpm/tpm.c
+@@ -827,10 +827,10 @@ EXPORT_SYMBOL_GPL(tpm_pcr_extend);
+ int tpm_do_selftest(struct tpm_chip *chip)
+ {
+ 	int rc;
+-	u8 digest[TPM_DIGEST_SIZE];
+ 	unsigned int loops;
+ 	unsigned int delay_msec = 1000;
+ 	unsigned long duration;
++	struct tpm_cmd_t cmd;
+ 
+ 	duration = tpm_calc_ordinal_duration(chip,
+ 	                                     TPM_ORD_CONTINUE_SELFTEST);
+@@ -845,7 +845,15 @@ int tpm_do_selftest(struct tpm_chip *chip)
+ 		return rc;
+ 
+ 	do {
+-		rc = __tpm_pcr_read(chip, 0, digest);
++		/* Attempt to read a PCR value */
++		cmd.header.in = pcrread_header;
++		cmd.params.pcrread_in.pcr_idx = cpu_to_be32(0);
++		rc = tpm_transmit(chip, (u8 *) &cmd, READ_PCR_RESULT_SIZE);
++
++		if (rc < TPM_HEADER_SIZE)
++			return -EFAULT;
++
++		rc = be32_to_cpu(cmd.header.out.return_code);
+ 		if (rc == TPM_ERR_DISABLED || rc == TPM_ERR_DEACTIVATED) {
+ 			dev_info(chip->dev,
+ 				 "TPM is disabled/deactivated (0x%X)\n", rc);
+-- 
+1.7.11.2
+
+
+From b5d5a811bf836781cb8deed920af82c7c3d621de Mon Sep 17 00:00:00 2001
+From: Meenakshi Venkataraman <meenakshi.venkataraman@intel.com>
+Date: Wed, 16 May 2012 22:40:50 +0200
+Subject: [PATCH 39/56] iwlwifi: fix debug print in iwl_sta_calc_ht_flags
+
+We missed passing an argument to the
+debug print. Fix it.
+
+Cc: stable@kernel.org
+Signed-off-by: Meenakshi Venkataraman <meenakshi.venkataraman@intel.com>
+Reviewed-by: Emmanuel Grumbach <emmanuel.grumbach@intel.com>
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: John W. Linville <linville@tuxdriver.com>
+---
+ drivers/net/wireless/iwlwifi/iwl-agn-sta.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/wireless/iwlwifi/iwl-agn-sta.c b/drivers/net/wireless/iwlwifi/iwl-agn-sta.c
+index eb6a8ea..287fdd0 100644
+--- a/drivers/net/wireless/iwlwifi/iwl-agn-sta.c
++++ b/drivers/net/wireless/iwlwifi/iwl-agn-sta.c
+@@ -236,6 +236,7 @@ static void iwl_sta_calc_ht_flags(struct iwl_priv *priv,
+ 	mimo_ps_mode = (sta_ht_inf->cap & IEEE80211_HT_CAP_SM_PS) >> 2;
+ 
+ 	IWL_DEBUG_INFO(priv, "STA %pM SM PS mode: %s\n",
++			sta->addr,
+ 			(mimo_ps_mode == WLAN_HT_CAP_SM_PS_STATIC) ?
+ 			"static" :
+ 			(mimo_ps_mode == WLAN_HT_CAP_SM_PS_DYNAMIC) ?
+-- 
+1.7.11.2
+
+
+From fdb2fa41fbfdd86bd7c26b991c4785daf9384d94 Mon Sep 17 00:00:00 2001
+From: Albert Pool <albertpool@solcon.nl>
+Date: Mon, 14 May 2012 18:08:32 +0200
+Subject: [PATCH 40/56] rt2800usb: 2001:3c17 is an RT3370 device
+
+D-Link DWA-123 rev A1
+
+Signed-off-by: Albert Pool<albertpool@solcon.nl>
+Cc: <stable@vger.kernel.org>
+Acked-by: Gertjan van Wingerde <gwingerde@gmail.com>
+Signed-off-by: John W. Linville <linville@tuxdriver.com>
+---
+ drivers/net/wireless/rt2x00/rt2800usb.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/rt2x00/rt2800usb.c b/drivers/net/wireless/rt2x00/rt2800usb.c
+index bf78317..20a5040 100644
+--- a/drivers/net/wireless/rt2x00/rt2800usb.c
++++ b/drivers/net/wireless/rt2x00/rt2800usb.c
+@@ -1137,6 +1137,8 @@ static struct usb_device_id rt2800usb_device_table[] = {
+ #ifdef CONFIG_RT2800USB_RT33XX
+ 	/* Belkin */
+ 	{ USB_DEVICE(0x050d, 0x945b) },
++	/* D-Link */
++	{ USB_DEVICE(0x2001, 0x3c17) },
+ 	/* Panasonic */
+ 	{ USB_DEVICE(0x083a, 0xb511) },
+ 	/* Philips */
+@@ -1237,7 +1239,6 @@ static struct usb_device_id rt2800usb_device_table[] = {
+ 	/* D-Link */
+ 	{ USB_DEVICE(0x07d1, 0x3c0b) },
+ 	{ USB_DEVICE(0x07d1, 0x3c17) },
+-	{ USB_DEVICE(0x2001, 0x3c17) },
+ 	/* Encore */
+ 	{ USB_DEVICE(0x203d, 0x14a1) },
+ 	/* Gemtek */
+-- 
+1.7.11.2
+
+
+From cba3851612913c574b86a3311fc45d9bfdfae6f0 Mon Sep 17 00:00:00 2001
+From: Eliad Peller <eliad@wizery.com>
+Date: Sun, 13 May 2012 18:07:04 +0300
+Subject: [PATCH 41/56] mac80211: fail authentication when AP denied
+ authentication
+
+ieee80211_rx_mgmt_auth() doesn't handle denied authentication
+properly - it authenticates the station and waits for association
+(for 5 seconds) instead of failing the authentication.
+
+Fix it by destroying auth_data and bailing out instead.
+
+Signed-off-by: Eliad Peller <eliad@wizery.com>
+Acked-by: Johannes Berg <johannes@sipsolutions.net>
+Cc: stable@vger.kernel.org #3.4
+Signed-off-by: John W. Linville <linville@tuxdriver.com>
+---
+ net/mac80211/mlme.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/net/mac80211/mlme.c b/net/mac80211/mlme.c
+index 0db5d34..95ae431 100644
+--- a/net/mac80211/mlme.c
++++ b/net/mac80211/mlme.c
+@@ -1805,7 +1805,8 @@ ieee80211_rx_mgmt_auth(struct ieee80211_sub_if_data *sdata,
+ 	if (status_code != WLAN_STATUS_SUCCESS) {
+ 		printk(KERN_DEBUG "%s: %pM denied authentication (status %d)\n",
+ 		       sdata->name, mgmt->sa, status_code);
+-		goto out;
++		ieee80211_destroy_auth_data(sdata, false);
++		return RX_MGMT_CFG80211_RX_AUTH;
+ 	}
+ 
+ 	switch (ifmgd->auth_data->algorithm) {
+@@ -1827,7 +1828,6 @@ ieee80211_rx_mgmt_auth(struct ieee80211_sub_if_data *sdata,
+ 	}
+ 
+ 	printk(KERN_DEBUG "%s: authenticated\n", sdata->name);
+- out:
+ 	ifmgd->auth_data->done = true;
+ 	ifmgd->auth_data->timeout = jiffies + IEEE80211_AUTH_WAIT_ASSOC;
+ 	run_again(ifmgd, ifmgd->auth_data->timeout);
+-- 
+1.7.11.2
+
+
+From 7e59f6729cd83672c1265196f445481f6658429e Mon Sep 17 00:00:00 2001
+From: Dylan Reid <dgreid@chromium.org>
+Date: Thu, 21 Jun 2012 21:51:22 -0700
+Subject: [PATCH 42/56] ALSA: hda - Don't power up when not powered down.
+
+After cancel_delayed_work_sync returns, the power down work either never
+started (power_on == 1) or finished (power_on == 0).  In the former case
+there is no need to power up again.
+
+Signed-off-by: Dylan Reid <dgreid@chromium.org>
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+---
+ sound/pci/hda/hda_codec.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/sound/pci/hda/hda_codec.c b/sound/pci/hda/hda_codec.c
+index 51cb2a2..4e17033 100644
+--- a/sound/pci/hda/hda_codec.c
++++ b/sound/pci/hda/hda_codec.c
+@@ -4418,6 +4418,13 @@ static void __snd_hda_power_up(struct hda_codec *codec, bool wait_power_down)
+ 	cancel_delayed_work_sync(&codec->power_work);
+ 
+ 	spin_lock(&codec->power_lock);
++	/* If the power down delayed work was cancelled above before starting,
++	 * then there is no need to go through power up here.
++	 */
++	if (codec->power_on) {
++		spin_unlock(&codec->power_lock);
++		return;
++	}
+ 	trace_hda_power_up(codec);
+ 	snd_hda_update_power_acct(codec);
+ 	codec->power_on = 1;
+-- 
+1.7.11.2
+
+
+From 9113bd59bc323389b554d7b82e3e74b1fd09c080 Mon Sep 17 00:00:00 2001
+From: Benjamin Tissoires <benjamin.tissoires@enac.fr>
+Date: Tue, 19 Jun 2012 14:39:52 +0200
+Subject: [PATCH 43/56] HID: hid-multitouch: fix input mode feature command
+
+Zytronic panels shows a new way of setting the Input Mode feature.
+This feature is put in the second usage in the HID feature, instead
+of the first, as the majority of the multitouch devices.
+
+This patch adds a detection step when the feature is presented to know
+where the feature is located in the report. We can then trigger the right
+command to the device. This removes the magic number "0" in the function
+mt_set_input_mode.
+
+Signed-off-by: Benjamin Tissoires <benjamin.tissoires@enac.fr>
+Signed-off-by: Jiri Kosina <jkosina@suse.cz>
+---
+ drivers/hid/hid-multitouch.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/hid/hid-multitouch.c b/drivers/hid/hid-multitouch.c
+index 7647924..c6655a5 100644
+--- a/drivers/hid/hid-multitouch.c
++++ b/drivers/hid/hid-multitouch.c
+@@ -83,6 +83,7 @@ struct mt_device {
+ 	unsigned last_field_index;	/* last field index of the report */
+ 	unsigned last_slot_field;	/* the last field of a slot */
+ 	__s8 inputmode;		/* InputMode HID feature, -1 if non-existent */
++	__s8 inputmode_index;	/* InputMode HID feature index in the report */
+ 	__s8 maxcontact_report_id;	/* Maximum Contact Number HID feature,
+ 				   -1 if non-existent */
+ 	__u8 num_received;	/* how many contacts we received */
+@@ -260,10 +261,20 @@ static void mt_feature_mapping(struct hid_device *hdev,
+ 		struct hid_field *field, struct hid_usage *usage)
+ {
+ 	struct mt_device *td = hid_get_drvdata(hdev);
++	int i;
+ 
+ 	switch (usage->hid) {
+ 	case HID_DG_INPUTMODE:
+ 		td->inputmode = field->report->id;
++		td->inputmode_index = 0; /* has to be updated below */
++
++		for (i=0; i < field->maxusage; i++) {
++			if (field->usage[i].hid == usage->hid) {
++				td->inputmode_index = i;
++				break;
++			}
++		}
++
+ 		break;
+ 	case HID_DG_CONTACTMAX:
+ 		td->maxcontact_report_id = field->report->id;
+@@ -618,7 +629,7 @@ static void mt_set_input_mode(struct hid_device *hdev)
+ 	re = &(hdev->report_enum[HID_FEATURE_REPORT]);
+ 	r = re->report_id_hash[td->inputmode];
+ 	if (r) {
+-		r->field[0]->value[0] = 0x02;
++		r->field[0]->value[td->inputmode_index] = 0x02;
+ 		usbhid_submit_report(hdev, r, USB_DIR_OUT);
+ 	}
+ }
+-- 
+1.7.11.2
+
+
+From be5f89a9dd07187470967e02acb403c227c8901b Mon Sep 17 00:00:00 2001
+From: Ilan Peer <ilan.peer@intel.com>
+Date: Thu, 10 May 2012 15:53:14 +0300
+Subject: [PATCH 44/56] iwlwifi: Check BSS ctx active before call mac80211
+
+It is possible that the BSS context is not active (for example
+when the current mode is set to GO), or that the vif->type is
+different than station. In such a case we cannot
+call mac80211 to report the average rssi for the interface
+(the function assumes that the vif is valid and that the type
+is station).
+
+Reviewed-by: Emmanuel Grumbach <emmanuel.grumbach@intel.com>
+Signed-off-by: Ilan Peer <ilan.peer@intel.com>
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+---
+ drivers/net/wireless/iwlwifi/iwl-agn-lib.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/net/wireless/iwlwifi/iwl-agn-lib.c b/drivers/net/wireless/iwlwifi/iwl-agn-lib.c
+index e55ec6c..c31072d 100644
+--- a/drivers/net/wireless/iwlwifi/iwl-agn-lib.c
++++ b/drivers/net/wireless/iwlwifi/iwl-agn-lib.c
+@@ -617,6 +617,11 @@ static bool iwlagn_fill_txpower_mode(struct iwl_priv *priv,
+ 	struct iwl_rxon_context *ctx = &priv->contexts[IWL_RXON_CTX_BSS];
+ 	int ave_rssi;
+ 
++	if (!ctx->vif || (ctx->vif->type != NL80211_IFTYPE_STATION)) {
++		IWL_DEBUG_INFO(priv, "BSS ctx not active or not in sta mode\n");
++		return false;
++	}
++
+ 	ave_rssi = ieee80211_ave_rssi(ctx->vif);
+ 	if (!ave_rssi) {
+ 		/* no rssi data, no changes to reduce tx power */
+-- 
+1.7.11.2
+
+
+From 45755c91cf3ce9de993faa87fcfb02d4523a7dfd Mon Sep 17 00:00:00 2001
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Wed, 4 Jul 2012 12:49:59 +0200
+Subject: [PATCH 45/56] mac80211: fix crash with single-queue drivers
+
+Larry (and some others I think) reported that with
+single-queue drivers mac80211 crashes when waking
+the queues. This happens because we allocate just
+a single queue for each virtual interface in case
+the driver doesn't have at least 4 queues, but the
+code stopping/waking the virtual interface queues
+wasn't taking this into account.
+
+Reported-by: Larry Finger <Larry.Finger@lwfinger.net>
+Tested-by: Larry Finger <Larry.Finger@lwfinger.net>
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+---
+ drivers/gpu/drm/radeon/radeon_connectors.c | 35 +++++++++++++++++++++++-------
+ net/mac80211/util.c                        | 12 ++++++++--
+ 2 files changed, 37 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/gpu/drm/radeon/radeon_connectors.c b/drivers/gpu/drm/radeon/radeon_connectors.c
+index 2914c57..895e628 100644
+--- a/drivers/gpu/drm/radeon/radeon_connectors.c
++++ b/drivers/gpu/drm/radeon/radeon_connectors.c
+@@ -64,14 +64,33 @@ void radeon_connector_hotplug(struct drm_connector *connector)
+ 
+ 	/* just deal with DP (not eDP) here. */
+ 	if (connector->connector_type == DRM_MODE_CONNECTOR_DisplayPort) {
+-		int saved_dpms = connector->dpms;
+-
+-		/* Only turn off the display it it's physically disconnected */
+-		if (!radeon_hpd_sense(rdev, radeon_connector->hpd.hpd))
+-			drm_helper_connector_dpms(connector, DRM_MODE_DPMS_OFF);
+-		else if (radeon_dp_needs_link_train(radeon_connector))
+-			drm_helper_connector_dpms(connector, DRM_MODE_DPMS_ON);
+-		connector->dpms = saved_dpms;
++		struct radeon_connector_atom_dig *dig_connector =
++			radeon_connector->con_priv;
++
++		/* if existing sink type was not DP no need to retrain */
++		if (dig_connector->dp_sink_type != CONNECTOR_OBJECT_ID_DISPLAYPORT)
++			return;
++
++		/* first get sink type as it may be reset after (un)plug */
++		dig_connector->dp_sink_type = radeon_dp_getsinktype(radeon_connector);
++		/* don't do anything if sink is not display port, i.e.,
++		 * passive dp->(dvi|hdmi) adaptor
++		 */
++		if (dig_connector->dp_sink_type == CONNECTOR_OBJECT_ID_DISPLAYPORT) {
++			int saved_dpms = connector->dpms;
++			/* Only turn off the display if it's physically disconnected */
++			if (!radeon_hpd_sense(rdev, radeon_connector->hpd.hpd)) {
++				drm_helper_connector_dpms(connector, DRM_MODE_DPMS_OFF);
++			} else if (radeon_dp_needs_link_train(radeon_connector)) {
++				/* set it to OFF so that drm_helper_connector_dpms()
++				 * won't return immediately since the current state
++				 * is ON at this point.
++				 */
++				connector->dpms = DRM_MODE_DPMS_OFF;
++				drm_helper_connector_dpms(connector, DRM_MODE_DPMS_ON);
++			}
++			connector->dpms = saved_dpms;
++		}
+ 	}
+ }
+ 
+diff --git a/net/mac80211/util.c b/net/mac80211/util.c
+index 8dd4712..f564b5e 100644
+--- a/net/mac80211/util.c
++++ b/net/mac80211/util.c
+@@ -268,6 +268,10 @@ EXPORT_SYMBOL(ieee80211_ctstoself_duration);
+ void ieee80211_propagate_queue_wake(struct ieee80211_local *local, int queue)
+ {
+ 	struct ieee80211_sub_if_data *sdata;
++	int n_acs = IEEE80211_NUM_ACS;
++
++	if (local->hw.queues < IEEE80211_NUM_ACS)
++		n_acs = 1;
+ 
+ 	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
+ 		int ac;
+@@ -279,7 +283,7 @@ void ieee80211_propagate_queue_wake(struct ieee80211_local *local, int queue)
+ 		    local->queue_stop_reasons[sdata->vif.cab_queue] != 0)
+ 			continue;
+ 
+-		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
++		for (ac = 0; ac < n_acs; ac++) {
+ 			int ac_queue = sdata->vif.hw_queue[ac];
+ 
+ 			if (ac_queue == queue ||
+@@ -341,6 +345,7 @@ static void __ieee80211_stop_queue(struct ieee80211_hw *hw, int queue,
+ {
+ 	struct ieee80211_local *local = hw_to_local(hw);
+ 	struct ieee80211_sub_if_data *sdata;
++	int n_acs = IEEE80211_NUM_ACS;
+ 
+ 	trace_stop_queue(local, queue, reason);
+ 
+@@ -352,11 +357,14 @@ static void __ieee80211_stop_queue(struct ieee80211_hw *hw, int queue,
+ 
+ 	__set_bit(reason, &local->queue_stop_reasons[queue]);
+ 
++	if (local->hw.queues < IEEE80211_NUM_ACS)
++		n_acs = 1;
++
+ 	rcu_read_lock();
+ 	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
+ 		int ac;
+ 
+-		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
++		for (ac = 0; ac < n_acs; ac++) {
+ 			if (sdata->vif.hw_queue[ac] == queue ||
+ 			    sdata->vif.cab_queue == queue)
+ 				netif_stop_subqueue(sdata->dev, ac);
+-- 
+1.7.11.2
+
+
+From 5540cab7369064f2a66d6c47bd04e8df28f19de8 Mon Sep 17 00:00:00 2001
+From: Fabio Estevam <festevam@gmail.com>
+Date: Tue, 3 Jul 2012 18:44:04 +0000
+Subject: [PATCH 46/56] dma: imx-dma: Fix kernel crash due to missing clock
+ conversion
+
+With the new i.MX clock infrastructure we need to request the dma clocks
+seperately: ahb and ipg clocks.
+
+This fixes the following kernel crash and make audio to be functional again:
+
+root@freescale /home$ aplay audio48k16S.wav
+Playing WAVE 'audio48k16S.wav' : Signed 16 bit Little Endian, Rate 48000 Hz, Stereo
+Unable to handle kernel NULL pointer dereference at virtual address 00000000
+pgd = c7b74000
+[00000000] *pgd=a7bb5831, *pte=00000000, *ppte=00000000
+Internal error: Oops: 17 [#1] PREEMPT ARM
+Modules linked in:
+CPU: 0    Not tainted  (3.5.0-rc5-next-20120702-00007-g3028b64 #1128)
+PC is at snd_dmaengine_pcm_get_chan+0x8/0x10
+LR is at snd_imx_pcm_hw_params+0x18/0xdc
+pc : [<c02d3cf8>]    lr : [<c02e95ec>]    psr: a0000013
+sp : c7b45e30  ip : ffffffff  fp : c7ae58e0
+r10: 00000000  r9 : c7ae981c  r8 : c7b88800
+r7 : c7ae5a60  r6 : c7ae5b20  r5 : c7ae9810  r4 : c7afa060
+r3 : 00000000  r2 : 00000001  r1 : c7b88800  r0 : c7afa060
+Flags: NzCv  IRQs on  FIQs on  Mode SVC_32  ISA ARM  Segment user
+Control: 0005317f  Table: a7b74000  DAC: 00000015
+Process aplay (pid: 701, stack limit = 0xc7b44270)
+Stack: (0xc7b45e30 to 0xc7b46000)
+5e20:                                     00100000 00000029 c7b88800 c02db870
+5e40: c7ae5a60 c02d4594 00000010 01ae5a60 c7ae5a60 c7ae9810 c7ae9810 c7afa060
+5e60: c7ae5b20 c7ae5a60 c7b88800 c02e3ef0 c02e3e08 c7b1e400 c7afa060 c7b88800
+5e80: 00000000 c0014da8 c7b44000 00000000 bec566ac c02cd400 c7afa060 c7afa060
+5ea0: bec56800 c7b88800 c0014da8 c02cdd7c c04ee710 c04ee7b8 00000003 c005fc74
+5ec0: 00000000 7fffffff c7b45f00 c7afa060 c7b67420 c7ba3070 00000004 c0014da8
+5ee0: c7b44000 00000000 bec566ac c02ced88 c04e95f8 b6f5ab04 c7b45fb0 0145a468
+5f00: 0145a600 bec566bc bec56800 c7b67420 c7ba3070 c00d499c c7b45f18 c7b45f18
+5f20: 0000001a 00000004 00000001 c7b44000 c0527f40 00000009 00000008 00000000
+5f40: c7b44000 c002c9ec 00000001 c04f0ab0 c04ebec0 00000101 00000000 0000000a
+5f60: 60000093 c7b67420 bec56800 c25c4111 00000004 c0014da8 c7b44000 00000000
+5f80: bec566ac c00d4f38 b6ffb658 00000000 c0522d80 0145a468 b6fd5000 0145a418
+5fa0: 00000036 c0014c00 0145a468 b6fd5000 00000004 c25c4111 bec56800 00020001
+5fc0: 0145a468 b6fd5000 0145a418 00000036 0145a468 0145a600 bec566bc bec566ac
+5fe0: 0145a468 bec56388 b6f65ce4 b6dcebec 20000010 00000004 00000000 00000000
+[<c02d3cf8>] (snd_dmaengine_pcm_get_chan+0x8/0x10) from [<c02e95ec>] (snd_imx_pcm_hw_params+0x18/0xdc)
+[<c02e95ec>] (snd_imx_pcm_hw_params+0x18/0xdc) from [<c02e3ef0>] (soc_pcm_hw_params+0xe8/0x1f0)
+[<c02e3ef0>] (soc_pcm_hw_params+0xe8/0x1f0) from [<c02cd400>] (snd_pcm_hw_params+0x124/0x474)
+[<c02cd400>] (snd_pcm_hw_params+0x124/0x474) from [<c02cdd7c>] (snd_pcm_common_ioctl1+0x4b4/0xf74)
+[<c02cdd7c>] (snd_pcm_common_ioctl1+0x4b4/0xf74) from [<c02ced88>] (snd_pcm_playback_ioctl1+0x30/0x510)
+[<c02ced88>] (snd_pcm_playback_ioctl1+0x30/0x510) from [<c00d499c>] (do_vfs_ioctl+0x80/0x5e4)
+[<c00d499c>] (do_vfs_ioctl+0x80/0x5e4) from [<c00d4f38>] (sys_ioctl+0x38/0x60)
+[<c00d4f38>] (sys_ioctl+0x38/0x60) from [<c0014c00>] (ret_fast_syscall+0x0/0x2c)
+Code: e593000c e12fff1e e59030a0 e59330bc (e5930000)
+---[ end trace fa518c8ba3a74e97 ]--
+
+Reported-by: Javier Martin <javier.martin@vista-silicon.com>
+Signed-off-by: Fabio Estevam <fabio.estevam@freescale.com>
+---
+ drivers/dma/imx-dma.c | 36 +++++++++++++++++++++++++-----------
+ 1 file changed, 25 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/dma/imx-dma.c b/drivers/dma/imx-dma.c
+index fcfeb3c..5084975 100644
+--- a/drivers/dma/imx-dma.c
++++ b/drivers/dma/imx-dma.c
+@@ -172,7 +172,8 @@ struct imxdma_engine {
+ 	struct device_dma_parameters	dma_parms;
+ 	struct dma_device		dma_device;
+ 	void __iomem			*base;
+-	struct clk			*dma_clk;
++	struct clk			*dma_ahb;
++	struct clk			*dma_ipg;
+ 	spinlock_t			lock;
+ 	struct imx_dma_2d_config	slots_2d[IMX_DMA_2D_SLOTS];
+ 	struct imxdma_channel		channel[IMX_DMA_CHANNELS];
+@@ -976,10 +977,20 @@ static int __init imxdma_probe(struct platform_device *pdev)
+ 		return 0;
+ 	}
+ 
+-	imxdma->dma_clk = clk_get(NULL, "dma");
+-	if (IS_ERR(imxdma->dma_clk))
+-		return PTR_ERR(imxdma->dma_clk);
+-	clk_enable(imxdma->dma_clk);
++	imxdma->dma_ipg = devm_clk_get(&pdev->dev, "ipg");
++	if (IS_ERR(imxdma->dma_ipg)) {
++		ret = PTR_ERR(imxdma->dma_ipg);
++		goto err_clk;
++	}
++
++	imxdma->dma_ahb = devm_clk_get(&pdev->dev, "ahb");
++	if (IS_ERR(imxdma->dma_ahb)) {
++		ret = PTR_ERR(imxdma->dma_ahb);
++		goto err_clk;
++	}
++
++	clk_prepare_enable(imxdma->dma_ipg);
++	clk_prepare_enable(imxdma->dma_ahb);
+ 
+ 	/* reset DMA module */
+ 	imx_dmav1_writel(imxdma, DCR_DRST, DMA_DCR);
+@@ -988,16 +999,14 @@ static int __init imxdma_probe(struct platform_device *pdev)
+ 		ret = request_irq(MX1_DMA_INT, dma_irq_handler, 0, "DMA", imxdma);
+ 		if (ret) {
+ 			dev_warn(imxdma->dev, "Can't register IRQ for DMA\n");
+-			kfree(imxdma);
+-			return ret;
++			goto err_enable;
+ 		}
+ 
+ 		ret = request_irq(MX1_DMA_ERR, imxdma_err_handler, 0, "DMA", imxdma);
+ 		if (ret) {
+ 			dev_warn(imxdma->dev, "Can't register ERRIRQ for DMA\n");
+ 			free_irq(MX1_DMA_INT, NULL);
+-			kfree(imxdma);
+-			return ret;
++			goto err_enable;
+ 		}
+ 	}
+ 
+@@ -1094,7 +1103,10 @@ err_init:
+ 		free_irq(MX1_DMA_INT, NULL);
+ 		free_irq(MX1_DMA_ERR, NULL);
+ 	}
+-
++err_enable:
++	clk_disable_unprepare(imxdma->dma_ipg);
++	clk_disable_unprepare(imxdma->dma_ahb);
++err_clk:
+ 	kfree(imxdma);
+ 	return ret;
+ }
+@@ -1114,7 +1126,9 @@ static int __exit imxdma_remove(struct platform_device *pdev)
+ 		free_irq(MX1_DMA_ERR, NULL);
+ 	}
+ 
+-        kfree(imxdma);
++	clk_disable_unprepare(imxdma->dma_ipg);
++	clk_disable_unprepare(imxdma->dma_ahb);
++	kfree(imxdma);
+ 
+         return 0;
+ }
+-- 
+1.7.11.2
+
+
+From 02df4a7845c714a3dafde776f96bd7a883d25e2c Mon Sep 17 00:00:00 2001
+From: Kay Sievers <kay@vrfy.org>
+Date: Mon, 16 Jul 2012 18:35:29 -0700
+Subject: [PATCH 47/56] kmsg - properly print over-long continuation lines
+
+Reserve PREFIX_MAX bytes in the LOG_LINE_MAX line when buffering a
+continuation line, to be able to properly prefix the LOG_LINE_MAX
+line with the syslog prefix and timestamp when printing it.
+
+Reported-By: Dave Jones <davej@redhat.com>
+Signed-off-by: Kay Sievers <kay@vrfy.org>
+Cc: stable <stable@vger.kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ kernel/printk.c | 33 +++++++++++++++++++--------------
+ 1 file changed, 19 insertions(+), 14 deletions(-)
+
+diff --git a/kernel/printk.c b/kernel/printk.c
+index ac4bc9e..21bea76 100644
+--- a/kernel/printk.c
++++ b/kernel/printk.c
+@@ -235,7 +235,8 @@ static u32 log_next_idx;
+ static u64 clear_seq;
+ static u32 clear_idx;
+ 
+-#define LOG_LINE_MAX 1024
++#define PREFIX_MAX		32
++#define LOG_LINE_MAX		1024 - PREFIX_MAX
+ 
+ /* record buffer */
+ #if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS)
+@@ -876,7 +877,7 @@ static size_t msg_print_text(const struct log *msg, enum log_flags prev,
+ 
+ 		if (buf) {
+ 			if (print_prefix(msg, syslog, NULL) +
+-			    text_len + 1>= size - len)
++			    text_len + 1 >= size - len)
+ 				break;
+ 
+ 			if (prefix)
+@@ -907,7 +908,7 @@ static int syslog_print(char __user *buf, int size)
+ 	struct log *msg;
+ 	int len = 0;
+ 
+-	text = kmalloc(LOG_LINE_MAX, GFP_KERNEL);
++	text = kmalloc(LOG_LINE_MAX + PREFIX_MAX, GFP_KERNEL);
+ 	if (!text)
+ 		return -ENOMEM;
+ 
+@@ -930,7 +931,8 @@ static int syslog_print(char __user *buf, int size)
+ 
+ 		skip = syslog_partial;
+ 		msg = log_from_idx(syslog_idx);
+-		n = msg_print_text(msg, syslog_prev, true, text, LOG_LINE_MAX);
++		n = msg_print_text(msg, syslog_prev, true, text,
++				   LOG_LINE_MAX + PREFIX_MAX);
+ 		if (n - syslog_partial <= size) {
+ 			/* message fits into buffer, move forward */
+ 			syslog_idx = log_next(syslog_idx);
+@@ -969,7 +971,7 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
+ 	char *text;
+ 	int len = 0;
+ 
+-	text = kmalloc(LOG_LINE_MAX, GFP_KERNEL);
++	text = kmalloc(LOG_LINE_MAX + PREFIX_MAX, GFP_KERNEL);
+ 	if (!text)
+ 		return -ENOMEM;
+ 
+@@ -1022,7 +1024,8 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
+ 			struct log *msg = log_from_idx(idx);
+ 			int textlen;
+ 
+-			textlen = msg_print_text(msg, prev, true, text, LOG_LINE_MAX);
++			textlen = msg_print_text(msg, prev, true, text,
++						 LOG_LINE_MAX + PREFIX_MAX);
+ 			if (textlen < 0) {
+ 				len = textlen;
+ 				break;
+@@ -1352,15 +1355,15 @@ static struct cont {
+ 	bool flushed:1;			/* buffer sealed and committed */
+ } cont;
+ 
+-static void cont_flush(void)
++static void cont_flush(enum log_flags flags)
+ {
+ 	if (cont.flushed)
+ 		return;
+ 	if (cont.len == 0)
+ 		return;
+ 
+-	log_store(cont.facility, cont.level, LOG_NOCONS, cont.ts_nsec,
+-		  NULL, 0, cont.buf, cont.len);
++	log_store(cont.facility, cont.level, LOG_NOCONS | flags,
++		  cont.ts_nsec, NULL, 0, cont.buf, cont.len);
+ 
+ 	cont.flushed = true;
+ }
+@@ -1371,7 +1374,8 @@ static bool cont_add(int facility, int level, const char *text, size_t len)
+ 		return false;
+ 
+ 	if (cont.len + len > sizeof(cont.buf)) {
+-		cont_flush();
++		/* the line gets too long, split it up in separate records */
++		cont_flush(LOG_CONT);
+ 		return false;
+ 	}
+ 
+@@ -1507,7 +1511,7 @@ asmlinkage int vprintk_emit(int facility, int level,
+ 		 * or another task also prints continuation lines.
+ 		 */
+ 		if (cont.len && (lflags & LOG_PREFIX || cont.owner != current))
+-			cont_flush();
++			cont_flush(0);
+ 
+ 		/* buffer line if possible, otherwise store it right away */
+ 		if (!cont_add(facility, level, text, text_len))
+@@ -1525,7 +1529,7 @@ asmlinkage int vprintk_emit(int facility, int level,
+ 		if (cont.len && cont.owner == current) {
+ 			if (!(lflags & LOG_PREFIX))
+ 				stored = cont_add(facility, level, text, text_len);
+-			cont_flush();
++			cont_flush(0);
+ 		}
+ 
+ 		if (!stored)
+@@ -1618,7 +1622,8 @@ EXPORT_SYMBOL(printk);
+ 
+ #else
+ 
+-#define LOG_LINE_MAX 0
++#define LOG_LINE_MAX		0
++#define PREFIX_MAX		0
+ static struct cont {
+ 	size_t len;
+ 	size_t cons;
+@@ -1923,7 +1928,7 @@ static enum log_flags console_prev;
+  */
+ void console_unlock(void)
+ {
+-	static char text[LOG_LINE_MAX];
++	static char text[LOG_LINE_MAX + PREFIX_MAX];
+ 	static u64 seen_seq;
+ 	unsigned long flags;
+ 	bool wake_klogd = false;
+-- 
+1.7.11.2
+
+
+From 9d2dc0598af4999ce7da68f45569d6f5e0ac28c8 Mon Sep 17 00:00:00 2001
+From: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Date: Tue, 3 Jul 2012 23:22:38 -0700
+Subject: [PATCH 48/56] USB: Disable LPM while the device is unconfigured.
+
+The USB 3.0 Set/Clear Feature U1/U2 Enable cannot be sent to a device in
+the Default or Addressed state.  It can only be sent to a configured
+device.  Change the USB core to initialize the LPM disable count to 1
+(disabled), which reflects this limitation.
+
+Change usb_set_configuration() to ensure that if the device is
+unconfigured on entry, usb_lpm_disable() is not called.  This avoids
+sending the Clear Feature U1/U2 when the device is in the Addressed
+state.  When usb_set_configuration() exits with a successfully installed
+configuration, usb_lpm_enable() will be called.
+
+Once the new configuration is installed, make sure
+usb_set_configuration() only calls usb_enable_lpm() if the device moved
+to the Configured state.  If we have unconfigured the device by sending
+it a Set Configuration for config 0, don't enable LPM.
+
+This commit should be backported to kernels as old as 3.5, that contain
+the commit 8306095fd2c1100e8244c09bf560f97aca5a311d "USB: Disable USB
+3.0 LPM in critical sections."
+
+Signed-off-by: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Cc: stable@vger.kernel.org
+---
+ drivers/usb/core/message.c | 7 ++++---
+ drivers/usb/core/usb.c     | 1 +
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/core/message.c b/drivers/usb/core/message.c
+index bdd1c67..8b24dc2 100644
+--- a/drivers/usb/core/message.c
++++ b/drivers/usb/core/message.c
+@@ -1791,14 +1791,15 @@ free_interfaces:
+ 	 * installed, so that the xHCI driver can recalculate the U1/U2
+ 	 * timeouts.
+ 	 */
+-	if (usb_disable_lpm(dev)) {
++	if (dev->actconfig && usb_disable_lpm(dev)) {
+ 		dev_err(&dev->dev, "%s Failed to disable LPM\n.", __func__);
+ 		mutex_unlock(hcd->bandwidth_mutex);
+ 		return -ENOMEM;
+ 	}
+ 	ret = usb_hcd_alloc_bandwidth(dev, cp, NULL, NULL);
+ 	if (ret < 0) {
+-		usb_enable_lpm(dev);
++		if (dev->actconfig)
++			usb_enable_lpm(dev);
+ 		mutex_unlock(hcd->bandwidth_mutex);
+ 		usb_autosuspend_device(dev);
+ 		goto free_interfaces;
+@@ -1818,7 +1819,7 @@ free_interfaces:
+ 	if (!cp) {
+ 		usb_set_device_state(dev, USB_STATE_ADDRESS);
+ 		usb_hcd_alloc_bandwidth(dev, NULL, NULL, NULL);
+-		usb_enable_lpm(dev);
++		/* Leave LPM disabled while the device is unconfigured. */
+ 		mutex_unlock(hcd->bandwidth_mutex);
+ 		usb_autosuspend_device(dev);
+ 		goto free_interfaces;
+diff --git a/drivers/usb/core/usb.c b/drivers/usb/core/usb.c
+index 25d0c61..cd8fb44 100644
+--- a/drivers/usb/core/usb.c
++++ b/drivers/usb/core/usb.c
+@@ -396,6 +396,7 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
+ 	dev->dev.dma_mask = bus->controller->dma_mask;
+ 	set_dev_node(&dev->dev, dev_to_node(bus->controller));
+ 	dev->state = USB_STATE_ATTACHED;
++	dev->lpm_disable_count = 1;
+ 	atomic_set(&dev->urbnum, 0);
+ 
+ 	INIT_LIST_HEAD(&dev->ep0.urb_list);
+-- 
+1.7.11.2
+
+
+From 6410337d6ee5a7696953cfb4fc48a5b8b503b950 Mon Sep 17 00:00:00 2001
+From: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Date: Tue, 3 Jul 2012 22:49:04 -0700
+Subject: [PATCH 49/56] USB: Fix LPM disable/enable during device reset.
+
+The USB 3.0 specification says that sending a Set Feature or Clear
+Feature for U1/U2 Enable is not a valid request when the device is in
+the Default or Addressed state.  It is only valid when the device is in
+the Configured state.
+
+The original LPM patch attempted to disable LPM after the device had
+been reset by hub_port_init(), before it had the configuration
+reinstalled.  The TI hub I tested with did not fail the Clear Feature
+U1/U2 Enable request that khubd sent while it was in the addressed
+state, which is why I didn't catch it.
+
+Move the LPM disable before the device reset, so that we can send the
+Clear Feature U1/U2 Enable successfully, and balance the LPM disable
+count.
+
+Also delete any calls to usb_enable_lpm() on error paths that lead to
+re-enumeration.  The calls will fail because the device isn't
+configured, and it's not useful to balance the LPM disable count because
+the usb_device is about to be destroyed before re-enumeration.
+
+Fix the early exit path ("done" label) to call usb_enable_lpm() to
+balance the LPM disable count.
+
+Note that calling usb_reset_and_verify_device() with an unconfigured
+device may fail on the first call to usb_disable_lpm().  That's because
+the LPM disable count is initialized to 0 (LPM enabled), and
+usb_disable_lpm() will attempt to send a Clear Feature U1/U2 request to
+a device in the Addressed state.  The next patch will fix that.
+
+This commit should be backported to kernels as old as 3.5, that contain
+the commit 8306095fd2c1100e8244c09bf560f97aca5a311d "USB: Disable USB
+3.0 LPM in critical sections."
+
+Signed-off-by: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Cc: stable@vger.kernel.org
+---
+ drivers/usb/core/hub.c | 26 ++++++++++++--------------
+ 1 file changed, 12 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/usb/core/hub.c b/drivers/usb/core/hub.c
+index 8fb4849..9fc2e90 100644
+--- a/drivers/usb/core/hub.c
++++ b/drivers/usb/core/hub.c
+@@ -4672,6 +4672,16 @@ static int usb_reset_and_verify_device(struct usb_device *udev)
+ 	}
+ 	parent_hub = hdev_to_hub(parent_hdev);
+ 
++	/* Disable LPM while we reset the device and reinstall the alt settings.
++	 * Device-initiated LPM settings, and system exit latency settings are
++	 * cleared when the device is reset, so we have to set them up again.
++	 */
++	ret = usb_unlocked_disable_lpm(udev);
++	if (ret) {
++		dev_err(&udev->dev, "%s Failed to disable LPM\n.", __func__);
++		goto re_enumerate;
++	}
++
+ 	set_bit(port1, parent_hub->busy_bits);
+ 	for (i = 0; i < SET_CONFIG_TRIES; ++i) {
+ 
+@@ -4699,22 +4709,11 @@ static int usb_reset_and_verify_device(struct usb_device *udev)
+ 		goto done;
+ 
+ 	mutex_lock(hcd->bandwidth_mutex);
+-	/* Disable LPM while we reset the device and reinstall the alt settings.
+-	 * Device-initiated LPM settings, and system exit latency settings are
+-	 * cleared when the device is reset, so we have to set them up again.
+-	 */
+-	ret = usb_disable_lpm(udev);
+-	if (ret) {
+-		dev_err(&udev->dev, "%s Failed to disable LPM\n.", __func__);
+-		mutex_unlock(hcd->bandwidth_mutex);
+-		goto done;
+-	}
+ 	ret = usb_hcd_alloc_bandwidth(udev, udev->actconfig, NULL, NULL);
+ 	if (ret < 0) {
+ 		dev_warn(&udev->dev,
+ 				"Busted HC?  Not enough HCD resources for "
+ 				"old configuration.\n");
+-		usb_enable_lpm(udev);
+ 		mutex_unlock(hcd->bandwidth_mutex);
+ 		goto re_enumerate;
+ 	}
+@@ -4726,7 +4725,6 @@ static int usb_reset_and_verify_device(struct usb_device *udev)
+ 		dev_err(&udev->dev,
+ 			"can't restore configuration #%d (error=%d)\n",
+ 			udev->actconfig->desc.bConfigurationValue, ret);
+-		usb_enable_lpm(udev);
+ 		mutex_unlock(hcd->bandwidth_mutex);
+ 		goto re_enumerate;
+   	}
+@@ -4765,17 +4763,17 @@ static int usb_reset_and_verify_device(struct usb_device *udev)
+ 				desc->bInterfaceNumber,
+ 				desc->bAlternateSetting,
+ 				ret);
+-			usb_unlocked_enable_lpm(udev);
+ 			goto re_enumerate;
+ 		}
+ 	}
+ 
++done:
+ 	/* Now that the alt settings are re-installed, enable LPM. */
+ 	usb_unlocked_enable_lpm(udev);
+-done:
+ 	return 0;
+  
+ re_enumerate:
++	/* LPM state doesn't matter when we're about to destroy the device. */
+ 	hub_port_logical_disconnect(parent_hub, port1);
+ 	return -ENODEV;
+ }
+-- 
+1.7.11.2
+
+
+From a7bd929c580145e6ffcbea5813a77a01b319805c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Bj=C3=B8rn=20Mork?= <bjorn@mork.no>
+Date: Thu, 12 Jul 2012 12:37:32 +0200
+Subject: [PATCH 50/56] USB: option: add ZTE MF821D
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Sold by O2 (telefonica germany) under the name "LTE4G"
+
+Tested-by: Thomas Schäfer <tschaefer@t-online.de>
+Signed-off-by: Bjørn Mork <bjorn@mork.no>
+Cc: stable <stable@vger.kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/serial/option.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/usb/serial/option.c b/drivers/usb/serial/option.c
+index 417ab1b..46cee56 100644
+--- a/drivers/usb/serial/option.c
++++ b/drivers/usb/serial/option.c
+@@ -936,6 +936,8 @@ static const struct usb_device_id option_ids[] = {
+ 	{ USB_DEVICE_AND_INTERFACE_INFO(ZTE_VENDOR_ID, 0x0165, 0xff, 0xff, 0xff) },
+ 	{ USB_DEVICE_AND_INTERFACE_INFO(ZTE_VENDOR_ID, 0x0167, 0xff, 0xff, 0xff),
+ 	  .driver_info = (kernel_ulong_t)&net_intf4_blacklist },
++	{ USB_DEVICE_AND_INTERFACE_INFO(ZTE_VENDOR_ID, 0x0326, 0xff, 0xff, 0xff),
++	  .driver_info = (kernel_ulong_t)&net_intf4_blacklist },
+ 	{ USB_DEVICE_AND_INTERFACE_INFO(ZTE_VENDOR_ID, 0x1008, 0xff, 0xff, 0xff),
+ 	  .driver_info = (kernel_ulong_t)&net_intf4_blacklist },
+ 	{ USB_DEVICE_AND_INTERFACE_INFO(ZTE_VENDOR_ID, 0x1010, 0xff, 0xff, 0xff),
+-- 
+1.7.11.2
+
+
+From d0624383f51f4c8afce930ec2827fb1ac84751b8 Mon Sep 17 00:00:00 2001
+From: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Date: Thu, 5 Jul 2012 09:41:22 -0700
+Subject: [PATCH 51/56] USB: Remove unused LPM variable.
+
+hub_initiated_lpm_disable_count is not used by any code, so remove it.
+
+This commit should be backported to kernels as old as 3.5, that contain
+the commit 8306095fd2c1100e8244c09bf560f97aca5a311d "USB: Disable USB
+3.0 LPM in critical sections."
+
+Signed-off-by: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Cc: stable@vger.kernel.org
+---
+ include/linux/usb.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/include/linux/usb.h b/include/linux/usb.h
+index dea39dc..72a0e7d 100644
+--- a/include/linux/usb.h
++++ b/include/linux/usb.h
+@@ -556,7 +556,6 @@ struct usb_device {
+ 	struct usb3_lpm_parameters u1_params;
+ 	struct usb3_lpm_parameters u2_params;
+ 	unsigned lpm_disable_count;
+-	unsigned hub_initiated_lpm_disable_count;
+ };
+ #define	to_usb_device(d) container_of(d, struct usb_device, dev)
+ 
+-- 
+1.7.11.2
+
+
+From 2cf1e330e21211de6d6bc3cafb412e47d4e2eb40 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Wed, 4 Jul 2012 09:18:01 +0200
+Subject: [PATCH 52/56] usbdevfs: Correct amount of data copied to user in
+ processcompl_compat
+
+iso data buffers may have holes in them if some packets were short, so for
+iso urbs we should always copy the entire buffer, just like the regular
+processcompl does.
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Acked-by: Alan Stern <stern@rowland.harvard.edu>
+CC: stable@vger.kernel.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/core/devio.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/core/devio.c b/drivers/usb/core/devio.c
+index e0f1079..62679bc 100644
+--- a/drivers/usb/core/devio.c
++++ b/drivers/usb/core/devio.c
+@@ -1604,10 +1604,14 @@ static int processcompl_compat(struct async *as, void __user * __user *arg)
+ 	void __user *addr = as->userurb;
+ 	unsigned int i;
+ 
+-	if (as->userbuffer && urb->actual_length)
+-		if (copy_to_user(as->userbuffer, urb->transfer_buffer,
+-				 urb->actual_length))
++	if (as->userbuffer && urb->actual_length) {
++		if (urb->number_of_packets > 0)		/* Isochronous */
++			i = urb->transfer_buffer_length;
++		else					/* Non-Isoc */
++			i = urb->actual_length;
++		if (copy_to_user(as->userbuffer, urb->transfer_buffer, i))
+ 			return -EFAULT;
++	}
+ 	if (put_user(as->status, &userurb->status))
+ 		return -EFAULT;
+ 	if (put_user(urb->actual_length, &userurb->actual_length))
+-- 
+1.7.11.2
+
+
+From 9dee8cf25ee147cef27f7b5d5b7fd033f5638bfd Mon Sep 17 00:00:00 2001
+From: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Date: Thu, 5 Jul 2012 14:09:30 -0700
+Subject: [PATCH 53/56] USB: Fix LPM disable count mismatch on driver unbind.
+
+When a user runs `echo 0 > bConfigurationValue` for a USB 3.0 device,
+usb_disable_device() is called.  This function disables all drivers,
+deallocates interfaces, and sets the device configuration value to 0
+(unconfigured).
+
+With the new scheme to ensure that unconfigured devices have LPM
+disabled, usb_disable_device() must call usb_unlocked_disable_lpm() once
+it unconfigures the device.
+
+This commit should be backported to kernels as old as 3.5, that contain
+the commit 8306095fd2c1100e8244c09bf560f97aca5a311d "USB: Disable USB
+3.0 LPM in critical sections."
+
+Signed-off-by: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Cc: stable@vger.kernel.org
+---
+ drivers/usb/core/message.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/usb/core/message.c b/drivers/usb/core/message.c
+index 8b24dc2..11cc49d 100644
+--- a/drivers/usb/core/message.c
++++ b/drivers/usb/core/message.c
+@@ -1174,6 +1174,7 @@ void usb_disable_device(struct usb_device *dev, int skip_ep0)
+ 			put_device(&dev->actconfig->interface[i]->dev);
+ 			dev->actconfig->interface[i] = NULL;
+ 		}
++		usb_unlocked_disable_lpm(dev);
+ 		dev->actconfig = NULL;
+ 		if (dev->state == USB_STATE_CONFIGURED)
+ 			usb_set_device_state(dev, USB_STATE_ADDRESS);
+-- 
+1.7.11.2
+
+
+From 541a2ed47ba156dd92ead4efed642241e75cf5e7 Mon Sep 17 00:00:00 2001
+From: Kevin Cernekee <cernekee@gmail.com>
+Date: Sun, 24 Jun 2012 21:11:22 -0700
+Subject: [PATCH 54/56] usb: gadget: Fix g_ether interface link status
+
+A "usb0" interface that has never been connected to a host has an unknown
+operstate, and therefore the IFF_RUNNING flag is (incorrectly) asserted
+when queried by ifconfig, ifplugd, etc.  This is a result of calling
+netif_carrier_off() too early in the probe function; it should be called
+after register_netdev().
+
+Similar problems have been fixed in many other drivers, e.g.:
+
+    e826eafa6 (bonding: Call netif_carrier_off after register_netdevice)
+    0d672e9f8 (drivers/net: Call netif_carrier_off at the end of the probe)
+    6a3c869a6 (cxgb4: fix reported state of interfaces without link)
+
+Fix is to move netif_carrier_off() to the end of the function.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Kevin Cernekee <cernekee@gmail.com>
+Signed-off-by: Felipe Balbi <balbi@ti.com>
+---
+ drivers/usb/gadget/u_ether.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/usb/gadget/u_ether.c b/drivers/usb/gadget/u_ether.c
+index 47cf48b..5b46f02 100644
+--- a/drivers/usb/gadget/u_ether.c
++++ b/drivers/usb/gadget/u_ether.c
+@@ -798,12 +798,6 @@ int gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
+ 
+ 	SET_ETHTOOL_OPS(net, &ops);
+ 
+-	/* two kinds of host-initiated state changes:
+-	 *  - iff DATA transfer is active, carrier is "on"
+-	 *  - tx queueing enabled if open *and* carrier is "on"
+-	 */
+-	netif_carrier_off(net);
+-
+ 	dev->gadget = g;
+ 	SET_NETDEV_DEV(net, &g->dev);
+ 	SET_NETDEV_DEVTYPE(net, &gadget_type);
+@@ -817,6 +811,12 @@ int gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
+ 		INFO(dev, "HOST MAC %pM\n", dev->host_mac);
+ 
+ 		the_dev = dev;
++
++		/* two kinds of host-initiated state changes:
++		 *  - iff DATA transfer is active, carrier is "on"
++		 *  - tx queueing enabled if open *and* carrier is "on"
++		 */
++		netif_carrier_off(net);
+ 	}
+ 
+ 	return status;
+-- 
+1.7.11.2
+
+
+From 8025d83884329d84d95ca425c6f0e97a8e7b005d Mon Sep 17 00:00:00 2001
+From: Ben Hutchings <ben@decadent.org.uk>
+Date: Wed, 20 Jun 2012 02:31:11 +0100
+Subject: [PATCH 55/56] staging: zsmalloc: Finish conversion to a separate
+ module
+
+ZSMALLOC is tristate, but the code has no MODULE_LICENSE and since it
+depends on GPL-only symbols it cannot be loaded as a module.  This in
+turn breaks zram which now depends on it.  I assume it's meant to be
+Dual BSD/GPL like the other z-stuff.
+
+There is also no module_exit, which will make it impossible to unload.
+Add the appropriate module_init and module_exit declarations suggested
+by comments.
+
+Reported-by: Christian Ohm <chr.ohm@gmx.net>
+References: http://bugs.debian.org/677273
+Cc: stable@vger.kernel.org # v3.4
+Signed-off-by: Ben Hutchings <ben@decadent.org.uk>
+Reviewed-by: Jonathan Nieder <jrnieder@gmail.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/staging/zsmalloc/zsmalloc-main.c | 33 +++++++-------------------------
+ 1 file changed, 7 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/staging/zsmalloc/zsmalloc-main.c b/drivers/staging/zsmalloc/zsmalloc-main.c
+index 4496737..8ded9a0 100644
+--- a/drivers/staging/zsmalloc/zsmalloc-main.c
++++ b/drivers/staging/zsmalloc/zsmalloc-main.c
+@@ -425,12 +425,6 @@ static struct page *find_get_zspage(struct size_class *class)
+ }
+ 
+ 
+-/*
+- * If this becomes a separate module, register zs_init() with
+- * module_init(), zs_exit with module_exit(), and remove zs_initialized
+-*/
+-static int zs_initialized;
+-
+ static int zs_cpu_notifier(struct notifier_block *nb, unsigned long action,
+ 				void *pcpu)
+ {
+@@ -489,7 +483,7 @@ fail:
+ 
+ struct zs_pool *zs_create_pool(const char *name, gfp_t flags)
+ {
+-	int i, error, ovhd_size;
++	int i, ovhd_size;
+ 	struct zs_pool *pool;
+ 
+ 	if (!name)
+@@ -516,28 +510,9 @@ struct zs_pool *zs_create_pool(const char *name, gfp_t flags)
+ 
+ 	}
+ 
+-	/*
+-	 * If this becomes a separate module, register zs_init with
+-	 * module_init, and remove this block
+-	*/
+-	if (!zs_initialized) {
+-		error = zs_init();
+-		if (error)
+-			goto cleanup;
+-		zs_initialized = 1;
+-	}
+-
+ 	pool->flags = flags;
+ 	pool->name = name;
+ 
+-	error = 0; /* Success */
+-
+-cleanup:
+-	if (error) {
+-		zs_destroy_pool(pool);
+-		pool = NULL;
+-	}
+-
+ 	return pool;
+ }
+ EXPORT_SYMBOL_GPL(zs_create_pool);
+@@ -753,3 +728,9 @@ u64 zs_get_total_size_bytes(struct zs_pool *pool)
+ 	return npages << PAGE_SHIFT;
+ }
+ EXPORT_SYMBOL_GPL(zs_get_total_size_bytes);
++
++module_init(zs_init);
++module_exit(zs_exit);
++
++MODULE_LICENSE("Dual BSD/GPL");
++MODULE_AUTHOR("Nitin Gupta <ngupta@vflare.org>");
+-- 
+1.7.11.2
+
+
+From c8be9dd36688afcbfd368b756cf0217336650679 Mon Sep 17 00:00:00 2001
+From: Gerd Hoffmann <kraxel@redhat.com>
+Date: Tue, 19 Jun 2012 09:54:48 +0200
+Subject: [PATCH 56/56] Revert "usb/uas: make sure data urb is gone if we
+ receive status before that"
+
+This reverts commit e4d8318a85779b25b880187b1b1c44e797bd7d4b.
+
+This patch makes uas.c call usb_unlink_urb on data urbs.  The data urbs
+get freed in the completion callback.  This is illegal according to the
+usb_unlink_urb documentation.
+
+This patch also makes the code expect the data completion callback
+being called before the status completion callback.  This isn't
+guaranteed to be the case, even though the actual data transfer should
+be finished by the time the status is received.
+
+Background:  The ehci irq handler for example only know that there are
+finished transfers, it then has go check the QHs & TDs to see which
+transfers did actually finish.  It has no way to figure in which order
+the transfers did complete.  The xhci driver can call the callbacks in
+completion order thanks to the event queue.  This does nicely explain
+why the driver is solid on a (usb2) xhci port whereas it goes crazy on
+ehci in my testing.
+
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+Cc: stable <stable@vger.kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/usb/storage/uas.c | 90 ++++++++---------------------------------------
+ 1 file changed, 15 insertions(+), 75 deletions(-)
+
+diff --git a/drivers/usb/storage/uas.c b/drivers/usb/storage/uas.c
+index 8ec8a6e..f98ba40 100644
+--- a/drivers/usb/storage/uas.c
++++ b/drivers/usb/storage/uas.c
+@@ -58,9 +58,6 @@ enum {
+ 	SUBMIT_DATA_OUT_URB	= (1 << 5),
+ 	ALLOC_CMD_URB		= (1 << 6),
+ 	SUBMIT_CMD_URB		= (1 << 7),
+-	COMPLETED_DATA_IN	= (1 << 8),
+-	COMPLETED_DATA_OUT	= (1 << 9),
+-	DATA_COMPLETES_CMD	= (1 << 10),
+ };
+ 
+ /* Overrides scsi_pointer */
+@@ -114,7 +111,6 @@ static void uas_sense(struct urb *urb, struct scsi_cmnd *cmnd)
+ {
+ 	struct sense_iu *sense_iu = urb->transfer_buffer;
+ 	struct scsi_device *sdev = cmnd->device;
+-	struct uas_cmd_info *cmdinfo = (void *)&cmnd->SCp;
+ 
+ 	if (urb->actual_length > 16) {
+ 		unsigned len = be16_to_cpup(&sense_iu->len);
+@@ -132,15 +128,13 @@ static void uas_sense(struct urb *urb, struct scsi_cmnd *cmnd)
+ 	}
+ 
+ 	cmnd->result = sense_iu->status;
+-	if (!(cmdinfo->state & DATA_COMPLETES_CMD))
+-		cmnd->scsi_done(cmnd);
++	cmnd->scsi_done(cmnd);
+ }
+ 
+ static void uas_sense_old(struct urb *urb, struct scsi_cmnd *cmnd)
+ {
+ 	struct sense_iu_old *sense_iu = urb->transfer_buffer;
+ 	struct scsi_device *sdev = cmnd->device;
+-	struct uas_cmd_info *cmdinfo = (void *)&cmnd->SCp;
+ 
+ 	if (urb->actual_length > 8) {
+ 		unsigned len = be16_to_cpup(&sense_iu->len) - 2;
+@@ -158,8 +152,7 @@ static void uas_sense_old(struct urb *urb, struct scsi_cmnd *cmnd)
+ 	}
+ 
+ 	cmnd->result = sense_iu->status;
+-	if (!(cmdinfo->state & DATA_COMPLETES_CMD))
+-		cmnd->scsi_done(cmnd);
++	cmnd->scsi_done(cmnd);
+ }
+ 
+ static void uas_xfer_data(struct urb *urb, struct scsi_cmnd *cmnd,
+@@ -184,7 +177,6 @@ static void uas_stat_cmplt(struct urb *urb)
+ 	struct Scsi_Host *shost = urb->context;
+ 	struct uas_dev_info *devinfo = (void *)shost->hostdata[0];
+ 	struct scsi_cmnd *cmnd;
+-	struct uas_cmd_info *cmdinfo;
+ 	u16 tag;
+ 	int ret;
+ 
+@@ -210,32 +202,12 @@ static void uas_stat_cmplt(struct urb *urb)
+ 			dev_err(&urb->dev->dev, "failed submit status urb\n");
+ 		return;
+ 	}
+-	cmdinfo = (void *)&cmnd->SCp;
+ 
+ 	switch (iu->iu_id) {
+ 	case IU_ID_STATUS:
+ 		if (devinfo->cmnd == cmnd)
+ 			devinfo->cmnd = NULL;
+ 
+-		if (!(cmdinfo->state & COMPLETED_DATA_IN) &&
+-				cmdinfo->data_in_urb) {
+-		       if (devinfo->use_streams) {
+-			       cmdinfo->state |= DATA_COMPLETES_CMD;
+-			       usb_unlink_urb(cmdinfo->data_in_urb);
+-		       } else {
+-			       usb_free_urb(cmdinfo->data_in_urb);
+-		       }
+-		}
+-		if (!(cmdinfo->state & COMPLETED_DATA_OUT) &&
+-				cmdinfo->data_out_urb) {
+-			if (devinfo->use_streams) {
+-				cmdinfo->state |= DATA_COMPLETES_CMD;
+-				usb_unlink_urb(cmdinfo->data_in_urb);
+-			} else {
+-				usb_free_urb(cmdinfo->data_out_urb);
+-			}
+-		}
+-
+ 		if (urb->actual_length < 16)
+ 			devinfo->uas_sense_old = 1;
+ 		if (devinfo->uas_sense_old)
+@@ -264,59 +236,27 @@ static void uas_stat_cmplt(struct urb *urb)
+ 		dev_err(&urb->dev->dev, "failed submit status urb\n");
+ }
+ 
+-static void uas_data_out_cmplt(struct urb *urb)
+-{
+-	struct scsi_cmnd *cmnd = urb->context;
+-	struct scsi_data_buffer *sdb = scsi_out(cmnd);
+-	struct uas_cmd_info *cmdinfo = (void *)&cmnd->SCp;
+-
+-	cmdinfo->state |= COMPLETED_DATA_OUT;
+-
+-	sdb->resid = sdb->length - urb->actual_length;
+-	usb_free_urb(urb);
+-
+-	if (cmdinfo->state & DATA_COMPLETES_CMD)
+-		cmnd->scsi_done(cmnd);
+-}
+-
+-static void uas_data_in_cmplt(struct urb *urb)
++static void uas_data_cmplt(struct urb *urb)
+ {
+-	struct scsi_cmnd *cmnd = urb->context;
+-	struct scsi_data_buffer *sdb = scsi_in(cmnd);
+-	struct uas_cmd_info *cmdinfo = (void *)&cmnd->SCp;
+-
+-	cmdinfo->state |= COMPLETED_DATA_IN;
+-
++	struct scsi_data_buffer *sdb = urb->context;
+ 	sdb->resid = sdb->length - urb->actual_length;
+ 	usb_free_urb(urb);
+-
+-	if (cmdinfo->state & DATA_COMPLETES_CMD)
+-		cmnd->scsi_done(cmnd);
+ }
+ 
+ static struct urb *uas_alloc_data_urb(struct uas_dev_info *devinfo, gfp_t gfp,
+-		unsigned int pipe, struct scsi_cmnd *cmnd,
+-		enum dma_data_direction dir)
++				unsigned int pipe, u16 stream_id,
++				struct scsi_data_buffer *sdb,
++				enum dma_data_direction dir)
+ {
+-	struct uas_cmd_info *cmdinfo = (void *)&cmnd->SCp;
+ 	struct usb_device *udev = devinfo->udev;
+ 	struct urb *urb = usb_alloc_urb(0, gfp);
+-	struct scsi_data_buffer *sdb;
+-	usb_complete_t complete_fn;
+-	u16 stream_id = cmdinfo->stream;
+ 
+ 	if (!urb)
+ 		goto out;
+-	if (dir == DMA_FROM_DEVICE) {
+-		sdb = scsi_in(cmnd);
+-		complete_fn = uas_data_in_cmplt;
+-	} else {
+-		sdb = scsi_out(cmnd);
+-		complete_fn = uas_data_out_cmplt;
+-	}
+-	usb_fill_bulk_urb(urb, udev, pipe, NULL, sdb->length,
+-			complete_fn, cmnd);
+-	urb->stream_id = stream_id;
++	usb_fill_bulk_urb(urb, udev, pipe, NULL, sdb->length, uas_data_cmplt,
++									sdb);
++	if (devinfo->use_streams)
++		urb->stream_id = stream_id;
+ 	urb->num_sgs = udev->bus->sg_tablesize ? sdb->table.nents : 0;
+ 	urb->sg = sdb->table.sgl;
+  out:
+@@ -418,8 +358,8 @@ static int uas_submit_urbs(struct scsi_cmnd *cmnd,
+ 
+ 	if (cmdinfo->state & ALLOC_DATA_IN_URB) {
+ 		cmdinfo->data_in_urb = uas_alloc_data_urb(devinfo, gfp,
+-					devinfo->data_in_pipe, cmnd,
+-					DMA_FROM_DEVICE);
++					devinfo->data_in_pipe, cmdinfo->stream,
++					scsi_in(cmnd), DMA_FROM_DEVICE);
+ 		if (!cmdinfo->data_in_urb)
+ 			return SCSI_MLQUEUE_DEVICE_BUSY;
+ 		cmdinfo->state &= ~ALLOC_DATA_IN_URB;
+@@ -436,8 +376,8 @@ static int uas_submit_urbs(struct scsi_cmnd *cmnd,
+ 
+ 	if (cmdinfo->state & ALLOC_DATA_OUT_URB) {
+ 		cmdinfo->data_out_urb = uas_alloc_data_urb(devinfo, gfp,
+-					devinfo->data_out_pipe, cmnd,
+-					DMA_TO_DEVICE);
++					devinfo->data_out_pipe, cmdinfo->stream,
++					scsi_out(cmnd), DMA_TO_DEVICE);
+ 		if (!cmdinfo->data_out_urb)
+ 			return SCSI_MLQUEUE_DEVICE_BUSY;
+ 		cmdinfo->state &= ~ALLOC_DATA_OUT_URB;
+-- 
+1.7.11.2
+

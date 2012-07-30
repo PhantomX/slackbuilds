@@ -27,6 +27,7 @@ ApplyPatch() {
   if [ ! -f ${SB_PATCHDIR}/${patch} ]; then
     exit 1
   fi
+  echo "Applying ${patch}"
   case "${patch}" in
   *.bz2) bzcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
   *.gz) zcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
@@ -142,8 +143,14 @@ ApplyPatch perf_timechart_fix_zero_timestamps.patch
 ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
-ApplyPatch 0001-block-cgroups-kconfig-build-bits-for-BFQ-v4-3.5.patch
-ApplyPatch 0002-block-introduce-the-BFQ-v4-I-O-sched-for-3.5.patch
+mkdir -p bfq_patches
+cp ${SB_PATCHDIR}/bfq_patches/000*.patch bfq_patches/
+
+( SB_PATCHDIR=bfq_patches
+  for file in ${BFQSRCARCHIVES} ;do
+    ApplyPatch ${file}
+  done
+)
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -235,6 +242,8 @@ ApplyPatch CPU-hotplug-cpusets-suspend-Dont-modify-cpusets-during.patch
 
 #rhbz 820039 843554
 ApplyPatch rds-set-correct-msg_namelen.patch
+
+ApplyPatch 3.5-git-stable.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

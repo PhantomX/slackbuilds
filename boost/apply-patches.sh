@@ -8,13 +8,18 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-version-override.patch
 sed "s/__SONAME__/${SONAMEVER}/" ${SB_PATCHDIR}/boost-gcc-soname.patch | patch -p0 -E --backup --verbose
 # The patch may break c++03, and there is therefore no plan yet to include
 # it upstream: https://svn.boost.org/trac/boost/ticket/4999
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-signals-erase.patch
-# https://svn.boost.org/trac/boost/ticket/5731
-#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-exceptions.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-signals-erase.patch
 # https://svn.boost.org/trac/boost/ticket/6150
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-fix-non-utf8-files.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-fix-non-utf8-files.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-add-bjam-man-page.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-pool.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-foreach.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-attribute.patch
+# https://bugzilla.redhat.com/show_bug.cgi?id=783660
+# https://svn.boost.org/trac/boost/ticket/6459 fixed
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-long-double-1.patch
+# https://bugzilla.redhat.com/show_bug.cgi?id=784654
+patch -p3 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-polygon.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-pool.patch
 
 # Gentoo
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-respect_python-buildid.patch

@@ -40,8 +40,22 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
 # Toggle solid upnp support at runtime via env var SOLID_UPNP=1 (disabled by default)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.4-SOLID_UPNP.patch
 
-# make forcefully hal-free build
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.3-halectomy.patch
+# udisks2 Solid backend, halectomy
+( cd solid
+patch -p2 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-udisks2_prep.patch
+patch -p4 --verbose --backup  -i ${SB_PATCHDIR}/kdelibs-udisks2-backend.patch
+sed -i.udisks2_sed \
+  -e 's|#include "../shared/udevqtdevice.h"|#include "../shared/udevqt.h"|g' \
+  -e 's|#include "../shared/udevqtclient.h"|#include "../shared/udevqt.h"|g' \
+  solid/backends/udisks2/udisksopticaldisc.h \
+  solid/backends/udisks2/udisksstoragedrive.h \
+  solid/backends/udisks2/udisksopticaldisc.cpp \
+  solid/backends/udisks2/udisksstoragedrive.cpp
+patch -p4 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-udisks2_post.patch
+)
+
+# return valid locale (RFC 1766)
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
 
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
@@ -51,10 +65,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # Branch upstream
 # fix kdeclarative install location (by wstephenson as found in kde-packager list)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.3-kdeclarative-install-location.patch
-# bz#830178
-# http://commits.kde.org/kdelibs/76e0376d7582cfe5b898c56bf3779ca2279dace8
-# http://commits.kde.org/kdelibs/bde5aad1e9f7bfb6f8d5c60197797de4a315158d
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-nepomuk-regression.patch
 
 # Trunk patches
 

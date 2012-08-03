@@ -36,6 +36,8 @@ zcat ${SB_PATCHDIR}/kdelibs-3.5.9-fix-flock-redefinition.patch.gz | patch -p1 --
 zcat ${SB_PATCHDIR}/kdelibs-3.5.10-latex-syntax-kile-2.0.3.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # fix FTBFS (cups-util.c must include stdio.h, #714133)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.10-cups-util-missing-header.patch
+# remove flawed and obsolete automake version check in admin/cvs.sh
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.10-automake-version.patch
 
 # use /etc/kde in addition to /usr/share/config, borrowed from debian
 zcat ${SB_PATCHDIR}/kdelibs-3.5.5-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig

@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ## Most patches are from Fedora
-patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.97-redhat_startkde.patch
+patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.97-redhat_startkde.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.0-plasma-konsole.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-systemsettings_onlyshowin_kde.patch
 # 441062: packagekit tools do not show icons correctly on KDE
@@ -18,7 +18,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.90-font.
 zcat ${SB_PATCHDIR}/kdebase-workspace-4.3.75-kio_sysinfo.patch.gz | patch -p1 -E --backup --verbose
 # show the remaining time in the battery plasmoid's popup (as in 4.2) (#515166)
 # currently requires backport from pre-4.3.80 trunk (Patch100)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.80-battery-plasmoid-showremainingtime.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.8.80-battery-plasmoid-showremainingtime.patch
 # allow adding a "Leave..." button which brings up the complete shutdown dialog
 # to the classic menu (as in KDE <= 4.2.x); the default is still the upstream
 # default Leave submenu
@@ -77,16 +77,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-kwin_llvmpipe_wh
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
 
 ## upstream patches
-# ksysguard fixes
-# https://projects.kde.org/projects/kde/kde-workspace/repository/revisions/b6fa43be9d86a577dd103dc4fa727770725e2d85
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.5-ksysguard-1.patch
-# https://projects.kde.org/projects/kde/kde-workspace/repository/revisions/4ccec1a6623426ad7b3672ce85424ad9201e5b73
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.5-ksysguard-2.patch
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-wac-html-widgets.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kwin-check-opengl.diff
 
 ## trunk patches
 

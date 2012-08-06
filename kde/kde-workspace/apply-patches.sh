@@ -76,7 +76,14 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-kwin_llvmpipe_wh
 # http://bugzilla.redhat.com/796969
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
 
+# fontconfig-2.10+, support $XDG_CONFIG_HOME/fontconfig/fonts.conf
+# https://bugs.kde.org/show_bug.cgi?id=304317
+# http://svnweb.mageia.org/packages/cauldron/kdebase4-workspace/current/SOURCES/kdebase-workspace-4.9.0-fontconfigdir.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-fontconfigdir.patch
+
 ## upstream patches
+# https://bugs.kde.org/show_bug.cgi?id=288093
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-kde\#288093.patch
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch

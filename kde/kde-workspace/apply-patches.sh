@@ -84,6 +84,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-fontconfigdir.pa
 ## upstream patches
 # https://bugs.kde.org/show_bug.cgi?id=288093
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-kde\#288093.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9-tasks_attention.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9-taskmanager_attention.patch
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch

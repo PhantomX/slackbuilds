@@ -74,6 +74,8 @@ ApplyOptionalPatch linux-2.6-hotfixes.patch
 ApplyPatch oom-warning.patch
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 
+ApplyPatch vmbugon-warnon.patch
+
 # mm patches
 
 # Architecture patches
@@ -222,7 +224,7 @@ ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch lis3-improve-handling-of-null-rate.patch
 
-ApplyPatch uprobes-3.5-tip.patch
+ApplyPatch uprobes-backport.patch
 
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
@@ -230,9 +232,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 ApplyPatch unhandled-irqs-switch-to-polling.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
-
-#rhbz 772730
-ApplyPatch ACPI-AC-check-the-return-value-of-power_supply_register.patch
 
 #rhbz 836742
 ApplyPatch uvcvideo-Reset-bytesused-field-when-recycling-erroneous-buffer.patch
@@ -243,7 +242,10 @@ ApplyPatch CPU-hotplug-cpusets-suspend-Dont-modify-cpusets-during.patch
 #rhbz 820039 843554
 ApplyPatch rds-set-correct-msg_namelen.patch
 
-ApplyPatch 3.5-git-stable.patch
+#rhbz 845558 844714
+ApplyPatch net-Allow-driver-to-limit-number-of-GSO-segments-per-skb.patch
+ApplyPatch sfc-Fix-maximum-number-of-TSO-segments-and-minimum-TX-queue-size.patch
+ApplyPatch tcp-Apply-device-TSO-segment-limit-earlier.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

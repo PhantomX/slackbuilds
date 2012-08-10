@@ -55,4 +55,7 @@ ApplyPatch perl-5.14.1-offtest.patch
 # Fix find2perl to translate ? glob properly, rhbz#825701, RT#113054
 ApplyPatch perl-5.14.2-find2perl-transtate-question-mark-properly.patch
 
+# Fix broken atof, rhbz#835452, RT#109318
+ApplyPatch perl-5.16.0-fix-broken-atof.patch
+
 set +e +o pipefail

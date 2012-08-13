@@ -1,0 +1,130 @@
+#!/bin/sh
+#
+# Will check all certificates stored in $CERTDIR for their expiration date,
+# and will display (if optional "stdout" argument is given), or mail a warning
+# message to $MAILADDR (if script is executed without any parameter
+# - unattended mode suitable for cron execution) for each particular certificate
+# that is about to expire in time less to, or equal to $DAYS after this script
+# has been executed, or if it has already expired.
+# This stupid script (C) 2006,2007 Jan Rafaj
+
+########################## CONFIGURATION SECTION BEGIN #########################
+# Note: all settings are mandatory
+# Warning will be sent if a certificate expires in time <= days given here
+DAYS=7
+# E-mail address where to send warnings
+MAILADDR=root
+# Directory with certificates to check
+CERTDIR=/etc/ssl/certs
+# Directory where to keep state files if this script isnt executed with "stdout"
+STATEDIR=/var/run
+########################### CONFIGURATION SECTION END ##########################
+
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+DAY_IN_SECS=$((60*60*24))
+DATE_CURRENT=$(date '+%s')
+
+usage()
+{
+  echo "Usage: $0 [stdout]"
+  echo
+  echo "Detailed description and configuration is embedded within the script."
+  exit 0
+}
+
+message()
+{
+  cat << EOF
+    WARNING: certificate $certfile
+    is about to expire in time equal to or less than $DAYS days from now on,
+    or has already expired - it might be a good idea to obtain/create new one.
+
+EOF
+}
+
+message_mail()
+{
+  message
+  cat << EOF
+    NOTE: This message is being sent only once.
+
+    A lock-file
+    $STATEDIR/certwatch-mailwarning-sent-$certfilebase
+    has been created, which will prevent this script from mailing you again
+    upon its subsequent executions by crond. You dont need to care about it;
+    the file will be auto-deleted as soon as you'll prolong your certificate.
+EOF
+}
+
+unset stdout
+case $# in
+  0) ;;
+  1) if   [ "$1" = "-h" -o "$1" == "--help" ]; then
+       usage
+     elif [ "$1" = "stdout" ]; then
+       stdout=1
+     else
+       usage
+     fi
+     ;;
+  *) usage ;;
+esac
+
+for dir in $STATEDIR $CERTDIR ; do
+  if [ ! -d $dir ]; then
+    echo "ERROR: directory $dir does not exist"
+    exit 1
+  fi
+done
+for binary in basename date find grep mail openssl touch ; do
+  if [ ! \( -x /usr/bin/$binary -o -x /bin/$binary \) ]; then
+    echo "ERROR: /usr/bin/$binary not found"
+    exit 1
+  fi
+done
+
+find $CERTDIR -type f -maxdepth 1 | while read certfile ; do
+  if [ "$certfile" != "/etc/ssl/certs/ca-certificates.crt" ]; then
+  certfilebase="$(basename "$certfile")"
+  inform=PEM
+  echo "$certfile" | grep -q -i '\.net$'
+  if [ $? -eq 0 ]; then
+    # This is based purely on filename extension, so may give false results.
+    # But lets assume noone uses NET format certs today, ok?
+    continue
+  fi
+  echo "$certfile" | grep -q -i '\.der$'
+  if [ $? -eq 0 -o "$(file "$certfile" | egrep '(ASCII|PEM)')" == "" ]; then
+    inform=DER
+  fi
+  # We wont use '-checkend' since it is not properly documented (as of
+  # OpenSSL 0.9.8e).
+  DATE_CERT_EXPIRES=$(openssl x509 -in "$certfile" -inform $inform -noout -enddate | sed 's/^notAfter=//')
+  DATE_CERT_EXPIRES=$(date -d"$DATE_CERT_EXPIRES" +%s)
+  if [ $(($DATE_CERT_EXPIRES - $DATE_CURRENT)) -le $(($DAYS * $DAY_IN_SECS)) ]
+  then
+    if [ $stdout ]; then
+      message
+    else
+      if [ ! -f $STATEDIR/certwatch-mailwarning-sent-"$certfilebase" ]; then
+        subject="$0: certificate $certfile expiration warning"
+        message_mail | mail -r "certwatch@$HOSTNAME" \
+                            -s "$subject" \
+                            $MAILADDR 2>/dev/null
+        # echo "Mail about expiring certificate $certfile sent to $MAILADDR."
+        # echo "If you need to send it again, please remove lock-file"
+        # echo "$STATEDIR/certwatch-mailwarning-sent-$certfilebase ."
+        # echo
+      fi
+      touch $STATEDIR/certwatch-mailwarning-sent-"$certfilebase"
+    fi
+  else
+    if [ ! $stdout ]; then
+      if [ -f $STATEDIR/certwatch-mailwarning-sent-"$certfilebase" ]; then
+        rm $STATEDIR/certwatch-mailwarning-sent-"$certfilebase"
+      fi
+    fi
+  fi
+  fi
+done
+

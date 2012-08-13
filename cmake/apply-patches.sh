@@ -12,7 +12,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.7-FindLAPACK.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.8.0-kde3-include.patch.gz | patch -p0 -E --backup --verbose
 # Patch to find DCMTK in Fedora (bug #720140)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dcmtk.patch
-# (modified) Upstream patch to fix setting PKG_CONFIG_FOUND (bug #812188)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-pkgconfig.patch
 
 set +e +o pipefail

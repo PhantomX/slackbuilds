@@ -15,7 +15,6 @@ else
 fi
 
 # From upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.17-ls-rootdir-symlink.patch
 
 # Fedora patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch
@@ -31,8 +30,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.4-mkdir-modenote.pat
 # sh-utils
 # add info about TZ envvar to date manpage
 zcat ${SB_PATCHDIR}/sh-utils-2.0.11-dateman.patch.gz | patch -p1 -E --backup --verbose
-# set paths for su explicitly, don't get influenced by paths.h
-zcat ${SB_PATCHDIR}/sh-utils-1.16-paths.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.3-langinfo.patch
 
 # (sb) lin18nux/lsb compliance

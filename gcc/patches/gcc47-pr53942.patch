@@ -1,0 +1,133 @@
+From fa3ad39cabcc33e8ee4ff1891640ef92e08556bc Mon Sep 17 00:00:00 2001
+From: jakub <jakub@138bc75d-0d04-0410-961f-82ee72b054a4>
+Date: Mon, 13 Aug 2012 07:35:03 +0000
+Subject: [PATCH] 	Backported from trunk
+ 	2012-07-19  Jakub Jelinek  <jakub@redhat.com>
+
+	PR rtl-optimization/53942
+	* function.c (assign_parm_setup_reg): Avoid zero/sign extension
+	directly from likely spilled non-fixed hard registers, move them
+	to pseudo first.
+
+	* gcc.dg/pr53942.c: New test.
+
+
+git-svn-id: svn+ssh://gcc.gnu.org/svn/gcc/branches/gcc-4_7-branch@190338 138bc75d-0d04-0410-961f-82ee72b054a4
+---
+ gcc/ChangeLog                  |   10 ++++++++++
+ gcc/function.c                 |   19 +++++++++++++++++--
+ gcc/testsuite/ChangeLog        |    8 ++++++++
+ gcc/testsuite/gcc.dg/pr53942.c |   34 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 69 insertions(+), 2 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.dg/pr53942.c
+
+diff --git a/gcc/ChangeLog b/gcc/ChangeLog
+index 37dabef..1be4f6c 100644
+--- a/gcc/ChangeLog
++++ b/gcc/ChangeLog
+@@ -1,3 +1,13 @@
++2012-08-13  Jakub Jelinek  <jakub@redhat.com>
++
++	Backported from trunk
++	2012-07-19  Jakub Jelinek  <jakub@redhat.com>
++
++	PR rtl-optimization/53942
++	* function.c (assign_parm_setup_reg): Avoid zero/sign extension
++	directly from likely spilled non-fixed hard registers, move them
++	to pseudo first.
++
+ 2012-08-11  Uros Bizjak  <ubizjak@gmail.com>
+ 
+ 	* config/i386/sse.md (xop_phaddbq):  Fix vec_select selectors.
+diff --git a/gcc/function.c b/gcc/function.c
+index 7c57879..f16b5ef 100644
+--- a/gcc/function.c
++++ b/gcc/function.c
+@@ -2975,11 +2975,26 @@ assign_parm_setup_reg (struct assign_parm_data_all *all, tree parm,
+ 	  && insn_operand_matches (icode, 1, op1))
+ 	{
+ 	  enum rtx_code code = unsignedp ? ZERO_EXTEND : SIGN_EXTEND;
+-	  rtx insn, insns;
++	  rtx insn, insns, t = op1;
+ 	  HARD_REG_SET hardregs;
+ 
+ 	  start_sequence ();
+-	  insn = gen_extend_insn (op0, op1, promoted_nominal_mode,
++	  /* If op1 is a hard register that is likely spilled, first
++	     force it into a pseudo, otherwise combiner might extend
++	     its lifetime too much.  */
++	  if (GET_CODE (t) == SUBREG)
++	    t = SUBREG_REG (t);
++	  if (REG_P (t)
++	      && HARD_REGISTER_P (t)
++	      && ! TEST_HARD_REG_BIT (fixed_reg_set, REGNO (t))
++	      && targetm.class_likely_spilled_p (REGNO_REG_CLASS (REGNO (t))))
++	    {
++	      t = gen_reg_rtx (GET_MODE (op1));
++	      emit_move_insn (t, op1);
++	    }
++	  else
++	    t = op1;
++	  insn = gen_extend_insn (op0, t, promoted_nominal_mode,
+ 				  data->passed_mode, unsignedp);
+ 	  emit_insn (insn);
+ 	  insns = get_insns ();
+diff --git a/gcc/testsuite/ChangeLog b/gcc/testsuite/ChangeLog
+index 90714cc..1c529bb 100644
+--- a/gcc/testsuite/ChangeLog
++++ b/gcc/testsuite/ChangeLog
+@@ -1,3 +1,11 @@
++2012-08-13  Jakub Jelinek  <jakub@redhat.com>
++
++	Backported from trunk
++	2012-07-19  Jakub Jelinek  <jakub@redhat.com>
++
++	PR rtl-optimization/53942
++	* gcc.dg/pr53942.c: New test.
++
+ 2012-08-10  Ulrich Weigand  <ulrich.weigand@linaro.org>
+ 
+ 	Backport from mainline
+diff --git a/gcc/testsuite/gcc.dg/pr53942.c b/gcc/testsuite/gcc.dg/pr53942.c
+new file mode 100644
+index 0000000..6a51d26
+--- /dev/null
++++ b/gcc/testsuite/gcc.dg/pr53942.c
+@@ -0,0 +1,34 @@
++/* PR rtl-optimization/53942 */
++/* { dg-do compile } */
++/* { dg-options "-O2" } */
++/* { dg-additional-options "-mtune=pentium2" { target { { i?86-*-* x86_64-*-* } && ia32 } } } */
++
++struct S
++{
++  unsigned short w[3];
++  unsigned int x, y;
++};
++
++struct S *baz (void);
++
++__attribute__ ((noinline))
++static unsigned char
++foo (struct S *x, unsigned char y)
++{
++  unsigned char c = 0;
++  unsigned char v = x->w[0];
++  c |= v;
++  v = ((x->w[1]) & (1 << y)) ? 1 : 0;
++  c |= v << 1;
++  v = ((x->w[2]) & 0xff) & (1 << y);
++  c |= v << 2;
++  return c;
++}
++
++void
++bar (void)
++{
++  struct S *s = baz ();
++  s->x = foo (s, 6);
++  s->y = foo (s, 7);
++}
+-- 
+1.7.3.4
+

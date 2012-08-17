@@ -9,6 +9,7 @@ zcat ${SB_PATCHDIR}/glibc-open-macro.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/emacs-spellchecker.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/emacs-locate-library.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/emacs-nogets.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/emacs-cve-2012-3479.patch
 
 ( cd site-lisp
   # rpm-spec-mode can use compilation-mode

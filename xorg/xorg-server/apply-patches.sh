@@ -25,6 +25,11 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-fix-pci-slot-claims.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12-modesetting-fallback.patch
 # needed when building without xorg (aka s390x)
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12.2-xorg-touch-test.patch
+# print newline on -displayfd (824594)
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12-os-print-newline-after-printing-display-name.patch
+
+# send keycode/event type for slow keys enable (#816764)
+patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12-xkb-fill-in-keycode-and-event-type-for-slow-keys-ena.patch
 
 # misc
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch

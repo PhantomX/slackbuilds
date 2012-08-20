@@ -1,0 +1,193 @@
+diff -up hostname/hostname.1.initial hostname/hostname.1
+--- hostname/hostname.1.initial	2009-09-22 14:21:50.000000000 +0200
++++ hostname/hostname.1	2009-11-06 16:30:20.000000000 +0100
+@@ -91,6 +91,33 @@ will print the domain part of the FQDN (
+ complete FQDN of the system is returned with
+ .BR "hostname \-\-fqdn" .
+ 
++.LP
++The function 
++.BR gethostname(2)
++is used to get the hostname.  When the 
++.BR "hostname \-a, \-d, \-f or \-i" 
++is called will 
++.BR gethostbyname(3)
++be called.  The difference in 
++.BR gethostname(2)
++and
++.BR gethostbyname(3)
++is that
++.BR gethostbyname(3)
++is network aware, so it consults 
++.IR /etc/nsswitch.conf
++and
++.IR /etc/host.conf
++to decide whether to read information in
++.IR /etc/sysconfig/network
++or
++.IR /etc/hosts
++
++To add another dimension to this,
++the 
++.B hostname 
++is also set when the network interface is brought up.
++
+ .SS "SET NAME"
+ When called with one argument or with the
+ .B \-\-file
+@@ -106,7 +133,7 @@ and
+ use the
+ .BR setdomainname (2).
+ Note that this is effective only until the next reboot.
+-Edit /etc/hostname for permanent change.
++After reboot original names from \fI/etc/hosts\fR are used again. 
+ .LP
+ Note, that only the super-user can change the names.
+ .LP
+@@ -117,10 +144,10 @@ command (see
+ below).
+ .LP
+ The host name is usually set once at system startup in
+-.I /etc/init.d/hostname.sh
++.I /etc/rc.d/rc.sysinit
+ (normally by reading the contents of a file which contains
+ the host name, e.g.
+-.IR /etc/hostname ).
++.IR /etc/sysconfig/network ).
+ 
+ .SS THE FQDN
+ You can't change the FQDN (as returned by
+@@ -185,7 +212,7 @@ Display the short host name. This is the
+ Print version information on standard output and exit successfully.
+ .TP
+ .I "\-v, \-\-verbose"
+-Be verbose and tell what's going on.
++Verbose output was removed.
+ .TP
+ .I "\-y, \-\-yp, \-\-nis"
+ Display the NIS domain name. If a parameter is given (or
+@@ -203,9 +230,7 @@ option in
+ .BR /etc/resolv.conf .
+ .SH FILES
+ .B /etc/hosts
+-
+-.B /etc/hostname
+-This file should only contain the hostname and not the full FQDN.
++.B /etc/sysconfig/network
+ .SH AUTHORS
+ Peter Tobias, <tobias@et-inf.fho-emden.de>
+ .br
+diff -up hostname/hostname.c.initial hostname/hostname.c
+--- hostname/hostname.c.initial	2009-10-27 13:19:28.000000000 +0100
++++ hostname/hostname.c	2009-11-06 16:14:23.000000000 +0100
+@@ -43,7 +43,7 @@
+ #include <err.h>
+ #include <rpcsvc/ypclnt.h>
+ 
+-#define VERSION "3.00"
++#define VERSION "3.01"
+ 
+ enum type_t { DEFAULT, DNS, FQDN, SHORT, ALIAS, IP, NIS, NIS_DEF };
+ 
+@@ -112,7 +112,7 @@ localdomain()
+  * If something goes wrong, program exits.
+  */
+ char *
+-localhost()
++localhost(enum type_t type)
+ {
+ 	char *buf = 0;
+ 	size_t buf_len = 0;
+@@ -134,10 +134,11 @@ localhost()
+ 	        || errno == ENAMETOOLONG);
+ 
+ 	/*
+-	 * a hostname must not contain a dot, so if we find one,
++	 * short hostname must not contain a dot, so if we find one,
+          * we also have a domain in here, which we better remove
+ 	 */
+-	*(strchrnul(buf, '.')) = '\0';
++	if (type == SHORT)
++		*(strchrnul(buf, '.')) = '\0';
+ 
+ 	/* gethostname failed, abort. */
+ 	if (myerror)
+@@ -257,7 +258,7 @@ show_name(enum type_t type)
+ 	{
+ 		case DEFAULT: 
+ 		case SHORT:
+-			printf("%s\n", localhost());
++			printf("%s\n", localhost(type));
+ 			break;
+ 		case NIS:
+ 			printf("%s\n", localdomain());
+@@ -270,7 +271,7 @@ show_name(enum type_t type)
+ 			hints.ai_socktype = SOCK_DGRAM;
+ 			hints.ai_flags = AI_CANONNAME;
+ 
+-			if ((ret = getaddrinfo(localhost(), NULL, &hints, &res)) != 0)
++			if ((ret = getaddrinfo(localhost(type), NULL, &hints, &res)) != 0)
+ 				errx(1, "%s", gai_strerror(ret));
+ 
+ 			switch (type) {
+@@ -278,7 +279,7 @@ show_name(enum type_t type)
+ 				struct hostent *hp;
+ 				int i;
+ 
+-				if ((hp = gethostbyname(localhost())) == NULL)
++				if ((hp = gethostbyname(localhost(type))) == NULL)
+ 					errx(1, "%s", hstrerror(h_errno));
+ 
+ 				for (i = 0; hp->h_aliases[i]; i++) {
+@@ -449,7 +450,7 @@ main(int argc, char **argv)
+ 		if (boot && (name == NULL || name[0] == '\0')) {
+ 			free(name);
+ 
+-			name = localhost();
++			name = localhost(type);
+ 			if (name[0] == '\0' || !strcmp(name,"(none)"))
+ 				strcpy(name, "localhost");
+ 		}
+diff -up hostname/Makefile.initial hostname/Makefile
+--- hostname/Makefile.initial	2009-09-22 14:21:50.000000000 +0200
++++ hostname/Makefile	2009-11-06 16:14:23.000000000 +0100
+@@ -7,26 +7,28 @@ OBJS=hostname.o
+ 
+ hostname: $(OBJS)
+ 	$(CC) $(CFLAGS) -o $@ $(OBJS) -lnsl
+-	ln -fs hostname dnsdomainname
+-	ln -fs hostname domainname
+-	ln -fs hostname ypdomainname
+-	ln -fs hostname nisdomainname
+ 
+ install: hostname
+ 	install -d ${BASEDIR}/usr/share/man/man1
+-	install -o root -g root -m 0644 hostname.1 ${BASEDIR}/usr/share/man/man1
++	install -m 0644 hostname.1 ${BASEDIR}/usr/share/man/man1
+ 	ln -fs hostname.1 ${BASEDIR}/usr/share/man/man1/dnsdomainname.1
+ 	ln -fs hostname.1 ${BASEDIR}/usr/share/man/man1/domainname.1
+ 	ln -fs hostname.1 ${BASEDIR}/usr/share/man/man1/ypdomainname.1
+ 	ln -fs hostname.1 ${BASEDIR}/usr/share/man/man1/nisdomainname.1
+-	install -o root -g root -m 0644 hostname.1.fr ${BASEDIR}/usr/share/man/fr/man1/hostname.1
++	install -d ${BASEDIR}/usr/share/man/fr/man1
++	install -m 0644 hostname.1.fr ${BASEDIR}/usr/share/man/fr/man1/hostname.1
++	ln -fs hostname.1 ${BASEDIR}/usr/share/man/fr/man1/dnsdomainname.1
++	ln -fs hostname.1 ${BASEDIR}/usr/share/man/fr/man1/domainname.1
++	ln -fs hostname.1 ${BASEDIR}/usr/share/man/fr/man1/ypdomainname.1
++	ln -fs hostname.1 ${BASEDIR}/usr/share/man/fr/man1/nisdomainname.1
++
+ 
+ 	install -d ${BASEDIR}/bin
+-	install -o root -g root -m 0755 hostname ${BASEDIR}/bin
+-	ln -f hostname ${BASEDIR}/bin/dnsdomainname
+-	ln -f hostname ${BASEDIR}/bin/domainname
+-	ln -f hostname ${BASEDIR}/bin/nisdomainname
+-	ln -f hostname ${BASEDIR}/bin/ypdomainname
++	install -m 0755 hostname ${BASEDIR}/bin
++	ln -fs hostname ${BASEDIR}/bin/dnsdomainname
++	ln -fs hostname ${BASEDIR}/bin/domainname
++	ln -fs hostname ${BASEDIR}/bin/nisdomainname
++	ln -fs hostname ${BASEDIR}/bin/ypdomainname
+ 
+ clean:
+ 	-rm -f $(OBJS) hostname dnsdomainname domainname nisdomainname ypdomainname

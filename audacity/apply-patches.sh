@@ -11,7 +11,5 @@ sed -e "s|__RPM_LIBDIR__|/usr/lib${LIBDIRSUFFIX}|g" \
 
 # Debian
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/disable-dynamic-ffmpeg.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/additional-mime-types.patch
-
 
 set +e +o pipefail

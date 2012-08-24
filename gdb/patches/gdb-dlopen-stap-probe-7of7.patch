@@ -1,0 +1,147 @@
+2012-07-30  Gary Benson  <gbenson@redhat.com>
+
+	* objfiles.h (inhibit_section_map_updates): New function
+	declaration.
+	(resume_section_map_updates): Likewise.
+	(resume_section_map_updates_cleanup): Likewise.
+	* objfiles.c (objfile_pspace_info): New field "inhibit_updates".
+	(find_pc_section): Do not update the section map if
+	inhibit_updates is set.
+	(inhibit_section_map_updates): New function.
+	(resume_section_map_updates): Likewise.
+	(resume_section_map_updates_cleanup): Likewise.
+	* solib-svr4.c (svr4_handle_solib_event): Inhibit section map
+	updates for calls to evaluate_probe_argument.
+
+Index: gdb-7.4.91.20120814/gdb/objfiles.h
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/objfiles.h	2012-08-14 17:16:54.000000000 +0200
++++ gdb-7.4.91.20120814/gdb/objfiles.h	2012-08-14 17:20:55.913174609 +0200
+@@ -526,6 +526,22 @@ extern void set_objfile_data (struct obj
+ extern void *objfile_data (struct objfile *objfile,
+ 			   const struct objfile_data *data);
+ 
++/* In normal use, the section map will be rebuilt by FIND_PC_SECTION
++   if objfiles have been added, removed or relocated since it was last
++   called.  Calling INHIBIT_SECTION_MAP_UPDATES will inhibit this
++   behavior until RESUME_SECTION_MAP_UPDATES is called.  If you call
++   INHIBIT_SECTION_MAP_UPDATES you must ensure that every call to
++   FIND_PC_SECTION in the inhibited region relates to a section that
++   is already in the section map and has not since been removed or
++   relocated.  */
++extern void inhibit_section_map_updates (void);
++
++/* Resume automatically rebuilding the section map as required.  */
++extern void resume_section_map_updates (void);
++
++/* Version of the above suitable for use as a cleanup.  */
++extern void resume_section_map_updates_cleanup (void *arg);
++
+ extern void default_iterate_over_objfiles_in_search_order
+   (struct gdbarch *gdbarch,
+    iterate_over_objfiles_in_search_order_cb_ftype *cb,
+Index: gdb-7.4.91.20120814/gdb/objfiles.c
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/objfiles.c	2012-08-14 17:16:55.000000000 +0200
++++ gdb-7.4.91.20120814/gdb/objfiles.c	2012-08-14 17:20:55.915174609 +0200
+@@ -70,6 +70,9 @@ struct objfile_pspace_info
+   int objfiles_changed_p;
+   struct obj_section **sections;
+   int num_sections;
++
++  /* Nonzero if section map updates should be inhibited.  */
++  int inhibit_updates;
+ };
+ 
+ /* Per-program-space data key.  */
+@@ -1295,7 +1298,7 @@ find_pc_section (CORE_ADDR pc)
+     return s;
+ 
+   pspace_info = get_objfile_pspace_data (current_program_space);
+-  if (pspace_info->objfiles_changed_p != 0)
++  if (pspace_info->objfiles_changed_p && !pspace_info->inhibit_updates)
+     {
+       update_section_map (current_program_space,
+ 			  &pspace_info->sections,
+@@ -1463,6 +1466,30 @@ objfiles_changed (void)
+   get_objfile_pspace_data (current_program_space)->objfiles_changed_p = 1;
+ }
+ 
++/* See comments in objfiles.h.  */
++
++void
++inhibit_section_map_updates (void)
++{
++  get_objfile_pspace_data (current_program_space)->inhibit_updates = 1;
++}
++
++/* See comments in objfiles.h.  */
++
++void
++resume_section_map_updates (void)
++{
++  get_objfile_pspace_data (current_program_space)->inhibit_updates = 0;
++}
++
++/* See comments in objfiles.h.  */
++
++void
++resume_section_map_updates_cleanup (void *arg)
++{
++  resume_section_map_updates ();
++}
++
+ /* The default implementation for the "iterate_over_objfiles_in_search_order"
+    gdbarch method.  It is equivalent to use the ALL_OBJFILES macro,
+    searching the objfiles in the order they are stored internally,
+Index: gdb-7.4.91.20120814/gdb/solib-svr4.c
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/solib-svr4.c	2012-08-14 17:20:42.000000000 +0200
++++ gdb-7.4.91.20120814/gdb/solib-svr4.c	2012-08-14 17:21:14.090169216 +0200
+@@ -1847,6 +1847,7 @@ svr4_handle_solib_event (bpstat bs)
+   struct svr4_info *info = get_svr4_info ();
+   struct probe_and_info buf, *pi = &buf;
+   enum probe_action action;
++  struct cleanup *cleanups = NULL;
+   struct value *val;
+   LONGEST lmid;
+   CORE_ADDR debug_base, lm = 0;
+@@ -1870,6 +1871,19 @@ svr4_handle_solib_event (bpstat bs)
+   if (action == NAMESPACE_NO_ACTION)
+     return;
+ 
++  /* EVALUATE_PROBE_ARGUMENT looks up symbols in the dynamic linker
++     using FIND_PC_SECTION.  FIND_PC_SECTION is accelerated by a cache
++     called the section map.  The section map is invalidated every
++     time a shared library is loaded or unloaded, and if the inferior
++     is generating a lot of shared library events then the section map
++     will be updated every time SVR4_HANDLE_SOLIB_EVENT is called.
++     We called FIND_PC_SECTION in SVR4_CREATE_SOLIB_EVENT_BREAKPOINTS,
++     so we can guarantee that the dynamic linker's sections are in the
++     section map.  We can therefore inhibit section map updates across
++     these calls to EVALUATE_PROBE_ARGUMENT and save a lot of time.  */
++  inhibit_section_map_updates ();
++  cleanups = make_cleanup (resume_section_map_updates_cleanup, NULL);
++
+   val = evaluate_probe_argument (pi->probe, 0);
+   if (val == NULL)
+     goto error;
+@@ -1901,6 +1915,9 @@ svr4_handle_solib_event (bpstat bs)
+ 	action = NAMESPACE_RELOAD;
+     }
+ 
++  do_cleanups (cleanups);
++  cleanups = NULL;
++
+   if (action == NAMESPACE_UPDATE_OR_RELOAD)
+     {
+       if (namespace_update_incremental (info, lmid, lm, is_initial_ns))
+@@ -1923,6 +1940,8 @@ svr4_handle_solib_event (bpstat bs)
+   warning (_("Probes-based dynamic linker interface failed.\n"
+ 	     "Reverting to original interface.\n"));
+ 
++  if (cleanups != NULL)
++    do_cleanups (cleanups);
+   free_namespace_table (info);
+   free_probes (info);
+   info->using_probes = 0;

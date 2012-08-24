@@ -1,0 +1,795 @@
+http://sourceware.org/ml/gdb-cvs/2012-07/msg00123.html
+
+### src/gdb/ChangeLog	2012/07/18 04:36:15	1.14473
+### src/gdb/ChangeLog	2012/07/18 16:12:15	1.14474
+## -1,3 +1,37 @@
++2012-07-18  Sergio Durigan Junior  <sergiodj@redhat.com>
++
++	* elfread.c (elf_get_probe_argument_count): Remove `objfile' argument.
++	(elf_compile_to_ax): Likewise.
++	* infrun.c (insert_exception_resume_from_probe): Likewise.
++	(check_exception_resume): Remove `objfile' variable.
++	* probe.c (find_probe_by_pc): Remove `objfile' argument.
++	(struct probe_and_objfile, probe_and_objfile_s): Delete.
++	(collect_probes): Adjust return value to `VEC (probe_p) *'.
++	(compare_entries): Rename to...
++	(compare_probes): ...this.  Adjust function to work with
++	`struct probe *'.  Rename variables `ea' and `eb' to `pa' and `pb'
++	respectively.
++	(gen_ui_out_table_header_info): Adjust `probes' argument to be
++	`VEC (probe_p) *'.
++	(print_ui_out_info): Adjust argument to be `struct probe *'.
++	(info_probes_for_ops): Adjust internal computations to use
++	`VEC (probe_p) *'.
++	(probe_safe_evaluate_at_pc): Refactor to not pass `objfile' anymore.
++	* probe.h (struct probe_ops) <get_probe_argument_count, compile_to_ax,
++	gen_info_probes_table_values>: Remove `objfile' argument.
++	(struct probe) <objfile>: New field.
++	(find_probe_by_pc): Remove `objfile' argument.
++	* stap-probe.c (stap_parse_probe_arguments): Likewise.
++	(stap_get_probe_argument_count): Likewise.
++	(stap_get_arg): Likewise.
++	(stap_evaluate_probe_argument): Likewise.
++	(stap_compile_to_ax): Likewise.
++	(compile_probe_arg): Refactor not to pass `objfile' anymore.
++	(handle_stap_probe): Fill `objfile' field from `struct probe'.
++	(stap_gen_info_probes_table_header): Remove `objfile' argument.
++	* symfile.h (struct sym_probe_fns) <sym_evaluate_probe_argument,
++	sym_compile_to_ax>: Likewise.
++
+ 2012-07-18  Terry Guo  <terry.guo@arm.com>
+ 
+ 	PR 14329
+--- src/gdb/elfread.c	2012/06/26 20:14:01	1.133
++++ src/gdb/elfread.c	2012/07/18 16:12:15	1.134
+@@ -1635,33 +1635,29 @@
+    symfile.h.  */
+ 
+ static unsigned
+-elf_get_probe_argument_count (struct objfile *objfile,
+-			      struct probe *probe)
++elf_get_probe_argument_count (struct probe *probe)
+ {
+-  return probe->pops->get_probe_argument_count (probe, objfile);
++  return probe->pops->get_probe_argument_count (probe);
+ }
+ 
+ /* Implementation of `sym_evaluate_probe_argument', as documented in
+    symfile.h.  */
+ 
+ static struct value *
+-elf_evaluate_probe_argument (struct objfile *objfile,
+-			     struct probe *probe,
+-			     unsigned n)
++elf_evaluate_probe_argument (struct probe *probe, unsigned n)
+ {
+-  return probe->pops->evaluate_probe_argument (probe, objfile, n);
++  return probe->pops->evaluate_probe_argument (probe, n);
+ }
+ 
+ /* Implementation of `sym_compile_to_ax', as documented in symfile.h.  */
+ 
+ static void
+-elf_compile_to_ax (struct objfile *objfile,
+-		   struct probe *probe,
++elf_compile_to_ax (struct probe *probe,
+ 		   struct agent_expr *expr,
+ 		   struct axs_value *value,
+ 		   unsigned n)
+ {
+-  probe->pops->compile_to_ax (probe, objfile, expr, value, n);
++  probe->pops->compile_to_ax (probe, expr, value, n);
+ }
+ 
+ /* Implementation of `sym_relocate_probe', as documented in symfile.h.  */
+--- src/gdb/infrun.c	2012/07/01 10:37:04	1.549
++++ src/gdb/infrun.c	2012/07/18 16:12:16	1.550
+@@ -5518,7 +5518,6 @@
+ static void
+ insert_exception_resume_from_probe (struct thread_info *tp,
+ 				    const struct probe *probe,
+-				    struct objfile *objfile,
+ 				    struct frame_info *frame)
+ {
+   struct value *arg_value;
+@@ -5534,7 +5533,7 @@
+   if (debug_infrun)
+     fprintf_unfiltered (gdb_stdlog,
+ 			"infrun: exception resume at %s\n",
+-			paddress (get_objfile_arch (objfile),
++			paddress (get_objfile_arch (probe->objfile),
+ 				  handler));
+ 
+   bp = set_momentary_breakpoint_at_pc (get_frame_arch (frame),
+@@ -5552,7 +5551,6 @@
+ 			struct frame_info *frame)
+ {
+   volatile struct gdb_exception e;
+-  struct objfile *objfile;
+   const struct probe *probe;
+   struct symbol *func;
+ 
+@@ -5560,11 +5558,10 @@
+      SystemTap probe point.  If so, the probe has two arguments: the
+      CFA and the HANDLER.  We ignore the CFA, extract the handler, and
+      set a breakpoint there.  */
+-  probe = find_probe_by_pc (get_frame_pc (frame), &objfile);
++  probe = find_probe_by_pc (get_frame_pc (frame));
+   if (probe)
+     {
+-      insert_exception_resume_from_probe (ecs->event_thread, probe,
+-					  objfile, frame);
++      insert_exception_resume_from_probe (ecs->event_thread, probe, frame);
+       return;
+     }
+ 
+--- src/gdb/probe.c	2012/05/08 01:35:34	1.3
++++ src/gdb/probe.c	2012/07/18 16:12:17	1.4
+@@ -204,7 +204,7 @@
+ /* See definition in probe.h.  */
+ 
+ struct probe *
+-find_probe_by_pc (CORE_ADDR pc, struct objfile **objfile_out)
++find_probe_by_pc (CORE_ADDR pc)
+ {
+   struct objfile *objfile;
+ 
+@@ -221,10 +221,7 @@
+     probes = objfile->sf->sym_probe_fns->sym_get_probes (objfile);
+     for (ix = 0; VEC_iterate (probe_p, probes, ix, probe); ix++)
+       if (probe->address == pc)
+-	{
+-	  *objfile_out = objfile;
+-	  return probe;
+-	}
++	return probe;
+   }
+ 
+   return NULL;
+@@ -232,21 +229,6 @@
+ 
+ 
+ 
+-/* A utility structure.  A VEC of these is built when handling "info
+-   probes".  */
+-
+-struct probe_and_objfile
+-{
+-  /* The probe.  */
+-  struct probe *probe;
+-
+-  /* The probe's objfile.  */
+-  struct objfile *objfile;
+-};
+-
+-typedef struct probe_and_objfile probe_and_objfile_s;
+-DEF_VEC_O (probe_and_objfile_s);
+-
+ /* A helper function for collect_probes that compiles a regexp and
+    throws an exception on error.  This installs a cleanup to free the
+    resulting pattern on success.  If RX is NULL, this does nothing.  */
+@@ -275,16 +257,16 @@
+    If POPS is not NULL, only probes of this certain probe_ops will match.
+    Each argument is a regexp, or NULL, which matches anything.  */
+ 
+-static VEC (probe_and_objfile_s) *
++static VEC (probe_p) *
+ collect_probes (char *objname, char *provider, char *probe_name,
+ 		const struct probe_ops *pops)
+ {
+   struct objfile *objfile;
+-  VEC (probe_and_objfile_s) *result = NULL;
++  VEC (probe_p) *result = NULL;
+   struct cleanup *cleanup, *cleanup_temps;
+   regex_t obj_pat, prov_pat, probe_pat;
+ 
+-  cleanup = make_cleanup (VEC_cleanup (probe_and_objfile_s), &result);
++  cleanup = make_cleanup (VEC_cleanup (probe_p), &result);
+ 
+   cleanup_temps = make_cleanup (null_cleanup, NULL);
+   compile_rx_or_error (&prov_pat, provider, _("Invalid provider regexp"));
+@@ -310,8 +292,6 @@
+ 
+       for (ix = 0; VEC_iterate (probe_p, probes, ix, probe); ix++)
+ 	{
+-	  probe_and_objfile_s entry;
+-
+ 	  if (pops != NULL && probe->pops != pops)
+ 	    continue;
+ 
+@@ -323,9 +303,7 @@
+ 	      && regexec (&probe_pat, probe->name, 0, NULL, 0) != 0)
+ 	    continue;
+ 
+-	  entry.probe = probe;
+-	  entry.objfile = objfile;
+-	  VEC_safe_push (probe_and_objfile_s, result, &entry);
++	  VEC_safe_push (probe_p, result, probe);
+ 	}
+     }
+ 
+@@ -334,36 +312,36 @@
+   return result;
+ }
+ 
+-/* A qsort comparison function for probe_and_objfile_s objects.  */
++/* A qsort comparison function for probe_p objects.  */
+ 
+ static int
+-compare_entries (const void *a, const void *b)
++compare_probes (const void *a, const void *b)
+ {
+-  const probe_and_objfile_s *ea = a;
+-  const probe_and_objfile_s *eb = b;
++  const struct probe *pa = *((const struct probe **) a);
++  const struct probe *pb = *((const struct probe **) b);
+   int v;
+ 
+-  v = strcmp (ea->probe->provider, eb->probe->provider);
++  v = strcmp (pa->provider, pb->provider);
+   if (v)
+     return v;
+ 
+-  v = strcmp (ea->probe->name, eb->probe->name);
++  v = strcmp (pa->name, pb->name);
+   if (v)
+     return v;
+ 
+-  if (ea->probe->address < eb->probe->address)
++  if (pa->address < pb->address)
+     return -1;
+-  if (ea->probe->address > eb->probe->address)
++  if (pa->address > pb->address)
+     return 1;
+ 
+-  return strcmp (ea->objfile->name, eb->objfile->name);
++  return strcmp (pa->objfile->name, pb->objfile->name);
+ }
+ 
+ /* Helper function that generate entries in the ui_out table being
+    crafted by `info_probes_for_ops'.  */
+ 
+ static void
+-gen_ui_out_table_header_info (VEC (probe_and_objfile_s) *probes,
++gen_ui_out_table_header_info (VEC (probe_p) *probes,
+ 			      const struct probe_ops *p)
+ {
+   /* `headings' refers to the names of the columns when printing `info
+@@ -392,11 +370,11 @@
+        VEC_iterate (info_probe_column_s, headings, ix, column);
+        ++ix)
+     {
+-      probe_and_objfile_s *entry;
++      struct probe *probe;
+       int jx;
+       size_t size_max = strlen (column->print_name);
+ 
+-      for (jx = 0; VEC_iterate (probe_and_objfile_s, probes, jx, entry); ++jx)
++      for (jx = 0; VEC_iterate (probe_p, probes, jx, probe); ++jx)
+ 	{
+ 	  /* `probe_fields' refers to the values of each new field that this
+ 	     probe will display.  */
+@@ -405,12 +383,11 @@
+ 	  const char *val;
+ 	  int kx;
+ 
+-	  if (entry->probe->pops != p)
++	  if (probe->pops != p)
+ 	    continue;
+ 
+ 	  c2 = make_cleanup (VEC_cleanup (const_char_ptr), &probe_fields);
+-	  p->gen_info_probes_table_values (entry->probe, entry->objfile,
+-					   &probe_fields);
++	  p->gen_info_probes_table_values (probe, &probe_fields);
+ 
+ 	  gdb_assert (VEC_length (const_char_ptr, probe_fields)
+ 		      == headings_size);
+@@ -437,10 +414,10 @@
+ }
+ 
+ /* Helper function to print extra information about a probe and an objfile
+-   represented by ENTRY.  */
++   represented by PROBE.  */
+ 
+ static void
+-print_ui_out_info (probe_and_objfile_s *entry)
++print_ui_out_info (struct probe *probe)
+ {
+   int ix;
+   int j = 0;
+@@ -451,23 +428,21 @@
+   info_probe_column_s *column;
+   struct cleanup *c;
+ 
+-  gdb_assert (entry != NULL);
+-  gdb_assert (entry->probe != NULL);
+-  gdb_assert (entry->probe->pops != NULL);
++  gdb_assert (probe != NULL);
++  gdb_assert (probe->pops != NULL);
+ 
+-  if (entry->probe->pops->gen_info_probes_table_header == NULL
+-      && entry->probe->pops->gen_info_probes_table_values == NULL)
++  if (probe->pops->gen_info_probes_table_header == NULL
++      && probe->pops->gen_info_probes_table_values == NULL)
+     return;
+ 
+-  gdb_assert (entry->probe->pops->gen_info_probes_table_header != NULL
+-	      && entry->probe->pops->gen_info_probes_table_values != NULL);
++  gdb_assert (probe->pops->gen_info_probes_table_header != NULL
++	      && probe->pops->gen_info_probes_table_values != NULL);
+ 
+   c = make_cleanup (VEC_cleanup (info_probe_column_s), &headings);
+   make_cleanup (VEC_cleanup (const_char_ptr), &values);
+ 
+-  entry->probe->pops->gen_info_probes_table_header (&headings);
+-  entry->probe->pops->gen_info_probes_table_values (entry->probe,
+-						    entry->objfile, &values);
++  probe->pops->gen_info_probes_table_header (&headings);
++  probe->pops->gen_info_probes_table_values (probe, &values);
+ 
+   gdb_assert (VEC_length (info_probe_column_s, headings)
+ 	      == VEC_length (const_char_ptr, values));
+@@ -515,16 +490,16 @@
+ void
+ info_probes_for_ops (char *arg, int from_tty, const struct probe_ops *pops)
+ {
+-  char *provider, *probe = NULL, *objname = NULL;
++  char *provider, *probe_name = NULL, *objname = NULL;
+   struct cleanup *cleanup = make_cleanup (null_cleanup, NULL);
+-  VEC (probe_and_objfile_s) *items;
++  VEC (probe_p) *probes;
+   int i, any_found;
+   int ui_out_extra_fields = 0;
+   size_t size_addr;
+   size_t size_name = strlen ("Name");
+   size_t size_objname = strlen ("Object");
+   size_t size_provider = strlen ("Provider");
+-  probe_and_objfile_s *entry;
++  struct probe *probe;
+   struct gdbarch *gdbarch = get_current_arch ();
+ 
+   /* Do we have a `provider:probe:objfile' style of linespec?  */
+@@ -533,10 +508,10 @@
+     {
+       make_cleanup (xfree, provider);
+ 
+-      probe = extract_arg (&arg);
+-      if (probe)
++      probe_name = extract_arg (&arg);
++      if (probe_name)
+ 	{
+-	  make_cleanup (xfree, probe);
++	  make_cleanup (xfree, probe_name);
+ 
+ 	  objname = extract_arg (&arg);
+ 	  if (objname)
+@@ -564,28 +539,27 @@
+   else
+     ui_out_extra_fields = get_number_extra_fields (pops);
+ 
+-  items = collect_probes (objname, provider, probe, pops);
+-  make_cleanup (VEC_cleanup (probe_and_objfile_s), &items);
++  probes = collect_probes (objname, provider, probe_name, pops);
++  make_cleanup (VEC_cleanup (probe_p), &probes);
+   make_cleanup_ui_out_table_begin_end (current_uiout,
+ 				       4 + ui_out_extra_fields,
+-				       VEC_length (probe_and_objfile_s, items),
++				       VEC_length (probe_p, probes),
+ 				       "StaticProbes");
+ 
+-  if (!VEC_empty (probe_and_objfile_s, items))
+-    qsort (VEC_address (probe_and_objfile_s, items),
+-	   VEC_length (probe_and_objfile_s, items),
+-	   sizeof (probe_and_objfile_s), compare_entries);
++  if (!VEC_empty (probe_p, probes))
++    qsort (VEC_address (probe_p, probes), VEC_length (probe_p, probes),
++	   sizeof (probe_p), compare_probes);
+ 
+   /* What's the size of an address in our architecture?  */
+   size_addr = gdbarch_addr_bit (gdbarch) == 64 ? 18 : 10;
+ 
+   /* Determining the maximum size of each field (`provider', `name' and
+      `objname').  */
+-  for (i = 0; VEC_iterate (probe_and_objfile_s, items, i, entry); ++i)
++  for (i = 0; VEC_iterate (probe_p, probes, i, probe); ++i)
+     {
+-      size_name = max (strlen (entry->probe->name), size_name);
+-      size_provider = max (strlen (entry->probe->provider), size_provider);
+-      size_objname = max (strlen (entry->objfile->name), size_objname);
++      size_name = max (strlen (probe->name), size_name);
++      size_provider = max (strlen (probe->provider), size_provider);
++      size_objname = max (strlen (probe->objfile->name), size_objname);
+     }
+ 
+   ui_out_table_header (current_uiout, size_provider, ui_left, "provider",
+@@ -601,26 +575,26 @@
+       /* We have to generate the table header for each new probe type that we
+ 	 will print.  */
+       for (ix = 0; VEC_iterate (probe_ops_cp, all_probe_ops, ix, po); ++ix)
+-	gen_ui_out_table_header_info (items, po);
++	gen_ui_out_table_header_info (probes, po);
+     }
+   else
+-    gen_ui_out_table_header_info (items, pops);
++    gen_ui_out_table_header_info (probes, pops);
+ 
+   ui_out_table_header (current_uiout, size_objname, ui_left, "object",
+ 		       _("Object"));
+   ui_out_table_body (current_uiout);
+ 
+-  for (i = 0; VEC_iterate (probe_and_objfile_s, items, i, entry); ++i)
++  for (i = 0; VEC_iterate (probe_p, probes, i, probe); ++i)
+     {
+       struct cleanup *inner;
+ 
+       inner = make_cleanup_ui_out_tuple_begin_end (current_uiout, "probe");
+ 
+-      ui_out_field_string (current_uiout, "provider", entry->probe->provider);
+-      ui_out_field_string (current_uiout, "name", entry->probe->name);
++      ui_out_field_string (current_uiout, "provider", probe->provider);
++      ui_out_field_string (current_uiout, "name", probe->name);
+       ui_out_field_core_addr (current_uiout, "addr",
+-			      get_objfile_arch (entry->objfile),
+-			      entry->probe->address);
++			      get_objfile_arch (probe->objfile),
++			      probe->address);
+ 
+       if (pops == NULL)
+ 	{
+@@ -629,19 +603,19 @@
+ 
+ 	  for (ix = 0; VEC_iterate (probe_ops_cp, all_probe_ops, ix, po);
+ 	       ++ix)
+-	    if (entry->probe->pops == po)
+-	      print_ui_out_info (entry);
++	    if (probe->pops == po)
++	      print_ui_out_info (probe);
+ 	}
+       else
+-	print_ui_out_info (entry);
++	print_ui_out_info (probe);
+ 
+-      ui_out_field_string (current_uiout, "object", entry->objfile->name);
++      ui_out_field_string (current_uiout, "object", probe->objfile->name);
+       ui_out_text (current_uiout, "\n");
+ 
+       do_cleanups (inner);
+     }
+ 
+-  any_found = !VEC_empty (probe_and_objfile_s, items);
++  any_found = !VEC_empty (probe_p, probes);
+   do_cleanups (cleanup);
+ 
+   if (!any_found)
+@@ -662,23 +636,24 @@
+ probe_safe_evaluate_at_pc (struct frame_info *frame, unsigned n)
+ {
+   struct probe *probe;
+-  struct objfile *objfile;
++  const struct sym_probe_fns *probe_fns;
+   unsigned n_probes;
+ 
+-  probe = find_probe_by_pc (get_frame_pc (frame), &objfile);
++  probe = find_probe_by_pc (get_frame_pc (frame));
+   if (!probe)
+     return NULL;
+-  gdb_assert (objfile->sf && objfile->sf->sym_probe_fns);
+ 
+-  n_probes
+-    = objfile->sf->sym_probe_fns->sym_get_probe_argument_count (objfile,
+-								probe);
++  gdb_assert (probe->objfile != NULL);
++  gdb_assert (probe->objfile->sf != NULL);
++  gdb_assert (probe->objfile->sf->sym_probe_fns != NULL);
++
++  probe_fns = probe->objfile->sf->sym_probe_fns;
++  n_probes = probe_fns->sym_get_probe_argument_count (probe);
++
+   if (n >= n_probes)
+     return NULL;
+ 
+-  return objfile->sf->sym_probe_fns->sym_evaluate_probe_argument (objfile,
+-								  probe,
+-								  n);
++  return probe_fns->sym_evaluate_probe_argument (probe, n);
+ }
+ 
+ /* See comment in probe.h.  */
+--- src/gdb/probe.h	2012/04/27 20:47:55	1.1
++++ src/gdb/probe.h	2012/07/18 16:12:17	1.2
+@@ -66,21 +66,18 @@
+ 
+     /* Return the number of arguments of PROBE.  */
+ 
+-    unsigned (*get_probe_argument_count) (struct probe *probe,
+-					  struct objfile *objfile);
++    unsigned (*get_probe_argument_count) (struct probe *probe);
+ 
+     /* Evaluate the Nth argument from the PROBE, returning a value
+        corresponding to it.  The argument number is represented N.  */
+ 
+     struct value *(*evaluate_probe_argument) (struct probe *probe,
+-					      struct objfile *objfile,
+ 					      unsigned n);
+ 
+     /* Compile the Nth argument of the PROBE to an agent expression.
+        The argument number is represented by N.  */
+ 
+-    void (*compile_to_ax) (struct probe *probe, struct objfile *objfile,
+-			   struct agent_expr *aexpr,
++    void (*compile_to_ax) (struct probe *probe, struct agent_expr *aexpr,
+ 			   struct axs_value *axs_value, unsigned n);
+ 
+     /* Set the semaphore associated with the PROBE.  This function only makes
+@@ -108,8 +105,8 @@
+     void (*gen_info_probes_table_header) (VEC (info_probe_column_s) **heads);
+ 
+     /* Function that will fill VALUES with the values of the extra fields
+-       to be printed for PROBE  and OBJFILE.  If the backend implements
+-       the `gen_ui_out_table_header' method, then it should implement
++       to be printed for PROBE.  If the backend implements the
++       `gen_ui_out_table_header' method, then it should implement
+        this method as well.  The backend should also guarantee that the
+        order and the number of values in the vector is exactly the same
+        as the order of the extra fields provided in the method
+@@ -118,7 +115,6 @@
+        position in the vector.  */
+ 
+     void (*gen_info_probes_table_values) (struct probe *probe,
+-					  struct objfile *objfile,
+ 					  VEC (const_char_ptr) **values);
+   };
+ 
+@@ -157,6 +153,11 @@
+     /* The operations associated with this probe.  */
+     const struct probe_ops *pops;
+ 
++    /* The objfile which contains this probe.  Even if the probe is also
++       present in a separate debug objfile, this variable always points to
++       the non-separate debug objfile.  */
++    struct objfile *objfile;
++
+     /* The name of the probe.  */
+     const char *name;
+ 
+@@ -181,11 +182,9 @@
+ extern void register_probe_ops (struct probe *probe);
+ 
+ /* Given a PC, find an associated probe with type PTYPE.  If a probe is
+-   found, set *OBJFILE_OUT to the probe's objfile, and return the
+-   probe.  If no probe is found, return NULL.  */
++   found, return it.  If no probe is found, return NULL.  */
+ 
+-extern struct probe *find_probe_by_pc (CORE_ADDR pc,
+-				       struct objfile **objfile_out);
++extern struct probe *find_probe_by_pc (CORE_ADDR pc);
+ 
+ /* Search OBJFILE for a probe with the given PROVIDER, NAME and PTYPE.
+    Return a VEC of all probes that were found.  If no matching probe
+--- src/gdb/stap-probe.c	2012/05/08 01:35:35	1.4
++++ src/gdb/stap-probe.c	2012/07/18 16:12:17	1.5
+@@ -903,10 +903,10 @@
+    this information.  */
+ 
+ static void
+-stap_parse_probe_arguments (struct stap_probe *probe, struct objfile *objfile)
++stap_parse_probe_arguments (struct stap_probe *probe)
+ {
+   const char *cur;
+-  struct gdbarch *gdbarch = get_objfile_arch (objfile);
++  struct gdbarch *gdbarch = get_objfile_arch (probe->p.objfile);
+ 
+   gdb_assert (!probe->args_parsed);
+   cur = probe->args_u.text;
+@@ -991,15 +991,14 @@
+    argument string.  */
+ 
+ static unsigned
+-stap_get_probe_argument_count (struct probe *probe_generic,
+-			       struct objfile *objfile)
++stap_get_probe_argument_count (struct probe *probe_generic)
+ {
+   struct stap_probe *probe = (struct stap_probe *) probe_generic;
+ 
+   gdb_assert (probe_generic->pops == &stap_probe_ops);
+ 
+   if (!probe->args_parsed)
+-    stap_parse_probe_arguments (probe, objfile);
++    stap_parse_probe_arguments (probe);
+ 
+   gdb_assert (probe->args_parsed);
+   return VEC_length (stap_probe_arg_s, probe->args_u.vec);
+@@ -1042,10 +1041,10 @@
+ }
+ 
+ static struct stap_probe_arg *
+-stap_get_arg (struct stap_probe *probe, struct objfile *objfile, unsigned n)
++stap_get_arg (struct stap_probe *probe, unsigned n)
+ {
+   if (!probe->args_parsed)
+-    stap_parse_probe_arguments (probe, objfile);
++    stap_parse_probe_arguments (probe);
+ 
+   return VEC_index (stap_probe_arg_s, probe->args_u.vec, n);
+ }
+@@ -1054,8 +1053,7 @@
+    corresponding to it.  Assertion is thrown if N does not exist.  */
+ 
+ static struct value *
+-stap_evaluate_probe_argument (struct probe *probe_generic,
+-			      struct objfile *objfile, unsigned n)
++stap_evaluate_probe_argument (struct probe *probe_generic, unsigned n)
+ {
+   struct stap_probe *stap_probe = (struct stap_probe *) probe_generic;
+   struct stap_probe_arg *arg;
+@@ -1063,7 +1061,7 @@
+ 
+   gdb_assert (probe_generic->pops == &stap_probe_ops);
+ 
+-  arg = stap_get_arg (stap_probe, objfile, n);
++  arg = stap_get_arg (stap_probe, n);
+   return evaluate_subexp_standard (arg->atype, arg->aexpr, &pos, EVAL_NORMAL);
+ }
+ 
+@@ -1071,9 +1069,8 @@
+    Assertion is thrown if N does not exist.  */
+ 
+ static void
+-stap_compile_to_ax (struct probe *probe_generic, struct objfile *objfile,
+-		    struct agent_expr *expr, struct axs_value *value,
+-		    unsigned n)
++stap_compile_to_ax (struct probe *probe_generic, struct agent_expr *expr,
++		    struct axs_value *value, unsigned n)
+ {
+   struct stap_probe *stap_probe = (struct stap_probe *) probe_generic;
+   struct stap_probe_arg *arg;
+@@ -1081,7 +1078,7 @@
+ 
+   gdb_assert (probe_generic->pops == &stap_probe_ops);
+ 
+-  arg = stap_get_arg (stap_probe, objfile, n);
++  arg = stap_get_arg (stap_probe, n);
+ 
+   pc = arg->aexpr->elts;
+   gen_expr (arg->aexpr, &pc, expr, value);
+@@ -1124,20 +1121,24 @@
+   struct frame_info *frame = get_selected_frame (_("No frame selected"));
+   CORE_ADDR pc = get_frame_pc (frame);
+   int sel = (int) (uintptr_t) data;
+-  struct objfile *objfile;
+   struct probe *pc_probe;
++  const struct sym_probe_fns *pc_probe_fns;
+   unsigned n_args;
+ 
+   /* SEL == -1 means "_probe_argc".  */
+   gdb_assert (sel >= -1);
+ 
+-  pc_probe = find_probe_by_pc (pc, &objfile);
++  pc_probe = find_probe_by_pc (pc);
+   if (pc_probe == NULL)
+     error (_("No SystemTap probe at PC %s"), core_addr_to_string (pc));
+ 
+-  n_args
+-    = objfile->sf->sym_probe_fns->sym_get_probe_argument_count (objfile,
+-								pc_probe);
++  gdb_assert (pc_probe->objfile != NULL);
++  gdb_assert (pc_probe->objfile->sf != NULL);
++  gdb_assert (pc_probe->objfile->sf->sym_probe_fns != NULL);
++
++  pc_probe_fns = pc_probe->objfile->sf->sym_probe_fns;
++
++  n_args = pc_probe_fns->sym_get_probe_argument_count (pc_probe);
+   if (sel == -1)
+     return value_from_longest (builtin_type (arch)->builtin_int, n_args);
+ 
+@@ -1145,9 +1146,7 @@
+     error (_("Invalid probe argument %d -- probe has %u arguments available"),
+ 	   sel, n_args);
+ 
+-  return objfile->sf->sym_probe_fns->sym_evaluate_probe_argument (objfile,
+-								  pc_probe,
+-								  sel);
++  return pc_probe_fns->sym_evaluate_probe_argument (pc_probe, sel);
+ }
+ 
+ /* This is called to compile one of the $_probe_arg* convenience
+@@ -1159,20 +1158,25 @@
+ {
+   CORE_ADDR pc = expr->scope;
+   int sel = (int) (uintptr_t) data;
+-  struct objfile *objfile;
+   struct probe *pc_probe;
++  const struct sym_probe_fns *pc_probe_fns;
+   int n_probes;
+ 
+   /* SEL == -1 means "_probe_argc".  */
+   gdb_assert (sel >= -1);
+ 
+-  pc_probe = find_probe_by_pc (pc, &objfile);
++  pc_probe = find_probe_by_pc (pc);
+   if (pc_probe == NULL)
+     error (_("No SystemTap probe at PC %s"), core_addr_to_string (pc));
+ 
+-  n_probes
+-    = objfile->sf->sym_probe_fns->sym_get_probe_argument_count (objfile,
+-								pc_probe);
++  gdb_assert (pc_probe->objfile != NULL);
++  gdb_assert (pc_probe->objfile->sf != NULL);
++  gdb_assert (pc_probe->objfile->sf->sym_probe_fns != NULL);
++
++  pc_probe_fns = pc_probe->objfile->sf->sym_probe_fns;
++
++  n_probes = pc_probe_fns->sym_get_probe_argument_count (pc_probe);
++
+   if (sel == -1)
+     {
+       value->kind = axs_rvalue;
+@@ -1186,8 +1190,7 @@
+     error (_("Invalid probe argument %d -- probe has %d arguments available"),
+ 	   sel, n_probes);
+ 
+-  objfile->sf->sym_probe_fns->sym_compile_to_ax (objfile, pc_probe,
+-						 expr, value, sel);
++  pc_probe_fns->sym_compile_to_ax (pc_probe, expr, value, sel);
+ }
+ 
+ 
+@@ -1297,6 +1300,7 @@
+ 
+   ret = obstack_alloc (&objfile->objfile_obstack, sizeof (*ret));
+   ret->p.pops = &stap_probe_ops;
++  ret->p.objfile = objfile;
+ 
+   /* Provider and the name of the probe.  */
+   ret->p.provider = &el->data[3 * size];
+@@ -1481,15 +1485,16 @@
+ 
+ static void
+ stap_gen_info_probes_table_values (struct probe *probe_generic,
+-				   struct objfile *objfile,
+ 				   VEC (const_char_ptr) **ret)
+ {
+   struct stap_probe *probe = (struct stap_probe *) probe_generic;
+-  struct gdbarch *gdbarch = get_objfile_arch (objfile);
++  struct gdbarch *gdbarch;
+   const char *val = NULL;
+ 
+   gdb_assert (probe_generic->pops == &stap_probe_ops);
+ 
++  gdbarch = get_objfile_arch (probe->p.objfile);
++
+   if (probe->sem_addr)
+     val = print_core_address (gdbarch, probe->sem_addr);
+ 
+--- src/gdb/symfile.h	2012/05/24 22:14:35	1.109
++++ src/gdb/symfile.h	2012/07/18 16:12:17	1.110
+@@ -320,8 +320,7 @@
+      have come from a call to this objfile's sym_get_probes method.
+      If you provide an implementation of sym_get_probes, you must
+      implement this method as well.  */
+-  unsigned (*sym_get_probe_argument_count) (struct objfile *objfile,
+-					    struct probe *probe);
++  unsigned (*sym_get_probe_argument_count) (struct probe *probe);
+ 
+   /* Evaluate the Nth argument available to PROBE.  PROBE will have
+      come from a call to this objfile's sym_get_probes method.  N will
+@@ -330,8 +329,7 @@
+      PC will match the address of the probe.  If you provide an
+      implementation of sym_get_probes, you must implement this method
+      as well.  */
+-  struct value *(*sym_evaluate_probe_argument) (struct objfile *objfile,
+-						struct probe *probe,
++  struct value *(*sym_evaluate_probe_argument) (struct probe *probe,
+ 						unsigned n);
+ 
+   /* Compile the Nth probe argument to an agent expression.  PROBE
+@@ -339,8 +337,7 @@
+      method.  N will be between 0 and the number of arguments
+      available to this probe.  EXPR and VALUE are the agent expression
+      that is being updated.  */
+-  void (*sym_compile_to_ax) (struct objfile *objfile,
+-			     struct probe *probe,
++  void (*sym_compile_to_ax) (struct probe *probe,
+ 			     struct agent_expr *expr,
+ 			     struct axs_value *value,
+ 			     unsigned n);

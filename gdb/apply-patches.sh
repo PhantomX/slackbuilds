@@ -36,8 +36,6 @@ ApplyPatch() {
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
-ApplyPatch gdb-upstream.patch
-
 # The merged branch `archer' of: http://sourceware.org/gdb/wiki/ProjectArcher
 ApplyPatch gdb-archer.patch
 
@@ -310,12 +308,6 @@ ApplyPatch gdb-bz568248-oom-is-error.patch
 #=push: There is different patch on gdb-patches, waiting now for resolution in kernel.
 ApplyPatch gdb-bz623749-gcore-relro.patch
 
-# Fix lost siginfo_t in linux-nat (BZ 592031).
-#=push
-ApplyPatch gdb-bz592031-siginfo-lost-4of5.patch
-#=push
-ApplyPatch gdb-bz592031-siginfo-lost-5of5.patch
-
 # Verify GDB Python built-in function gdb.solib_address exists (BZ # 634108).
 #=fedoratest
 ApplyPatch gdb-bz634108-solib_address.patch
@@ -336,8 +328,15 @@ ApplyPatch gdb-7.2.50-sparc-add-workaround-to-broken-debug-files.patch
 
 # Fix dlopen of libpthread.so, patched glibc required (Gary Benson, BZ 669432).
 #=push
-ApplyPatch gdb-dlopen-stap-probe.patch
+ApplyPatch gdb-dlopen-stap-probe-1of7.patch
+ApplyPatch gdb-dlopen-stap-probe-2of7.patch
+ApplyPatch gdb-dlopen-stap-probe-3of7.patch
+ApplyPatch gdb-dlopen-stap-probe-4of7.patch
+ApplyPatch gdb-dlopen-stap-probe-5of7.patch
+ApplyPatch gdb-dlopen-stap-probe-6of7.patch
+ApplyPatch gdb-dlopen-stap-probe-7of7.patch
 ApplyPatch gdb-dlopen-stap-probe-test.patch
+ApplyPatch gdb-dlopen-stap-probe-test2.patch
 
 # Work around PR libc/13097 "linux-vdso.so.1" warning message.
 #=push
@@ -356,10 +355,6 @@ ApplyPatch gdb-python-rdynamic.patch
 ApplyPatch gdb-attach-fail-reasons-5of5.patch
 ApplyPatch gdb-attach-fail-reasons-5of5configure.patch
 
-# Fix inferior calls, particularly uncaught thrown exceptions (BZ 799531).
-ApplyPatch gdb-x86-onstack-1of2.patch
-ApplyPatch gdb-x86-onstack-2of2.patch
-
 # Workaround crashes from stale frame_info pointer (BZ 804256).
 ApplyPatch gdb-stale-frame_info.patch
 
@@ -367,21 +362,17 @@ ApplyPatch gdb-stale-frame_info.patch
 #=push+work: But push it to glibc.
 ApplyPatch gdb-glibc-strstr-workaround.patch
 
-# Fix dejagnu-1.5-4.fc17 compatibility for Go (for BZ 635651).
+# Include testcase for `Unable to see a variable inside a module (XLF)' (BZ 823789).
 #=fedoratest
-ApplyPatch gdb-dejagnu-go.patch
+#+ppc
+ApplyPatch gdb-rhel5.9-testcase-xlf-var-inside-mod.patch
 
-# Revert recent breakage of UNIX objfiles order for symbols lookup.
-ApplyPatch gdb-objfile-order.patch
+# Testcase for `Setting solib-absolute-prefix breaks vDSO' (BZ 818343).
+#=fedoratest
+ApplyPatch gdb-rhbz-818343-set-solib-absolute-prefix-testcase.patch
 
-# Disable -lmcheck in the development builds.
-ApplyPatch gdb-disable-mcheck.patch
-
-# Fix assertion on some files as glibc-2.15.90-8.fc18 (Doug Evans).
-ApplyPatch gdb-index-assert.patch
-
-# Support DW_OP_GNU_parameter_ref for -O2 -g inferiors (BZ 827375).
-ApplyPatch gdb-parameterref-1of2.patch
-ApplyPatch gdb-parameterref-2of2.patch
+# Implement MiniDebugInfo F-18 Feature consumer (Alexander Larsson, BZ 834068).
+#=fedora
+ApplyPatch gdb-minidebuginfo.patch
 
 set +e +o pipefail

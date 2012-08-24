@@ -1,0 +1,1989 @@
+gdb/
+2012-07-30  Gary Benson  <gbenson@redhat.com>
+
+	* breakpoint.h (handle_solib_event): Moved function definition
+	to solib.h, and added a new parameter.
+	* breakpoint.c (handle_solib_event): Moved function to solib.c
+	and added a new parameter.
+	(bpstat_stop_status): Pass new argument to handle_solib_event.
+	* solib.h (breakpoint.h): New include.
+	(handle_solib_event): Moved function definition from breakpoint.h
+	and added a new parameter.
+	(update_solib_breakpoints): New function definition.
+	* solib.c (handle_solib_event): Moved function from breakpoint.c
+	and added a new parameter.
+	(update_solib_breakpoints): New function.
+	* solist.h (breakpoint.h): New include.
+	(target_so_ops): New fields "handle_solib_event" and
+	"update_breakpoints".
+	* infrun.c (set_stop_on_solib_events): New function.
+	(_initialize_infrun): Use the above for "set stop-on-solib-events".
+	(handle_inferior_event): Pass new argument to handle_solib_event.
+	* solib-svr4.c (probe.h): New include.
+	(namespace_table_flatten): New forward declaration.
+	(lm_info): New fields "lmid" and "in_initial_ns".
+	(probe_action): New enum.
+	(probe_info): New struct.
+	(probe_info): New static variable.
+	(NUM_PROBES): New definition.
+	(svr4_info): New fields  "using_probes", "probes" and
+	"namespace_table".
+	(free_probes): New function.
+	(free_namespace_table): Likewise.
+	(svr4_pspace_data_cleanup): Free probes and namespace table.
+	(svr4_same): Also compare namespaces if using probes.
+	(lm_addr_check): Only print .dynamic section at wrong address
+	warning for initial namespace if using probes.
+	(r_map_from_debug_base): New function.
+	(solib_svr4_r_map): Call the above.
+	(svr4_read_so_list): New parameter "prev_lm".
+	Changed	return type from void to int.
+	Return nonzero on success, zero on error.
+	(svr4_current_sos_from_debug_base): New function.
+	(svr4_current_sos): Create result from namespace table if available.
+	Use svr4_current_sos_from_debug_base to generate list otherwise.
+	(probe_and_info): New struct.
+	(solib_event_probe_at): New function.
+	(solib_event_probe_action): Likewise.
+	(namespace): New struct.
+	(hash_namespace): New function.
+	(equal_namespace): Likewise.
+	(free_namespace): Likewise.
+	(namespace_update_full): Likewise.
+	(namespace_update_incremental): Likewise.
+	(svr4_handle_solib_event): Likewise.
+	(namespace_table_flatten_helper): Likewise.
+	(namespace_table_flatten): Likewise.
+	(svr4_update_solib_event_breakpoint): Likewise.
+	(svr4_update_solib_event_breakpoints): Likewise.
+	(svr4_create_solib_event_breakpoints): Likewise.
+	(enable_break): Free probes before creating breakpoints.
+	Use svr4_create_solib_event_breakpoints to create breakpoints.
+	(svr4_solib_create_inferior_hook): Free the namespace table.
+	(_initialize_svr4_solib): Initialise svr4_so_ops.handle_solib_event
+	and svr4_so_ops.update_breakpoints.
+
+gdb/testsuite
+2012-07-30  Gary Benson  <gbenson@redhat.com>
+
+	* gdb.base/break-interp.exp (solib_bp): New constant.
+	(reach_1): Use the above instead of "_dl_debug_state".
+	(test_attach): Likewise.
+	(test_ld): Likewise.
+	* gdb.base/break-probes.exp: New file.
+	* gdb.base/break-probes.c: Likewise.
+	* gdb.base/break-probes-solib.c: Likewise.
+	* gdb.base/info-shared.exp: New file.
+	* gdb.base/info-shared.c: Likewise.
+	* gdb.base/info-shared-solib1.c: Likewise.
+	* gdb.base/info-shared-solib2.c: Likewise.
+	* gdb.base/break-dlmopen.exp: Likewise.
+	* gdb.base/break-dlmopen.c: Likewise.
+	* gdb.base/break-dlmopen-solib.c: Likewise.
+
+Index: gdb-7.4.91.20120814/gdb/breakpoint.h
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/breakpoint.h	2012-08-14 17:31:37.050984427 +0200
++++ gdb-7.4.91.20120814/gdb/breakpoint.h	2012-08-14 17:34:44.203746601 +0200
+@@ -1515,8 +1515,6 @@ extern int user_breakpoint_p (struct bre
+ /* Attempt to determine architecture of location identified by SAL.  */
+ extern struct gdbarch *get_sal_arch (struct symtab_and_line sal);
+ 
+-extern void handle_solib_event (void);
+-
+ extern void breakpoints_relocate (struct objfile *objfile,
+ 				  struct section_offsets *delta);
+ 
+Index: gdb-7.4.91.20120814/gdb/breakpoint.c
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/breakpoint.c	2012-08-14 17:31:37.128984404 +0200
++++ gdb-7.4.91.20120814/gdb/breakpoint.c	2012-08-14 17:34:44.211746597 +0200
+@@ -5205,7 +5205,7 @@ bpstat_stop_status (struct address_space
+     {
+       if (bs->breakpoint_at && bs->breakpoint_at->type == bp_shlib_event)
+ 	{
+-	  handle_solib_event ();
++	  handle_solib_event (bs);
+ 	  break;
+ 	}
+     }
+@@ -5301,25 +5301,6 @@ handle_jit_event (void)
+   target_terminal_inferior ();
+ }
+ 
+-/* Handle an solib event by calling solib_add.  */
+-
+-void
+-handle_solib_event (void)
+-{
+-  clear_program_space_solib_cache (current_inferior ()->pspace);
+-
+-  /* Check for any newly added shared libraries if we're supposed to
+-     be adding them automatically.  Switch terminal for any messages
+-     produced by breakpoint_re_set.  */
+-  target_terminal_ours_for_output ();
+-#ifdef SOLIB_ADD
+-  SOLIB_ADD (NULL, 0, &current_target, auto_solib_add);
+-#else
+-  solib_add (NULL, 0, &current_target, auto_solib_add);
+-#endif
+-  target_terminal_inferior ();
+-}
+-
+ /* Prepare WHAT final decision for infrun.  */
+ 
+ /* Decide what infrun needs to do with this bpstat.  */
+Index: gdb-7.4.91.20120814/gdb/solib.h
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/solib.h	2012-02-03 16:19:37.000000000 +0100
++++ gdb-7.4.91.20120814/gdb/solib.h	2012-08-14 17:34:44.257746587 +0200
+@@ -21,6 +21,9 @@
+ #ifndef SOLIB_H
+ #define SOLIB_H
+ 
++/* For bpstat.  */
++#include "breakpoint.h"
++
+ /* Forward decl's for prototypes */
+ struct so_list;
+ struct target_ops;
+@@ -91,4 +94,15 @@ extern CORE_ADDR gdb_bfd_lookup_symbol_f
+ 								      void *),
+ 						    void *data);
+ 
++/* Handle an solib event by calling solib_add.  Targets which handle
++   solib events using breakpoints must pass a valid bpstat.  Targets
++   which handle solib events using some other mechanism should pass
++   NULL.  */
++
++extern void handle_solib_event (bpstat bs);
++
++/* Enable or disable optional solib event breakpoints as appropriate.  */
++
++extern void update_solib_breakpoints (void);
++
+ #endif /* SOLIB_H */
+Index: gdb-7.4.91.20120814/gdb/solib.c
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/solib.c	2012-08-14 17:31:36.832984492 +0200
++++ gdb-7.4.91.20120814/gdb/solib.c	2012-08-14 17:34:44.272746583 +0200
+@@ -1226,6 +1226,42 @@ no_shared_libraries (char *ignored, int
+   objfile_purge_solibs ();
+ }
+ 
++/* See solib.h.  */
++
++void
++handle_solib_event (bpstat bs)
++{
++  struct target_so_ops *ops = solib_ops (target_gdbarch);
++
++  if (ops->handle_solib_event != NULL)
++    ops->handle_solib_event (bs);
++
++  clear_program_space_solib_cache (current_inferior ()->pspace);
++
++  /* Check for any newly added shared libraries if we're supposed to
++     be adding them automatically.  Switch terminal for any messages
++     produced by breakpoint_re_set.  */
++  target_terminal_ours_for_output ();
++#ifdef SOLIB_ADD
++  SOLIB_ADD (NULL, 0, &current_target, auto_solib_add);
++#else
++  solib_add (NULL, 0, &current_target, auto_solib_add);
++#endif
++  target_terminal_inferior ();
++}
++
++/* See solib.h.  */
++
++void
++update_solib_breakpoints (void)
++{
++  struct target_so_ops *ops = solib_ops (target_gdbarch);
++
++  if (ops->update_breakpoints != NULL)
++    ops->update_breakpoints ();
++}
++
++
+ /* Reload shared libraries, but avoid reloading the same symbol file
+    we already have loaded.  */
+ 
+Index: gdb-7.4.91.20120814/gdb/solist.h
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/solist.h	2012-01-04 09:17:11.000000000 +0100
++++ gdb-7.4.91.20120814/gdb/solist.h	2012-08-14 17:34:44.273746584 +0200
+@@ -23,6 +23,8 @@
+ #define SO_NAME_MAX_PATH_SIZE 512	/* FIXME: Should be dynamic */
+ /* For domain_enum domain.  */
+ #include "symtab.h"
++/* For bpstat.  */
++#include "breakpoint.h"
+ 
+ /* Forward declaration for target specific link map information.  This
+    struct is opaque to all but the target specific file.  */
+@@ -149,6 +151,20 @@ struct target_so_ops
+        core file (in particular, for readonly sections).  */
+     int (*keep_data_in_core) (CORE_ADDR vaddr,
+ 			      unsigned long size);
++
++    /* Target-specific handling of solib events.  For targets which
++       handle solib events using breakpoints a valid bpstat must be
++       passed.  Targets which handle solib events using some other
++       mechanism should pass NULL.  This pointer can be NULL, in which
++       case no specific handling is necessary for this target.  */
++    void (*handle_solib_event) (bpstat bs);
++
++    /* Enable or disable optional solib event breakpoints as
++       appropriate.  This should be called whenever
++       stop_on_solib_events is changed.  This pointer can be
++       NULL, in which case no enabling or disabling is necessary
++       for this target.  */
++    void (*update_breakpoints) (void);
+   };
+ 
+ /* Free the memory associated with a (so_list *).  */
+Index: gdb-7.4.91.20120814/gdb/infrun.c
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/infrun.c	2012-08-14 17:33:16.249955007 +0200
++++ gdb-7.4.91.20120814/gdb/infrun.c	2012-08-14 17:34:44.276746583 +0200
+@@ -361,6 +361,16 @@ static struct symbol *step_start_functio
+ /* Nonzero if we want to give control to the user when we're notified
+    of shared library events by the dynamic linker.  */
+ int stop_on_solib_events;
++
++/* Enable or disable optional shared library event breakpoints
++   as appropriate when the above flag is changed.  */
++
++static void
++set_stop_on_solib_events (char *args, int from_tty, struct cmd_list_element *c)
++{
++  update_solib_breakpoints ();
++}
++
+ static void
+ show_stop_on_solib_events (struct ui_file *file, int from_tty,
+ 			   struct cmd_list_element *c, const char *value)
+@@ -3321,7 +3331,7 @@ handle_inferior_event (struct execution_
+ 	    context_switch (ecs->ptid);
+ 	  regcache = get_thread_regcache (ecs->ptid);
+ 
+-	  handle_solib_event ();
++	  handle_solib_event (NULL);
+ 
+ 	  ecs->event_thread->control.stop_bpstat
+ 	    = bpstat_stop_status (get_regcache_aspace (regcache),
+@@ -7226,7 +7236,7 @@ Show stopping for shared library events.
+ If nonzero, gdb will give control to the user when the dynamic linker\n\
+ notifies gdb of shared library events.  The most common event of interest\n\
+ to the user would be loading/unloading of a new library."),
+-			    NULL,
++			    set_stop_on_solib_events,
+ 			    show_stop_on_solib_events,
+ 			    &setlist, &showlist);
+ 
+Index: gdb-7.4.91.20120814/gdb/solib-svr4.c
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/solib-svr4.c	2012-08-14 17:34:39.346752840 +0200
++++ gdb-7.4.91.20120814/gdb/solib-svr4.c	2012-08-14 17:35:42.635732596 +0200
+@@ -47,10 +47,12 @@
+ #include "auxv.h"
+ #include "exceptions.h"
+ #include "gdb_bfd.h"
++#include "probe.h"
+ 
+ static struct link_map_offsets *svr4_fetch_link_map_offsets (void);
+ static int svr4_have_link_map_offsets (void);
+ static void svr4_relocate_main_executable (void);
++static struct so_list *namespace_table_flatten (htab_t namespace_table);
+ 
+ /* Link map info to include in an allocated so_list entry.  */
+ 
+@@ -71,6 +73,16 @@ struct lm_info
+ 
+     /* Values read in from inferior's fields of the same name.  */
+     CORE_ADDR l_ld, l_next, l_prev, l_name;
++
++    /* Numeric link-map ID of the namespace this object is loaded
++       into.  This value is only valid when using the probes-based
++       interface.  */
++    LONGEST lmid;
++
++    /* Nonzero if the namespace list this object is loaded into is the
++       application's initial namespace (LM_ID_BASE).  This value is
++       only valid when using the probes-based interface.  */
++    unsigned int in_initial_ns : 1;
+   };
+ 
+ /* On SVR4 systems, a list of symbols in the dynamic linker where
+@@ -107,6 +119,53 @@ static const  char * const main_name_lis
+   NULL
+ };
+ 
++/* What to do with the namespace table when a probe stop occurs.  */
++
++enum probe_action
++  {
++    /* Something went seriously wrong.  Stop using probes and
++       revert to using the older interface.  */
++    NAMESPACE_TABLE_INVALIDATE,
++
++    /* No action is required.  This namespace is still valid.  */
++    NAMESPACE_NO_ACTION,
++
++    /* This namespace should be reloaded entirely.  */
++    NAMESPACE_RELOAD,
++
++    /* Attempt to incrementally update this namespace. If the
++       update fails or is not possible, fall back to reloading
++       the namespace in full.  */
++    NAMESPACE_UPDATE_OR_RELOAD,
++  };
++
++/* A probe's name and its associated action.  */
++
++struct probe_info
++{
++  /* The name of the probe.  */
++  const char *name;
++
++  /* What to do with the namespace table when a probe stop occurs.  */
++  enum probe_action action;
++};
++
++/* A list of named probes and their associated actions.  If all
++   probes are present in the dynamic linker then the probes-based
++   interface will be used.  */
++
++static const struct probe_info probe_info[] =
++{
++  { "init_start", NAMESPACE_NO_ACTION },
++  { "init_complete", NAMESPACE_RELOAD },
++  { "map_start", NAMESPACE_NO_ACTION },
++  { "reloc_complete", NAMESPACE_UPDATE_OR_RELOAD },
++  { "unmap_start", NAMESPACE_NO_ACTION },
++  { "unmap_complete", NAMESPACE_RELOAD },
++};
++
++#define NUM_PROBES ARRAY_SIZE (probe_info)
++
+ /* Per pspace SVR4 specific data.  */
+ 
+ struct svr4_info
+@@ -129,17 +188,58 @@ struct svr4_info
+   CORE_ADDR interp_text_sect_high;
+   CORE_ADDR interp_plt_sect_low;
+   CORE_ADDR interp_plt_sect_high;
++
++  /* Nonzero if we are using the probes-based interface.  */
++  unsigned int using_probes : 1;
++
++  /* Named probes in the dynamic linker.  */
++  VEC (probe_p) *probes[NUM_PROBES];
++
++  /* Table of dynamic linker namespaces, used by the probes-based
++     interface.  */
++  htab_t namespace_table;
+ };
+ 
+ /* Per-program-space data key.  */
+ static const struct program_space_data *solib_svr4_pspace_data;
+ 
++/* Free any allocated probe vectors.  */
++
++static void
++free_probes (struct svr4_info *info)
++{
++  int i;
++
++  for (i = 0; i < NUM_PROBES; i++)
++    VEC_free (probe_p, info->probes[i]);
++
++  memset (info->probes, 0, sizeof (info->probes));
++}
++
++/* Free the namespace table.  */
++
++static void
++free_namespace_table (struct svr4_info *info)
++{
++  if (info->namespace_table == NULL)
++    return;
++
++  htab_delete (info->namespace_table);
++  info->namespace_table = NULL;
++}
++
+ static void
+ svr4_pspace_data_cleanup (struct program_space *pspace, void *arg)
+ {
+   struct svr4_info *info;
+ 
+   info = program_space_data (pspace, solib_svr4_pspace_data);
++  if (info == NULL)
++    return;
++
++  free_probes (info);
++  free_namespace_table (info);
++
+   xfree (info);
+ }
+ 
+@@ -188,10 +288,21 @@ svr4_same_1 (const char *gdb_so_name, co
+   return 0;
+ }
+ 
++/* Return non-zero if GDB and INFERIOR represent the same shared
++   library.  */
++
+ static int
+ svr4_same (struct so_list *gdb, struct so_list *inferior)
+ {
+-  return (svr4_same_1 (gdb->so_original_name, inferior->so_original_name));
++  struct svr4_info *info = get_svr4_info ();
++
++  if (info->using_probes)
++    {
++      if (gdb->lm_info->lmid != inferior->lm_info->lmid)
++	return 0;
++    }
++
++  return svr4_same_1 (gdb->so_original_name, inferior->so_original_name);
+ }
+ 
+ static struct lm_info *
+@@ -322,18 +433,26 @@ lm_addr_check (struct so_list *so, bfd *
+ 	    }
+ 	  else
+ 	    {
+-	      /* There is no way to verify the library file matches.  prelink
+-		 can during prelinking of an unprelinked file (or unprelinking
+-		 of a prelinked file) shift the DYNAMIC segment by arbitrary
+-		 offset without any page size alignment.  There is no way to
+-		 find out the ELF header and/or Program Headers for a limited
+-		 verification if it they match.  One could do a verification
+-		 of the DYNAMIC segment.  Still the found address is the best
+-		 one GDB could find.  */
+-
+-	      warning (_(".dynamic section for \"%s\" "
+-			 "is not at the expected address "
+-			 "(wrong library or version mismatch?)"), so->so_name);
++	      struct svr4_info *info = get_svr4_info ();
++
++	      if (!info->using_probes || so->lm_info->in_initial_ns)
++		{
++		  /* There is no way to verify the library file
++		     matches.  prelink can during prelinking of an
++		     unprelinked file (or unprelinking of a prelinked
++		     file) shift the DYNAMIC segment by arbitrary
++		     offset without any page size alignment.  There is
++		     no way to find out the ELF header and/or Program
++		     Headers for a limited verification if it they
++		     match.  One could do a verification of the
++		     DYNAMIC segment.  Still the found address is the
++		     best one GDB could find.  */
++
++		  warning (_(".dynamic section for \"%s\" "
++			     "is not at the expected address "
++			     "(wrong library or version mismatch?)"),
++			   so->so_name);
++		}
+ 	    }
+ 	}
+ 
+@@ -775,16 +894,10 @@ locate_base (struct svr4_info *info)
+   return info->debug_base;
+ }
+ 
+-/* Find the first element in the inferior's dynamic link map, and
+-   return its address in the inferior.  Return zero if the address
+-   could not be determined.
+-
+-   FIXME: Perhaps we should validate the info somehow, perhaps by
+-   checking r_version for a known version number, or r_state for
+-   RT_CONSISTENT.  */
++/* Read the r_map field from the supplied r_debug structure.  */
+ 
+ static CORE_ADDR
+-solib_svr4_r_map (struct svr4_info *info)
++r_map_from_debug_base (CORE_ADDR debug_base)
+ {
+   struct link_map_offsets *lmo = svr4_fetch_link_map_offsets ();
+   struct type *ptr_type = builtin_type (target_gdbarch)->builtin_data_ptr;
+@@ -793,13 +906,27 @@ solib_svr4_r_map (struct svr4_info *info
+ 
+   TRY_CATCH (ex, RETURN_MASK_ERROR)
+     {
+-      addr = read_memory_typed_address (info->debug_base + lmo->r_map_offset,
++      addr = read_memory_typed_address (debug_base + lmo->r_map_offset,
+                                         ptr_type);
+     }
+   exception_print (gdb_stderr, ex);
+   return addr;
+ }
+ 
++/* Find the first element in the inferior's dynamic link map, and
++   return its address in the inferior.  Return zero if the address
++   could not be determined.
++
++   FIXME: Perhaps we should validate the info somehow, perhaps by
++   checking r_version for a known version number, or r_state for
++   RT_CONSISTENT.  */
++
++static CORE_ADDR
++solib_svr4_r_map (struct svr4_info *info)
++{
++  return r_map_from_debug_base (info->debug_base);
++}
++
+ /* Find r_brk from the inferior's debug base.  */
+ 
+ static CORE_ADDR
+@@ -1164,15 +1291,17 @@ svr4_default_sos (void)
+   return new;
+ }
+ 
+-/* Read the whole inferior libraries chain starting at address LM.  Add the
+-   entries to the tail referenced by LINK_PTR_PTR.  Ignore the first entry if
+-   IGNORE_FIRST and set global MAIN_LM_ADDR according to it.  */
++/* Read the whole inferior libraries chain starting at address LM.
++   Expect the first entry in the chain's previous entry to be PREV_LM.
++   Add the entries to the tail referenced by LINK_PTR_PTR.  Ignore the
++   first entry if IGNORE_FIRST and set global MAIN_LM_ADDR according
++   to it.  Returns nonzero upon success.  */
+ 
+-static void
+-svr4_read_so_list (CORE_ADDR lm, struct so_list ***link_ptr_ptr,
+-		   int ignore_first)
++static int
++svr4_read_so_list (CORE_ADDR lm, CORE_ADDR prev_lm,
++		   struct so_list ***link_ptr_ptr, int ignore_first)
+ {
+-  CORE_ADDR prev_lm = 0, next_lm;
++  CORE_ADDR next_lm;
+ 
+   for (; lm != 0; prev_lm = lm, lm = next_lm)
+     {
+@@ -1189,7 +1318,7 @@ svr4_read_so_list (CORE_ADDR lm, struct
+       if (new->lm_info == NULL)
+ 	{
+ 	  do_cleanups (old_chain);
+-	  break;
++	  return 0;
+ 	}
+ 
+       next_lm = new->lm_info->l_next;
+@@ -1200,7 +1329,7 @@ svr4_read_so_list (CORE_ADDR lm, struct
+ 		   paddress (target_gdbarch, prev_lm),
+ 		   paddress (target_gdbarch, new->lm_info->l_prev));
+ 	  do_cleanups (old_chain);
+-	  break;
++	  return 0;
+ 	}
+ 
+       /* For SVR4 versions, the first entry in the link map is for the
+@@ -1295,20 +1424,61 @@ svr4_read_so_list (CORE_ADDR lm, struct
+       **link_ptr_ptr = new;
+       *link_ptr_ptr = &new->next;
+     }
++
++  return 1;
+ }
+ 
+-/* Implement the "current_sos" target_so_ops method.  */
++/* Read the list of loaded libraries from the dynamic linker's base
++   structure.  */
+ 
+ static struct so_list *
+-svr4_current_sos (void)
++svr4_current_sos_from_debug_base (void)
+ {
++  struct svr4_info *info = get_svr4_info ();
+   CORE_ADDR lm;
+   struct so_list *head = NULL;
+   struct so_list **link_ptr = &head;
+-  struct svr4_info *info;
+   struct cleanup *back_to;
+   int ignore_first;
++
++  gdb_assert (info->debug_base);
++
++  /* Assume that everything is a library if the dynamic loader was loaded
++     late by a static executable.  */
++  if (exec_bfd && bfd_get_section_by_name (exec_bfd, ".dynamic") == NULL)
++    ignore_first = 0;
++  else
++    ignore_first = 1;
++
++  back_to = make_cleanup (svr4_free_library_list, &head);
++
++  /* Walk the inferior's link map list, and build our list of
++     `struct so_list' nodes.  */
++  lm = solib_svr4_r_map (info);
++  if (lm)
++    svr4_read_so_list (lm, 0, &link_ptr, ignore_first);
++
++  /* On Solaris, the dynamic linker is not in the normal list of
++     shared objects, so make sure we pick it up too.  Having
++     symbol information for the dynamic linker is quite crucial
++     for skipping dynamic linker resolver code.  */
++  lm = solib_svr4_r_ldsomap (info);
++  if (lm)
++    svr4_read_so_list (lm, 0, &link_ptr, 0);
++
++  discard_cleanups (back_to);
++
++  return head;
++}
++
++/* Implement the "current_sos" target_so_ops method.  */
++
++static struct so_list *
++svr4_current_sos (void)
++{
++  struct svr4_info *info;
+   struct svr4_library_list library_list;
++  struct so_list *result;
+ 
+   /* Fall back to manual examination of the target if the packet is not
+      supported or gdbserver failed to find DT_DEBUG.  gdb.server/solib-list.exp
+@@ -1331,6 +1501,10 @@ svr4_current_sos (void)
+ 
+   info = get_svr4_info ();
+ 
++  /* If we have a namespace table then return a flattened copy.  */
++  if (info->namespace_table != NULL)
++    return namespace_table_flatten (info->namespace_table);
++
+   /* Always locate the debug struct, in case it has moved.  */
+   info->debug_base = 0;
+   locate_base (info);
+@@ -1340,35 +1514,12 @@ svr4_current_sos (void)
+   if (! info->debug_base)
+     return svr4_default_sos ();
+ 
+-  /* Assume that everything is a library if the dynamic loader was loaded
+-     late by a static executable.  */
+-  if (exec_bfd && bfd_get_section_by_name (exec_bfd, ".dynamic") == NULL)
+-    ignore_first = 0;
+-  else
+-    ignore_first = 1;
+-
+-  back_to = make_cleanup (svr4_free_library_list, &head);
+-
+-  /* Walk the inferior's link map list, and build our list of
+-     `struct so_list' nodes.  */
+-  lm = solib_svr4_r_map (info);
+-  if (lm)
+-    svr4_read_so_list (lm, &link_ptr, ignore_first);
+-
+-  /* On Solaris, the dynamic linker is not in the normal list of
+-     shared objects, so make sure we pick it up too.  Having
+-     symbol information for the dynamic linker is quite crucial
+-     for skipping dynamic linker resolver code.  */
+-  lm = solib_svr4_r_ldsomap (info);
+-  if (lm)
+-    svr4_read_so_list (lm, &link_ptr, 0);
+-
+-  discard_cleanups (back_to);
++  result = svr4_current_sos_from_debug_base ();
+ 
+-  if (head == NULL)
++  if (result == NULL)
+     return svr4_default_sos ();
+ 
+-  return head;
++  return result;
+ }
+ 
+ /* Get the address of the link_map for a given OBJFILE.  */
+@@ -1450,6 +1601,498 @@ exec_entry_point (struct bfd *abfd, stru
+ 					     targ);
+ }
+ 
++/* A probe and its associated information structure.  */
++
++struct probe_and_info
++{
++  /* The probe.  */
++  struct probe *probe;
++
++  /* The probe_info from which the probe was created.  */
++  const struct probe_info *info;
++};
++
++/* Get the solib event probe at the specified location, and the
++   probe_info the probe was created with.  Fills in RESULT and
++   returns nonzero if a solib event probe was found at the
++   specified location.  Returns zero if no solib event probe
++   was found.  */
++
++static int
++solib_event_probe_at (struct svr4_info *info, struct bp_location *loc,
++		      struct probe_and_info *result)
++{
++  int i;
++
++  for (i = 0; i < NUM_PROBES; i++)
++    {
++      struct probe *probe;
++      int ix;
++
++      for (ix = 0; VEC_iterate (probe_p, info->probes[i], ix, probe); ++ix)
++	{
++	  if (loc->pspace == current_program_space
++	      && loc->address == probe->address)
++	    {
++	      result->info = &probe_info[i];
++	      result->probe = probe;
++
++	      return 1;
++	    }
++	}
++    }
++
++  return 0;
++}
++
++/* Decide what action to take when the specified solib event probe is
++   hit.  */
++
++static enum probe_action
++solib_event_probe_action (struct probe_and_info *pi)
++{
++  enum probe_action action;
++  unsigned probe_argc;
++
++  action = pi->info->action;
++  if (action == NAMESPACE_NO_ACTION || action == NAMESPACE_TABLE_INVALIDATE)
++    return action;
++
++  gdb_assert (action == NAMESPACE_RELOAD
++	      || action == NAMESPACE_UPDATE_OR_RELOAD);
++
++  /* Check that an appropriate number of arguments has been supplied.
++     We expect:
++       arg0: Lmid_t lmid (mandatory)
++       arg1: struct r_debug *debug_base (mandatory)
++       arg2: struct link_map *new (optional, for incremental updates)  */
++  probe_argc = get_probe_argument_count (pi->probe);
++  if (probe_argc == 2)
++    action = NAMESPACE_RELOAD;
++  else if (probe_argc < 2)
++    action = NAMESPACE_TABLE_INVALIDATE;
++
++  return action;
++}
++
++/* A namespace in the dynamic linker.  */
++
++struct namespace
++{
++  /* Numeric link-map ID of the namespace.  */
++  LONGEST lmid;
++
++  /* List of objects loaded into the namespace.  */
++  struct so_list *solist;
++};
++
++/* Returns a hash code for the namespace referenced by p.  */
++
++static hashval_t
++hash_namespace (const void *p)
++{
++  const struct namespace *ns = p;
++
++  return (hashval_t) ns->lmid;
++}
++
++/* Returns non-zero if the namespaces referenced by p1 and p2
++   are equal.  */
++
++static int
++equal_namespace (const void *p1, const void *p2)
++{
++  const struct namespace *ns1 = p1;
++  const struct namespace *ns2 = p2;
++
++  return ns1->lmid == ns2->lmid;
++}
++
++/* Free a namespace.  */
++
++static void
++free_namespace (void *p)
++{
++  struct namespace *ns = p;
++
++  svr4_free_library_list (ns->solist);
++  xfree (ns);
++}
++
++/* Populate this namespace by reading the entire list of shared
++   objects from the inferior.  Returns nonzero on success.  */
++
++static int
++namespace_update_full (struct svr4_info *info, LONGEST lmid,
++		       CORE_ADDR debug_base, int is_initial_ns)
++{
++  struct so_list *result = NULL, *so;
++  struct namespace lookup, *ns;
++  void **slot;
++
++  /* Read the list of shared objects from the inferior.  The
++     initial namespace requires extra processing and is handled
++     separately.  */
++  if (is_initial_ns)
++    {
++      result = svr4_current_sos_from_debug_base ();
++    }
++  else
++    {
++      CORE_ADDR lm = r_map_from_debug_base (debug_base);
++      struct so_list **link_ptr = &result;
++
++      if (!svr4_read_so_list (lm, 0, &link_ptr, 0))
++	return 0;
++    }
++
++  /* If the namespace is empty then delete it from the table.  */
++  if (result == NULL)
++    {
++      if (info->namespace_table != NULL)
++	{
++	  lookup.lmid = lmid;
++	  htab_remove_elt (info->namespace_table, &lookup);
++	}
++
++      return 1;
++    }
++
++  /* Fill in the link-map IDs and initial namespace flags.  */
++  for (so = result; so; so = so->next)
++    {
++      so->lm_info->lmid = lmid;
++      so->lm_info->in_initial_ns = is_initial_ns;
++    }
++
++  /* Create the namespace table, if necessary.  */
++  if (info->namespace_table == NULL)
++    {
++      info->namespace_table = htab_create_alloc (1, hash_namespace,
++						 equal_namespace,
++						 free_namespace,
++						 xcalloc, xfree);
++    }
++
++  /* Update the namespace table with our new list.  */
++  lookup.lmid = lmid;
++  slot = htab_find_slot (info->namespace_table, &lookup, INSERT);
++  if (*slot == HTAB_EMPTY_ENTRY)
++    {
++      ns = XCNEW (struct namespace);
++      ns->lmid = lmid;
++      *slot = ns;
++    }
++  else
++    {
++      ns = *slot;
++      svr4_free_library_list (ns->solist);
++    }
++  ns->solist = result;
++
++  return 1;
++}
++
++/* Update this namespace starting from the link-map entry passed by
++   the linker in the probe's third argument.  Returns nonzero if the
++   list was successfully updated, or zero to indicate failure.  */
++
++static int
++namespace_update_incremental (struct svr4_info *info, LONGEST lmid,
++			      CORE_ADDR lm, int is_initial_ns)
++{
++  struct namespace lookup, *ns;
++  struct so_list *tail, **link, *so;
++  struct value *val;
++
++  /* Find our namespace in the table.  */
++  if (info->namespace_table == NULL)
++    return 0;
++
++  lookup.lmid = lmid;
++  ns = htab_find (info->namespace_table, &lookup);
++  if (ns == NULL)
++    return 0;
++
++  /* Walk to the end of the list.  */
++  tail = ns->solist;
++  if (tail == NULL)
++    return 0;
++
++  while (tail->next)
++    tail = tail->next;
++  link = &tail->next;
++
++  /* Read the new objects.  */
++  if (!svr4_read_so_list (lm, tail->lm_info->lm_addr, &link, 0))
++    return 0;
++
++  /* Fill in the link-map IDs and initial namespace flags.  */
++  for (so = tail; so; so = so->next)
++    {
++      so->lm_info->lmid = lmid;
++      so->lm_info->in_initial_ns = is_initial_ns;
++    }
++
++  return 1;
++}
++
++/* Update the namespace table as appropriate when using the
++   probes-based linker interface.  Do nothing if using the
++   standard interface.  */
++
++static void
++svr4_handle_solib_event (bpstat bs)
++{
++  struct svr4_info *info = get_svr4_info ();
++  struct probe_and_info buf, *pi = &buf;
++  enum probe_action action;
++  struct value *val;
++  LONGEST lmid;
++  CORE_ADDR debug_base, lm = 0;
++  int is_initial_ns;
++
++  /* It is possible that this function will be called incorrectly
++     by the handle_solib_event in handle_inferior_event if GDB goes
++     fully multi-target.  */
++  gdb_assert (bs != NULL);
++
++  if (!info->using_probes)
++    return;
++
++  if (!solib_event_probe_at (info, bs->bp_location_at, pi))
++    goto error;
++
++  action = solib_event_probe_action (pi);
++  if (action == NAMESPACE_TABLE_INVALIDATE)
++    goto error;
++
++  if (action == NAMESPACE_NO_ACTION)
++    return;
++
++  val = evaluate_probe_argument (pi->probe, 0);
++  if (val == NULL)
++    goto error;
++
++  lmid = value_as_long (val);
++
++  val = evaluate_probe_argument (pi->probe, 1);
++  if (val == NULL)
++    goto error;
++
++  debug_base = value_as_address (val);
++  if (debug_base == 0)
++    goto error;
++
++  /* Always locate the debug struct, in case it moved.  */
++  info->debug_base = 0;
++  if (locate_base (info) == 0)
++    goto error;
++
++  is_initial_ns = (debug_base == info->debug_base);
++
++  if (action == NAMESPACE_UPDATE_OR_RELOAD)
++    {
++      val = evaluate_probe_argument (pi->probe, 2);
++      if (val != NULL)
++	lm = value_as_address (val);
++
++      if (lm == 0)
++	action = NAMESPACE_RELOAD;
++    }
++
++  if (action == NAMESPACE_UPDATE_OR_RELOAD)
++    {
++      if (namespace_update_incremental (info, lmid, lm, is_initial_ns))
++	return;
++
++      action = NAMESPACE_RELOAD;
++    }
++
++  gdb_assert (action == NAMESPACE_RELOAD);
++
++  if (namespace_update_full (info, lmid, debug_base, is_initial_ns))
++    return;
++
++ error:
++
++  /* We should never reach here, but if we do we disable the
++     probes interface and revert to the original interface.
++     We don't reset the breakpoints as the ones we've set up
++     are adequate.  */
++  warning (_("Probes-based dynamic linker interface failed.\n"
++	     "Reverting to original interface.\n"));
++
++  free_namespace_table (info);
++  free_probes (info);
++  info->using_probes = 0;
++}
++
++/* Helper function for namespace_table_flatten.  */
++
++static int
++namespace_table_flatten_helper (void **slot, void *arg)
++{
++  struct namespace *ns = (struct namespace *) *slot;
++  struct so_list *src = ns->solist;
++  struct so_list **link = (struct so_list **) arg;
++
++  while (*link)
++    link = &(*link)->next;
++
++  while (src != NULL)
++    {
++      struct so_list *dst;
++
++      dst = xmalloc (sizeof (struct so_list));
++      memcpy (dst, src, sizeof (struct so_list));
++
++      dst->lm_info = xmalloc (sizeof (struct lm_info));
++      memcpy (dst->lm_info, src->lm_info, sizeof (struct lm_info));
++
++      *link = dst;
++      link = &dst->next;
++
++      src = src->next;
++    }
++
++  *link = NULL;
++
++  return 1; /* Continue traversal.  */
++}
++
++/* Flatten the namespace table into a single list.  */
++
++static struct so_list *
++namespace_table_flatten (htab_t namespace_table)
++{
++  struct so_list *dst = NULL;
++
++  htab_traverse (namespace_table, namespace_table_flatten_helper, &dst);
++
++  return dst;
++}
++
++/* Helper function for svr4_update_solib_event_breakpoints.  */
++
++static int
++svr4_update_solib_event_breakpoint (struct breakpoint *b, void *arg)
++{
++  struct svr4_info *info = get_svr4_info ();
++  struct bp_location *loc;
++
++  if (b->type != bp_shlib_event)
++    return 0; /* Continue iterating.  */
++
++  for (loc = b->loc; loc; loc = loc->next)
++    {
++      struct probe_and_info buf, *pi = &buf;
++
++      if (solib_event_probe_at (info, loc, pi))
++	{
++	  if (pi->info->action == NAMESPACE_NO_ACTION)
++	    b->enable_state = (stop_on_solib_events
++			       ? bp_enabled : bp_disabled);
++
++	  return 0; /* Continue iterating.  */
++	}
++    }
++
++  return 0; /* Continue iterating.  */
++}
++
++/* Enable or disable optional solib event breakpoints as appropriate.
++   Called whenever stop_on_solib_events is changed.  */
++
++static void
++svr4_update_solib_event_breakpoints (void)
++{
++  struct svr4_info *info = get_svr4_info ();
++
++  if (info->using_probes)
++    iterate_over_breakpoints (svr4_update_solib_event_breakpoint, NULL);
++}
++
++/* Both the SunOS and the SVR4 dynamic linkers call a marker function
++   before and after mapping and unmapping shared libraries.  The sole
++   purpose of this method is to allow debuggers to set a breakpoint so
++   they can track these changes.
++
++   Some versions of the glibc dynamic linker contain named probes
++   to allow more fine grained stopping.  Given the address of the
++   original marker function, this function attempts to find these
++   probes, and if found, sets breakpoints on those instead.  If the
++   probes aren't found, a single breakpoint is set on the original
++   marker function.  */
++
++static void
++svr4_create_solib_event_breakpoints (struct gdbarch *gdbarch,
++				     CORE_ADDR address)
++{
++  struct svr4_info *info = get_svr4_info ();
++  struct obj_section *os;
++
++  os = find_pc_section (address);
++  if (os != NULL)
++    {
++      int with_prefix;
++
++      for (with_prefix = 0; with_prefix <= 1; with_prefix++)
++	{
++	  int all_probes_found = 1;
++	  int i;
++
++	  for (i = 0; i < NUM_PROBES; i++)
++	    {
++	      char name[32] = { '\0' };
++
++	      /* Fedora 17, RHEL 6.2, and RHEL 6.3 shipped with an
++		 early version of the probes code in which the probes'
++		 names were prefixed with "rtld_".  The locations and
++		 arguments of the probes are otherwise the same, so we
++		 check for the prefixed version if the unprefixed
++		 probes are not found.  */
++
++	      if (with_prefix)
++		strncat (name, "rtld_", sizeof (name));
++
++	      strncat (name, probe_info[i].name, sizeof (name) - sizeof ("rtld_"));
++
++	      info->probes[i] = find_probes_in_objfile (os->objfile, "rtld",
++							name);
++
++	      if (!VEC_length (probe_p, info->probes[i]))
++		{
++		  free_probes (info);
++		  all_probes_found = 0;
++		  break;
++		}
++	    }
++
++	  if (all_probes_found)
++	    {
++	      info->using_probes = 1;
++
++	      for (i = 0; i < NUM_PROBES; i++)
++		{
++		  struct probe *probe;
++		  int ix;
++
++		  for (ix = 0;
++		       VEC_iterate (probe_p, info->probes[i], ix, probe);
++		       ++ix)
++		    create_solib_event_breakpoint (gdbarch, probe->address);
++		}
++
++	      svr4_update_solib_event_breakpoints ();
++	      return;
++	    }
++	}
++    }
++
++  create_solib_event_breakpoint (gdbarch, address);
++}
++
+ /* Helper function for gdb_bfd_lookup_symbol.  */
+ 
+ static int
+@@ -1502,6 +2145,9 @@ enable_break (struct svr4_info *info, in
+   info->interp_text_sect_low = info->interp_text_sect_high = 0;
+   info->interp_plt_sect_low = info->interp_plt_sect_high = 0;
+ 
++  free_probes (info);
++  info->using_probes = 0;
++
+   /* If we already have a shared library list in the target, and
+      r_debug contains r_brk, set the breakpoint there - this should
+      mean r_brk has already been relocated.  Assume the dynamic linker
+@@ -1533,7 +2179,7 @@ enable_break (struct svr4_info *info, in
+ 	 That knowledge is encoded in the address, if it's Thumb the low bit
+ 	 is 1.  However, we've stripped that info above and it's not clear
+ 	 what all the consequences are of passing a non-addr_bits_remove'd
+-	 address to create_solib_event_breakpoint.  The call to
++	 address to svr4_create_solib_event_breakpoints.  The call to
+ 	 find_pc_section verifies we know about the address and have some
+ 	 hope of computing the right kind of breakpoint to use (via
+ 	 symbol info).  It does mean that GDB needs to be pointed at a
+@@ -1571,7 +2217,7 @@ enable_break (struct svr4_info *info, in
+ 		+ bfd_section_size (tmp_bfd, interp_sect);
+ 	    }
+ 
+-	  create_solib_event_breakpoint (target_gdbarch, sym_addr);
++	  svr4_create_solib_event_breakpoints (target_gdbarch, sym_addr);
+ 	  return 1;
+ 	}
+     }
+@@ -1729,7 +2375,8 @@ enable_break (struct svr4_info *info, in
+ 
+       if (sym_addr != 0)
+ 	{
+-	  create_solib_event_breakpoint (target_gdbarch, load_addr + sym_addr);
++	  svr4_create_solib_event_breakpoints (target_gdbarch,
++					       load_addr + sym_addr);
+ 	  xfree (interp_name);
+ 	  return 1;
+ 	}
+@@ -1755,7 +2402,7 @@ enable_break (struct svr4_info *info, in
+ 	  sym_addr = gdbarch_convert_from_func_ptr_addr (target_gdbarch,
+ 							 sym_addr,
+ 							 &current_target);
+-	  create_solib_event_breakpoint (target_gdbarch, sym_addr);
++	  svr4_create_solib_event_breakpoints (target_gdbarch, sym_addr);
+ 	  return 1;
+ 	}
+     }
+@@ -1771,7 +2418,7 @@ enable_break (struct svr4_info *info, in
+ 	      sym_addr = gdbarch_convert_from_func_ptr_addr (target_gdbarch,
+ 							     sym_addr,
+ 							     &current_target);
+-	      create_solib_event_breakpoint (target_gdbarch, sym_addr);
++	      svr4_create_solib_event_breakpoints (target_gdbarch, sym_addr);
+ 	      return 1;
+ 	    }
+ 	}
+@@ -2281,6 +2928,9 @@ svr4_solib_create_inferior_hook (int fro
+ 
+   info = get_svr4_info ();
+ 
++  /* Free the probes-based interface's namespace table.  */
++  free_namespace_table (info);
++
+   /* Relocate the main executable if necessary.  */
+   svr4_relocate_main_executable ();
+ 
+@@ -2547,4 +3197,6 @@ _initialize_svr4_solib (void)
+   svr4_so_ops.lookup_lib_global_symbol = elf_lookup_lib_symbol;
+   svr4_so_ops.same = svr4_same;
+   svr4_so_ops.keep_data_in_core = svr4_keep_data_in_core;
++  svr4_so_ops.handle_solib_event = svr4_handle_solib_event;
++  svr4_so_ops.update_breakpoints = svr4_update_solib_event_breakpoints;
+ }
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-dlmopen-solib.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-dlmopen-solib.c	2012-08-14 17:34:44.330746591 +0200
+@@ -0,0 +1,24 @@
++/* Copyright 2012 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#include <stdio.h>
++
++int
++foo (int n)
++{
++  printf ("foo %d\n", n);
++
++  return 0;
++}
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-dlmopen.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-dlmopen.c	2012-08-14 17:34:44.339746576 +0200
+@@ -0,0 +1,58 @@
++/* Copyright 2012 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#define _GNU_SOURCE
++#include <dlfcn.h>
++
++void
++stop ()
++{
++}
++
++int
++main ()
++{
++  void *handle1, *handle2, *handle3;
++  void (*func)(int);
++
++  handle1 = dlmopen (LM_ID_NEWLM, SHLIB_NAME, RTLD_LAZY);
++  stop ();
++
++  func = (void (*)(int)) dlsym (handle1, "foo");
++  func (1);
++
++  handle2 = dlmopen (LM_ID_NEWLM, SHLIB_NAME, RTLD_LAZY);
++  stop ();
++
++  func = (void (*)(int)) dlsym (handle2, "foo");
++  func (2);
++
++  handle3 = dlopen (SHLIB_NAME, RTLD_LAZY);
++  stop ();
++
++  func = (void (*)(int)) dlsym (handle3, "foo");
++  func (3);
++
++  dlclose (handle1);
++  stop ();
++
++  dlclose (handle2);
++  stop ();
++
++  dlclose (handle3);
++  stop ();
++
++  return 0;
++}
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-dlmopen.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-dlmopen.exp	2012-08-14 17:34:44.343746563 +0200
+@@ -0,0 +1,125 @@
++# Copyright 2012 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++if { [skip_shlib_tests] || [is_remote target] } {
++    return 0
++}
++
++standard_testfile
++
++set libname $testfile-solib
++set srcfile_lib $srcdir/$subdir/$libname.c
++set binfile_lib [standard_output_file $libname.so]
++
++set normal_bp "_dl_debug_state"
++set probes_bp "dl_main"
++
++if { [gdb_compile_shlib $srcfile_lib $binfile_lib \
++	  [list additional_flags=-fPIC]] != "" } {
++    untested "Could not compile $binfile_lib."
++    return -1
++}
++
++if { [prepare_for_testing $testfile.exp $testfile $srcfile \
++	  [list additional_flags=-DSHLIB_NAME\=\"$binfile_lib\" libs=-ldl]] } {
++    return -1
++}
++
++# Run "info sharedlibrary" and check our library is shown the expected
++# number of times.
++proc check_info_shared { test expect } {
++    global libname
++    global gdb_prompt
++
++    set actual 0
++
++    gdb_test_multiple "info sharedlibrary" $test {
++	-re $libname {
++	    incr actual 1
++	    exp_continue
++	}
++	-re "\r\n$gdb_prompt $" {
++	    if { $actual == $expect } {
++		pass $test
++	    } else {
++		fail $test
++	    }
++	}
++    }
++}
++
++# Enable stop-on-solib-events
++gdb_test_no_output "set stop-on-solib-events 1"
++
++# Run to the first stop
++gdb_test "run" ".*Stopped due to shared library event.*"
++
++# XFAIL if we are not using probes
++set test "ensure using probes"
++set using_probes 0
++gdb_test_multiple "bt" $test {
++    -re "#0 +\[^\r\n\]*\\m(__GI_)?$normal_bp\\M.*$gdb_prompt $" {
++	xfail $test
++    }
++    -re "#0 +\[^\r\n\]*\\m(__GI_)?$probes_bp\\M.*$gdb_prompt $" {
++	pass $test
++	set using_probes 1
++    }
++}
++
++if { $using_probes } {
++    # Set up breakpoints.
++    gdb_test_no_output "set stop-on-solib-events 0"
++    gdb_test "break stop" {Breakpoint [0-9]+ at .*}
++    gdb_test_no_output "set breakpoint pending on"
++    gdb_test "break foo" {Breakpoint [0-9]+ \(foo\) pending\.}
++
++    # Check our library isn't loaded.
++    check_info_shared "info sharedlibrary #1" 0
++
++    # Run to the first stop and check our library loaded.
++    gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++    check_info_shared "info sharedlibrary #2" 1
++
++    # The next stop should be the function in the library.
++    gdb_test "c" {Breakpoint [0-9]+, .* in foo \(\) from .*}
++
++    # Run to the next stop and check our library is now loaded twice.
++    gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++    check_info_shared "info sharedlibrary #3" 2
++
++    # The next stop should be the function in the library.
++    gdb_test "c" {Breakpoint [0-9]+, .* in foo \(\) from .*}
++
++    # Run to the next stop and check our library is now loaded three
++    # times.
++    gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++    check_info_shared "info sharedlibrary #4" 3
++
++    # The next stop should be the function in the library.
++    gdb_test "c" {Breakpoint [0-9]+, .* in foo \(\) from .*}
++
++    # Run to the next stop and check our library is now loaded twice.
++    gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++    check_info_shared "info sharedlibrary #5" 2
++
++    # Run to the next stop and check our library is now loaded once.
++    gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++    check_info_shared "info sharedlibrary #6" 1
++
++    # Run to the next stop and check our library is not loaded.
++    gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++    check_info_shared "info sharedlibrary #7" 0
++}
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-interp.exp
+===================================================================
+--- gdb-7.4.91.20120814.orig/gdb/testsuite/gdb.base/break-interp.exp	2012-06-21 22:46:21.000000000 +0200
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-interp.exp	2012-08-14 17:34:44.344746565 +0200
+@@ -109,12 +109,19 @@ proc strip_debug {dest} {
+     }
+ }
+ 
++# The marker function for the standard runtime linker interface is
++# _dl_debug_state.  The probes-based interface has no specific marker
++# function; the probe we will stop on (init_start) is in dl_main so we
++# check for that.
++
++set solib_bp {(_dl_debug_state|dl_main)}
++
+ # Implementation of reach.
+ 
+ proc reach_1 {func command displacement} {
+-    global gdb_prompt expect_out
++    global gdb_prompt expect_out solib_bp
+ 
+-    if {$func == "_dl_debug_state"} {
++    if {$func == $solib_bp} {
+ 	# Breakpoint on _dl_debug_state can have problems due to its overlap
+ 	# with the existing internal breakpoint from GDB.
+ 	gdb_test_no_output "set stop-on-solib-events 1"
+@@ -142,21 +149,21 @@ proc reach_1 {func command displacement}
+ 	    exp_continue
+ 	}
+ 	-re "Breakpoint \[0-9\]+, \\.?(__GI_)?$func \\(.*\\) at .*:\[0-9\]+\r\n.*$gdb_prompt $" {
+-	    if {$func == "_dl_debug_state"} {
++	    if {$func == $solib_bp} {
+ 		fail $test
+ 	    } else {
+ 		pass $test
+ 	    }
+ 	}
+ 	-re "Breakpoint \[0-9\]+, \[0-9xa-f\]+ in \\.?(__GI_)?$func \\(\\).*\r\n$gdb_prompt $" {
+-	    if {$func == "_dl_debug_state"} {
++	    if {$func == $solib_bp} {
+ 		fail $test
+ 	    } else {
+ 		pass $test
+ 	    }
+ 	}
+ 	-re "Stopped due to (spurious )?shared library event.*\r\n$gdb_prompt $" {
+-	    if {$func == "_dl_debug_state"} {
++	    if {$func == $solib_bp} {
+ 		if {$debug_state_count == 0} {
+ 		    # First stop does not yet relocate the _start function
+ 		    # descriptor on ppc64.
+@@ -175,7 +182,7 @@ proc reach_1 {func command displacement}
+ 	fail $test_displacement
+     }
+ 
+-    if {$func == "_dl_debug_state"} {
++    if {$func == $solib_bp} {
+ 	gdb_test_no_output "set stop-on-solib-events 0"
+     }
+ }
+@@ -357,7 +364,7 @@ proc test_attach {file displacement {rel
+ }
+ 
+ proc test_ld {file ifmain trynosym displacement} {
+-    global srcdir subdir gdb_prompt expect_out inferior_exited_re
++    global srcdir subdir gdb_prompt expect_out inferior_exited_re solib_bp
+ 
+     # First test normal `file'-command loaded $FILE with symbols.
+ 
+@@ -385,9 +392,9 @@ proc test_ld {file ifmain trynosym displ
+ 	gdb_test_no_output "set args ${objdir}/${subdir}/$binfile_test" "set args OBJDIR/${subdir}/$binfile_test"
+     }
+ 
+-    reach "_dl_debug_state" "run" $displacement
++    reach $solib_bp "run" $displacement
+ 
+-    gdb_test "bt" "#0 +\[^\r\n\]*\\m(__GI_)?_dl_debug_state\\M.*" "dl bt"
++    gdb_test "bt" "#0 +\[^\r\n\]*\\m(__GI_)?$solib_bp\\M.*" "dl bt"
+ 
+     if $ifmain {
+ 	reach "main" continue "NONE"
+@@ -399,7 +406,7 @@ proc test_ld {file ifmain trynosym displ
+ 
+     # Try re-run if the new PIE displacement takes effect.
+     gdb_test "kill" "" "kill" {Kill the program being debugged\? \(y or n\) } "y"
+-    reach "_dl_debug_state" "run" $displacement
++    reach $solib_bp "run" $displacement
+ 
+     if $ifmain {
+ 	test_core $file $displacement
+@@ -431,7 +438,7 @@ proc test_ld {file ifmain trynosym displ
+ 	gdb_test "exec-file $file" "exec-file $escapedfile" "load"
+ 
+ 	if $ifmain {
+-	    reach "_dl_debug_state" run $displacement
++	    reach $solib_bp run $displacement
+ 
+ 	    # Use two separate gdb_test_multiple statements to avoid timeouts due
+ 	    # to slow processing of wildcard capturing long output
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-probes-solib.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-probes-solib.c	2012-08-14 17:34:44.355746561 +0200
+@@ -0,0 +1,24 @@
++/* Copyright 2012 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#include <stdio.h>
++
++int
++foo (int n)
++{
++  printf ("foo %d\n", n);
++
++  return 0;
++}
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-probes.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-probes.c	2012-08-14 17:34:44.362746561 +0200
+@@ -0,0 +1,26 @@
++/* Copyright 2012 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#include <dlfcn.h>
++
++int
++main ()
++{
++  void *handle = dlopen (SHLIB_NAME, RTLD_LAZY);
++
++  dlclose (handle);
++
++  return 0;
++}
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-probes.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/break-probes.exp	2012-08-14 17:34:44.363746561 +0200
+@@ -0,0 +1,76 @@
++# Copyright 2012 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++if { [skip_shlib_tests] || [is_remote target] } {
++    return 0
++}
++
++standard_testfile
++
++set libname $testfile-solib
++set srcfile_lib $srcdir/$subdir/$libname.c
++set binfile_lib [standard_output_file $libname.so]
++
++set normal_bp "_dl_debug_state"
++set probes_bp "dl_main"
++
++if { [gdb_compile_shlib $srcfile_lib $binfile_lib \
++	  [list additional_flags=-fPIC]] != "" } {
++    untested "Could not compile $binfile_lib."
++    return -1
++}
++
++if { [prepare_for_testing $testfile.exp $testfile $srcfile \
++	  [list additional_flags=-DSHLIB_NAME\=\"$binfile_lib\" libs=-ldl]] } {
++    return -1
++}
++
++# Enable stop-on-solib-events
++gdb_test_no_output "set stop-on-solib-events 1"
++
++# Run to the first stop
++gdb_test "run" ".*Stopped due to shared library event.*"
++
++# XFAIL if we are not using probes
++set test "ensure using probes"
++set using_probes 0
++gdb_test_multiple "bt" $test {
++    -re "#0 +\[^\r\n\]*\\m(__GI_)?$normal_bp\\M.*$gdb_prompt $" {
++	xfail $test
++    }
++    -re "#0 +\[^\r\n\]*\\m(__GI_)?$probes_bp\\M.*$gdb_prompt $" {
++	pass $test
++	set using_probes 1
++    }
++}
++
++if { $using_probes } {
++    # Run til it loads our library
++    set test "run til our library loads"
++    set loaded_library 0
++    while { !$loaded_library } {
++	gdb_test_multiple "c" $test {
++	    -re "Inferior loaded $binfile_lib\\M.*$gdb_prompt $" {
++		pass $test
++		set loaded_library 1
++	    }
++	    -re "Stopped due to shared library event\\M.*$gdb_prompt $" {
++	    }
++	}
++    }
++
++    # Call something to ensure that relocation occurred
++    gdb_test "call foo(23)" "foo 23.*\\\$.* = .*"
++}
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/info-shared-solib1.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/info-shared-solib1.c	2012-08-14 17:34:44.365746561 +0200
+@@ -0,0 +1,24 @@
++/* Copyright 2012 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#include <stdio.h>
++
++int
++foo (int n)
++{
++  printf ("foo %d\n", n);
++
++  return 0;
++}
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/info-shared-solib2.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/info-shared-solib2.c	2012-08-14 17:34:44.365746561 +0200
+@@ -0,0 +1,24 @@
++/* Copyright 2012 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#include <stdio.h>
++
++int
++bar (int n)
++{
++  printf ("bar %d\n", n);
++
++  return 0;
++}
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/info-shared.c
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/info-shared.c	2012-08-14 17:34:44.366746561 +0200
+@@ -0,0 +1,48 @@
++/* Copyright 2012 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#include <dlfcn.h>
++
++void
++stop ()
++{
++}
++
++int
++main ()
++{
++  void *handle1, *handle2;
++  void (*func)(int);
++
++  handle1 = dlopen (SHLIB1_NAME, RTLD_LAZY);
++  stop ();
++
++  handle2 = dlopen (SHLIB2_NAME, RTLD_LAZY);
++  stop ();
++
++  func = (void (*)(int)) dlsym (handle1, "foo");
++  func (1);
++
++  func = (void (*)(int)) dlsym (handle2, "bar");
++  func (2);
++
++  dlclose (handle1);
++  stop ();
++
++  dlclose (handle2);
++  stop ();
++
++  return 0;
++}
+Index: gdb-7.4.91.20120814/gdb/testsuite/gdb.base/info-shared.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.4.91.20120814/gdb/testsuite/gdb.base/info-shared.exp	2012-08-14 17:34:44.367746561 +0200
+@@ -0,0 +1,139 @@
++# Copyright 2012 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++if { [skip_shlib_tests] || [is_remote target] } {
++    return 0
++}
++
++standard_testfile
++
++set lib1name $testfile-solib1
++set srcfile_lib1 $srcdir/$subdir/$lib1name.c
++set binfile_lib1 [standard_output_file $lib1name.so]
++set define1 -DSHLIB1_NAME\=\"$binfile_lib1\"
++
++set lib2name $testfile-solib2
++set srcfile_lib2 $srcdir/$subdir/$lib2name.c
++set binfile_lib2 [standard_output_file $lib2name.so]
++set define2 -DSHLIB2_NAME\=\"$binfile_lib2\"
++
++if { [gdb_compile_shlib $srcfile_lib1 $binfile_lib1 \
++	  [list additional_flags=-fPIC]] != "" } {
++    untested "Could not compile $binfile_lib1."
++    return -1
++}
++
++if { [gdb_compile_shlib $srcfile_lib2 $binfile_lib2 \
++	  [list additional_flags=-fPIC]] != "" } {
++    untested "Could not compile $binfile_lib2."
++    return -1
++}
++
++set cflags "$define1 $define2"
++if { [prepare_for_testing $testfile.exp $testfile $srcfile \
++	  [list additional_flags=$cflags libs=-ldl]] } {
++    return -1
++}
++
++# Run "info sharedlibrary" and check for the presence or absence of
++# our libraries.
++proc check_info_shared { test expect1 expect2 } {
++    global lib1name
++    global lib2name
++    global gdb_prompt
++
++    set actual1 0
++    set actual2 0
++
++    gdb_test_multiple "info sharedlibrary" $test {
++	-re $lib1name {
++	    set actual1 1
++	    exp_continue
++	}
++	-re $lib2name {
++	    set actual2 1
++	    exp_continue
++	}
++	-re "\r\n$gdb_prompt $" {
++	    if { $actual1 == $expect1 && $actual2 == $expect2 } {
++		pass $test
++	    } else {
++		fail $test
++	    }
++	}
++    }
++}
++
++# Set up breakpoints.
++gdb_test "break stop" {Breakpoint [0-9]+ at .*}
++gdb_test_no_output "set breakpoint pending on"
++gdb_test "break foo" {Breakpoint [0-9]+ \(foo\) pending\.}
++gdb_test "break bar" {Breakpoint [0-9]+ \(bar\) pending\.}
++
++# Check neither of the libraries are loaded at the start.
++gdb_test "start" {Temporary breakpoint [0-9]+, .* in main \(\)}
++check_info_shared "info sharedlibrary #1" 0 0
++
++# Run to the first stop and check that only the first library is loaded.
++gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++check_info_shared "info sharedlibrary #2" 1 0
++
++# Run to the second stop and check that both libraries are loaded.
++gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++check_info_shared "info sharedlibrary #3" 1 1
++
++# Check that the next stop is in foo.
++gdb_test "c" {Breakpoint [0-9]+, .* in foo \(\) from .*}
++
++# Check that the next stop is in bar.
++gdb_test "c" {Breakpoint [0-9]+, .* in bar \(\) from .*}
++
++# Restart the inferior and make sure there are no breakpoint reset
++# errors.  These can happen with the probes-based runtime linker
++# interface if the cache is not cleared correctly.
++set test "restart"
++gdb_test_multiple "run" $test {
++    -re {Start it from the beginning\? \(y or n\) } {
++	send_gdb "y\n"
++	exp_continue
++    }
++    -re {Error in re-setting breakpoint} {
++	fail $test
++    }
++    -re "\r\n$gdb_prompt $" {
++	pass $test
++    }
++}
++
++# We're at the first stop.  Check that only the first library is loaded.
++check_info_shared "info sharedlibrary #4" 1 0
++
++# Run to the second stop and check that both libraries are loaded.
++gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++check_info_shared "info sharedlibrary #5" 1 1
++
++# Check that the next stop is in foo.
++gdb_test "c" {Breakpoint [0-9]+, .* in foo \(\) from .*}
++
++# Check that the next stop is in bar.
++gdb_test "c" {Breakpoint [0-9]+, .* in bar \(\) from .*}
++
++# Run to the next stop and check that the first library has been unloaded.
++gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++check_info_shared "info sharedlibrary #6" 0 1
++
++# Run to the last stop and check that both libraries are gone.
++gdb_test "c" {Breakpoint [0-9]+, .* in stop \(\)}
++check_info_shared "info sharedlibrary #7" 0 0

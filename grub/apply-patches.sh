@@ -8,6 +8,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-handle-fwrite-return.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-grub_test_assert_printf.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-Workaround-for-variable-set-but-not-used-issue.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-2.00-ignore-gnulib-gets-stupidity.patch
 
 #filterdiff -p1 -x configure.ac -x ChangeLog -x "po/*" -x "debian/po/*" -z \
 zcat ${CWD}/${PSRCARCHIVE} | patch -p1 -E --verbose
@@ -39,6 +40,9 @@ for patch in \
   gcc_4_6_space.patch \
   lzo.patch \
   fat_uuid.patch \
+  4k_sectors.patch \
+  efi_disk_cache.patch \
+  dirlen.patch \
   ; do
   patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done

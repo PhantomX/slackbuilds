@@ -90,15 +90,6 @@ ApplyPatch x86_64-hpet-64bit-timer.patch
 #
 
 #
-# Exec shield
-#
-#ApplyPatch linux-2.6-i386-nx-emulation.patch
-#ApplyPatch linux-2.6-32bit-mmap-exec-randomization.patch
-#ApplyPatch nx-emu-remove-cpuinitdata-for-disable_nx-on-x86_32.patch
-#rhbz 804957 CVE-2012-1568
-#ApplyPatch shlib_base_randomize.patch
-
-#
 # bugfixes to drivers and filesystems
 #
 
@@ -246,6 +237,10 @@ ApplyPatch rds-set-correct-msg_namelen.patch
 ApplyPatch net-Allow-driver-to-limit-number-of-GSO-segments-per-skb.patch
 ApplyPatch sfc-Fix-maximum-number-of-TSO-segments-and-minimum-TX-queue-size.patch
 ApplyPatch tcp-Apply-device-TSO-segment-limit-earlier.patch
+
+ApplyPatch fbcon-fix-race-condition-between-console-lock-and-cursor-timer.patch
+
+ApplyPatch af_netlink-credentials-cve-2012-3520.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

@@ -7,6 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhclient-script.PATH.diff
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-remove-bind.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P1-remove-dst.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-errwarn-message.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-options.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-release-by-ifup.patch
@@ -40,5 +41,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-P2-log_perror.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-getifaddrs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-send_release.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-P2-rfc5970-dhcpv6-options-for-network-boot.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-failOverPeer.patch 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P1-dhclient6-leases_semicolon_expected.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P1-interval.patch 
 
 set +e +o pipefail

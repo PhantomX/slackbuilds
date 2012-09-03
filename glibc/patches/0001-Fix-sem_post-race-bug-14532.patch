@@ -1,0 +1,145 @@
+From 033d54a2d43a92cdb1794a4dfece4d465cf36f6b Mon Sep 17 00:00:00 2001
+From: Joseph Myers <joseph@codesourcery.com>
+Date: Fri, 31 Aug 2012 19:49:31 +0000
+Subject: [PATCH] Fix sem_post race (bug 14532).
+
+---
+ nptl/Makefile                           |  2 +-
+ nptl/sysdeps/unix/sysv/linux/sem_post.c |  4 +-
+ nptl/tst-sem14.c                        | 91 +++++++++++++++++++++++++++++++++
+ 5 files changed, 101 insertions(+), 6 deletions(-)
+ create mode 100644 nptl/tst-sem14.c
+
+diff --git a/nptl/Makefile b/nptl/Makefile
+index 8cd168d..614f0ce 100644
+--- a/nptl/Makefile
++++ b/nptl/Makefile
+@@ -217,7 +217,7 @@ tests = tst-typesizes \
+ 	tst-once1 tst-once2 tst-once3 tst-once4 \
+ 	tst-key1 tst-key2 tst-key3 tst-key4 \
+ 	tst-sem1 tst-sem2 tst-sem3 tst-sem4 tst-sem5 tst-sem6 tst-sem7 \
+-	tst-sem8 tst-sem9 tst-sem10 tst-sem11 tst-sem12 tst-sem13 \
++	tst-sem8 tst-sem9 tst-sem10 tst-sem11 tst-sem12 tst-sem13 tst-sem14 \
+ 	tst-barrier1 tst-barrier2 tst-barrier3 tst-barrier4 \
+ 	tst-align tst-align2 tst-align3 \
+ 	tst-basic1 tst-basic2 tst-basic3 tst-basic4 tst-basic5 tst-basic6 \
+diff --git a/nptl/sysdeps/unix/sysv/linux/sem_post.c b/nptl/sysdeps/unix/sysv/linux/sem_post.c
+index 56f27e9..67e8cc5 100644
+--- a/nptl/sysdeps/unix/sysv/linux/sem_post.c
++++ b/nptl/sysdeps/unix/sysv/linux/sem_post.c
+@@ -1,5 +1,5 @@
+ /* sem_post -- post to a POSIX semaphore.  Generic futex-using version.
+-   Copyright (C) 2003, 2004, 2007, 2008 Free Software Foundation, Inc.
++   Copyright (C) 2003-2012 Free Software Foundation, Inc.
+    This file is part of the GNU C Library.
+    Contributed by Jakub Jelinek <jakub@redhat.com>, 2003.
+ 
+@@ -40,7 +40,7 @@ __new_sem_post (sem_t *sem)
+ 	  return -1;
+ 	}
+     }
+-  while (atomic_compare_and_exchange_bool_acq (&isem->value, cur + 1, cur));
++  while (atomic_compare_and_exchange_bool_rel (&isem->value, cur + 1, cur));
+ 
+   atomic_full_barrier ();
+   if (isem->nwaiters > 0)
+diff --git a/nptl/tst-sem14.c b/nptl/tst-sem14.c
+new file mode 100644
+index 0000000..949c03f
+--- /dev/null
++++ b/nptl/tst-sem14.c
+@@ -0,0 +1,91 @@
++/* Test for sem_post race: bug 14532.
++   Copyright (C) 2012 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <pthread.h>
++#include <semaphore.h>
++#include <stdio.h>
++
++#define NTHREADS 10
++#define NITER 100000
++
++sem_t sem;
++int c;
++volatile int thread_fail;
++
++static void *
++tf (void *arg)
++{
++  for (int i = 0; i < NITER; i++)
++    {
++      if (sem_wait (&sem) != 0)
++	{
++	  perror ("sem_wait");
++	  thread_fail = 1;
++	}
++      ++c;
++      if (sem_post (&sem) != 0)
++	{
++	  perror ("sem_post");
++	  thread_fail = 1;
++	}
++    }
++  return NULL;
++}
++
++static int
++do_test (void)
++{
++  if (sem_init (&sem, 0, 0) != 0)
++    {
++      perror ("sem_init");
++      return 1;
++    }
++
++  pthread_t th[NTHREADS];
++  for (int i = 0; i < NTHREADS; i++)
++    {
++      if (pthread_create (&th[i], NULL, tf, NULL) != 0)
++	{
++	  puts ("pthread_create failed");
++	  return 1;
++	}
++    }
++
++  if (sem_post (&sem) != 0)
++    {
++      perror ("sem_post");
++      return 1;
++    }
++
++  for (int i = 0; i < NTHREADS; i++)
++    if (pthread_join (th[i], NULL) != 0)
++      {
++	puts ("pthread_join failed");
++	return 1;
++      }
++
++  if (c != NTHREADS * NITER)
++    {
++      printf ("c = %d, should be %d\n", c, NTHREADS * NITER);
++      return 1;
++    }
++  return thread_fail;
++}
++
++#define TEST_FUNCTION do_test ()
++#include "../test-skeleton.c"
+-- 
+1.7.12
+

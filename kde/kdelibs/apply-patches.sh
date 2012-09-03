@@ -4,7 +4,9 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-# patch -p0 --verbose --backup -i ${SB_PATCHDIR}/${NAME}.patch 
+# patch -p0 --verbose --backup -i ${SB_PATCHDIR}/${NAME}.patch
+# /usr/doc/HTML
+patch -p1 --verbose --backup -z .htmldir -i ${SB_PATCHDIR}/kdelibs-4.9.0-htmldir.patch
 # make -devel packages parallel-installable
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-parallel_devel.patch
 # fix kde#149705

@@ -11,6 +11,7 @@ ApplyPatch() {
   if [ ! -f ${SB_PATCHDIR}/${patch} ]; then
     exit 1
   fi
+  echo "Applying ${patch}"
   case "${patch}" in
   *.bz2) bzcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
   *.gz) zcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
@@ -57,7 +58,6 @@ fi
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
   ApplyPatch 1008_all_glibc-2.16-fortify.patch
-  ApplyPatch 1030_all_glibc-manual-no-perl.patch
   ApplyPatch 1040_all_2.3.3-localedef-fix-trampoline.patch
   ApplyPatch 1055_all_glibc-resolv-dynamic.patch
   ApplyPatch 1070_all_glibc-fadvise64_64.patch
@@ -94,5 +94,15 @@ ApplyPatch 0001-Merge-_sigsys-changes-from-Linux-3.5.patch
 ApplyPatch 0002-Merge-Linux-3.5-epoll-changes.patch
 ApplyPatch 0003-Merge-Linux-3.5-ptrace-changes.patch
 ApplyPatch 0001-Improve-clog-clog10-handling-of-values-with-real-or-.patch
+ApplyPatch 0001-Update-i386-ULPs.patch
+ApplyPatch 0001-Update-x86-64-ULPs.patch
+ApplyPatch 0002-Another-ULPs-update.patch
+ApplyPatch 0001-Fix-BZ-14090-md5-sha512-with-large-sizes.patch
+ApplyPatch 0002-Add-testcase-for-BZ-14090-md5-sha512-with-large-size.patch
+ApplyPatch 0001-Fix-segmentation-fault-in-strncasecmp-for-i686.patch
+ApplyPatch 0001-Fix-strtod-integer-buffer-overflow-bug-14459.patch
+ApplyPatch 0002-Fix-strtod-rounding-bug-3479.patch
+ApplyPatch 0003-Fix-sign-of-zero-on-strtod-underflow-bug-14519.patch
+ApplyPatch 0001-Fix-sem_post-race-bug-14532.patch
 
 set +e +o pipefail

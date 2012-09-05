@@ -72,9 +72,14 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.95-kdm_xauth.patch
 # kwin/llvmpipe whitelist
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-kwin_llvmpipe_whitelist.patch
 
-# pam/systemd bogosity: kdm restart/shutdown does not work 
-# http://bugzilla.redhat.com/796969
-#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
+if [ ${SB_SYSTEMD} = "YES" ] ;then
+  # pam/systemd bogosity: kdm restart/shutdown does not work 
+  # http://bugzilla.redhat.com/796969
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
+
+  # initial systemd support
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systemd-shutdown.patch
+fi
 
 # fontconfig-2.10+, support $XDG_CONFIG_HOME/fontconfig/fonts.conf
 # https://bugs.kde.org/show_bug.cgi?id=304317
@@ -82,10 +87,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-kwin_llvmpipe_wh
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-fontconfigdir.patch
 
 ## upstream patches
-# https://bugs.kde.org/show_bug.cgi?id=288093
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-kde\#288093.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9-tasks_attention.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9-taskmanager_attention.patch
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch

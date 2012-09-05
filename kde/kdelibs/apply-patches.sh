@@ -43,21 +43,13 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.4-SOLID_UPNP.patch
 
 # udisks2 Solid backend, halectomy
-( cd solid
-patch -p2 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-udisks2_prep.patch
-patch -p4 --verbose --backup  -i ${SB_PATCHDIR}/kdelibs-udisks2-backend.patch
-sed -i.udisks2_sed \
-  -e 's|#include "../shared/udevqtdevice.h"|#include "../shared/udevqt.h"|g' \
-  -e 's|#include "../shared/udevqtclient.h"|#include "../shared/udevqt.h"|g' \
-  solid/backends/udisks2/udisksopticaldisc.h \
-  solid/backends/udisks2/udisksstoragedrive.h \
-  solid/backends/udisks2/udisksopticaldisc.cpp \
-  solid/backends/udisks2/udisksstoragedrive.cpp
-patch -p4 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-udisks2_post.patch
-)
+patch -p1 --verbose --backup  -i ${SB_PATCHDIR}/kdelibs-udisks2-backend.patch
 
 # return valid locale (RFC 1766)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
+
+# Can't safely remove a USB removable hard drive ( http://bugzilla.redhat.com/852196 )
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.1-udisks_detatch_external_hdd.patch
 
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
@@ -65,8 +57,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-# fix kdeclarative install location (by wstephenson as found in kde-packager list)
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.3-kdeclarative-install-location.patch
 
 # Trunk patches
 

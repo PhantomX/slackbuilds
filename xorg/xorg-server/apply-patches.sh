@@ -15,25 +15,24 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.4.99-ssh-isnt-local.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.0-less-acpi-brokenness.patch
 
 # ajax needs to upstream this
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.0-displayfd.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
 #zcat ${SB_PATCHDIR}/xserver-1.6.99-hush-prerelease-warning.patch.gz | patch -p1 --verbose
 
 # backport pci slot claiming fix for kms drivers
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-fix-pci-slot-claims.patch
-# backport modesetting fallback driver
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12-modesetting-fallback.patch
 # needed when building without xorg (aka s390x)
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12.2-xorg-touch-test.patch
-# print newline on -displayfd (824594)
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12-os-print-newline-after-printing-display-name.patch
 
 # send keycode/event type for slow keys enable (#816764)
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12-xkb-fill-in-keycode-and-event-type-for-slow-keys-ena.patch
 
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-linux-Refactor-xf86-En-Dis-ableIO.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/0002-linux-Make-failure-to-iopl-non-fatal.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/0003-xfree86-Change-the-semantics-of-driverFunc-GET_REQUI.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Always-install-vbe-and-int10-sdk-headers.patch
+
 # misc
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/sync-fix.patch
+#patch -p1 --verbose -i ${SB_PATCHDIR}/sync-fix.patch
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.11.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then

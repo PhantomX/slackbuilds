@@ -87,6 +87,8 @@ fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-fontconfigdir.patch
 
 ## upstream patches
+# http://commits.kde.org/kde-workspace/8452e6c3f01a65953705087e0d7ada87e2cc6997
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r8452e6c3f01a65953705087e0d7ada87e2cc6997.diff
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch

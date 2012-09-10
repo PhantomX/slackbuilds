@@ -38,8 +38,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-clear-old-state-reasons.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-systray-dbus-exception.patch
 # Avoid busy loop in hpcups when backend has exited.
 zcat ${SB_PATCHDIR}/hplip-hpcups-sigpipe.patch.gz | patch -p1 -E --backup --verbose
-# Use correct fax PPD name for Qt3 UI.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-fax-ppd.patch
 # Fixed Device ID parsing code in hpijs's dj9xxvip.c.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-bad-low-ink-warning.patch
 
@@ -88,5 +86,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-wifisetup.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-makefile-chgrp.patch
 # Pay attention to the SANE localOnly flag in hpaio (bug #743593).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpaio-localonly.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-ipp-accessors.patch
 
 set +e +o pipefail

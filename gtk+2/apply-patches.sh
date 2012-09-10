@@ -15,8 +15,6 @@ patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk-lib64-slk.patch
 zcat ${SB_PATCHDIR}/system-python.patch.gz | patch -p1 --verbose
 # https://bugzilla.gnome.org/show_bug.cgi?id=583273
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/icon-padding.patch
-# https://bugzilla.gnome.org/show_bug.cgi?id=599617
-patch -p1 --backup --verbose -i ${SB_PATCHDIR}/fresh-tooltips.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=599618
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/tooltip-positioning.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=592582
@@ -24,8 +22,6 @@ patch -p1 --backup --verbose -i ${SB_PATCHDIR}/tooltip-positioning.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=611313
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/window-dragging.patch
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk2-fixdso.patch
-# #680346
-patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk+-2.24.11-stuck-grab.patch
 
 # From Debian
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/003_gdk.pc_privates.patch

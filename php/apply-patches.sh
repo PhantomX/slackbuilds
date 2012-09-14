@@ -21,7 +21,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/004_all_strict_aliasing.patch
 # Functional changes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-dlopen.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-easter.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.1-systzdata-v8.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.1-systzdata-v9.patch
 # See http://bugs.php.net/53436
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-phpize.patch
 # Use system libzip instead of bundled one

@@ -4,7 +4,22 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-PATCHCOM="patch -p1 -F1 -s --verbose"
+# Set to test (some patches require others, so, is not 100%)
+DRYRUN=${DRYRUN:-NO}
+
+if [ "${DRYRUN}" = "YES" ] ; then
+  DRYRUN_OPT="--dry-run"
+fi
+
+if [ "${VERBOSE}" = "YES" ] ; then
+  VERBOSE_OPT="--verbose"
+fi
+
+if [ "${SVERBOSE}" = "YES" ] ; then
+  set -o xtrace
+fi
+
+PATCHCOM="patch ${DRYRUN_OPT} -p1 -F1 -s ${VERBOSE_OPT}"
 
 ApplyPatch() {
   local patch=$1
@@ -12,6 +27,7 @@ ApplyPatch() {
   if [ ! -f ${SB_PATCHDIR}/${patch} ]; then
     exit 1
   fi
+  echo "Applying ${patch}"
   case "${patch}" in
   *.bz2) bzcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
   *.gz) zcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
@@ -43,7 +59,7 @@ ApplyPatch qt-everywhere-opensource-src-4.6.3-glib_eventloop_nullcheck.patch
 ApplyPatch qt-everywhere-opensource-src-4.8.0-rc1-moc-boost148.patch
 # hack out largely useless (to users) warnings about qdbusconnection
 # (often in kde apps), keep an eye on https://git.reviewboard.kde.org/r/103699/
-ApplyPatch qt-everywhere-opensource-src-4.8.1-qdbusconnection_no_debug.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.3-qdbusconnection_no_debug.patch
 # lrelease-qt4 tries to run qmake not qmake-qt4 (http://bugzilla.redhat.com/820767)
 ApplyPatch qt-everywhere-opensource-src-4.8.1-linguist_qmake-qt4.patch
 # enable debuginfo in libQt3Support
@@ -82,15 +98,11 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-14724.patch
 # Buttons in Qt applications not clickable when run under gnome-shell (#742658, QTBUG-21900)
 ApplyPatch  qt-everywhere-opensource-src-4.8.0-QTBUG-21900.patch
 
-# QtWebKit wtf library: GMutex is a union rather than a struct in GLib >= 2.31
-# fixes FTBFS: https://bugs.webkit.org/show_bug.cgi?id=69840
-ApplyPatch qt-everywhere-opensource-src-4.8.0-qtwebkit-glib231.patch
-
 # workaround
 # sql/drivers/tds/qsql_tds.cpp:341:49: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
 ApplyPatch qt-everywhere-opensource-src-4.7.4-tds_no_strict_aliasing.patch
 # don't spam if libicu is not present at runtime
-ApplyPatch qt-everywhere-opensource-src-4.8.1-icu_no_debug.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.3-icu_no_debug.patch
 # gcc doesn't support flag -fuse-ld=gold
 ApplyPatch qt-everywhere-opensource-src-4.8.0-ld-gold.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=810500
@@ -106,10 +118,5 @@ ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
-# text cursor blinks not in the current cell (kde#296490)
-ApplyPatch qt-Fix-cursor-truncate-to-include-line-position.patch
-# fix crash on big endian machines
-# https://bugreports.qt-project.org/browse/QTBUG-22960
-ApplyPatch qt-everywhere-opensource-src-4.8.1-type.patch
 
 set +e +o pipefail

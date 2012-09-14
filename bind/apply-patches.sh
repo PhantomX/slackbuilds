@@ -30,7 +30,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind98-rh735103.patch
 patch -p0 -E --backup --verbose -d bin/dig -i ${SB_PATCHDIR}/nslookup-norec.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-buildfix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-forward.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind98-rh816164.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.9.1-P2-multlib-conflict.patch
 
 # needs inpection
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-96-dyndb.patch

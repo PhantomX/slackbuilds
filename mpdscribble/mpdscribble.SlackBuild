@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ mpdscribble.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008, 2009, 2010, 2011 Phantom X, Goiania, Brazil.
+# Copyright 2008-2012 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -63,8 +63,11 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
-# Set to YES to add libsoup binary too
-SB_SOUP=${SB_SOUP:-YES}
+grep --quiet '^mpdscribble:' /etc/group && SB_HGROUP=1
+grep --quiet '^mpdscribble:' /etc/passwd && SB_HUSER=1
+
+# Set to YES to add curl binary too
+SB_CURL=${SB_CURL:-NO}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -117,6 +120,10 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+sed -i \
+  -e '/^#daemon_user/s|^#||g' \
+  doc/${NAME}.conf || exit 1
+
 SB_CONFIGURE(){
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -134,24 +141,24 @@ CXXFLAGS="${SLKCFLAGS}" \
 mkdir curl-build
 ( cd curl-build
   SB_CONFIGURE \
-    --with-http-client=curl || exit $?
+    --with-http-client=soup || exit $?
   make -j${NJOBS} || make || exit $?
   make install DESTDIR=${PKG} || exit $?
-  mv ${PKG}/usr/bin/${NAME} ${PKG}/usr/bin/${NAME}-curl || exit $?
 ) || exit $?
 
-if [ "${SB_SOUP}" = "YES" ] ;then
+if [ "${SB_CURL}" = "YES" ] ;then
+mv ${PKG}/usr/bin/${NAME} ${PKG}/usr/bin/${NAME}-soup || exit $?
 mkdir soup-build
 ( cd soup-build
   SB_CONFIGURE \
-    --with-http-client=soup || exit $?
+    --with-http-client=curl || exit $?
   make -j${NJOBS} || make || exit $?
-  install -pm0755 src/${NAME} ${PKG}/usr/bin/${NAME}-soup || exit $?
+  install -pm0755 src/${NAME} ${PKG}/usr/bin/${NAME}-curl || exit $?
 ) || exit $?
 fi
 
-rm -f ${PKG}/etc/*${NAME}.conf 
-install -pm0600 doc/${NAME}.conf ${PKG}/etc/${NAME}.conf.new || exit 1
+rm -f ${PKG}/etc/*${NAME}.conf
+install -pm0660 doc/${NAME}.conf ${PKG}/etc/${NAME}.conf.new || exit 1
 
 mkdir -p ${PKG}/var/cache/${NAME}
 
@@ -169,6 +176,18 @@ install -pm0644 ${CWD}/${NAME}.service ${PKG}/lib/systemd/system/ || exit 1
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+mkdir ${PKG}/var/log
+touch ${PKG}/var/log/${NAME}.log.new
+chmod 0644 ${PKG}/var/log/${NAME}.log.new
+
+mkdir -p ${PKG}//var/run/${NAME}
+
+mkdir -p ${PKG}/usr/lib/tmpfiles.d
+cat > ${PKG}/usr/lib/tmpfiles.d/${NAME}.conf <<EOF
+d /var/cache/mpdscribble 0755 mpdscribble mpdscribble
+EOF
+
+if [ "${SB_CURL}" = "YES" ] ;then
 cat > ${PKG}/usr/bin/${NAME} <<EOF
 #!/bin/sh
 # ${NAME} wrapper
@@ -182,11 +201,28 @@ else
 fi
 EOF
 chmod 0755 ${PKG}/usr/bin/${NAME}
+fi
 
+if [ "${SB_CURL}" = "YES" ] ;then
 mkdir -p ${PKG}/etc/default
 cat > ${PKG}/etc/default/${NAME}.new <<'EOF'
 # Set http client binary type (curl or soup)
-MPDSCRIBBLE_HTTP=curl
+MPDSCRIBBLE_HTTP=soup
+EOF
+fi
+
+mkdir -p ${PKG}/etc/logrotate.d
+cat >> ${PKG}/etc/logrotate.d/${NAME}.new <<EOF
+/var/log/${NAME}.log {
+    create 0644 ${NAME} ${NAME}
+    missingok
+    compress
+    size 1M
+    notifempty
+    postrotate
+      /bin/systemctl try-restart ${NAME}.service > /dev/null 2>/dev/null || test -x /etc/rc.d/rc.${NAME} && /etc/rc.d/rc.${NAME} condrestart >/dev/null 2>/dev/null || :
+    endscript
+}
 EOF
 
 # Add a documentation directory:
@@ -224,14 +260,74 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<EOF
+cat > ${PKG}/install/doinst.sh <<'EOF'
+function free_user_id {
+  # Find a free user-ID >= 100 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
 # Figure out our root directory
-ROOTDIR=\$(pwd)
+ROOTDIR=$(pwd)
 unset CHROOT
-if test "\${ROOTDIR}" != "/"; then
-  CHROOT="chroot \${ROOTDIR} "
-  ROOTDIR="\${ROOTDIR}/"
+if test "${ROOTDIR}" != "/"; then
+ CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
+
+# Set up groups.
+if ! grep --quiet '^mpdscribble:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    mpdscribble 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^mpdscribble:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/cache/mpdscribble:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "mpdscribble"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/var/cache/mpdscribble' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g mpdscribble \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'Mpdscribble' \
+    -u $(free_user_id) \
+    -g mpdscribble \
+    -s /bin/false \
+    -d '/var/cache/mpdscribble' \
+    mpdscribble 2> /dev/null
+fi
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -254,11 +350,18 @@ fi
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
 cat >> ${PKG}/install/doinst.sh <<'EOF'
+# Fix permissions
+${CHROOT} /bin/chown mpdscribble.mpdscribble /etc/mpdscribble.conf{,.new} 2> /dev/null
+${CHROOT} /bin/chown mpdscribble.mpdscribble /var/log/mpdscribble.log{,.new} 2> /dev/null
+${CHROOT} /bin/chown -R mpdscribble.mpdscribble /var/cache/mpdscribble 2> /dev/null
+${CHROOT} /bin/chown -R mpdscribble.mpdscribble /var/run/mpdscribble 2> /dev/null
+
 if [ -x bin/systemctl ] ; then
   ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
 fi
@@ -284,7 +387,9 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown -R mpdscribble.mpdscribble ./var/cache/mpdscribble ./var/run/mpdscribble ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown mpdscribble.mpdscribble ./etc/mpdscribble.conf* ./var/log/mpdscribble.log* ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

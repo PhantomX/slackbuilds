@@ -182,9 +182,6 @@ ApplyPatch linux-2.6-crash-driver.patch
 
 # crypto/
 
-# Assorted Virt Fixes
-ApplyPatch fix_xen_guest_on_old_EC2.patch
-
 # DRM core
 ApplyPatch drm-vgem.patch
 
@@ -223,9 +220,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 ApplyPatch unhandled-irqs-switch-to-polling.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
-
-#rhbz 836742
-ApplyPatch uvcvideo-Reset-bytesused-field-when-recycling-erroneous-buffer.patch
 
 #rhbz 714271
 ApplyPatch CPU-hotplug-cpusets-suspend-Dont-modify-cpusets-during.patch

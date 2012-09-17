@@ -6,7 +6,7 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Internal debug
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-wIm.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-coverity.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-6.1p1-coverity.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1872
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p1-fingerprint.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1894
@@ -15,11 +15,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p1-getaddrinfo.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p1-packet.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=983
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-2auth.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-required-authentications.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-6.1p1-required-authentications.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1641 (WONTFIX)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-6.0p1-role-mls.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1663
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-akc.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-6.1p1-akc.patch
 sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.0p1-ldap.patch | patch -p1 -E --backup --verbose
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1668
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-keygen.patch
@@ -36,6 +36,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p1-keyperm.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p2-remove-stale-control-socket.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1925
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-ipv6man.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.8p2-sigpipe.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-6.1p1-askpass-ld.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1789
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.5p1-x11.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.6p1-exit-deadlock.patch
@@ -48,13 +50,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-chinfo.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1890 (WONTFIX) need integration to prng helper which is discontinued :)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-6.0p1-entropy.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1640
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-vendor.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-6.1p1-vendor.patch
 # make aes-ctr ciphers use EVP engines such as AES-NI from OpenSSL
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-ctr-evp-fast.patch
 # add cavs test binary for the aes-ctr
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-ctr-cavstest-slk.patch
-# https://bugzilla.redhat.com/show_bug.cgi?id=815993
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/openssh-5.9p1-null-xcrypt.patch
 
 set +e +o pipefail
 

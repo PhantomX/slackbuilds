@@ -1,0 +1,175 @@
+--- valgrind-3.8.0/coregrind/m_debuginfo/readdwarf.c	(revision 12990)
++++ valgrind-3.8.0/coregrind/m_debuginfo/readdwarf.c	(working copy)
+@@ -2733,6 +2733,7 @@
+    Word   sw;
+    UWord  uw;
+    CfiOp  op;
++   CfiUnop uop;
+    HChar* opname;
+ 
+    Int sp; /* # of top element: valid is -1 .. N_EXPR_STACK-1 */
+@@ -2778,7 +2779,7 @@
+            break;
+       }
+ 
+-      op = 0; opname = NULL; /* excessively conservative */
++      op = 0; uop = 0; opname = NULL; /* excessively conservative */
+ 
+       opcode = *expr++;
+       switch (opcode) {
+@@ -2836,6 +2837,15 @@
+                VG_(printf)("DW_OP_const4s: %ld", sw);
+             break;
+ 
++         case DW_OP_const2s:
++            /* push: 16-bit signed immediate */
++            sw = read_le_s_encoded_literal( expr, 4 );
++            expr += 2;
++            PUSH( ML_(CfiExpr_Const)( dst, (UWord)sw ) );
++            if (ddump_frames)
++               VG_(printf)("DW_OP_const2s: %ld", sw);
++            break;
++
+          case DW_OP_const1s:
+             /* push: 8-bit signed immediate */
+             sw = read_le_s_encoded_literal( expr, 1 );
+@@ -2845,6 +2855,46 @@
+                VG_(printf)("DW_OP_const1s: %ld", sw);
+             break;
+ 
++         case DW_OP_const1u:
++            /* push: 8-bit unsigned immediate */
++            uw = read_le_u_encoded_literal( expr, 1 );
++            expr += 1;
++            PUSH( ML_(CfiExpr_Const)( dst, uw ) );
++            if (ddump_frames)
++               VG_(printf)("DW_OP_const1: %lu", uw);
++            break;
++
++         case DW_OP_const2u:
++            /* push: 16-bit unsigned immediate */
++            uw = read_le_u_encoded_literal( expr, 2 );
++            expr += 2;
++            PUSH( ML_(CfiExpr_Const)( dst, uw ) );
++            if (ddump_frames)
++               VG_(printf)("DW_OP_const2: %lu", uw);
++            break;
++
++         case DW_OP_const4u:
++            /* push: 32-bit unsigned immediate */
++            uw = read_le_u_encoded_literal( expr, 4 );
++            expr += 4;
++            PUSH( ML_(CfiExpr_Const)( dst, uw ) );
++            if (ddump_frames)
++               VG_(printf)("DW_OP_const4: %lu", uw);
++            break;
++
++         case DW_OP_abs:
++            uop = Cunop_Abs; opname = "abs"; goto unop;
++         case DW_OP_neg:
++            uop = Cunop_Neg; opname = "neg"; goto unop;
++         case DW_OP_not:
++            uop = Cunop_Not; opname = "not"; goto unop;
++         unop:
++            POP( ix );
++            PUSH( ML_(CfiExpr_Unop)( dst, uop, ix ) );
++            if (ddump_frames)
++               VG_(printf)("DW_OP_%s", opname);
++            break;
++
+          case DW_OP_minus:
+             op = Cop_Sub; opname = "minus"; goto binop;
+          case DW_OP_plus:
+--- valgrind-3.8.0/coregrind/m_debuginfo/debuginfo.c	(revision 12990)
++++ valgrind-3.8.0/coregrind/m_debuginfo/debuginfo.c	(working copy)
+@@ -2051,7 +2051,7 @@
+ UWord evalCfiExpr ( XArray* exprs, Int ix, 
+                     CfiExprEvalContext* eec, Bool* ok )
+ {
+-   UWord wL, wR;
++   UWord w, wL, wR;
+    Addr  a;
+    CfiExpr* e;
+    vg_assert(sizeof(Addr) == sizeof(UWord));
+@@ -2118,6 +2118,16 @@
+          }
+          /* let's hope it doesn't trap! */
+          return ML_(read_UWord)((void *)a);
++      case Cex_Unop:
++         w = evalCfiExpr( exprs, e->Cex.Unop.ix, eec, ok );
++         if (!(*ok)) return 0;
++         switch (e->Cex.Unop.op) {
++            case Cunop_Abs: return (Word) w < 0 ? - w : w;
++            case Cunop_Neg: return - (Word) w;
++            case Cunop_Not: return ~ w;
++            default: goto unhandled;
++         }
++         /*NOTREACHED*/
+       default: 
+          goto unhandled;
+    }
+--- valgrind-3.8.0/coregrind/m_debuginfo/storage.c	(revision 12990)
++++ valgrind-3.8.0/coregrind/m_debuginfo/storage.c	(working copy)
+@@ -595,6 +595,16 @@
+    e.Cex.Binop.ixR = ixR;
+    return (Int)VG_(addToXA)( dst, &e );
+ }
++Int ML_(CfiExpr_Unop)( XArray* dst, CfiUnop op, Int ix )
++{
++   CfiExpr e;
++   VG_(memset)( &e, 0, sizeof(e) );
++   e.tag = Cex_Unop;
++   e.Cex.Unop.op  = op;
++   e.Cex.Unop.ix = ix;
++   return (Int)VG_(addToXA)( dst, &e );
++}
++
+ Int ML_(CfiExpr_CfiReg)( XArray* dst, CfiReg reg )
+ {
+    CfiExpr e;
+--- valgrind-3.8.0/coregrind/m_debuginfo/priv_storage.h	(revision 12990)
++++ valgrind-3.8.0/coregrind/m_debuginfo/priv_storage.h	(working copy)
+@@ -296,6 +296,14 @@
+ 
+ typedef
+    enum {
++      Cunop_Abs=0x231,
++      Cunop_Neg,
++      Cunop_Not
++   }
++   CfiUnop;
++
++typedef
++   enum {
+       Creg_IA_SP=0x213,
+       Creg_IA_BP,
+       Creg_IA_IP,
+@@ -315,7 +323,8 @@
+       Cex_Const,
+       Cex_Binop,
+       Cex_CfiReg,
+-      Cex_DwReg
++      Cex_DwReg,
++      Cex_Unop
+    }
+    CfiExprTag;
+ 
+@@ -342,6 +351,10 @@
+          struct {
+             Int reg;
+          } DwReg;
++         struct {
++            CfiUnop op;
++            Int ix;
++         } Unop;
+       }
+       Cex;
+    }
+@@ -353,6 +366,7 @@
+ extern Int ML_(CfiExpr_Binop) ( XArray* dst, CfiOp op, Int ixL, Int ixR );
+ extern Int ML_(CfiExpr_CfiReg)( XArray* dst, CfiReg reg );
+ extern Int ML_(CfiExpr_DwReg) ( XArray* dst, Int reg );
++extern Int ML_(CfiExpr_Unop) ( XArray* dst, CfiUnop op, Int ix );
+ 
+ extern void ML_(ppCfiExpr)( XArray* src, Int ix );
+ 

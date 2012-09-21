@@ -20,8 +20,10 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libitm-fno-exceptions.pa
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-rh837630.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-arm-hfp-ldso.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/libgo-hardening.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr53942.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libstdc++54185.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr54312.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr54564.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr54563.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-gogo-filenamesh.patch 
 
 # From Gentoo
 patch -p0 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_gcc-default-fortify-source.patch

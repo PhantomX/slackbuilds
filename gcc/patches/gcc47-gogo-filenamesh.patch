@@ -1,0 +1,594 @@
+From d4b688972c9148002cdc5a028a48bf08139a1dd5 Mon Sep 17 00:00:00 2001
+From: ian <ian@138bc75d-0d04-0410-961f-82ee72b054a4>
+Date: Thu, 20 Sep 2012 17:01:41 +0000
+Subject: [PATCH] Bring in collected bug fixes from mainline.
+
+	* Make-lang.in (go/gogo.o): Depend on filenames.h.
+
+
+git-svn-id: svn+ssh://gcc.gnu.org/svn/gcc/branches/gcc-4_7-branch@191579 138bc75d-0d04-0410-961f-82ee72b054a4
+---
+ gcc/go/ChangeLog                 |    4 ++
+ gcc/go/Make-lang.in              |    9 ++--
+ gcc/go/gofrontend/expressions.cc |    3 +
+ gcc/go/gofrontend/gogo-tree.cc   |   14 ++++++-
+ gcc/go/gofrontend/gogo.cc        |   82 ++++++++++++++++++++++++++++++++++---
+ gcc/go/gofrontend/gogo.h         |   27 ++++++++++---
+ gcc/go/gofrontend/lex.cc         |   49 ++++++++++++++++++++++-
+ gcc/go/gofrontend/lex.h          |    4 ++
+ gcc/go/gofrontend/parse.cc       |    3 +-
+ gcc/go/gofrontend/types.cc       |   63 +++++++++++++++++++++++++++--
+ gcc/go/gofrontend/types.h        |   20 ++++++---
+ 11 files changed, 246 insertions(+), 32 deletions(-)
+
+diff --git a/gcc/go/ChangeLog b/gcc/go/ChangeLog
+index cce981c..2165911 100644
+--- a/gcc/go/ChangeLog
++++ b/gcc/go/ChangeLog
+@@ -1,3 +1,7 @@
++2012-09-20  Ian Lance Taylor  <iant@google.com>
++
++	* Make-lang.in (go/gogo.o): Depend on filenames.h.
++
+ 2012-09-20  Release Manager
+ 
+ 	* GCC 4.7.2 released.
+diff --git a/gcc/go/Make-lang.in b/gcc/go/Make-lang.in
+index 34e5584..b3cb2bd 100644
+--- a/gcc/go/Make-lang.in
++++ b/gcc/go/Make-lang.in
+@@ -289,10 +289,11 @@ go/gogo-tree.o: go/gofrontend/gogo-tree.cc $(GO_SYSTEM_H) $(TOPLEV_H) \
+ 	convert.h output.h $(DIAGNOSTIC_H) $(GO_TYPES_H) \
+ 	$(GO_EXPRESSIONS_H) $(GO_STATEMENTS_H) $(GO_RUNTIME_H) \
+ 	go/gofrontend/backend.h $(GO_GOGO_H)
+-go/gogo.o: go/gofrontend/gogo.cc $(GO_SYSTEM_H) $(GO_C_H) \
+-	go/gofrontend/go-dump.h $(GO_LEX_H) $(GO_TYPES_H) $(GO_STATEMENTS_H) \
+-	$(GO_EXPRESSIONS_H) go/gofrontend/dataflow.h $(GO_RUNTIME_H) \
+-	$(GO_IMPORT_H) $(GO_EXPORT_H) go/gofrontend/backend.h $(GO_GOGO_H)
++go/gogo.o: go/gofrontend/gogo.cc $(GO_SYSTEM_H) \
++	$(srcdir)/../include/filenames.h $(GO_C_H) go/gofrontend/go-dump.h \
++	$(GO_LEX_H) $(GO_TYPES_H) $(GO_STATEMENTS_H) $(GO_EXPRESSIONS_H) \
++	go/gofrontend/dataflow.h $(GO_RUNTIME_H) $(GO_IMPORT_H) \
++	$(GO_EXPORT_H) go/gofrontend/backend.h $(GO_GOGO_H)
+ go/import.o: go/gofrontend/import.cc $(GO_SYSTEM_H) \
+ 	$(srcdir)/../include/filenames.h $(srcdir)/../include/simple-object.h \
+ 	$(GO_C_H) $(GO_GOGO_H) $(GO_LEX_H) $(GO_TYPES_H) $(GO_EXPORT_H) \
+diff --git a/gcc/go/gofrontend/expressions.cc b/gcc/go/gofrontend/expressions.cc
+index f57ca41..cfc775d 100644
+--- a/gcc/go/gofrontend/expressions.cc
++++ b/gcc/go/gofrontend/expressions.cc
+@@ -5184,6 +5184,9 @@ Binary_expression::lower_struct_comparison(Gogo* gogo,
+        pf != fields->end();
+        ++pf, ++field_index)
+     {
++      if (Gogo::is_sink_name(pf->field_name()))
++	continue;
++
+       if (field_index > 0)
+ 	{
+ 	  if (left_temp == NULL)
+diff --git a/gcc/go/gofrontend/gogo-tree.cc b/gcc/go/gofrontend/gogo-tree.cc
+index c746b9b..d7c5f2d 100644
+--- a/gcc/go/gofrontend/gogo-tree.cc
++++ b/gcc/go/gofrontend/gogo-tree.cc
+@@ -1002,9 +1002,19 @@ Named_object::get_id(Gogo* gogo)
+     }
+   if (this->is_type())
+     {
+-      const Named_object* in_function = this->type_value()->in_function();
++      unsigned int index;
++      const Named_object* in_function = this->type_value()->in_function(&index);
+       if (in_function != NULL)
+-	decl_name += '$' + Gogo::unpack_hidden_name(in_function->name());
++	{
++	  decl_name += '$' + Gogo::unpack_hidden_name(in_function->name());
++	  if (index > 0)
++	    {
++	      char buf[30];
++	      snprintf(buf, sizeof buf, "%u", index);
++	      decl_name += '$';
++	      decl_name += buf;
++	    }
++	}
+     }
+   return get_identifier_from_string(decl_name);
+ }
+diff --git a/gcc/go/gofrontend/gogo.cc b/gcc/go/gofrontend/gogo.cc
+index 6e9b8c1..06f0369 100644
+--- a/gcc/go/gofrontend/gogo.cc
++++ b/gcc/go/gofrontend/gogo.cc
+@@ -6,6 +6,8 @@
+ 
+ #include "go-system.h"
+ 
++#include "filenames.h"
++
+ #include "go-c.h"
+ #include "go-dump.h"
+ #include "lex.h"
+@@ -385,6 +387,57 @@ Gogo::import_package(const std::string& filename,
+ 		     bool is_local_name_exported,
+ 		     Location location)
+ {
++  if (filename.empty())
++    {
++      error_at(location, "import path is empty");
++      return;
++    }
++
++  const char *pf = filename.data();
++  const char *pend = pf + filename.length();
++  while (pf < pend)
++    {
++      unsigned int c;
++      int adv = Lex::fetch_char(pf, &c);
++      if (adv == 0)
++	{
++	  error_at(location, "import path contains invalid UTF-8 sequence");
++	  return;
++	}
++      if (c == '\0')
++	{
++	  error_at(location, "import path contains NUL");
++	  return;
++	}
++      if (c < 0x20 || c == 0x7f)
++	{
++	  error_at(location, "import path contains control character");
++	  return;
++	}
++      if (c == '\\')
++	{
++	  error_at(location, "import path contains backslash; use slash");
++	  return;
++	}
++      if (Lex::is_unicode_space(c))
++	{
++	  error_at(location, "import path contains space character");
++	  return;
++	}
++      if (c < 0x7f && strchr("!\"#$%&'()*,:;<=>?[]^`{|}", c) != NULL)
++	{
++	  error_at(location, "import path contains invalid character '%c'", c);
++	  return;
++	}
++      pf += adv;
++    }
++
++  if (IS_ABSOLUTE_PATH(filename.c_str()))
++    {
++      error_at(location, "import path cannot be absolute path");
++      return;
++    }
++
+   if (filename == "unsafe")
+     {
+       this->import_unsafe(local_name, is_local_name_exported, location);
+@@ -1003,7 +1056,15 @@ Gogo::add_type(const std::string& name, Type* type, Location location)
+   Named_object* no = this->current_bindings()->add_type(name, NULL, type,
+ 							location);
+   if (!this->in_global_scope() && no->is_type())
+-    no->type_value()->set_in_function(this->functions_.back().function);
++    {
++      Named_object* f = this->functions_.back().function;
++      unsigned int index;
++      if (f->is_function())
++	index = f->func_value()->new_local_type_index();
++      else
++	index = 0;
++      no->type_value()->set_in_function(f, index);
++    }
+ }
+ 
+ // Add a named type.
+@@ -1025,7 +1086,12 @@ Gogo::declare_type(const std::string& name, Location location)
+   if (!this->in_global_scope() && no->is_type_declaration())
+     {
+       Named_object* f = this->functions_.back().function;
+-      no->type_declaration_value()->set_in_function(f);
++      unsigned int index;
++      if (f->is_function())
++	index = f->func_value()->new_local_type_index();
++      else
++	index = 0;
++      no->type_declaration_value()->set_in_function(f, index);
+     }
+   return no;
+ }
+@@ -2989,9 +3055,10 @@ Gogo::convert_named_types_in_bindings(Bindings* bindings)
+ Function::Function(Function_type* type, Function* enclosing, Block* block,
+ 		   Location location)
+   : type_(type), enclosing_(enclosing), results_(NULL),
+-    closure_var_(NULL), block_(block), location_(location), fndecl_(NULL),
+-    defer_stack_(NULL), results_are_named_(false), calls_recover_(false),
+-    is_recover_thunk_(false), has_recover_thunk_(false)
++    closure_var_(NULL), block_(block), location_(location), labels_(),
++    local_type_count_(0), fndecl_(NULL), defer_stack_(NULL),
++    results_are_named_(false), calls_recover_(false), is_recover_thunk_(false),
++    has_recover_thunk_(false)
+ {
+ }
+ 
+@@ -4599,9 +4666,10 @@ Named_object::set_type_value(Named_type* named_type)
+   go_assert(this->classification_ == NAMED_OBJECT_TYPE_DECLARATION);
+   Type_declaration* td = this->u_.type_declaration;
+   td->define_methods(named_type);
+-  Named_object* in_function = td->in_function();
++  unsigned int index;
++  Named_object* in_function = td->in_function(&index);
+   if (in_function != NULL)
+-    named_type->set_in_function(in_function);
++    named_type->set_in_function(in_function, index);
+   delete td;
+   this->classification_ = NAMED_OBJECT_TYPE;
+   this->u_.type_value = named_type;
+diff --git a/gcc/go/gofrontend/gogo.h b/gcc/go/gofrontend/gogo.h
+index deb9968..efd31f1 100644
+--- a/gcc/go/gofrontend/gogo.h
++++ b/gcc/go/gofrontend/gogo.h
+@@ -963,6 +963,11 @@ class Function
+   void
+   check_labels() const;
+ 
++  // Note that a new local type has been added.  Return its index.
++  unsigned int
++  new_local_type_index()
++  { return this->local_type_count_++; }
++
+   // Whether this function calls the predeclared recover function.
+   bool
+   calls_recover() const
+@@ -1084,6 +1089,8 @@ class Function
+   Location location_;
+   // Labels defined or referenced in the function.
+   Labels labels_;
++  // The number of local types defined in this function.
++  unsigned int local_type_count_;
+   // The function decl.
+   tree fndecl_;
+   // The defer stack variable.  A pointer to this variable is used to
+@@ -1638,8 +1645,8 @@ class Type_declaration
+ {
+  public:
+   Type_declaration(Location location)
+-    : location_(location), in_function_(NULL), methods_(),
+-      issued_warning_(false)
++    : location_(location), in_function_(NULL), in_function_index_(0),
++      methods_(), issued_warning_(false)
+   { }
+ 
+   // Return the location.
+@@ -1650,13 +1657,19 @@ class Type_declaration
+   // Return the function in which this type is declared.  This will
+   // return NULL for a type declared in global scope.
+   Named_object*
+-  in_function()
+-  { return this->in_function_; }
++  in_function(unsigned int* pindex)
++  {
++    *pindex = this->in_function_index_;
++    return this->in_function_;
++  }
+ 
+   // Set the function in which this type is declared.
+   void
+-  set_in_function(Named_object* f)
+-  { this->in_function_ = f; }
++  set_in_function(Named_object* f, unsigned int index)
++  {
++    this->in_function_ = f;
++    this->in_function_index_ = index;
++  }
+ 
+   // Add a method to this type.  This is used when methods are defined
+   // before the type.
+@@ -1689,6 +1702,8 @@ class Type_declaration
+   // If this type is declared in a function, a pointer back to the
+   // function in which it is defined.
+   Named_object* in_function_;
++  // The index of this type in IN_FUNCTION_.
++  unsigned int in_function_index_;
+   // Methods defined before the type is defined.
+   Methods methods_;
+   // True if we have issued a warning about a use of this type
+diff --git a/gcc/go/gofrontend/lex.cc b/gcc/go/gofrontend/lex.cc
+index 5b7ce68..25aaeb7 100644
+--- a/gcc/go/gofrontend/lex.cc
++++ b/gcc/go/gofrontend/lex.cc
+@@ -722,7 +722,16 @@ Lex::next_token()
+ 		unsigned int ci;
+ 		bool issued_error;
+ 		this->lineoff_ = p - this->linebuf_;
+-		this->advance_one_utf8_char(p, &ci, &issued_error);
++		const char *pnext = this->advance_one_utf8_char(p, &ci,
++								&issued_error);
++
++		// Ignore byte order mark at start of file.
++		if (ci == 0xfeff)
++		  {
++		    p = pnext;
++		    break;
++		  }
++
+ 		if (Lex::is_unicode_letter(ci))
+ 		  return this->gather_identifier();
+ 
+@@ -831,6 +840,14 @@ Lex::advance_one_utf8_char(const char* p, unsigned int* value,
+       *issued_error = true;
+       return p + 1;
+     }
++
++  // Warn about byte order mark, except at start of file.
++  if (*value == 0xfeff && (this->lineno_ != 1 || this->lineoff_ != 0))
++    {
++      error_at(this->location(), "Unicode (UTF-8) BOM in middle of file");
++      *issued_error = true;
++    }
++
+   return p + adv;
+ }
+ 
+@@ -1705,6 +1722,27 @@ struct Unicode_range
+   unsigned int stride;
+ };
+ 
++// A table of whitespace characters--Unicode code points classified as
++// "Space", "C" locale whitespace characters, the "next line" control
++// character (0085), the line separator (2028), the paragraph
++// separator (2029), and the "zero-width non-break space" (feff).
++
++static const Unicode_range unicode_space[] =
++{
++  { 0x0009, 0x000d, 1 },
++  { 0x0020, 0x0020, 1 },
++  { 0x0085, 0x0085, 1 },
++  { 0x00a0, 0x00a0, 1 },
++  { 0x1680, 0x1680, 1 },
++  { 0x180e, 0x180e, 1 },
++  { 0x2000, 0x200a, 1 },
++  { 0x2028, 0x2029, 1 },
++  { 0x202f, 0x202f, 1 },
++  { 0x205f, 0x205f, 1 },
++  { 0x3000, 0x3000, 1 },
++  { 0xfeff, 0xfeff, 1 },
++};
++
+ // A table of Unicode digits--Unicode code points classified as
+ // "Digit".
+ 
+@@ -2294,6 +2332,15 @@ Lex::is_in_unicode_range(unsigned int c, const Unicode_range* ranges,
+     }
+ }
+ 
++// Return whether C is a space character.
++
++bool
++Lex::is_unicode_space(unsigned int c)
++{
++  return Lex::is_in_unicode_range(c, unicode_space,
++				  ARRAY_SIZE(unicode_space));
++}
++
+ // Return whether C is a Unicode digit--a Unicode code point
+ // classified as "Digit".
+ 
+diff --git a/gcc/go/gofrontend/lex.h b/gcc/go/gofrontend/lex.h
+index 8858e73..074bbae 100644
+--- a/gcc/go/gofrontend/lex.h
++++ b/gcc/go/gofrontend/lex.h
+@@ -375,6 +375,10 @@ class Lex
+   static int
+   fetch_char(const char* str, unsigned int *value);
+ 
++  // Return whether C is a Unicode or "C" locale space character.
++  static bool
++  is_unicode_space(unsigned int c);
++
+  private:
+   ssize_t
+   get_line();
+diff --git a/gcc/go/gofrontend/parse.cc b/gcc/go/gofrontend/parse.cc
+index 29323f0..cfcc00f 100644
+--- a/gcc/go/gofrontend/parse.cc
++++ b/gcc/go/gofrontend/parse.cc
+@@ -5337,7 +5337,8 @@ Parse::import_spec(void*)
+ 
+   if (!token->is_string())
+     {
+-      error_at(this->location(), "missing import package name");
++      error_at(this->location(), "import statement not a string");
++      this->advance_token();
+       return;
+     }
+ 
+diff --git a/gcc/go/gofrontend/types.cc b/gcc/go/gofrontend/types.cc
+index 228f3fa..c4f8908 100644
+--- a/gcc/go/gofrontend/types.cc
++++ b/gcc/go/gofrontend/types.cc
+@@ -588,6 +588,9 @@ Type::are_compatible_for_comparison(bool is_equality_op, const Type *t1,
+ 	       p != fields->end();
+ 	       ++p)
+ 	    {
++	      if (Gogo::is_sink_name(p->field_name()))
++		continue;
++
+ 	      if (!p->type()->is_comparable())
+ 		{
+ 		  if (reason != NULL)
+@@ -1295,7 +1298,8 @@ Type::type_descriptor_var_name(Gogo* gogo, Named_type* nt)
+     return "__go_td_" + this->mangled_name(gogo);
+ 
+   Named_object* no = nt->named_object();
+-  const Named_object* in_function = nt->in_function();
++  unsigned int index;
++  const Named_object* in_function = nt->in_function(&index);
+   std::string ret = "__go_tdn_";
+   if (nt->is_builtin())
+     go_assert(in_function == NULL);
+@@ -1310,6 +1314,13 @@ Type::type_descriptor_var_name(Gogo* gogo, Named_type* nt)
+ 	{
+ 	  ret.append(Gogo::unpack_hidden_name(in_function->name()));
+ 	  ret.append(1, '.');
++	  if (index > 0)
++	    {
++	      char buf[30];
++	      snprintf(buf, sizeof buf, "%u", index);
++	      ret.append(buf);
++	      ret.append(1, '.');
++	    }
+ 	}
+     }
+ 
+@@ -1746,9 +1757,19 @@ Type::specific_type_functions(Gogo* gogo, Named_type* name,
+     {
+       // This name is already hidden or not as appropriate.
+       base_name = name->name();
+-      const Named_object* in_function = name->in_function();
++      unsigned int index;
++      const Named_object* in_function = name->in_function(&index);
+       if (in_function != NULL)
+-	base_name += '$' + Gogo::unpack_hidden_name(in_function->name());
++	{
++	  base_name += '$' + Gogo::unpack_hidden_name(in_function->name());
++	  if (index > 0)
++	    {
++	      char buf[30];
++	      snprintf(buf, sizeof buf, "%u", index);
++	      base_name += '$';
++	      base_name += buf;
++	    }
++	}
+     }
+   std::string hash_name = base_name + "$hash";
+   std::string equal_name = base_name + "$equal";
+@@ -1989,10 +2010,19 @@ Type::uncommon_type_constructor(Gogo* gogo, Type* uncommon_type,
+ 				     ? gogo->pkgpath()
+ 				     : package->pkgpath());
+ 	  n.assign(pkgpath);
+-	  if (name->in_function() != NULL)
++	  unsigned int index;
++	  const Named_object* in_function = name->in_function(&index);
++	  if (in_function != NULL)
+ 	    {
+ 	      n.append(1, '.');
+-	      n.append(Gogo::unpack_hidden_name(name->in_function()->name()));
++	      n.append(Gogo::unpack_hidden_name(in_function->name()));
++	      if (index > 0)
++		{
++		  char buf[30];
++		  snprintf(buf, sizeof buf, "%u", index);
++		  n.append(1, '.');
++		  n.append(buf);
++		}
+ 	    }
+ 	  s = Expression::make_string(n, bloc);
+ 	  vals->push_back(Expression::make_unary(OPERATOR_AND, s, bloc));
+@@ -4276,6 +4306,9 @@ Struct_type::do_compare_is_identity(Gogo* gogo) const
+        pf != fields->end();
+        ++pf)
+     {
++      if (Gogo::is_sink_name(pf->field_name()))
++	return false;
++
+       if (!pf->type()->compare_is_identity(gogo))
+ 	return false;
+ 
+@@ -4749,6 +4782,9 @@ Struct_type::write_hash_function(Gogo* gogo, Named_type*,
+        pf != fields->end();
+        ++pf)
+     {
++      if (Gogo::is_sink_name(pf->field_name()))
++	continue;
++
+       if (first)
+ 	first = false;
+       else
+@@ -4840,6 +4876,9 @@ Struct_type::write_equal_function(Gogo* gogo, Named_type* name)
+        pf != fields->end();
+        ++pf, ++field_index)
+     {
++      if (Gogo::is_sink_name(pf->field_name()))
++	continue;
++
+       // Compare one field in both P1 and P2.
+       Expression* f1 = Expression::make_temporary_reference(p1, bloc);
+       f1 = Expression::make_unary(OPERATOR_MULT, f1, bloc);
+@@ -8360,6 +8399,13 @@ Named_type::do_reflection(Gogo* gogo, std::string* ret) const
+     {
+       ret->append(Gogo::unpack_hidden_name(this->in_function_->name()));
+       ret->push_back('$');
++      if (this->in_function_index_ > 0)
++	{
++	  char buf[30];
++	  snprintf(buf, sizeof buf, "%u", this->in_function_index_);
++	  ret->append(buf);
++	  ret->push_back('$');
++	}
+     }
+   ret->append(Gogo::unpack_hidden_name(this->named_object_->name()));
+ }
+@@ -8389,6 +8435,13 @@ Named_type::do_mangled_name(Gogo* gogo, std::string* ret) const
+ 	{
+ 	  name.append(Gogo::unpack_hidden_name(this->in_function_->name()));
+ 	  name.append(1, '$');
++	  if (this->in_function_index_ > 0)
++	    {
++	      char buf[30];
++	      snprintf(buf, sizeof buf, "%u", this->in_function_index_);
++	      name.append(buf);
++	      name.append(1, '$');
++	    }
+ 	}
+     }
+   name.append(Gogo::unpack_hidden_name(no->name()));
+diff --git a/gcc/go/gofrontend/types.h b/gcc/go/gofrontend/types.h
+index a542bf7..7b879240 100644
+--- a/gcc/go/gofrontend/types.h
++++ b/gcc/go/gofrontend/types.h
+@@ -2623,8 +2623,8 @@ class Named_type : public Type
+  public:
+   Named_type(Named_object* named_object, Type* type, Location location)
+     : Type(TYPE_NAMED),
+-      named_object_(named_object), in_function_(NULL), type_(type),
+-      local_methods_(NULL), all_methods_(NULL),
++      named_object_(named_object), in_function_(NULL), in_function_index_(0),
++      type_(type), local_methods_(NULL), all_methods_(NULL),
+       interface_method_tables_(NULL), pointer_interface_method_tables_(NULL),
+       location_(location), named_btype_(NULL), dependencies_(),
+       is_visible_(true), is_error_(false), is_placeholder_(false),
+@@ -2651,13 +2651,19 @@ class Named_type : public Type
+   // Return the function in which this type is defined.  This will
+   // return NULL for a type defined in global scope.
+   const Named_object*
+-  in_function() const
+-  { return this->in_function_; }
++  in_function(unsigned int *pindex) const
++  {
++    *pindex = this->in_function_index_;
++    return this->in_function_;
++  }
+ 
+   // Set the function in which this type is defined.
+   void
+-  set_in_function(Named_object* f)
+-  { this->in_function_ = f; }
++  set_in_function(Named_object* f, unsigned int index)
++  {
++    this->in_function_ = f;
++    this->in_function_index_ = index;
++  }
+ 
+   // Return the name of the type.
+   const std::string&
+@@ -2865,6 +2871,8 @@ class Named_type : public Type
+   // If this type is defined in a function, a pointer back to the
+   // function in which it is defined.
+   Named_object* in_function_;
++  // The index of this type in IN_FUNCTION_.
++  unsigned int in_function_index_;
+   // The actual type.
+   Type* type_;
+   // The list of methods defined for this type.  Any named type can
+-- 
+1.7.3.4
+

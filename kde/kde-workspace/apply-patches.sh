@@ -79,6 +79,7 @@ if [ ${SB_SYSTEMD} = "YES" ] ;then
 
   # initial systemd support
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systemd-shutdown.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/powerdevil-systemd-policyagent.patch
 fi
 
 # fontconfig-2.10+, support $XDG_CONFIG_HOME/fontconfig/fonts.conf
@@ -89,6 +90,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-fontconfigdir.pa
 ## upstream patches
 # http://commits.kde.org/kde-workspace/8452e6c3f01a65953705087e0d7ada87e2cc6997
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r8452e6c3f01a65953705087e0d7ada87e2cc6997.diff
+# fix device notifier Free Space meter
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.2-devicenotifier-freespace.patch
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch

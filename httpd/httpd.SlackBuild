@@ -55,13 +55,16 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable systemd notify support
+SB_SYSTEMD=${SB_SYSTEMD:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -133,6 +136,11 @@ sed -i \
 sed -i -e '/LoadModule/s|$(rel_libexecdir)|modules|g' Makefile.in || exit 1
 sed -i -e 's|@rel_sysconfdir@/||g' docs/conf/httpd.conf.in || exit 1
 
+sed \
+  -e '/^Type=/s|=.*$|=forking|g' \
+  -e 's| -DFOREGROUND||g' \
+  ${CWD}/httpd.service > httpd.service.forking || exit 1
+
 # regenerate configure scripts
 autoheader || exit 1
 autoconf || exit 1
@@ -187,6 +195,7 @@ rmdir ${PKG}/usr/bin
   zcat ${SB_PATCHDIR}/httpd.runasapache.diff.gz | patch -p1 --verbose || exit 1
   rm -f ${PKG}/etc/httpd/httpd.conf{~,.orig}
 ) || exit 1
+
 # Change config files to .new:
 ( cd ${PKG}/etc/httpd
   mv httpd.conf httpd.conf.new || exit 1
@@ -218,11 +227,22 @@ mkdir -p ${PKG}/etc/rc.d
 cat ${CWD}/rc.httpd > ${PKG}/etc/rc.d/rc.httpd.new || exit 1
 
 mkdir -p ${PKG}/lib/systemd/system
-install -pm0644 ${CWD}/httpd.service ${PKG}/lib/systemd/system/ || exit 1
+
+if [ "${SB_SYSTEMD}" = "YES" ] ;then
+cat > ${PKG}/etc/httpd/conf.d/00-systemd.conf <<'EOF'
+# This file configures systemd module:
+LoadModule systemd_module modules/mod_systemd.so
+EOF
+  install -pm0644 ${CWD}/httpd.service ${PKG}/lib/systemd/system/ || exit 1
+else
+  install -pm0644 httpd.service.forking \
+    ${PKG}/lib/systemd/system/${CWD}/httpd.service || exit 1
+  rm -f httpd.service.forking
+fi
 
 mkdir -p ${PKG}/usr/lib/tmpfiles.d
 cat > ${PKG}/usr/lib/tmpfiles.d/httpd.conf <<'EOF'
-d /run/httpd   755 root root
+d /run/httpd   710 root apache
 EOF
 
 mkdir -p ${PKG}/usr/libexec
@@ -293,6 +313,8 @@ EOF
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+chmod 0710 ${PKG}/run/httpd
+
 # symlinks for /etc/httpd
 ln -s ../../var/log/httpd ${PKG}/etc/httpd/logs
 ln -s ../../run/httpd ${PKG}/etc/httpd/run
@@ -330,7 +352,7 @@ mkdir -p ${DOCDIR}
 cp -a \
   ABOUT_APACHE Apache.dsw BuildBin.dsp CHANGES InstallBin.dsp LAYOUT LICENSE \
   NOTICE NWGNUmakefile README* ROADMAP VERSIONING ${CWD}/README.confd \
-  ${CWD}/ChangeLog.SB ${DOCDIR}/
+  httpd.service.forking ${CWD}/ChangeLog.SB ${DOCDIR}/
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
@@ -417,6 +439,8 @@ EOF
 )
 
 cat >> ${PKG}/install/doinst.sh <<'EOF'
+${CHROOT} /bin/chown root.apache /run/httpd
+
 if [ -x bin/systemctl ] ; then
   ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
 fi
@@ -442,7 +466,8 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  /bin/chown root.apache ./run/httpd ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

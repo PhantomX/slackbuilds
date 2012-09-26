@@ -5,8 +5,11 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
-zcat ${CWD}/${PSRCARCHIVE} | patch -p1 --backup -z .pdeb --verbose
-find . -type f -name '*.pdeb' -size 0 -print0 | xargs -0 rm -f
+#zcat ${CWD}/${PSRCARCHIVE} | patch -p1 --backup -z .pdeb --verbose
+#find . -type f -name '*.pdeb' -size 0 -print0 | xargs -0 rm -f
+
+# Patch from Fedora
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dbus.patch
 
 # Patches from GNOME SlackBuild
 # Use auth_admin in policy

@@ -7,7 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
-# From Fedora
+# From Fedora or upstream
 patch -p0 -E --backup -z .hack --verbose -i ${SB_PATCHDIR}/gcc47-hack.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-c++-builtin-redecl.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr33763.patch

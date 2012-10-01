@@ -67,7 +67,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 ADJTDOCDIR=${PKG}/usr/doc/${ADJTNAME}-${ADJTVER}
@@ -77,6 +77,9 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+grep --quiet '^uuidd:' /etc/group && SB_HGROUP=1
+grep --quiet '^uuidd:' /etc/passwd && SB_HUSER=1
 
 # Set to YES to enale mtab symlink support.
 SB_MTABSYM=${SB_MTABSYM:-YES}
@@ -219,7 +222,6 @@ unset LINGUAS
 unset SB_SYSTEMDOPTS
 [ "${SB_SYSTEMD}" = "YES" ] && SB_SYSTEMDOPTS='--with-systemdsystemunitdir=/lib/systemd/system --enable-socket-activation'
 
-
 if [ "${SB_PAM}" = "YES" ] ; then
   SB_PAMOPTS="--enable-login --enable-su --enable-sulogin"
   cp ${CWD}/nologin.c . || exit 1
@@ -231,12 +233,15 @@ if [ "${NEED_AUTOGEN}" = "YES" ] ;then
   sh ./autogen.sh || exit $?
 fi
 
+sed -i -e 's|${prefix}/${localstatedir}|${localstatedir}|g' configure || exit 1
+
 CFLAGS="${SLKCFLAGS} -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64" \
 ./configure \
   --prefix=/usr \
+  --exec-prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
-  --localstatedir=/var \
+  --localstatedir=/run \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
@@ -411,6 +416,13 @@ fi
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+mkdir -p ${PKG}/run/uuidd
+
+mkdir -p ${PKG}/usr/lib/tmpfiles.d
+cat > ${PKG}/usr/lib/tmpfiles.d/uuidd.conf <<'EOF'
+d /run/uuidd   2775 uuidd uuidd
+EOF
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
@@ -440,30 +452,78 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-    rm -f dir
-    gzip -9 *.info*
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<EOF
+cat > ${PKG}/install/doinst.sh <<'EOF'
+function free_user_id {
+  # Find a free user-ID >= 100 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
 # Figure out our root directory
-ROOTDIR=\$(pwd)
+ROOTDIR=$(pwd)
 unset CHROOT
-if test "\${ROOTDIR}" != "/"; then
-  CHROOT="chroot \${ROOTDIR} "
-  ROOTDIR="\${ROOTDIR}/"
+if test "${ROOTDIR}" != "/"; then
+ CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
-# Install the info files for this package
-if [ -x usr/bin/install-info ] ; then
-  \${CHROOT} /usr/bin/install-info --info-dir=/usr/info usr/info/ipc.info.gz 2>/dev/null
+
+# Set up groups.
+if ! grep --quiet '^uuidd:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    uuidd 2> /dev/null
 fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^uuidd:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/run/uuidd:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "uuidd"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/run/uuidd' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g uuidd \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'UUID generator helper daemon' \
+    -u $(free_user_id) \
+    -g uuidd \
+    -s /bin/false \
+    -d '/run/uuidd' \
+    uuidd 2> /dev/null
+fi
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -498,6 +558,14 @@ ${CHROOT} /bin/chown root:tty /usr/bin/wall
 ${CHROOT} /bin/chmod 2755 /usr/bin/wall
 ${CHROOT} /bin/chown root:tty /usr/bin/write
 ${CHROOT} /bin/chmod 2755 /usr/bin/write
+
+${CHROOT} /bin/chown uuidd:uuidd /usr/sbin/uuidd
+${CHROOT} /bin/chown uuidd:uuidd /run/uuidd
+${CHROOT} /bin/chmod 2775 /run/uuidd
+
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
+fi
 EOF
 
 if [ "${SB_MTABSYM}" = "YES" ] ;then
@@ -548,7 +616,8 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
   /bin/chmod 4755 ./bin/umount ;
   /bin/chown root:tty ./usr/bin/wall ./usr/bin/write ;
-  /bin/chmod 2755 ./usr/bin/wall ./usr/bin/write ;"
+  /bin/chmod 2755 ./usr/bin/wall ./usr/bin/write ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown uuidd.uuidd ./usr/sbin/uuidd ./run/uuidd ;"
 
 if [ "${SB_PAM}" = "YES" ] ; then
   ROOTCOMMANDS="${ROOTCOMMANDS}

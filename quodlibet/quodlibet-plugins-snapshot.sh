@@ -22,7 +22,7 @@ snap2=${snap/quodlibet-/}
 pushd "${tmp}"
   hg clone -r ${snap} ${snaproot} ${module}-${snap2}
   pushd ${module}-${snap2}
-    #if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+    #if [ "${snap}" != "$(date +%Y%m%d)" ] && [ -z "${tag}" ] ; then
       #hgdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
       #hg checkout -d "${hgdate}"
     #fi

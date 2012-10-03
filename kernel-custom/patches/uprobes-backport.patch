@@ -1,6 +1,11 @@
+Hello,
+
+Test build: http://koji.fedoraproject.org/koji/taskinfo?taskID=4490824
+This also fixes: https://bugzilla.redhat.com/show_bug.cgi?id=849364
+
 The split-out series is available in the git repository at:
- 
-   git://fedorapeople.org/home/fedora/aarapov/public_git/kernel-uprobes.git tags/f17_exported
+  http://fedorapeople.org/cgit/aarapov/public_git/kernel-uprobes.git/log/?h=f17_uprobes_out
+  (Just @jistone's patch is not upstream that exports functions.)
 
 Ananth N Mavinakayanahalli (1):
       uprobes: Pass probed vaddr to arch_uprobe_analyze_insn()
@@ -8,7 +13,7 @@ Ananth N Mavinakayanahalli (1):
 Josh Stone (1):
       uprobes: add exports necessary for uprobes use by modules
 
-Oleg Nesterov (36):
+Oleg Nesterov (52):
       uprobes: Optimize is_swbp_at_addr() for current->mm
       uprobes: Change read_opcode() to use FOLL_FORCE
       uprobes: Introduce find_active_uprobe() helper
@@ -44,31 +49,77 @@ Oleg Nesterov (36):
       uprobes: Fix register_for_each_vma()->vma_address() check
       uprobes: Rename vma_address() and make it return "unsigned long"
       uprobes: __replace_page() needs munlock_vma_page()
-      uprobes: mmap_region() corrupts mm->mm_rb if uprobe_mmap() fails
+      uprobes: Fix mmap_region()'s mm->mm_rb corruption if uprobe_mmap() fails
+      uprobes: Kill uprobes_state->count
+      uprobes: Kill dup_mmap()->uprobe_mmap(), simplify uprobe_mmap/munmap
+      uprobes: Change uprobe_mmap() to ignore the errors but check fatal_signal_pending()
+      uprobes: Do not use -EEXIST in install_breakpoint() paths
+      uprobes: Introduce MMF_HAS_UPROBES
+      uprobes: Fold uprobe_reset_state() into uprobe_dup_mmap()
+      uprobes: Remove "verify" argument from set_orig_insn()
+      uprobes: uprobes_treelock should not disable irqs
+      uprobes: Introduce MMF_RECALC_UPROBES
+      uprobes: Teach find_active_uprobe() to clear MMF_HAS_UPROBES
+      ptrace/x86: Introduce set_task_blockstep() helper
+      ptrace/x86: Partly fix set_task_blockstep()->update_debugctlmsr() logic
+      uprobes/x86: Do not (ab)use TIF_SINGLESTEP/user_*_single_step() for single-stepping
+      uprobes/x86: Xol should send SIGTRAP if X86_EFLAGS_TF was set
+      uprobes/x86: Fix arch_uprobe_disable_step() && UTASK_SSTEP_TRAPPED interaction
+      uprobes: Make arch_uprobe_task->saved_trap_nr "unsigned int"
 
 Peter Zijlstra (1):
       uprobes: Document uprobe_register() vs uprobe_mmap() race
+
+Sebastian Andrzej Siewior (4):
+      uprobes: Remove check for uprobe variable in handle_swbp()
+      uprobes: Don't put NULL pointer in uprobe_register()
+      uprobes: Introduce arch_uprobe_enable/disable_step()
+      uprobes/x86: Implement x86 specific arch_uprobe_*_step
 
 Srikar Dronamraju (1):
       uprobes: Remove redundant lock_page/unlock_page
 
 Signed-off-by: Anton Arapov <anton@redhat.com>
 ---
- arch/x86/include/asm/uprobes.h |   2 +-
- arch/x86/kernel/ptrace.c       |   6 +
- arch/x86/kernel/uprobes.c      |   5 +-
- include/linux/sched.h          |   1 -
- kernel/events/uprobes.c        | 624 ++++++++++++++++++++---------------------
- kernel/fork.c                  |   4 +-
- mm/mmap.c                      |  11 +-
- 7 files changed, 314 insertions(+), 339 deletions(-)
+ arch/x86/include/asm/processor.h |   2 +
+ arch/x86/include/asm/uprobes.h   |   5 +-
+ arch/x86/kernel/step.c           |  53 ++-
+ arch/x86/kernel/uprobes.c        |  55 ++-
+ include/linux/sched.h            |   4 +-
+ include/linux/uprobes.h          |  15 +-
+ kernel/events/uprobes.c          | 819 +++++++++++++++++++--------------------
+ kernel/fork.c                    |   6 +-
+ kernel/ptrace.c                  |   6 +
+ mm/mmap.c                        |  11 +-
+ 10 files changed, 505 insertions(+), 471 deletions(-)
 
+diff --git a/arch/x86/include/asm/processor.h b/arch/x86/include/asm/processor.h
+index 39bc577..2f9f8ca 100644
+--- a/arch/x86/include/asm/processor.h
++++ b/arch/x86/include/asm/processor.h
+@@ -746,6 +746,8 @@ static inline void update_debugctlmsr(unsigned long debugctlmsr)
+ 	wrmsrl(MSR_IA32_DEBUGCTLMSR, debugctlmsr);
+ }
+ 
++extern void set_task_blockstep(struct task_struct *task, bool on);
++
+ /*
+  * from system description table in BIOS. Mostly for MCA use, but
+  * others may find it useful:
 diff --git a/arch/x86/include/asm/uprobes.h b/arch/x86/include/asm/uprobes.h
-index 1e9bed1..f3971bb 100644
+index 1e9bed1..8ff8be7 100644
 --- a/arch/x86/include/asm/uprobes.h
 +++ b/arch/x86/include/asm/uprobes.h
-@@ -48,7 +48,7 @@ struct arch_uprobe_task {
+@@ -42,13 +42,14 @@ struct arch_uprobe {
+ };
+ 
+ struct arch_uprobe_task {
+-	unsigned long			saved_trap_nr;
+ #ifdef CONFIG_X86_64
+ 	unsigned long			saved_scratch_register;
  #endif
++	unsigned int			saved_trap_nr;
++	unsigned int			saved_tf;
  };
  
 -extern int  arch_uprobe_analyze_insn(struct arch_uprobe *aup, struct mm_struct *mm);
@@ -76,28 +127,110 @@ index 1e9bed1..f3971bb 100644
  extern int  arch_uprobe_pre_xol(struct arch_uprobe *aup, struct pt_regs *regs);
  extern int  arch_uprobe_post_xol(struct arch_uprobe *aup, struct pt_regs *regs);
  extern bool arch_uprobe_xol_was_trapped(struct task_struct *tsk);
-diff --git a/arch/x86/kernel/ptrace.c b/arch/x86/kernel/ptrace.c
-index c4c6a5c..a6a6871 100644
---- a/arch/x86/kernel/ptrace.c
-+++ b/arch/x86/kernel/ptrace.c
-@@ -1415,6 +1415,12 @@ const struct user_regset_view *task_user_regset_view(struct task_struct *task)
- #endif
+diff --git a/arch/x86/kernel/step.c b/arch/x86/kernel/step.c
+index c346d11..cd3b243 100644
+--- a/arch/x86/kernel/step.c
++++ b/arch/x86/kernel/step.c
+@@ -157,6 +157,33 @@ static int enable_single_step(struct task_struct *child)
+ 	return 1;
  }
  
-+/*
-+ * This is declared in linux/regset.h and defined in machine-dependent
-+ * code.  We put the export here to ensure no machine forgets it.
-+ */
-+EXPORT_SYMBOL_GPL(task_user_regset_view);
++void set_task_blockstep(struct task_struct *task, bool on)
++{
++	unsigned long debugctl;
 +
- static void fill_sigtrap_info(struct task_struct *tsk,
- 				struct pt_regs *regs,
- 				int error_code, int si_code,
++	/*
++	 * Ensure irq/preemption can't change debugctl in between.
++	 * Note also that both TIF_BLOCKSTEP and debugctl should
++	 * be changed atomically wrt preemption.
++	 * FIXME: this means that set/clear TIF_BLOCKSTEP is simply
++	 * wrong if task != current, SIGKILL can wakeup the stopped
++	 * tracee and set/clear can play with the running task, this
++	 * can confuse the next __switch_to_xtra().
++	 */
++	local_irq_disable();
++	debugctl = get_debugctlmsr();
++	if (on) {
++		debugctl |= DEBUGCTLMSR_BTF;
++		set_tsk_thread_flag(task, TIF_BLOCKSTEP);
++	} else {
++		debugctl &= ~DEBUGCTLMSR_BTF;
++		clear_tsk_thread_flag(task, TIF_BLOCKSTEP);
++	}
++	if (task == current)
++		update_debugctlmsr(debugctl);
++	local_irq_enable();
++}
++
+ /*
+  * Enable single or block step.
+  */
+@@ -169,19 +196,10 @@ static void enable_step(struct task_struct *child, bool block)
+ 	 * So no one should try to use debugger block stepping in a program
+ 	 * that uses user-mode single stepping itself.
+ 	 */
+-	if (enable_single_step(child) && block) {
+-		unsigned long debugctl = get_debugctlmsr();
+-
+-		debugctl |= DEBUGCTLMSR_BTF;
+-		update_debugctlmsr(debugctl);
+-		set_tsk_thread_flag(child, TIF_BLOCKSTEP);
+-	} else if (test_tsk_thread_flag(child, TIF_BLOCKSTEP)) {
+-		unsigned long debugctl = get_debugctlmsr();
+-
+-		debugctl &= ~DEBUGCTLMSR_BTF;
+-		update_debugctlmsr(debugctl);
+-		clear_tsk_thread_flag(child, TIF_BLOCKSTEP);
+-	}
++	if (enable_single_step(child) && block)
++		set_task_blockstep(child, true);
++	else if (test_tsk_thread_flag(child, TIF_BLOCKSTEP))
++		set_task_blockstep(child, false);
+ }
+ 
+ void user_enable_single_step(struct task_struct *child)
+@@ -199,13 +217,8 @@ void user_disable_single_step(struct task_struct *child)
+ 	/*
+ 	 * Make sure block stepping (BTF) is disabled.
+ 	 */
+-	if (test_tsk_thread_flag(child, TIF_BLOCKSTEP)) {
+-		unsigned long debugctl = get_debugctlmsr();
+-
+-		debugctl &= ~DEBUGCTLMSR_BTF;
+-		update_debugctlmsr(debugctl);
+-		clear_tsk_thread_flag(child, TIF_BLOCKSTEP);
+-	}
++	if (test_tsk_thread_flag(child, TIF_BLOCKSTEP))
++		set_task_blockstep(child, false);
+ 
+ 	/* Always clear TIF_SINGLESTEP... */
+ 	clear_tsk_thread_flag(child, TIF_SINGLESTEP);
 diff --git a/arch/x86/kernel/uprobes.c b/arch/x86/kernel/uprobes.c
-index dc4e910..ad9faf1 100644
+index dc4e910..9538f00 100644
 --- a/arch/x86/kernel/uprobes.c
 +++ b/arch/x86/kernel/uprobes.c
-@@ -409,9 +409,10 @@ static int validate_insn_bits(struct arch_uprobe *auprobe, struct mm_struct *mm,
+@@ -41,6 +41,9 @@
+ /* Adjust the return address of a call insn */
+ #define UPROBE_FIX_CALL	0x2
+ 
++/* Instruction will modify TF, don't change it */
++#define UPROBE_FIX_SETF	0x4
++
+ #define UPROBE_FIX_RIP_AX	0x8000
+ #define UPROBE_FIX_RIP_CX	0x4000
+ 
+@@ -239,6 +242,10 @@ static void prepare_fixups(struct arch_uprobe *auprobe, struct insn *insn)
+ 	insn_get_opcode(insn);	/* should be a nop */
+ 
+ 	switch (OPCODE1(insn)) {
++	case 0x9d:
++		/* popf */
++		auprobe->fixups |= UPROBE_FIX_SETF;
++		break;
+ 	case 0xc3:		/* ret/lret */
+ 	case 0xcb:
+ 	case 0xc2:
+@@ -409,9 +416,10 @@ static int validate_insn_bits(struct arch_uprobe *auprobe, struct mm_struct *mm,
   * arch_uprobe_analyze_insn - instruction analysis including validity and fixups.
   * @mm: the probed address space.
   * @arch_uprobe: the probepoint information.
@@ -109,27 +242,77 @@ index dc4e910..ad9faf1 100644
  {
  	int ret;
  	struct insn insn;
-@@ -626,6 +627,7 @@ int arch_uprobe_exception_notify(struct notifier_block *self, unsigned long val,
- 
- 	return ret;
- }
-+EXPORT_SYMBOL_GPL(uprobe_register);
- 
- /*
-  * This function gets called when XOL instruction either gets trapped or
-@@ -640,6 +642,7 @@ void arch_uprobe_abort_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
- 	handle_riprel_post_xol(auprobe, regs, NULL);
- 	instruction_pointer_set(regs, utask->vaddr);
- }
-+EXPORT_SYMBOL_GPL(uprobe_unregister);
- 
- /*
+@@ -645,7 +653,7 @@ void arch_uprobe_abort_xol(struct arch_uprobe *auprobe, struct pt_regs *regs)
   * Skip these instructions as per the currently known x86 ISA.
+  * 0x66* { 0x90 | 0x0f 0x1f | 0x0f 0x19 | 0x87 0xc0 }
+  */
+-bool arch_uprobe_skip_sstep(struct arch_uprobe *auprobe, struct pt_regs *regs)
++static bool __skip_sstep(struct arch_uprobe *auprobe, struct pt_regs *regs)
+ {
+ 	int i;
+ 
+@@ -672,3 +680,46 @@ bool arch_uprobe_skip_sstep(struct arch_uprobe *auprobe, struct pt_regs *regs)
+ 	}
+ 	return false;
+ }
++
++bool arch_uprobe_skip_sstep(struct arch_uprobe *auprobe, struct pt_regs *regs)
++{
++	bool ret = __skip_sstep(auprobe, regs);
++	if (ret && (regs->flags & X86_EFLAGS_TF))
++		send_sig(SIGTRAP, current, 0);
++	return ret;
++}
++
++void arch_uprobe_enable_step(struct arch_uprobe *auprobe)
++{
++	struct task_struct *task = current;
++	struct arch_uprobe_task	*autask	= &task->utask->autask;
++	struct pt_regs *regs = task_pt_regs(task);
++
++	autask->saved_tf = !!(regs->flags & X86_EFLAGS_TF);
++
++	regs->flags |= X86_EFLAGS_TF;
++	if (test_tsk_thread_flag(task, TIF_BLOCKSTEP))
++		set_task_blockstep(task, false);
++}
++
++void arch_uprobe_disable_step(struct arch_uprobe *auprobe)
++{
++	struct task_struct *task = current;
++	struct arch_uprobe_task	*autask	= &task->utask->autask;
++	bool trapped = (task->utask->state == UTASK_SSTEP_TRAPPED);
++	struct pt_regs *regs = task_pt_regs(task);
++	/*
++	 * The state of TIF_BLOCKSTEP was not saved so we can get an extra
++	 * SIGTRAP if we do not clear TF. We need to examine the opcode to
++	 * make it right.
++	 */
++	if (unlikely(trapped)) {
++		if (!autask->saved_tf)
++			regs->flags &= ~X86_EFLAGS_TF;
++	} else {
++		if (autask->saved_tf)
++			send_sig(SIGTRAP, task, 0);
++		else if (!(auprobe->fixups & UPROBE_FIX_SETF))
++			regs->flags &= ~X86_EFLAGS_TF;
++	}
++}
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 4a1f493..64d9df5 100644
+index 4a1f493..864054f 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
-@@ -1581,7 +1581,6 @@ struct task_struct {
+@@ -441,6 +441,9 @@ extern int get_dumpable(struct mm_struct *mm);
+ #define MMF_VM_HUGEPAGE		17	/* set when VM_HUGEPAGE is set on vma */
+ #define MMF_EXE_FILE_CHANGED	18	/* see prctl_set_mm_exe_file() */
+ 
++#define MMF_HAS_UPROBES		19	/* has uprobes */
++#define MMF_RECALC_UPROBES	20	/* MMF_HAS_UPROBES can be wrong */
++
+ #define MMF_INIT_MASK		(MMF_DUMPABLE_MASK | MMF_DUMP_FILTER_MASK)
+ 
+ struct sighand_struct {
+@@ -1581,7 +1584,6 @@ struct task_struct {
  #endif
  #ifdef CONFIG_UPROBES
  	struct uprobe_task *utask;
@@ -137,11 +320,72 @@ index 4a1f493..64d9df5 100644
  #endif
  };
  
+diff --git a/include/linux/uprobes.h b/include/linux/uprobes.h
+index efe4b33..e6f0331 100644
+--- a/include/linux/uprobes.h
++++ b/include/linux/uprobes.h
+@@ -99,25 +99,27 @@ struct xol_area {
+ 
+ struct uprobes_state {
+ 	struct xol_area		*xol_area;
+-	atomic_t		count;
+ };
++
+ extern int __weak set_swbp(struct arch_uprobe *aup, struct mm_struct *mm, unsigned long vaddr);
+-extern int __weak set_orig_insn(struct arch_uprobe *aup, struct mm_struct *mm,  unsigned long vaddr, bool verify);
++extern int __weak set_orig_insn(struct arch_uprobe *aup, struct mm_struct *mm, unsigned long vaddr);
+ extern bool __weak is_swbp_insn(uprobe_opcode_t *insn);
+ extern int uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *uc);
+ extern void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *uc);
+ extern int uprobe_mmap(struct vm_area_struct *vma);
+ extern void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned long end);
++extern void uprobe_dup_mmap(struct mm_struct *oldmm, struct mm_struct *newmm);
+ extern void uprobe_free_utask(struct task_struct *t);
+ extern void uprobe_copy_process(struct task_struct *t);
+ extern unsigned long __weak uprobe_get_swbp_addr(struct pt_regs *regs);
++extern void __weak arch_uprobe_enable_step(struct arch_uprobe *arch);
++extern void __weak arch_uprobe_disable_step(struct arch_uprobe *arch);
+ extern int uprobe_post_sstep_notifier(struct pt_regs *regs);
+ extern int uprobe_pre_sstep_notifier(struct pt_regs *regs);
+ extern void uprobe_notify_resume(struct pt_regs *regs);
+ extern bool uprobe_deny_signal(void);
+ extern bool __weak arch_uprobe_skip_sstep(struct arch_uprobe *aup, struct pt_regs *regs);
+ extern void uprobe_clear_state(struct mm_struct *mm);
+-extern void uprobe_reset_state(struct mm_struct *mm);
+ #else /* !CONFIG_UPROBES */
+ struct uprobes_state {
+ };
+@@ -138,6 +140,10 @@ static inline void
+ uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned long end)
+ {
+ }
++static inline void
++uprobe_dup_mmap(struct mm_struct *oldmm, struct mm_struct *newmm)
++{
++}
+ static inline void uprobe_notify_resume(struct pt_regs *regs)
+ {
+ }
+@@ -158,8 +164,5 @@ static inline void uprobe_copy_process(struct task_struct *t)
+ static inline void uprobe_clear_state(struct mm_struct *mm)
+ {
+ }
+-static inline void uprobe_reset_state(struct mm_struct *mm)
+-{
+-}
+ #endif /* !CONFIG_UPROBES */
+ #endif	/* _LINUX_UPROBES_H */
 diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
-index 985be4d..7cff24c 100644
+index 985be4d..f8a97e7 100644
 --- a/kernel/events/uprobes.c
 +++ b/kernel/events/uprobes.c
-@@ -32,19 +32,36 @@
+@@ -27,24 +27,42 @@
+ #include <linux/pagemap.h>	/* read_mapping_page */
+ #include <linux/slab.h>
+ #include <linux/sched.h>
++#include <linux/export.h>
+ #include <linux/rmap.h>		/* anon_vma_prepare */
+ #include <linux/mmu_notifier.h>	/* set_pte_at_notify */
  #include <linux/swap.h>		/* try_to_free_swap */
  #include <linux/ptrace.h>	/* user_enable_single_step */
  #include <linux/kdebug.h>	/* notifier mechanism */
@@ -179,7 +423,7 @@ index 985be4d..7cff24c 100644
  /* serialize (un)register */
  static struct mutex uprobes_mutex[UPROBES_HASH_SZ];
  
-@@ -61,17 +78,6 @@ static struct mutex uprobes_mmap_mutex[UPROBES_HASH_SZ];
+@@ -61,17 +79,6 @@ static struct mutex uprobes_mmap_mutex[UPROBES_HASH_SZ];
   */
  static atomic_t uprobe_events = ATOMIC_INIT(0);
  
@@ -197,7 +441,7 @@ index 985be4d..7cff24c 100644
  struct uprobe {
  	struct rb_node		rb_node;	/* node in the rb tree */
  	atomic_t		ref;
-@@ -100,20 +106,21 @@ static bool valid_vma(struct vm_area_struct *vma, bool is_register)
+@@ -100,20 +107,21 @@ static bool valid_vma(struct vm_area_struct *vma, bool is_register)
  	if (!is_register)
  		return true;
  
@@ -226,7 +470,7 @@ index 985be4d..7cff24c 100644
  }
  
  /**
-@@ -121,41 +128,27 @@ static loff_t vma_address(struct vm_area_struct *vma, loff_t offset)
+@@ -121,41 +129,27 @@ static loff_t vma_address(struct vm_area_struct *vma, loff_t offset)
   * based on replace_page in mm/ksm.c
   *
   * @vma:      vma that holds the pte pointing to page
@@ -278,7 +522,7 @@ index 985be4d..7cff24c 100644
  
  	get_page(kpage);
  	page_add_new_anon_rmap(kpage, vma, addr);
-@@ -172,11 +165,15 @@ static int __replace_page(struct vm_area_struct *vma, struct page *page, struct
+@@ -172,11 +166,15 @@ static int __replace_page(struct vm_area_struct *vma, struct page *page, struct
  	page_remove_rmap(page);
  	if (!page_mapped(page))
  		try_to_free_swap(page);
@@ -297,7 +541,7 @@ index 985be4d..7cff24c 100644
  	return err;
  }
  
-@@ -218,79 +215,46 @@ static int write_opcode(struct arch_uprobe *auprobe, struct mm_struct *mm,
+@@ -218,79 +216,46 @@ static int write_opcode(struct arch_uprobe *auprobe, struct mm_struct *mm,
  			unsigned long vaddr, uprobe_opcode_t opcode)
  {
  	struct page *old_page, *new_page;
@@ -386,7 +630,7 @@ index 985be4d..7cff24c 100644
  	return ret;
  }
  
-@@ -312,16 +276,14 @@ static int read_opcode(struct mm_struct *mm, unsigned long vaddr, uprobe_opcode_
+@@ -312,16 +277,14 @@ static int read_opcode(struct mm_struct *mm, unsigned long vaddr, uprobe_opcode_
  	void *vaddr_new;
  	int ret;
  
@@ -404,7 +648,7 @@ index 985be4d..7cff24c 100644
  
  	put_page(page);
  
-@@ -333,10 +295,20 @@ static int is_swbp_at_addr(struct mm_struct *mm, unsigned long vaddr)
+@@ -333,10 +296,20 @@ static int is_swbp_at_addr(struct mm_struct *mm, unsigned long vaddr)
  	uprobe_opcode_t opcode;
  	int result;
  
@@ -426,7 +670,7 @@ index 985be4d..7cff24c 100644
  	if (is_swbp_insn(&opcode))
  		return 1;
  
-@@ -355,7 +327,9 @@ static int is_swbp_at_addr(struct mm_struct *mm, unsigned long vaddr)
+@@ -355,10 +328,12 @@ static int is_swbp_at_addr(struct mm_struct *mm, unsigned long vaddr)
  int __weak set_swbp(struct arch_uprobe *auprobe, struct mm_struct *mm, unsigned long vaddr)
  {
  	int result;
@@ -436,8 +680,74 @@ index 985be4d..7cff24c 100644
 +	 */
  	result = is_swbp_at_addr(mm, vaddr);
  	if (result == 1)
- 		return -EEXIST;
-@@ -520,7 +494,6 @@ static struct uprobe *alloc_uprobe(struct inode *inode, loff_t offset)
+-		return -EEXIST;
++		return 0;
+ 
+ 	if (result)
+ 		return result;
+@@ -371,24 +346,22 @@ int __weak set_swbp(struct arch_uprobe *auprobe, struct mm_struct *mm, unsigned
+  * @mm: the probed process address space.
+  * @auprobe: arch specific probepoint information.
+  * @vaddr: the virtual address to insert the opcode.
+- * @verify: if true, verify existance of breakpoint instruction.
+  *
+  * For mm @mm, restore the original opcode (opcode) at @vaddr.
+  * Return 0 (success) or a negative errno.
+  */
+ int __weak
+-set_orig_insn(struct arch_uprobe *auprobe, struct mm_struct *mm, unsigned long vaddr, bool verify)
++set_orig_insn(struct arch_uprobe *auprobe, struct mm_struct *mm, unsigned long vaddr)
+ {
+-	if (verify) {
+-		int result;
++	int result;
+ 
+-		result = is_swbp_at_addr(mm, vaddr);
+-		if (!result)
+-			return -EINVAL;
++	result = is_swbp_at_addr(mm, vaddr);
++	if (!result)
++		return -EINVAL;
++
++	if (result != 1)
++		return result;
+ 
+-		if (result != 1)
+-			return result;
+-	}
+ 	return write_opcode(auprobe, mm, vaddr, *(uprobe_opcode_t *)auprobe->insn);
+ }
+ 
+@@ -439,11 +412,10 @@ static struct uprobe *__find_uprobe(struct inode *inode, loff_t offset)
+ static struct uprobe *find_uprobe(struct inode *inode, loff_t offset)
+ {
+ 	struct uprobe *uprobe;
+-	unsigned long flags;
+ 
+-	spin_lock_irqsave(&uprobes_treelock, flags);
++	spin_lock(&uprobes_treelock);
+ 	uprobe = __find_uprobe(inode, offset);
+-	spin_unlock_irqrestore(&uprobes_treelock, flags);
++	spin_unlock(&uprobes_treelock);
+ 
+ 	return uprobe;
+ }
+@@ -490,12 +462,11 @@ static struct uprobe *__insert_uprobe(struct uprobe *uprobe)
+  */
+ static struct uprobe *insert_uprobe(struct uprobe *uprobe)
+ {
+-	unsigned long flags;
+ 	struct uprobe *u;
+ 
+-	spin_lock_irqsave(&uprobes_treelock, flags);
++	spin_lock(&uprobes_treelock);
+ 	u = __insert_uprobe(uprobe);
+-	spin_unlock_irqrestore(&uprobes_treelock, flags);
++	spin_unlock(&uprobes_treelock);
+ 
+ 	/* For now assume that the instruction need not be single-stepped */
+ 	uprobe->flags |= UPROBE_SKIP_SSTEP;
+@@ -520,7 +491,6 @@ static struct uprobe *alloc_uprobe(struct inode *inode, loff_t offset)
  	uprobe->inode = igrab(inode);
  	uprobe->offset = offset;
  	init_rwsem(&uprobe->consumer_rwsem);
@@ -445,7 +755,7 @@ index 985be4d..7cff24c 100644
  
  	/* add to uprobes_tree, sorted on inode:offset */
  	cur_uprobe = insert_uprobe(uprobe);
-@@ -588,20 +561,22 @@ static bool consumer_del(struct uprobe *uprobe, struct uprobe_consumer *uc)
+@@ -588,20 +558,22 @@ static bool consumer_del(struct uprobe *uprobe, struct uprobe_consumer *uc)
  }
  
  static int
@@ -475,7 +785,7 @@ index 985be4d..7cff24c 100644
  
  	/*
  	 * Ensure that the page that has the original instruction is
-@@ -612,22 +587,20 @@ __copy_insn(struct address_space *mapping, struct vm_area_struct *vma, char *ins
+@@ -612,22 +584,20 @@ __copy_insn(struct address_space *mapping, struct vm_area_struct *vma, char *ins
  		return PTR_ERR(page);
  
  	vaddr = kmap_atomic(page);
@@ -501,7 +811,7 @@ index 985be4d..7cff24c 100644
  	mapping = uprobe->inode->i_mapping;
  
  	/* Instruction at end of binary; copy only available bytes */
-@@ -638,13 +611,13 @@ copy_insn(struct uprobe *uprobe, struct vm_area_struct *vma, unsigned long addr)
+@@ -638,13 +608,13 @@ copy_insn(struct uprobe *uprobe, struct vm_area_struct *vma, unsigned long addr)
  
  	/* Instruction at the page-boundary; copy bytes in second page */
  	if (nbytes < bytes) {
@@ -520,7 +830,7 @@ index 985be4d..7cff24c 100644
  }
  
  /*
-@@ -672,9 +645,8 @@ copy_insn(struct uprobe *uprobe, struct vm_area_struct *vma, unsigned long addr)
+@@ -672,9 +642,9 @@ copy_insn(struct uprobe *uprobe, struct vm_area_struct *vma, unsigned long addr)
   */
  static int
  install_breakpoint(struct uprobe *uprobe, struct mm_struct *mm,
@@ -528,15 +838,19 @@ index 985be4d..7cff24c 100644
 +			struct vm_area_struct *vma, unsigned long vaddr)
  {
 -	unsigned long addr;
++	bool first_uprobe;
  	int ret;
  
  	/*
-@@ -687,20 +659,22 @@ install_breakpoint(struct uprobe *uprobe, struct mm_struct *mm,
+@@ -685,204 +655,194 @@ install_breakpoint(struct uprobe *uprobe, struct mm_struct *mm,
+ 	 * Hence behave as if probe already existed.
+ 	 */
  	if (!uprobe->consumers)
- 		return -EEXIST;
- 
--	addr = (unsigned long)vaddr;
+-		return -EEXIST;
 -
+-	addr = (unsigned long)vaddr;
++		return 0;
+ 
  	if (!(uprobe->flags & UPROBE_COPY_INSN)) {
 -		ret = copy_insn(uprobe, vma, addr);
 +		ret = copy_insn(uprobe, vma->vm_file);
@@ -559,16 +873,31 @@ index 985be4d..7cff24c 100644
  		uprobe->flags |= UPROBE_COPY_INSN;
  	}
  
-@@ -713,7 +687,7 @@ install_breakpoint(struct uprobe *uprobe, struct mm_struct *mm,
- 	 * Hence increment before and decrement on failure.
+ 	/*
+-	 * Ideally, should be updating the probe count after the breakpoint
+-	 * has been successfully inserted. However a thread could hit the
+-	 * breakpoint we just inserted even before the probe count is
+-	 * incremented. If this is the first breakpoint placed, breakpoint
+-	 * notifier might ignore uprobes and pass the trap to the thread.
+-	 * Hence increment before and decrement on failure.
++	 * set MMF_HAS_UPROBES in advance for uprobe_pre_sstep_notifier(),
++	 * the task can hit this breakpoint right after __replace_page().
  	 */
- 	atomic_inc(&mm->uprobes_state.count);
+-	atomic_inc(&mm->uprobes_state.count);
 -	ret = set_swbp(&uprobe->arch, mm, addr);
+-	if (ret)
+-		atomic_dec(&mm->uprobes_state.count);
++	first_uprobe = !test_bit(MMF_HAS_UPROBES, &mm->flags);
++	if (first_uprobe)
++		set_bit(MMF_HAS_UPROBES, &mm->flags);
++
 +	ret = set_swbp(&uprobe->arch, mm, vaddr);
- 	if (ret)
- 		atomic_dec(&mm->uprobes_state.count);
++	if (!ret)
++		clear_bit(MMF_RECALC_UPROBES, &mm->flags);
++	else if (first_uprobe)
++		clear_bit(MMF_HAS_UPROBES, &mm->flags);
  
-@@ -721,27 +695,21 @@ install_breakpoint(struct uprobe *uprobe, struct mm_struct *mm,
+ 	return ret;
  }
  
  static void
@@ -576,8 +905,13 @@ index 985be4d..7cff24c 100644
 +remove_breakpoint(struct uprobe *uprobe, struct mm_struct *mm, unsigned long vaddr)
  {
 -	if (!set_orig_insn(&uprobe->arch, mm, (unsigned long)vaddr, true))
-+	if (!set_orig_insn(&uprobe->arch, mm, vaddr, true))
- 		atomic_dec(&mm->uprobes_state.count);
+-		atomic_dec(&mm->uprobes_state.count);
++	/* can happen if uprobe_register() fails */
++	if (!test_bit(MMF_HAS_UPROBES, &mm->flags))
++		return;
++
++	set_bit(MMF_RECALC_UPROBES, &mm->flags);
++	set_orig_insn(&uprobe->arch, mm, vaddr);
  }
  
  /*
@@ -595,13 +929,16 @@ index 985be4d..7cff24c 100644
   */
  static void delete_uprobe(struct uprobe *uprobe)
  {
- 	unsigned long flags;
- 
+-	unsigned long flags;
+-
 -	synchronize_srcu(&uprobes_srcu);
- 	spin_lock_irqsave(&uprobes_treelock, flags);
+-	spin_lock_irqsave(&uprobes_treelock, flags);
++	spin_lock(&uprobes_treelock);
  	rb_erase(&uprobe->rb_node, &uprobes_tree);
- 	spin_unlock_irqrestore(&uprobes_treelock, flags);
-@@ -750,139 +718,136 @@ static void delete_uprobe(struct uprobe *uprobe)
+-	spin_unlock_irqrestore(&uprobes_treelock, flags);
++	spin_unlock(&uprobes_treelock);
+ 	iput(uprobe->inode);
+ 	put_uprobe(uprobe);
  	atomic_dec(&uprobe_events);
  }
  
@@ -678,10 +1015,10 @@ index 985be4d..7cff24c 100644
 +			continue;
  		}
 -	}
- 
+-
 -	return NULL;
 -}
--
+ 
 -/*
 - * Iterate in the rmap prio tree  and find a vma where a probe has not
 - * yet been inserted.
@@ -798,52 +1135,60 @@ index 985be4d..7cff24c 100644
 -			mmput(mm);
 -			continue;
 -		}
--
--		if (is_register)
--			ret = install_breakpoint(uprobe, mm, vma, vi->vaddr);
--		else
--			remove_breakpoint(uprobe, mm, vi->vaddr);
 +		if (vma->vm_start > info->vaddr ||
 +		    vaddr_to_offset(vma, info->vaddr) != uprobe->offset)
 +			goto unlock;
  
+ 		if (is_register)
+-			ret = install_breakpoint(uprobe, mm, vma, vi->vaddr);
++			err = install_breakpoint(uprobe, mm, vma, info->vaddr);
+ 		else
+-			remove_breakpoint(uprobe, mm, vi->vaddr);
++			remove_breakpoint(uprobe, mm, info->vaddr);
+ 
 -		up_read(&mm->mmap_sem);
--		mmput(mm);
- 		if (is_register) {
++ unlock:
++		up_write(&mm->mmap_sem);
++ free:
+ 		mmput(mm);
+-		if (is_register) {
 -			if (ret && ret == -EEXIST)
 -				ret = 0;
 -			if (ret)
 -				break;
-+			err = install_breakpoint(uprobe, mm, vma, info->vaddr);
-+			/*
-+			 * We can race against uprobe_mmap(), see the
-+			 * comment near uprobe_hash().
-+			 */
-+			if (err == -EEXIST)
-+				err = 0;
-+		} else {
-+			remove_breakpoint(uprobe, mm, info->vaddr);
- 		}
-+ unlock:
-+		up_write(&mm->mmap_sem);
-+ free:
-+		mmput(mm);
-+		info = free_map_info(info);
- 	}
- 
+-		}
+-	}
+-
 -	list_for_each_entry_safe(vi, tmpvi, &try_list, probe_list) {
 -		list_del(&vi->probe_list);
 -		kfree(vi);
--	}
--
++		info = free_map_info(info);
+ 	}
+ 
 -	return ret;
 +	return err;
  }
  
  static int __uprobe_register(struct uprobe *uprobe)
-@@ -977,59 +942,66 @@ void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consume
+@@ -941,10 +901,12 @@ int uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *
+ 	}
+ 
+ 	mutex_unlock(uprobes_hash(inode));
+-	put_uprobe(uprobe);
++	if (uprobe)
++		put_uprobe(uprobe);
+ 
+ 	return ret;
+ }
++EXPORT_SYMBOL_GPL(uprobe_register);
+ 
+ /*
+  * uprobe_unregister - unregister a already registered probe.
+@@ -976,81 +938,81 @@ void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consume
+ 	if (uprobe)
  		put_uprobe(uprobe);
  }
++EXPORT_SYMBOL_GPL(uprobe_unregister);
  
 -/*
 - * Of all the nodes that correspond to the given inode, return the node
@@ -862,14 +1207,14 @@ index 985be4d..7cff24c 100644
  	while (n) {
 -		uprobe = rb_entry(n, struct uprobe, rb_node);
 -		match = match_uprobe(&u, uprobe);
-+		struct uprobe *u = rb_entry(n, struct uprobe, rb_node);
- 
+-
 -		if (uprobe->inode == inode)
 -			close_node = n;
 -
 -		if (!match)
 -			return close_node;
--
++		struct uprobe *u = rb_entry(n, struct uprobe, rb_node);
+ 
 -		if (match < 0)
 +		if (inode < u->inode) {
  			n = n->rb_left;
@@ -901,13 +1246,13 @@ index 985be4d..7cff24c 100644
 +				struct list_head *head)
  {
 -	struct uprobe *uprobe;
-+	loff_t min, max;
- 	unsigned long flags;
+-	unsigned long flags;
 -	struct rb_node *n;
 -
 -	spin_lock_irqsave(&uprobes_treelock, flags);
 -
 -	n = find_least_offset_node(inode);
++	loff_t min, max;
 +	struct rb_node *n, *t;
 +	struct uprobe *u;
  
@@ -921,7 +1266,7 @@ index 985be4d..7cff24c 100644
  
 -		list_add(&uprobe->pending_list, head);
 -		atomic_inc(&uprobe->ref);
-+	spin_lock_irqsave(&uprobes_treelock, flags);
++	spin_lock(&uprobes_treelock);
 +	n = find_node_in_range(inode, min, max);
 +	if (n) {
 +		for (t = n; t; t = rb_prev(t)) {
@@ -940,64 +1285,138 @@ index 985be4d..7cff24c 100644
 +		}
  	}
 -
- 	spin_unlock_irqrestore(&uprobes_treelock, flags);
+-	spin_unlock_irqrestore(&uprobes_treelock, flags);
++	spin_unlock(&uprobes_treelock);
  }
  
-@@ -1059,28 +1031,21 @@ int uprobe_mmap(struct vm_area_struct *vma)
+ /*
+- * Called from mmap_region.
+- * called with mm->mmap_sem acquired.
+- *
+- * Return -ve no if we fail to insert probes and we cannot
+- * bail-out.
+- * Return 0 otherwise. i.e:
++ * Called from mmap_region/vma_adjust with mm->mmap_sem acquired.
+  *
+- *	- successful insertion of probes
+- *	- (or) no possible probes to be inserted.
+- *	- (or) insertion of probes failed but we can bail-out.
++ * Currently we ignore all errors and always return 0, the callers
++ * can't handle the failure anyway.
+  */
+ int uprobe_mmap(struct vm_area_struct *vma)
+ {
+ 	struct list_head tmp_list;
+ 	struct uprobe *uprobe, *u;
+ 	struct inode *inode;
+-	int ret, count;
+ 
+ 	if (!atomic_read(&uprobe_events) || !valid_vma(vma, true))
+ 		return 0;
+@@ -1059,54 +1021,38 @@ int uprobe_mmap(struct vm_area_struct *vma)
  	if (!inode)
  		return 0;
  
 -	INIT_LIST_HEAD(&tmp_list);
  	mutex_lock(uprobes_mmap_hash(inode));
 -	build_probe_list(inode, &tmp_list);
+-
+-	ret = 0;
+-	count = 0;
 +	build_probe_list(inode, vma, vma->vm_start, vma->vm_end, &tmp_list);
- 
- 	ret = 0;
- 	count = 0;
  
  	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
 -		loff_t vaddr;
 -
 -		list_del(&uprobe->pending_list);
- 		if (!ret) {
+-		if (!ret) {
 -			vaddr = vma_address(vma, uprobe->offset);
 -
 -			if (vaddr < vma->vm_start || vaddr >= vma->vm_end) {
 -				put_uprobe(uprobe);
 -				continue;
 -			}
-+			unsigned long vaddr = offset_to_vaddr(vma, uprobe->offset);
- 
- 			ret = install_breakpoint(uprobe, vma->vm_mm, vma, vaddr);
+-
+-			ret = install_breakpoint(uprobe, vma->vm_mm, vma, vaddr);
 -
 -			/* Ignore double add: */
-+			/*
-+			 * We can race against uprobe_register(), see the
-+			 * comment near uprobe_hash().
-+			 */
- 			if (ret == -EEXIST) {
- 				ret = 0;
+-			if (ret == -EEXIST) {
+-				ret = 0;
+-
+-				if (!is_swbp_at_addr(vma->vm_mm, vaddr))
+-					continue;
+-
+-				/*
+-				 * Unable to insert a breakpoint, but
+-				 * breakpoint lies underneath. Increment the
+-				 * probe count.
+-				 */
+-				atomic_inc(&vma->vm_mm->uprobes_state.count);
+-			}
+-
+-			if (!ret)
+-				count++;
++		if (!fatal_signal_pending(current)) {
++			unsigned long vaddr = offset_to_vaddr(vma, uprobe->offset);
++			install_breakpoint(uprobe, vma->vm_mm, vma, vaddr);
+ 		}
+ 		put_uprobe(uprobe);
+ 	}
+-
+ 	mutex_unlock(uprobes_mmap_hash(inode));
  
-@@ -1121,6 +1086,9 @@ void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned lon
+-	if (ret)
+-		atomic_sub(count, &vma->vm_mm->uprobes_state.count);
++	return 0;
++}
+ 
+-	return ret;
++static bool
++vma_has_uprobes(struct vm_area_struct *vma, unsigned long start, unsigned long end)
++{
++	loff_t min, max;
++	struct inode *inode;
++	struct rb_node *n;
++
++	inode = vma->vm_file->f_mapping->host;
++
++	min = vaddr_to_offset(vma, start);
++	max = min + (end - start) - 1;
++
++	spin_lock(&uprobes_treelock);
++	n = find_node_in_range(inode, min, max);
++	spin_unlock(&uprobes_treelock);
++
++	return !!n;
+ }
+ 
+ /*
+@@ -1114,41 +1060,18 @@ int uprobe_mmap(struct vm_area_struct *vma)
+  */
+ void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned long end)
+ {
+-	struct list_head tmp_list;
+-	struct uprobe *uprobe, *u;
+-	struct inode *inode;
+-
  	if (!atomic_read(&uprobe_events) || !valid_vma(vma, false))
  		return;
  
+-	if (!atomic_read(&vma->vm_mm->uprobes_state.count))
 +	if (!atomic_read(&vma->vm_mm->mm_users)) /* called by mmput() ? */
-+		return;
-+
- 	if (!atomic_read(&vma->vm_mm->uprobes_state.count))
  		return;
  
-@@ -1128,24 +1096,17 @@ void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned lon
- 	if (!inode)
+-	inode = vma->vm_file->f_mapping->host;
+-	if (!inode)
++	if (!test_bit(MMF_HAS_UPROBES, &vma->vm_mm->flags) ||
++	     test_bit(MMF_RECALC_UPROBES, &vma->vm_mm->flags))
  		return;
  
 -	INIT_LIST_HEAD(&tmp_list);
- 	mutex_lock(uprobes_mmap_hash(inode));
+-	mutex_lock(uprobes_mmap_hash(inode));
 -	build_probe_list(inode, &tmp_list);
-+	build_probe_list(inode, vma, start, end, &tmp_list);
- 
- 	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
+-
+-	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
 -		loff_t vaddr;
 -
 -		list_del(&uprobe->pending_list);
@@ -1011,17 +1430,37 @@ index 985be4d..7cff24c 100644
 -			if (is_swbp_at_addr(vma->vm_mm, vaddr) == 1)
 -				atomic_dec(&vma->vm_mm->uprobes_state.count);
 -		}
-+		unsigned long vaddr = offset_to_vaddr(vma, uprobe->offset);
-+		/*
-+		 * An unregister could have removed the probe before
-+		 * unmap. So check before we decrement the count.
-+		 */
-+		if (is_swbp_at_addr(vma->vm_mm, vaddr) == 1)
-+			atomic_dec(&vma->vm_mm->uprobes_state.count);
- 		put_uprobe(uprobe);
- 	}
- 	mutex_unlock(uprobes_mmap_hash(inode));
-@@ -1378,9 +1339,6 @@ void uprobe_free_utask(struct task_struct *t)
+-		put_uprobe(uprobe);
+-	}
+-	mutex_unlock(uprobes_mmap_hash(inode));
++	if (vma_has_uprobes(vma, start, end))
++		set_bit(MMF_RECALC_UPROBES, &vma->vm_mm->flags);
+ }
+ 
+ /* Slot allocation for XOL */
+@@ -1250,13 +1173,15 @@ void uprobe_clear_state(struct mm_struct *mm)
+ 	kfree(area);
+ }
+ 
+-/*
+- * uprobe_reset_state - Free the area allocated for slots.
+- */
+-void uprobe_reset_state(struct mm_struct *mm)
++void uprobe_dup_mmap(struct mm_struct *oldmm, struct mm_struct *newmm)
+ {
+-	mm->uprobes_state.xol_area = NULL;
+-	atomic_set(&mm->uprobes_state.count, 0);
++	newmm->uprobes_state.xol_area = NULL;
++
++	if (test_bit(MMF_HAS_UPROBES, &oldmm->flags)) {
++		set_bit(MMF_HAS_UPROBES, &newmm->flags);
++		/* unconditionally, dup_mmap() skips VM_DONTCOPY vmas */
++		set_bit(MMF_RECALC_UPROBES, &newmm->flags);
++	}
+ }
+ 
+ /*
+@@ -1378,9 +1303,6 @@ void uprobe_free_utask(struct task_struct *t)
  {
  	struct uprobe_task *utask = t->utask;
  
@@ -1031,7 +1470,7 @@ index 985be4d..7cff24c 100644
  	if (!utask)
  		return;
  
-@@ -1398,7 +1356,6 @@ void uprobe_free_utask(struct task_struct *t)
+@@ -1398,7 +1320,6 @@ void uprobe_free_utask(struct task_struct *t)
  void uprobe_copy_process(struct task_struct *t)
  {
  	t->utask = NULL;
@@ -1039,7 +1478,7 @@ index 985be4d..7cff24c 100644
  }
  
  /*
-@@ -1417,7 +1374,6 @@ static struct uprobe_task *add_utask(void)
+@@ -1417,7 +1338,6 @@ static struct uprobe_task *add_utask(void)
  	if (unlikely(!utask))
  		return NULL;
  
@@ -1047,10 +1486,29 @@ index 985be4d..7cff24c 100644
  	current->utask = utask;
  	return utask;
  }
-@@ -1479,41 +1435,61 @@ static bool can_skip_sstep(struct uprobe *uprobe, struct pt_regs *regs)
+@@ -1479,41 +1399,93 @@ static bool can_skip_sstep(struct uprobe *uprobe, struct pt_regs *regs)
  	return false;
  }
  
++static void mmf_recalc_uprobes(struct mm_struct *mm)
++{
++	struct vm_area_struct *vma;
++
++	for (vma = mm->mmap; vma; vma = vma->vm_next) {
++		if (!valid_vma(vma, false))
++			continue;
++		/*
++		 * This is not strictly accurate, we can race with
++		 * uprobe_unregister() and see the already removed
++		 * uprobe if delete_uprobe() was not yet called.
++		 */
++		if (vma_has_uprobes(vma, vma->vm_start, vma->vm_end))
++			return;
++	}
++
++	clear_bit(MMF_HAS_UPROBES, &mm->flags);
++}
++
 +static struct uprobe *find_active_uprobe(unsigned long bp_vaddr, int *is_swbp)
 +{
 +	struct mm_struct *mm = current->mm;
@@ -1072,9 +1530,22 @@ index 985be4d..7cff24c 100644
 +	} else {
 +		*is_swbp = -EFAULT;
 +	}
++
++	if (!uprobe && test_and_clear_bit(MMF_RECALC_UPROBES, &mm->flags))
++		mmf_recalc_uprobes(mm);
 +	up_read(&mm->mmap_sem);
 +
 +	return uprobe;
++}
++
++void __weak arch_uprobe_enable_step(struct arch_uprobe *arch)
++{
++	user_enable_single_step(current);
++}
++
++void __weak arch_uprobe_disable_step(struct arch_uprobe *arch)
++{
++	user_disable_single_step(current);
 +}
 +
  /*
@@ -1131,7 +1602,63 @@ index 985be4d..7cff24c 100644
  		return;
  	}
  
-@@ -1620,7 +1596,6 @@ int uprobe_pre_sstep_notifier(struct pt_regs *regs)
+@@ -1531,7 +1503,7 @@ static void handle_swbp(struct pt_regs *regs)
+ 
+ 	utask->state = UTASK_SSTEP;
+ 	if (!pre_ssout(uprobe, regs, bp_vaddr)) {
+-		user_enable_single_step(current);
++		arch_uprobe_enable_step(&uprobe->arch);
+ 		return;
+ 	}
+ 
+@@ -1540,17 +1512,15 @@ cleanup_ret:
+ 		utask->active_uprobe = NULL;
+ 		utask->state = UTASK_RUNNING;
+ 	}
+-	if (uprobe) {
+-		if (!(uprobe->flags & UPROBE_SKIP_SSTEP))
++	if (!(uprobe->flags & UPROBE_SKIP_SSTEP))
+ 
+-			/*
+-			 * cannot singlestep; cannot skip instruction;
+-			 * re-execute the instruction.
+-			 */
+-			instruction_pointer_set(regs, bp_vaddr);
++		/*
++		 * cannot singlestep; cannot skip instruction;
++		 * re-execute the instruction.
++		 */
++		instruction_pointer_set(regs, bp_vaddr);
+ 
+-		put_uprobe(uprobe);
+-	}
++	put_uprobe(uprobe);
+ }
+ 
+ /*
+@@ -1569,10 +1539,10 @@ static void handle_singlestep(struct uprobe_task *utask, struct pt_regs *regs)
+ 	else
+ 		WARN_ON_ONCE(1);
+ 
++	arch_uprobe_disable_step(&uprobe->arch);
+ 	put_uprobe(uprobe);
+ 	utask->active_uprobe = NULL;
+ 	utask->state = UTASK_RUNNING;
+-	user_disable_single_step(current);
+ 	xol_free_insn_slot(current);
+ 
+ 	spin_lock_irq(&current->sighand->siglock);
+@@ -1611,8 +1581,7 @@ int uprobe_pre_sstep_notifier(struct pt_regs *regs)
+ {
+ 	struct uprobe_task *utask;
+ 
+-	if (!current->mm || !atomic_read(&current->mm->uprobes_state.count))
+-		/* task is currently not uprobed */
++	if (!current->mm || !test_bit(MMF_HAS_UPROBES, &current->mm->flags))
+ 		return 0;
+ 
+ 	utask = current->utask;
+@@ -1620,7 +1589,6 @@ int uprobe_pre_sstep_notifier(struct pt_regs *regs)
  		utask->state = UTASK_BP_HIT;
  
  	set_thread_flag(TIF_UPROBE);
@@ -1139,7 +1666,7 @@ index 985be4d..7cff24c 100644
  
  	return 1;
  }
-@@ -1655,7 +1630,6 @@ static int __init init_uprobes(void)
+@@ -1655,7 +1623,6 @@ static int __init init_uprobes(void)
  		mutex_init(&uprobes_mutex[i]);
  		mutex_init(&uprobes_mmap_mutex[i]);
  	}
@@ -1147,6 +1674,44 @@ index 985be4d..7cff24c 100644
  
  	return register_die_notifier(&uprobe_exception_nb);
  }
+diff --git a/kernel/fork.c b/kernel/fork.c
+index 7a1d634..5d0137c 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -355,6 +355,7 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
+ 
+ 	down_write(&oldmm->mmap_sem);
+ 	flush_cache_dup_mm(oldmm);
++	uprobe_dup_mmap(oldmm, mm);
+ 	/*
+ 	 * Not linked in yet - no deadlock potential:
+ 	 */
+@@ -843,8 +841,6 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
+ #ifdef CONFIG_TRANSPARENT_HUGEPAGE
+ 	mm->pmd_huge_pte = NULL;
+ #endif
+-	uprobe_reset_state(mm);
+-
+ 	if (!mm_init(mm, tsk))
+ 		goto fail_nomem;
+ 
+diff --git a/kernel/ptrace.c b/kernel/ptrace.c
+index a232bb5..764fcd1 100644
+--- a/kernel/ptrace.c
++++ b/kernel/ptrace.c
+@@ -33,6 +33,12 @@ static int ptrace_trapping_sleep_fn(void *flags)
+ }
+ 
+ /*
++ * This is declared in linux/regset.h and defined in machine-dependent
++ * code.  We put the export here to ensure no machine forgets it.
++ */
++EXPORT_SYMBOL_GPL(task_user_regset_view);
++
++/*
+  * ptrace a task: make the debugger its new parent and
+  * move it to the ptrace list.
+  *
 diff --git a/mm/mmap.c b/mm/mmap.c
 index 3edfcdf..f25fd3f 100644
 --- a/mm/mmap.c

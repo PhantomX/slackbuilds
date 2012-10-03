@@ -15,10 +15,11 @@ for patches in \
 done
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Python-3.1.1-rpath.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2b2-remove-mimeaudio-tests.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00003-remove-mimeaudio-tests.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00111-no-static-lib.patch
 if [ "${ARCH}" = "x86_64" ]; then
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2.3-lib64.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.3.0b1-lib64.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00104-lib64-fix-for-test_install.patch
 fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00113-more-configuration-flags.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00114-statvfs-f_flag-constants.patch
@@ -27,10 +28,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-3.2.1-fix-test-subproce
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00131-disable-tests-in-test_io.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00134-fix-COUNT_ALLOCS-failure-in-test_sys.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00135-fix-test-within-test_weakref-in-debug-build.patch
-# Add a sys._debugmallocstats() function
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00147-add-debug-malloc-stats.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00152-fix-test-gdb-regex.patch
-
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autotool-intermediates.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00141-fix-test_gc_with_COUNT_ALLOCS.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00156-gdb-autoload-safepath.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00157-uid-gid-overflows.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
 
 set +e +o pipefail

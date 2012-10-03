@@ -31,6 +31,15 @@ pushd "${tmp}"
       git checkout $(git rev-list -n 1 --before="${gitdate}" ${gitbranch})
       gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
     fi
+    if [ -n "${tag}" ] ;then
+      if git tag | grep -q "^${tag}$" ;then
+        gittree="${tag}"
+      else
+        echo "Tag not found! Printing available."
+        git tag
+        exit 1
+      fi
+    fi
     git archive --format=tar --prefix=${module}-${snap}/ ${gittree} | xz -9 > "${pwd}"/${module}-${snap}.tar.xz
   popd
 popd >/dev/null

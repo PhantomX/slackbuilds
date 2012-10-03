@@ -123,8 +123,6 @@ ApplyPatch acpi-add-proc-event-regs.patch
 
 # cpufreq
 ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
-## cpuidle perf events cleanups and related
-ApplyPatch perf_timechart_fix_zero_timestamps.patch
 
 #
 # PCI
@@ -137,7 +135,9 @@ ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
 mkdir -p bfq_patches
-cp ${SB_PATCHDIR}/bfq_patches/000*.patch bfq_patches/
+for file in ${BFQSRCARCHIVES} ;do
+  cp ${BFQDOWNDIR}/${file} bfq_patches/
+done
 
 ( SB_PATCHDIR=bfq_patches
   for file in ${BFQSRCARCHIVES} ;do
@@ -224,17 +224,11 @@ ApplyPatch weird-root-dentry-name-debug.patch
 #rhbz 714271
 ApplyPatch CPU-hotplug-cpusets-suspend-Dont-modify-cpusets-during.patch
 
-#rhbz 820039 843554
-ApplyPatch rds-set-correct-msg_namelen.patch
+#rhbz 857324
+ApplyPatch net-tcp-bz857324.patch
 
-#rhbz 845558 844714
-ApplyPatch net-Allow-driver-to-limit-number-of-GSO-segments-per-skb.patch
-ApplyPatch sfc-Fix-maximum-number-of-TSO-segments-and-minimum-TX-queue-size.patch
-ApplyPatch tcp-Apply-device-TSO-segment-limit-earlier.patch
-
-ApplyPatch fbcon-fix-race-condition-between-console-lock-and-cursor-timer.patch
-
-ApplyPatch af_netlink-credentials-cve-2012-3520.patch
+#rhbz 850350
+ApplyPatch xen-pciback-restore-pci-config-space-after-FLR.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

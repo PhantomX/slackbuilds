@@ -26,9 +26,18 @@ gittree=${gittree:-${gitbranch}}
 pushd "${tmp}"
   git clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+    if [ "${snap}" != "$(date +%Y%m%d)" ] && [ -z "${tag}" ] ; then
       gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
       git checkout $(git rev-list -n 1 --before="${gitdate}" ${gitbranch})
+    fi
+    if [ -n "${tag}" ] ;then
+      if git tag | grep -q ${tag} ;then
+        gittree="${tag}"
+      else
+        echo "Tag not found! Printing available."
+        git tag
+        exit 1
+      fi
     fi
     git rev-list HEAD | sort > config.git-hash
     GITLOCALVER=$(wc -l config.git-hash | awk '{print $1}')

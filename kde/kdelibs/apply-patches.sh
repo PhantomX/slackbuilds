@@ -43,15 +43,13 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.2-uri_mimetypes.patch
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.4-SOLID_UPNP.patch
 
 # udisks2 Solid backend, halectomy
-patch -p2 --verbose --backup -d solid -i ${SB_PATCHDIR}/kdelibs-udisks2_prep.patch
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-udisks2-backend.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-udisks2_post.patch
 
 # return valid locale (RFC 1766)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
 
-# Can't safely remove a USB removable hard drive ( http://bugzilla.redhat.com/852196 )
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.1-udisks_detatch_external_hdd.patch
+# patch FindSamba.cmake to find samba4 libs (using pkg-config hints)
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.2-FindSamba_samba4.patch
 
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch

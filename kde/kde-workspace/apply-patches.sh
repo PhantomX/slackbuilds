@@ -57,6 +57,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.2-bz\#74
 # add ktp_presence applet to default systray
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systray_ktp_presence.patch
 
+# disable plasma-runner-solid by default, has limited usefulness (afaict) 
+# and is crashy (at least with udisks2).
+# http://bugs.kde.org/307445
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.1-solid_krunner_disable.patch
+
 # upstreamable patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-kde\#171685.patch
@@ -88,10 +93,6 @@ fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-fontconfigdir.patch
 
 ## upstream patches
-# http://commits.kde.org/kde-workspace/8452e6c3f01a65953705087e0d7ada87e2cc6997
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r8452e6c3f01a65953705087e0d7ada87e2cc6997.diff
-# fix device notifier Free Space meter
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.2-devicenotifier-freespace.patch
 
 ## plasma active patches
 # adapted version of wac-html-widgets.patch

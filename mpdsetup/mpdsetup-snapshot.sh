@@ -26,10 +26,19 @@ gittree=${gittree:-${gitbranch}}
 pushd "${tmp}"
   git clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+    if [ "${snap}" != "$(date +%Y%m%d)" ] && [ -z "${tag}" ] ; then
       gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
       git checkout $(git rev-list -n 1 --before="${gitdate}" ${gitbranch})
       gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
+    fi
+    if [ -n "${tag}" ] ;then
+      if git tag | grep -q ${tag} ;then
+        git checkout ${tag}
+      else
+        echo "Tag not found! Printing available."
+        git tag
+        exit 1
+      fi
     fi
     rm -rf python-mpd mpd.py
     find . -type d -name .git -print0 | xargs -0r rm -rf

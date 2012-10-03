@@ -20,7 +20,7 @@ snap=${snap:-$(date +%Y%m%d)}
 pushd "${tmp}"
   hg clone ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    if [ "${snap}" != "$(date +%Y%m%d)" ] ; then
+    if [ "${snap}" != "$(date +%Y%m%d)" ] && [ -z "${tag}" ] ; then
       hgdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
       hg checkout -d "${hgdate}"
     fi

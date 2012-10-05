@@ -1,0 +1,244 @@
+From 784761bee3828e4e21cbe15340c7a99e3fd1788b Mon Sep 17 00:00:00 2001
+From: Joseph Myers <joseph@codesourcery.com>
+Date: Fri, 14 Sep 2012 20:18:49 +0000
+Subject: [PATCH] Make printf respect the rounding mode for decimal output
+ (bug 5044).
+
+---
+ stdio-common/Makefile           |   9 +++-
+ stdio-common/printf_fp.c        |  53 +++++++++----------
+ stdio-common/tst-printf-round.c | 110 ++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 154 insertions(+), 30 deletions(-)
+ create mode 100644 stdio-common/tst-printf-round.c
+
+diff --git a/stdio-common/Makefile b/stdio-common/Makefile
+index 5d7ab53..9811572 100644
+--- a/stdio-common/Makefile
++++ b/stdio-common/Makefile
+@@ -57,7 +57,7 @@ tests := tstscanf test_rdwr test-popen tstgetln test-fseek \
+ 	 bug19 bug19a tst-popen2 scanf13 scanf14 scanf15 bug20 bug21 bug22 \
+ 	 scanf16 scanf17 tst-setvbuf1 tst-grouping bug23 bug24 \
+ 	 bug-vfprintf-nargs tst-long-dbl-fphex tst-fphex-wide tst-sprintf3 \
+-	 bug25
++	 bug25 tst-printf-round
+ 
+ test-srcs = tst-unbputc tst-printf
+ 
+@@ -128,3 +128,10 @@ CPPFLAGS += $(libio-mtsafe)
+ $(objpfx)tst-setvbuf1.out: tst-setvbuf1.expect $(objpfx)tst-setvbuf1
+ 	$(built-program-cmd) > $@ 2>&1
+ 	cmp tst-setvbuf1.expect $@
++
++ifeq ($(build-shared),yes)
++link-libm = $(common-objpfx)math/libm.so
++else
++link-libm = $(common-objpfx)math/libm.a
++endif
++$(objpfx)tst-printf-round: $(link-libm)
+diff --git a/stdio-common/printf_fp.c b/stdio-common/printf_fp.c
+index 5f3c904..6e2b57c 100644
+--- a/stdio-common/printf_fp.c
++++ b/stdio-common/printf_fp.c
+@@ -39,6 +39,8 @@
+ #include <unistd.h>
+ #include <stdlib.h>
+ #include <wchar.h>
++#include <stdbool.h>
++#include <rounding-mode.h>
+ 
+ #ifdef COMPILE_WPRINTF
+ # define CHAR_T        wchar_t
+@@ -197,9 +199,6 @@ ___printf_fp (FILE *fp,
+   /* Temporary bignum value.  */
+   MPN_VAR(tmp);
+ 
+-  /* Digit which is result of last hack_digit() call.  */
+-  wchar_t digit;
+-
+   /* The type of output format that will be used: 'e'/'E' or 'f'.  */
+   int type;
+ 
+@@ -955,34 +954,31 @@ ___printf_fp (FILE *fp,
+       }
+ 
+     /* Do rounding.  */
+-    digit = hack_digit ();
+-    if (digit > L'4')
++    wchar_t last_digit = wcp[-1] != decimalwc ? wcp[-1] : wcp[-2];
++    wchar_t next_digit = hack_digit ();
++    bool more_bits;
++    if (next_digit != L'0' && next_digit != L'5')
++      more_bits = true;
++    else if (fracsize == 1 && frac[0] == 0)
++      /* Rest of the number is zero.  */
++      more_bits = false;
++    else if (scalesize == 0)
++      {
++	/* Here we have to see whether all limbs are zero since no
++	   normalization happened.  */
++	size_t lcnt = fracsize;
++	while (lcnt >= 1 && frac[lcnt - 1] == 0)
++	  --lcnt;
++	more_bits = lcnt > 0;
++      }
++    else
++      more_bits = true;
++    int rounding_mode = get_rounding_mode ();
++    if (round_away (is_neg, (last_digit - L'0') & 1, next_digit >= L'5',
++		    more_bits, rounding_mode))
+       {
+ 	wchar_t *wtp = wcp;
+ 
+-	if (digit == L'5'
+-	    && ((*(wcp - 1) != decimalwc && (*(wcp - 1) & 1) == 0)
+-		|| ((*(wcp - 1) == decimalwc && (*(wcp - 2) & 1) == 0))))
+-	  {
+-	    /* This is the critical case.	 */
+-	    if (fracsize == 1 && frac[0] == 0)
+-	      /* Rest of the number is zero -> round to even.
+-		 (IEEE 754-1985 4.1 says this is the default rounding.)  */
+-	      goto do_expo;
+-	    else if (scalesize == 0)
+-	      {
+-		/* Here we have to see whether all limbs are zero since no
+-		   normalization happened.  */
+-		size_t lcnt = fracsize;
+-		while (lcnt >= 1 && frac[lcnt - 1] == 0)
+-		  --lcnt;
+-		if (lcnt == 0)
+-		  /* Rest of the number is zero -> round to even.
+-		     (IEEE 754-1985 4.1 says this is the default rounding.)  */
+-		  goto do_expo;
+-	      }
+-	  }
+-
+ 	if (fracdig_no > 0)
+ 	  {
+ 	    /* Process fractional digits.  Terminate if not rounded or
+@@ -1076,7 +1072,6 @@ ___printf_fp (FILE *fp,
+ 	  }
+       }
+ 
+-  do_expo:
+     /* Now remove unnecessary '0' at the end of the string.  */
+     while (fracdig_no > fracdig_min + added_zeros && *(wcp - 1) == L'0')
+       {
+diff --git a/stdio-common/tst-printf-round.c b/stdio-common/tst-printf-round.c
+new file mode 100644
+index 0000000..2bd4607
+--- /dev/null
++++ b/stdio-common/tst-printf-round.c
+@@ -0,0 +1,110 @@
++/* Test for correct rounding of printf floating-point output.
++   Copyright (C) 2012 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <fenv.h>
++#include <stdio.h>
++#include <string.h>
++
++struct dec_test {
++  double d;
++  const char *fmt;
++  const char *rd, *rn, *rz, *ru;
++};
++
++static const struct dec_test dec_tests[] = {
++  { 1.5, "%.0f", "1", "2", "1", "2" },
++  { -1.5, "%.0f", "-2", "-2", "-1", "-1" },
++  { 2.5, "%.0f", "2", "2", "2", "3" },
++  { -2.5, "%.0f", "-3", "-2", "-2", "-2" },
++  { 1.4999, "%.0f", "1", "1", "1", "2" },
++  { -1.4999, "%.0f", "-2", "-1", "-1", "-1" },
++  { 1.5001, "%.0f", "1", "2", "1", "2" },
++  { -1.5001, "%.0f", "-2", "-2", "-1", "-1" },
++  { 2.4999, "%.0f", "2", "2", "2", "3" },
++  { -2.4999, "%.0f", "-3", "-2", "-2", "-2" },
++  { 2.5001, "%.0f", "2", "3", "2", "3" },
++  { -2.5001, "%.0f", "-3", "-3", "-2", "-2" },
++  { 1.0 / 3.0, "%f", "0.333333", "0.333333", "0.333333", "0.333334" },
++  { -1.0 / 3.0, "%f", "-0.333334", "-0.333333", "-0.333333", "-0.333333" },
++  { 0.2500001, "%.2e", "2.50e-01", "2.50e-01", "2.50e-01", "2.51e-01" },
++  { -0.2500001, "%.2e", "-2.51e-01", "-2.50e-01", "-2.50e-01", "-2.50e-01" },
++  { 1000001.0, "%.1e", "1.0e+06", "1.0e+06", "1.0e+06", "1.1e+06" },
++  { -1000001.0, "%.1e", "-1.1e+06", "-1.0e+06", "-1.0e+06", "-1.0e+06" },
++};
++
++static int
++test_dec_in_one_mode (double d, const char *fmt, const char *expected,
++		      const char *mode_name)
++{
++  char buf[100];
++  int ret = snprintf (buf, sizeof buf, fmt, d);
++  if (ret <= 0 || ret >= (int) sizeof buf)
++    {
++      printf ("snprintf for %a returned %d\n", d, ret);
++      return 1;
++    }
++  if (strcmp (buf, expected) == 0)
++    return 0;
++  else
++    {
++      printf ("snprintf (\"%s\", %a) returned \"%s\" not \"%s\" (%s)\n",
++	      fmt, d, buf, expected, mode_name);
++      return 1;
++    }
++}
++
++static int
++do_test (void)
++{
++  int save_round_mode = fegetround ();
++  int result = 0;
++
++  for (size_t i = 0; i < sizeof (dec_tests) / sizeof (dec_tests[0]); i++)
++    {
++      result |= test_dec_in_one_mode (dec_tests[i].d, dec_tests[i].fmt,
++				      dec_tests[i].rn, "default rounding mode");
++#ifdef FE_DOWNWARD
++      if (!fesetround (FE_DOWNWARD))
++	{
++	  result |= test_dec_in_one_mode (dec_tests[i].d, dec_tests[i].fmt,
++					  dec_tests[i].rd, "FE_DOWNWARD");
++	  fesetround (save_round_mode);
++	}
++#endif
++#ifdef FE_TOWARDZERO
++      if (!fesetround (FE_TOWARDZERO))
++	{
++	  result |= test_dec_in_one_mode (dec_tests[i].d, dec_tests[i].fmt,
++					  dec_tests[i].rz, "FE_TOWARDZERO");
++	  fesetround (save_round_mode);
++	}
++#endif
++#ifdef FE_UPWARD
++      if (!fesetround (FE_UPWARD))
++	{
++	  result |= test_dec_in_one_mode (dec_tests[i].d, dec_tests[i].fmt,
++					  dec_tests[i].ru, "FE_UPWARD");
++	  fesetround (save_round_mode);
++	}
++#endif
++    }
++  return result;
++}
++
++#define TEST_FUNCTION do_test ()
++#include "../test-skeleton.c"
+-- 
+1.7.12.2
+

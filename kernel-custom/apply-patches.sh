@@ -212,8 +212,6 @@ ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch lis3-improve-handling-of-null-rate.patch
 
-ApplyPatch uprobes-backport.patch
-
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
@@ -221,14 +219,8 @@ ApplyPatch unhandled-irqs-switch-to-polling.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
 
-#rhbz 714271
-ApplyPatch CPU-hotplug-cpusets-suspend-Dont-modify-cpusets-during.patch
-
-#rhbz 857324
-ApplyPatch net-tcp-bz857324.patch
-
-#rhbz 850350
-ApplyPatch xen-pciback-restore-pci-config-space-after-FLR.patch
+#rhbz 847548
+ApplyPatch virtio-scsi-Initialize-scatterlist-structure.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

@@ -52,6 +52,7 @@ fi
 
   ApplyPatch 0020_all_glibc-tweak-rfc1918-lookup.patch
   ApplyPatch 0052_all_glibc-2.14-resolv-hp-assert.patch
+  ApplyPatch 0055_all_glibc-2.16-x32-malloc-align.patch
   ApplyPatch 0068_all_glibc-2.16-glibc-revert-fseek-on-fclose.patch
   ApplyPatch 0070_all_glibc-2.16-sunrpc-bootstrap.patch
   ApplyPatch 0080_all_glibc-2.16-revert-x86_64-eagain-pthread_cond_wait.patch
@@ -104,5 +105,15 @@ ApplyPatch 0001-Fix-strtod-integer-buffer-overflow-bug-14459.patch
 ApplyPatch 0002-Fix-strtod-rounding-bug-3479.patch
 ApplyPatch 0003-Fix-sign-of-zero-on-strtod-underflow-bug-14519.patch
 ApplyPatch 0001-Fix-sem_post-race-bug-14532.patch
+ApplyPatch 0001-Check-for-gawk-3.0-bug-13412.patch
+ApplyPatch 0001-Correctly-handle-Motorola-extended-float-format-in-t.patch
+ApplyPatch 0001-Use-LDBL_MIN_EXP-to-distinguish-Intel-and-Motorola-e.patch
+ApplyPatch 0001-Improve-C-header-location-detection-bug-13966.patch
+ApplyPatch 0001-Increase-timeout-for-stdlib-tst-strtod-overflow.patch
+ApplyPatch 0001-Fix-iogetdelim.c-latent-integer-overflow-bug-9914.patch
+ApplyPatch 0001-Fix-strtod-test-for-values-above-maximum-for-IBM-lon.patch
+ApplyPatch 0001-Make-printf-respect-the-rounding-mode-for-decimal-ou.patch
+ApplyPatch 0001-Make-printf-respect-the-rounding-mode-for-hex-output.patch
+ApplyPatch 0001-Make-strtod-respect-the-rounding-mode-bug-14518.patch
 
 set +e +o pipefail

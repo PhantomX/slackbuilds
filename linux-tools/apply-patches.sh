@@ -26,6 +26,7 @@ ApplyPatch() {
   if [ ! -f ${SB_PATCHDIR}/${patch} ]; then
     exit 1
   fi
+  echo "Applying ${patch}"
   case "${patch}" in
   *.bz2) bzcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
   *.gz) zcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;

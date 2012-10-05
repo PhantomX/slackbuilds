@@ -1,0 +1,124 @@
+From e6ca9179443dcdd16d0cbfb2a571a7a9fde56a25 Mon Sep 17 00:00:00 2001
+From: Dave Airlie <airlied@redhat.com>
+Date: Thu, 6 Sep 2012 16:33:54 +1000
+Subject: [PATCH] dri2: invalidate drawable after sharing pixmap
+
+After we share the pixmap, the backing storage may have changed,
+and we need to invalidate and buffers pointing at it.
+
+This fixes GL compositors and prime windows lacking contents initially.
+
+Signed-off-by: Dave Airlie <airlied@redhat.com>
+---
+ hw/xfree86/dri2/dri2.c | 74 ++++++++++++++++++++++++++++----------------------
+ 1 file changed, 42 insertions(+), 32 deletions(-)
+
+diff --git a/hw/xfree86/dri2/dri2.c b/hw/xfree86/dri2/dri2.c
+index 23f589c..40963c3 100644
+--- a/hw/xfree86/dri2/dri2.c
++++ b/hw/xfree86/dri2/dri2.c
+@@ -766,6 +766,44 @@ static inline PixmapPtr GetDrawablePixmap(DrawablePtr drawable)
+     }
+ }
+ 
++/*
++ * A TraverseTree callback to invalidate all windows using the same
++ * pixmap
++ */
++static int
++DRI2InvalidateWalk(WindowPtr pWin, pointer data)
++{
++    if (pWin->drawable.pScreen->GetWindowPixmap(pWin) != data)
++        return WT_DONTWALKCHILDREN;
++    DRI2InvalidateDrawable(&pWin->drawable);
++    return WT_WALKCHILDREN;
++}
++
++static void
++DRI2InvalidateDrawableAll(DrawablePtr pDraw)
++{
++    if (pDraw->type == DRAWABLE_WINDOW) {
++        WindowPtr pWin = (WindowPtr) pDraw;
++        PixmapPtr pPixmap = pDraw->pScreen->GetWindowPixmap(pWin);
++
++        /*
++         * Find the top-most window using this pixmap
++         */
++        while (pWin->parent &&
++               pDraw->pScreen->GetWindowPixmap(pWin->parent) == pPixmap)
++            pWin = pWin->parent;
++
++        /*
++         * Walk the sub-tree to invalidate all of the
++         * windows using the same pixmap
++         */
++        TraverseTree(pWin, DRI2InvalidateWalk, pPixmap);
++        DRI2InvalidateDrawable(&pPixmap->drawable);
++    }
++    else
++        DRI2InvalidateDrawable(pDraw);
++}
++
+ DrawablePtr DRI2UpdatePrime(DrawablePtr pDraw, DRI2BufferPtr pDest)
+ {
+     DRI2DrawablePtr pPriv = DRI2GetDrawable(pDraw);
+@@ -831,6 +869,8 @@ DrawablePtr DRI2UpdatePrime(DrawablePtr pDraw, DRI2BufferPtr pDest)
+     spix->screen_x = mpix->screen_x;
+     spix->screen_y = mpix->screen_y;
+ #endif
++
++    DRI2InvalidateDrawableAll(pDraw);
+     return &spix->drawable;
+ }
+ 
+@@ -1048,18 +1088,7 @@ DRI2WaitSwap(ClientPtr client, DrawablePtr pDrawable)
+     return FALSE;
+ }
+ 
+-/*
+- * A TraverseTree callback to invalidate all windows using the same
+- * pixmap
+- */
+-static int
+-DRI2InvalidateWalk(WindowPtr pWin, pointer data)
+-{
+-    if (pWin->drawable.pScreen->GetWindowPixmap(pWin) != data)
+-        return WT_DONTWALKCHILDREN;
+-    DRI2InvalidateDrawable(&pWin->drawable);
+-    return WT_WALKCHILDREN;
+-}
++
+ 
+ int
+ DRI2SwapBuffers(ClientPtr client, DrawablePtr pDraw, CARD64 target_msc,
+@@ -1162,26 +1191,7 @@ DRI2SwapBuffers(ClientPtr client, DrawablePtr pDraw, CARD64 target_msc,
+      */
+     *swap_target = pPriv->swap_count + pPriv->swapsPending;
+ 
+-    if (pDraw->type == DRAWABLE_WINDOW) {
+-        WindowPtr pWin = (WindowPtr) pDraw;
+-        PixmapPtr pPixmap = pScreen->GetWindowPixmap(pWin);
+-
+-        /*
+-         * Find the top-most window using this pixmap
+-         */
+-        while (pWin->parent &&
+-               pScreen->GetWindowPixmap(pWin->parent) == pPixmap)
+-            pWin = pWin->parent;
+-
+-        /*
+-         * Walk the sub-tree to invalidate all of the
+-         * windows using the same pixmap
+-         */
+-        TraverseTree(pWin, DRI2InvalidateWalk, pPixmap);
+-        DRI2InvalidateDrawable(&pPixmap->drawable);
+-    }
+-    else
+-        DRI2InvalidateDrawable(pDraw);
++    DRI2InvalidateDrawableAll(pDraw);
+ 
+     return Success;
+ }
+-- 
+1.7.12
+

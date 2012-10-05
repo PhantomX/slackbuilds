@@ -30,9 +30,21 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/0002-linux-Make-failure-to-iopl-non-fatal.
 patch -p1 --verbose -i ${SB_PATCHDIR}/0003-xfree86-Change-the-semantics-of-driverFunc-GET_REQUI.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Always-install-vbe-and-int10-sdk-headers.patch
 
+# backport dri2 drawable fix
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-dri2-invalidate-drawable-after-sharing-pixmap.patch
+
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86-return-NULL-for-compat-output-if-no-outputs.patch
+
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-scan-pci-after-probing-devices.patch
+
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-config-udev-ignore-change-on-drm-devices.patch
+
+# Bug 852841 - Mouse jumps to edges / corners when using an absolute input
+# device (ie virtual machine usb tablet)
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-dix-set-the-device-transformation-matrix.patch
+
 # misc
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
-#patch -p1 --verbose -i ${SB_PATCHDIR}/sync-fix.patch
 
 patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.11.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then

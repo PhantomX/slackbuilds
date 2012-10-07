@@ -51,6 +51,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
 # patch FindSamba.cmake to find samba4 libs (using pkg-config hints)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.2-FindSamba_samba4.patch
 
+# krunner using ~/Documents as working directory, revert kde#108510, kde#183534
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.2-revert-kde\#108510-kde\#183534.patch
+
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
 

@@ -5,13 +5,10 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # From Fedora
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-handle-fwrite-return.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-grub_test_assert_printf.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-Workaround-for-variable-set-but-not-used-issue.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-2.00-ignore-gnulib-gets-stupidity.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/grub-2.00-Handle-escapes-in-labels.patch
 
-#filterdiff -p1 -x configure.ac -x ChangeLog -x "po/*" -x "debian/po/*" -z \
-zcat ${CWD}/${PSRCARCHIVE} | patch -p1 -E --verbose
+tar xvf ${CWD}/${PSRCARCHIVE}
 
 for patch in \
   core_in_fs.patch \
@@ -20,33 +17,24 @@ for patch in \
   gfxpayload_keep_default.patch \
   mkrescue_diet.patch \
   mkconfig_skip_dmcrypt.patch \
-  branch_devmapper.patch \
-  branch_squash.patch \
-  branch_longlinuxcmd.patch \
-  branch_parse-color.patch \
-  branch_embed-sectors.patch \
-  branch_fuse.patch \
   mkrescue_efi_modules.patch \
   mkconfig_loopback.patch \
-  lazy_stat.patch \
-  btrfs_stat.patch \
-  partition_performance.patch \
-  gfxterm_background.patch \
-  probe_canonicalise.patch \
-  mkconfig_skip_readme.patch \
-  xfs_invalid_bmap.patch \
-  handle_new_autotools.patch \
-  bash-completion_identifiers.patch \
-  gcc_4_6_space.patch \
-  lzo.patch \
-  fat_uuid.patch \
-  4k_sectors.patch \
-  efi_disk_cache.patch \
-  dirlen.patch \
+  restore_mkdevicemap.patch \
+  efi_mmap_size.patch \
+  gettext_quiet.patch \
+  mkconfig_mid_upgrade.patch \
+  fix_powerpc_emu.patch \
+  install_efi_fallback.patch \
+  mkconfig_overescaping.patch \
+  efifwsetup.patch \
+  msdos_embed_off_by_one.patch \
+  mkconfig_stderr_handling.patch \
+  tftp_endianness.patch \
+  mkconfig_nonexistent_loopback.patch \
   ; do
   patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done
 
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/grub-1.99-slknew.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/grub-2.00-slknew.patch
 
 set +e +o pipefail

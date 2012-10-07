@@ -87,5 +87,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-makefile-chgrp.patch
 # Pay attention to the SANE localOnly flag in hpaio (bug #743593).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpaio-localonly.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-ipp-accessors.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-IEEE-1284-4.patch
 
 set +e +o pipefail

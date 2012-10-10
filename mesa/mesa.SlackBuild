@@ -44,7 +44,7 @@ PNAME=Mesa
 NAME=mesa
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-8.0.4}
+VERSION=${VERSION:-9.0}
 SVER=$(echo ${VERSION} | cut -d- -f1)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -156,17 +156,20 @@ CXXFLAGS="${SLKCFLAGS}" \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
+  --disable-silent-rules \
   --with-dri-driverdir=/usr/lib${LIBDIRSUFFIX}/xorg/modules/dri \
   --enable-xcb \
   --enable-glx-tls \
   --enable-pic \
-  --with-driver=dri \
-  --with-state-trackers=dri,glx \
   --enable-egl \
+  --with-egl-platforms=x11,drm,wayland \
   --enable-gles1 \
   --enable-gles2 \
-  --with-gallium-drivers=r300,r600,nouveau,swrast \
+  --enable-shared-glapi \
+  --enable-gbm \
+  --with-gallium-drivers=r300,r600,radeonsi,nouveau,swrast \
   --enable-gallium-llvm \
+  --with-llvm-shared-libs \
   --disable-gallium-egl \
   --disable-asm ${SB_GLUTOPTS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
@@ -176,14 +179,15 @@ make clean
 make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} DRI_DIRS= || exit $?
 
+find ${PKG} -name '*.la' -delete
+
+mkdir -p ${PKG}/usr/include/KHR
+install -m 0644 include/KHR/*.h ${PKG}/usr/include/KHR/ || exit 1
+
 # just the DRI drivers that are sane
 mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/xorg/modules/dri
-# use gallium driver if built
-[ -f lib${LIBDIRSUFFIX}/gallium/r300_dri.so ] && cp -f lib${LIBDIRSUFFIX}/gallium/r300_dri.so lib${LIBDIRSUFFIX}/r300_dri.so
-[ -f lib${LIBDIRSUFFIX}/gallium/r600_dri.so ] && cp -f lib${LIBDIRSUFFIX}/gallium/r600_dri.so lib${LIBDIRSUFFIX}/r600_dri.so
-[ -f lib${LIBDIRSUFFIX}/gallium/swrastg_dri.so ] && mv -f lib${LIBDIRSUFFIX}/gallium/swrastg_dri.so lib${LIBDIRSUFFIX}/swrast_dri.so
 
-for f in i810 i915 i965 mach64 mga r128 r200 r300 r600 radeon savage sis swrast tdfx unichrome nouveau_vieux gallium/vmwgfx ; do
+for f in i810 i915 i965 mach64 mga r128 r300 r600 radeonsi savage sis swrast tdfx unichrome nouveau gallium/vmwgfx ; do
   so=lib${LIBDIRSUFFIX}/${f}_dri.so
   test -e ${so} && echo ${so}
 done | xargs install -m 0755 -t ${PKG}/usr/lib${LIBDIRSUFFIX}/xorg/modules/dri/ >& /dev/null
@@ -207,6 +211,8 @@ rm -f ${PKG}/usr/include/GL/[a-fh-np-wyz]*.h
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+mv ${PKG}/etc/drirc ${PKG}/etc/drirc.new || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -244,7 +250,30 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<'EOF'
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
 # Add ld.so.conf.d directory to /etc/ld.so.conf:
 if fgrep ld.so.conf.d etc/ld.so.conf 1> /dev/null 2> /dev/null ; then
   true

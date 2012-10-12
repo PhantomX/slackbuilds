@@ -1,0 +1,91 @@
+From 9343e79fee796a142a4bd12674aa3fdb56526eb6 Mon Sep 17 00:00:00 2001
+From: "Brian C. Lane" <bcl@redhat.com>
+Date: Tue, 20 Mar 2012 16:08:25 -0700
+Subject: [PATCH 1/2] libparted: check PMBR before GPT partition table
+ (#805272)
+
+The UEFI spec requires that a valid GPT disk label have a PMBR
+partition. This moves the PMBR check to before the GPT check,
+exiting gpt_probe with a 0 if the PMBR is not valid.
+
+The previous behavior would cause problems in the following situation:
+ 1. format a disk as GPT
+ 2. re-format it as MSDOS using tools that don't understand GPT
+
+Subsequent operations with parted would then complain about the invlid
+PMBR, but would not allow the disk to be used as a msdos disk. This
+change causes parted to tread the disk as a msdos disk.
+
+* libparted/labels/gpt.c (gpt_probe): Move _pmbr_is_valid test
+---
+ libparted/labels/gpt.c |   44 +++++++++++++-------------------------------
+ 1 files changed, 13 insertions(+), 31 deletions(-)
+
+diff --git a/libparted/labels/gpt.c b/libparted/labels/gpt.c
+index 84bdc12..e57b3a2 100644
+--- a/libparted/labels/gpt.c
++++ b/libparted/labels/gpt.c
+@@ -465,6 +465,17 @@ gpt_probe (const PedDevice *dev)
+   if (dev->length <= 1)
+     return 0;
+ 
++  void *label;
++  if (!ptt_read_sector (dev, 0, &label))
++    return 0;
++
++  if (!_pmbr_is_valid ((const LegacyMBR_t *) label))
++    {
++        free (label);
++        return 0;
++    }
++  free (label);
++
+   void *pth_raw = ped_malloc (pth_get_size (dev));
+   if (ped_device_read (dev, pth_raw, 1, GPT_HEADER_SECTORS)
+       || ped_device_read (dev, pth_raw, dev->length - 1, GPT_HEADER_SECTORS))
+@@ -472,40 +483,11 @@ gpt_probe (const PedDevice *dev)
+       gpt = pth_new_from_raw (dev, pth_raw);
+       if (gpt->Signature == PED_CPU_TO_LE64 (GPT_HEADER_SIGNATURE))
+         gpt_sig_found = 1;
++      pth_free (gpt);
+     }
+-
+   free (pth_raw);
+ 
+-  pth_free (gpt);
+-
+-  if (!gpt_sig_found)
+-    return 0;
+-
+-  void *label;
+-  if (!ptt_read_sector (dev, 0, &label))
+-    return 0;
+-
+-  int ok = 1;
+-  if (!_pmbr_is_valid ((const LegacyMBR_t *) label))
+-    {
+-      int ex_status = ped_exception_throw
+-        (PED_EXCEPTION_WARNING,
+-         PED_EXCEPTION_YES_NO,
+-         _("%s contains GPT signatures, indicating that it has "
+-           "a GPT table.  However, it does not have a valid "
+-           "fake msdos partition table, as it should.  Perhaps "
+-           "it was corrupted -- possibly by a program that "
+-           "doesn't understand GPT partition tables.  Or "
+-           "perhaps you deleted the GPT table, and are now "
+-           "using an msdos partition table.  Is this a GPT "
+-           "partition table?"),
+-         dev->path);
+-      if (ex_status == PED_EXCEPTION_NO)
+-        ok = 0;
+-    }
+-
+-  free (label);
+-  return ok;
++  return gpt_sig_found;
+ }
+ 
+ static PedDisk *
+-- 
+1.7.7.6
+

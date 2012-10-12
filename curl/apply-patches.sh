@@ -18,4 +18,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0106-curl-7.21.0-libssh2-valgr
 # work around valgrind bug (#678518)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0107-curl-7.21.4-libidn-valgrind.patch
 
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
+
 set +e +o pipefail

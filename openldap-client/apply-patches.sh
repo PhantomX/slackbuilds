@@ -15,7 +15,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-ldaprc-currentdir.pat
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-userconfig-setgid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-dns-priority.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-syncrepl-unset-tls-options.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-constraint-count.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-man-sasl-nocanon.patch
 
 set +e +o pipefail

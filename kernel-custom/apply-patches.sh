@@ -215,8 +215,6 @@ ApplyPatch lis3-improve-handling-of-null-rate.patch
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
-ApplyPatch unhandled-irqs-switch-to-polling.patch
-
 ApplyPatch weird-root-dentry-name-debug.patch
 
 #rhbz 847548

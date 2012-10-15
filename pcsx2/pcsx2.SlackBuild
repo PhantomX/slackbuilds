@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ pcsx2.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008, 2009, 2010, 2011 Phantom X, Goiania, Brazil.
+# Copyright 2008-2012 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -48,7 +48,7 @@ PKG=${PKG:-${TMP}/package-${NAME}}
 if [ "${SNAPBUILD}" = "YES" ] ;then
   VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
 else
-  VERSION=${VERSION:-0.9.4}
+  VERSION=${VERSION:-1.0.0-r5350}
 fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -57,6 +57,8 @@ else
 fi
 if [ "${ARCH}" = "x86_64" ] ;then
   SLKTARGET=${SLKTARGET:-x86_64}
+  echo 'x86_64 not supported! Try multilib.'
+  exit 0
 else
   SLKTARGET=${SLKTARGET:-i486}
 fi
@@ -71,18 +73,18 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}-${VERSION}
 if [ "${SNAPBUILD}" = "YES" ] ;then
-  SRCARCHIVE=${SRCDIR}.tar.bz2
+  SRCDIR=${NAME}-${VERSION}
+  SRCARCHIVE=${SRCDIR}.tar.xz
 else
-  SRCARCHIVE=${SRCDIR}.tar.gz
+  SRCDIR=${NAME}-${VERSION}-sources
+  SRCARCHIVE=${SRCDIR}.7z
 fi
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
-DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+DL_URL="http://pcsx2.net/download.html"
 SNAPUPDATE=${NAME}-snapshot.sh
 export snap=${VERSION}
 
@@ -90,7 +92,9 @@ export snap=${VERSION}
 if [ "${SNAPBUILD}" = "YES" ] ;then
   test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
 else
-  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+  if ! test -r ${SRCARCHIVE}; then
+    echo "Download ${SRCARCHIVE} at ${DL_URL}" && exit 1
+  fi
 fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -124,90 +128,97 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
+else
+  7z x ${CWD}/${SRCARCHIVE} || exit 1
+fi
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
-sed -i -e 's|-O1||g' configure.ac || exit 1
-sed -i -e 's/\r//' Docs/*.txt
 
-[ "$(echo ${SB_ECFLAGS} |grep msse3)" ] && SSE3OPT="--enable-sse3"
+if /usr/bin/wx-config --arch ${ARCH} --unicode=yes &>/dev/null ;then 
+  sed -i -e "/wxWidgets_CONFIG_OPTIONS/s|--unicode|--arch ${ARCH} \0|g" \
+    cmake/SearchForStuff.cmake
+fi
 
-autoreconf -iv || exit 1
+for doc in FAQ Readme ;do
+  mv bin/docs/PCSX2_${doc}_*.pdf bin/docs/PCSX2_${doc}.pdf
+done
 
-CFLAGS="${SLKCFLAGS}" \
-CXXFLAGS="${SLKCFLAGS}" \
-./configure \
-  --prefix=/usr \
-  --sysconfdir=/etc \
-  --localstatedir=/var/lib \
-  --infodir=/usr/info \
-  --mandir=/usr/man \
-  --docdir=/usr/doc/${NAME}-${VERSION} \
-  --enable-nls ${SSE3OPT} \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+sed -i \
+  -e '/DESTINATION/s|_0.9.8||g' \
+  -e "s|/share/doc/${NAME}|/doc/${NAME}-${VERSION}|g" \
+  -e "s|/share/man|/man|g" \
+  CMakeLists.txt
 
-make -j${NJOBS} || make || exit 1
-make install DESTDIR=${PKG} || exit 1
+sed -i -e 's|-march=i686||g' cmake/BuildParameters.cmake || exit 1
 
-mkdir -p ${PKG}/usr/libexec
-mv ${PKG}/usr/bin/${NAME} ${PKG}/usr/libexec/ || exit 1
+export CFLAGS="${SLKCFLAGS}"
+export CXXFLAGS="${SLKCFLAGS}"
+export FFLAGS="${SLKCFLAGS}"
 
-cat > ${PKG}/usr/bin/${NAME} <<EOF
-#!/bin/sh
+mkdir -p build
+( cd build || exit $?
 
-mkdir -p ~/.PS2E ~/.${NAME}/bios
-cd ~/.${NAME} || exit 1
-ln -snf /usr/share/${NAME}/* .
-ln -snf /usr/share/${NAME}/.pixmaps
-ln -snf /usr/lib/ps2emu/plugins
-ln -snf plugins/cfg
-ln -snf ../.PS2E inis
-exec /usr/libexec/${NAME} "\${@}"
-EOF
-chmod 0755 ${PKG}/usr/bin/${NAME} || exit 1
+  cmake .. \
+    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DINCLUDE_INSTALL_DIR:PATH=/usr/include \
+    -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSHARE_INSTALL_PREFIX:PATH=/usr/share \
+    -DMAN_INSTALL_DIR:PATH=/usr/man \
+    -DCMAKE_BUILD_TYPE:STRING=Release \
+    -DBUILD_SHARED_LIBS:BOOL=ON \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+    -DCMAKE_BUILD_STRIP:BOOL=FALSE \
+    -DXDG_STD:BOOL=TRUE \
+    -DPACKAGE_MODE:BOOL=TRUE \
+    -DPLUGIN_DIR:PATH=/usr/lib${LIBDIRSUFFIX}/${NAME} \
+    -DGAMEINDEX_DIR:PATH=/var/lib/${NAME} \
+    -DGLSL_SHADER_DIR:PATH=/usr/share/${NAME} \
+    -DUSER_CMAKE_C_FLAGS:STRING="${SLKCFLAGS}" \
+    -DUSER_CMAKE_CXX_FLAGS:STRING="${SLKCFLAGS}" \
+    || exit $?
 
-mkdir -p ${PKG}/usr/lib/ps2emu/plugins
+  make -j${NJOBS} || make || exit $?
+  make install/fast DESTDIR=${PKG} || exit $?
 
-mkdir -p ${PKG}/usr/share/${NAME}/Langs
-cp -r bin/{*.xml,.pixmaps,patches} ${PKG}/usr/share/${NAME}/ || exit 1
-
-cp -r bin/Langs/* ${PKG}/usr/share/${NAME}/Langs/ || exit 1
+) || exit $?
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-mkdir -p ${PKG}/usr/share/applications
-cat > ${PKG}/usr/share/applications/${NAME}.desktop <<EOF
-[Desktop Entry]
-Name=PCSX2
-Comment=Open Source Sony PlayStation 2 emulator
-Exec=${NAME}
-Icon=${NAME}
-Terminal=false
-Type=Application
-Categories=Game;Emulator;
-EOF
+mv ${PKG}/var/lib/${NAME}/GameIndex.dbf \
+  ${PKG}/var/lib/${NAME}/GameIndex.dbf.new || exit 1
 
-mkdir -p ${PKG}/usr/share/icons/hicolor/64x64/apps
-convert windows/Cdrom02.ico -depth 8 \
-        ${PKG}/usr/share/icons/hicolor/64x64/apps/${NAME}.png || exit 1
+rm -rf ${PKG}/usr/share/pixmaps
+mkdir -p ${PKG}/usr/share/icons/hicolor/128x128/apps
+convert linux_various/${NAME}.xpm -depth 8 \
+  ${PKG}/usr/share/icons/hicolor/128x128/apps/${NAME}.png || exit 1
 
-mv "Docs/readme 0.9.4.txt" "Docs/readme-0.9.4.txt"
+for res in 16 22 24 32 36 48 64 72 96 ;do
+  dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
+  mkdir -p ${dir}
+  convert linux_various/${NAME}.xpm -filter Lanczos \
+    -resize ${res}x${res} -depth 8 ${dir}/${NAME}.png || exit 1
+done
 
 # Add a documentation directory:
-mkdir -p ${DOCDIR}/html
+mkdir -p ${DOCDIR}
 cp -a \
-  Docs/*.txt ${CWD}/ChangeLog.SB \
+  COPYING* ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
-cp -a bin/compat_list/* ${DOCDIR}/html/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -234,6 +245,43 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/update-desktop-database ]; then
+  \${CHROOT} /usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1
+fi
+if [ -x usr/bin/gtk-update-icon-cache ]; then
+  \${CHROOT} /usr/bin/touch --no-create /usr/share/icons/hicolor >/dev/null 2>&1
+  \${CHROOT} /usr/bin/gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1
+fi
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find var/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -241,11 +289,12 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${SNAPUPDATE} ${CWD}/apply-patches.sh ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${SNAPUPDATE} ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
-  install -m0644 ${CWD}/patches/*.gz \
-                 ${SBDIR}/patches/
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:

@@ -144,6 +144,7 @@ done
     ApplyPatch ${file}
   done
 )
+ApplyPatch 0001-block-bfq-be-sure-to-schedule-a-dispatch-after-chang.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA

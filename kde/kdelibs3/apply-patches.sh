@@ -7,7 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/kdelibs-utempter.diff.gz | patch -p1 --verbose --backup --suffix=.orig
 
 # Set .kde3 as home dir
-zcat ${SB_PATCHDIR}/kdelibs-3.5.10-kde3-standarddirs.patch.gz | patch -p0 --verbose --backup -z .kde3dirs --suffix=.orig
+patch -p1 --verbose --backup -z .kde3dirs -i ${SB_PATCHDIR}/kdelibs-3.5.10-kde3-standarddirs.patch
 
 # Fedora patches
 zcat ${SB_PATCHDIR}/kdelibs-3.0.0-ndebug.patch.gz | patch -p1 --verbose --backup --suffix=.orig
@@ -56,6 +56,8 @@ patch -p4 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-3.5.10-kde
 patch -p4 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-3.5.10-kmenubar-struct.patch
 # kde4.4 backport
 patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-3.5.10-kde-config_kde-version.patch
+# cups 1.6 patch adapted from Trinity Desktop
+patch -p1 --verbose --backup -z .cups16 -i ${SB_PATCHDIR}/kdelibs-3.5.10-cups-1.6.patch
 
 # security fixes
 ## security fixes
@@ -88,7 +90,6 @@ zcat ${SB_PATCHDIR}/inotify.patch.gz | patch -p0 -E --backup --verbose
 zcat ${SB_PATCHDIR}/fix-async_configfile.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/fix-gmail_html_elemtimpl.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/fix-kwallet.patch.gz | patch -p1 -E --backup --verbose
-
 
 # KDEmod patches
 # Bugging iconview.

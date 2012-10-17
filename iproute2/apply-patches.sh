@@ -13,5 +13,6 @@ zcat ${SB_PATCHDIR}/${NAME}-example-cbq-service.patch.gz | patch -p1 -E --backup
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.6.35-print-route.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.6.39-create-peer-veth-without-a-name.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.6.39-lnstat-dump-to-stdout.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.6.0-List-interfaces-without-net-address-by-default.patch
 
 set +e +o pipefail

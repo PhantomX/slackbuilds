@@ -17,9 +17,13 @@ patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.16-webco
 # Remove "AC_PROG_CC' was expanded before it was required" warning
 patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-conf264.patch
 ## Patches which must be discussed with upstream
+# Add -D_FILE_OFFSET_BITS=64 when this enabled stat64
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.19-check-largefile-support.patch
 # driver/test-passwd tty segfaults
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.12-test-passwd-segv-tty.patch
 # patch to compile driver/test-xdpms
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.12-tests-miscfix.patch
+# xscreensaver-5.17-2 and above
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.17-blurb-hndl-test-passwd.patch
 
 set +e +o pipefail

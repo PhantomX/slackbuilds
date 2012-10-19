@@ -210,11 +210,11 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
-  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+  install -pm0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/apply-patches.sh ${SBDIR}/
-  install -m0755 ${CWD}/${NAME}.SlackBuild \
+  install -pm0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
-  install -m0644 ${CWD}/patches/*.* \
+  install -pm0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
   rmdir ${SBDIR}/patches
 fi

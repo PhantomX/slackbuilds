@@ -20,6 +20,7 @@ snap=${snap:-$(date +%Y%m%d)}
 gitbranch=${gitbranch:-master}
 gittree=${gittree:-${gitbranch}}
 
+[ -n "${tag}" ] && snap="${tag}"
 [ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
 [ "${gitbranch}" = "${master}" ] || gitbranch="origin/${gitbranch}"
 

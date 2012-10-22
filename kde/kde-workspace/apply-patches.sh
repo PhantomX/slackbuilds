@@ -77,20 +77,27 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.95-kdm_xauth.patch
 # kwin/llvmpipe whitelist
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-kwin_llvmpipe_whitelist.patch
 
-if [ ${SB_SYSTEMD} = "YES" ] ;then
+if [ "${SB_SYSTEMD}" = "YES" ] ;then
   # pam/systemd bogosity: kdm restart/shutdown does not work 
   # http://bugzilla.redhat.com/796969
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
 
   # initial systemd support
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systemd-shutdown.patch
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/powerdevil-systemd-policyagent.patch
+  # Support for switching users with systemd - rh#859347
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.9.2-systemd-switch-user.patch
+  # systemd_inhibit work-in-progress
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.9.2-systemd_inhibit.patch
 fi
 
 # fontconfig-2.10+, support $XDG_CONFIG_HOME/fontconfig/fonts.conf
 # https://bugs.kde.org/show_bug.cgi?id=304317
 # http://svnweb.mageia.org/packages/cauldron/kdebase4-workspace/current/SOURCES/kdebase-workspace-4.9.0-fontconfigdir.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-fontconfigdir.patch
+
+# DPMS timeout reset related fixes, https://bugs.kde.org/295164
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-r106793.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-r106794.patch
 
 ## upstream patches
 

@@ -22,7 +22,7 @@ fi
 zcat ${SB_PATCHDIR}/ncurses.mkhashsize.diff.gz | patch -p1 --verbose
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-config.patch
-zcat ${SB_PATCHDIR}/ncurses-libs.patch.gz | patch -p1 --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-libs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-urxvt.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-kbs.patch
 

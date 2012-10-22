@@ -218,9 +218,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
 
-#rhbz 847548
-ApplyPatch virtio-scsi-Initialize-scatterlist-structure.patch
-
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 
 set +e +o pipefail +o xtrace

@@ -104,7 +104,8 @@ for obj in objects:
         trust[obj['CKA_LABEL']] = True
     elif obj['CKA_TRUST_CODE_SIGNING'] == 'CKT_NSS_TRUSTED_DELEGATOR':
         trust[obj['CKA_LABEL']] = True
-    elif obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_UNTRUSTED':
+    # NSS recently changed CKT_NSS_UNTRUSTED to CKT_NSS_NOT_TRUSTED
+    elif obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_UNTRUSTED' or obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_NOT_TRUSTED':
         print '!'*74
         print "UNTRUSTED BUT NOT BLACKLISTED CERTIFICATE FOUND: %s" % obj['CKA_LABEL']
         print '!'*74

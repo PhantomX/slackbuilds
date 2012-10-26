@@ -98,6 +98,8 @@ ApplyPatch remount-no-shrink-dcache.patch
 # reisefs
 
 # ext4
+# https://lkml.org/lkml/2012/10/24/14
+ApplyPatch ext4-fix-potential-fs-corrupting.patch
 
 # ext3
 
@@ -217,6 +219,12 @@ ApplyPatch lis3-improve-handling-of-null-rate.patch
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
+
+#rhbz 862877 864824 CVE-2012-0957
+ApplyPatch fix-stack-memory-content-leak-via-UNAME26.patch
+
+#rhbz 867344
+ApplyPatch dont-call-cifs_lookup-on-hashed-negative-dentry.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

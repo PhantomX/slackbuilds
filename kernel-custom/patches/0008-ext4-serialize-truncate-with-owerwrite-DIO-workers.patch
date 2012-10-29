@@ -1,0 +1,61 @@
+From 69e4026a2d104ffcf1b935bc889f8abcbfbb29ec Mon Sep 17 00:00:00 2001
+From: Dmitry Monakhov <dmonakhov@openvz.org>
+Date: Sat, 29 Sep 2012 00:58:26 -0400
+Subject: [PATCH 08/13] ext4: serialize truncate with owerwrite DIO workers
+
+Jan Kara have spotted interesting issue:
+There are  potential data corruption issue with  direct IO overwrites
+racing with truncate:
+ Like:
+  dio write                      truncate_task
+  ->ext4_ext_direct_IO
+   ->overwrite == 1
+    ->down_read(&EXT4_I(inode)->i_data_sem);
+    ->mutex_unlock(&inode->i_mutex);
+                               ->ext4_setattr()
+                                ->inode_dio_wait()
+                                ->truncate_setsize()
+                                ->ext4_truncate()
+                                 ->down_write(&EXT4_I(inode)->i_data_sem);
+    ->__blockdev_direct_IO
+     ->ext4_get_block
+     ->submit_io()
+    ->up_read(&EXT4_I(inode)->i_data_sem);
+                                 # truncate data blocks, allocate them to
+                                 # other inode - bad stuff happens because
+                                 # dio is still in flight.
+
+In order to serialize with truncate dio worker should grab extra i_dio_count
+reference before drop i_mutex.
+
+Reviewed-by: Jan Kara <jack@suse.cz>
+Signed-off-by: Dmitry Monakhov <dmonakhov@openvz.org>
+Signed-off-by: "Theodore Ts'o" <tytso@mit.edu>
+(cherry picked from commit 1f555cfa29e8f787d675e8390f88ce517a37271a)
+---
+ fs/ext4/inode.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
+index 3b03dd6..484a327 100644
+--- a/fs/ext4/inode.c
++++ b/fs/ext4/inode.c
+@@ -3008,6 +3008,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
+ 		overwrite = *((int *)iocb->private);
+ 
+ 		if (overwrite) {
++			atomic_inc(&inode->i_dio_count);
+ 			down_read(&EXT4_I(inode)->i_data_sem);
+ 			mutex_unlock(&inode->i_mutex);
+ 		}
+@@ -3105,6 +3106,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
+ 	retake_lock:
+ 		/* take i_mutex locking again if we do a ovewrite dio */
+ 		if (overwrite) {
++			inode_dio_done(inode);
+ 			up_read(&EXT4_I(inode)->i_data_sem);
+ 			mutex_lock(&inode->i_mutex);
+ 		}
+-- 
+1.7.12.rc0.22.gcdd159b
+

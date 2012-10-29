@@ -93,7 +93,7 @@ fi
 # fontconfig-2.10+, support $XDG_CONFIG_HOME/fontconfig/fonts.conf
 # https://bugs.kde.org/show_bug.cgi?id=304317
 # http://svnweb.mageia.org/packages/cauldron/kdebase4-workspace/current/SOURCES/kdebase-workspace-4.9.0-fontconfigdir.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.0-fontconfigdir.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.2-fontconfigdir.patch
 
 # DPMS timeout reset related fixes, https://bugs.kde.org/295164
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-r106793.patch

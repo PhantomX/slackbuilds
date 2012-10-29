@@ -98,8 +98,6 @@ ApplyPatch remount-no-shrink-dcache.patch
 # reisefs
 
 # ext4
-# https://lkml.org/lkml/2012/10/24/14
-ApplyPatch ext4-fix-potential-fs-corrupting.patch
 
 # ext3
 
@@ -220,11 +218,22 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
 
-#rhbz 862877 864824 CVE-2012-0957
-ApplyPatch fix-stack-memory-content-leak-via-UNAME26.patch
-
 #rhbz 867344
 ApplyPatch dont-call-cifs_lookup-on-hashed-negative-dentry.patch
+
+#rhbz 869904 869909 CVE-2012-4508
+ApplyPatch 0001-ext4-ext4_inode_info-diet.patch
+ApplyPatch 0002-ext4-give-i_aiodio_unwritten-a-more-appropriate-name.patch
+ApplyPatch 0003-ext4-fix-unwritten-counter-leakage.patch
+ApplyPatch 0004-ext4-completed_io-locking-cleanup.patch
+ApplyPatch 0005-ext4-serialize-dio-nonlocked-reads-with-defrag-worke.patch
+ApplyPatch 0006-ext4-serialize-unlocked-dio-reads-with-truncate.patch
+ApplyPatch 0007-ext4-endless-truncate-due-to-nonlocked-dio-readers.patch
+ApplyPatch 0008-ext4-serialize-truncate-with-owerwrite-DIO-workers.patch
+ApplyPatch 0009-ext4-punch_hole-should-wait-for-DIO-writers.patch
+ApplyPatch 0010-ext4-fix-ext_remove_space-for-punch_hole-case.patch
+ApplyPatch 0011-ext4-fix-ext4_flush_completed_IO-wait-semantics.patch
+ApplyPatch 0012-ext4-serialize-fallocate-with-ext4_convert_unwritten.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

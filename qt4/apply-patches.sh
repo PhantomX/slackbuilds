@@ -87,7 +87,7 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-tp-qtreeview-kpackagekit-crash.pat
 
 # https://bugs.webkit.org/show_bug.cgi?id=63941
 # -Wall + -Werror = fail
-ApplyPatch qt-4.8.1-webkit-no_Werror.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.3-no_Werror.patch
 
 # revert qlist.h commit that seems to induce crashes in qDeleteAll<QList (QTBUG-22037)
 ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-22037.patch
@@ -96,7 +96,7 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-22037.patch
 ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-14724.patch 
 
 # Buttons in Qt applications not clickable when run under gnome-shell (#742658, QTBUG-21900)
-ApplyPatch  qt-everywhere-opensource-src-4.8.0-QTBUG-21900.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-21900.patch
 
 # workaround
 # sql/drivers/tds/qsql_tds.cpp:341:49: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
@@ -107,10 +107,20 @@ ApplyPatch qt-everywhere-opensource-src-4.8.3-icu_no_debug.patch
 ApplyPatch qt-everywhere-opensource-src-4.8.0-ld-gold.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=810500
 ApplyPatch qt-everywhere-opensource-src-4.8.2--assistant-crash.patch
+# https://bugzilla.redhat.com/show_bug.cgi?id=694385
+# https://bugs.kde.org/show_bug.cgi?id=249217
+# https://bugreports.qt-project.org/browse/QTBUG-4862
+# QDir::homePath() should account for an empty HOME environment variable on X11
+ApplyPatch qt-everywhere-opensource-src-4.8.3-QTBUG-4862.patch
+
+# poll support
+ApplyPatch qt-4.8-poll.patch
 
 # security patches
 # CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code
 ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
+# disable compression for SSL/TLS to avoid CRIME
+ApplyPatch 0041-Disable-SSL-compression-by-default.patch
 
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore
@@ -118,5 +128,11 @@ ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
+# find qdevice.pri even for installed qt builds
+# https://codereview.qt-project.org/#change,34507
+ApplyPatch qt-everywhere-opensource-src-4.8.3-qdevice_pri.patch
+# followup for fix JIT crash
+# https://bugreports.qt-project.org/browse/QTBUG-27322
+ApplyPatch qt-everywhere-opensource-src-4.8.3-QTBUG-27322.patch
 
 set +e +o pipefail

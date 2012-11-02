@@ -60,11 +60,16 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
+# cache solid device icon so that it does not poll udisks2 constantly (rhbz#868530)
+# see https://git.reviewboard.kde.org/r/107030/
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.2-cache-solid-device-in-kfileplaces.patch
 
 # Trunk patches
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex
 zcat ${SB_PATCHDIR}/kdelibs-4.3.1-CVE-2009-2702.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.x-CVE-2012-4515.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.x-CVE-2012-4514.patch
 
 set +e +o pipefail

@@ -48,7 +48,7 @@ PKG=${PKG:-${TMP}/package-${NAME}}
 if [ "${SNAPBUILD}" = "YES" ] ;then
   VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
 else
-  VERSION=${VERSION:-2.5.6}
+  VERSION=${VERSION:-2.6.0}
 fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -62,7 +62,7 @@ else
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
 SLKDIST=${SLKDIST:-Slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -145,63 +145,103 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-rm -rf plugins/ADM_videoFilters/Ass/ADM_libAss
-rm -rf plugins/ADM_audioEncoders/twolame/ADM_libtwolame
-rm -rf plugins/ADM_audioDecoders/ADM_ad_mad/ADM_libMad
-rm -rf plugins/ADM_audioDecoders/ADM_ad_ac3/ADM_liba52
+# Remove sources of bundled libraries.
+rm -rf avidemux_plugins/ADM_videoFilters6/ass/ADM_libass
+rm -rf avidemux_plugins/ADM_audioEncoders/twolame/ADM_libtwolame
+rm -rf avidemux_plugins/ADM_audioDecoders/ADM_ad_mad/ADM_libMad 
+rm -rf avidemux_plugins/ADM_audioDecoders/ADM_ad_ac3/ADM_liba52 
 
-sed -i -e "/startDir/s|lib|lib${LIBDIRSUFFIX}|g" \
-  avidemux/main.cpp avidemux/ADM_core/src/ADM_fileio.cpp || exit 1
+if [ "${SB_GTK}" != "YES" ] ;then
+  sed -i.nogtk -e 's|DO_GTK    1)|DO_GTK    0)|g' avidemux_plugins/CMakeLists.txt || exit 1
+fi
+if [ "${SB_QT}" != "YES" ] ;then
+  sed -i.noqt -e 's|DO_QT4    1)|DO_QT4    0)|g' avidemux_plugins/CMakeLists.txt || exit 1
+fi
 
-sed -i -e '/add_libs_all_targets/s|dts|dca|g' avidemux/CMakeLists.txt || exit 1
-
-[ "${SB_GTK}" = "YES" ] || SB_GTK="NO"
-[ "${SB_QT}" = "YES" ] || SB_QT="NO"
+export CFLAGS="${SLKCFLAGS}"
+export CXXFLAGS="${SLKCFLAGS}"
+export FFLAGS="${SLKCFLAGS}"
+export LDFLAGS="${LDFLAGS} -Wl,--as-needed"
 
 SB_CONFIGURE() {
-  CFLAGS="${SLKCFLAGS}" \
-  CXXFLAGS="${SLKCFLAGS} -fpermissive" \
-  cmake .. \
+  cmake \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DCMAKE_INSTALL_LIBDIR:PATH=/usr/lib${LIBDIRSUFFIX} \
     -DLIB_SUFFIX=${LIBDIRSUFFIX} \
     -DSYSCONF_INSTALL_DIR=/etc \
     -DMAN_INSTALL_DIR:PATH=/usr/man \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_SKIP_RPATH:BOOL=ON \
     -DCMAKE_VERBOSE_MAKEFILE=ON \
-    -DGTK:BOOL=${SB_GTK} \
-    -DQT4:BOOL=${SB_QT} \
     -DARTS:BOOL=N \
     -DESD:BOOL=N \
-    -DAVIDEMUX_SOURCE_DIR=${SB_SROOT} \
-    -DAVIDEMUX_CORECONFIG_DIR=${SB_SROOT}/build/config \
-    -DAVIDEMUX_INSTALL_PREFIX=${SB_SROOT}/build \
     -D_X264_INCLUDE_DIR=/usr/include/x264 \
     -DX264_INCLUDE_DIR=/usr/include/x264 \
     $@
 }
 
-mkdir -p build
-( cd build || exit 1
+mkdir -p build_core
+( cd build_core || exit 1
 
-  SB_CONFIGURE || exit 1
+  SB_CONFIGURE ../avidemux_core || exit $?
 
-  make -j${NJOBS} || make || exit 1
-  make -j${NJOBS} -C plugins || make -C plugins || exit 1
-  make install DESTDIR=${PKG} || exit 1
-  make install DESTDIR=${PKG} -C plugins || exit 1
+  make -j${NJOBS} -k || make || exit $?
+  make install DESTDIR=${PKG} || exit $?
 
-) || exit 1
+) || exit $?
 
-find ${PKG} -name "*.so*" -exec chmod 0755 {} ';'
+# Build cli interface
+mkdir -p build_cli
+( cd build_cli || exit 1
+  SB_CONFIGURE \
+    -DFAKEROOT:PATH=${PKG} \
+    ../avidemux/cli || exit $?
+    make -j${NJOBS} -k || make || exit $?
+    make install DESTDIR=${PKG} || exit $?
+) || exit $?
+
+
+if [ "${SB_GTK}" = "YES" ] ;then
+# Build GTK gui
+  mkdir -p build_gtk
+  ( cd build_gtk || exit 1
+    SB_CONFIGURE \
+      -DFAKEROOT:PATH=${PKG} \
+      ../avidemux/gtk
+    make -j${NJOBS} -k || make || exit $?
+    make install DESTDIR=${PKG} || exit $?
+  ) || exit $?
+fi
+
+if [ "${SB_QT}" = "YES" ] ;then
+  # Build QT4 gui
+  mkdir -p build_qt4
+  ( cd build_qt4 || exit 1
+    SB_CONFIGURE \
+      -DFAKEROOT:PATH=${PKG} \
+      ../avidemux/qt4
+    make -j${NJOBS} -k || make || exit $?
+    make install DESTDIR=${PKG} || exit $?
+  ) || exit $?
+fi
+
+# Build avidemux_plugins
+mkdir -p build_plugins
+  ( cd build_plugins || exit 1
+    SB_CONFIGURE \
+      -DFAKEROOT:PATH=${PKG} \
+      -DAVIDEMUX_SOURCE_DIR:PATH=${SB_SROOT} \
+      -DPLUGIN_UI:STRING=ALL \
+      -DUSE_EXTERNAL_LIBASS:BOOL=TRUE \
+      -DUSE_EXTERNAL_LIBMAD:BOOL=TRUE \
+      -DUSE_EXTERNAL_LIBA52:BOOL=TRUE \
+      -DUSE_EXTERNAL_TWOLAME:BOOL=TRUE \
+       ../avidemux_plugins || exit $?
+    make -j${NJOBS} -k || make || exit $?
+    make install DESTDIR=${PKG} || exit $?
+) || exit $?
+
+find ${PKG} -name '*.so*' -exec chmod 0755 {} ';'
 find ${PKG} -type f -name "*.la" -exec rm -f {} ';'
-
-( cd ${PKG}/usr/lib${LIBDIRSUFFIX}/ADM_plugins/videoEncoder/x264
-  for file in *.xml ;do
-    mv "${file}" "${file// /_}"
-  done
-)
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -217,7 +257,7 @@ cat > ${PKG}/usr/share/applications/${NAME}_${1}.desktop <<EOF
 Name=Avidemux Video Editor ($2)
 Comment=Graphical video editing tool
 Icon=${NAME}
-Exec=${NAME}2_$1
+Exec=${NAME}3_$1
 Terminal=false
 Type=Application
 Categories=$2;AudioVideo;
@@ -243,8 +283,10 @@ mkdir -p ${DOCDIR}
 cp -a \
   AUTHORS COPYING ChangeLog README NEWS THANKS TODO History \
   ${CWD}/ChangeLog.SB ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -271,9 +313,26 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/update-desktop-database ]; then
+  \${CHROOT} /usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1
+fi
+if [ -x usr/bin/gtk-update-icon-cache ]; then
+  \${CHROOT} /usr/bin/touch --no-create /usr/share/icons/hicolor >/dev/null 2>&1
+  \${CHROOT} /usr/bin/gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1
+fi
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
-
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches

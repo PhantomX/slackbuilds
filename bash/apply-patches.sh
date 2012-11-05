@@ -41,5 +41,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-rc2-logout.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-coverity.patch
 # Don't call malloc in signal handler
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-defer-sigchld-trap.patch
+# rh#799958, updated info about trap
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-manpage_trap.patch
+# rh#695656, block the signal and unblock it after the new handler is installed
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-signal.patch
 
 set +e +o pipefail

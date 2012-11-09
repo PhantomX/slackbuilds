@@ -234,7 +234,6 @@ ApplyPatch 0009-ext4-punch_hole-should-wait-for-DIO-writers.patch
 ApplyPatch 0010-ext4-fix-ext_remove_space-for-punch_hole-case.patch
 ApplyPatch 0011-ext4-fix-ext4_flush_completed_IO-wait-semantics.patch
 ApplyPatch 0012-ext4-serialize-fallocate-with-ext4_convert_unwritten.patch
-ApplyPatch ext4-fix-unjournaled-inode-bitmap-modification.patch
 
 #rhbz 871923 871848 CVE-2012-4565
 ApplyPatch net-fix-divide-by-zero-in-tcp-algorithm-illinois.patch

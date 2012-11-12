@@ -51,8 +51,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
 # patch FindSamba.cmake to find samba4 libs (using pkg-config hints)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.2-FindSamba_samba4.patch
 
-# krunner using ~/Documents as working directory, revert kde#108510, kde#183534
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.2-revert-kde\#108510-kde\#183534.patch
+# backport FindKipi.cmake from Digikam SC 3.0.0-beta1 for libkipi 2 (kde#307213)
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.1-FindKipi-libkipi2.patch
 
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
@@ -60,16 +60,11 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-# cache solid device icon so that it does not poll udisks2 constantly (rhbz#868530)
-# see https://git.reviewboard.kde.org/r/107030/
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.2-cache-solid-device-in-kfileplaces.patch
 
 # Trunk patches
 
 # security fix
 ## Not Upstreamed? why not ? -- Rex
 zcat ${SB_PATCHDIR}/kdelibs-4.3.1-CVE-2009-2702.patch.gz | patch -p1 --verbose --backup --suffix=.orig
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.x-CVE-2012-4515.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.x-CVE-2012-4514.patch
 
 set +e +o pipefail

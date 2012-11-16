@@ -240,6 +240,13 @@ ApplyPatch net-fix-divide-by-zero-in-tcp-algorithm-illinois.patch
 
 ApplyPatch uprobes-upstream-backport.patch
 
+#rhbz 871078
+ApplyPatch usb-audio-fix-crash-at-re-preparing-the-PCM-stream.patch
+ApplyPatch USB-EHCI-urb-hcpriv-should-not-be-NULL.patch
+ApplyPatch USB-report-submission-of-active-URBs.patch
+
+ApplyPatch smp_irq_move_cleanup_interrupt.patch
+
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 
 set +e +o pipefail +o xtrace

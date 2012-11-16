@@ -1,0 +1,125 @@
+At Thu, 08 Nov 2012 08:31:35 +0100,
+Daniel Mack wrote:
+(snip)
+> >> We can't simply stop both endpoints in the prepare callback.
+> > 
+> > The new function doesn't stop the stream by itself but it just syncs
+> > if the stream is being stopped beforehand.  So, it's safe to call it
+> > there.
+> > 
+> > Maybe the name was confusing.  It should have been like
+> > snd_usb_endpoint_sync_pending_stop() or such.
+> 
+> Ah, right. I was errornously looking closer to Alan's patch but then
+> replied to yours. Alright then - thanks for explaining :)
+
+OK, thanks for checking.
+
+FWIW, below is the patch I applied now to for-linus branch.
+Renamed the function, added the comment and put NULL check to the
+function to simplify.
+
+
+Takashi
+
+---
+From: Takashi Iwai <tiwai@suse.de>
+Subject: [PATCH] ALSA: usb-audio: Fix crash at re-preparing the PCM stream
+
+There are bug reports of a crash with USB-audio devices when PCM
+prepare is performed immediately after the stream is stopped via
+trigger callback.  It turned out that the problem is that we don't
+wait until all URBs are killed.
+
+This patch adds a new function to synchronize the pending stop
+operation on an endpoint, and calls in the prepare callback for
+avoiding the crash above.
+
+Bugzilla: https://bugzilla.kernel.org/show_bug.cgi?id=49181
+
+Reported-and-tested-by: Artem S. Tashkinov <t.artem@lycos.com>
+Cc: <stable@vger.kernel.org> [v3.6]
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+---
+ sound/usb/endpoint.c | 13 +++++++++++++
+ sound/usb/endpoint.h |  1 +
+ sound/usb/pcm.c      |  3 +++
+ 3 files changed, 17 insertions(+)
+
+diff --git a/sound/usb/endpoint.c b/sound/usb/endpoint.c
+index 7f78c6d..34de6f2 100644
+--- a/sound/usb/endpoint.c
++++ b/sound/usb/endpoint.c
+@@ -35,6 +35,7 @@
+ 
+ #define EP_FLAG_ACTIVATED	0
+ #define EP_FLAG_RUNNING		1
++#define EP_FLAG_STOPPING	2
+ 
+ /*
+  * snd_usb_endpoint is a model that abstracts everything related to an
+@@ -502,10 +503,20 @@ static int wait_clear_urbs(struct snd_usb_endpoint *ep)
+ 	if (alive)
+ 		snd_printk(KERN_ERR "timeout: still %d active urbs on EP #%x\n",
+ 					alive, ep->ep_num);
++	clear_bit(EP_FLAG_STOPPING, &ep->flags);
+ 
+ 	return 0;
+ }
+ 
++/* sync the pending stop operation;
++ * this function itself doesn't trigger the stop operation
++ */
++void snd_usb_endpoint_sync_pending_stop(struct snd_usb_endpoint *ep)
++{
++	if (ep && test_bit(EP_FLAG_STOPPING, &ep->flags))
++		wait_clear_urbs(ep);
++}
++
+ /*
+  * unlink active urbs.
+  */
+@@ -918,6 +929,8 @@ void snd_usb_endpoint_stop(struct snd_usb_endpoint *ep,
+ 
+ 		if (wait)
+ 			wait_clear_urbs(ep);
++		else
++			set_bit(EP_FLAG_STOPPING, &ep->flags);
+ 	}
+ }
+ 
+diff --git a/sound/usb/endpoint.h b/sound/usb/endpoint.h
+index 6376ccf..3d4c970 100644
+--- a/sound/usb/endpoint.h
++++ b/sound/usb/endpoint.h
+@@ -19,6 +19,7 @@ int snd_usb_endpoint_set_params(struct snd_usb_endpoint *ep,
+ int  snd_usb_endpoint_start(struct snd_usb_endpoint *ep, int can_sleep);
+ void snd_usb_endpoint_stop(struct snd_usb_endpoint *ep,
+ 			   int force, int can_sleep, int wait);
++void snd_usb_endpoint_sync_pending_stop(struct snd_usb_endpoint *ep);
+ int  snd_usb_endpoint_activate(struct snd_usb_endpoint *ep);
+ int  snd_usb_endpoint_deactivate(struct snd_usb_endpoint *ep);
+ void snd_usb_endpoint_free(struct list_head *head);
+diff --git a/sound/usb/pcm.c b/sound/usb/pcm.c
+index 37428f7..5c12a3f 100644
+--- a/sound/usb/pcm.c
++++ b/sound/usb/pcm.c
+@@ -552,6 +552,9 @@ static int snd_usb_pcm_prepare(struct snd_pcm_substream *substream)
+	if (snd_BUG_ON(!subs->data_endpoint))
+		return -EIO;
+ 
++	snd_usb_endpoint_sync_pending_stop(subs->sync_endpoint);
++	snd_usb_endpoint_sync_pending_stop(subs->data_endpoint);
++
+	/* some unit conversions in runtime */
+	subs->data_endpoint->maxframesize =
+		bytes_to_frames(runtime, subs->data_endpoint->maxpacksize);
+-- 
+1.8.0
+
+
+--
+To unsubscribe from this list: send the line "unsubscribe linux-kernel" in
+the body of a message to majordomo@vger.kernel.org
+More majordomo info at  http://vger.kernel.org/majordomo-info.html
+Please read the FAQ at  http://www.tux.org/lkml/

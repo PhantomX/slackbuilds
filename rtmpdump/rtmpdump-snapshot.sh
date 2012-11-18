@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://git.mplayer2.org/${module}.git"
+snaproot="git://git.ffmpeg.org/${module}.git"
 
 tmp=$(mktemp -d)
 

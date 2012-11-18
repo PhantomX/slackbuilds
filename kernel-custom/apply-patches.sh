@@ -235,9 +235,6 @@ ApplyPatch 0010-ext4-fix-ext_remove_space-for-punch_hole-case.patch
 ApplyPatch 0011-ext4-fix-ext4_flush_completed_IO-wait-semantics.patch
 ApplyPatch 0012-ext4-serialize-fallocate-with-ext4_convert_unwritten.patch
 
-#rhbz 871923 871848 CVE-2012-4565
-ApplyPatch net-fix-divide-by-zero-in-tcp-algorithm-illinois.patch
-
 ApplyPatch uprobes-upstream-backport.patch
 
 #rhbz 871078
@@ -245,7 +242,11 @@ ApplyPatch usb-audio-fix-crash-at-re-preparing-the-PCM-stream.patch
 ApplyPatch USB-EHCI-urb-hcpriv-should-not-be-NULL.patch
 ApplyPatch USB-report-submission-of-active-URBs.patch
 
+#rhbz 869341
 ApplyPatch smp_irq_move_cleanup_interrupt.patch
+
+#rhbz 870562
+ApplyPatch keyspan.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

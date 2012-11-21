@@ -13,6 +13,6 @@ CACHE_SWAP=$(sed -e 's/#.*//g' ${SQUID_CONF} | \
 for adir in ${CACHE_SWAP}; do
   if [ ! -d ${adir}/00 ]; then
     echo -n "init_cache_dir ${adir}... "
-    /usr/sbin/squid -z -F -f ${SQUID_CONF} >> /var/log/squid/squid.out 2>&1
+    /usr/sbin/squid -N -z -F -f ${SQUID_CONF} >> /var/log/squid/squid.out 2>&1
   fi
 done

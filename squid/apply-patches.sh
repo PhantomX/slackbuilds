@@ -5,10 +5,16 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 if [ "${PVER}" != "0" ] ;then
+  mkdir -p patches
+  SB_CP="filterdiff -p0 -x 'doc/release-notes/*'"
   for i in ${PVER} ; do
-    patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}-${SVER}-${i}.patch \
-      || patch -p0 --backup --verbose -i ${SB_PATCHDIR}/updates/${NAME}-${SSVER}-${i}.patch
+    ${SB_CP} ${SB_PATCHDIR}/updates/${NAME}-${SVER}-${i}.patch \
+      > patches/${NAME}-${SVER}-${i}.patch \
+    || ${SB_CP} ${SB_PATCHDIR}/updates/${NAME}-${SVER}-${i}.patch \
+      > patches/${NAME}-${SSVER}-${i}.patch
   done
+  patch -p0 --backup --verbose -i patches/${NAME}-${SVER}-${i}.patch \
+    || patch -p0 --backup --verbose -i patches/${NAME}-${SSVER}-${i}.patch
 fi
 
 zcat ${SB_PATCHDIR}/squid-3.1.0.9-config.patch.gz | patch -p1 -E --backup --verbose

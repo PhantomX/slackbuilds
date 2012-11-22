@@ -14,5 +14,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.3.1-gcc47-darwin.pat
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.3.1-noswig-rubymethod.patch
 # On F-17, directory for C ruby files changed to use vendorarch directory
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.3.1-ruby19-vendorarch.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-perl.patch
 
 set +e +o pipefail

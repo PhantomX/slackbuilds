@@ -18,8 +18,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-cmsgalign.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-retcode.patch
 # ntpbz #992
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p4-rtnetlink.patch
+# ntpbz #2309
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-hexpw.patch
 # ntpbz #898
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p4-htmldoc.patch
+# ntpbz #1402
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-updatebclient.patch
 # add missing nanokernel macros
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-nano.patch
 # fix precision calculation on fast CPUs
@@ -27,13 +31,17 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.4p7-getprecision.patch
 # ntpbz #1408
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-logdefault.patch
 # add option -m to lock memory
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p4-mlock.patch
+[ "${SB_AUTOGEN}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-mlock.patch
 # allow -u and -p options to be used twice (#639101)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p2-multiopts.patch
+[ "${SB_AUTOGEN}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-multiopts.patch
+# ntpbz #2040
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-identlen.patch
 # ntpbz #1670
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p3-broadcastdelay.patch
 # ntpbz #1671
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-delaycalib.patch
+# ntpbz #2019
+[ "${SB_AUTOGEN}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-pwcipher.patch
 
 ( cd ntpstat-${NSVER}
   # handle unknown clock types

@@ -12,5 +12,6 @@ zcat ${SB_PATCHDIR}/${NAME}-7.0-wctomb.patch.gz | patch -p0 -E --backup --verbos
 zcat ${SB_PATCHDIR}/${NAME}-7.0-dvddl.patch.gz | patch -p0 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-7.1-noevent.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-7.1-lastshort.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-7.1-format.patch
 
 set +e +o pipefail

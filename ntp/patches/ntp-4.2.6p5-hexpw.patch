@@ -1,0 +1,236 @@
+diff -up ntp-4.2.6p5/include/ntp_stdlib.h.hexpw ntp-4.2.6p5/include/ntp_stdlib.h
+--- ntp-4.2.6p5/include/ntp_stdlib.h.hexpw	2012-11-20 14:43:14.001139737 +0100
++++ ntp-4.2.6p5/include/ntp_stdlib.h	2012-11-20 14:43:14.047139771 +0100
+@@ -66,7 +66,8 @@ extern	int	authhavekey	(keyid_t);
+ extern	int	authistrusted	(keyid_t);
+ extern	int	authreadkeys	(const char *);
+ extern	void	authtrust	(keyid_t, u_long);
+-extern	int	authusekey	(keyid_t, int, const u_char *);
++extern	int	authusekey	(keyid_t, int, const char *);
++extern	int	authdecodekey	(const char *, u_char *, int);
+ 
+ extern	u_long	calyearstart	(u_long);
+ extern	const char *clockname	(int);
+diff -up ntp-4.2.6p5/libntp/authreadkeys.c.hexpw ntp-4.2.6p5/libntp/authreadkeys.c
+--- ntp-4.2.6p5/libntp/authreadkeys.c.hexpw	2009-12-09 08:36:36.000000000 +0100
++++ ntp-4.2.6p5/libntp/authreadkeys.c	2012-11-20 14:43:14.047139771 +0100
+@@ -3,7 +3,6 @@
+  */
+ #include <config.h>
+ #include <stdio.h>
+-#include <ctype.h>
+ 
+ #include "ntp_fp.h"
+ #include "ntp.h"
+@@ -77,7 +76,6 @@ authreadkeys(
+ 	char	buf[512];		/* lots of room for line */
+ 	u_char	keystr[20];
+ 	int	len;
+-	int	j;
+ 
+ 	/*
+ 	 * Open file.  Complain and return if it can't be opened.
+@@ -162,10 +160,7 @@ authreadkeys(
+ #endif /* OPENSSL */
+ 
+ 		/*
+-		 * Finally, get key and insert it. If it is longer than 20
+-		 * characters, it is a binary string encoded in hex;
+-		 * otherwise, it is a text string of printable ASCII
+-		 * characters.
++		 * Finally, get key and insert it.
+ 		 */
+ 		token = nexttok(&line);
+ 		if (token == NULL) {
+@@ -173,31 +168,15 @@ authreadkeys(
+ 			    "authreadkeys: no key for key %d", keyno);
+ 			continue;
+ 		}
+-		len = strlen(token);
+-		if (len <= 20) {
+-			MD5auth_setkey(keyno, keytype, (u_char *)token, len);
+-		} else {
+-			char	hex[] = "0123456789abcdef";
+-			u_char	temp;
+-			char	*ptr;
+-			int	jlim;
+-
+-			jlim = min(len, 2 * sizeof(keystr));
+-			for (j = 0; j < jlim; j++) {
+-				ptr = strchr(hex, tolower(token[j]));
+-				if (ptr == NULL) {
+-					msyslog(LOG_ERR,
+-					    "authreadkeys: invalid hex digit for key %d", keyno);
+-					continue;
+-				}
+-				temp = (u_char)(ptr - hex);
+-				if (j & 1)
+-					keystr[j / 2] |= temp;
+-				else
+-					keystr[j / 2] = temp << 4;
+-			}
+-			MD5auth_setkey(keyno, keytype, keystr, jlim / 2);
++
++		len = authdecodekey(token, keystr, sizeof (keystr));
++		if (!len) {
++			msyslog(LOG_ERR,
++				"authreadkeys: could not decode key %d", keyno);
++			continue;
+ 		}
++
++		MD5auth_setkey(keyno, keytype, keystr, len);
+ 	}
+ 	fclose(fp);
+ 	return (1);
+diff -up ntp-4.2.6p5/libntp/authusekey.c.hexpw ntp-4.2.6p5/libntp/authusekey.c
+--- ntp-4.2.6p5/libntp/authusekey.c.hexpw	2009-12-09 08:36:37.000000000 +0100
++++ ntp-4.2.6p5/libntp/authusekey.c	2012-11-20 14:43:14.048139771 +0100
+@@ -7,6 +7,7 @@
+ #include "ntp_types.h"
+ #include "ntp_string.h"
+ #include "ntp_stdlib.h"
++#include "ntp.h"
+ 
+ /*
+  * Types of ascii representations for keys.  "Standard" means a 64 bit
+@@ -19,17 +20,62 @@ int
+ authusekey(
+ 	keyid_t keyno,
+ 	int keytype,
+-	const u_char *str
++	const char *str
+ 	)
+ {
+-	const u_char *cp;
+ 	int len;
++	u_char key[20];
+ 
+-	cp = str;
+-	len = strlen((const char *)cp);
+-	if (len == 0)
++	len = authdecodekey(str, key, sizeof(key));
++	if (!len)
+ 		return 0;
+ 
+-	MD5auth_setkey(keyno, keytype, str, (int)strlen((const char *)str));
++	MD5auth_setkey(keyno, keytype, key, len);
+ 	return 1;
+ }
++
++/*
++ * authdecodekey - decode binary or ASCII key from string
++ *
++ * Returns the length of the parsed key, zero if invalid.
++ */
++int
++authdecodekey(
++	const char *str,
++	u_char *key,
++	int max_length
++	)
++{
++	int len;
++
++	/*
++	 * If the string is longer than 20 characters, it is
++	 * a binary string encoded in hex; otherwise, it is
++	 * a text string of printable ASCII characters.
++	 */
++	len = strlen(str);
++
++	if (len <= 20) {
++		len = min(len, max_length);
++		memcpy(key, str, len);
++	} else {
++		char	hex[] = "0123456789abcdef";
++		u_char	temp;
++		char	*ptr;
++		int	j;
++
++		len = min(len / 2, max_length);
++		for (j = 0; j < len * 2; j++) {
++			ptr = strchr(hex, tolower(str[j]));
++			if (ptr == NULL)
++				return 0;
++			temp = (u_char)(ptr - hex);
++			if (j & 1)
++				key[j / 2] |= temp;
++			else
++				key[j / 2] = temp << 4;
++		}
++	}
++
++	return len;
++}
+diff -up ntp-4.2.6p5/ntpdc/ntpdc.c.hexpw ntp-4.2.6p5/ntpdc/ntpdc.c
+--- ntp-4.2.6p5/ntpdc/ntpdc.c.hexpw	2011-12-25 00:27:15.000000000 +0100
++++ ntp-4.2.6p5/ntpdc/ntpdc.c	2012-11-20 14:43:14.048139771 +0100
+@@ -942,12 +942,10 @@ sendrequest(
+ 	}
+ 	if (!authistrusted(info_auth_keyid)) {
+ 		pass = getpass_keytype(info_auth_keytype);
+-		if ('\0' == pass[0]) {
++		if (!authusekey(info_auth_keyid, info_auth_keytype, pass)) {
+ 			fprintf(stderr, "Invalid password\n");
+ 			return 1;
+ 		}
+-		authusekey(info_auth_keyid, info_auth_keytype,
+-			   (u_char *)pass);
+ 		authtrust(info_auth_keyid, 1);
+ 	}
+ 	qpkt.auth_seq = AUTH_SEQ(1, 0);
+@@ -1825,16 +1823,21 @@ passwd(
+ 		}
+ 	}
+ 	if (!interactive) {
+-		authusekey(info_auth_keyid, info_auth_keytype,
+-			   (u_char *)pcmd->argval[0].string);
++		if (!authusekey(info_auth_keyid, info_auth_keytype,
++			   pcmd->argval[0].string)) {
++			fprintf(fp, "Invalid password\n");
++			return;
++		}
+ 		authtrust(info_auth_keyid, 1);
+ 	} else {
+ 		pass = getpass_keytype(info_auth_keytype);
+ 		if (*pass == '\0')
+ 		    (void) fprintf(fp, "Password unchanged\n");
+ 		else {
+-		    authusekey(info_auth_keyid, info_auth_keytype,
+-			       (u_char *)pass);
++		    if (!authusekey(info_auth_keyid, info_auth_keytype, pass)) {
++			    fprintf(fp, "Invalid password\n");
++			    return;
++		    }
+ 		    authtrust(info_auth_keyid, 1);
+ 		}
+ 	}
+diff -up ntp-4.2.6p5/ntpq/ntpq.c.hexpw ntp-4.2.6p5/ntpq/ntpq.c
+--- ntp-4.2.6p5/ntpq/ntpq.c.hexpw	2011-12-25 00:27:15.000000000 +0100
++++ ntp-4.2.6p5/ntpq/ntpq.c	2012-11-20 14:43:14.049139771 +0100
+@@ -1276,12 +1276,10 @@ sendrequest(
+ 	}
+ 	if (!authistrusted(info_auth_keyid)) {
+ 		pass = getpass_keytype(info_auth_keytype);
+-		if ('\0' == pass[0]) {
++		if (!authusekey(info_auth_keyid, info_auth_keytype, pass)) {
+ 			fprintf(stderr, "Invalid password\n");
+ 			return 1;
+ 		}
+-		authusekey(info_auth_keyid, info_auth_keytype,
+-			   (u_char *)pass);
+ 		authtrust(info_auth_keyid, 1);
+ 	}
+ 
+@@ -2498,7 +2496,10 @@ passwd(
+ 			return;
+ 		}
+ 	}
+-	authusekey(info_auth_keyid, info_auth_keytype, (u_char *)pass);
++	if (!authusekey(info_auth_keyid, info_auth_keytype, pass)) {
++		fprintf(fp, "Invalid password\n");
++		return;
++	}
+ 	authtrust(info_auth_keyid, 1);
+ }
+ 

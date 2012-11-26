@@ -57,7 +57,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-3}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -65,8 +65,12 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to enable rerun autogen (enable some patches)
+SB_AUTOGEN=${SB_AUTOGEN:-NO}
 # Set to YES to enable avahi
 SB_AVAHI=${SB_AVAHI:-NO}
+# Set to YES to enable local libopts (autogen)
+SB_LOPTS=${SB_LOPTS:-NO}
 # Set ntp pool
 SB_NTPPOOL=${SB_NTPPOOL:-south-america}
 
@@ -127,7 +131,9 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-[ "${SB_AVAHI}" = "YES" ] || sed -i -e 's|dns_sd.h|dns_sd_disabled.h|g' configure
+unset SB_LOPTSOPTS
+[ "${SB_AVAHI}" = "YES" ] || sed -i -e 's|dns_sd\.h|dns_sd_disabled.h|g' configure
+[ "${SB_LOPTS}" = "YES" ] || SB_LOPTSOPTS='--disable-local-libopts'
 
 export CFLAGS="${SLKCFLAGS} -fno-strict-aliasing"
 if echo 'int main () { return 0; }' | gcc -pie -fPIE -O2 -xc - -o pietest 2>/dev/null; then
@@ -148,6 +154,7 @@ fi
   --enable-parse-clocks \
   --enable-linuxcaps \
   --with-openssl-libdir=/usr/lib${LIBDIRSUFFIX} \
+  ${SB_LOPTSOPTS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 echo '#define KEYFILE "/etc/ntp/keys"' >> ntpdate/ntpdate.h || exit 1
@@ -207,16 +214,15 @@ cat > ${PKG}/etc/ntp/crypto/pw.new <<EOF
 EOF
 chmod 600 ${PKG}/etc/ntp/crypto/pw.new
 
+find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
+  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
 mkdir -p ${PKG}/etc/rc.d
 cat ${CWD}/rc.ntpd > ${PKG}/etc/rc.d/rc.ntpd.new
 install -pm0755 ${CWD}/rc.ntpdate ${PKG}/etc/rc.d/rc.ntpdate.new || exit 1
 
 mkdir -p ${PKG}/lib/systemd/system
 install -pm0644 ${CWD}/systemd/ntp*.service ${PKG}/lib/systemd/system/ || exit 1
-
-mkdir ${PKG}/lib/systemd/system/systemd-timedated-ntp.target.wants
-ln -sf ../ntpd.service \
-  ${PKG}/lib/systemd/system/systemd-timedated-ntp.target.wants/ntpd.service || exit 1
 
 mkdir -p ${PKG}/etc/default
 cat > ${PKG}/etc/default/ntpd.new <<'EOF'
@@ -235,10 +241,10 @@ RETRIES=2
 SYNC_HWCLOCK=no
 EOF
 
-rmdir ${PKG}/usr/lib
 
-find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
-  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+mkdir -p ${PKG}/usr/lib/systemd/ntp-units.d
+echo 'ntpd.service' \
+  > ${PKG}/usr/lib/systemd/ntp-units.d/60-ntpd.list || exit 1
 
 # fix section numbers
 sed -i 's/\(\.TH[a-zA-Z ]*\)[1-9]\(.*\)/\18\2/' ${PKG}/usr/man/man8/*.8
@@ -398,6 +404,7 @@ fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;

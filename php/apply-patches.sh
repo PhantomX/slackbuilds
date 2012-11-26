@@ -12,8 +12,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-fpm.conf.diff
 
 # Build fixes
 zcat ${SB_PATCHDIR}/php-5.2.0-includedir.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/php-5.2.4-embed.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.2.4-embed.patch
 zcat ${SB_PATCHDIR}/php-5.3.0-recode.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.7-libdb.patch
+# https://bugs.php.net/63361 - Header not installed
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.8-mysqli.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/004_all_strict_aliasing.patch
 
 # Fixes for extension modules
@@ -34,7 +37,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.1-systzdata-v9.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-phpize.patch
 # Use system libzip instead of bundled one
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.5-system-libzip.patch
+# Use -lldap_r for OpenLDAP
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.8-ldap_r.patch
 
 # Fixes for tests
+
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
 
 set +e +o pipefail

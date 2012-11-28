@@ -51,6 +51,8 @@ ApplyOptionalPatch() {
   fi
 }
 
+# Most patches are retrieved from Fedora git repository
+
 ApplyOptionalPatch git-linus.diff
 
 # This patch adds a "make nonint_oldconfig" which is non-interactive and
@@ -218,9 +220,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
 
-#rhbz 867344
-ApplyPatch dont-call-cifs_lookup-on-hashed-negative-dentry.patch
-
 #rhbz 869904 869909 CVE-2012-4508
 ApplyPatch 0001-ext4-ext4_inode_info-diet.patch
 ApplyPatch 0002-ext4-give-i_aiodio_unwritten-a-more-appropriate-name.patch
@@ -238,15 +237,35 @@ ApplyPatch 0012-ext4-serialize-fallocate-with-ext4_convert_unwritten.patch
 ApplyPatch uprobes-upstream-backport.patch
 
 #rhbz 871078
-ApplyPatch usb-audio-fix-crash-at-re-preparing-the-PCM-stream.patch
 ApplyPatch USB-EHCI-urb-hcpriv-should-not-be-NULL.patch
 ApplyPatch USB-report-submission-of-active-URBs.patch
 
 #rhbz 869341
 ApplyPatch smp_irq_move_cleanup_interrupt.patch
 
-#rhbz 870562
-ApplyPatch keyspan.patch
+#rhbz 812129
+ApplyPatch block-fix-a-crash-when-block-device-is.patch
+ApplyPatch blockdev-turn-a-rw-semaphore-into-a-percpu-rw-sem.patch
+ApplyPatch fs-lock-splice_read-and-splice_write-functions.patch
+
+#rhbz 874791
+ApplyPatch Bluetooth-Add-support-for-BCM20702A0.patch
+
+#rhbz 859485
+ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
+
+#rhbz CVE-2012-4461 862900 878518
+ApplyPatch KVM-x86-invalid-opcode-oops-on-SET_SREGS-with-OSXSAV.patch
+
+#rhbz CVE-2012-4530 868285 880147
+ApplyPatch exec-do-not-leave-bprm-interp-on-stack.patch
+ApplyPatch exec-use-eloop-for-max-recursion-depth.patch
+
+#rhbz 869629
+ApplyPatch SCSI-mvsas-Fix-oops-when-ata-commond-timeout.patch
+
+#rhbz 851278
+ApplyPatch 8139cp-revert-set-ring-address-before-enabling-recei.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

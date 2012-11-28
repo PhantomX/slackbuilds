@@ -1,0 +1,74 @@
+Lock splice_read and splice_write functions
+
+commit 1a25b1c4ce189e3926f2981f3302352a930086db
+Author: Mikulas Patocka <mpatocka@redhat.com>
+Date:   Mon Oct 15 17:20:17 2012 -0400
+
+    Lock splice_read and splice_write functions
+    
+    Functions generic_file_splice_read and generic_file_splice_write access
+    the pagecache directly. For block devices these functions must be locked
+    so that block size is not changed while they are in progress.
+    
+    This patch is an additional fix for commit b87570f5d349 ("Fix a crash
+    when block device is read and block size is changed at the same time")
+    that locked aio_read, aio_write and mmap against block size change.
+    
+    Signed-off-by: Mikulas Patocka <mpatocka@redhat.com>
+    Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+
+Index: linux-3.6.x86_64/fs/block_dev.c
+===================================================================
+--- linux-3.6.x86_64.orig/fs/block_dev.c	2012-11-16 17:12:57.352936580 -0500
++++ linux-3.6.x86_64/fs/block_dev.c	2012-11-16 17:13:11.908887989 -0500
+@@ -1662,6 +1662,39 @@
+ 	return ret;
+ }
+ 
++static ssize_t blkdev_splice_read(struct file *file, loff_t *ppos,
++				  struct pipe_inode_info *pipe, size_t len,
++				  unsigned int flags)
++{
++	ssize_t ret;
++	struct block_device *bdev = I_BDEV(file->f_mapping->host);
++
++	percpu_down_read(&bdev->bd_block_size_semaphore);
++
++	ret = generic_file_splice_read(file, ppos, pipe, len, flags);
++
++	percpu_up_read(&bdev->bd_block_size_semaphore);
++
++	return ret;
++}
++
++static ssize_t blkdev_splice_write(struct pipe_inode_info *pipe,
++				   struct file *file, loff_t *ppos, size_t len,
++				   unsigned int flags)
++{
++	ssize_t ret;
++	struct block_device *bdev = I_BDEV(file->f_mapping->host);
++
++	percpu_down_read(&bdev->bd_block_size_semaphore);
++
++	ret = generic_file_splice_write(pipe, file, ppos, len, flags);
++
++	percpu_up_read(&bdev->bd_block_size_semaphore);
++
++	return ret;
++}
++
++
+ /*
+  * Try to release a page associated with block device when the system
+  * is under memory pressure.
+@@ -1700,8 +1733,8 @@
+ #ifdef CONFIG_COMPAT
+ 	.compat_ioctl	= compat_blkdev_ioctl,
+ #endif
+-	.splice_read	= generic_file_splice_read,
+-	.splice_write	= generic_file_splice_write,
++	.splice_read	= blkdev_splice_read,
++	.splice_write	= blkdev_splice_write,
+ };
+ 
+ int ioctl_by_bdev(struct block_device *bdev, unsigned cmd, unsigned long arg)

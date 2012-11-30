@@ -92,9 +92,6 @@ ApplyPatch qt-everywhere-opensource-src-4.8.3-no_Werror.patch
 # revert qlist.h commit that seems to induce crashes in qDeleteAll<QList (QTBUG-22037)
 ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-22037.patch
 
-# Qt doesn't close orphaned file descriptors after printing (#746601, QTBUG-14724)
-ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-14724.patch 
-
 # Buttons in Qt applications not clickable when run under gnome-shell (#742658, QTBUG-21900)
 ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-21900.patch
 
@@ -119,8 +116,6 @@ ApplyPatch qt-4.8-poll.patch
 # security patches
 # CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code
 ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
-# disable compression for SSL/TLS to avoid CRIME
-ApplyPatch 0041-Disable-SSL-compression-by-default.patch
 
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore
@@ -128,11 +123,5 @@ ApplyPatch 0041-Disable-SSL-compression-by-default.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
-# find qdevice.pri even for installed qt builds
-# https://codereview.qt-project.org/#change,34507
-ApplyPatch qt-everywhere-opensource-src-4.8.3-qdevice_pri.patch
-# followup for fix JIT crash
-# https://bugreports.qt-project.org/browse/QTBUG-27322
-ApplyPatch qt-everywhere-opensource-src-4.8.3-QTBUG-27322.patch
 
 set +e +o pipefail

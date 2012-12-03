@@ -11,7 +11,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-pstotiff-is-rubbish.patc
 # Fix compilation.
 zcat ${SB_PATCHDIR}/hplip-strstr-const.patch.gz | patch -p1 -E --backup --verbose
 # Make utils.checkPyQtImport() look for the gui sub-package.
-zcat ${SB_PATCHDIR}/hplip-ui-optional.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-ui-optional.patch
 # Make sure to avoid handwritten asm.
 zcat ${SB_PATCHDIR}/hplip-no-asm.patch.gz | patch -p1 -E --backup --verbose
 # Corrected several IEEE 1284 Device IDs using foomatic data.
@@ -55,8 +55,6 @@ done
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-skip-blank-lines.patch
 # Added missing newline to string argument in dbglog() call.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbglog-newline.patch
-# Release parport if unsupported model connected (bug #699052).
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-release-parport.patch
 # Fix ImageableArea for Laserjet 8150/9000 (bug #596298).
 for ppd_file in $(grep '^diff' ${SB_PATCHDIR}/hplip-ppd-ImageableArea.patch | cut -d " " -f 4);
 do
@@ -88,5 +86,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-makefile-chgrp.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-hpaio-localonly.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-ipp-accessors.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-IEEE-1284-4.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-check.patch
 
 set +e +o pipefail

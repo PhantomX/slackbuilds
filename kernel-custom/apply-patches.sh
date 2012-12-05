@@ -254,9 +254,6 @@ ApplyPatch Bluetooth-Add-support-for-BCM20702A0.patch
 #rhbz 859485
 ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
 
-#rhbz CVE-2012-4461 862900 878518
-ApplyPatch KVM-x86-invalid-opcode-oops-on-SET_SREGS-with-OSXSAV.patch
-
 #rhbz CVE-2012-4530 868285 880147
 ApplyPatch exec-do-not-leave-bprm-interp-on-stack.patch
 ApplyPatch exec-use-eloop-for-max-recursion-depth.patch
@@ -265,7 +262,8 @@ ApplyPatch exec-use-eloop-for-max-recursion-depth.patch
 ApplyPatch SCSI-mvsas-Fix-oops-when-ata-commond-timeout.patch
 
 #rhbz 851278
-ApplyPatch 8139cp-revert-set-ring-address-before-enabling-recei.patch
+ApplyPatch 8139cp-set-ring-address-after-enabling-C-mode.patch
+ApplyPatch 8139cp-re-enable-interrupts-after-tx-timeout.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

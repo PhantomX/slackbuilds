@@ -86,13 +86,9 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systemd-shutdown.patch
   # Support for switching users with systemd - rh#859347
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.9.2-systemd-switch-user.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.9.2-systemd-switch-user2.patch
 
 fi
-
-# fontconfig-2.10+, support $XDG_CONFIG_HOME/fontconfig/fonts.conf
-# https://bugs.kde.org/show_bug.cgi?id=304317
-# http://svnweb.mageia.org/packages/cauldron/kdebase4-workspace/current/SOURCES/kdebase-workspace-4.9.0-fontconfigdir.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.2-fontconfigdir.patch
 
 ## upstream patches
 

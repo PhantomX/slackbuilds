@@ -54,12 +54,18 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.2-FindSamba_samba4.pa
 # backport FindKipi.cmake from Digikam SC 3.0.0-beta1 for libkipi 2 (kde#307213)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.1-FindKipi-libkipi2.patch
 
+# make filter working
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-kcm_ssl.patch
+
+
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
 
 # official backports
 
 # Branch upstream
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Revert-Also-check-parent-mimetypes-in-protocolForArc.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Fix-crash-when-no-service-was-selected-user-clicked-.patch
 
 # Trunk patches
 

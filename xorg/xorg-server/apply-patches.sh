@@ -22,9 +22,6 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
 # needed when building without xorg (aka s390x)
 patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12.2-xorg-touch-test.patch
 
-# send keycode/event type for slow keys enable (#816764)
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12-xkb-fill-in-keycode-and-event-type-for-slow-keys-ena.patch
-
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-linux-Refactor-xf86-En-Dis-ableIO.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/0002-linux-Make-failure-to-iopl-non-fatal.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/0003-xfree86-Change-the-semantics-of-driverFunc-GET_REQUI.patch

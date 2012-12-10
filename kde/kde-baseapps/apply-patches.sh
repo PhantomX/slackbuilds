@@ -21,6 +21,8 @@ patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-4.3.4-bz\#609039-chfn-
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.2-konqueror-mimetyp.patch
 
 ## upstream patches
+# From Arch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.4-fix-bugs-311206-311246.diff
 
 #trunk patches
 

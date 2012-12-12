@@ -262,7 +262,6 @@ ApplyPatch exec-use-eloop-for-max-recursion-depth.patch
 ApplyPatch SCSI-mvsas-Fix-oops-when-ata-commond-timeout.patch
 
 #rhbz 851278
-ApplyPatch 8139cp-set-ring-address-after-enabling-C-mode.patch
 ApplyPatch 8139cp-re-enable-interrupts-after-tx-timeout.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE

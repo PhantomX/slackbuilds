@@ -35,7 +35,8 @@ lesspipe() {
   *.tar.lzma|*.tlz) tar -tJvvf "$1" 2>/dev/null ;;
   *.tar.xz|*.txz) tar -tJvvf "$1" 2>/dev/null ;;
   *.z|*.Z) gzip -dc "$1" 2>/dev/null ;; # View compressed files correctly
-  *.zip|*.ZIP|*.cbz|*.CBZ|*.xpi|*.XPI) unzip -l "$1" 2>/dev/null ;;
+  *.zip|*.ZIP|*.cbz|*.CBZ|*.jar|*.JAR|*.xpi|*.XPI) unzip -l "$1" 2>/dev/null ;;
+  *.deb) dpkg -c "$1" 2>/dev/null ;;
   *.rpm) rpm -qpvl "$1" 2>/dev/null ;;
   *.7z|*.7Z) # check if p7zip is installed first
     if which 7z 1> /dev/null ; then

@@ -7,5 +7,6 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.48.2-libwpg.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.48.1-libpng15.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.48.2-poppler_020.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.48.3.1-hugexml.patch
 
 set +e +o pipefail

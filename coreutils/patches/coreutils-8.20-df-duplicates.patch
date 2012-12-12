@@ -1,0 +1,264 @@
+diff -urNp coreutils-8.20-orig/doc/coreutils.texi coreutils-8.20/doc/coreutils.texi
+--- coreutils-8.20-orig/doc/coreutils.texi	2012-10-23 16:14:12.000000000 +0200
++++ coreutils-8.20/doc/coreutils.texi	2012-12-10 14:41:33.532650289 +0100
+@@ -10597,6 +10597,14 @@ Normally the disk space is printed in un
+ 1024 bytes, but this can be overridden (@pxref{Block size}).
+ Non-integer quantities are rounded up to the next higher unit.
+ 
++For bind mounts and without arguments, @command{df} only outputs the statistics
++for the first occurence of that device in the list of file systems (@var{mtab}),
++i.e., it hides duplicate entries, unless the @option{-a} option is specified.
++
++By default, @command{df} omits the early-boot pseudo file system type
++@samp{rootfs}, unless the @option{-a} option is specified or that file system
++type is explicitly to be included by using the @option{-t} option.
++
+ @cindex disk device file
+ @cindex device file, disk
+ If an argument @var{file} is a disk device file containing a mounted
+diff -urNp coreutils-8.20-orig/src/df.c coreutils-8.20/src/df.c
+--- coreutils-8.20-orig/src/df.c	2012-10-23 16:14:12.000000000 +0200
++++ coreutils-8.20/src/df.c	2012-12-10 14:41:33.534649048 +0100
+@@ -46,6 +46,17 @@
+ /* If true, show inode information. */
+ static bool inode_format;
+ 
++/* Filled with device numbers of examined file systems to avoid
++   duplicities in output.  */
++struct devlist
++{
++  dev_t dev_num;
++  struct devlist *next;
++};
++
++/* Store of already-processed device numbers.  */
++static struct devlist *devlist_head;
++
+ /* If true, show even file systems with zero size or
+    uninteresting types. */
+ static bool show_all_fs;
+@@ -57,6 +68,12 @@ static bool show_local_fs;
+    command line argument -- even if it's a dummy (automounter) entry.  */
+ static bool show_listed_fs;
+ 
++/* If true, include rootfs in the output.  */
++static bool show_rootfs;
++
++/* The literal name of the initial root file system.  */
++static char const *ROOTFS = "rootfs";
++
+ /* Human-readable options for output.  */
+ static int human_output_opts;
+ 
+@@ -372,6 +389,29 @@ excluded_fstype (const char *fstype)
+   return false;
+ }
+ 
++/* Check if the device was already examined.  */
++
++static bool
++dev_examined (char const *mount_dir, char const *devname)
++{
++  struct stat buf;
++  if (-1 == stat (mount_dir, &buf))
++    return false;
++
++  struct devlist *devlist = devlist_head;
++  for ( ; devlist; devlist = devlist->next)
++    if (devlist->dev_num == buf.st_dev)
++      return true;
++
++  /* Add the device number to the global list devlist.  */
++  devlist = xmalloc (sizeof *devlist);
++  devlist->dev_num = buf.st_dev;
++  devlist->next = devlist_head;
++  devlist_head = devlist;
++
++  return false;
++}
++
+ /* Return true if N is a known integer value.  On many file systems,
+    UINTMAX_MAX represents an unknown value; on AIX, UINTMAX_MAX - 1
+    represents unknown.  Use a rule that works on AIX file systems, and
+@@ -496,6 +536,15 @@ get_dev (char const *disk, char const *m
+   if (!selected_fstype (fstype) || excluded_fstype (fstype))
+     return;
+ 
++  if (process_all && !show_all_fs && !show_listed_fs)
++    {
++      /* No arguments nor "df -a", then check if df has to ...  */
++      if (!show_rootfs && STREQ (disk, ROOTFS))
++        return; /* ... skip rootfs: (unless -trootfs is given.  */
++      if (dev_examined (mount_point, disk))
++        return; /* ... skip duplicate entries (bind mounts).  */
++    }
++
+   /* If MOUNT_POINT is NULL, then the file system is not mounted, and this
+      program reports on the file system that the special file is on.
+      It would be better to report on the unmounted file system,
+@@ -1005,6 +1054,7 @@ main (int argc, char **argv)
+           /* Accept -F as a synonym for -t for compatibility with Solaris.  */
+         case 't':
+           add_fs_type (optarg);
++          show_rootfs = selected_fstype (ROOTFS);
+           break;
+ 
+         case 'v':		/* For SysV compatibility. */
+@@ -1149,6 +1199,14 @@ main (int argc, char **argv)
+      diagnostic, e.g., if all have been excluded.  */
+   if (exit_status == EXIT_SUCCESS && ! file_systems_processed)
+     error (EXIT_FAILURE, 0, _("no file systems processed"));
++  IF_LINT (
++    while (devlist_head)
++      {
++        struct devlist *devlist = devlist_head->next;
++        free (devlist_head);
++        devlist_head = devlist;
++      }
++    );
+ 
+   exit (exit_status);
+ }
+diff -urNp coreutils-8.20-orig/tests/df/skip-duplicates.sh coreutils-8.20/tests/df/skip-duplicates.sh
+--- coreutils-8.20-orig/tests/df/skip-duplicates.sh	1970-01-01 01:00:00.000000000 +0100
++++ coreutils-8.20/tests/df/skip-duplicates.sh	2012-12-10 14:41:33.535280173 +0100
+@@ -0,0 +1,77 @@
++#!/bin/sh
++# Test df's behavior when the mount list contains duplicate entries.
++# This test is skipped on systems that lack LD_PRELOAD support; that's fine.
++
++# Copyright (C) 2012 Free Software Foundation, Inc.
++
++# This program is free software: you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation, either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++. "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
++print_ver_ df
++
++df || skip_ "df fails"
++
++# Simulate an mtab file with two entries of the same device number.
++cat > k.c <<'EOF' || framework_failure_
++#include <stdio.h>
++#include <mntent.h>
++
++struct mntent *getmntent (FILE *fp)
++{
++  /* Prove that LD_PRELOAD works. */
++  static int done = 0;
++  if (!done)
++    {
++      fclose (fopen ("x", "w"));
++      ++done;
++    }
++
++  static struct mntent mntent;
++
++  while (done++ < 3)
++    {
++      mntent.mnt_fsname = "fsname";
++      mntent.mnt_dir = "/";
++      mntent.mnt_type = "-";
++
++      return &mntent;
++    }
++  return NULL;
++}
++EOF
++
++# Then compile/link it:
++gcc --std=gnu99 -shared -fPIC -ldl -O2 k.c -o k.so \
++  || skip_ "getmntent hack does not work on this platform"
++
++# Test if LD_PRELOAD works:
++LD_PRELOAD=./k.so df
++test -f x || skip_ "internal test failure: maybe LD_PRELOAD doesn't work?"
++
++# The fake mtab file should only contain 2 entries, both
++# having the same device number; thus the output should
++# consist of a header and one entry.
++LD_PRELOAD=./k.so df >out || fail=1
++test $(wc -l <out) -eq 2 || { fail=1; cat out; }
++
++# Ensure that filtering duplicates does not affect -a processing.
++LD_PRELOAD=./k.so df -a >out || fail=1
++test $(wc -l <out) -eq 3 || { fail=1; cat out; }
++
++# Ensure that filtering duplcates does not affect
++# argument processing (now without the fake getmntent()).
++df '.' '.' >out || fail=1
++test $(wc -l <out) -eq 3 || { fail=1; cat out; }
++
++Exit $fail
+diff -urNp coreutils-8.20-orig/tests/df/skip-rootfs.sh coreutils-8.20/tests/df/skip-rootfs.sh
+--- coreutils-8.20-orig/tests/df/skip-rootfs.sh	1970-01-01 01:00:00.000000000 +0100
++++ coreutils-8.20/tests/df/skip-rootfs.sh	2012-12-10 14:41:33.536310753 +0100
+@@ -0,0 +1,46 @@
++#!/bin/sh
++# Test df's behavior for skipping the pseudo "rootfs" file system.
++
++# Copyright (C) 2012 Free Software Foundation, Inc.
++
++# This program is free software: you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation, either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++. "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
++print_ver_ df
++
++df || skip_ "df fails"
++
++# Verify that rootfs is in mtab (and shown when the -a option is specified).
++df -a >out || fail=1
++grep '^rootfs' out || skip_ "no rootfs in mtab"
++
++# Ensure that rootfs is supressed when no options is specified.
++df >out || fail=1
++grep '^rootfs' out && { fail=1; cat out; }
++
++# Ensure that the rootfs is shown when explicitly specifying "-t rootfs".
++df -t rootfs >out || fail=1
++grep '^rootfs' out || { fail=1; cat out; }
++
++# Ensure that the rootfs is shown when explicitly specifying "-t rootfs",
++# even when the -a option is specified.
++df -t rootfs -a >out || fail=1
++grep '^rootfs' out || { fail=1; cat out; }
++
++# Ensure that the rootfs is omitted in all_fs mode when it is explicitly
++# black-listed.
++df -a -x rootfs >out || fail=1
++grep '^rootfs' out && { fail=1; cat out; }
++
++Exit $fail
+diff -urNp coreutils-8.20-orig/tests/local.mk coreutils-8.20/tests/local.mk
+--- coreutils-8.20-orig/tests/local.mk	2012-10-23 16:14:12.000000000 +0200
++++ coreutils-8.20/tests/local.mk	2012-12-10 14:41:33.536310753 +0100
+@@ -456,6 +456,8 @@ all_tests =					\
+   tests/df/unreadable.sh			\
+   tests/df/total-unprocessed.sh			\
+   tests/df/no-mtab-status.sh			\
++  tests/df/skip-duplicates.sh			\
++  tests/df/skip-rootfs.sh			\
+   tests/dd/direct.sh				\
+   tests/dd/misc.sh				\
+   tests/dd/nocache.sh				\

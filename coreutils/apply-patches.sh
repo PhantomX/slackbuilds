@@ -15,6 +15,8 @@ else
 fi
 
 # From upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.20-powerpcfactor.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.20-df-duplicates.patch
 
 # Fedora patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch

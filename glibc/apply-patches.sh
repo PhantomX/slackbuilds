@@ -3,7 +3,11 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-PATCHCOM="patch -p1 -s --backup --verbose"
+unset PATCH_VERBOSE_OPT
+[ "${PATCH_VERBOSE}" = "YES" ] && PATCH_VERBOSE_OPT="--verbose"
+[ "${PATCH_SVERBOSE}" = "YES" ] && set -o xtrace
+
+PATCHCOM="patch -p1 -s --backup ${PATCH_VERBOSE_OPT}"
 
 ApplyPatch() {
   local patch=$1
@@ -115,5 +119,11 @@ ApplyPatch 0001-Fix-strtod-test-for-values-above-maximum-for-IBM-lon.patch
 ApplyPatch 0001-Make-printf-respect-the-rounding-mode-for-decimal-ou.patch
 ApplyPatch 0001-Make-printf-respect-the-rounding-mode-for-hex-output.patch
 ApplyPatch 0001-Make-strtod-respect-the-rounding-mode-bug-14518.patch
+ApplyPatch 0001-BZ-14583.patch
+ApplyPatch 0001-Use-size_t-instead-of-int-for-internal-variables-in-.patch
+ApplyPatch 0001-Fix-sign-of-exact-zero-return-from-fma-bug-14638.patch
+ApplyPatch 0002-Fix-sign-of-inexact-zero-return-from-fma-bug-14645.patch
+ApplyPatch 0003-Fix-exception-table-for-i386-pthread_cond_wait.patch
+ApplyPatch 0001-Fix-strtod-handling-of-underflow-bug-14047.patch
 
 set +e +o pipefail

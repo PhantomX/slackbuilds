@@ -1,0 +1,1058 @@
+Subject: [PATCH] libparted: add support for EAV DASD partitions
+
+From: Nageswara R Sastry <rnsastry@linux.vnet.ibm.com>
+
+Extended Address Volume (EAV) DASDs are ECKD DASDs with more than
+65520 cylinders. This patch adds support for recognizing and
+modifying partitions on EAV DASDs to Parted. The changes are
+based on the EAV support added to version 1.8.1 [1] of the
+s390-tools package.
+
+[1] http://www.ibm.com/developerworks/linux/linux390/s390-tools-1.8.1.html
+
+Signed-off-by: Nageswara R Sastry <rnsastry@linux.vnet.ibm.com>
+Signed-off-by: Peter Oberparleiter <oberpar@linux.vnet.ibm.com>
+
+---
+ include/parted/fdasd.h   |   89 ++++++++++++++++--
+ include/parted/vtoc.h    |   58 ++++++++++--
+ libparted/labels/dasd.c  |    1 
+ libparted/labels/fdasd.c |  226 ++++++++++++++++++++++++++++++++---------------
+ libparted/labels/vtoc.c  |  173 ++++++++++++++++++++++++++++++-----
+ 5 files changed, 435 insertions(+), 112 deletions(-)
+
+--- a/include/parted/fdasd.h
++++ b/include/parted/fdasd.h
+@@ -74,6 +74,80 @@ typedef struct dasd_information_t {
+ 	char configuration_data[256]; /* from read_configuration_data        */
+ } dasd_information_t;
+ 
++struct dasd_eckd_characteristics {
++	unsigned short cu_type;
++	struct {
++		unsigned char support:2;
++		unsigned char async:1;
++		unsigned char reserved:1;
++		unsigned char cache_info:1;
++		unsigned char model:3;
++	} __attribute__ ((packed)) cu_model;
++	unsigned short dev_type;
++	unsigned char dev_model;
++	struct {
++		unsigned char mult_burst:1;
++		unsigned char RT_in_LR:1;
++		unsigned char reserved1:1;
++		unsigned char RD_IN_LR:1;
++		unsigned char reserved2:4;
++		unsigned char reserved3:8;
++		unsigned char defect_wr:1;
++		unsigned char XRC_supported:1;
++		unsigned char reserved4:1;
++		unsigned char striping:1;
++		unsigned char reserved5:4;
++		unsigned char cfw:1;
++		unsigned char reserved6:2;
++		unsigned char cache:1;
++		unsigned char dual_copy:1;
++		unsigned char dfw:1;
++		unsigned char reset_alleg:1;
++		unsigned char sense_down:1;
++	} __attribute__ ((packed)) facilities;
++	unsigned char dev_class;
++	unsigned char unit_type;
++	unsigned short no_cyl;
++	unsigned short trk_per_cyl;
++	unsigned char sec_per_trk;
++	unsigned char byte_per_track[3];
++	unsigned short home_bytes;
++	unsigned char formula;
++	union {
++		struct {
++			unsigned char f1;
++			unsigned short f2;
++			unsigned short f3;
++		} __attribute__ ((packed)) f_0x01;
++		struct {
++			unsigned char f1;
++			unsigned char f2;
++			unsigned char f3;
++			unsigned char f4;
++			unsigned char f5;
++		} __attribute__ ((packed)) f_0x02;
++	} __attribute__ ((packed)) factors;
++	unsigned short first_alt_trk;
++	unsigned short no_alt_trk;
++	unsigned short first_dia_trk;
++	unsigned short no_dia_trk;
++	unsigned short first_sup_trk;
++	unsigned short no_sup_trk;
++	unsigned char MDR_ID;
++	unsigned char OBR_ID;
++	unsigned char director;
++	unsigned char rd_trk_set;
++	unsigned short max_rec_zero;
++	unsigned char reserved1;
++	unsigned char RWANY_in_LR;
++	unsigned char factor6;
++	unsigned char factor7;
++	unsigned char factor8;
++	unsigned char reserved2[3];
++	unsigned char reserved3[6];
++	unsigned int long_no_cyl;
++} __attribute__ ((packed));
++
+ /*
+  * struct format_data_t
+  * represents all data necessary to format a dasd
+@@ -116,18 +190,6 @@ typedef struct format_data_t {
+ #define BLKRRPART  _IO(0x12,95)
+ /* get block device sector size */
+ #define BLKSSZGET  _IO(0x12,104)
+-
+-/*****************************************************************************
+- * SECTION: Definition from hdreq.h                                          *
+- *****************************************************************************/
+-
+-struct fdasd_hd_geometry {
+-      unsigned char heads;
+-      unsigned char sectors;
+-      unsigned short cylinders;
+-      unsigned long start;
+-};
+-
+ /* get device geometry */
+ #define HDIO_GETGEO		0x0301
+ 
+@@ -189,10 +251,13 @@ typedef struct fdasd_anchor {
+ 	format4_label_t  *f4;
+ 	format5_label_t  *f5;
+ 	format7_label_t  *f7;
++	format9_label_t  *f9; /* template for all f9 labels */
+ 	partition_info_t *first;
+ 	partition_info_t *last;
+ 	volume_label_t   *vlabel;
+ 	config_data_t confdata[USABLE_PARTITIONS];
++	u_int32_t hw_cylinders;
++	u_int32_t formatted_cylinders;
+ 	struct fdasd_hd_geometry geo;
+ 	unsigned int label_block;
+ 	unsigned int FBA_layout;
+--- a/include/parted/vtoc.h
++++ b/include/parted/vtoc.h
+@@ -42,7 +42,18 @@
+ 
+ #define VOLSER_LENGTH 6
+ #define BIG_DISK_SIZE 0x10000
++#define LV_COMPAT_CYL 0xFFFE
+ 
++/*****************************************************************************
++ * SECTION: Definition from hdreq.h                                          *
++ *****************************************************************************/
++
++struct fdasd_hd_geometry {
++      unsigned char heads;
++      unsigned char sectors;
++      unsigned short cylinders;
++      unsigned long start;
++};
+ 
+ typedef struct ttr              ttr_t;
+ typedef struct cchhb            cchhb_t;
+@@ -59,6 +70,7 @@ typedef struct ds5ext           ds5ext_t
+ typedef struct format5_label    format5_label_t;
+ typedef struct ds7ext           ds7ext_t;
+ typedef struct format7_label    format7_label_t;
++typedef struct format9_label    format9_label_t;
+ 
+ struct __attribute__ ((packed)) ttr {
+         u_int16_t tt;
+@@ -169,6 +181,10 @@ struct __attribute__ ((packed)) dev_cons
+         u_int8_t  DS4DEVDB;     /* number of directory blocks per track */
+ };
+ 
++/*
++ * format 1 and format 8 label have the same layout so we use the following
++ * structure for both.
++ */
+ struct __attribute__ ((packed)) format1_label {
+ 	char  DS1DSNAM[44];     /* data set name                           */
+ 	u_int8_t  DS1FMTID;     /* format identifier                       */
+@@ -229,7 +245,11 @@ struct __attribute__ ((packed)) format4_
+ 	char res2[10];          /* reserved                                */
+ 	u_int8_t DS4EFLVL;      /* extended free-space management level    */
+ 	cchhb_t DS4EFPTR;       /* pointer to extended free-space info     */
+-	char res3[9];           /* reserved                                */
++	char res3;              /* reserved */
++	u_int32_t DS4DCYL;      /* number of logical cyls */
++	char res4[2];           /* reserved */
++	u_int8_t DS4DEVF2;      /* device flags */
++	char res5;              /* reserved */
+ };
+ 
+ struct __attribute__ ((packed)) ds5ext {
+@@ -261,12 +281,28 @@ struct __attribute__ ((packed)) format7_
+ 	cchhb_t DS7PTRDS;       /* pointer to next FMT7 DSCB               */
+ };
+ 
++struct __attribute__ ((packed)) format9_label {
++	u_int8_t  DS9KEYID;     /* key code for format 9 labels (0x09) */
++	u_int8_t  DS9SUBTY;     /* subtype (0x01) */
++	u_int8_t  DS9NUMF9;     /* number of F9 datasets  */
++	u_int8_t  res1[41];     /* reserved  */
++	u_int8_t  DS9FMTID;     /* format identifier  */
++	u_int8_t  res2[95];     /* reserved */
++};
++
+ char *vtoc_ebcdic_enc (char const *source, char *target, int l);
+ char *vtoc_ebcdic_dec (char const *source, char *target, int l);
+ void vtoc_set_extent (extent_t *ext, u_int8_t typeind, u_int8_t seqno,
+                       cchh_t *lower, cchh_t *upper);
+-void vtoc_set_cchh (cchh_t *addr, u_int16_t cc, u_int16_t hh);
+-void vtoc_set_cchhb (cchhb_t *addr, u_int16_t cc, u_int16_t hh, u_int8_t b);
++void vtoc_set_cchh (cchh_t *addr, u_int32_t cc, u_int16_t hh);
++u_int32_t vtoc_get_cyl_from_cchh(cchh_t *addr);
++u_int16_t vtoc_get_head_from_cchh(cchh_t *addr);
++void vtoc_set_cchhb (cchhb_t *addr, u_int32_t cc, u_int16_t hh, u_int8_t b);
++u_int32_t vtoc_get_cyl_from_cchhb(cchhb_t *addr);
++u_int16_t vtoc_get_head_from_cchhb(cchhb_t *addr);
++u_int64_t cchhb2blk(cchhb_t *p, struct fdasd_hd_geometry *geo);
++u_int64_t cchh2blk (cchh_t *p, struct fdasd_hd_geometry *geo);
++u_int32_t cchh2trk (cchh_t *p, struct fdasd_hd_geometry *geo);
+ void vtoc_set_date (labeldate_t *d, u_int8_t year, u_int16_t day);
+ 
+ void vtoc_volume_label_init (volume_label_t *vlabel);
+@@ -295,14 +331,16 @@ void vtoc_write_label (int fd, unsigned
+ 		       format1_label_t const *f1,
+                        format4_label_t const *f4,
+ 		       format5_label_t const *f5,
+-                       format7_label_t const *f7);
++                       format7_label_t const *f7,
++                       format9_label_t const *f9);
+ 
+ void vtoc_init_format1_label (char *volid, unsigned int blksize,
+                               extent_t *part_extent, format1_label_t *f1);
+ 
+ void vtoc_init_format4_label (format4_label_t *f4lbl,
+                               unsigned int usable_partitions,
+-                              unsigned int cylinders,
++                              unsigned int compat_cylinders,
++                              unsigned int real_cylinders,
+                               unsigned int tracks,
+                               unsigned int blocks,
+                               unsigned int blksize,
+@@ -329,8 +367,16 @@ void vtoc_update_format7_label_add (form
+ void vtoc_update_format7_label_del (format7_label_t *f7, int verbose,
+                                     u_int32_t a, u_int32_t b);
+ 
++void vtoc_init_format8_label (char *volid, unsigned int blksize,
++                              extent_t *part_extent, format1_label_t *f1);
++
++void vtoc_update_format8_label (cchhb_t *associated_f9, format1_label_t *f8);
++
++void vtoc_init_format9_label (format9_label_t *f9);
++
+ void vtoc_set_freespace(format4_label_t *f4, format5_label_t *f5,
+                         format7_label_t *f7, char ch, int verbose,
+-                        u_int32_t start, u_int32_t stop, int cyl, int trk);
++                        u_int32_t start, u_int32_t stop, u_int32_t cyl,
++                        u_int32_t trk);
+ 
+ #endif /* VTOC_H */
+--- a/libparted/labels/dasd.c
++++ b/libparted/labels/dasd.c
+@@ -631,6 +631,7 @@ dasd_write (const PedDisk* disk)
+ 	/* initialize the anchor */
+ 	fdasd_initialize_anchor(&anchor);
+ 	fdasd_get_geometry(disk->dev, &anchor, arch_specific->fd);
++	fdasd_check_volume(&anchor, arch_specific->fd);
+ 	memcpy(anchor.vlabel, &disk_specific->vlabel, sizeof(volume_label_t));
+ 	anchor.vlabel_changed++;
+ 
+--- a/libparted/labels/fdasd.c
++++ b/libparted/labels/fdasd.c
+@@ -59,6 +59,48 @@ setpos (fdasd_anchor_t *anc, int dsn, in
+ 	anc->partno[dsn] = pos;
+ }
+ 
++static u_int32_t
++get_usable_cylinders (fdasd_anchor_t *anc)
++{
++	u_int32_t cyl;
++
++	/* large volume */
++	if (anc->f4->DS4DEVCT.DS4DSCYL == LV_COMPAT_CYL &&
++	    anc->f4->DS4DCYL > anc->f4->DS4DEVCT.DS4DSCYL)
++		return anc->f4->DS4DCYL;
++	/* normal volume */
++	if (anc->f4->DS4DEVCT.DS4DEVFG & ALTERNATE_CYLINDERS_USED)
++		cyl = anc->f4->DS4DEVCT.DS4DSCYL -
++			(u_int16_t) anc->f4->DS4DEVAC;
++	else
++		cyl = anc->f4->DS4DEVCT.DS4DSCYL;
++	return cyl;
++}
++
++static void
++get_addr_of_highest_f1_f8_label (fdasd_anchor_t *anc, cchhb_t *addr)
++{
++
++	u_int8_t record;
++	/* We have to count the follwing labels:
++	 * one format 4
++	 * one format 5
++	 * format 7 only if we have moren then BIG_DISK_SIZE tracks
++	 * one for each format 1 or format 8 label == one for each partition
++	 * one for each format 9 label before the last format 8
++	 * We assume that all partitions use format 8 labels when
++	 *  anc->formatted_cylinders > LV_COMPAT_CYL
++	 * Note: Record zero is special, so block 0 on our disk is record 1!
++	 */
++
++	record = anc->used_partitions + 2;
++	if (anc->big_disk)
++		record++;
++	if (anc->formatted_cylinders > LV_COMPAT_CYL)
++		record += anc->used_partitions - 1;
++	vtoc_set_cchhb(addr, VTOC_START_CC, VTOC_START_HH, record);
++}
++
+ void
+ fdasd_cleanup (fdasd_anchor_t *anchor)
+ {
+@@ -72,6 +114,7 @@ fdasd_cleanup (fdasd_anchor_t *anchor)
+         free(anchor->f4);
+         free(anchor->f5);
+         free(anchor->f7);
++        free(anchor->f9);
+         free(anchor->vlabel);
+ 
+ 	p = anchor->first;
+@@ -82,6 +125,7 @@ fdasd_cleanup (fdasd_anchor_t *anchor)
+ 		if (p == NULL)
+ 			return;
+ 		q = p->next;
++		free(p->f1);
+ 		free(p);
+ 		p = q;
+ 	}
+@@ -154,17 +198,6 @@ fdasd_error (fdasd_anchor_t *anc, enum f
+ }
+ 
+ /*
+- * converts cyl-cyl-head-head-blk to blk
+- */
+-static unsigned long
+-cchhb2blk (cchhb_t *p, struct fdasd_hd_geometry *geo)
+-{
+-	PDEBUG
+-	return (unsigned long) (p->cc * geo->heads * geo->sectors
+-	                        + p->hh * geo->sectors + p->b);
+-}
+-
+-/*
+  * initializes the anchor structure and allocates some
+  * memory for the labels
+  */
+@@ -216,9 +249,16 @@ fdasd_initialize_anchor (fdasd_anchor_t
+ 	if (anc->f7 == NULL)
+ 		fdasd_error(anc, malloc_failed, "FMT7 DSCB.");
+ 
++       /* template for all format 9 labels */
++	anc->f9 = malloc(sizeof(format9_label_t));
++	if (anc->f9 == NULL)
++		fdasd_error(anc, malloc_failed, "FMT9 DSCB.");
++
+ 	bzero(anc->f4, sizeof(format4_label_t));
+ 	bzero(anc->f5, sizeof(format5_label_t));
+ 	bzero(anc->f7, sizeof(format7_label_t));
++	bzero(anc->f9, sizeof(format9_label_t));
++	vtoc_init_format9_label(anc->f9);
+ 
+ 	v = malloc(sizeof(volume_label_t));
+ 	if (v == NULL)
+@@ -259,6 +299,8 @@ fdasd_initialize_anchor (fdasd_anchor_t
+ 
+ 		q = p;
+ 	}
++	anc->hw_cylinders = 0;
++	anc->formatted_cylinders = 0;
+ }
+ 
+ /*
+@@ -269,44 +311,46 @@ fdasd_write_vtoc_labels (fdasd_anchor_t
+ {
+ 	PDEBUG
+ 	partition_info_t *p;
+-	unsigned long b;
++	unsigned long b, maxblk;
+ 	char dsno[6], s1[7], s2[45], *c1, *c2, *ch;
+ 	int i = 0, k = 0;
++	cchhb_t f9addr;
++	format1_label_t emptyf1;
+ 
+ 	b = (cchhb2blk (&anc->vlabel->vtoc, &anc->geo) - 1) * anc->blksize;
+ 	if (b <= 0)
+ 		fdasd_error (anc, vlabel_corrupted, "");
++	maxblk = b + anc->blksize * 9; /* f4+f5+f7+3*f8+3*f9 */
+ 
+ 	/* write FMT4 DSCB */
+-	vtoc_write_label (fd, b, NULL, anc->f4, NULL, NULL);
++	vtoc_write_label (fd, b, NULL, anc->f4, NULL, NULL, NULL);
++	b += anc->blksize;
+ 
+ 	/* write FMT5 DSCB */
++	vtoc_write_label (fd, b, NULL, NULL, anc->f5, NULL, NULL);
+ 	b += anc->blksize;
+-	vtoc_write_label (fd, b, NULL, NULL, anc->f5, NULL);
+ 
+ 	/* write FMT7 DSCB */
+ 	if (anc->big_disk) {
++		vtoc_write_label (fd, b, NULL, NULL, NULL, anc->f7, NULL);
+ 		b += anc->blksize;
+-		vtoc_write_label (fd, b, NULL, NULL, NULL, anc->f7);
+ 	}
+ 
+-	/* loop over all FMT1 DSCBs */
+-	p = anc->first;
+-	for (i = 0; i < USABLE_PARTITIONS; i++) {
+-		b += anc->blksize;
++	/* loop over all partitions (format 1 or format 8 DCB) */
++	for (p = anc->first; p != NULL; p = p->next) {
+ 
+ 		if (p->used != 0x01) {
+-			vtoc_write_label (fd, b, p->f1, NULL, NULL, NULL);
+ 			continue;
+ 		}
+ 
++		i++;
+ 		strncpy (p->f1->DS1DSSN, anc->vlabel->volid, 6);
+ 
+ 		ch = p->f1->DS1DSNAM;
+ 		vtoc_ebcdic_dec (ch, ch, 44);
+ 		c1 = ch + 7;
+ 
+-		if (getdsn (anc, i) > -1) {
++		if (getdsn (anc, i-1) > -1) {
+ 			/* re-use the existing data set name */
+ 			c2 = strchr (c1, '.');
+ 			if (c2 != NULL)
+@@ -325,11 +369,7 @@ fdasd_write_vtoc_labels (fdasd_anchor_t
+ 			while (getpos (anc, k) > -1)
+ 				k++;
+ 
+-			setpos (anc, k, i);
+-
+-			strncpy (s2, ch, 44);
+-			s2[44] = 0;
+-			vtoc_ebcdic_dec (s2, s2, 44);
++			setpos (anc, k, i-1);
+ 
+ 			strncpy (ch, "LINUX.V               " "                      ", 44);
+ 
+@@ -366,8 +406,32 @@ fdasd_write_vtoc_labels (fdasd_anchor_t
+ 
+ 		vtoc_ebcdic_enc (ch, ch, 44);
+ 
+-		vtoc_write_label (fd, b, p->f1, NULL, NULL, NULL);
+-		p = p->next;
++		if (p->f1->DS1FMTID == 0xf8 ) {
++			/* Now as we know where which label will be written, we
++			 * can add the address of the format 9 label to the
++			 * format 8 label. The f9 record will be written to the
++			 * block after the current blk. Remember: records are of
++			 * by one, so we have to add 2 and not just one.
++			 */
++			vtoc_set_cchhb(&f9addr, VTOC_START_CC, VTOC_START_HH,
++				((b / anc->blksize) % anc->geo.sectors) + 2);
++			vtoc_update_format8_label(&f9addr, p->f1);
++			vtoc_write_label(fd, b, p->f1, NULL, NULL, NULL, NULL);
++			b += anc->blksize;
++			vtoc_write_label(fd, b, NULL, NULL, NULL, NULL,
++					 anc->f9);
++			b += anc->blksize;
++		} else {
++			vtoc_write_label(fd, b, p->f1, NULL, NULL, NULL, NULL);
++			b += anc->blksize;
++		}
++	}
++
++	/* write empty labels to the rest of the blocks */
++	bzero(&emptyf1, sizeof(emptyf1));
++	while (b < maxblk) {
++		vtoc_write_label(fd, b, &emptyf1, NULL, NULL, NULL, NULL);
++		b += anc->blksize;
+ 	}
+ }
+ 
+@@ -394,20 +458,25 @@ int
+ fdasd_prepare_labels (fdasd_anchor_t *anc, int fd)
+ {
+ 	PDEBUG
+-	partition_info_t *p = anc->first;
++	partition_info_t *p;
+ 	char dsno[6], s1[7], s2[45], *c1, *c2, *ch;
+ 	int i = 0, k = 0;
+ 
+-	/* loop over all FMT1 DSCBs */
+-	p = anc->first;
+-	for (i = 0; i < USABLE_PARTITIONS; i++) {
++	/* loop over all partitions (format 1 or format 8 DCB) */
++	for (p = anc->first; p != NULL; p = p->next) {
++
++		if (p->used != 0x01) {
++			continue;
++		}
++
++		i++;
+ 		strncpy (p->f1->DS1DSSN, anc->vlabel->volid, 6);
+ 
+ 		ch = p->f1->DS1DSNAM;
+ 		vtoc_ebcdic_dec (ch, ch, 44);
+ 		c1 = ch + 7;
+ 
+-		if (getdsn (anc, i) > -1) {
++		if (getdsn (anc, i-1) > -1) {
+ 			/* re-use the existing data set name */
+ 			c2 = strchr (c1, '.');
+ 			if (c2 != NULL)
+@@ -426,11 +495,7 @@ fdasd_prepare_labels (fdasd_anchor_t *an
+ 			while (getpos (anc, k) > -1)
+ 				k++;
+ 
+-			setpos (anc, k, i);
+-
+-			strncpy (s2, ch, 44);
+-			s2[44] = 0;
+-			vtoc_ebcdic_dec (s2, s2, 44);
++			setpos (anc, k, i-1);
+ 
+ 			strncpy (ch, "LINUX.V               " "                      ", 44);
+ 
+@@ -466,7 +531,6 @@ fdasd_prepare_labels (fdasd_anchor_t *an
+ 		}
+ 
+ 		vtoc_ebcdic_enc (ch, ch, 44);
+-		p = p->next;
+ 	}
+ 
+ 	return 1;
+@@ -482,6 +546,7 @@ fdasd_recreate_vtoc (fdasd_anchor_t *anc
+ 	vtoc_init_format4_label(anc->f4,
+ 							USABLE_PARTITIONS,
+ 							anc->geo.cylinders,
++						anc->formatted_cylinders,
+ 							anc->geo.heads,
+ 							anc->geo.sectors,
+ 							anc->blksize,
+@@ -492,8 +557,8 @@ fdasd_recreate_vtoc (fdasd_anchor_t *anc
+ 	vtoc_set_freespace(anc->f4, anc->f5, anc->f7,
+ 					   '+', anc->verbose,
+ 					   FIRST_USABLE_TRK,
+-					   anc->geo.cylinders * anc->geo.heads - 1,
+-					   anc->geo.cylinders, anc->geo.heads);
++				anc->formatted_cylinders * anc->geo.heads - 1,
++				anc->formatted_cylinders, anc->geo.heads);
+ 
+ 	for (i = 0; i < USABLE_PARTITIONS; i++) {
+ 		bzero(p->f1, sizeof(format1_label_t));
+@@ -507,7 +572,8 @@ fdasd_recreate_vtoc (fdasd_anchor_t *anc
+ 	}
+ 
+ 	anc->used_partitions = 0;
+-	anc->fspace_trk = anc->geo.cylinders * anc->geo.heads - FIRST_USABLE_TRK;
++	anc->fspace_trk = anc->formatted_cylinders * anc->geo.heads -
++			  FIRST_USABLE_TRK;
+ 
+ 	for (i=0; i<USABLE_PARTITIONS; i++)
+ 		setpos(anc, i, -1);
+@@ -526,15 +592,15 @@ fdasd_update_partition_info (fdasd_ancho
+ {
+ 	PDEBUG
+ 	partition_info_t *q = NULL, *p = anc->first;
+-	unsigned int h = anc->geo.heads;
+-	unsigned long max = anc->geo.cylinders * h - 1;
++	unsigned long max = anc->formatted_cylinders * anc->geo.heads - 1;
+ 	int i;
+ 	char *ch;
+ 
+ 	anc->used_partitions = anc->geo.sectors - 2 - anc->f4->DS4DSREC;
+ 
+ 	for (i = 1; i <= USABLE_PARTITIONS; i++) {
+-		if (p->f1->DS1FMTID != 0xf1) {
++		if (p->f1->DS1FMTID != 0xf1 &&
++		    p->f1->DS1FMTID != 0xf8) {
+ 			if (i == 1)
+ 				/* there is no partition at all */
+ 				anc->fspace_trk = max - FIRST_USABLE_TRK + 1;
+@@ -546,8 +612,8 @@ fdasd_update_partition_info (fdasd_ancho
+ 
+ 		/* this is a valid format 1 label */
+ 		p->used = 0x01;
+-		p->start_trk = p->f1->DS1EXT1.llimit.cc * h + p->f1->DS1EXT1.llimit.hh;
+-		p->end_trk   = p->f1->DS1EXT1.ulimit.cc * h + p->f1->DS1EXT1.ulimit.hh;
++		p->start_trk = cchh2trk(&p->f1->DS1EXT1.llimit,	&anc->geo);
++		p->end_trk = cchh2trk(&p->f1->DS1EXT1.ulimit, &anc->geo);
+ 		p->len_trk   = p->end_trk - p->start_trk + 1;
+ 
+ 		if (i == 1) {
+@@ -618,14 +684,22 @@ fdasd_process_valid_vtoc (fdasd_anchor_t
+ 	format1_label_t q;
+ 	char s[5], *ch;
+ 
++	if (anc->f4->DS4DEVCT.DS4DSCYL == LV_COMPAT_CYL &&
++	    anc->f4->DS4DCYL > anc->f4->DS4DEVCT.DS4DSCYL)
++		anc->formatted_cylinders = anc->f4->DS4DCYL;
++	else
++		anc->formatted_cylinders = anc->f4->DS4DEVCT.DS4DSCYL;
++	anc->fspace_trk = anc->formatted_cylinders * anc->geo.heads -
++			  FIRST_USABLE_TRK;
+ 	b += anc->blksize;
+ 
+-	for (i = 1; i <= anc->geo.sectors; i++) {
++	for (i = 1; i < anc->geo.sectors; i++) {
+ 		bzero (&q, f1size);
+ 		vtoc_read_label (fd, b, &q, NULL, NULL, NULL);
+ 
+ 		switch (q.DS1FMTID) {
+ 			case 0xf1:
++			case 0xf8:
+ 				if (p == NULL)
+ 					break;
+ 				memcpy (p->f1, &q, f1size);
+@@ -669,6 +743,12 @@ fdasd_process_valid_vtoc (fdasd_anchor_t
+ 					memcpy (anc->f7, &q, f1size);
+ 				f7_counter++;
+ 				break;
++			case 0xf9:
++				/* each format 8 lable has an associated
++				 * format 9 lable, but they are of no further
++				 * use to us.
++				 */
++				break;
+ 		}
+ 
+ 		b += anc->blksize;
+@@ -718,7 +798,7 @@ fdasd_check_volume (fdasd_anchor_t *anc,
+ {
+ 	PDEBUG
+ 	volume_label_t *v = anc->vlabel;
+-	unsigned long b = -1;
++	long long b = -1;
+ 	char str[LINE_LENGTH];
+ 
+ 	memset(v, 0, sizeof(volume_label_t));
+@@ -784,6 +864,7 @@ fdasd_get_geometry (const PedDevice *dev
+ 	PDEBUG
+ 	int blksize = 0;
+ 	dasd_information_t dasd_info;
++	struct dasd_eckd_characteristics *characteristics;
+ 
+ 	/* We can't get geometry from a regular file,
+ 	   so simulate something usable, for the sake of testing.  */
+@@ -803,6 +884,8 @@ fdasd_get_geometry (const PedDevice *dev
+ 	    dasd_info.devno = 513;
+ 	    dasd_info.label_block = 2;
+ 	    dasd_info.FBA_layout = 0;
++	    anc->hw_cylinders = ((st.st_size / blksize) / anc->geo.sectors) /
++				anc->geo.heads;
+ 	} else {
+ 		if (ioctl(f, HDIO_GETGEO, &anc->geo) != 0)
+ 			fdasd_error(anc, unable_to_ioctl,
+@@ -816,13 +899,20 @@ fdasd_get_geometry (const PedDevice *dev
+ 		if (ioctl(f, BIODASDINFO, &dasd_info) != 0)
+ 			fdasd_error(anc, unable_to_ioctl,
+ 				    _("Could not retrieve disk information."));
++
++		characteristics = (struct dasd_eckd_characteristics *)
++					&dasd_info.characteristics;
++		if (characteristics->no_cyl == LV_COMPAT_CYL &&
++		    characteristics->long_no_cyl)
++			anc->hw_cylinders = characteristics->long_no_cyl;
++		else
++			anc->hw_cylinders = characteristics->no_cyl;
+ 	}
+ 
+ 	anc->dev_type   = dasd_info.dev_type;
+ 	anc->blksize    = blksize;
+ 	anc->label_pos  = dasd_info.label_block * blksize;
+ 	anc->devno      = dasd_info.devno;
+-	anc->fspace_trk = anc->geo.cylinders * anc->geo.heads - FIRST_USABLE_TRK;
+ 	anc->label_block = dasd_info.label_block;
+ 	anc->FBA_layout = dasd_info.FBA_layout;
+ }
+@@ -850,20 +940,17 @@ fdasd_get_partition_data (fdasd_anchor_t
+                           unsigned int *stop_ptr)
+ {
+ 	PDEBUG
+-	unsigned int limit, cc, hh;
++	unsigned int limit;
++	u_int32_t cc, c;
++	u_int16_t hh, h;
+ 	cchh_t llimit, ulimit;
+ 	partition_info_t *q;
+ 	u_int8_t b1, b2;
+-	u_int16_t c, h;
+ 	unsigned int start = *start_ptr, stop = *stop_ptr;
+ 	int i;
+ 	char *ch;
+ 
+-	if (anc->f4->DS4DEVCT.DS4DEVFG & ALTERNATE_CYLINDERS_USED)
+-		c = anc->f4->DS4DEVCT.DS4DSCYL - (u_int16_t) anc->f4->DS4DEVAC;
+-	else
+-		c = anc->f4->DS4DEVCT.DS4DSCYL;
+-
++	c = get_usable_cylinders(anc);
+ 	h = anc->f4->DS4DEVCT.DS4DSTRK;
+ 	limit = (h * c - 1);
+ 
+@@ -1019,7 +1106,6 @@ fdasd_add_partition (fdasd_anchor_t *anc
+ 	cchhb_t hf1;
+ 	partition_info_t *p;
+ 	extent_t ext;
+-	int i;
+ 
+ 	PDEBUG;
+ 
+@@ -1032,8 +1118,14 @@ fdasd_add_partition (fdasd_anchor_t *anc
+ 	if (fdasd_get_partition_data(anc, &ext, p, &start, &stop) != 0)
+ 		return 0;
+ 
+-	PDEBUG;
+-	vtoc_init_format1_label(anc->vlabel->volid, anc->blksize, &ext, p->f1);
++	if (anc->formatted_cylinders > LV_COMPAT_CYL) {
++		vtoc_init_format8_label(anc->vlabel->volid, anc->blksize, &ext,
++					p->f1);
++	} else {
++		PDEBUG;
++		vtoc_init_format1_label(anc->vlabel->volid, anc->blksize, &ext,
++					p->f1);
++	}
+ 
+ 	PDEBUG;
+ 	fdasd_enqueue_new_partition(anc);
+@@ -1041,23 +1133,17 @@ fdasd_add_partition (fdasd_anchor_t *anc
+ 	PDEBUG;
+ 	anc->used_partitions += 1;
+ 
+-	i = anc->used_partitions + 2;
+-	if (anc->big_disk)
+-		i++;
+-	PDEBUG;
+-
+-	vtoc_set_cchhb(&hf1, VTOC_START_CC, VTOC_START_HH, i);
+-
++	get_addr_of_highest_f1_f8_label(anc, &hf1);
+ 	vtoc_update_format4_label(anc->f4, &hf1, anc->f4->DS4DSREC - 1);
+ 
+ 	PDEBUG;
+ 
+-	start = ext.llimit.cc * anc->geo.heads + ext.llimit.hh;
+-	stop  = ext.ulimit.cc * anc->geo.heads + ext.ulimit.hh;
++	start = cchh2trk(&ext.llimit, &anc->geo);
++	stop = cchh2trk(&ext.ulimit, &anc->geo);
+ 
+ 	PDEBUG;
+ 	vtoc_set_freespace(anc->f4, anc->f5, anc->f7, '-', anc->verbose,
+-					   start, stop, anc->geo.cylinders, anc->geo.heads);
++			start, stop, anc->formatted_cylinders, anc->geo.heads);
+ 
+ 	anc->vtoc_changed++;
+ 
+--- a/libparted/labels/vtoc.c
++++ b/libparted/labels/vtoc.c
+@@ -218,11 +218,32 @@ vtoc_set_extent (extent_t *ext, u_int8_t
+ }
+ 
+ void
+-vtoc_set_cchh (cchh_t *addr, u_int16_t cc, u_int16_t hh)
++vtoc_set_cchh (cchh_t *addr, u_int32_t cc, u_int16_t hh)
+ {
+ 	PDEBUG
+-	addr->cc = cc;
+-	addr->hh = hh;
++	addr->cc = (u_int16_t) cc;
++	addr->hh = cc >> 16;
++	addr->hh <<= 4;
++	addr->hh |= hh;
++}
++
++u_int32_t
++vtoc_get_cyl_from_cchh (cchh_t *addr)
++{
++	u_int32_t cyl;
++
++	/*decode cylinder for large volumes */
++	cyl = addr->hh & 0xFFF0;
++	cyl <<= 12;
++	cyl |= addr->cc;
++	return cyl;
++}
++
++u_int16_t
++vtoc_get_head_from_cchh (cchh_t *addr)
++{
++	/* decode heads for large volumes */
++	return addr->hh & 0x000F;
+ }
+ 
+ static void
+@@ -234,12 +255,63 @@ vtoc_set_ttr (ttr_t *addr, u_int16_t tt,
+ }
+ 
+ void
+-vtoc_set_cchhb (cchhb_t *addr, u_int16_t cc, u_int16_t hh, u_int8_t b)
++vtoc_set_cchhb (cchhb_t *addr, u_int32_t cc, u_int16_t hh, u_int8_t b)
+ {
+ 	PDEBUG
+-	addr->cc = cc;
+-	addr->hh = hh;
+-	addr->b = b;
++	addr->cc = (u_int16_t) cc;
++	addr->hh = cc >> 16;
++	addr->hh <<= 4;
++	addr->hh |= hh;
++	addr->b  = b;
++}
++
++u_int32_t
++vtoc_get_cyl_from_cchhb(cchhb_t *addr)
++{
++	u_int32_t cyl;
++
++	/* decode cylinder for large volumes */
++	cyl = addr->hh & 0xFFF0;
++	cyl <<= 12;
++	cyl |= addr->cc;
++	return cyl;
++}
++
++u_int16_t
++vtoc_get_head_from_cchhb(cchhb_t *addr)
++{
++	/* decode heads for large volumes */
++	return addr->hh & 0x000F;
++}
++
++/*
++ * some functions to convert cyl-cyl-head-head addresses to
++ * block or track numbers
++ * Note: Record zero is special, so first block on a track is
++ * in record 1!
++ */
++u_int64_t
++cchhb2blk (cchhb_t *p, struct fdasd_hd_geometry *geo)
++{
++	return (u_int64_t) vtoc_get_cyl_from_cchhb(p) *
++		geo->heads * geo->sectors +
++		vtoc_get_head_from_cchhb(p) * geo->sectors +
++		p->b;
++}
++
++u_int64_t
++cchh2blk (cchh_t *p, struct fdasd_hd_geometry *geo)
++{
++	return (u_int64_t) vtoc_get_cyl_from_cchh(p) *
++		geo->heads * geo->sectors +
++		vtoc_get_head_from_cchh(p) * geo->sectors;
++}
++
++u_int32_t
++cchh2trk (cchh_t *p, struct fdasd_hd_geometry *geo)
++{
++	return  vtoc_get_cyl_from_cchh(p) * geo->heads +
++		vtoc_get_head_from_cchh(p);
+ }
+ 
+ void
+@@ -506,7 +578,8 @@ vtoc_write_label (int f, unsigned long p
+ 		  format1_label_t const *f1,
+                   format4_label_t const *f4,
+ 		  format5_label_t const *f5,
+-		  format7_label_t const *f7)
++		  format7_label_t const *f7,
++		  format9_label_t const *f9)
+ {
+ 	PDEBUG
+ 	int t;
+@@ -542,6 +615,17 @@ vtoc_write_label (int f, unsigned long p
+ 			vtoc_error(unable_to_write, "vtoc_write_label",
+ 				   _("Could not write VTOC FMT7 DSCB."));
+ 	}
++
++	if (f9 != NULL)
++	{
++		t = sizeof(format9_label_t);
++		if (write(f, f9, t) != t)
++		{
++			close(f);
++			vtoc_error(unable_to_write, "vtoc_write_label",
++				   _("Could not write VTOC FMT9 DSCB."));
++		}
++	}
+ }
+ 
+ /*
+@@ -549,7 +633,8 @@ vtoc_write_label (int f, unsigned long p
+  */
+ void
+ vtoc_init_format4_label (format4_label_t *f4, unsigned int usable_partitions,
+-                         unsigned int cylinders, unsigned int tracks,
++                         unsigned int compat_cylinders,
++                         unsigned int real_cylinders, unsigned int tracks,
+                          unsigned int blocks, unsigned int blksize,
+                          u_int16_t dev_type)
+ {
+@@ -574,7 +659,7 @@ vtoc_init_format4_label (format4_label_t
+ 	f4->DS4DEVAC = 0x00;
+ 
+ 	/* -- begin f4->DS4DEVCT -- */
+-	f4->DS4DEVCT.DS4DSCYL = cylinders;
++	f4->DS4DEVCT.DS4DSCYL = compat_cylinders;
+ 	f4->DS4DEVCT.DS4DSTRK = tracks;
+ 
+ 	switch (dev_type) {
+@@ -613,7 +698,11 @@ vtoc_init_format4_label (format4_label_t
+ 	bzero(f4->res2, sizeof(f4->res2));
+ 	f4->DS4EFLVL = 0x00;
+ 	bzero(&f4->DS4EFPTR, sizeof(f4->DS4EFPTR));
+-	bzero(f4->res3, sizeof(f4->res3));
++	bzero(&f4->res3, sizeof(f4->res3));
++	f4->DS4DCYL = real_cylinders;
++	bzero(f4->res4, sizeof(f4->res4));
++	f4->DS4DEVF2 = 0x40; /* allow format 8 and 9 labels */
++	bzero(&f4->res5, sizeof(f4->res5));
+ }
+ 
+ /*
+@@ -647,11 +736,12 @@ vtoc_init_format7_label (format7_label_t
+ }
+ 
+ /*
+- * initializes a format1 label
++ * helper function that initializes a most parts of a
++ * format1 or format 8 label, all but the field DS1FMTID
+  */
+ void
+-vtoc_init_format1_label (char *volid, unsigned int blksize,
+-                         extent_t *part_extent, format1_label_t *f1)
++vtoc_init_format_1_8_label (char *volid, unsigned int blksize,
++                            extent_t *part_extent, format1_label_t *f1)
+ {
+ 	PDEBUG
+ 	struct tm * creatime;
+@@ -666,7 +756,6 @@ vtoc_init_format1_label (char *volid, un
+ 	sprintf(str, "PART    .NEW                                ");
+ 	vtoc_ebcdic_enc(str, str, 44);
+ 	strncpy(f1->DS1DSNAM, str, 44);
+-	f1->DS1FMTID = 0xf1;
+ 	strncpy(f1->DS1DSSN, "      ", 6);
+ 	f1->DS1VOLSQ = 0x0001;
+ 
+@@ -704,6 +793,37 @@ vtoc_init_format1_label (char *volid, un
+ 	vtoc_set_cchhb(&f1->DS1PTRDS, 0x0000, 0x0000, 0x00);
+ }
+ 
++void
++vtoc_init_format1_label (char *volid, unsigned int blksize,
++                         extent_t *part_extent, format1_label_t *f1)
++{
++	vtoc_init_format_1_8_label(volid, blksize, part_extent, f1);
++	f1->DS1FMTID = 0xf1;
++}
++
++void
++vtoc_init_format8_label (char *volid, unsigned int blksize,
++                         extent_t *part_extent, format1_label_t *f8)
++{
++	vtoc_init_format_1_8_label(volid, blksize, part_extent, f8);
++	f8->DS1FMTID = 0xf8;
++}
++
++void
++vtoc_update_format8_label (cchhb_t *associated_f9, format1_label_t *f8)
++{
++	memcpy(&f8->DS1PTRDS, associated_f9, sizeof(*associated_f9));
++}
++
++void
++vtoc_init_format9_label (format9_label_t *f9)
++{
++	f9->DS9KEYID = 0x09;
++	f9->DS9SUBTY = 0x01;
++	f9->DS9NUMF9 = 1;
++	f9->DS9FMTID = 0xf9;
++}
++
+ /*
+  * do some updates to the VTOC format4 label
+  */
+@@ -1060,7 +1180,7 @@ vtoc_update_format7_label_add (format7_l
+ 		if ((ext->a + ext->b) == 0x00000000)
+ 			continue;
+ 
+-		if ((ext->b + 1) == tmp->a) {
++		if (ext->b == tmp->a) {
+ 			/* this extent precedes the new one */
+ 			ext->b = tmp->b;
+ 			bzero(tmp, sizeof(ds7ext_t));
+@@ -1074,7 +1194,7 @@ vtoc_update_format7_label_add (format7_l
+ 			continue;
+ 		}
+ 
+-		if (ext->a == (tmp->b + 1)) {
++		if (ext->a == tmp->b) {
+ 			/* this extent succeeds the new one */
+ 			ext->a = tmp->a;
+ 			bzero(tmp, sizeof(ds7ext_t));
+@@ -1119,7 +1239,7 @@ vtoc_update_format7_label_del (format7_l
+ 
+ 		if ((a == ext->a) && (b < ext->b)) {
+ 			/* left-bounded in free space gap */
+-			ext->a = b + 1;
++			ext->a = b;
+ 
+ 			if (verbose)
+ 				puts ("FMT7 add extent: left-bounded");
+@@ -1130,7 +1250,7 @@ vtoc_update_format7_label_del (format7_l
+ 
+ 		if ((a > ext->a) && (b == ext->b)) {
+ 			/* right-bounded in free space gap */
+-			ext->b = a - 1;
++			ext->b = a;
+ 
+ 			if (verbose)
+ 				puts ("FMT7 add extent: right-bounded");
+@@ -1141,8 +1261,8 @@ vtoc_update_format7_label_del (format7_l
+ 
+ 		if ((a > ext->a) && (b < ext->b)) {
+ 			/* partition devides free space into 2 pieces */
+-			vtoc_update_format7_label_add(f7, verbose, b+1, ext->b);
+-			ext->b = a - 1;
++			vtoc_update_format7_label_add(f7, verbose, b, ext->b);
++			ext->b = a;
+ 
+ 			if (verbose)
+ 				puts ("FMT7 add extent: 2 pieces");
+@@ -1172,14 +1292,19 @@ vtoc_update_format7_label_del (format7_l
+ void
+ vtoc_set_freespace(format4_label_t *f4, format5_label_t *f5,
+                    format7_label_t *f7, char ch, int verbose,
+-                   u_int32_t start, u_int32_t stop, int cyl, int trk)
++                   u_int32_t start, u_int32_t stop, u_int32_t cyl,
++                   u_int32_t trk)
+ {
+ 	PDEBUG
+ 	if ((cyl * trk) > BIG_DISK_SIZE) {
+ 		if (ch == '+')
+-			vtoc_update_format7_label_add(f7, verbose, start, stop);
++			vtoc_update_format7_label_add(f7, verbose, start,
++						      /* ds7ext RTA + 1 */
++						      stop + 1);
+ 		else if (ch == '-')
+-			vtoc_update_format7_label_del(f7, verbose, start, stop);
++			vtoc_update_format7_label_del(f7, verbose, start,
++						      /* ds7ext RTA + 1 */
++						      stop + 1);
+ 		else
+ 			puts ("BUG: syntax error in vtoc_set_freespace call");
+ 

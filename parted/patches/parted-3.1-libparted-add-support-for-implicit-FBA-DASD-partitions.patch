@@ -1,0 +1,187 @@
+Subject: [PATCH] libparted: add support for implicit FBA DASD partitions
+
+From: Nageswara R Sastry <rnsastry@linux.vnet.ibm.com>
+
+Fixed Block Access (FBA) DASDs are mainframe-specific disk devices
+which are layed out as a sequence of 512-byte sectors. In contrast
+to ECKD DASDs, these disks do not require formatting and resemble
+the LBA layout of non-mainframe disks. Despite this resemblance,
+the Linux kernel applies special handling during partition detection
+for FBA DASDs, resulting in a single, immutable partition being
+reported.
+
+While actual FBA DASD hardware is no longer available, the z/VM
+hypervisor can simulate FBA DASD disks, backed by either ECKD or
+SCSI devices.
+
+This patch adds support for recognizing FBA DASD partitions
+to parted.
+
+Signed-off-by: Nageswara R Sastry <rnsastry@linux.vnet.ibm.com>
+Signed-off-by: Peter Oberparleiter <oberpar@linux.vnet.ibm.com>
+
+---
+ include/parted/fdasd.h   |    2 +
+ libparted/labels/dasd.c  |   63 ++++++++++++++++++++++++++++++++++++++++-------
+ libparted/labels/fdasd.c |    5 +++
+ 3 files changed, 61 insertions(+), 9 deletions(-)
+
+--- a/include/parted/fdasd.h
++++ b/include/parted/fdasd.h
+@@ -194,6 +194,8 @@ typedef struct fdasd_anchor {
+ 	volume_label_t   *vlabel;
+ 	config_data_t confdata[USABLE_PARTITIONS];
+ 	struct fdasd_hd_geometry geo;
++	unsigned int label_block;
++	unsigned int FBA_layout;
+ } fdasd_anchor_t;
+ 
+ enum offset {lower, upper};
+--- a/libparted/labels/dasd.c
++++ b/libparted/labels/dasd.c
+@@ -71,6 +71,7 @@ typedef struct {
+ 
+ typedef struct {
+ 	unsigned int format_type;
++	unsigned int label_block;
+ 	volume_label_t vlabel;
+ } DasdDiskSpecific;
+ 
+@@ -151,6 +152,7 @@ dasd_alloc (const PedDevice* dev)
+ 
+ 	/* CDL format, newer */
+ 	disk_specific->format_type = 2;
++	disk_specific->label_block = 2;
+ 
+ 	/* Setup volume label (for fresh disks) */
+ 	snprintf(volser, sizeof(volser), "0X%04X", arch_specific->devno);
+@@ -226,7 +228,9 @@ dasd_probe (const PedDevice *dev)
+ 
+ 	fdasd_check_api_version(&anchor, arch_specific->fd);
+ 
+-	if (fdasd_check_volume(&anchor, arch_specific->fd))
++	/* Labels are required on CDL formatted DASDs. */
++	if (fdasd_check_volume(&anchor, arch_specific->fd) &&
++	    anchor.FBA_layout == 0)
+ 		goto error_cleanup;
+ 
+ 	fdasd_cleanup(&anchor);
+@@ -273,17 +277,53 @@ dasd_read (PedDisk* disk)
+ 	fdasd_initialize_anchor(&anchor);
+ 
+ 	fdasd_get_geometry(disk->dev, &anchor, arch_specific->fd);
++	disk_specific->label_block = anchor.label_block;
++
++	if ((anchor.geo.cylinders * anchor.geo.heads) > BIG_DISK_SIZE)
++		anchor.big_disk++;
+ 
+ 	/* check dasd for labels and vtoc */
+-	if (fdasd_check_volume(&anchor, arch_specific->fd))
+-		goto error_close_dev;
++	if (fdasd_check_volume(&anchor, arch_specific->fd)) {
++		DasdPartitionData* dasd_data;
++
++		/* Kernel partitioning code will report 'implicit' partitions
++		 * for non-CDL format DASDs even when there is no
++		 * label/VTOC.  */
++		if (anchor.FBA_layout == 0)
++			goto error_close_dev;
++
++		disk_specific->format_type = 1;
++
++		/* Register implicit partition */
++		ped_disk_delete_all (disk);
++
++		start = (PedSector) arch_specific->real_sector_size /
++			(PedSector) disk->dev->sector_size *
++			(PedSector) (anchor.label_block + 1);
++		end = disk->dev->length - 1;
++		part = ped_partition_new (disk, PED_PARTITION_NORMAL, NULL,
++					  start, end);
++		if (!part)
++			goto error_close_dev;
++
++		part->num = 1;
++		part->fs_type = ped_file_system_probe (&part->geom);
++		dasd_data = part->disk_specific;
++		dasd_data->raid = 0;
++		dasd_data->lvm = 0;
++		dasd_data->type = 0;
++
++		if (!ped_disk_add_partition (disk, part, NULL))
++			goto error_close_dev;
++
++		fdasd_cleanup(&anchor);
++
++		return 1;
++	}
+ 
+ 	/* Save volume label (read by fdasd_check_volume) for writing */
+ 	memcpy(&disk_specific->vlabel, anchor.vlabel, sizeof(volume_label_t));
+ 
+-	if ((anchor.geo.cylinders * anchor.geo.heads) > BIG_DISK_SIZE)
+-		anchor.big_disk++;
+-
+ 	ped_disk_delete_all (disk);
+ 
+ 	bool is_ldl = strncmp(anchor.vlabel->volkey,
+@@ -348,7 +388,7 @@ dasd_read (PedDisk* disk)
+ 			    / (long long) disk->dev->sector_size
+ 			    * (long long) (cms_ptr->block_count - 1) - 1;
+ 
+-		part = ped_partition_new (disk, PED_PARTITION_PROTECTED, NULL, start, end);
++		part = ped_partition_new (disk, PED_PARTITION_NORMAL, NULL, start, end);
+ 		if (!part)
+ 			goto error_close_dev;
+ 
+@@ -923,7 +963,12 @@ dasd_alloc_metadata (PedDisk* disk)
+ 	   the start of the first partition */
+ 	if (disk_specific->format_type == 1) {
+ 	        part = ped_disk_get_partition(disk, 1);
+-		vtoc_end = part->geom.start - 1;
++		if (part)
++			vtoc_end = part->geom.start - 1;
++		else
++			vtoc_end = (PedSector) arch_specific->real_sector_size /
++				   (PedSector) disk->dev->sector_size *
++				   (PedSector) disk_specific->label_block;
+ 	}
+ 	else {
+                 if (disk->dev->type == PED_DEVICE_FILE)
+@@ -943,7 +988,7 @@ dasd_alloc_metadata (PedDisk* disk)
+ 		goto error;
+ 	}
+ 
+-	if (disk_specific->format_type == 1) {
++	if (disk_specific->format_type == 1 && part) {
+ 	   /*
+ 	      For LDL or CMS there may be trailing metadata as well.
+ 	      For example: the last block of a CMS reserved file,
+--- a/libparted/labels/fdasd.c
++++ b/libparted/labels/fdasd.c
+@@ -721,6 +721,7 @@ fdasd_check_volume (fdasd_anchor_t *anc,
+ 	unsigned long b = -1;
+ 	char str[LINE_LENGTH];
+ 
++	memset(v, 0, sizeof(volume_label_t));
+ 	vtoc_read_volume_label (fd, anc->label_pos, v);
+ 
+ 	if (strncmp(v->vollbl, vtoc_ebcdic_enc ("VOL1", str, 4), 4) == 0) {
+@@ -800,6 +801,8 @@ fdasd_get_geometry (const PedDevice *dev
+ 	    dasd_info.dev_type = 13200;
+ 	    dasd_info.label_block = 2;
+ 	    dasd_info.devno = 513;
++	    dasd_info.label_block = 2;
++	    dasd_info.FBA_layout = 0;
+ 	} else {
+ 		if (ioctl(f, HDIO_GETGEO, &anc->geo) != 0)
+ 			fdasd_error(anc, unable_to_ioctl,
+@@ -820,6 +823,8 @@ fdasd_get_geometry (const PedDevice *dev
+ 	anc->label_pos  = dasd_info.label_block * blksize;
+ 	anc->devno      = dasd_info.devno;
+ 	anc->fspace_trk = anc->geo.cylinders * anc->geo.heads - FIRST_USABLE_TRK;
++	anc->label_block = dasd_info.label_block;
++	anc->FBA_layout = dasd_info.FBA_layout;
+ }
+ 
+ /*

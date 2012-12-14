@@ -43,7 +43,7 @@ fi
 NAME=samba
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-3.6.10}
+VERSION=${VERSION:-4.0.0}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -62,6 +62,13 @@ SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+grep --quiet '^wbpriv:' /etc/group && SB_HGROUP=1
+
+PERLVENDORARCH=$(eval "$(perl -V:vendorarch)"; echo ${vendorarch})
+PERLVENDORLIB=$(eval "$(perl -V:vendorlib)"; echo ${vendorlib})
+PERLARCHLIB=$(eval "$(perl -V:archlib)"; echo ${archlib})
+PERLVER=$(eval "$(perl -V:version)"; echo ${version})
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -114,16 +121,20 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-( cd source3 || exit 1
+sed -i \
+  -e '/PIDFile/s|/run/|/run/samba/|g' \
+  -e '/EnvironmentFile/s|sysconfig|default|g' \
+  packaging/systemd/*.service
 
-  mv VERSION VERSION.orig
-  sed -e "s/SAMBA_VERSION_VENDOR_SUFFIX=$/&\"${BUILD}${PACKAGER_ID}\"/" \
-     VERSION.orig > VERSION
-  script/mkversion.sh || exit 1
+sed -i -e "s|\$(WAF) build|\0 -v -j ${NJOBS}|g" Makefile || exit 1
 
-  sh autogen.sh || exit 1
+_samba4_idmap_modules="idmap_ad,idmap_rid,idmap_adex,idmap_hash,idmap_tdb2"
+_samba4_pdb_modules="pdb_tdbsam,pdb_ldap,pdb_ads,pdb_smbpasswd,pdb_wbc_sam,pdb_samba4"
+_samba4_auth_modules="auth_unix,auth_wbc,auth_server,auth_netlogond,auth_script,auth_samba4"
 
-CFLAGS="${SLKCFLAGS} -D_GNU_SOURCE -DLDAP_DEPRECATED" \
+_samba4_libraries="heimdal,!zlib,!popt"
+
+CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
@@ -133,55 +144,62 @@ CXXFLAGS="${SLKCFLAGS}" \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
+  --enable-fhs \
   --with-configdir=/etc/samba \
   --with-modulesdir=/usr/lib${LIBDIRSUFFIX}/samba \
-  --with-piddir=/var/run \
+  --with-piddir=/var/run/samba \
+  --with-sockets-dir=/var/run/samba \
   --with-privatedir=/etc/samba/private \
   --localstatedir=/var \
   --with-lockdir=/var/cache/samba \
-  --with-swatdir=/usr/share/swat \
   --with-logfilebase=/var/log/samba \
   --enable-cups \
-  --enable-static=no \
-  --enable-shared=yes \
-  --with-acl-support=yes \
   --with-automount \
-  --with-cifsmount \
   --with-quotas \
   --with-syslog \
   --with-utmp \
-  --with-libsmbclient \
   --with-winbind \
   --with-ldap \
-  --with-shared-modules=idmap_ad,idmap_rid,idmap_adex,idmap_hash,idmap_tdb2 \
-  --with-libtalloc=no \
-  --enable-external-libtalloc=yes \
-  --with-libtdb=no \
-  --with-pam=no \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
-
-mkdir -p \
-  ${DOCDIR} \
-  ${PKG}/var/spool/samba \
-  ${PKG}/var/log/samba \
-  ${PKG}/etc/samba/private \
-  ${PKG}/var/cache/samba
-chmod 700 ${PKG}/etc/samba/private
-chmod 1777 ${PKG}/var/spool/samba
+  --disable-gnutls \
+  --disable-rpath-install \
+  --with-shared-modules=${_samba4_idmap_modules},${_samba4_pdb_modules},${_samba4_auth_modules} \
+  --builtin-libraries=ccan \
+  --bundled-libraries=${_samba4_libraries} \
+  --without-pam \
+  --without-pam_smbpass \
+  --disable-ntdb \
+   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
-make install-everything DESTDIR=${PKG} || exit 1
 
-# Install libnss_win* libraries:
-mkdir -p ${PKG}/lib${LIBDIRSUFFIX}
-cp -a ../nsswitch/libnss_winbind.so ${PKG}/lib${LIBDIRSUFFIX}/libnss_winbind.so.2 || exit 1
-cp -a ../nsswitch/libnss_wins.so ${PKG}/lib${LIBDIRSUFFIX}/libnss_wins.so.2 || exit 1
-( cd ${PKG}/lib${LIBDIRSUFFIX}
-  ln -sf libnss_winbind.so.2 libnss_winbind.so
-  ln -sf libnss_wins.so.2 libnss_wins.so
-)
+(cd pidl && perl Makefile.PL INSTALLDIRS=vendor ) || exit $?
 
-) || exit 1
+make install DESTDIR=${PKG} || exit $?
+
+mkdir -p ${PKG}/usr/{sbin,bin}
+mkdir -p ${PKG}/var/lib/samba
+mkdir -p ${PKG}/etc/samba/private
+mkdir -p ${PKG}/var/lib/samba/winbindd_privileged
+mkdir -p ${PKG}/var/lib/samba/scripts
+mkdir -p ${PKG}/var/lib/samba/sysvol
+mkdir -p ${PKG}/var/log/samba/old
+mkdir -p ${PKG}/var/cache/samba
+mkdir -p ${PKG}/var/spool/samba
+mkdir -p ${PKG}/usr/share/swat/using_samba
+mkdir -p ${PKG}/var/run/samba
+mkdir -p ${PKG}/var/run/winbindd
+chmod 700 ${PKG}/etc/samba/private
+chmod 0750 ${PKG}/var/lib/samba/winbindd_privileged
+chmod 1777 ${PKG}/var/spool/samba
+
+# Undo the PIDL install, we want to try again with the right options.
+rm -rf ${PKG}/usr/lib*/perl5
+rm -rf ${PKG}/usr/share/perl5
+
+# Install PIDL.
+( cd pidl && make install PERL_INSTALL_ROOT=${PKG} ) || exit $?
+
+/sbin/ldconfig -N -n ${PKG}/usr/lib${LIBDIRSUFFIX}
 
 mkdir -p ${PKG}/sbin
 install -pm0755 examples/scripts/mount/mount.smbfs \
@@ -189,11 +207,25 @@ install -pm0755 examples/scripts/mount/mount.smbfs \
 
 ln -sf ../../sbin/mount.smbfs ${PKG}/usr/bin/smbmount || exit 1
 
+install -m 0744 packaging/printing/smbprint ${PKG}/usr/bin/smbprint || exit 1
+
+find ${PKG} -type f \( -name perllocal.pod -o -name .packlist \) -exec rm -f {} \;
+find ${PKG} -type f -name '*.bs' -a -size 0 -exec rm -f {} ';'
+rm -f ${PKG}/${PERLVENDORLIB}/wscript_build
+rm -rf ${PKG}/${PERLVENDORLIB}/Parse/Yapp
+chmod -R u+w ${PKG}/*
+
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 # Add a sample config file:
 cat ${CWD}/smb.conf.default > ${PKG}/etc/samba/smb.conf-sample
+
+echo 127.0.0.1 localhost > ${PKG}/etc/samba/lmhosts.new || exit 1
+
+mkdir -p ${PKG}/etc/openldap/schema
+install -m0644 examples/LDAP/samba.schema \
+  ${PKG}/etc/openldap/schema/samba.schema || exit 1
 
 if [ ! -r ${PKG}/usr/bin/smbget ]; then
   rm -f ${PKG}/usr/man/man1/smbget.1 ${PKG}/usr/share/man/man1/smbget.1
@@ -204,42 +236,61 @@ rm -f ${PKG}/usr/man/man8/tdbbackup.8* ${PKG}/usr/share/man/man8/tdbbackup.8*
 rm -f ${PKG}/usr/man/man8/tdbdump.8* ${PKG}/usr/share/man/man8/tdbdump.8*
 rm -f ${PKG}/usr/man/man8/tdbtool.8* ${PKG}/usr/share/man/man8/tdbtool.8*
 
+mkdir -p ${PKG}/etc/logrotate.d
+cat > ${PKG}/etc/logrotate.d/samba.new <<'EOF'
+/var/log/samba/* {
+    notifempty
+    olddir /var/log/samba/old
+    missingok
+    sharedscripts
+    copytruncate
+}
+EOF
+
 # We'll add rc.samba to the init directory, but chmod 644 so that it doesn't
 # start by default:
 mkdir -p ${PKG}/etc/rc.d
 install -pm0644 ${CWD}/rc.samba ${PKG}/etc/rc.d/rc.samba.new || exit 1
 
 mkdir -p ${PKG}/lib/systemd/system
-install -pm0644 ${CWD}/systemd/*.service ${PKG}/lib/systemd/system/ || exit 1
+install -pm0644 packaging/systemd/*.service ${PKG}/lib/systemd/system/ || exit 1
+
+mkdir -p ${PKG}/usr/lib/tmpfiles.d
+install -m644 packaging/systemd/samba.conf.tmp \
+  ${PKG}/usr/lib/tmpfiles.d/samba.conf || exit 1
+
+echo 'd /var/run/winbindd  755 root root' \
+  > ${PKG}/usr/lib/tmpfiles.d/winbindd.conf || exit 1
 
 mkdir ${PKG}/etc/default
-cat > ${PKG}/etc/default/samba.new <<EOF
-# Options to smbd
-SMBD_OPTS=""
-# Options to nmbd
-NMBD_OPTS=""
-# Options for winbindd
-WINBIND_OPTS=""
+install -m 0644 packaging/systemd/samba.sysconfig \
+  ${PKG}/etc/default/samba.new || exit 1
 
+cat >> ${PKG}/etc/default/samba.new <<EOF
+# Set to YES to load samba AD
+SAMBA=NO
 # Set to YES to load winbind
 WINBIND=YES
 EOF
+
+# NetworkManager online/offline script
+mkdir -p ${PKG}/etc/NetworkManager/dispatcher.d/
+install -m 0755 packaging/NetworkManager/30-winbind-systemd \
+  ${PKG}/etc/NetworkManager/dispatcher.d/30-winbind || exir 1
 
 # PAM related stuff we don't use:
 rm -rf ${PKG}/usr/share/locale
 rm -f ${PKG}/usr/man/man8/pam* ${PKG}/usr/share/man/man8/pam*
 
 # Add a documentation directory:
-mkdir -p ${DOCDIR}
+mkdir -p ${DOCDIR}/htmldocs
 cp -a \
   COPYING* MAINTAINERS Manifest PFIF.txt README* \
-  Read-Manifest-Now Roadmap WHATSNEW.txt docs examples \
+  Read-Manifest-Now Roadmap WHATSNEW.txt examples \
   ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
-rm -rf ${DOCDIR}/docs/{htmldocs,manpages}
-ln -sf ../../../share/swat/help ${DOCDIR}/docs/htmldocs
-ln -sf ../../../share/swat/using_samba ${DOCDIR}/docs/using_samba
-rm -rf docs/*.pdf docs/docbook
+ln -sf ../../../share/samba/swat/help ${DOCDIR}/htmldocs
+ln -sf ../../share/swat/using_samba ${DOCDIR}/using_samba
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
 
@@ -268,14 +319,36 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<EOF
+cat > ${PKG}/install/doinst.sh <<'EOF'
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
 # Figure out our root directory
-ROOTDIR=\$(pwd)
+ROOTDIR=$(pwd)
 unset CHROOT
-if test "\${ROOTDIR}" != "/"; then
-  CHROOT="chroot \${ROOTDIR} "
-  ROOTDIR="\${ROOTDIR}/"
+if test "${ROOTDIR}" != "/"; then
+  CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
+
+# Set up group.
+if ! grep --quiet '^wbpriv:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    wbpriv
+fi
+
+${CHROOT} /bin/chown root.wbpriv /var/lib/samba/winbindd_privileged
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -298,7 +371,8 @@ fi
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
@@ -313,15 +387,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/{patches,systemd}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/apply-patches.sh ${CWD}/*.conf.default ${CWD}/rc.* ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
-  install -m0644 ${CWD}/systemd/*.service \
-    ${SBDIR}/systemd/
   rmdir ${SBDIR}/patches
 fi
 
@@ -331,7 +403,8 @@ set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
-  /bin/chmod 1777 ./var/spool/samba ; "
+  /bin/chmod 1777 ./var/spool/samba ; 
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.wbpriv ./var/lib/samba/winbindd_privileged ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

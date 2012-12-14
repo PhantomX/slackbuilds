@@ -5,21 +5,15 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # Set to test (some patches require others, so, is not 100%)
-DRYRUN=${DRYRUN:-NO}
+PATCH_DRYRUN=${PATCH_DRYRUN:-NO}
 
-if [ "${DRYRUN}" = "YES" ] ; then
-  DRYRUN_OPT="--dry-run"
-fi
+unset PATCH_DRYRUN_OPT PATCH_VERBOSE_OPT
 
-if [ "${VERBOSE}" = "YES" ] ; then
-  VERBOSE_OPT="--verbose"
-fi
+[ "${PATCH_DRYRUN}" = "YES" ] && PATCH_DRYRUN_OPT="--dry-run"
+[ "${PATCH_VERBOSE}" = "YES" ] && PATCH_VERBOSE_OPT="--verbose"
+[ "${PATCH_SVERBOSE}" = "YES" ] && set -o xtrace
 
-if [ "${SVERBOSE}" = "YES" ] ; then
-  set -o xtrace
-fi
-
-PATCHCOM="patch ${DRYRUN_OPT} -p1 -F1 -s ${VERBOSE_OPT}"
+PATCHCOM="patch ${PATCH_DRYRUN_OPT} -p1 -F1 -s ${PATCH_VERBOSE_OPT}"
 
 ApplyPatch() {
   local patch=$1
@@ -133,7 +127,6 @@ ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
 #
 # SCSI / block Bits.
 #
-ApplyPatch scsi-check-host-lookup-failure.patch
 
 # BFQ disk scheduler - http://algo.ing.unimo.it/people/paolo/disk_sched/
 mkdir -p bfq_patches
@@ -146,7 +139,6 @@ done
     ApplyPatch ${file}
   done
 )
-ApplyPatch 0001-block-bfq-be-sure-to-schedule-a-dispatch-after-chang.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -186,10 +178,9 @@ ApplyPatch linux-2.6-crash-driver.patch
 # crypto/
 
 # DRM core
-ApplyPatch drm-vgem.patch
+#ApplyPatch drm-vgem.patch
 
 # Nouveau DRM
-#ApplyOptionalPatch drm-nouveau-updates.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
@@ -220,33 +211,8 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
 
-#rhbz 869904 869909 CVE-2012-4508
-ApplyPatch 0001-ext4-ext4_inode_info-diet.patch
-ApplyPatch 0002-ext4-give-i_aiodio_unwritten-a-more-appropriate-name.patch
-ApplyPatch 0003-ext4-fix-unwritten-counter-leakage.patch
-ApplyPatch 0004-ext4-completed_io-locking-cleanup.patch
-ApplyPatch 0005-ext4-serialize-dio-nonlocked-reads-with-defrag-worke.patch
-ApplyPatch 0006-ext4-serialize-unlocked-dio-reads-with-truncate.patch
-ApplyPatch 0007-ext4-endless-truncate-due-to-nonlocked-dio-readers.patch
-ApplyPatch 0008-ext4-serialize-truncate-with-owerwrite-DIO-workers.patch
-ApplyPatch 0009-ext4-punch_hole-should-wait-for-DIO-writers.patch
-ApplyPatch 0010-ext4-fix-ext_remove_space-for-punch_hole-case.patch
-ApplyPatch 0011-ext4-fix-ext4_flush_completed_IO-wait-semantics.patch
-ApplyPatch 0012-ext4-serialize-fallocate-with-ext4_convert_unwritten.patch
-
-ApplyPatch uprobes-upstream-backport.patch
-
-#rhbz 871078
-ApplyPatch USB-EHCI-urb-hcpriv-should-not-be-NULL.patch
-ApplyPatch USB-report-submission-of-active-URBs.patch
-
-#rhbz 869341
-ApplyPatch smp_irq_move_cleanup_interrupt.patch
-
-#rhbz 812129
-ApplyPatch block-fix-a-crash-when-block-device-is.patch
-ApplyPatch blockdev-turn-a-rw-semaphore-into-a-percpu-rw-sem.patch
-ApplyPatch fs-lock-splice_read-and-splice_write-functions.patch
+#Build patch, should go away
+ApplyPatch irqnr-build.patch
 
 #rhbz 874791
 ApplyPatch Bluetooth-Add-support-for-BCM20702A0.patch
@@ -257,9 +223,6 @@ ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
 #rhbz CVE-2012-4530 868285 880147
 ApplyPatch exec-do-not-leave-bprm-interp-on-stack.patch
 ApplyPatch exec-use-eloop-for-max-recursion-depth.patch
-
-#rhbz 869629
-ApplyPatch SCSI-mvsas-Fix-oops-when-ata-commond-timeout.patch
 
 #rhbz 851278
 ApplyPatch 8139cp-re-enable-interrupts-after-tx-timeout.patch

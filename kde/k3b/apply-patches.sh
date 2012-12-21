@@ -10,6 +10,10 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/k3b-2.0.1-sndfile-inc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/113_initial_preference.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/114_bug587996_bdr_capacity_fix.diff
 
+## upstreamable patches
+# From Fedora
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/k3b-2.0.2-use_vartmp_instead_of_tmp.patch
+
 ## upstream patches
 # wodim(cdrecord) doesnt work for dvds, use growisofs instead
 # http://bugzilla.redhat.com/610976

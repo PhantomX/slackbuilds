@@ -21,5 +21,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-plugin-test.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-cipherspec.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-file-contents.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-string-overflow.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mysql-dh1024.patch
 
 set +e +o pipefail

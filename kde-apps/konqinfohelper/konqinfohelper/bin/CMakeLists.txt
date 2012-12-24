@@ -1,4 +1,0 @@
-
-set(BINFILES konqinfohelper )
-
-install(PROGRAMS ${BINFILES} DESTINATION "${HELPER_INSTALL_DIR}" )

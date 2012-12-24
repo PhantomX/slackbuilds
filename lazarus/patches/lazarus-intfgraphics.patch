@@ -1,0 +1,455 @@
+--- lcl/intfgraphics.pas.orig	2011-06-28 05:31:19.000000000 -0300
++++ lcl/intfgraphics.pas	2012-09-03 18:16:16.000000000 -0300
+@@ -1,4 +1,4 @@
+-{  $Id: intfgraphics.pas 31422 2011-06-28 08:31:19Z vincents $  }
++{  $Id: intfgraphics.pas 38512 2012-09-03 21:16:16Z mattias $  }
+ {
+  /***************************************************************************
+                               intfgraphics.pp
+@@ -33,7 +33,7 @@ interface
+ uses
+   Classes, SysUtils, fpImage, FPReadBMP, FPWriteBMP, BMPComn, FPCAdds,
+   AvgLvlTree, LCLType, LCLversion, Math,
+-  LCLProc, GraphType, LCLIntf, FPReadPNG, FPWritePNG, FPReadTiff, FPWriteTiff,
++  LCLProc, GraphType, FPReadPNG, FPWritePNG, FPReadTiff, FPWriteTiff, FPTiffCmn,
+   IcnsTypes;
+ 
+ type
+@@ -115,7 +115,7 @@ type
+     FRawImage: TRawImage;
+     FLineStarts: PRawImageLineStarts;
+     FMaskLineStarts: PRawImageLineStarts;
+-    FMaskSet: Boolean; // Set when atleast one maskpixel is set
++    FMaskSet: Boolean; // Set when at least one maskpixel is set
+     FUpdateCount: integer;
+     fCreateAllDataNeeded: boolean;
+     FGetSetColorFunctionsUpdateNeeded: boolean;
+@@ -236,6 +236,7 @@ type
+     constructor Create(AWidth, AHeight: integer); override;
+     constructor Create(AWidth, AHeight: integer; AFlags: TRawImageQueryFlags);
+     constructor Create(ARawImage: TRawImage; ADataOwner: Boolean);
++    constructor CreateCompatible(IntfImg: TLazIntfImage; AWidth, AHeight: integer);
+     destructor Destroy; override;
+     procedure BeginUpdate;
+     procedure EndUpdate;
+@@ -252,12 +253,14 @@ type
+                          AlphaMask: Boolean = False; AlphaTreshold: Word = 0); virtual;
+     procedure AlphaBlend(ASource, ASourceAlpha: TLazIntfImage; const ADestX, ADestY: Integer);
+     procedure AlphaFromMask(AKeepAlpha: Boolean = True);
++    procedure Mask(const AColor: TFPColor; AKeepOldMask: Boolean = False);
+     procedure GetXYDataPosition(x, y: integer; out Position: TRawImagePosition);
+     procedure GetXYMaskPosition(x, y: integer; out Position: TRawImagePosition);
+     function  GetDataLineStart(y: integer): Pointer;// similar to Delphi TBitmap.ScanLine. Only works with lines aligned to whole bytes.
+     procedure CreateData; virtual;
+     function  HasTransparency: boolean; virtual;
+     function  HasMask: boolean; virtual;
++    procedure SetDataDescriptionKeepData(const ADescription: TRawImageDescription);
+   public
+     property PixelData: PByte read FRawImage.Data;
+     property MaskData: PByte read FRawImage.Mask;
+@@ -390,9 +393,9 @@ type
+     FPixelToColorTree: TArrayNodesTree;
+     FContinue: Boolean;
+     FUpdateDescription: Boolean; // If set, update rawimagedescription
++  public
+     function  GetUpdateDescription: Boolean;
+     procedure SetUpdateDescription(AValue: Boolean);
+-  protected
+ {$IFDEF FPC_HAS_CONSTREF}
+     function QueryInterface(constref iid: TGuid; out obj): LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+     function _AddRef: LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+@@ -492,10 +495,9 @@ type
+     function RGBToFPColor(const AColor: TColorRGB): TFPcolor;
+     function RGBToFPColor(const AColor: Word): TFPcolor;
+ 
+-
++  public
+     function  GetUpdateDescription: Boolean;
+     procedure SetUpdateDescription(AValue: Boolean);
+-  protected
+ {$IFDEF FPC_HAS_CONSTREF}
+     function QueryInterface(constref iid: TGuid; out obj): LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+     function _AddRef: LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+@@ -542,8 +544,7 @@ type
+   { TLazWriterBMP }
+ 
+   TLazWriterBMP = class(TFPWriterBMP, ILazImageWriter)
+-  private
+-  protected
++  public
+ {$IFDEF FPC_HAS_CONSTREF}
+     function QueryInterface(constref iid: TGuid; out obj): LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+     function _AddRef: LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+@@ -574,9 +575,9 @@ type
+   private
+     FAlphaPalette: Boolean;
+     FUpdateDescription: Boolean;
++  public
+     function  GetUpdateDescription: Boolean;
+     procedure SetUpdateDescription(AValue: Boolean);
+-  protected
+ {$IFDEF FPC_HAS_CONSTREF}
+     function QueryInterface(constref iid: TGuid; out obj): LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+     function _AddRef: LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+@@ -597,8 +598,7 @@ type
+   { TLazWriterPNG }
+ 
+   TLazWriterPNG = class(TFPWriterPNG, ILazImageWriter)
+-  private
+-  protected
++  public
+ {$IFDEF FPC_HAS_CONSTREF}
+     function QueryInterface(constref iid: TGuid; out obj): LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+     function _AddRef: LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+@@ -623,16 +623,26 @@ const
+   LazTiffSoftware = LazTiffExtraPrefix + 'Software';
+ 
+ type
++  {$IF FPC_FULLVERSION<20601}
++  {$DEFINE OldTiffCreateImageHook}
++  {$ENDIF}
++
+   TLazReaderTiff = class(TFPReaderTiff, ILazImageReader)
+   private
+     FUpdateDescription: Boolean;
++    {$IFDEF OldTiffCreateImageHook}
+     // the OnCreateImage event is "abused" to update the description after the
+     // format and before the image is read
+     FOrgEvent: TTiffCreateCompatibleImgEvent;
+-    function  GetUpdateDescription: Boolean;
+-    procedure SetUpdateDescription(AValue: Boolean);
+     procedure CreateImageHook(Sender: TFPReaderTiff; var NewImage: TFPCustomImage);
++    procedure DoCreateImage(ImgFileDir: TTiffIDF);
++    {$ELSE}
+   protected
++    procedure DoCreateImage(ImgFileDir: TTiffIFD); override;
++    {$ENDIF}
++  public
++    function  GetUpdateDescription: Boolean;
++    procedure SetUpdateDescription(AValue: Boolean);
+ {$IFDEF FPC_HAS_CONSTREF}
+     function QueryInterface(constref iid: TGuid; out obj): LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+     function _AddRef: LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+@@ -651,8 +661,7 @@ type
+   { TLazWriterTiff }
+ 
+   TLazWriterTiff = class(TFPWriterTiff, ILazImageWriter)
+-  private
+-  protected
++  public
+ {$IFDEF FPC_HAS_CONSTREF}
+     function QueryInterface(constref iid: TGuid; out obj): LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+     function _AddRef: LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+@@ -685,6 +694,15 @@ type
+   protected
+     function  InternalCheck(Str:TStream): boolean; override;
+     procedure InternalRead(Stream: TStream; Img: TFPCustomImage); override;
++    procedure SetupRead(AWidth, AHeight, ADepth: Integer; IsMask: Boolean);
++    function Create256ColorPalette: TFPPalette;
++    procedure DoReadRaw;
++    procedure DoReadRLE;
++    procedure DoReadJpeg2000;
++    procedure DoReadMask;
++  public
++    function GetUpdateDescription: Boolean;
++    procedure SetUpdateDescription(AValue: Boolean);
+ {$IFDEF FPC_HAS_CONSTREF}
+     function QueryInterface(constref iid: TGuid; out obj): LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+     function _AddRef: LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
+@@ -694,14 +712,6 @@ type
+     function _AddRef: LongInt; stdcall;
+     function _Release: LongInt; stdcall;
+ {$ENDIF}
+-    function GetUpdateDescription: Boolean;
+-    procedure SetUpdateDescription(AValue: Boolean);
+-    procedure SetupRead(AWidth, AHeight, ADepth: Integer; IsMask: Boolean);
+-    function Create256ColorPalette: TFPPalette;
+-    procedure DoReadRaw;
+-    procedure DoReadRLE;
+-    procedure DoReadJpeg2000;
+-    procedure DoReadMask;
+   public
+     constructor Create; override;
+     destructor Destroy; override;
+@@ -731,7 +741,7 @@ function dbgs(const FPColor: TFPColor):
+ implementation
+ 
+ uses
+-  Graphics;
++  Graphics, LCLIntf;
+   
+ type
+   PFPColorBytes = ^TFPColorBytes;
+@@ -818,7 +828,7 @@ end;
+ function QueryDescription(AFlags: TRawImageQueryFlags; AWidth: Integer = -1; AHeight: integer = -1): TRawImageDescription;
+ begin
+   Exclude(AFlags, riqfUpdate);
+-  Result.Init;
++  Result{%H-}.Init;
+   QueryDescription(Result, AFlags, AWidth, AHeight);
+ end;
+ 
+@@ -836,7 +846,7 @@ end;
+ 
+ function GetDescriptionFromDevice(ADC: HDC; AWidth, AHeight: integer): TRawImageDescription;
+ begin
+-  Result.Init;
++  Result{%H-}.Init;
+   if not RawImage_DescriptionFromDevice(ADC, Result) then Exit;
+   if AWidth <> -1 then Result.Width := AWidth;
+   if AHeight <> -1 then Result.Height := AHeight;
+@@ -844,7 +854,7 @@ end;
+ 
+ function GetDescriptionFromBitmap(ABitmap: HBitmap; AWidth: Integer = -1; AHeight: integer = -1): TRawImageDescription;
+ begin
+-  Result.Init;
++  Result{%H-}.Init;
+   if not RawImage_DescriptionFromBitmap(ABitmap, Result) then Exit;
+   if AWidth <> -1 then Result.Width := AWidth;
+   if AHeight <> -1 then Result.Height := AHeight;
+@@ -1530,7 +1540,7 @@ procedure TLazIntfImage.ChooseGetSetColo
+       then Positions := not Positions; // reverse positions
+     end;
+     
+-    // the locations of A,R,G,B are now coded in 2 bits each: AARRBBGG
++    // the locations of A,R,G,B are now coded in 2 bits each: AARRGGBB
+     // the 2-bit value (0..3) represents the location of the channel,
+     // counting from left
+     case Positions of
+@@ -3140,6 +3150,7 @@ end;
+ 
+ procedure TLazIntfImage.FreeData;
+ begin
++  //DebugLn(Format('[TLazIntfImage.FreeData] Self=%x Data=%x', [PtrUInt(Self), PtrUInt(FRawImage.Data)]));
+   if FDataOwner
+   then ReallocMem(FRawImage.Data, 0)
+   else FRawImage.Data := nil;
+@@ -3148,7 +3159,7 @@ begin
+   if FLineStarts <> nil then Dispose(FLineStarts);
+   FLineStarts := nil;
+   
+-  if FDataOwner
++  if FDataOwner and (FRawImage.Mask <> nil)
+   then ReallocMem(FRawImage.Mask, 0)
+   else FRawImage.Mask := nil;
+   FRawImage.MaskSize := 0;
+@@ -3157,7 +3168,7 @@ begin
+   FMaskLineStarts := nil;
+   FMaskSet := False;
+   
+-  if FDataOwner
++  if FDataOwner and (FRawImage.Palette <> nil)
+   then ReallocMem(FRawImage.Palette, 0)
+   else FRawImage.Palette := nil;
+   FRawImage.PaletteSize := 0;
+@@ -3195,6 +3206,12 @@ begin
+   Result := FMaskSet;
+ end;
+ 
++procedure TLazIntfImage.SetDataDescriptionKeepData(
++  const ADescription: TRawImageDescription);
++begin
++  FRawImage.Description:=ADescription;
++end;
++
+ constructor TLazIntfImage.Create(AWidth, AHeight: integer);
+ begin
+   Create(AWidth, AHeight, []);
+@@ -3231,6 +3248,18 @@ begin
+   ChooseGetSetColorFunctions;
+ end;
+ 
++constructor TLazIntfImage.CreateCompatible(IntfImg: TLazIntfImage; AWidth,
++  AHeight: integer);
++var
++  Desc: TRawImageDescription;
++begin
++  Create(0,0);
++  Desc:=IntfImg.DataDescription;
++  Desc.Width:=AWidth;
++  Desc.Height:=AHeight;
++  DataDescription:=Desc;
++end;
++
+ destructor TLazIntfImage.Destroy;
+ begin
+   FreeData;
+@@ -3272,6 +3301,20 @@ begin
+   end;
+ end;
+ 
++procedure TLazIntfImage.Mask(const AColor: TFPColor; AKeepOldMask: Boolean = False);
++var
++  x, y: Integer;
++begin
++  if AKeepOldMask then
++    for y := 0 to Height - 1 do
++      for x := 0 to Width - 1 do
++        Masked[x,y] := Masked[x,y] or (Colors[x,y] = AColor)
++  else
++    for y := 0 to Height - 1 do
++      for x := 0 to Width - 1 do
++        Masked[x,y] := Colors[x,y] = AColor;
++end;
++
+ procedure TLazIntfImage.BeginUpdate;
+ begin
+   Inc(FUpdateCount);
+@@ -3471,6 +3514,8 @@ end;
+   containing the alpha channel. White pixels in the alpha channel will correspond
+   to the source image pixel being fully drawn, grey ones are merged and
+   black ones ignored.
++
++  If ASourceAlpha = nil then it will utilize the alpha channel from ASource
+ }
+ procedure TLazIntfImage.AlphaBlend(ASource, ASourceAlpha: TLazIntfImage;
+   const ADestX, ADestY: Integer);
+@@ -3493,9 +3538,11 @@ begin
+       // Never draw outside the destination
+       if (CurX < 0) or (CurY < 0) then Continue;
+ 
+-      // All channels in the Alpha should have the same value
+-      // So getting any of them should be enough
+-      MaskValue := ASourceAlpha.Colors[x, y].red;
++      if ASourceAlpha = nil then
++        MaskValue := ASourceAlpha.Colors[x, y].alpha
++      else
++        MaskValue := ASource.Colors[x, y].alpha;
++
+       InvMaskValue := $FFFF - MaskValue;
+ 
+       if MaskValue = $FFFF then
+@@ -3524,8 +3571,8 @@ begin
+   end;
+ end;
+ 
+-procedure TLazIntfImage.CopyPixels(ASource: TFPCustomImage; XDst, YDst: Integer;
+-                                   AlphaMask: Boolean; AlphaTreshold: Word);
++procedure TLazIntfImage.CopyPixels(ASource: TFPCustomImage; XDst: Integer;
++  YDst: Integer; AlphaMask: Boolean; AlphaTreshold: Word);
+ var
+   SrcImg: TLazIntfImage absolute ASource;
+   SrcHasMask, DstHasMask: Boolean;
+@@ -4220,8 +4267,7 @@ var
+   i: Integer;
+ begin
+   if FAVLPalette<>nil then begin
+-    if FAVLPalette.ConsistencyCheck<>0 then
+-      RaiseGDBException('TLazAVLPalette.ConsistencyCheck');
++    FAVLPalette.ConsistencyCheck;
+     if FAVLPalette.Count<>FCount then
+       RaiseGDBException('TLazAVLPalette.ConsistencyCheck');
+   end;
+@@ -5299,7 +5345,10 @@ begin
+ 
+   // if there is no alpha in real (all alpha values = 0) then update the description
+   if FUpdateDescription and FIgnoreAlpha and (Depth = 32) then
+-    FImage.DataDescription.AlphaPrec := 0;
++  begin
++    Desc.AlphaPrec:=0;
++    FImage.SetDataDescriptionKeepData(Desc);
++  end;
+ 
+   Progress(psEnding, 100, false, Rect(0,0,0,0), '', FContinue);
+ end;
+@@ -5918,36 +5967,48 @@ end;
+ 
+ { TLazReaderTiff }
+ 
++{$IFDEF OldTiffCreateImageHook}
+ procedure TLazReaderTiff.CreateImageHook(Sender: TFPReaderTiff; var NewImage: TFPCustomImage);
++begin
++  if Assigned(FOrgEvent) then FOrgEvent(Sender, NewImage);
++  FirstImg.Img:=NewImage;
++  DoCreateImage(FirstImg);
++end;
++{$ENDIF}
++
++procedure TLazReaderTiff.DoCreateImage(
++  ImgFileDir: {$IFDEF OldTiffCreateImageHook}TTiffIDF{$ELSE}TTiffIFD{$ENDIF});
+ var
+   Desc: TRawImageDescription;
+   IsAlpha, IsGray: Boolean;
+ begin
+-  if Assigned(FOrgEvent) then FOrgEvent(Sender, NewImage);
++  {$IFNDEF OldTiffCreateImageHook}
++  inherited;
++  {$ENDIF}
+ 
+   if not FUpdateDescription then Exit;
+   if not (theImage is TLazIntfImage) then Exit;
+ 
+   // init some default
+ 
+-  IsGray := FirstImg.PhotoMetricInterpretation in [0, 1];
+-  IsAlpha := FirstImg.AlphaBits <> 0;
++  IsGray := ImgFileDir.PhotoMetricInterpretation in [0, 1];
++  IsAlpha := ImgFileDir.AlphaBits <> 0;
+ 
+   if IsAlpha
+-  then Desc.Init_BPP32_B8G8R8A8_BIO_TTB(FirstImg.ImageWidth, FirstImg.ImageHeight)
+-  else Desc.Init_BPP24_B8G8R8_BIO_TTB(FirstImg.ImageWidth, FirstImg.ImageHeight);
++  then Desc.Init_BPP32_B8G8R8A8_BIO_TTB(ImgFileDir.ImageWidth, ImgFileDir.ImageHeight)
++  else Desc.Init_BPP24_B8G8R8_BIO_TTB(ImgFileDir.ImageWidth, ImgFileDir.ImageHeight);
+ 
+   if IsGray
+   then Desc.Format := ricfGray;
+ 
+   // check mask
+-  if FirstImg.PhotoMetricInterpretation = 4
++  if ImgFileDir.PhotoMetricInterpretation = 4
+   then begin
+     // todo: mask
+   end
+   else
+   // check palette
+-  if FirstImg.PhotoMetricInterpretation = 3
++  if ImgFileDir.PhotoMetricInterpretation = 3
+   then begin
+     // todo: palette
+   end
+@@ -5955,21 +6016,21 @@ begin
+     // no palette, adjust description
+     if IsGray
+     then begin
+-      Desc.RedPrec := FirstImg.GrayBits;
++      Desc.RedPrec := ImgFileDir.GrayBits;
+       Desc.RedShift := 0;
+       if IsAlpha
+       then begin
+-        Desc.Depth := FirstImg.GrayBits + FirstImg.AlphaBits;
+-        Desc.AlphaPrec := FirstImg.AlphaBits;
+-        Desc.AlphaShift := FirstImg.GrayBits;
++        Desc.Depth := ImgFileDir.GrayBits + ImgFileDir.AlphaBits;
++        Desc.AlphaPrec := ImgFileDir.AlphaBits;
++        Desc.AlphaShift := ImgFileDir.GrayBits;
+       end
+       else begin
+-        Desc.Depth := FirstImg.GrayBits;
+-        Desc.BitsPerPixel := FirstImg.GrayBits;
++        Desc.Depth := ImgFileDir.GrayBits;
++        Desc.BitsPerPixel := ImgFileDir.GrayBits;
+       end;
+     end
+     else begin
+-      Desc.Depth := FirstImg.RedBits + FirstImg.GreenBits + FirstImg.BlueBits + FirstImg.AlphaBits;
++      Desc.Depth := ImgFileDir.RedBits + ImgFileDir.GreenBits + ImgFileDir.BlueBits + ImgFileDir.AlphaBits;
+       if Desc.Depth > 32
+       then begin
+         // switch to 64bit description
+@@ -5996,11 +6057,15 @@ end;
+ 
+ procedure TLazReaderTiff.InternalRead(Str: TStream; Img: TFPCustomImage);
+ begin
++  {$IFDEF OldTiffCreateImageHook}
+   FOrgEvent := OnCreateImage;
+   OnCreateImage := @CreateImageHook;
+   inherited InternalRead(Str, Img);
+   OnCreateImage := FOrgEvent;
+   FOrgEvent := nil;
++  {$ELSE}
++  inherited InternalRead(Str, Img);
++  {$ENDIF}
+ end;
+ 
+ {$IFDEF FPC_HAS_CONSTREF}

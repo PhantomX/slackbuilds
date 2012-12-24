@@ -10,6 +10,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.7.0-kwallet.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.7.2-ruby19.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.7.4-kwallet2.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.7.4-sqlitever.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.7.5-kwallet-gcc47.patch
 
 set +e +o pipefail

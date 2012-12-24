@@ -45,6 +45,10 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.4-SOLID_UPNP.patch
 # udisks2 Solid backend, halectomy
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-udisks2-backend.patch
 
+# limit solid qDebug spam
+# http://bugzilla.redhat.com/882731
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-solid_qt_no_debug_output.patch
+
 # return valid locale (RFC 1766)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
 
@@ -66,6 +70,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # Branch upstream
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Revert-Also-check-parent-mimetypes-in-protocolForArc.patch
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Fix-crash-when-no-service-was-selected-user-clicked-.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Fix-regression-specified-or-remembered-save-path-is-.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Make-sure-appShouldConserveResources-returns-the-cac.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Fix-KDirListers-rootItem-not-being-updated-when-rena.patch
 
 # Trunk patches
 

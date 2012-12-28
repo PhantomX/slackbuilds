@@ -4,6 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+# From Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-cachegrind-improvements.patch
 # KDE#307103 - sys_openat If pathname is absolute, then dirfd is ignored.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-openat.patch
@@ -39,7 +40,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-x86_amd64_featur
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-gdbserver_tests-syscall-template-source.patch
 # KDE#307290 - memcheck overlap testcase needs memcpy version filter
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-overlap_memcpy_filter.patch
-# Note: Need to make memcheck/tests/filter_memcpy executable
+chmod 755 memcheck/tests/filter_memcpy
 # KDE#307729 - pkgconfig support broken valgrind.pc
 # valt_load_address=@VALT_LOAD_ADDRESS@
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-pkg-config.patch
@@ -56,8 +57,18 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-gdbserver_exit.p
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-aspacemgr_VG_N_SEGs.patch
 # KDE#308427 - s390 memcheck reports tsearch conditional jump or move
 #              depends on uninitialized value [workaround, suppression]
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-s390_tsearch_supp.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-VEX/priv/guest_amd64_toIR.c
 # KDE#307106 - unhandled instruction bytes: f0 0f c0 02 (lock xadd)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-xaddb.patch
+# KDE#309427 - SSE optimized stpncpy trigger uninitialised value
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-stpncpy.patch
+# KDE#308573 - Internal Valgrind error on 64-bit instruction executed
+#              in 32-bit mode
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-ppc-32-mode-64-bit-instr.patch
+
+# From Arch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.1-glibc-2.17.patch
+
+rm -f gdbserver_tests/filter_gdb.orig
 
 set +e +o pipefail

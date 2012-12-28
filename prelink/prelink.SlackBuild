@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -115,9 +115,13 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
 
 sed -i -e '/^prelink_LDADD/s/$/ -lpthread/' src/Makefile.{am,in}
+
+autoreconf -ivf || exit 1
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -145,12 +149,51 @@ make install DESTDIR=${PKG} || exit 1
 mkdir -p ${PKG}/etc/rpm
 zcat ${CWD}/prelink.conf.gz \
   > ${PKG}/etc/prelink.conf.new || exit 1
-mkdir -p ${PKG}/etc/default
-zcat ${CWD}/prelinkopts.conf.gz \
-  > ${PKG}/etc/default/prelink.new || exit 1
+
 mkdir -p ${PKG}/etc/{cron.daily,prelink.conf.d}
 install -pm0755 ${CWD}/prelink.cron \
   ${PKG}/etc/cron.daily/prelink || exit 1
+
+mkdir -p ${PKG}/etc/default
+cat >> ${PKG}/etc/default/prelink.new <<'EOF'
+# Set this to no to disable prelinking altogether
+# (if you change this from yes to no prelink -ua
+# will be run next night to undo prelinking)
+PRELINKING=no
+
+# Options to pass to prelink
+# -m	Try to conserve virtual memory by allowing overlapping
+#	assigned virtual memory slots for libraries which
+#	never appear together in one binary
+# -R	Randomize virtual memory slot assignments for libraries.
+#	This makes it slightly harder for various buffer overflow
+#	attacks, since library addresses will be different on each
+#	host using -R.
+PRELINK_OPTS=-mR
+
+# How often should full prelink be run (in days)
+# Normally, prelink will be run in quick mode, every
+# $PRELINK_FULL_TIME_INTERVAL days it will be run
+# in normal mode.  Comment it out if it should be run
+# in normal mode always.
+PRELINK_FULL_TIME_INTERVAL=14
+
+# How often should prelink run (in days) even if
+# no packages have been upgraded via rpm.
+# If $PRELINK_FULL_TIME_INTERVAL days have not elapsed
+# yet since last normal mode prelinking, last
+# quick mode prelinking happened less than
+# $PRELINK_NONRPM_CHECK_INTERVAL days ago
+# and no packages have been upgraded by rpm
+# since last quick mode prelinking, prelink
+# will not do anything.
+# Change to
+# PRELINK_NONRPM_CHECK_INTERVAL=0
+# if you want to disable the rpm database timestamp
+# check (especially if you don't use rpm/up2date/yum/apt-rpm
+# exclusively to upgrade system libraries and/or binaries).
+PRELINK_NONRPM_CHECK_INTERVAL=0
+EOF
 
 cat > ${PKG}/etc/rpm/macros.prelink <<'EOF'
 # rpm-4.1 verifies prelinked libraries using a prelink undo helper.
@@ -223,8 +266,8 @@ config() {
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  find var/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find var/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   find etc/ var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
@@ -234,15 +277,19 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${FEDORADIST} ${CWD}/*.conf.gz ${CWD}/*.cron ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${FEDORADIST} ${CWD}/*.conf.gz ${CWD}/*.cron ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"

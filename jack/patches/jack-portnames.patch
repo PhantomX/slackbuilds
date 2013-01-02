@@ -1,0 +1,447 @@
+   1.) Human-readable portnames on larger cards where "playback_56" is
+       simply to cumbersome to figure out what's actually connected
+   2.) People who travel with ADAT-ADCs/DACs, but connect them via
+       different interfaces in different locations, e.g. a Multiface
+       when on the road and a RayDat when in the studio. Despite the
+       different cards, the port names and hence any ardour session
+       would remain intact.
+   http://adi.loris.tv/jackd2-portnames.png
+   alsa_pcm:hw:1,0:out1
+   system:capture_1
+   alsa_pcm:hw:1,0:out2
+   system:capture_2
+--- /dev/null
++++ b/linux/alsa/port_names.c
+@@ -0,0 +1,179 @@ 
++/* -*- mode: c; c-file-style: "linux"; -*- */
++/*
++    Copyright (C) 2010 Florian Faber, faber@faberman.de
++
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 2 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program; if not, write to the Free Software
++    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++
++*/
++
++
++#include <math.h>
++#include <stdio.h>
++#include <memory.h>
++#include <unistd.h>
++#include <stdlib.h>
++#include <errno.h>
++#include <stdarg.h>
++#include <signal.h>
++#include <sys/types.h>
++#include <regex.h>
++#include <string.h>
++
++#include "alsa_driver.h"
++
++
++static int port_names_load_portfile(alsa_driver_t *driver, const char *filename, char **buf, const unsigned int offset, const unsigned int num) {
++	int fh, i, ret, lineno, id, res=0;
++	char line[256];
++
++	printf("Trying to load portnames from %s\n", filename);
++	fh = open(filename, O_RDONLY);
++	if (-1!=fh) {
++		res = 1;
++		i = 0;
++		lineno = 1;
++		for (;;) {
++			ret = read(fh, &line[i], 1);
++			if (0==ret) {
++				break;
++			} else if (-1==ret) {
++				sprintf(stderr, "Error while reading \"%s\": %s", filename, strerror(errno));
++				break;
++			}
++			if (0x0A==line[i]) {
++				/* new line, parse input */
++				line[i] = 0;
++
++				if ('#' != line[0]) {
++					i=0;
++					while ((i<255) && (line[i]!='=')) i++;
++					if (255==i) {
++						sprintf(stderr, "Error while reading \"%s\": Line %d has no key=value syntax!", filename, lineno);
++					} else {
++						line[i] = 0;
++						id = atoi(line);
++						if ((id>=1) && (id<=num)) {
++							if (NULL==buf[id-1+offset]) {
++								/* don't overwrite existing names */
++								buf[id-1+offset] = strdup(&line[i+1]);
++							}
++						} else {
++							sprintf(stderr, "Error while reading \"%s\": Key %d out of range in line %d (1..%d)", filename, id, lineno, num);
++						}
++					}
++				}
++
++				i = 0;
++				lineno++;
++			} else {
++				i++;
++				if (i==255) {
++					sprintf(stderr, "Error while reading \"%s\": Line %d is too long", filename, lineno);
++					break;
++				}
++			}
++		}
++
++		(void) close(fh);
++	}
++
++	return res;
++}
++
++
++static void port_names_default_portnames(char **buf, const unsigned int offset, const unsigned int num, const char *defaultname) {
++	unsigned int i;
++	char line[256];
++
++	/* Fill in default names */
++	for (i=0; i<num; i++) {
++		if (NULL==buf[i+offset]) {
++			snprintf(line, 255, defaultname, i+1);
++			buf[i+offset] = strdup(line);
++		}
++	}
++}
++
++
++char** port_names_get_portnames(alsa_driver_t *driver) {
++	snd_ctl_card_info_t *card_info;
++	int err;
++	const char *card_name = NULL;
++	char filename[256], *speed;
++	char **buf;
++
++	printf("Using port names patch v0.1 (07.04.2010)\n");
++
++	if (driver->frame_rate > 96000) {
++		speed="qs";
++	} else if (driver->frame_rate > 48000) {
++		speed="ds";
++	} else {
++		speed="ss";
++	}
++
++	snd_ctl_card_info_alloca(&card_info);
++	err = snd_ctl_card_info(driver->ctl_handle, card_info);
++	if (err >= 0) {
++		card_name = snd_ctl_card_info_get_name(card_info);
++	} else {
++		card_name = "noname";
++	}
++
++	buf = malloc(sizeof(char *)*(driver->capture_nchannels + driver->playback_nchannels));
++	if (NULL==buf) {
++		sprintf(stderr, "ALSA: Not enough memory for %d port names", driver->capture_nchannels + driver->playback_nchannels);
++		return NULL;
++	}
++	bzero(buf, sizeof(char *)*(driver->capture_nchannels + driver->playback_nchannels));
++
++	/* Read port names from special to general:
++	 * Begin with user and speed specific port names */
++	snprintf(filename, 255, "%s/.config/jack/cards/%s.%s.ports.in", getenv("HOME"), card_name, speed);
++	(void) port_names_load_portfile(driver, filename, buf, 0, driver->capture_nchannels);
++
++	/* Now user general */
++	snprintf(filename, 255, "%s/.config/jack/cards/%s.ports.in", getenv("HOME"), card_name);
++	(void) port_names_load_portfile(driver, filename, buf, 0, driver->capture_nchannels);
++
++	/* System speed specific */
++	snprintf(filename, 255, "/etc/jack/cards/%s.%s.ports.in", card_name, speed);
++	(void) port_names_load_portfile(driver, filename, buf, 0, driver->capture_nchannels);
++
++	/* System general */
++	snprintf(filename, 255, "/etc/jack/cards/%s.ports.in", card_name);
++	(void) port_names_load_portfile(driver, filename, buf, 0, driver->capture_nchannels);
++
++	/* Fill all still unnamed ports with default names */
++	port_names_default_portnames(buf, 0, driver->capture_nchannels, "capture_%lu");
++
++
++	/* Same procedure for the playback channels */
++	snprintf(filename, 255, "%s/.config/jack/cards/%s.%s.ports.out", getenv("HOME"), card_name, speed);
++	(void) port_names_load_portfile(driver, filename, buf, driver->capture_nchannels, driver->playback_nchannels);
++
++	snprintf(filename, 255, "%s/.config/jack/cards/%s.ports.out", getenv("HOME"), card_name);
++	(void) port_names_load_portfile(driver, filename, buf, driver->capture_nchannels, driver->playback_nchannels);
++
++	snprintf(filename, 255, "/etc/jack/cards/%s.%s.ports.out", card_name, speed);
++	(void) port_names_load_portfile(driver, filename, buf, driver->capture_nchannels, driver->playback_nchannels);
++
++	snprintf(filename, 255, "/etc/jack/cards/%s.ports.out", card_name);
++	(void) port_names_load_portfile(driver, filename, buf, driver->capture_nchannels, driver->playback_nchannels);
++
++	port_names_default_portnames(buf, driver->capture_nchannels, driver->playback_nchannels, "playback_%lu");
++
++	return buf;
++}
+--- /dev/null
++++ b/linux/alsa/port_names.h
+@@ -0,0 +1,34 @@ 
++/*
++    Copyright (C) 2010 Florian Faber, faber@faberman.de
++
++    This program is free software; you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation; either version 2 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program; if not, write to the Free Software
++    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++
++*/
++
++#ifndef __jack_port_names_h__
++#define __jack_port_names_h__
++
++#ifdef __cplusplus
++extern "C"
++{
++#endif
++
++char** port_names_get_portnames(alsa_driver_t *driver);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* __jack_port_names_h__ */
+--- a/linux/alsa/JackAlsaDriver.cpp
++++ b/linux/alsa/JackAlsaDriver.cpp
+@@ -42,6 +42,7 @@ 
+ #include "JackPosixThread.h"
+ #include "JackCompilerDeps.h"
+ #include "JackServerGlobals.h"
++#include "port_names.h"
+ 
+ namespace Jack
+ {
+@@ -97,6 +98,8 @@ 
+     unsigned long port_flags = (unsigned long)CaptureDriverFlags;
+     char name[REAL_JACK_PORT_NAME_SIZE];
+     char alias[REAL_JACK_PORT_NAME_SIZE];
++    char old_name[REAL_JACK_PORT_NAME_SIZE];
++    char **portnames;
+ 
+     assert(fCaptureChannels < DRIVER_PORT_NUM);
+     assert(fPlaybackChannels < DRIVER_PORT_NUM);
+@@ -112,13 +115,17 @@ 
+ 
+     jack_log("JackAlsaDriver::Attach fBufferSize %ld fSampleRate %ld", fEngineControl->fBufferSize, fEngineControl->fSampleRate);
+ 
++    portnames = port_names_get_portnames(alsa_driver);
++
+     for (int i = 0; i < fCaptureChannels; i++) {
+         snprintf(alias, sizeof(alias), "%s:%s:out%d", fAliasName, fCaptureDriverName, i + 1);
+-        snprintf(name, sizeof(name), "%s:capture_%d", fClientControl.fName, i + 1);
++        snprintf(old_name, sizeof(old_name), "%s:capture_%d", fClientControl.fName, i + 1);
++        snprintf(name, sizeof(name), "%s:%s", fClientControl.fName, portnames[i]);
+         if (fEngine->PortRegister(fClientControl.fRefNum, name, JACK_DEFAULT_AUDIO_TYPE, (JackPortFlags)port_flags, fEngineControl->fBufferSize, &port_index) < 0) {
+             jack_error("driver: cannot register port for %s", name);
+             return -1;
+         }
++        free(portnames[i]);
+         port = fGraphManager->GetPort(port_index);
+         port->SetAlias(alias);
+         fCapturePortList[i] = port_index;
+@@ -129,11 +136,13 @@ 
+ 
+     for (int i = 0; i < fPlaybackChannels; i++) {
+         snprintf(alias, sizeof(alias), "%s:%s:in%d", fAliasName, fPlaybackDriverName, i + 1);
+-        snprintf(name, sizeof(name), "%s:playback_%d", fClientControl.fName, i + 1);
++        snprintf(old_name, sizeof(old_name), "%s:playback_%d", fClientControl.fName, i + 1);
++        snprintf(name, sizeof(name), "%s:%s", fClientControl.fName, portnames[i+fCaptureChannels]);
+         if (fEngine->PortRegister(fClientControl.fRefNum, name, JACK_DEFAULT_AUDIO_TYPE, (JackPortFlags)port_flags, fEngineControl->fBufferSize, &port_index) < 0) {
+             jack_error("driver: cannot register port for %s", name);
+             return -1;
+         }
++        free(portnames[i+fCaptureChannels]);
+         port = fGraphManager->GetPort(port_index);
+         port->SetAlias(alias);
+         fPlaybackPortList[i] = port_index;
+@@ -151,6 +160,8 @@ 
+         }
+     }
+ 
++    free(portnames);
++
+     UpdateLatencies();
+ 
+     if (alsa_driver->midi) {
+--- a/linux/wscript
++++ b/linux/wscript
+@@ -55,6 +55,7 @@ 
+                        'alsa/hdsp.c',
+                        'alsa/alsa_driver.c',
+                        'alsa/hammerfall.c',
++                       'alsa/port_names.c',
+                        'alsa/ice1712.c'
+                        ]
+ 
+   alsa_pcm:hw:1,0:out1
+   system:capture_1
+   alsa_pcm:hw:1,0:out2
+   system:capture_2
+   alsa_pcm:hw:1,0:out3
+   system:capture_3
+   alsa_pcm:hw:1,0:out4
+   system:capture_4
+   alsa_pcm:hw:1,0:out5
+   system:capture_5
+   alsa_pcm:hw:1,0:out6
+   system:capture_6
+   alsa_pcm:hw:1,0:out7
+   system:capture_7
+   alsa_pcm:hw:1,0:out8
+   system:capture_8
+   alsa_pcm:hw:1,0:out9
+   system:capture_9
+   alsa_pcm:hw:1,0:out10
+   system:capture_10
+   alsa_pcm:hw:1,0:out11
+   system:capture_11
+   alsa_pcm:hw:1,0:out12
+   system:capture_12
+   alsa_pcm:hw:1,0:out13
+   system:capture_13
+   alsa_pcm:hw:1,0:out14
+   system:capture_14
+   alsa_pcm:hw:1,0:out15
+   system:capture_15
+   alsa_pcm:hw:1,0:out16
+   system:capture_16
+   alsa_pcm:hw:1,0:out17
+   system:capture_17
+   alsa_pcm:hw:1,0:out18
+   system:capture_18
+   alsa_pcm:hw:1,0:out19
+   system:capture_19
+   alsa_pcm:hw:1,0:out20
+   system:capture_20
+   alsa_pcm:hw:1,0:out21
+   system:capture_21
+   alsa_pcm:hw:1,0:out22
+   system:capture_22
+   alsa_pcm:hw:1,0:out23
+   system:capture_23
+   alsa_pcm:hw:1,0:out24
+   system:capture_24
+   alsa_pcm:hw:1,0:out25
+   system:capture_25
+   alsa_pcm:hw:1,0:out26
+   system:capture_26
+   alsa_pcm:hw:1,0:out27
+   system:capture_27
+   alsa_pcm:hw:1,0:out28
+   system:capture_28
+   alsa_pcm:hw:1,0:out29
+   system:capture_29
+   alsa_pcm:hw:1,0:out30
+   system:capture_30
+   alsa_pcm:hw:1,0:out31
+   system:capture_31
+   alsa_pcm:hw:1,0:out32
+   system:capture_32
+   alsa_pcm:hw:1,0:out33
+   system:capture_33
+   alsa_pcm:hw:1,0:out34
+   system:capture_34
+   alsa_pcm:hw:1,0:out35
+   system:capture_35
+   alsa_pcm:hw:1,0:out36
+   system:capture_36
+   alsa_pcm:hw:1,0:in1
+   system:playback_1
+   alsa_pcm:hw:1,0:in2
+   system:playback_2
+   alsa_pcm:hw:1,0:in3
+   system:playback_3
+   alsa_pcm:hw:1,0:in4
+   system:playback_4
+   alsa_pcm:hw:1,0:in5
+   system:playback_5
+   alsa_pcm:hw:1,0:in6
+   system:playback_6
+   alsa_pcm:hw:1,0:in7
+   system:playback_7
+   alsa_pcm:hw:1,0:in8
+   system:playback_8
+   alsa_pcm:hw:1,0:in9
+   system:playback_9
+   alsa_pcm:hw:1,0:in10
+   system:playback_10
+   alsa_pcm:hw:1,0:in11
+   system:playback_11
+   alsa_pcm:hw:1,0:in12
+   system:playback_12
+   alsa_pcm:hw:1,0:in13
+   system:playback_13
+   alsa_pcm:hw:1,0:in14
+   system:playback_14
+   alsa_pcm:hw:1,0:in15
+   system:playback_15
+   alsa_pcm:hw:1,0:in16
+   system:playback_16
+   alsa_pcm:hw:1,0:in17
+   system:playback_17
+   alsa_pcm:hw:1,0:in18
+   system:playback_18
+   alsa_pcm:hw:1,0:in19
+   system:playback_19
+   alsa_pcm:hw:1,0:in20
+   system:playback_20
+   alsa_pcm:hw:1,0:in21
+   system:playback_21
+   alsa_pcm:hw:1,0:in22
+   system:playback_22
+   alsa_pcm:hw:1,0:in23
+   system:playback_23
+   alsa_pcm:hw:1,0:in24
+   system:playback_24
+   alsa_pcm:hw:1,0:in25
+   system:playback_25
+   alsa_pcm:hw:1,0:in26
+   system:playback_26
+   alsa_pcm:hw:1,0:in27
+   system:playback_27
+   alsa_pcm:hw:1,0:in28
+   system:playback_28
+   alsa_pcm:hw:1,0:in29
+   system:playback_29
+   alsa_pcm:hw:1,0:in30
+   system:playback_30
+   alsa_pcm:hw:1,0:in31
+   system:playback_31
+   alsa_pcm:hw:1,0:in32
+   system:playback_32
+   alsa_pcm:hw:1,0:in33
+   system:playback_33
+   alsa_pcm:hw:1,0:in34
+   system:playback_34
+   alsa_pcm:hw:1,0:in35
+   system:playback_35
+   alsa_pcm:hw:1,0:in36
+   system:playback_36

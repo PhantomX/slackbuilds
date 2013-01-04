@@ -81,13 +81,9 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
   # pam/systemd bogosity: kdm restart/shutdown does not work 
   # http://bugzilla.redhat.com/796969
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
-
-  # initial systemd support
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systemd-shutdown.patch
-  # Support for switching users with systemd - rh#859347
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.9.2-systemd-switch-user.patch
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.9.2-systemd-switch-user2.patch
-
+  # merged patches: systemd-switch-user{,2} systemd-shutdown
+  # Support for systemd AND ConsoleKit in kworkspace
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.3-systemd-displaymanager.patch
 fi
 
 ## upstream patches

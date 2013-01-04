@@ -1,0 +1,393 @@
+#!/bin/sh
+#-- krb5 for Slackware --
+# Build script by Phantom X <megaphantomx at bol.com.br>
+# Suggested usage: $ krb5.SlackBuild 2>&1 | tee build.log
+#--
+# Copyright 2008-2013 Phantom X, Goiania, Brazil.
+# Copyright 2006 Martijn Dekker, Groningen, Netherlands.
+# All rights reserved.
+#
+# Redistribution and use of this script, with or without modification, is
+# permitted provided that the following conditions are met:
+#
+# 1. Redistributions of this script must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR `AS IS'' AND ANY EXPRESS OR IMPLIED
+#  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+#  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+#  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+#  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+#  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# http://web.mit.edu/kerberos/www/
+
+PACKAGER_ID=${PACKAGER_ID:-$USER}
+PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
+
+# Set YES for native build with gcc >= 4.2
+SB_NATIVE=${SB_NATIVE:-NO}
+
+# Set to YES to replicate slackbuild and patches
+SB_REP=${SB_REP:-YES}
+
+CWD=$(pwd)
+TMP=${TMP:-/tmp}
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
+
+NAME=krb5
+PKG=${PKG:-${TMP}/package-${NAME}}
+
+VERSION=${VERSION:-1.11}
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  ARCH=${ARCH:-$(uname -m)}
+else
+  ARCH=${ARCH:-x86_64}
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  SLKTARGET=${SLKTARGET:-x86_64}
+else
+  SLKTARGET=${SLKTARGET:-i486}
+fi
+SLKDTARGET=${SLKDTARGET:-slackware}
+BUILD=${BUILD:-1}
+NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
+DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
+SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
+PKGDEST=${PKGDEST:-${CWD}}
+PKGFORMAT=${PKGFORMAT:-txz}
+PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+SRCDIR=${NAME}-${VERSION}
+SRCARCHIVE=${SRCDIR}-signed.tar
+
+DL_PROG=${DL_PROG:-wget}
+DL_TO=${DL_TO:-5}
+DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
+DL_URL="http://web.mit.edu/kerberos/dist/krb5/${VERSION}/${SRCARCHIVE}"
+
+# if source is not present, download in source rootdir if possible
+test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+
+if [ "${SB_NATIVE}" = "YES" ] ;then
+  SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
+  [ "${SB_ECFLAGS}" ] && SLKCFLAGS="${SLKCFLAGS} ${SB_ECFLAGS}"
+else
+  case "${ARCH}" in
+    i[3-6]86)    SLKCFLAGS="-O2 -march=${ARCH} -mtune=i686"
+                 ;;
+    x86_64)      SLKCFLAGS="-O2 -fPIC"
+                 ;;
+    s390|*)      SLKCFLAGS="-O2"
+                 ;;
+  esac
+fi
+if [ "${ARCH}" = "x86_64" ] ;then
+  LIBDIRSUFFIX="64"
+  SLKCFLAGS="${SLKCFLAGS} -fPIC"
+else
+  LIBDIRSUFFIX=""
+fi
+
+if [ -d ${PKG} ]; then
+  # Clean up a previous build
+  rm -rf ${PKG}
+fi
+mkdir -p ${PKG}
+
+cd ${TMP}
+rm -rf ${SRCDIR}
+mkdir ${SRCDIR}
+cd ${SRCDIR} || exit 1
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
+tar -xvf ${SRCDIR}.tar.gz || exit 1
+cd ${SRCDIR} || exit 1
+
+chmod -R u+w,go+r-w,a-s .
+
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+# Generate an FDS-compatible LDIF file.
+inldif=src/plugins/kdb/ldap/libkdb_ldap/kerberos.ldif
+cat > 60kerberos.ldif << EOF
+# This is a variation on kerberos.ldif which 389 Directory Server will like.
+dn: cn=schema
+EOF
+egrep -iv '(^$|^dn:|^changetype:|^add:)' $inldif | \
+sed -r 's,^		,                ,g' | \
+sed -r 's,^	,        ,g' >> 60kerberos.ldif
+touch -r $inldif 60kerberos.ldif
+
+( cd src || exit 1
+
+if [ "${SB_AUTOGEN}" = "YES" ] ;then
+  autoreconf -ivf || exit $?
+fi
+
+INCLUDES="-I/usr/include/et"
+SLKCFLAGS="$(echo ${SLKCFLAGS} ${DEFINES} ${INCLUDES} -fPIC -fno-strict-aliasing -fstack-protector-all)"
+CPPFLAGS="$(echo ${DEFINES} ${INCLUDES})"
+
+CFLAGS="${SLKCFLAGS}" \
+CXXFLAGS="${SLKCFLAGS}" \
+CPPFLAGS="${CPPFLAGS}" \
+SS_LIB="-lss" \
+./configure \
+  --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --sysconfdir=/etc \
+  --localstatedir=/var/kerberos \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --docdir=/usr/doc/${NAME}-${VERSION} \
+  --disable-silent-rules \
+  --enable-shared \
+  --disable-rpath \
+  --with-system-et \
+  --with-system-ss \
+  --with-netlib="-lresolv" \
+  --with-tcl \
+  --enable-dns-for-realm \
+  --with-ldap \
+  --with-dirsrv-account-locking \
+  --enable-pkinit \
+  --with-pkinit-crypto-impl=openssl \
+  --without-system-verto \
+  --without-pam \
+  --without-selinux \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
+
+make -j${NJOBS} || make || exit $?
+make install DESTDIR=${PKG} EXAMPLEDIR=/usr/doc/${NAME}-${VERSION}/examples || exit $?
+
+) || exit $?
+
+# Munge krb5-config yet again.  This is totally wrong for 64-bit, but chunks
+# of the buildconf patch already conspire to strip out /usr/<anything> from the
+# list of link flags, and it helps prevent file conflicts on multilib systems.
+sed -r -i -e 's|^libdir=/usr/lib(64)?$|libdir=/usr/lib|g' ${PKG}/usr/bin/krb5-config
+
+[ "${LDFLAGS}" ] && sed -i -e "/^LDFLAGS/s|${LDFLAGS}||g" ${PKG}/usr/bin/krb5-config
+
+find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
+  | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+mkdir -p ${PKG}/lib${LIBDIRSUFFIX}
+
+for libname in libgssapi_krb5 libgssrpc libk5crypto libkrb5 libkrb5support ;do
+  mv ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so.* ${PKG}/lib${LIBDIRSUFFIX}/ || exit 1
+
+  reldir=$(perl -e 'use File::Spec; print File::Spec->abs2rel($ARGV[0], $ARGV[1])' /lib${LIBDIRSUFFIX} /usr/lib${LIBDIRSUFFIX})
+  oldlink=$(readlink ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so)
+  ln -sf ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so || exit 1
+done
+
+# Sample KDC config files (bundled kdc.conf and kadm5.acl).
+mkdir -p ${PKG}/var/kerberos/krb5kdc
+for conf in kdc.conf kadm5.acl ;do
+  install -pm 600 ${CWD}/conf/${conf} ${PKG}/var/kerberos/krb5kdc/${conf}.new || exit 1
+done
+
+# Where per-user keytabs live by default.
+mkdir -p ${PKG}/var/kerberos/kdc/user
+
+# Default configuration file for everything.
+mkdir -p ${PKG}/etc
+install -pm 644 ${CWD}/conf/krb5.conf ${PKG}/etc/krb5.conf
+
+# Plug-in directories.
+install -pdm 755 ${PKG}/usr/lib${LIBDIRSUFFIX}/krb5/plugins/preauth
+install -pdm 755 ${PKG}/usr/lib${LIBDIRSUFFIX}/krb5/plugins/kdb
+install -pdm 755 ${PKG}/usr/lib${LIBDIRSUFFIX}/krb5/plugins/authdata
+
+RCFILES="kadmind kpropd krb5kdc"
+
+mkdir -p ${PKG}/etc/rc.d
+for rcfile in ${RCFILES} ;do
+  install -pm0755 ${CWD}/conf/rc.${rcfile} ${PKG}/etc/rc.d/rc.${rcfile}.new || exit 1
+done
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/conf/*.service ${PKG}/lib/systemd/system/ || exit 1
+
+mkdir -p ${PKG}/var/log/setup
+install -pm0755 ${CWD}/conf/setup.onlyonce.rc${NAME} \
+  ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
+
+
+mkdir -p ${PKG}/etc/default
+cat > ${PKG}/etc/default/krb5kdc.new <<'EOF'
+KRB5KDC_ARGS=
+EOF
+
+cat > ${PKG}/etc/default/kadmin.new <<'EOF'
+KADMIND_ARGS=
+EOF
+
+mkdir -p ${PKG}/etc/logrotate.d
+cat > ${PKG}/etc/logrotate.d/krb5kdc.new <<'EOF'
+/var/log/krb5kdc.log {
+    missingok
+    notifempty
+    monthly
+    rotate 12
+    postrotate
+      /bin/kill -HUP $(at /var/run/krb5kdc.pid 2>/dev/null) 2> /dev/null || true
+    endscript
+}
+EOF
+
+cat > ${PKG}/etc/logrotate.d/kadmind.new <<'EOF'
+/var/log/kadmind.log {
+    missingok
+    notifempty
+    monthly
+    rotate 12
+    postrotate
+     /bin/kill -HUP $(cat /var/run/kadmind.pid 2>/dev/null) 2> /dev/null || true
+    endscript
+}
+
+EOF
+
+# Add a documentation directory:
+mkdir -p ${DOCDIR}
+cp -a \
+  NOTICE README 60kerberos ${CWD}/ChangeLog.SB \
+  ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
+find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
+find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
+
+# Compress and link manpages, if any:
+if [ -d ${PKG}/usr/share/man ]; then
+  mv ${PKG}/usr/share/man ${PKG}/usr/man
+  rmdir ${PKG}/usr/share
+fi
+if [ -d ${PKG}/usr/man ]; then
+  ( cd ${PKG}/usr/man
+    for manpagedir in $(find . -type d -name "man*") ; do
+      ( cd ${manpagedir}
+        for eachpage in $( find . -type l -maxdepth 1) ; do
+          ln -s $( readlink ${eachpage} ).gz ${eachpage}.gz
+          rm -f ${eachpage}
+        done
+        gzip -9 *.?
+        # Prevent errors
+        rm -f *.gz.gz
+      )
+    done
+  )
+fi
+
+rm -f ${PKG}/usr/man/man*/.k*.*
+rmdir -p ${PKG}/usr/man/*
+
+mkdir -p ${PKG}/install
+cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
+cat ${CWD}/slack-required > ${PKG}/install/slack-required
+
+cat > ${PKG}/install/doinst.sh <<EOF
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+# Keep same perms on rc.*.new:
+for rcfile in ${RCFILES} ;do
+  if [ -r etc/rc.d/rc.${rcfile} -a -r etc/rc.d/rc.${rcfile}.new ]; then
+    chmod --reference=etc/rc.d/rc.${rcfile} etc/rc.d/rc.${rcfile}.new
+  fi
+done
+
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ var -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
+fi
+EOF
+
+sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
+  ${PKG}/install/slack-desc
+
+if [ "${SB_REP}" = "YES" ] ;then
+  # Replicate slackbuild and patches
+  mkdir -p ${SBDIR}/{conf,patches}
+  install -pm0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+    ${CWD}/apply-patches.sh ${SBDIR}/
+  install -pm0755 ${CWD}/${NAME}.SlackBuild \
+    ${SBDIR}/${NAME}.SlackBuild
+  install -pm0644 ${CWD}/conf/*.* \
+    ${SBDIR}/conf/
+  install -pm0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
+fi
+
+# Build package:
+set +o xtrace        # no longer print commands upon execution
+set -e
+
+ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
+  /bin/chown --recursive root:root .  ;"
+
+ROOTCOMMANDS="${ROOTCOMMANDS}
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+
+if test ${UID} = 0; then
+  eval ${ROOTCOMMANDS}
+  set +o xtrace
+elif test "$(type -t fakeroot)" = 'file'; then
+  echo -e "\e[1mEntering fakeroot environment.\e[0m"
+  echo ${ROOTCOMMANDS} | fakeroot
+else
+  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
+  /bin/su -c "${ROOTCOMMANDS}"
+fi
+
+# Clean up the extra stuff:
+if [ "$1" = "--cleanup" ]; then
+  echo "Cleaning..."
+  if [ -d ${TMP}/${SRCDIR} ]; then
+    rm -rf ${TMP}/${SRCDIR} && echo "${TMP}/${SRCDIR} cleanup completed"
+  fi
+  if [ -d ${PKG} ]; then
+    rm -rf ${PKG} && echo "${PKG} cleanup completed"
+  fi
+  rmdir ${TMP} && echo "${TMP} cleanup completed"
+fi
+exit 0

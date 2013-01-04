@@ -45,5 +45,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-defer-sigchld-trap.pa
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-manpage_trap.patch
 # rh#695656, block the signal and unblock it after the new handler is installed
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-signal.patch
+# https://www.securecoding.cert.org/confluence/display/seccode/INT32-C.+Ensure+that+operations+on+signed+integers+do+not+result+in+overflow
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-size_type.patch
 
 set +e +o pipefail

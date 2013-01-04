@@ -68,11 +68,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Revert-Also-check-parent-mimetypes-in-protocolForArc.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Fix-crash-when-no-service-was-selected-user-clicked-.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Fix-regression-specified-or-remembered-save-path-is-.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Make-sure-appShouldConserveResources-returns-the-cac.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Fix-KDirListers-rootItem-not-being-updated-when-rena.patch
+# FindKdcraw.cmake fixes
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-FindKdcraw.patch
 
 # Trunk patches
 

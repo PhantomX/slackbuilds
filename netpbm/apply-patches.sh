@@ -15,7 +15,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-CAN-2005-2471.patch
 zcat ${SB_PATCHDIR}/${NAME}-xwdfix.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-ppmtompeg.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-multilib.patch.gz | patch -p1 -E --backup --verbose
-#zcat ${SB_PATCHDIR}/${NAME}-pamscale.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-glibc.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-docfix.patch
 zcat ${SB_PATCHDIR}/netpbm-ppmfadeusage.patch.gz | patch -p1 -E --backup --verbose

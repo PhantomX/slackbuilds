@@ -23,4 +23,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.05-xz-container.patch
 
 rm -f magic/Magdir/*{~,.orig}
 
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
+
 set +e +o pipefail

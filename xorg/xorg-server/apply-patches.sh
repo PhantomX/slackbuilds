@@ -32,6 +32,16 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86-return-NULL-for-compat-output-if
 # kernel doesn't use _INPUT_H anymore
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86-Fix-build-against-recent-Linux-kernel.patch
 
+# Bug 878956 - After installation is complete, Alt+F4 is broken
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-linux-Prefer-ioctl-KDSKBMUTE-1-over-ioctl-KDSKBMODE-.patch
+
+# mustard: make the default queue length bigger to calm abrt down
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-mieq-Bump-default-queue-size-to-512.patch
+
+# some hotplug fixes/workaround
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xfree86-hotplug-cleanup-properly-if-the-screen-fails.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86crtc-don-t-use-display-for-vx-vy-for-gpu-screens.patch
+
 # misc
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
 
@@ -39,5 +49,8 @@ patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.11.0-force-hal-disable.patch
 if [ "${SB_ZW}" = "YES" ] ;then
   patch -p1 --verbose -z .zap-warning -i ${SB_PATCHDIR}/xserver-zap-warning.patch
 fi
+
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
 
 set +e +o pipefail

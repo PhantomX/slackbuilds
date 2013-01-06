@@ -13,7 +13,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-cjk.patch
 
 # winepulse backend
 # http://repo.or.cz/w/wine/multimedia.git
-filterdiff -p1 -x configure -z ${SB_PATCHDIR}/wine-pulse-1.5.17.patch | patch -p1 -E --backup --verbose
+filterdiff -p1 -x configure -z ${SB_PATCHDIR}/wine-pulse-1.5.20.patch | patch -p1 -E --backup --verbose
 # use winealsa for midi in the pa backend
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-pulse-winmm-Load-winealsa-if-winepulse-is-found.patch
 # bugfixes

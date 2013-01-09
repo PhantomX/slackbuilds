@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ systemd.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008, 2009, 2010, 2011, 2012 Phantom X, Goiania, Brazil.
+# Copyright 2008-2013 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -44,7 +44,7 @@ fi
 NAME=systemd
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-196}
+VERSION=${VERSION:-197}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 SLKDIST=${SLKDIST:-Slackware}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -118,30 +118,40 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
+unset SB_AUTOGEN
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
 sed -i \
-  -e 's|/etc/rc.local|/etc/rc.d/rc.local|g' \
+  -e 's|@RC_LOCAL_SCRIPT_PATH_START@|/etc/rc.d/rc.local|g' \
   -e '/^ConditionFileIsExecutable=/aConditionFileIsExecutable=/etc/rc.d/rc.local_shutdown' \
+  -e '/^After=/s|$| local-fs.target|g' \
   -e '/^ExecStart/s| start||g' \
   -e 's|^Type=.*$|ExecStop=/etc/rc.d/rc.local_shutdown|g' \
-  units/fedora/rc-local.service || exit 1
+  units/rc-local.service.in || exit 1
 
 sed -i -e '/^exec_prefix=/s|=.*$|=/|g' \
   src/libudev/libudev.pc.in || exit 1
 
-sed -i -e 's|@bindir@|/sbin|g' \
+sed -i -e '/udevadm/s|@bindir@|/sbin|g' \
+  src/login/71-seat.rules.in \
   units/systemd-udev-settle.service.in \
   units/systemd-udev-trigger.service.in || exit 1
 
-sed -i -e 's|/etc/hostname|/etc/HOSTNAME|g' src/hostname/hostnamed.c || exit 1
+sed -i -e 's|/etc/hostname|/etc/HOSTNAME|g' \
+  src/hostname/hostnamed.c src/core/hostname-setup.c || exit 1
 
 mkdir -p ${PKG}/lib/udev/rules.d
 mkdir -p ${PKG}/run
 
 find . -name "*.[1-8]" -exec touch '{}' ';'
+
+if [ "${SB_AUTOGEN}" = "YES" ] ;then
+  autoreconf -ivf || exit $?
+fi
+
+sed -i -e '/man\/bootchart\.conf\.5/d' Makefile.in || exit 1
 
 unset SB_QROPTS
 [ "${SB_QR}" = "YES" ] || SB_QROPTS='--disable-qrencode'
@@ -161,7 +171,6 @@ CXXFLAGS="${SLKCFLAGS}" \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-silent-rules \
   --enable-static \
-  --with-distro=slackware \
   --enable-split-usr \
   --disable-pam \
   --disable-audit \
@@ -177,6 +186,9 @@ make install DESTDIR=${PKG} \
   || exit $?
 
 [ "${SB_RMLA}" = "YES" ] && find ${PKG} -name '*.la' -exec rm {} ';'
+
+mv ${PKG}/usr/lib${LIBDIRSUFFIX}/libnss_myhostname.so.* \
+  ${PKG}/lib${LIBDIRSUFFIX}/ || exit 1
 
 rmdir -p ${PKG}/lib${LIBDIRSUFFIX}/security
 rmdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/security
@@ -207,8 +219,8 @@ ln -sf ../var-run.mount \
   ${PKG}/lib/systemd/system/local-fs.target.wants/var-run.mount || exit 1
 
 # rc.local and rc.local_shutdown
-install -pm0644 units/fedora/rc-local.service \
-  ${PKG}/lib/systemd/system/ || exit 1
+install -pm0644 units/rc-local.service.in \
+  ${PKG}/lib/systemd/system/rc-local.service || exit 1
 
 ln -s ../rc-local.service \
   ${PKG}/lib/systemd/system/multi-user.target.wants/rc-local.service || exit 1
@@ -410,6 +422,12 @@ setcaps () {
   fi
 }
 
+enableservice () {
+  if ! ${CHROOT}/bin/systemctl is-enable "${1}" > /dev/null 2>&1 ;then
+    ${CHROOT} /bin/systemctl enable "${1}" 2>&1
+  fi
+}
+
 # Try to read default runlevel from the old inittab if it exists
 runlevel=$(${CHROOT} /bin/awk -F':' '$3 == "initdefault" && $1 !~ "^#" { print $2 }' /etc/inittab 2> /dev/null)
 if [ -z "${runlevel}" ]; then
@@ -431,11 +449,10 @@ if [ -f lib/systemd/systemd.old ]; then
   rm -f lib/systemd/systemd.old
 fi
 
-${CHROOT} /bin/systemctl enable \
-  getty@.service \
-  remote-fs.target \
-  systemd-readahead-replay.service \
-  systemd-readahead-collect.service 2>&1 || :
+enableservice getty@.service || :
+enableservice remote-fs.target || :
+enableservice systemd-readahead-replay.service || :
+enableservice systemd-readahead-collect.service || :
 
 setcaps 'cap_dac_override,cap_sys_ptrace+ep' 'u-s' /usr/bin/systemd-detect-virt
 
@@ -449,6 +466,15 @@ ${CHROOT} /bin/systemctl --system daemon-reload  >/dev/null 2>&1 || :
 ${CHROOT} /bin/systemctl start systemd-udev.service >/dev/null 2>&1 || :
 ${CHROOT} /sbin/udevadm hwdb --update >/dev/null 2>&1 || :
 ${CHROOT} /bin/journalctl --update-catalog >/dev/null 2>&1 || :
+
+if [ -f etc/nsswitch.conf ] ; then
+  ${CHROOT} sed -i.bak -e '
+    /^hosts:/ !b
+    /\<myhostname\>/ b
+    s/[[:blank:]]*$/ myhostname/
+    ' /etc/nsswitch.conf
+fi
+
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \

@@ -55,8 +55,6 @@ ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch
 # may be upstreamable, not sure yet
 # workaround for gdal/grass crashers wrt glib_eventloop null deref's
 ApplyPatch qt-everywhere-opensource-src-4.6.3-glib_eventloop_nullcheck.patch
-# workaround for a MOC issue with Boost 1.48 headers (#756395)
-ApplyPatch qt-everywhere-opensource-src-4.8.0-rc1-moc-boost148.patch
 # hack out largely useless (to users) warnings about qdbusconnection
 # (often in kde apps), keep an eye on https://git.reviewboard.kde.org/r/103699/
 ApplyPatch qt-everywhere-opensource-src-4.8.3-qdbusconnection_no_debug.patch
@@ -123,5 +121,18 @@ ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
+# backported from Qt5 (essentially)
+# http://bugzilla.redhat.com/702493
+# https://bugreports.qt-project.org/browse/QTBUG-5545
+ApplyPatch qt-everywhere-opensource-src-4.8.4-qgtkstyle_disable_gtk_theme_check.patch
+# workaround for a MOC issue with Boost 1.48 headers (rh#756395)
+ApplyPatch 0013-Fix-moc-from-choking-on-boost-headers.patch
+# QSslSocket may report incorrect errors when certificate verification fails
+# https://codereview.qt-project.org/#change,42461
+ApplyPatch 0054-Fix-binary-incompatibility-between-openssl-versions.patch
+# http://lists.qt-project.org/pipermail/announce/2013-January/000021.html
+ApplyPatch 0080-SSL-certificates-blacklist-mis-issued-Turktrust-cert.patch
+# another set similar to 0080
+ApplyPatch 0090-QtNetwork-blacklist-two-more-certificates.patch
 
 set +e +o pipefail

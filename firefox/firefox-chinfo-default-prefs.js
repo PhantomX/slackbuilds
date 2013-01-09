@@ -20,3 +20,4 @@ pref("intl.locale.matchOS", true);
 pref("extensions.shownSelectionUI", true);
 pref("extensions.autoDisableScope", 0);
 pref("media.use_cubeb", false);
+pref("gfx.color_management.enablev4", true);

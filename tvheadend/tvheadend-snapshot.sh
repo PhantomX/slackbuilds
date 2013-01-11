@@ -30,7 +30,7 @@ pushd "${tmp}"
       git checkout $(git rev-list -n 1 --before="${gitdate}" ${snapbranch})
       gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
     fi
-    if [ "${snapbranch}" != "master" ] && [ -z "${tag}" ];then
+    if [ "${snapbranch}" != "master" ] && [ -z "${snaptag}" ];then
       git checkout -q ${gittree}
     fi
     if [ -n "${snaptag}" ] ;then

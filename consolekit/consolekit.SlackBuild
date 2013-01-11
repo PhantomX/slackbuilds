@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ consolekit.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008, 2009, 2010, 2011 Phantom X, Goiania, Brazil.
+# Copyright 2008-2012 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -41,11 +41,18 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
+SNAPBUILD=${SNAPBUILD:-YES}
+
 PNAME=ConsoleKit
 NAME=consolekit
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.4.5}
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+  SNAPBRANCH=${SNAPBRANCH:-master}
+else
+  VERSION=${VERSION:-0.4.5}
+fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -67,16 +74,28 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${PNAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.bz2
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  SRCDIR=${NAME}-${VERSION}
+  SRCARCHIVE=${SRCDIR}.tar.xz
+else
+  SRCDIR=${PNAME}-${VERSION}
+  SRCARCHIVE=${SRCDIR}.tar.bz2
+fi
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://www.freedesktop.org/software/${PNAME}/dist/${SRCARCHIVE}"
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
+export snapbranch=${SNAPBRANCH}
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+else
+  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -111,9 +130,17 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
+unset SB_AUTOGEN
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
+
+if [ "${SB_AUTOGEN}" = "YES" ] || [ ! -r configure ]; then
+  autoreconf -ivf || exit $?
+fi
+
+unset SB_MMOPTS
+[ "${SNAPBUILD}" = "YES" ] && SB_MMOPTS='--enable-maintainer-mode'
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -127,9 +154,11 @@ CXXFLAGS="${SLKCFLAGS}" \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-silent-rules \
   --with-pid-file=/var/run/console-kit-daemon.pid \
+  --enable-udev-acl \
   --disable-pam-module \
   --enable-docbook-docs \
   --with-systemdsystemunitdir=/lib/systemd/system \
+  ${SB_MMOPTS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
@@ -147,6 +176,17 @@ mv ${PKG}/etc/dbus-1/system.d/ConsoleKit.conf \
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+abs2rel(){
+  perl -e 'use File::Spec; print File::Spec->abs2rel($ARGV[0], $ARGV[1])' "$1" "$2"
+}
+
+udevdir=$(pkg-config udev --variable=udevdir)
+reldir=$(abs2rel /usr/libexec ${udevdir})
+ln -sf ${reldir}/udev-acl ${PKG}/${udevdir}/udev-acl || exit 1
+
+reldir2=$(abs2rel /usr/libexec /usr/lib/ConsoleKit/run-seat.d )
+ln -sf ${reldir2}/udev-acl ${PKG}/usr/lib/ConsoleKit/run-seat.d/udev-acl.ck || exit 1
 
 mkdir -p ${PKG}/etc/X11/xinit/xinitrc.d
 cat > ${PKG}/etc/X11/xinit/xinitrc.d/00-start-xinit-ck.sh <<'EOF'
@@ -178,8 +218,8 @@ TAGDIR=/var/run/console
 TAGFILE="${TAGDIR}/$(getent passwd ${CK_SESSION_USER_UID} | cut -f 1 -d:)"
 
 if [ "$1" = "session_added" ]; then
-	mkdir -p "${TAGDIR}"
-	echo "${CK_SESSION_ID}" >> "$TAGFILE"
+  mkdir -p "${TAGDIR}"
+  echo "${CK_SESSION_ID}" >> "${TAGFILE}"
 fi
 
 if [ "$1" = "session_removed" ] && [ -e "$TAGFILE" ]; then
@@ -224,7 +264,6 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
 # Figure out our root directory
 ROOTDIR=\$(pwd)
 unset CHROOT
@@ -261,6 +300,12 @@ EOF
   echo >> ${PKG}/install/doinst.sh
 )
 
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
+fi
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -268,12 +313,12 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/rc.${NAME} ${CWD}/setup.*.rc${NAME} \
-                 ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${SNAPUPDATE} ${CWD}/rc.${NAME} \
+    ${CWD}/setup.*.rc${NAME} ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
   rmdir ${SBDIR}/patches
 fi
 
@@ -284,7 +329,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

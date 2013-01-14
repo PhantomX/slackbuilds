@@ -214,14 +214,10 @@ ApplyPatch weird-root-dentry-name-debug.patch
 #Build patch, should go away
 ApplyPatch irqnr-build.patch
 
-#rhbz 874791
-ApplyPatch Bluetooth-Add-support-for-BCM20702A0.patch
-
 #rhbz 859485
 ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
 
 #rhbz CVE-2012-4530 868285 880147
-ApplyPatch exec-do-not-leave-bprm-interp-on-stack.patch
 ApplyPatch exec-use-eloop-for-max-recursion-depth.patch
 
 #rhbz 851278

@@ -8,7 +8,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/polkit-0.108-fix-libmozjs185-s
 # Patch the patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/polkit-fix-deb-patch.patch
 
-for ignore in 01 05 06 ;do
+for ignore in 01 04 05 06 ;do
   sed -i -e "/^${ignore}.*$/d" debian/patches/series
 done
 for i in $(<debian/patches/series); do

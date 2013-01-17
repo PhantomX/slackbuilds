@@ -4,9 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.48.2-libwpg.patch
-
-# Set to YES if autogen is needed
-SB_AUTOGEN=YES
+# From Arch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/poppler_buildfix.diff
 
 set +e +o pipefail

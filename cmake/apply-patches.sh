@@ -10,6 +10,7 @@ patch -p1 -E --backup -z .libform --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.10-lib
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.7-FindBLAS.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.7-FindLAPACK.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.8-FindPkgConfig.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.10.2-qt5.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.8.0-kde3-include.patch.gz | patch -p0 -E --backup --verbose
 # Patch to find DCMTK in Fedora (bug #720140)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dcmtk.patch

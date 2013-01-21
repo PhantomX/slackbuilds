@@ -16,7 +16,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-long-double-1.pat
 # https://bugzilla.redhat.com/show_bug.cgi?id=784654
 patch -p3 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-polygon.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-pool.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-hash-enum.patch
 
 # Gentoo
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.51.0-respect_python-buildid.patch
@@ -25,5 +24,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-no_strict_aliasin
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-disable_libboost_python3.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-python_linking.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-disable_icu_rpath.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.52.0-tuple.patch
 
 set +e +o pipefail

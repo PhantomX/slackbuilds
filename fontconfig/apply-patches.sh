@@ -18,4 +18,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fontconfig.font.dir.list.diff
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fontconfig-2.8.0-sleep-less.patch
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Copy-all-values-from-pattern-to-font-if-the-font-doe.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Fix-fc-cache-crash-caused-by-looking-up-NULL-object-.patch
+
 set +e +o pipefail

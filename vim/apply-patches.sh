@@ -30,6 +30,11 @@ cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
     patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${SVER}.${i}
   done
 )
+sed -i \
+  -e '/nl \\/d' \
+  -e '/nl.mo \\/d' \
+  -e '/nl.ck \\/d' \
+  src/po/Makefile || exit 1
 
 if [ "${SB_SYNUP}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/updates/vim-runtime-syntax-${SYNUPVER}.patch.gz | patch -p0 --verbose

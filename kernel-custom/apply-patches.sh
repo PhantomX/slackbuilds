@@ -139,6 +139,7 @@ done
     ApplyPatch ${file}
   done
 )
+ApplyPatch 0001-block-bfq-do-not-update-peak-rate-if-service-rate-of.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA

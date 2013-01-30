@@ -139,6 +139,7 @@ done
     ApplyPatch ${file}
   done
 )
+ApplyPatch 0001-block-bfq-do-not-update-peak-rate-if-no-I-O-was-done.patch
 ApplyPatch 0001-block-bfq-do-not-update-peak-rate-if-service-rate-of.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
@@ -166,6 +167,9 @@ ApplyPatch linux-2.6-silence-noise.patch
 
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch linux-2.6-silence-fbcon-logo.patch.gz
+
+# no-one cares about these warnings.
+ApplyPatch silence-empty-ipi-mask-warning.patch
 
 # libata
 

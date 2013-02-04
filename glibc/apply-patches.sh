@@ -54,6 +54,7 @@ fi
 # Gentoo patches
 ( SB_PATCHDIR=patches
 
+  ApplyPatch 0035_all_glibc-2.16-i386-math-feraiseexcept-overhead.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
   ApplyPatch 1008_all_glibc-2.16-fortify.patch
@@ -79,5 +80,15 @@ ApplyPatch glibc-2.16-multiarch.patch
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 # master
+ApplyPatch 0001-BZ-14317-Optimze-__xpg_strerror_r.patch
+ApplyPatch 0001-Add-new-defines-from-Linux-3.7-to-netinet-tcp.h.patch
+ApplyPatch 0002-Add-values-from-Linux-3.7-to-elf.h.patch
+ApplyPatch 0001-Fix-casinh-casin-inaccuracy-from-cancellation-bug-14.patch
+ApplyPatch 0001-Fix-casinh-casin-overflow-bug-14996.patch
+ApplyPatch 0001-BZ-14985-Remove-erroneous-EPOLL_NONBLOCK.patch
+ApplyPatch 0001-Add-MSG_FASTOPEN.patch
+ApplyPatch 0001-Implement-x86-SIZE32-SIZE64-relocations.patch
+ApplyPatch 0001-Fix-cacos-real-part-inaccuracy-for-result-real-part-.patch
+ApplyPatch 0001-Make-bits-wchar.h-correct-for-all-architectures-bug-.patch
 
 set +e +o pipefail

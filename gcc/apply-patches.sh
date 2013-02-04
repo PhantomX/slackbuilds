@@ -10,20 +10,16 @@ SB_PATCHDIR=${CWD}/patches
 # From Fedora or upstream
 patch -p0 -E --backup -z .hack --verbose -i ${SB_PATCHDIR}/gcc47-hack.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-c++-builtin-redecl.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr33763.patch
+####patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr33763.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-rh330771.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libgomp-omp_h-multilib.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libtool-no-rpath.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr38757.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-no-add-needed.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-no-copy-dt-needed-entries.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libitm-fno-exceptions.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-rh837630.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-arm-hfp-ldso.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/libgo-hardening.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr54312.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr54564.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr54563.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-gogo-filenamesh.patch 
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr55137.patch
 
 # From Gentoo
 patch -p0 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_gcc-default-fortify-source.patch

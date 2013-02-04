@@ -1,0 +1,77 @@
+diff -up nspluginwrapper-1.4.4/src/npw-wrapper.c.restart nspluginwrapper-1.4.4/src/npw-wrapper.c
+--- nspluginwrapper-1.4.4/src/npw-wrapper.c.restart	2011-07-01 05:18:57.000000000 +0200
++++ nspluginwrapper-1.4.4/src/npw-wrapper.c	2012-07-18 15:49:11.329877655 +0200
+@@ -115,6 +115,7 @@ static void plugin_exit(void);
+ static void plugin_kill_cb(rpc_connection_t *connection, void *user_data);
+ static NPError plugin_start(void);
+ static NPError plugin_start_if_needed(void);
++static void plugin_kill(void);
+ static int plugin_killed = 0;
+ 
+ /*
+@@ -2104,31 +2105,44 @@ g_NPP_New(NPMIMEType mime_type, NPP inst
+ 		  uint16_t mode, int16_t argc, char *argn[], char *argv[],
+ 		  NPSavedData *saved)
+ {
++  NPError ret;
++  int attempt = 1;
++
+   if (instance == NULL)
+ 	return NPERR_INVALID_INSTANCE_ERROR;
+-	
+-  // Check if we need to restart the plug-in
+-  NPError ret = plugin_start_if_needed();
+-  if (ret != NPERR_NO_ERROR)
+-  	return ret;
+ 
+-  PluginInstance *plugin = npw_plugin_instance_new(&PluginInstanceClass);
+-  if (plugin == NULL)
+-	return NPERR_OUT_OF_MEMORY_ERROR;
+-  plugin->instance = instance;
+-  plugin->instance_id = id_create(plugin);
+-  plugin->connection = rpc_connection_ref(g_rpc_connection);
+-  instance->pdata = plugin;
++  do {
++    // Check if we need to restart the plug-in
++    NPError ret = plugin_start_if_needed();
++    if (ret != NPERR_NO_ERROR)
++      return ret;
++
++    PluginInstance *plugin = npw_plugin_instance_new(&PluginInstanceClass);
++    if (plugin == NULL)
++      return NPERR_OUT_OF_MEMORY_ERROR;
++    plugin->instance = instance;
++    plugin->instance_id = id_create(plugin);
++    plugin->connection = rpc_connection_ref(g_rpc_connection);
++    instance->pdata = plugin;
++
++    if (PLUGIN_DIRECT_EXEC) {
++      if ((plugin->native_instance = NPW_MemNew0(NPP_t, 1)) == NULL)
++        return NPERR_OUT_OF_MEMORY_ERROR;
++      plugin->native_instance->ndata = instance->ndata;
++    }
++
++    D(bugiI("NPP_New instance=%p\n", instance));
++    ret = invoke_NPP_New(plugin, mime_type, mode, argc, argn, argv, saved);
++    D(bugiD("NPP_New return: %d [%s]\n", ret, string_of_NPError(ret)));
++
++    // NPP_New was succesfull or we exhausted all our restart attempts
++    if(!ret || attempt == 0)
++      break;
+ 
+-  if (PLUGIN_DIRECT_EXEC) {
+-	if ((plugin->native_instance = NPW_MemNew0(NPP_t, 1)) == NULL)
+-	  return NPERR_OUT_OF_MEMORY_ERROR;
+-	plugin->native_instance->ndata = instance->ndata;
+-  }
+-
+-  D(bugiI("NPP_New instance=%p\n", instance));
+-  ret = invoke_NPP_New(plugin, mime_type, mode, argc, argn, argv, saved);
+-  D(bugiD("NPP_New return: %d [%s]\n", ret, string_of_NPError(ret)));
++    // kill the plugin
++    plugin_kill();
++    attempt--;
++  } while(1);
+ 
+   if (saved) {
+ 	if (saved->buf)

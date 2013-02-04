@@ -1,0 +1,379 @@
+diff -up nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-config.c.dlopen nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-config.c
+--- nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-config.c.dlopen	2012-12-14 11:48:58.414171680 +0100
++++ nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-config.c	2012-12-14 11:48:58.415171685 +0100
+@@ -257,39 +257,46 @@ int is_setuid(void)
+   return(geteuid() == 0 && getuid() != 0);
+ }
+ 
+-/*
+- * Drop root UID
+- */
+-int drop_setuid(void)
+-{  
+-  if(is_setuid()) {
+-    if(setgid(getgid()) < 0)
+-      return(FALSE);
+-    if(setuid(getuid()) < 0)
+-      return(FALSE);
+-  }  
+-  return(TRUE);
++
++int get_user_uid_gid(const char *username, uid_t *uid, gid_t *gid)
++{
++    struct passwd *passwd_entry;
++
++    if ((passwd_entry = getpwnam(username)) == NULL)
++        return FALSE;
++
++    *uid = passwd_entry->pw_uid;
++    *gid = passwd_entry->pw_gid;
++
++    return TRUE;
+ }
+ 
+ /*
+- * Drop root UID, leave it only for filesystem
++ * Drop root UID
+  */
+ int drop_root(void)
+-{
+-  if(is_setuid()) {
+-    return(drop_setuid());
++{  
++  static uid_t user_uid = -1;
++  static gid_t user_gid = -1;
++  const char* username = "nobody";
++
++  // get user uid and gid
++  if (user_uid == -1 || user_gid == -1) {
++      if (!get_user_uid_gid(username, &user_uid, &user_gid))
++          return FALSE;
++  }
++
++  //identify as nspluginwrapper user
++  if(setgid(user_gid) == -1) {
++      return FALSE;
++  }
++  if(setuid(user_uid) == -1) {
++      return FALSE;
+   }
+   
+-  return(TRUE);
++  return TRUE;
+ }
+ 
+-enum
+-{
+-	EXIT_VIEWER_NOT_FOUND = -2,
+-	EXIT_VIEWER_ERROR = -1,
+-	EXIT_VIEWER_OK = 0,
+-};
+-
+ char * get_prefix(char *p_prefix, int max_len, int s_bits, int t_bits)
+ {  
+   snprintf(p_prefix,max_len,"nswrapper_%d_%d",s_bits,t_bits);
+@@ -321,7 +328,7 @@ int check_plugin_viewer(const char *plug
+     return(FALSE);
+   }
+   else if (pid == 0) {
+-    if(!drop_setuid())
++    if(!drop_root())
+       exit(EXIT_VIEWER_ERROR);
+ 
+     if(access(p_viewer, X_OK) != 0) {
+diff -up nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-config.h.dlopen nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-config.h
+--- nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-config.h.dlopen	2007-10-31 10:46:34.000000000 +0100
++++ nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-config.h	2012-12-14 11:48:58.416171689 +0100
+@@ -36,6 +36,13 @@ typedef struct _WRAP_PLUGIN {
+ 
+ } WRAP_PLUGIN;
+ 
++enum
++{
++  EXIT_VIEWER_NOT_FOUND = -2,
++  EXIT_VIEWER_ERROR = -1,
++  EXIT_VIEWER_OK = 0,
++};
++
+ #define NPW_WRAPPER_PLUGIN   "npwrapper.so"  // Don't process this plugin
+ 
+ void warning(const char *format,...);
+@@ -43,6 +50,6 @@ void error(const char *format,...);
+ void info(const char *format, ...);
+ 
+ int is_setuid(void);
+-int drop_setuid(void);
++int drop_root(void);
+ 
+ #endif // __PLUGIN_CONFIG_H__
+diff -up nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-detection.c.dlopen nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-detection.c
+--- nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-detection.c.dlopen	2007-11-06 12:48:18.000000000 +0100
++++ nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-detection.c	2012-12-14 11:48:58.416171689 +0100
+@@ -49,6 +49,9 @@
+ #include <asm/types.h>
+ 
+ #include "plugin-detection.h"
++#include "plugin-path.h"
++#include "plugin-dir.h"
++#include "plugin-config.h"
+ 
+ 
+ /* ELF decoder derived from QEMU code */
+@@ -817,37 +820,96 @@ int is_wrapper_plugin_fd (int fd)
+ 
+ int get_wrapper_plugin_info(const char *plugin_path, NPW_PLUGININFO *out_plugin_info)
+ {
+-  void *handle = dlopen(plugin_path, RTLD_LAZY);
+-  if (handle == NULL)
+-        return FALSE;
+-  if (dlsym(handle, "NP_Initialize") == NULL)
+-        return FALSE;
+-  if (dlsym(handle, "NP_Shutdown") == NULL)
+-        return FALSE;
+-  if (dlsym(handle, "NP_GetMIMEDescription") == NULL)
++    int fd[2];
++
++    // initialize pipe
++    if (pipe(fd) == -1)
+         return FALSE;
+-  NPW_PLUGININFO *pi;
+-  if ((pi = (NPW_PLUGININFO *)dlsym(handle, "NPW_Plugin")) == NULL)
++
++    int pid = fork();
++    if (pid < 0) {
+         return FALSE;
+-  if (out_plugin_info) {
+-        strncpy(out_plugin_info->ident, pi->ident, NPW_PLUGIN_IDENT_SIZE);
+-        strncpy(out_plugin_info->path, pi->path, PATH_MAX);
+-        out_plugin_info->mtime = pi->mtime;
+-        out_plugin_info->target_arch[0] = '\0';
+-        out_plugin_info->target_os[0] = '\0';
+-        if (strncmp(pi->ident, "NPW:0.9.9", 9) != 0) {
+-          strncpy(out_plugin_info->target_arch, pi->target_arch, NPW_PLUGININFO_TARGET_LENGTH-2);
+-          strncpy(out_plugin_info->target_os, pi->target_os, NPW_PLUGININFO_TARGET_LENGTH-2);
+-          out_plugin_info->target_arch[NPW_PLUGININFO_TARGET_LENGTH-1] = '\0';
+-          out_plugin_info->target_os[NPW_PLUGININFO_TARGET_LENGTH-1] = '\0';
++    }
++    else if (pid == 0) {
++        //close read
++        close(fd[0]);
++    
++        if(!drop_root())
++            exit(EXIT_VIEWER_ERROR);
++
++        void *handle = dlopen(plugin_path, RTLD_LAZY);
++
++        NPW_PLUGININFO plugin_info;
++        NPW_PLUGININFO *pi;
++
++        if ((pi = (NPW_PLUGININFO *)dlsym(handle, "NPW_Plugin")) == NULL) {
++            // Send expected data to parent but invalidate them with error 
++            // return code
++            write(fd[1], &plugin_info, sizeof(NPW_PLUGININFO));
++            exit(EXIT_VIEWER_ERROR);
++        }
++        else {
++            //check if necessary symbols are presented
++            if ((dlsym(handle, "NP_Initialize") == NULL) ||
++                (dlsym(handle, "NP_Shutdown") == NULL) ||
++                (dlsym(handle, "NP_GetMIMEDescription") == NULL)) {
++
++                // Send expected data to parent but invalidate them with error
++                // return code
++                write(fd[1], &plugin_info, sizeof(NPW_PLUGININFO));
++                exit(EXIT_VIEWER_ERROR);
++            }
++
++            if (out_plugin_info) {
++                strncpy(plugin_info.ident, pi->ident, NPW_PLUGIN_IDENT_SIZE);
++                strncpy(plugin_info.path, pi->path, PATH_MAX);
++                plugin_info.mtime = pi->mtime;
++                plugin_info.target_arch[0] = '\0';
++                plugin_info.target_os[0] = '\0';
++                if (strncmp(pi->ident, "NPW:0.9.9", 9) != 0) {
++                    strncpy(plugin_info.target_arch, pi->target_arch, NPW_PLUGININFO_TARGET_LENGTH-2);
++                    strncpy(plugin_info.target_os, pi->target_os, NPW_PLUGININFO_TARGET_LENGTH-2);
++                    plugin_info.target_arch[NPW_PLUGININFO_TARGET_LENGTH-1] = '\0';
++                    plugin_info.target_os[NPW_PLUGININFO_TARGET_LENGTH-1] = '\0';
++                }
++            }
+         }
+-  }
+-  dlclose(handle);
+-  return TRUE;
++
++        /* Intentionally leak the handle; many libraries crash when unloaded. */
++        /* dlclose(handle); */
++        if (write(fd[1], &plugin_info, sizeof(NPW_PLUGININFO)) == -1)
++            exit(EXIT_VIEWER_ERROR);
++
++        exit(EXIT_VIEWER_OK);
++    }
++    else {
++        //close write
++        close(fd[1]);
++        int status;
++        NPW_PLUGININFO info;
++
++        //read result from child
++        if (read(fd[0], &info, sizeof(NPW_PLUGININFO)) == -1)
++            return FALSE;
++
++        while (waitpid(pid, &status, 0) != pid)
++            ;
++
++        if (WIFEXITED(status)) {
++            if (WEXITSTATUS(status) != EXIT_VIEWER_OK)
++                return FALSE;
++        }
++
++        if (out_plugin_info)
++            *out_plugin_info = info;
++    }
++
++    return TRUE;
+ }
+ 
+ int is_wrapper_plugin (const char *plugin_path, NPW_PLUGININFO * out_plugin_info)
+ {
++
+ 	int fd = open (plugin_path, O_RDONLY);
+ 	if (fd < 0)
+ 		return FALSE;
+diff -up nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-detection.h.dlopen nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-detection.h
+--- nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-detection.h.dlopen	2007-10-29 14:52:54.000000000 +0100
++++ nspluginwrapper-1.4.4/plugin-config-1.9/src/plugin-detection.h	2012-12-14 11:48:58.417171693 +0100
+@@ -53,6 +53,8 @@ int  is_plugin_fd_64(int fd, NPW_PLUGINI
+ int  is_plugin_fd(int fd, NPW_PLUGININFO * out_plugin_info);
+ int  is_plugin(const char *filename, NPW_PLUGININFO * out_plugin_info);
+ 
++int get_user_uid_gid(const char *username, uid_t *uid, gid_t *gid);
++
+ int  is_wrapper_plugin_handle(void *handle, NPW_PLUGININFO * out_plugin_info);
+ int  is_wrapper_plugin(const char *plugin_path, NPW_PLUGININFO * out_plugin_info);
+ 
+diff -up nspluginwrapper-1.4.4/src/npw-config.c.dlopen nspluginwrapper-1.4.4/src/npw-config.c
+--- nspluginwrapper-1.4.4/src/npw-config.c.dlopen	2012-12-14 11:48:58.383171524 +0100
++++ nspluginwrapper-1.4.4/src/npw-config.c	2012-12-14 11:59:45.276355433 +0100
+@@ -126,6 +126,42 @@ static int strexpand(char *dst, int dstl
+   return 0;
+ }
+ 
++static int get_user_uid_gid(const char *username, uid_t *uid, gid_t *gid)
++{
++    struct passwd *passwd_entry;
++
++    if ((passwd_entry = getpwnam(username)) == NULL)
++        return FALSE;
++
++    *uid = passwd_entry->pw_uid;
++    *gid = passwd_entry->pw_gid;
++
++    return TRUE;
++}
++
++static int drop_root(void)
++{  
++  static uid_t user_uid = -1;
++  static gid_t user_gid = -1;
++  const char* username = "nobody";
++
++  // get user uid and gid
++  if (user_uid == -1 || user_gid == -1) {
++      if (!get_user_uid_gid(username, &user_uid, &user_gid))
++          return FALSE;
++  }
++
++  //identify as nspluginwrapper user
++  if(setgid(user_gid) == -1) {
++      return FALSE;
++  }
++  if(setuid(user_uid) == -1) {
++      return FALSE;
++  }
++  
++  return TRUE;
++}
++
+ static const char *get_system_mozilla_plugin_dir(void)
+ {
+   static const char default_dir[] = LIBDIR "/mozilla/plugins";
+@@ -363,6 +399,8 @@ static bool is_plugin_viewer_ok(const ch
+   if (pid < 0)
+ 	return false;
+   if (pid == 0) {
++	if(!drop_root())
++	  exit(1);
+ 	if (!g_verbose) {
+ 	  // don't spit out errors in non-verbose mode, we only need
+ 	  // to know whether there is a valid viewer or not
+@@ -531,16 +569,62 @@ static bool is_wrapper_plugin_handle(voi
+   return true;
+ }
+ 
++#define EXIT_ERROR        (-1)
++#define EXIT_WRAPPED      (0)
++#define EXIT_NOT_WRAPPED  (1)
++
+ static bool is_wrapper_plugin(const char *plugin_path, NPW_PluginInfo *out_plugin_info)
+ {
+-  void *handle = dlopen(plugin_path, RTLD_LAZY);
+-  if (handle == NULL)
+-	return false;
++  int fd[2];
+ 
+-  bool ret = is_wrapper_plugin_handle(handle, out_plugin_info);
+-  /* Intentionally leak the handle; many libraries crash when unloaded. */
+-  /* dlclose(handle); */
+-  return ret;
++  // initialize pipe
++  if (pipe(fd) == -1)
++      return FALSE;
++
++  int pid = fork();
++  if (pid < 0) {
++      return FALSE;
++  }
++  else if (pid == 0) {
++      NPW_PluginInfo  plugin_info;
++      bool            is_wrapped = false;
++  
++      //close read
++      close(fd[0]);
++  
++      if(!drop_root())
++          exit(EXIT_ERROR);
++  
++      void *handle = dlopen(plugin_path, RTLD_LAZY);
++      if (handle != NULL) {
++          is_wrapped = is_wrapper_plugin_handle(handle, &plugin_info);
++          /* Intentionally leak the handle; many libraries crash when unloaded. */
++          /* dlclose(handle); */
++      }
++    
++      if (write(fd[1], &plugin_info, sizeof(NPW_PluginInfo)) == -1)
++          exit(EXIT_ERROR);
++      
++      exit(is_wrapped ? EXIT_WRAPPED : EXIT_NOT_WRAPPED);
++  }
++  else {
++      //close write
++      close(fd[1]);
++      int status;
++      NPW_PluginInfo info;
++
++      //read result from child
++      if (read(fd[0], &info, sizeof(NPW_PluginInfo)) == -1)
++          return FALSE;
++
++      while (waitpid(pid, &status, 0) != pid)
++          ;
++
++      if (out_plugin_info)
++          *out_plugin_info = info;
++      
++      return (WEXITSTATUS(status) == EXIT_WRAPPED);
++  }
+ }
+ 
+ static bool is_master_wrapper_plugin(const char *plugin_path)

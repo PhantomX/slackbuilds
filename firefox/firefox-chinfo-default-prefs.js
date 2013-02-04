@@ -21,3 +21,4 @@ pref("extensions.shownSelectionUI", true);
 pref("extensions.autoDisableScope", 0);
 pref("media.use_cubeb", false);
 pref("gfx.color_management.enablev4", true);
+pref("dom.ipc.plugins.enabled.nswrapper*",  false);

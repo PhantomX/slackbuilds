@@ -18,6 +18,16 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-2.21-ipcs-32bit.pat
 
 ### Upstream Patches
 ###
+# 889888 - wipefs does not completely wipe btrfs volume
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/libblkid-add-support-for-btrfs-backup-superblock.patch
+# 882305 - agetty: unstable /dev/tty* permissions
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/agetty-replace-perms-660-to-620.patch
+# 885314 - hexdump segfault
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hexdump-do-not-segfault-when-iterating-over-an-empty.patch
+# 896447 - No newlines in piped "cal" command
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cal-don-t-mix-ncurses-output-functions-and-printf.patch
+# upstream patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/libblkid-remove-optimization-from-verify-function.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=NO

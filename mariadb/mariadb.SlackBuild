@@ -1,9 +1,9 @@
 #!/bin/sh
-#-- mysql for Slackware --
+#-- mariadb for Slackware --
 # Build script by Phantom X <megaphantomx at bol.com.br>
-# Suggested usage: $ mysql.SlackBuild 2>&1 | tee build.log
+# Suggested usage: $ mariadb.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008-2012 Phantom X, Goiania, Brazil.
+# Copyright 2008-2013 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -23,8 +23,7 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# http://www.mysql.com
-# http://dev.mysql.com
+# http://mariadb.org
 
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
@@ -42,7 +41,7 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
-NAME=mysql
+NAME=mariadb
 PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-5.5.29}
@@ -73,17 +72,15 @@ grep --quiet '^mysql:' /etc/group && SB_HGROUP=1
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.gz
-SSRCARCHIVE=${SRCARCHIVE}.asc
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-MYSQL_MIRROR=${MYSQL_MIRROR:-https://cdn.mysql.com/Downloads}
-DL_URL="${MYSQL_MIRROR}/MySQL-${SVER}"
+MARIADB_MIRROR=${MYSQL_MIRROR:-http://ftp.osuosl.org/pub/${NAME}}
+DL_URL="${MARIADB_MIRROR}/${NAME}-${VERSION}/kvm-tarbake-jaunty-x86/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${SRCARCHIVE} || exit 1
-test -r ${CWD}/${SSRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${SSRCARCHIVE}
+test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -122,14 +119,16 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+cp -f ${CWD}/mysql_plugin.1 man/ || exit 1
+
 # workaround for upstream bug #56342
 rm -f mysql-test/t/ssl_8k_key-master.opt
 
 # upstream has fallen down badly on symbol versioning, do it ourselves
 [ -s libmysql.version ] || cat ${CWD}/libmysql.version > libmysql/libmysql.version
 
-export CFLAGS="${SLKCFLAGS} -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -fno-strict-aliasing -fwrapv -fPIC"
-export CXXFLAGS="${CFLAGS}"
+export CFLAGS="${SLKCFLAGS} -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -fno-strict-aliasing -DBIG_JOINS=1 -fPIC"
+export CXXFLAGS="${CFLAGS} -felide-constructors -fno-rtti"
 export FFLAGS="${SLKCFLAGS}"
 
 cmake . \
@@ -141,6 +140,7 @@ cmake . \
   -DINSTALL_INFODIR=info \
   -DINSTALL_LIBDIR="lib${LIBDIRSUFFIX}/mysql" \
   -DINSTALL_MANDIR=man \
+  -DINSTALL_DOCDIR=doc/${NAME}-${VERSION} \
   -DINSTALL_MYSQLSHAREDIR=share/mysql \
   -DINSTALL_MYSQLTESTDIR=share/mysql-test \
   -DINSTALL_PLUGINDIR="lib${LIBDIRSUFFIX}/mysql/plugin" \
@@ -158,31 +158,7 @@ cmake . \
   -DWITH_ZLIB=system \
   || exit $?
 
-( set -o xtrace
-  gcc ${CFLAGS} ${LDFLAGS} -o scriptstub "-DLIBDIR=\"/usr/lib${LIBDIRSUFFIX}/mysql\"" \
-  ${CWD}/scriptstub.c || exit 1
-) || exit 1
-
 make -j${NJOBS} VERBOSE=1 || make VERBOSE=1 || exit $?
-
-# regular build will make libmysqld.a but not libmysqld.so :-(
-mkdir libmysqld/work
-( cd libmysqld/work
-  ar -x ../libmysqld.a
-  rm -f sql_binlog.cc.o rpl_utility.cc.o
-  ( set -o xtrace
-    gcc ${SLKCFLAGS} ${LDFLAGS} -shared -Wl,-soname,libmysqld.so.0 -o libmysqld.so.0.0.1 \
-    *.o \
-    -lpthread -laio -lcrypt -lssl -lcrypto -lz -lrt -lstdc++ -ldl -lm -lc || exit 1
-  ) || exit 1
-
-  # this is to check that we built a complete library
-  cat ${CWD}/mysql-embedded-check.c > mysql-embedded-check.c
-  ln -s libmysqld.so.0.0.1 libmysqld.so.0
-  gcc -I../../include ${CFLAGS} mysql-embedded-check.c libmysqld.so.0 || exit 1
-  LD_LIBRARY_PATH=. ldd ./a.out || exit 1
-) || exit 1
-
 make install DESTDIR=${PKG} || exit $?
 
 sed -e 's/-lprobes_mysql//' -e 's/-lmysqlclient_r/-lmysqlclient/' \
@@ -191,26 +167,30 @@ cp -f mysql_config.tmp ${PKG}/usr/bin/mysql_config || exit 1
 chmod 755 ${PKG}/usr/bin/mysql_config
 
 rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.a
-install -m 0755 libmysqld/work/libmysqld.so.0.0.1 \
-  ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.so.0.0.1 || exit 1
-ln -s libmysqld.so.0.0.1 ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.so.0
-ln -s libmysqld.so.0 ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqld.so
 
 [ "${SB_RMLA}" = "YES" ] && rm -f ${PKG}/usr/lib*/mysql/*.*a ${PKG}/usr/lib*/*/plugin/*.*a
 
-mv ${PKG}/usr/bin/mysqlbug ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/mysqlbug || exit 1
-install -m 0755 scriptstub ${PKG}/usr/bin/mysqlbug || exit 1
-mv ${PKG}/usr/bin/mysql_config ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/mysql_config || exit 1
-install -m 0755 scriptstub ${PKG}/usr/bin/mysql_config || exit 1
+abs2rel(){
+  perl -e 'use File::Spec; print File::Spec->abs2rel($ARGV[0], $ARGV[1])' "$1" "$2"
+}
+
+reldir=$(abs2rel /usr/lib${LIBDIRSUFFIX}/mysql /usr/bin)
+
+for file in mysqlbug mysql_config ;do
+  mv ${PKG}/usr/bin/${file} ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/${file} || exit 1
+  ln -s ${reldir}/${file} ${PKG}/usr/bin/${file} || exit 1
+done
+
+reldir=$(abs2rel /usr/bin /usr/share/mysql-test/lib/My/SafeProcess)
 
 mv ${PKG}/usr/share/mysql-test/lib/My/SafeProcess/my_safe_process ${PKG}/usr/bin/ || exit 1
-ln -s ../../../../../bin/my_safe_process ${PKG}/usr/share/mysql-test/lib/My/SafeProcess/my_safe_process
+ln -s ${reldir}/my_safe_process ${PKG}/usr/share/mysql-test/lib/My/SafeProcess/my_safe_process
 
 mkdir -p ${PKG}/var/log
 touch ${PKG}/var/log/mysqld.log.new
 
 mkdir -p ${PKG}/usr/lib/tmpfiles.d
-echo 'd /var/run/mysqld 0755 mysql mysql -' > ${PKG}/usr/lib/tmpfiles.d/mysql.conf
+echo 'd /var/run/mysqld 0755 mysql mysql -' > ${PKG}/usr/lib/tmpfiles.d/${NAME}.conf
 
 # Fix funny permissions that cmake build scripts apply to config files
 chmod 644 ${PKG}/usr/share/mysql/config.*.ini
@@ -228,10 +208,21 @@ rm -f ${PKG}/usr/share/mysql/magic
 rm -f ${PKG}/usr/share/mysql/ndb-config-2-node.ini
 rm -f ${PKG}/usr/share/mysql/mysql.server
 rm -f ${PKG}/usr/share/mysql/mysqld_multi.server
-rm -f ${PKG}/usr/share/mysql/mysql-log-rotate
 rm -f ${PKG}/usr/man/man1/comp_err.1*
 rm -f ${PKG}/usr/man/man1/mysql-stress-test.pl.1*
 rm -f ${PKG}/usr/man/man1/mysql-test-run.pl.1*
+
+rm -f ${PKG}/usr/bin/mysql_embedded
+rm -f ${PKG}/usr/share/mysql/binary-configure
+rm -f ${PKG}/usr/share/mysql/magic
+rm -f ${PKG}/usr/share/mysql/ndb-config-2-node.ini
+rm -f ${PKG}/usr/share/mysql/mysql.server
+rm -f ${PKG}/usr/share/mysql/mysqld_multi.server
+rm -f ${PKG}/usr/{,share/}man/man1/mysql-stress-test.pl.1*
+rm -f ${PKG}/usr/{,share/}man/man1/mysql-test-run.pl.1*
+rm -rf ${PKG}/etc/init.d
+rm -f ${PKG}/etc/logrotate.d/mysql
+rm -rf ${PKG}/usr/info
 
 rmdir -p ${PKG}/usr/docs
 rmdir -p ${PKG}/usr/data/*
@@ -239,6 +230,11 @@ rmdir -p ${PKG}/usr/data/*
 mkdir -p ${PKG}/etc/ld.so.conf.d
 echo "/usr/lib${LIBDIRSUFFIX}/mysql" \
   > ${PKG}/etc/ld.so.conf.d/50-${NAME}-${ARCH}.conf || exit 1
+
+# put logrotate script where it needs to be
+mkdir -p ${PKG}/etc/logrotate.d
+mv ${PKG}/usr/share/mysql/mysql-log-rotate ${PKG}/etc/logrotate.d/mysqld.new || exit 1
+chmod 644 ${PKG}/etc/logrotate.d/mysqld.new
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -272,6 +268,7 @@ fi
 mkdir -p ${PKG}/etc
 cp support-files/my-{huge,large,medium,small}.cnf ${PKG}/etc/
 
+rm -f ${PKG}/etc/my.cnf
 cat > ${PKG}/etc/my.cnf.new <<'EOF'
 [mysqld]
 # Settings user and group are ignored when systemd is used.
@@ -286,7 +283,22 @@ symbolic-links=0
 [mysqld_safe]
 log-error=/var/log/mysqld.log
 pid-file=/var/run/mysqld/mysqld.pid
+
+#
+# This group is read both both by the client and the server
+# use it for options that affect everything
+#
+[client-server]
+
+#
+# include all files from the config directory
+#
+!includedir /etc/my.cnf.d
 EOF
+
+for file in ./etc/my.cnf.d/*.cnf ;do
+  mv ${file} ${file}.new
+done
 
 # This is the directory where databases are stored
 mkdir -p ${PKG}/var/lib/mysql
@@ -311,17 +323,8 @@ install -pm0644 ${CWD}/systemd/mysqld.service ${PKG}/lib/systemd/system/ || exit
 install -m 755 ${CWD}/systemd/mysqld-prepare-db-dir ${PKG}/usr/libexec/ || exit 1
 install -m 755 ${CWD}/systemd/mysqld-wait-ready ${PKG}/usr/libexec/ || exit 1
 
-rm -f ${PKG}/usr/lib*/libmysqlclient.so*
-for libname in libmysqlclient libmysqld ;do
-  reldir=mysql
-  oldlink=$(readlink ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/${libname}.so)
-  ln -sf ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so || exit 1
-done
-
 rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient_r.so*
-ln -s libmysqlclient.so ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient_r.so
-oldlink=$(readlink ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient.so)
-ln -s ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/libmysqlclient_r.so
+echo "INPUT(-lmysqlclient)" > ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient_r.so
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}/Docs
@@ -354,14 +357,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-# Compress info pages, if any:
-if [ -d ${PKG}/usr/info ]; then
-  ( cd ${PKG}/usr/info
-    rm -f dir
-    gzip -9 *.info*
-  )
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -374,11 +369,6 @@ if test "\${ROOTDIR}" != "/"; then
   CHROOT="chroot \${ROOTDIR} "
   ROOTDIR="\${ROOTDIR}/"
 fi
-# Install the info files for this package
-if [ -x usr/bin/install-info ] ; then
-  \${CHROOT} /usr/bin/install-info --info-dir=/usr/info usr/info/${NAME}.info.gz 2>/dev/null
-fi
-
 # Add ld.so.conf.d directory to /etc/ld.so.conf:
 if fgrep ld.so.conf.d etc/ld.so.conf 1> /dev/null 2> /dev/null ; then
   true
@@ -426,7 +416,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/{patches,systemd}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${CWD}/*.h.gz ${CWD}/rc.mysqld \
+    ${CWD}/apply-patches.sh ${CWD}/*.h.gz ${CWD}/rc.mysqld ${CWD}/*.1 \
     ${CWD}/*.{c,version} ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild

@@ -21,6 +21,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.5.95-compiz.
 # make nepomuk menu items (with oxygen-only icons atm) OnlyShowIn=KDE;
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.90-nepomuk_onlyshowin_kde.patch
 
+# ktimezoned: watch /etc/localtime if it doesn't exist yet (#906972)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.0-\#906972.patch
+
 ## upstream patches
 
 set +e +o pipefail

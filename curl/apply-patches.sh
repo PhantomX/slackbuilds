@@ -5,9 +5,9 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # patch making libcurl multilib ready
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0101-curl-7.25.0-multilib.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0101-curl-7.29.0-multilib.patch
 # prevent configure script from discarding -g in CFLAGS
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0102-curl-7.28.1-debug.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0102-curl-7.29.0-debug.patch
 # use localhost6 instead of ip6-localhost in the curl test-suite
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0104-curl-7.19.7-localhost6.patch
 # exclude test1112 from the test suite (#565305)

@@ -114,7 +114,10 @@ ApplyPatch qt-4.8-poll.patch
 # security patches
 # CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code
 ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
-
+mkdir -p tests/auto/qtipc/qsharedmemory
+touch tests/auto/qtipc/qsharedmemory/tst_qsharedmemory.cpp
+ApplyPatch qt-4.8-CVE-2013-0254.patch
+ 
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore
 # UPSTREAM ME

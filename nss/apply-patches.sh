@@ -18,6 +18,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-646045.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nss-ssl-enforce-no-pkcs11-bypass.path
 # TODO: Remove this patch when the ocsp test are fixed
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nss-3.14.0.0-disble-ocsp-test.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/allow-building-nss-against-older-sqlite.patch
 
 # Uncomment this if builds stops with -lz error
 #zcat ${SB_PATCHDIR}/nss-fix-zlib.patch.gz | patch -p0 -E --backup --verbose

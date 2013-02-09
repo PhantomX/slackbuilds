@@ -26,6 +26,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-classicmenu-log
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-xsession_errors_O_APPEND.patch
 # multilib QT_PLUGIN_PATH, http://bugzilla.redhat.com/704840
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.90-multilib_qt_plugin_path.patch
+# HALsectomy
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-no_HAL.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.90-no_HAL2.patch
 
 # plasmaclock displayEvents=false default, one more item to avoid
 # starting akonadi by default
@@ -76,11 +79,8 @@ fi
 # fix kcmdatetimehelper search path so hwclock and zic are found (#906854)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.0-\#906854.patch
 
-# https://bugs.gentoo.org/show_bug.cgi?id=450818 - #14
-# http://git.overlays.gentoo.org/gitweb/?p=proj/kde.git;a=commit;h=c329262988dd4dd8005540858a6e409a12cc9592
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-base_plasma-workspace_files_plasma-workspace-4.10.0-norepeater.patch
-
 ## upstream patches
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-2stagedevicenotifier.patch
 
 ## plasma active patches
 

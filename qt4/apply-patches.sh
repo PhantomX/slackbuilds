@@ -64,6 +64,8 @@ ApplyPatch qt-everywhere-opensource-src-4.8.1-linguist_qmake-qt4.patch
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qt3support_debuginfo.patch
 
 ## upstreamable bits
+# add support for pkgconfig's Requires.private to qmake
+ApplyPatch qt-everywhere-opensource-src-4.8.4-qmake_pkgconfig_requires_private.patch
 # fix invalid inline assembly in qatomic_{i386,x86_64}.h (de)ref implementations
 # should fix the reference counting in qt_toX11Pixmap and thus the Kolourpaint
 # crash with Qt 4.5
@@ -124,12 +126,14 @@ ApplyPatch qt-4.8-CVE-2013-0254.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
+#  https://bugreports.qt-project.org/browse/QTBUG-29082
+ApplyPatch qt-everywhere-opensource-src-4.8.4-QTBUG-29082.patch
 # backported from Qt5 (essentially)
 # http://bugzilla.redhat.com/702493
 # https://bugreports.qt-project.org/browse/QTBUG-5545
 ApplyPatch qt-everywhere-opensource-src-4.8.4-qgtkstyle_disable_gtk_theme_check.patch
-# workaround for a MOC issue with Boost 1.48 headers (rh#756395)
-ApplyPatch 0013-Fix-moc-from-choking-on-boost-headers.patch
+# workaround for MOC issues with Boost headers (#756395,QTBUG-22829)
+ApplyPatch qt-everywhere-opensource-src-4.8.4-QTBUG-22829.patch
 # QSslSocket may report incorrect errors when certificate verification fails
 # https://codereview.qt-project.org/#change,42461
 ApplyPatch 0054-Fix-binary-incompatibility-between-openssl-versions.patch

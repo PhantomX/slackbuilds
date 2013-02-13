@@ -17,6 +17,8 @@ rm -f tests/data/test1112
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0106-curl-7.21.0-libssh2-valgrind.patch
 # work around valgrind bug (#678518)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0107-curl-7.21.4-libidn-valgrind.patch
+# Fix a segfault when closing an unused multi.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Fix-NULL-pointer-reference-when-closing-an-unused-mu.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

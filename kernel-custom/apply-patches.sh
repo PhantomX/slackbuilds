@@ -224,7 +224,11 @@ ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
 ApplyPatch exec-use-eloop-for-max-recursion-depth.patch
 
 #rhbz 851278
+ApplyPatch 8139cp-revert-set-ring-address-before-enabling-receiver.patch -R
+ApplyPatch 8139cp-set-ring-address-after-enabling-C-mode.patch
 ApplyPatch 8139cp-re-enable-interrupts-after-tx-timeout.patch
+
+ApplyPatch validate-pud-largepage.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

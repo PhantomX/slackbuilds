@@ -47,11 +47,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.2-bz\#74
 # add ktp_presence applet to default systray
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systray_ktp_presence.patch
 
-# disable plasma-runner-solid by default, has limited usefulness (afaict) 
-# and is crashy (at least with udisks2).
-# http://bugs.kde.org/307445
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.1-solid_krunner_disable.patch
-
 # upstreamable patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-kde\#171685.patch
@@ -81,6 +76,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.0-\#906854.patch
 
 ## upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-2stagedevicenotifier.patch
+# https://bugs.kde.org/show_bug.cgi?id=310871
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-9c841a55.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-1739d32d.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-d06e15a7.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-72ca24bb.patch
 
 ## plasma active patches
 

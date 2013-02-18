@@ -228,7 +228,8 @@ ApplyPatch 8139cp-revert-set-ring-address-before-enabling-receiver.patch -R
 ApplyPatch 8139cp-set-ring-address-after-enabling-C-mode.patch
 ApplyPatch 8139cp-re-enable-interrupts-after-tx-timeout.patch
 
-ApplyPatch validate-pud-largepage.patch
+#rhbz 911479 911473 CVE-2013-0290
+ApplyPatch net-fix-infinite-loop-in-__skb_recv_datagram.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

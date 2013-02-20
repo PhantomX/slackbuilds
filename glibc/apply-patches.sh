@@ -90,5 +90,7 @@ ApplyPatch 0001-Add-MSG_FASTOPEN.patch
 ApplyPatch 0001-Implement-x86-SIZE32-SIZE64-relocations.patch
 ApplyPatch 0001-Fix-cacos-real-part-inaccuracy-for-result-real-part-.patch
 ApplyPatch 0001-Make-bits-wchar.h-correct-for-all-architectures-bug-.patch
+ApplyPatch 0001-Fix-casinh-spurious-underflows-away-from-i-i-bug-150.patch
+ApplyPatch 0001-Fix-aliases-in-stub-lseek.patch
 
 set +e +o pipefail

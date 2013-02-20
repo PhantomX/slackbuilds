@@ -42,6 +42,15 @@ patch -p1 --verbose -i ${SB_PATCHDIR}/0001-mieq-Bump-default-queue-size-to-512.p
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xfree86-hotplug-cleanup-properly-if-the-screen-fails.patch
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86crtc-don-t-use-display-for-vx-vy-for-gpu-screens.patch
 
+# on way upstream: fixes for reverse optimus
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-dix-allow-pixmap-dirty-helper-to-be-used-for-non-sha.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xserver-call-CSR-for-gpus.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86-actually-set-the-compat-output-in-the-failure-c.patch
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-randr-cleanup-provider-properly.patch
+
+# Bug 903986 - xdmxconfig will not run
+patch -p1 --verbose -i ${SB_PATCHDIR}/0001-dmx-don-t-include-dmx-config.h-from-xdmxconfig-37502.patch
+
 # misc
 patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
 

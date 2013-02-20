@@ -77,7 +77,7 @@ ApplyPatch vmbugon-warnon.patch
 # Architecture patches
 # x86(-64)
 # Add K10 and native cpu optimization support
-ApplyPatch linux-3.0-add-cpu-optimizations.patch
+ApplyPatch linux-3.8-add-cpu-optimizations.patch
 
 ApplyPatch x86_64-hpet-64bit-timer.patch
 
@@ -118,7 +118,7 @@ ApplyPatch acpi-sony-nonvs-blacklist.patch
 ApplyPatch acpi-add-proc-event-regs.patch
 
 # cpufreq
-ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
+#ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
 
 #
 # PCI
@@ -214,22 +214,18 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
 
-#Build patch, should go away
-ApplyPatch irqnr-build.patch
-
 #rhbz 859485
 ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
 
-#rhbz CVE-2012-4530 868285 880147
-ApplyPatch exec-use-eloop-for-max-recursion-depth.patch
+#rhbz 799564
+ApplyPatch Input-increase-struct-ps2dev-cmdbuf-to-8-bytes.patch
+ApplyPatch Input-add-support-for-Cypress-PS2-Trackpads.patch
 
-#rhbz 851278
-ApplyPatch 8139cp-revert-set-ring-address-before-enabling-receiver.patch -R
-ApplyPatch 8139cp-set-ring-address-after-enabling-C-mode.patch
-ApplyPatch 8139cp-re-enable-interrupts-after-tx-timeout.patch
+# https://fedoraproject.org/wiki/Features/Checkpoint_Restore
+ApplyPatch criu-no-expert.patch
 
-#rhbz 911479 911473 CVE-2013-0290
-ApplyPatch net-fix-infinite-loop-in-__skb_recv_datagram.patch
+# By Alon Bar-Lev <alon.barlev <at> gmail.com>
+ApplyPatch ps3-control-ep.patch 
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

@@ -51,6 +51,5 @@ ApplyOptionalPatch() {
 }
 
 ApplyPatch perf_timechart_fix_zero_timestamps.patch
-ApplyPatch power-x86-destdir.patch
 
 set +e +o pipefail

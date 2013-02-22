@@ -12,8 +12,9 @@ patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.15-rhbz_304121.pat
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.14-installdir.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.14-elfhack.patch
 
+patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-239254.patch
+
 # OpenSUSE
-patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-gstreamer-803287.patch
 patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-gstreamer-760140.patch
 patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-nongnome-proxies.patch
 

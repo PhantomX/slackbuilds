@@ -20,7 +20,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-dirsrv-accountlock.p
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-pkinit-debug.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.9-debuginfo.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-kvno-230379.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.10.3-timeout_over.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-alpha1-init.patch
 
 # Set to YES if autogen is needed

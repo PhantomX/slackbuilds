@@ -15,5 +15,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.8.1-use-gpg2.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.6.0-niagara.patch
 zcat ${SB_PATCHDIR}/rpm-4.7.1-geode-i686.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.9.1.1-ld-flags.patch
+# Compressed debuginfo support (rh#833311)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.10.0-dwz-debuginfo.patch
+# Minidebuginfo support (rh#834073)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-4.10.0-minidebuginfo.patch
 
 set +e +o pipefail

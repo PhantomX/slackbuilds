@@ -9,6 +9,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-libtool-pie.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.6.1-group-msg.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.6.0-soname.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.8.2-python-symbols.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.8.x-gtk3-layouts.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

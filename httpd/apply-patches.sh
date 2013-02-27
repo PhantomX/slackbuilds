@@ -12,17 +12,16 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.3-apxs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-deplibs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-apr14.patch
 # Features/functional changes
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-export.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-export.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-corelimit.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-selinux.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.2-r1337344+.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-r1337344+.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.2-icons.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.2-r1332643+.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-r1332643+.patch
 [ "${SB_SYSTEMD}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.3-mod_systemd.patch
 
 # Bug fixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.2-r1374214+.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.2-r1387633.patch
 
 # Security fixes
 

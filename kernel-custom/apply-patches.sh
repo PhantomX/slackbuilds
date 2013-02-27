@@ -224,6 +224,9 @@ ApplyPatch Input-add-support-for-Cypress-PS2-Trackpads.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
+#CVE-2013-1763 rhbz 915052,915057
+ApplyPatch sock_diag-Fix-out-of-bounds-access-to-sock_diag_handlers.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch 
 

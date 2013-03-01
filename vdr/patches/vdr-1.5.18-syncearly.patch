@@ -1,0 +1,114 @@
+Sync early parts extracted from the non-dvbs2 patch at
+http://article.gmane.org/gmane.linux.vdr/36097, fprintf(stderr) calls
+changed to dsyslog().
+
+diff -Nurp ../vdr-1.5.18-orig/device.c ./device.c
+--- ../vdr-1.5.18-orig/device.c	2008-03-09 11:03:34.000000000 +0100
++++ ./device.c	2008-03-19 22:34:40.000000000 +0100
+@@ -840,7 +840,7 @@ eSetChannelResult cDevice::SetChannel(co
+            }
+         for (int i = 0; i < MAXSPIDS; i++)
+             SetAvailableTrack(ttSubtitle, i, Channel->Spid(i), Channel->Slang(i));
+-        if (!NeedsTransferMode)
++        if (!NeedsTransferMode || GetCurrentAudioTrack() == ttNone)
+            EnsureAudioTrack(true);
+         EnsureSubtitleTrack();
+         }
+diff -Nurp ../vdr-1.5.18-orig/remux.c ./remux.c
+--- ../vdr-1.5.18-orig/remux.c	2007-11-25 14:56:03.000000000 +0100
++++ ./remux.c	2008-02-24 19:47:40.000000000 +0100
+@@ -1896,12 +2526,13 @@ int cRingBufferLinearPes::DataReady(cons
+ 
+ #define RESULTBUFFERSIZE KILOBYTE(256)
+ 
+-cRemux::cRemux(int VPid, const int *APids, const int *DPids, const int *SPids, bool ExitOnFailure)
++cRemux::cRemux(int VPid, const int *APids, const int *DPids, const int *SPids, bool ExitOnFailure, bool SyncEarly)
+ {
+   exitOnFailure = ExitOnFailure;
+   noVideo = VPid == 0 || VPid == 1 || VPid == 0x1FFF;
+   numUPTerrors = 0;
+   synced = false;
++  syncEarly = SyncEarly;
+   skipped = 0;
+   numTracks = 0;
+   resultSkipped = 0;
+@@ -2105,12 +2840,14 @@ uchar *cRemux::Get(int &Count, uchar *Pi
+                         }
+                      }
+                   else if (!synced) {
+-                     if (pt == I_FRAME) {
++                     if (pt == I_FRAME || syncEarly) {
+                         if (PictureType)
+                            *PictureType = pt;
+                         resultSkipped = i; // will drop everything before this position
+-                        SetBrokenLink(data + i, l);
+                         synced = true;
++                        if (pt == I_FRAME) // syncEarly: it's ok but there is no need to call SetBrokenLink()
++                           SetBrokenLink(data + i, l);
++else dsyslog("video: synced early");
+                         }
+                      }
+                   else if (Count)
+@@ -2123,17 +2860,19 @@ uchar *cRemux::Get(int &Count, uchar *Pi
+                l = GetPacketLength(data, resultCount, i);
+                if (l < 0)
+                   return resultData;
+-               if (noVideo) {
++               if (noVideo || !synced && syncEarly) {
++                  uchar pt = NO_PICTURE;
+                   if (!synced) {
+-                     if (PictureType)
+-                        *PictureType = I_FRAME;
++                     if (PictureType && noVideo)
++                        *PictureType = pt;
+                      resultSkipped = i; // will drop everything before this position
+                      synced = true;
++if (!noVideo) dsyslog("audio: synced early");
+                      }
+                   else if (Count)
+                      return resultData;
+                   else if (PictureType)
+-                     *PictureType = I_FRAME;
++                     *PictureType = pt;
+                   }
+                }
+             if (synced) {
+diff -Nurp ../vdr-1.5.18-orig/remux.h ./remux.h
+--- ../vdr-1.5.18-orig/remux.h	2007-09-02 12:19:06.000000000 +0200
++++ ./remux.h	2008-02-24 19:47:40.000000000 +0100
+@@ -40,6 +40,7 @@
+   bool noVideo;
+   int numUPTerrors;
+   bool synced;
++  bool syncEarly;
+   int skipped;
+   cTS2PES *ts2pes[MAXTRACKS];
+   int numTracks;
+@@ -47,12 +48,13 @@
+   int resultSkipped;
+   int GetPid(const uchar *Data);
+ public:
+-  cRemux(int VPid, const int *APids, const int *DPids, const int *SPids, bool ExitOnFailure = false);
++  cRemux(int VPid, const int *APids, const int *DPids, const int *SPids, bool ExitOnFailure = false, bool SyncEarly = false);
+        ///< Creates a new remuxer for the given PIDs. VPid is the video PID, while
+        ///< APids, DPids and SPids are pointers to zero terminated lists of audio,
+        ///< dolby and subtitle PIDs (the pointers may be NULL if there is no such
+        ///< PID). If ExitOnFailure is true, the remuxer will initiate an "emergency
+-       ///< exit" in case of problems with the data stream.
++       ///< exit" in case of problems with the data stream. SyncEarly causes cRemux
++       ///< to sync as soon as a video or audio frame is seen.
+   ~cRemux();
+   void SetTimeouts(int PutTimeout, int GetTimeout) { resultBuffer->SetTimeouts(PutTimeout, GetTimeout); }
+        ///< By default cRemux assumes that Put() and Get() are called from different
+diff -Nurp ../vdr-1.5.18-orig/transfer.c ./transfer.c
+--- ../vdr-1.5.18-orig/transfer.c	2007-01-05 11:45:28.000000000 +0100
++++ ./transfer.c	2008-02-24 19:47:40.000000000 +0100
+@@ -19,7 +19,7 @@ cTransfer::cTransfer(tChannelID ChannelI
+ ,cThread("transfer")
+ {
+   ringBuffer = new cRingBufferLinear(TRANSFERBUFSIZE, TS_SIZE * 2, true, "Transfer");
+-  remux = new cRemux(VPid, APids, Setup.UseDolbyDigital ? DPids : NULL, SPids);
++  remux = new cRemux(VPid, APids, Setup.UseDolbyDigital ? DPids : NULL, SPids, false, true);
+ }
+ 
+ cTransfer::~cTransfer()

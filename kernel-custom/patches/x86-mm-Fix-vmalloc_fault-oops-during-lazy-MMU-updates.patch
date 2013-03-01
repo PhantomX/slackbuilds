@@ -1,0 +1,48 @@
+From:	Samu Kallio <>
+Subject: [PATCH] x86: mm: Fix vmalloc_fault oops during lazy MMU updates.
+Date: Sun, 17 Feb 2013 04:35:52 +0200
+
+In paravirtualized x86_64 kernels, vmalloc_fault may cause an oops
+when lazy MMU updates are enabled, because set_pgd effects are being
+deferred.
+
+One instance of this problem is during process mm cleanup with memory
+cgroups enabled. The chain of events is as follows:
+
+- zap_pte_range enables lazy MMU updates
+- zap_pte_range eventually calls mem_cgroup_charge_statistics,
+  which accesses the vmalloc'd mem_cgroup per-cpu stat area
+- vmalloc_fault is triggered which tries to sync the corresponding
+  PGD entry with set_pgd, but the update is deferred
+- vmalloc_fault oopses due to a mismatch in the PUD entries
+
+Calling arch_flush_lazy_mmu_mode immediately after set_pgd makes the
+changes visible to the consistency checks.
+
+Signed-off-by: Samu Kallio <samu.kallio@aberdeencloud.com>
+---
+ arch/x86/mm/fault.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+diff --git a/arch/x86/mm/fault.c b/arch/x86/mm/fault.c
+index 8e13ecb..0a45298 100644
+--- a/arch/x86/mm/fault.c
++++ b/arch/x86/mm/fault.c
+@@ -378,10 +378,12 @@ static noinline __kprobes int vmalloc_fault(unsigned long address)
+ 	if (pgd_none(*pgd_ref))
+ 		return -1;
+ 
+-	if (pgd_none(*pgd))
++	if (pgd_none(*pgd)) {
+ 		set_pgd(pgd, *pgd_ref);
+-	else
++		arch_flush_lazy_mmu_mode();
++	} else {
+ 		BUG_ON(pgd_page_vaddr(*pgd) != pgd_page_vaddr(*pgd_ref));
++	}
+ 
+ 	/*
+ 	 * Below here mismatches are bugs because these lower tables
+-- 
+1.8.1.3
+
+  

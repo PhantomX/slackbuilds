@@ -26,6 +26,7 @@ fi
 mv runtime/doc/eval.txt runtime/doc/eval.txt.orig
 iconv -f iso-8859-1 -t utf-8 runtime/doc/eval.txt.orig -o runtime/doc/eval.txt
 
+if [ "${PATCHLEVEL}" -gt 0 ] ;then
 mkdir -p patches
 cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
 
@@ -34,6 +35,7 @@ cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
     patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${SVER}.${i}
   done
 )
+fi
 sed -i \
   -e '/nl \\/d' \
   -e '/nl.mo \\/d' \

@@ -21,5 +21,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fontconfig-2.8.0-sleep-less.pa
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Copy-all-values-from-pattern-to-font-if-the-font-doe.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Fix-fc-cache-crash-caused-by-looking-up-NULL-object-.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Bug_59385_-_Do_the_right_thing_for_intermixed_edit_a.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Bug-60748-broken-conf.d-10-autohint.conf-and-conf.d-.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-Bug-60783-Add-Liberation-Sans-Narrow-to-30-metric-al.patch
 
 set +e +o pipefail

@@ -17,5 +17,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-file-contents.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-string-overflow.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-dh1024.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-man-plugin.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-buffer.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-sortbuffer.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-basedir.patch
 
 set +e +o pipefail

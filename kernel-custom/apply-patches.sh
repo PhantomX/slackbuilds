@@ -163,6 +163,7 @@ ApplyPatch silence-fbcon-logo.patch.gz
 
 # no-one cares about these warnings.
 ApplyPatch silence-empty-ipi-mask-warning.patch
+ApplyPatch silence-tty-null.patch
 
 # libata
 
@@ -186,7 +187,7 @@ ApplyPatch drm-i915-dp-stfu.patch
 
 # silence the ACPI blacklist code
 ApplyPatch silence-acpi-blacklist.patch
-ApplyPatch quite-apm.patch
+ApplyPatch quiet-apm.patch
 
 # Media (V4L/DVB/IR) updates/fixes/experimental drivers
 ApplyOptionalPatch drivers-media-update.patch

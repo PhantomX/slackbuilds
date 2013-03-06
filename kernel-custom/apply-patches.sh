@@ -134,6 +134,7 @@ done
     ApplyPatch ${file}
   done
 )
+ApplyPatch 0001-block-bfq-attempt-to-fix-use-after-free-which-3.3.0-to-3.8.0.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -222,6 +223,9 @@ ApplyPatch 0001-kmsg-Honor-dmesg_restrict-sysctl-on-dev-kmsg.patch
 
 #rhbz 914737
 ApplyPatch x86-mm-Fix-vmalloc_fault-oops-during-lazy-MMU-updates.patch
+
+#rhbz 916544
+ApplyPatch 0001-drivers-crypto-nx-fix-init-race-alignmasks-and-GCM-b.patch
 
 ApplyPatch userns-avoid-recursion-in-put_user_ns.patch
 

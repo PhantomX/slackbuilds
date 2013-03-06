@@ -4,6 +4,6 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-zcat ${SB_PATCHDIR}/QScintilla-2-gpl-Qt4-incpath.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}//QScintilla-gpl-2.7.1-qt4qt5_designer_incpath.patch
 
 set +e +o pipefail

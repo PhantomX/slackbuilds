@@ -51,8 +51,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.90-FindSamba_samba4.p
 
 # make filter working
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-kcm_ssl.patch
-# solid/udisks2 fix/workaround for 2-stage devides
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-udisks2_2_stage.patch
+
+# disable dot to reduce apidoc size
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-dot.patch
 
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
@@ -60,6 +61,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rd81b00e9a0f67ac992df1034d920477b5f8b7c1c.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r326106bf5b928e7d88540e3643ab4ede7e412413.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r8d4f958586ab29bcfa9c70bb919540839c9bd2ac.diff
 
 # Trunk patches
 

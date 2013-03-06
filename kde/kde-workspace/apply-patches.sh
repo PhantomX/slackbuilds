@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ## Most patches are from Fedora
-patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.90-redhat_startkde.patch
+patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-redhat_startkde.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.90-plasma_konsole.patch
 # 441062: packagekit tools do not show icons correctly on KDE
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.80-krdb.patch
@@ -60,9 +60,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.2-bz\#732830-login
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.95-kdm_xauth.patch
 
 if [ "${SB_SYSTEMD}" = "YES" ] ;then
-  # bring systemd-login1 power love to powerdevil
-  # https://git.reviewboard.kde.org/r/108407/
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.98-powerdevil_systemd_login1.patch
   # pam/systemd bogosity: kdm restart/shutdown does not work 
   # http://bugzilla.redhat.com/796969
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
@@ -71,16 +68,14 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.3-systemd-displaymanager.patch
 fi
 
-# fix kcmdatetimehelper search path so hwclock and zic are found (#906854)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.0-\#906854.patch
-
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-2stagedevicenotifier.patch
-# https://bugs.kde.org/show_bug.cgi?id=310871
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-9c841a55.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-1739d32d.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-d06e15a7.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-72ca24bb.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rc6ccec336987780358d316351cab4b6b77c506e2.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r15b5220cefc53321a3f82035ecc1399761595ed7.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r82ee44dd5adfef655a685d657fcc8b518ce3f590.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r20239fd28c5929a5b2f211666a7b2b93ff9e1133.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rf40d7a41e78bf229e2a7fa7d921e77157dc01ac8.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r569f79c60f8fd2b3e655433c2c53f840b4c103e9.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r4803296de2a11a1712e1c3cb77500ffc261c3945.diff
 
 ## plasma active patches
 

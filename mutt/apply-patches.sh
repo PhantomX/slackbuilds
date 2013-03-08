@@ -6,6 +6,13 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mutt-1.5.18-muttrc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mutt-1.5.18-manual.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mutt-1.5.21-updating.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mutt-1.5.21-testcert.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mutt-1.5.21-cabundle.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mutt-1.5.21-pophash.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mutt-1.5.21-notation.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mutt-1.5.21-syncdebug.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mutt-1.5.21-tmpdir.patch
 
 # From Gentoo
 for patch in ${PDIR}/mutt-gentoo-${VERSION}-r?.patch ${PDIR}/mutt-gentoo-${VERSION}-r??.patch ; do
@@ -15,7 +22,6 @@ done
 for patches in \
   bdb-prefix.patch \
   interix-btowc.patch \
-  gpgme-1.2.0.patch \
   dont-reveal-bbc.patch \
   ;do
   patch -p1 --backup --verbose -i ${PDIR}/${patches}

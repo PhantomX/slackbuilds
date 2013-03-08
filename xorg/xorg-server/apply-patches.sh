@@ -3,58 +3,69 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+unset PATCH_DRYRUN_OPT PATCH_VERBOSE_OPT
+
+[ "${PATCH_DRYRUN}" = "YES" ] && PATCH_DRYRUN_OPT="--dry-run"
+[ "${PATCH_VERBOSE}" = "YES" ] && PATCH_VERBOSE_OPT="--verbose"
+[ "${PATCH_SVERBOSE}" = "YES" ] && set -o xtrace
+
+PATCHCOM="patch ${PATCH_DRYRUN_OPT} -p1 -F1 -s ${PATCH_VERBOSE_OPT}"
+
+ApplyPatch() {
+  local patch=$1
+  shift
+  if [ ! -f ${SB_PATCHDIR}/${patch} ]; then
+    exit 1
+  fi
+  echo "Applying ${patch}"
+  case "${patch}" in
+  *.bz2) bzcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
+  *.gz) zcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
+  *) ${PATCHCOM} ${1+"$@"} -i "${SB_PATCHDIR}/${patch}" ;;
+  esac
+}
+
 # patch -p0 --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/x11.startwithblackscreen.diff
+ApplyPatch x11.startwithblackscreen.diff
 
 # Patches from Fedora
 
 # This really could be done prettier.
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.4.99-ssh-isnt-local.patch
+ApplyPatch xserver-1.4.99-ssh-isnt-local.patch
 
 # don't build the (broken) acpi code
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.0-less-acpi-brokenness.patch
+ApplyPatch xserver-1.6.0-less-acpi-brokenness.patch
 
 # ajax needs to upstream this
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.6.99-right-of.patch
+ApplyPatch xserver-1.6.99-right-of.patch
 #zcat ${SB_PATCHDIR}/xserver-1.6.99-hush-prerelease-warning.patch.gz | patch -p1 --verbose
 
 # backport pci slot claiming fix for kms drivers
 # needed when building without xorg (aka s390x)
-patch -p1 --verbose -i ${SB_PATCHDIR}/xserver-1.12.2-xorg-touch-test.patch
+ApplyPatch xserver-1.12.2-xorg-touch-test.patch
 
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-linux-Refactor-xf86-En-Dis-ableIO.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/0002-linux-Make-failure-to-iopl-non-fatal.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/0003-xfree86-Change-the-semantics-of-driverFunc-GET_REQUI.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Always-install-vbe-and-int10-sdk-headers.patch
+ApplyPatch 0001-Always-install-vbe-and-int10-sdk-headers.patch
 
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86-return-NULL-for-compat-output-if-no-outputs.patch
-
-# kernel doesn't use _INPUT_H anymore
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86-Fix-build-against-recent-Linux-kernel.patch
-
-# Bug 878956 - After installation is complete, Alt+F4 is broken
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-linux-Prefer-ioctl-KDSKBMUTE-1-over-ioctl-KDSKBMODE-.patch
+ApplyPatch 0001-xf86-return-NULL-for-compat-output-if-no-outputs.patch
 
 # mustard: make the default queue length bigger to calm abrt down
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-mieq-Bump-default-queue-size-to-512.patch
+ApplyPatch 0001-mieq-Bump-default-queue-size-to-512.patch
 
 # some hotplug fixes/workaround
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xfree86-hotplug-cleanup-properly-if-the-screen-fails.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86crtc-don-t-use-display-for-vx-vy-for-gpu-screens.patch
+ApplyPatch 0001-xf86crtc-don-t-use-display-for-vx-vy-for-gpu-screens.patch
+# autoconfig: send events
+ApplyPatch 0001-randr-don-t-directly-set-changed-bits-in-randr-scree.patch
+ApplyPatch 0001-randr-make-SetChanged-modify-the-main-protocol-scree.patch
+ApplyPatch 0001-randr-only-respected-changed-on-the-protocol-screen.patch
+ApplyPatch 0001-randr-report-changes-when-we-disconnect-a-GPU-slave.patch
 
 # on way upstream: fixes for reverse optimus
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-dix-allow-pixmap-dirty-helper-to-be-used-for-non-sha.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xserver-call-CSR-for-gpus.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-xf86-actually-set-the-compat-output-in-the-failure-c.patch
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-randr-cleanup-provider-properly.patch
+ApplyPatch 0001-dix-allow-pixmap-dirty-helper-to-be-used-for-non-sha.patch
 
 # misc
-patch -p1 --verbose -i ${SB_PATCHDIR}/0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
+ApplyPatch 0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
 
-patch -p0 --verbose -i ${SB_PATCHDIR}/xserver-1.11.0-force-hal-disable.patch
-if [ "${SB_ZW}" = "YES" ] ;then
-  patch -p1 --verbose -z .zap-warning -i ${SB_PATCHDIR}/xserver-zap-warning.patch
-fi
+ApplyPatch xserver-force-hal-disable.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

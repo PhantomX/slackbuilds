@@ -13,10 +13,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-scripts.patch
 # Build igcref.c with -O0 to work around bug #150771.
 zcat ${SB_PATCHDIR}/ghostscript-noopt.patch.gz | patch -p1 --verbose
 # Fix ./autgen.sh in ijs sub-project
-# See http://bugs.ghostscript.com/show_bug.cgi?id=692040 for details.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-ijs-automake-ver.patch
 # Define .runlibfileifexists.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-runlibfileifexists.patch
+# Fixed missing error check when setting ICC profile.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-icc-missing-check.patch
 # Install CUPS filter convs files in the correct place.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-cups-filters.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patch

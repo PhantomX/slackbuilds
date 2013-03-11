@@ -17,5 +17,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.4-no-config
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-64-bit-thin-archives.patch
 # Fix errors reported by version 5.0 of texinfo
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-as-doc-texinfo-fixes.patch
+# Revert HJ's patch for  PR15149.  This stops the reporting of weak DT_NEEDED symbols.
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-revert-pr15149.patch
 
 set +e +o pipefail

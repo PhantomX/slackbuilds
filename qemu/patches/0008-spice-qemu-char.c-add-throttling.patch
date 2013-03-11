@@ -1,0 +1,132 @@
+From 57a83c6d83b53eb5baae9f006973e7faac52b36b Mon Sep 17 00:00:00 2001
+From: Alon Levy <alevy@redhat.com>
+Date: Tue, 22 Mar 2011 12:27:59 +0200
+Subject: [PATCH] spice-qemu-char.c: add throttling
+
+BZ: 672191
+
+upstream: not submitted (explained below)
+
+Adds throttling support to spicevmc chardev. Uses a timer to avoid recursing:
+1. spice-server: reds.c:            read_from_vdi_port
+2. qemu:         spice-qemu-char.c: vmc_read
+3.                                  chr_write_unblocked
+                                (calls virtio_serial_throttle_port(port, false))
+4. qemu:         virtio ...
+5. qemu:         spice-qemu-char.c: spice_chr_write
+6. qemu:         spice-qemu-char.c: wakeup (calls into spice-server)
+7. spice-server: ...
+8. qemu:         spice-qemu-char.c: vmc_read
+
+Instead, in vmc_read if we were throttled and we are just about to return
+all the bytes we will set a timer to be triggered immediately to call
+chr_write_unblocked. Then we return after 2 above, and 3 is called from the
+timer callback. This also means we can later remove some ugly recursion protection
+from spice-server.
+
+The other tricky point in this patch is not returning the leftover chunk twice.
+When we throttle, by definition we have data that spice server didn't consume.
+It is being kept by virtio-serial, and by us. The next vmc_read callback needs
+to not return it, but just do unthrottling. Then virtio will give us the remaining
+chunk as usual in spice_chr_write, and we will pass it to spice server in the
+next vmc_read.
+
+This patch relies on Amit's series to expose throttling to chardev's, which
+was not accepted upstream, and will not be accepted upstream until the mainloop
+is reworked to use glib.
+
+Signed-off-by: Cole Robinson <crobinso@redhat.com>
+---
+ spice-qemu-char.c | 39 +++++++++++++++++++++++++++++++++++----
+ 1 file changed, 35 insertions(+), 4 deletions(-)
+
+diff --git a/spice-qemu-char.c b/spice-qemu-char.c
+index a4d7de8..75bb125 100644
+--- a/spice-qemu-char.c
++++ b/spice-qemu-char.c
+@@ -1,4 +1,6 @@
+ #include "config-host.h"
++#include "qemu-common.h"
++#include "qemu/timer.h"
+ #include "trace.h"
+ #include "ui/qemu-spice.h"
+ #include "char/char.h"
+@@ -25,6 +27,7 @@ typedef struct SpiceCharDriver {
+     uint8_t               *datapos;
+     ssize_t               bufsize, datalen;
+     uint32_t              debug;
++    QEMUTimer             *unblock_timer;
+     QLIST_ENTRY(SpiceCharDriver) next;
+ } SpiceCharDriver;
+ 
+@@ -54,6 +57,17 @@ static int vmc_write(SpiceCharDeviceInstance *sin, const uint8_t *buf, int len)
+     return out;
+ }
+ 
++static void spice_chr_unblock(void *opaque)
++{
++    SpiceCharDriver *scd = opaque;
++
++    if (scd->chr->chr_write_unblocked == NULL) {
++        dprintf(scd, 1, "%s: backend doesn't support unthrottling.\n", __func__);
++        return;
++    }
++    scd->chr->chr_write_unblocked(scd->chr->handler_opaque);
++}
++
+ static int vmc_read(SpiceCharDeviceInstance *sin, uint8_t *buf, int len)
+ {
+     SpiceCharDriver *scd = container_of(sin, SpiceCharDriver, sin);
+@@ -65,9 +79,16 @@ static int vmc_read(SpiceCharDeviceInstance *sin, uint8_t *buf, int len)
+         scd->datapos += bytes;
+         scd->datalen -= bytes;
+         assert(scd->datalen >= 0);
+-        if (scd->datalen == 0) {
+-            scd->datapos = 0;
+-        }
++    }
++    if (scd->datalen == 0 && scd->chr->write_blocked) {
++        dprintf(scd, 1, "%s: unthrottling (%d)\n", __func__, bytes);
++        scd->chr->write_blocked = false;
++        /*
++         * set a timer instead of calling scd->chr->chr_write_unblocked directly,
++         * because that will call back into spice_chr_write (see
++         * virtio-console.c:chr_write_unblocked), which is unwanted.
++         */
++        qemu_mod_timer(scd->unblock_timer, 0);
+     }
+     trace_spice_vmc_read(bytes, len);
+     return bytes;
+@@ -163,6 +184,7 @@ static void vmc_unregister_interface(SpiceCharDriver *scd)
+ static int spice_chr_write(CharDriverState *chr, const uint8_t *buf, int len)
+ {
+     SpiceCharDriver *s = chr->opaque;
++    int read_bytes;
+ 
+     dprintf(s, 2, "%s: %d\n", __func__, len);
+     vmc_register_interface(s);
+@@ -175,7 +197,15 @@ static int spice_chr_write(CharDriverState *chr, const uint8_t *buf, int len)
+     s->datapos = s->buffer;
+     s->datalen = len;
+     spice_server_char_device_wakeup(&s->sin);
+-    return len;
++    read_bytes = len - s->datalen;
++    if (read_bytes != len) {
++        dprintf(s, 1, "%s: throttling: %d < %d (%zd)\n", __func__,
++                read_bytes, len, s->bufsize);
++        s->chr->write_blocked = true;
++        /* We'll get passed in the unconsumed data with the next call */
++        s->datalen = 0;
++    }
++    return read_bytes;
+ }
+ 
+ static void spice_chr_close(struct CharDriverState *chr)
+@@ -234,6 +264,7 @@ static CharDriverState *chr_open(QemuOpts *opts, const char *subtype)
+     chr->chr_close = spice_chr_close;
+     chr->chr_guest_open = spice_chr_guest_open;
+     chr->chr_guest_close = spice_chr_guest_close;
++    s->unblock_timer = qemu_new_timer_ms(vm_clock, spice_chr_unblock, s);
+ 
+     QLIST_INSERT_HEAD(&spice_chars, s, next);
+ 

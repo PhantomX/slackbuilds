@@ -1,0 +1,178 @@
+From 8b85c38edae20f5dddb82d7530ca33c2c64be0c4 Mon Sep 17 00:00:00 2001
+From: Amit Shah <amit.shah@redhat.com>
+Date: Mon, 21 Mar 2011 22:00:27 +0100
+Subject: [PATCH] char: Update send_all() to handle nonblocking chardev write
+ requests
+
+The send_all function is modified to return to the caller in case the
+driver cannot handle any more data.  It returns -EAGAIN or
+WSAEWOULDBLOCK on non-Windows and Windows platforms respectively.  This
+is only done when the caller sets a callback function handler indicating
+it's not interested in blocking till the driver has written out all the
+data.
+
+Currently there's no driver or caller that supports this.  Future
+commits will add such capability.
+
+Signed-off-by: Amit Shah <amit.shah@redhat.com>
+Signed-off-by: Cole Robinson <crobinso@redhat.com>
+---
+ include/qemu/sockets.h |  3 ++-
+ qemu-char.c            | 69 +++++++++++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 65 insertions(+), 7 deletions(-)
+
+diff --git a/include/qemu/sockets.h b/include/qemu/sockets.h
+index 803ae17..8ee146c 100644
+--- a/include/qemu/sockets.h
++++ b/include/qemu/sockets.h
+@@ -29,6 +29,7 @@ int inet_aton(const char *cp, struct in_addr *ia);
+ #include "qemu/option.h"
+ #include "qapi/error.h"
+ #include "qapi/qmp/qerror.h"
++#include "char/char.h"
+ 
+ /* misc helpers */
+ int qemu_socket(int domain, int type, int protocol);
+@@ -36,7 +37,7 @@ int qemu_accept(int s, struct sockaddr *addr, socklen_t *addrlen);
+ int socket_set_cork(int fd, int v);
+ void socket_set_block(int fd);
+ void socket_set_nonblock(int fd);
+-int send_all(int fd, const void *buf, int len1);
++int send_all(CharDriverState *chr, int fd, const void *buf, int len1);
+ 
+ /* callback function for nonblocking connect
+  * valid fd on success, negative error code on failure
+diff --git a/qemu-char.c b/qemu-char.c
+index ce2eba8..3d6e2f8 100644
+--- a/qemu-char.c
++++ b/qemu-char.c
+@@ -508,7 +508,7 @@ static CharDriverState *qemu_chr_open_mux(CharDriverState *drv)
+ 
+ 
+ #ifdef _WIN32
+-int send_all(int fd, const void *buf, int len1)
++static int do_send(int fd, const void *buf, int len1, bool nonblock)
+ {
+     int ret, len;
+ 
+@@ -516,9 +516,14 @@ int send_all(int fd, const void *buf, int len1)
+     while (len > 0) {
+         ret = send(fd, buf, len, 0);
+         if (ret < 0) {
++            if (nonblock && len1 - len) {
++                return len1 - len;
++            }
+             errno = WSAGetLastError();
+             if (errno != WSAEWOULDBLOCK) {
+                 return -1;
++            } else if (errno == WSAEWOULDBLOCK && nonblock) {
++                return WSAEWOULDBLOCK;
+             }
+         } else if (ret == 0) {
+             break;
+@@ -532,7 +537,7 @@ int send_all(int fd, const void *buf, int len1)
+ 
+ #else
+ 
+-int send_all(int fd, const void *_buf, int len1)
++static int do_send(int fd, const void *_buf, int len1, bool nonblock)
+ {
+     int ret, len;
+     const uint8_t *buf = _buf;
+@@ -541,8 +546,15 @@ int send_all(int fd, const void *_buf, int len1)
+     while (len > 0) {
+         ret = write(fd, buf, len);
+         if (ret < 0) {
+-            if (errno != EINTR && errno != EAGAIN)
++            if (nonblock && len1 - len) {
++                return len1 - len;
++            }
++            if (errno == EAGAIN && nonblock) {
++                return -EAGAIN;
++            }
++            if (errno != EINTR && errno != EAGAIN) {
+                 return -1;
++            }
+         } else if (ret == 0) {
+             break;
+         } else {
+@@ -557,6 +569,44 @@ int send_all(int fd, const void *_buf, int len1)
+ #define STDIO_MAX_CLIENTS 1
+ static int stdio_nb_clients;
+ 
++int send_all(CharDriverState *chr, int fd, const void *_buf, int len1)
++{
++    int ret, eagain_errno;
++    bool nonblock;
++
++    if (chr && chr->write_blocked) {
++        /*
++         * The caller should not send us data while we're blocked,
++         * but this can happen when multiple writers are woken at once,
++         * so simply return -EAGAIN.
++         */
++        return -EAGAIN;
++    }
++
++    nonblock = false;
++    /*
++     * Ensure the char backend is able to receive and handle the
++     * 'write unblocked' event before we turn on nonblock support.
++     */
++    if (chr && chr->chr_enable_write_fd_handler && chr->chr_write_unblocked) {
++        nonblock = true;
++    }
++    ret = do_send(fd, _buf, len1, nonblock);
++
++#ifdef _WIN32
++    eagain_errno = WSAEWOULDBLOCK;
++#else
++    eagain_errno = -EAGAIN;
++#endif
++
++    if (nonblock && (ret == eagain_errno || (ret >= 0 && ret < len1))) {
++        /* Update fd handler to wake up when chr becomes writable */
++        chr->chr_enable_write_fd_handler(chr);
++        chr->write_blocked = true;
++    }
++    return ret;
++}
++
+ #ifndef _WIN32
+ 
+ typedef struct {
+@@ -568,7 +618,7 @@ typedef struct {
+ static int fd_chr_write(CharDriverState *chr, const uint8_t *buf, int len)
+ {
+     FDCharDriver *s = chr->opaque;
+-    return send_all(s->fd_out, buf, len);
++    return send_all(chr, s->fd_out, buf, len);
+ }
+ 
+ static int fd_chr_read_poll(void *opaque)
+@@ -893,7 +943,7 @@ static int pty_chr_write(CharDriverState *chr, const uint8_t *buf, int len)
+         pty_chr_update_read_handler(chr);
+         return 0;
+     }
+-    return send_all(s->fd, buf, len);
++    return send_all(chr, s->fd, buf, len);
+ }
+ 
+ static int pty_chr_read_poll(void *opaque)
+@@ -2188,8 +2238,15 @@ static void tcp_closed(void *opaque)
+ static int tcp_chr_write(CharDriverState *chr, const uint8_t *buf, int len)
+ {
+     TCPCharDriver *s = chr->opaque;
++
+     if (s->connected) {
+-        return send_all(s->fd, buf, len);
++        int ret;
++
++        ret = send_all(chr, s->fd, buf, len);
++        if (ret == -1 && errno == EPIPE) {
++            tcp_closed(chr);
++        }
++        return ret;
+     } else {
+         /* XXX: indicate an error ? */
+         return len;

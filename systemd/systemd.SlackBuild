@@ -44,7 +44,7 @@ fi
 NAME=systemd
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-197}
+VERSION=${VERSION:-198}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 SLKDIST=${SLKDIST:-Slackware}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -280,6 +280,16 @@ touch ${PKG}/etc/systemd/system/default.target
 mkdir -p ${PKG}/{etc,lib}/systemd/system-preset
 mkdir -p ${PKG}/{etc,lib}/systemd/user-preset
 
+# Make sure the NTP units dir exists
+mkdir -p ${PKG}/usr/lib/systemd/ntp-units.d/
+
+# Make sure directories in /var exist
+mkdir -p ${PKG}/var/lib/systemd/coredump
+mkdir -p ${PKG}/var/lib/systemd/catalog
+mkdir -p ${PKG}/var/log/journal
+touch ${PKG}/var/lib/systemd/catalog/database
+touch ${PKG}/etc/udev/hwdb.bin
+
 # Make sure these directories are properly owned
 mkdir -p ${PKG}/lib/systemd/system/basic.target.wants
 mkdir -p ${PKG}/lib/systemd/system/default.target.wants
@@ -295,6 +305,8 @@ mv ${PKG}/etc/systemd/system.conf ${PKG}/etc/systemd/system.conf.new || exit 1
 mv ${PKG}/etc/systemd/user.conf ${PKG}/etc/systemd/user.conf.new || exit 1
 mv ${PKG}/etc/systemd/logind.conf ${PKG}/etc/systemd/logind.conf.new || exit 1
 mv ${PKG}/etc/systemd/journald.conf ${PKG}/etc/systemd/journald.conf.new || exit 1
+
+rm -f ${PKG}/usr/lib/sysctl.d/coredump.conf
 
 mkdir -p ${PKG}/etc/rpm
 cat > ${PKG}/etc/rpm/macros.${NAME} <<'EOF'
@@ -407,6 +419,14 @@ EOF
 )
 
 cat >> ${PKG}/install/doinst.sh <<'EOF'
+function free_user_id {
+  # Find a free user-ID >= 100 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
 function free_group_id {
   # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
   local FREE_GROUP_ID=120
@@ -416,11 +436,53 @@ function free_group_id {
   echo ${FREE_GROUP_ID}
 }
 
-# Set up group.
+# Set up groups.
 if ! grep --quiet '^lock:' etc/group ;then
   ${CHROOT} /usr/sbin/groupadd \
     -g $(free_group_id) \
     lock 2> /dev/null
+fi
+if ! grep --quiet '^systemd-journal:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    systemd-journal 2> /dev/null
+fi
+if ! grep --quiet '^systemd-journal-gateway:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    systemd-journal-gateway 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^systemd-journal-gateway:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/log/journal:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "systemd-journal-gateway"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/var/log/journal' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g systemd-journal-gateway \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'Journal Gateway' \
+    -u $(free_user_id) \
+    -g systemd-journal-gateway \
+    -s /bin/false \
+    -d '/var/log/journal' \
+    systemd-journal-gateway 2> /dev/null
 fi
 
 setcaps () {
@@ -479,8 +541,10 @@ if [ -f etc/nsswitch.conf ] ; then
     /^hosts:/ !b
     /\<myhostname\>/ b
     s/[[:blank:]]*$/ myhostname/
-    ' /etc/nsswitch.conf
+    ' /etc/nsswitch.conf >/dev/null 2>&1 || :
 fi
+
+/usr/bin/setfacl -Rnm g:adm:rx,d:g:adm:rx /var/log/journal/ >/dev/null 2>&1 || :
 
 EOF
 

@@ -23,6 +23,8 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+# Mostly adapted (copied) from Fedora Spec file
+
 # http://www.mozilla.org/
 
 PACKAGER_ID=${PACKAGER_ID:-$USER}
@@ -47,7 +49,7 @@ VERSION=${VERSION:-2012.1.87}
 ARCH=noarch
 SLKTARGET=${SLKTARGET:-i486}
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -60,12 +62,16 @@ DATE=$(LC_ALL=C date +%d-%b-%Y)
 PKIDIR=/etc/pki
 SB_CABDIR=/etc/ssl
 
+catrustdir=${PKIDIR}/ca-trust
+classic_tls_bundle=ca-bundle.crt
+trusted_all_bundle=ca-bundle.trust.crt
+java_bundle=cacerts
+
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=certdata.txt
-SRCARCHIVE2=mkcabundle.pl
+SRCARCHIVE2=update-ca-trust
 SRCARCHIVE3=generate-cacerts.pl
-SRCARCHIVE4=blacklist.txt
-SRCARCHIVE5=certdata2pem.py
+SRCARCHIVE4=certdata2pem.py
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
@@ -79,7 +85,6 @@ FEDORABRANCH=${FEDORABRANCH:-devel}
 test -r ${CWD}/${SRCARCHIVE} || cvs -d :pserver:anonymous@cvs-mirror.mozilla.org:/cvsroot co -p mozilla/security/nss/lib/ckfw/builtins/certdata.txt \
   > ${CWD}/${SRCARCHIVE} || exit 1
 #test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${FEDORADIST} ${NAME} ${FEDORABRANCH} ${SRCARCHIVE} || exit 1
-test -r ${CWD}/${SRCARCHIVE} || ${CWD}/mkcabundle.pl > ${CWD}/${SRCARCHIVE} || exit 1
 
 if ! test -s ${CWD}/${SRCARCHIVE} ;then
   echo "Delete ${CWD}/${SRCARCHIVE} and try again."
@@ -110,8 +115,8 @@ chmod -R u+w,go+r-w,a-s .
 
 mkdir certs
 ( cd certs 
-  cp ${CWD}/${SRCARCHIVE} ${CWD}/${SRCARCHIVE4} . || exit 1
-  python ${CWD}/${SRCARCHIVE5} || exit 1
+  cp ${CWD}/${SRCARCHIVE} . || exit 1
+  python ${CWD}/${SRCARCHIVE4} || exit 1
 ) || exit 1
 
 for file in ${CWD}/extra/*.crt ;do
@@ -124,19 +129,6 @@ done
 ( cat <<EOF
 # This is a bundle of X.509 certificates of public Certificate
 # Authorities.  It was generated from the Mozilla root CA list.
-#
-# Source: mozilla/security/nss/lib/ckfw/builtins/certdata.txt
-#
-# Generated from:
-EOF
-   ident -q ${CWD}/${SRCARCHIVE} | sed '1d;s/^/#/';
-   echo '#';
-
-) > ca-bundle.crt || exit 1
-
-( cat <<EOF
-# This is a bundle of X.509 certificates of public Certificate
-# Authorities.  It was generated from the Mozilla root CA list.
 # These certificates are in the OpenSSL "TRUSTED CERTIFICATE"
 # format and have trust bits set accordingly.
 #
@@ -144,45 +136,77 @@ EOF
 #
 # Generated from:
 EOF
-  ident -q ${CWD}/${SRCARCHIVE} | sed '1d;s/^/#/';
-  echo '#';
-) > ca-bundle.trust.crt || exit 1
+   ident -q ${CWD}/${SRCARCHIVE} | sed '1d;s/^/#/';
+   echo '#';
+) > ${trusted_all_bundle}
 
 for f in certs/*.crt; do 
   tbits=$(sed -n '/^# openssl-trust/{s/^.*=//;p;}' ${f})
-  case ${tbits} in
-    *serverAuth*) openssl x509 -text -in "${f}" >> ca-bundle.crt ;;
-  esac
+  distbits=$(sed -n '/^# openssl-distrust/{s/^.*=//;p;}' ${f})
+  targs=""
   if [ -n "${tbits}" ]; then
-    targs=""
     for t in ${tbits}; do
       targs="${targs} -addtrust ${t}"
     done
-      openssl x509 -text -in "${f}" -trustout ${targs} >> ca-bundle.trust.crt || exit 1
+  fi
+  if [ -n "${distbits}" ]; then
+    for t in ${distbits}; do
+      targs="${targs} -addreject ${t}"
+    done
+  fi
+  if [ -n "${targs}" ]; then
+    openssl x509 -text -in "${f}" -trustout ${targs} >> ${trusted_all_bundle} || exit $?
   fi
 done
 
-mkdir java
-( cd java
-  test -s ../ca-bundle.crt || exit 1
-  /usr/bin/perl ${CWD}/${SRCARCHIVE3} /usr/bin/gkeytool ../ca-bundle.crt || exit 1
-  touch -r ${CWD}/${SRCARCHIVE} cacerts
-  test -s cacerts || exit 1
-) || exit 1
+mkdir -p ${PKG}/${catrustdir}/source
+mkdir -p ${PKG}/${catrustdir}/extracted
+mkdir -p ${PKG}/${catrustdir}/extracted/pem
+mkdir -p ${PKG}/${catrustdir}/extracted/openssl
+mkdir -p ${PKG}/${catrustdir}/extracted/java
+mkdir -p ${PKG}/usr/share/pki/ca-trust-source
 
-mkdir -p ${PKG}/${SB_CABDIR}/certs ${PKG}/${PKIDIR}
+readmedir=${CWD}/readmes
+install -p -m 644 ${readmedir}/README.usr ${PKG}/usr/share/pki/ca-trust-source/README
+install -p -m 644 ${readmedir}/README.etc ${PKG}/${catrustdir}/README
+install -p -m 644 ${readmedir}/README.extr ${PKG}/${catrustdir}/extracted/README
+install -p -m 644 ${readmedir}/README.java ${PKG}/${catrustdir}/extracted/java/README
+install -p -m 644 ${readmedir}/README.openssl ${PKG}/${catrustdir}/extracted/openssl/README
+install -p -m 644 ${readmedir}/README.pem ${PKG}/${catrustdir}/extracted/pem/README
+install -p -m 644 ${readmedir}/README.src ${PKG}/${catrustdir}/source/README
+
+install -p -m 644 ${trusted_all_bundle} \
+  ${PKG}/usr/share/pki/ca-trust-source/${trusted_all_bundle} || exit 1
+touch -r ${CWD}/${SRCARCHIVE} ${PKG}/usr/share/pki/ca-trust-source/${trusted_all_bundle}
+
+mkdir -p ${PKG}/usr/bin
+install -p -m 755 ${CWD}/${SRCARCHIVE2} ${PKG}/usr/bin/update-ca-trust || exit 1
+
+# touch ghosted files that will be extracted dynamically
+touch ${PKG}/${catrustdir}/extracted/pem/tls-ca-bundle.pem
+touch ${PKG}/${catrustdir}/extracted/pem/email-ca-bundle.pem
+touch ${PKG}/${catrustdir}/extracted/pem/objsign-ca-bundle.pem
+touch ${PKG}/${catrustdir}/extracted/openssl/${trusted_all_bundle}
+touch ${PKG}/${catrustdir}/extracted/java/${java_bundle}
+
+mkdir -p ${PKG}/${SB_CABDIR}/certs ${PKG}/${PKIDIR}/java
 ln -s ../ssl ${PKG}/${PKIDIR}/tls
-install -p -m 644 ./ca-bundle.crt \
-  ${PKG}/${SB_CABDIR}/certs/ca-bundle.crt.new || exit 1
-install -p -m 644 ./ca-bundle.trust.crt \
-  ${PKG}/${SB_CABDIR}/certs/ca-bundle.trust.crt.new || exit 1
-ln -s certs/ca-bundle.crt ${PKG}/${SB_CABDIR}/cert.pem
 
-# Install Java cacerts file.
-mkdir -p -m 700 ${PKG}/${PKIDIR}/java
-install -p -m 644 java/cacerts ${PKG}/${PKIDIR}/java/cacerts.new || exit 1
+abs2rel(){
+  perl -e 'use File::Spec; print File::Spec->abs2rel($ARGV[0], $ARGV[1])' "$1" "$2"
+}
 
-# Add a documentation directory:
+# legacy filenames
+ln -s $(abs2rel ${catrustdir}/extracted/pem ${SB_CABDIR})/tls-ca-bundle.pem \
+  ${PKG}/${SB_CABDIR}/cert.pem || exit 1
+ln -s $(abs2rel ${catrustdir}/extracted/pem ${SB_CABDIR}/certs)/tls-ca-bundle.pem \
+  ${PKG}/${SB_CABDIR}/certs/${classic_tls_bundle} || exit 1
+ln -s $(abs2rel ${catrustdir}/extracted/openssl ${SB_CABDIR}/certs)/${trusted_all_bundle} \
+  ${PKG}/${SB_CABDIR}/certs/${trusted_all_bundle} || exit 1
+ln -s $(abs2rel ${catrustdir}/extracted/java ${PKIDIR}/java)/${java_bundle} \
+  ${PKG}/${PKIDIR}/java/${java_bundle} || exit 1
+
+# Add a documentation directeory:
 mkdir -p ${DOCDIR}
 cp -a \
   ${CWD}/ChangeLog.SB \
@@ -216,38 +240,29 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
-config() {
-  NEW="\$1"
-  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
-  # If there's no config file by that name, mv it over:
-  if [ ! -r \$OLD ]; then
-    mv \$NEW \$OLD
-  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
-    # toss the redundant copy
-    rm \$NEW
-  fi
-  # Otherwise, we leave the .new copy for the admin to consider...
-}
-## List of conf files to check.  The conf files in your package should end in .new
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+\${CHROOT} /usr/bin/update-ca-trust >/dev/null 2>&1
 EOF
-
-( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  echo >> ${PKG}/install/doinst.sh
-)
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/readmes
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/${FEDORADIST} ${CWD}/${SRCARCHIVE2} ${CWD}/${SRCARCHIVE3} \
-                 ${CWD}/${SRCARCHIVE4} ${CWD}/${SRCARCHIVE5} ${SBDIR}/
+    ${CWD}/${FEDORADIST} ${CWD}/${SRCARCHIVE2} ${CWD}/${SRCARCHIVE3} \
+    ${CWD}/${SRCARCHIVE4} ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
+  install -pm0644 ${CWD}/readmes/*.* \
+    ${SBDIR}/readmes/
 fi
 
 # Build package:
@@ -257,7 +272,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

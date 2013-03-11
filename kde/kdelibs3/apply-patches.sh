@@ -36,8 +36,6 @@ zcat ${SB_PATCHDIR}/kdelibs-3.5.9-fix-flock-redefinition.patch.gz | patch -p1 --
 zcat ${SB_PATCHDIR}/kdelibs-3.5.10-latex-syntax-kile-2.0.3.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # fix FTBFS (cups-util.c must include stdio.h, #714133)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.10-cups-util-missing-header.patch
-# remove flawed and obsolete automake version check in admin/cvs.sh
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.10-automake-version.patch
 
 # use /etc/kde in addition to /usr/share/config, borrowed from debian
 zcat ${SB_PATCHDIR}/kdelibs-3.5.5-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig
@@ -51,7 +49,6 @@ zcat ${SB_PATCHDIR}/kdelibs-3.5.10-kio.patch.gz | patch -p1 --verbose --backup -
 zcat ${SB_PATCHDIR}/kdelibs-3.5.10-assert.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 zcat ${SB_PATCHDIR}/kdelibs-3.5.10-dtoa.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 zcat ${SB_PATCHDIR}/kdelibs-3.5.10-kabc.patch.gz | patch -p1 --verbose --backup --suffix=.orig
-zcat ${SB_PATCHDIR}/arts-acinclude.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 patch -p4 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-3.5.10-kdebug-timestamp.patch
 patch -p4 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-3.5.10-kmenubar-struct.patch
 # kde4.4 backport
@@ -79,6 +76,13 @@ zcat ${SB_PATCHDIR}/kdelibs-3.5.10-oCERT-2009-015-xmlhttprequest.patch.gz | patc
 zcat ${SB_PATCHDIR}/libltdl-CVE-2009-3736.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # CVE-2011-3365, input validation failure in KSSL
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.x-CVE-2011-3365.patch
+
+# tweak autoconfigury so that it builds with autoconf 2.64 or 2.65
+zcat ${SB_PATCHDIR}/kde3-acinclude.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+# remove flawed and obsolete automake version check in admin/cvs.sh
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kde3-automake-version.patch
+# fix build failure with automake 1.13: add the --add-missing flag
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kde3-automake-add-missing.patch
 
 # Add "(Slackware)" to khtml user agent (modified from Gentoo patch).
 zcat ${SB_PATCHDIR}/kdelibs-3.5-cattlebrand.patch.gz |sed \

@@ -1,0 +1,70 @@
+From f6239f570a57ba6069ce1033b696365bdfed1b47 Mon Sep 17 00:00:00 2001
+From: Alon Levy <alevy@redhat.com>
+Date: Tue, 22 Mar 2011 12:28:00 +0200
+Subject: [PATCH] spice-qemu-char.c: remove intermediate buffer
+
+BZ: 672191
+upstream: not submitted (explained below)
+
+virtio-serial's buffer is valid when it calls us, and we don't
+access it otherwise: vmc_read is only called in response to wakeup,
+or else we set datalen=0 and throttle. Then vmc_read is called back,
+we return 0 (not accessing the buffer) and set the timer to unthrottle.
+
+Also make datalen int and not ssize_t (to fit spice_chr_write signature).
+
+This relied on the previous patch that introduces throttling, which
+can't go upstream right now as explained in that patch.
+
+Signed-off-by: Cole Robinson <crobinso@redhat.com>
+---
+ spice-qemu-char.c | 18 ++++++------------
+ 1 file changed, 6 insertions(+), 12 deletions(-)
+
+diff --git a/spice-qemu-char.c b/spice-qemu-char.c
+index 75bb125..5065240 100644
+--- a/spice-qemu-char.c
++++ b/spice-qemu-char.c
+@@ -23,9 +23,8 @@ typedef struct SpiceCharDriver {
+     SpiceCharDeviceInstance     sin;
+     char                  *subtype;
+     bool                  active;
+-    uint8_t               *buffer;
+-    uint8_t               *datapos;
+-    ssize_t               bufsize, datalen;
++    const uint8_t         *datapos;
++    int                   datalen;
+     uint32_t              debug;
+     QEMUTimer             *unblock_timer;
+     QLIST_ENTRY(SpiceCharDriver) next;
+@@ -73,7 +72,7 @@ static int vmc_read(SpiceCharDeviceInstance *sin, uint8_t *buf, int len)
+     SpiceCharDriver *scd = container_of(sin, SpiceCharDriver, sin);
+     int bytes = MIN(len, scd->datalen);
+ 
+-    dprintf(scd, 2, "%s: %p %d/%d/%zd\n", __func__, scd->datapos, len, bytes, scd->datalen);
++    dprintf(scd, 2, "%s: %p %d/%d/%d\n", __func__, scd->datapos, len, bytes, scd->datalen);
+     if (bytes > 0) {
+         memcpy(buf, scd->datapos, bytes);
+         scd->datapos += bytes;
+@@ -189,18 +188,13 @@ static int spice_chr_write(CharDriverState *chr, const uint8_t *buf, int len)
+     dprintf(s, 2, "%s: %d\n", __func__, len);
+     vmc_register_interface(s);
+     assert(s->datalen == 0);
+-    if (s->bufsize < len) {
+-        s->bufsize = len;
+-        s->buffer = g_realloc(s->buffer, s->bufsize);
+-    }
+-    memcpy(s->buffer, buf, len);
+-    s->datapos = s->buffer;
++    s->datapos = buf;
+     s->datalen = len;
+     spice_server_char_device_wakeup(&s->sin);
+     read_bytes = len - s->datalen;
+     if (read_bytes != len) {
+-        dprintf(s, 1, "%s: throttling: %d < %d (%zd)\n", __func__,
+-                read_bytes, len, s->bufsize);
++        dprintf(s, 1, "%s: throttling: %d < %d\n", __func__,
++                read_bytes, len);
+         s->chr->write_blocked = true;
+         /* We'll get passed in the unconsumed data with the next call */
+         s->datalen = 0;

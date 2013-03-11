@@ -3,7 +3,7 @@
 EXPORT_DIR=qt-copy
 snaproot="svn://anonsvn.kde.org/home/kde/branches/qt/3.3/${EXPORT_DIR}"
 
-set -x
+set -e -x
 
 tmp=$(mktemp -d)
 

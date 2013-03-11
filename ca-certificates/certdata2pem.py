@@ -79,41 +79,12 @@ for line in open('certdata.txt', 'r'):
 if len(obj.items()) > 0:
     objects.append(obj)
 
-# Read blacklist.
-blacklist = []
-if os.path.exists('blacklist.txt'):
-    for line in open('blacklist.txt', 'r'):
-        line = line.strip()
-        if line.startswith('#') or len(line) == 0:
-            continue
-        item = line.split('#', 1)[0].strip()
-        blacklist.append(item)
-
 # Build up trust database.
-trust = dict()
 trustmap = dict()
 for obj in objects:
 
     if obj['CKA_CLASS'] != 'CKO_NSS_TRUST':
         continue
-    if obj['CKA_LABEL'] in blacklist:
-        print "Certificate %s blacklisted, ignoring." % obj['CKA_LABEL']
-    elif obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_TRUSTED_DELEGATOR':
-        trust[obj['CKA_LABEL']] = True
-    elif obj['CKA_TRUST_EMAIL_PROTECTION'] == 'CKT_NSS_TRUSTED_DELEGATOR':
-        trust[obj['CKA_LABEL']] = True
-    elif obj['CKA_TRUST_CODE_SIGNING'] == 'CKT_NSS_TRUSTED_DELEGATOR':
-        trust[obj['CKA_LABEL']] = True
-    # NSS recently changed CKT_NSS_UNTRUSTED to CKT_NSS_NOT_TRUSTED
-    elif obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_UNTRUSTED' or obj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_NOT_TRUSTED':
-        print '!'*74
-        print "UNTRUSTED BUT NOT BLACKLISTED CERTIFICATE FOUND: %s" % obj['CKA_LABEL']
-        print '!'*74
-        sys.exit(1)
-    else:
-        print "Ignoring certificate %s.  SAUTH=%s, EPROT=%s" % \
-              (obj['CKA_LABEL'], obj['CKA_TRUST_SERVER_AUTH'],
-               obj['CKA_TRUST_EMAIL_PROTECTION'])
     label = obj['CKA_LABEL']
     trustmap[label] = obj
     print " added cert", label
@@ -158,26 +129,32 @@ openssl_trust = {
 for obj in objects:
     if obj['CKA_CLASS'] == 'CKO_CERTIFICATE':
         print "producing cert file for " + obj['CKA_LABEL']
-        if not obj['CKA_LABEL'] in trust or not trust[obj['CKA_LABEL']]:
-            print " -> untrusted, ignoring"
-            continue
         fname = obj_to_filename(obj)
         f = open(fname, 'w')
         trustbits = []
+        distrustbits = []
         openssl_trustflags = []
+        openssl_distrustflags = []
         tobj = trustmap[obj['CKA_LABEL']]
         for t in trust_types.keys():
             if tobj.has_key(t) and tobj[t] == 'CKT_NSS_TRUSTED_DELEGATOR':
                 trustbits.append(t)
                 if t in openssl_trust:
                     openssl_trustflags.append(openssl_trust[t])
+            if tobj.has_key(t) and tobj[t] == 'CKT_NSS_NOT_TRUSTED':
+                distrustbits.append(t)
+                if t in openssl_trust:
+                    openssl_distrustflags.append(openssl_trust[t])
         f.write("# trust=" + " ".join(trustbits) + "\n")
+        f.write("# distrust=" + " ".join(distrustbits) + "\n")
         if openssl_trustflags:
             f.write("# openssl-trust=" + " ".join(openssl_trustflags) + "\n")
+        if openssl_distrustflags:
+            f.write("# openssl-distrust=" + " ".join(openssl_distrustflags) + "\n")
         f.write("-----BEGIN CERTIFICATE-----\n")
         f.write("\n".join(textwrap.wrap(base64.b64encode(obj['CKA_VALUE']), 64)))
         f.write("\n-----END CERTIFICATE-----\n")
-        print " -> written as '%s', trust = %s, openssl-trust = %s" % (fname, trustbits, openssl_trustflags)
+        print " -> written as '%s', trust = %s, openssl-trust = %s, distrust = %s, openssl-distrust = %s" % (fname, trustbits, openssl_trustflags, distrustbits, openssl_distrustflags)
 
 
 

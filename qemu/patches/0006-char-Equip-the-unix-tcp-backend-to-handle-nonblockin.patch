@@ -1,0 +1,72 @@
+From 9fd3a478a3823258516f06201fa681e07dce1781 Mon Sep 17 00:00:00 2001
+From: Amit Shah <amit.shah@redhat.com>
+Date: Mon, 21 Mar 2011 22:02:47 +0100
+Subject: [PATCH] char: Equip the unix/tcp backend to handle nonblocking
+ writes#
+
+Now that the infrastructure is in place to return -EAGAIN to callers,
+individual char drivers can set their update_fd_handlers() function to
+set or remove an fd's write handler.  This handler checks if the driver
+became writable.
+
+A generic callback routine is used for unblocking writes and letting
+users of chardevs know that a driver became writable again.
+
+Signed-off-by: Amit Shah <amit.shah@redhat.com>
+Signed-off-by: Cole Robinson <crobinso@redhat.com>
+---
+ qemu-char.c | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/qemu-char.c b/qemu-char.c
+index 3d6e2f8..18e980d 100644
+--- a/qemu-char.c
++++ b/qemu-char.c
+@@ -105,6 +105,19 @@
+ static QTAILQ_HEAD(CharDriverStateHead, CharDriverState) chardevs =
+     QTAILQ_HEAD_INITIALIZER(chardevs);
+ 
++/*
++ * Generic routine that gets called when chardev becomes writable.
++ * Lets chardev user know it's OK to send more data.
++ */
++static void char_write_unblocked(void *opaque)
++{
++    CharDriverState *chr = opaque;
++
++    chr->write_blocked = false;
++    chr->chr_disable_write_fd_handler(chr);
++    chr->chr_write_unblocked(chr->handler_opaque);
++}
++
+ void qemu_chr_be_event(CharDriverState *s, int event)
+ {
+     /* Keep track if the char device is open */
+@@ -126,6 +139,9 @@ static void qemu_chr_fire_open_event(void *opaque)
+ {
+     CharDriverState *s = opaque;
+     qemu_chr_be_event(s, CHR_EVENT_OPENED);
++    if (s->write_blocked) {
++        char_write_unblocked(s);
++    }
+     qemu_free_timer(s->open_timer);
+     s->open_timer = NULL;
+ }
+@@ -2245,6 +2261,17 @@ static int tcp_chr_write(CharDriverState *chr, const uint8_t *buf, int len)
+         ret = send_all(chr, s->fd, buf, len);
+         if (ret == -1 && errno == EPIPE) {
+             tcp_closed(chr);
++
++            if (chr->chr_enable_write_fd_handler && chr->chr_write_unblocked) {
++                /*
++                 * Since we haven't written out anything, let's say
++                 * we're throttled.  This will prevent any output from
++                 * the guest getting lost if host-side chardev goes
++                 * down.  Unthrottle when we re-connect.
++                 */
++                chr->write_blocked = true;
++                return 0;
++            }
+         }
+         return ret;
+     } else {

@@ -55,10 +55,17 @@ zcat ${SB_PATCHDIR}/qt-x11-free-3.3.6-qt-x11-immodule-unified-qt3.3.5-20060318-r
 
 zcat ${SB_PATCHDIR}/0080-net-wm-sync-request-2.patch.gz | patch -p0 -E --backup --verbose
 
+# For 0088
+rm -f include/private/qt_x11_p.h
+cp src/kernel/qt_x11_p.h include/private/qt_x11_p.h
+
 # 0080, 0085 don't apply atm, some/most of these are already included -- Rex
 echo "0080" >> patches/DISABLED
 echo "0085" >> patches/DISABLED
 test -x apply_patches && ./apply_patches
+
+rm -f include/private/qt_x11_p.h
+ln -sf ../../src/kernel/qt_x11_p.h include/private/qt_x11_p.h
 
 # upstream patches
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.4-fullscreen.patch.gz | patch -p1 -E --backup --verbose

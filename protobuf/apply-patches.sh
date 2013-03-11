@@ -4,6 +4,9 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-zcat ${SB_PATCHDIR}/${NAME}-2.2.0-fedora-gtest.patch.gz | patch -p2 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.0-fedora-gtest.patch
+rm -rf gtest
+patch -p01 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.0-java-fixes.patch
+rm -rf java/src/test
 
 set +e +o pipefail

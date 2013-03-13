@@ -4,7 +4,13 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-PATCHCOM="patch -p1 -F1 -s --verbose"
+unset PATCH_DRYRUN_OPT PATCH_VERBOSE_OPT
+
+[ "${PATCH_DRYRUN}" = "YES" ] && PATCH_DRYRUN_OPT="--dry-run"
+[ "${PATCH_VERBOSE}" = "YES" ] && PATCH_VERBOSE_OPT="--verbose"
+[ "${PATCH_SVERBOSE}" = "YES" ] && set -o xtrace
+
+PATCHCOM="patch ${PATCH_DRYRUN_OPT} -p1 -F1 -s ${PATCH_VERBOSE_OPT}"
 
 ApplyPatch() {
   local patch=$1
@@ -59,9 +65,6 @@ ApplyPatch perl-5.14.2-find2perl-transtate-question-mark-properly.patch
 # Fix broken atof, rhbz#835452, RT#109318
 ApplyPatch perl-5.16.0-fix-broken-atof.patch
 
-# Do not access freed memory when cloning thread, rhbz#825749, RT#111610
-ApplyPatch perl-5.16.1-perl-111610-Trouble-with-XS-APItest-t-clone-with-sta.patch
-
 # Clear $@ before `do' I/O error, rhbz#834226, RT#113730
 ApplyPatch perl-5.16.1-RT-113730-should-be-cleared-on-do-IO-error.patch
 
@@ -85,5 +88,11 @@ ApplyPatch perl-5.16.1-perl-114984-Glob.xs-Extend-stack-when-returning.patch
 
 # Do not crash when vivifying $|, rhbz#865296, RT#115206
 ApplyPatch perl-5.16.1-perl-115206-Don-t-crash-when-vivifying.patch
+
+# Fix CVE-2012-6329, rhbz#884354
+ApplyPatch perl-5.17.6-Fix-misparsing-of-maketext-strings.patch
+
+# Add NAME heading into CPAN PODs, rhbz#908113, CPANRT#73396
+ApplyPatch perl-5.16.2-cpan-CPAN-add-NAME-headings-in-modules-with-POD.patch
 
 set +e +o pipefail

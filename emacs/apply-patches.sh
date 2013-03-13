@@ -5,9 +5,6 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/glibc-open-macro.patch.gz | patch -p1 -E --backup --verbose
-# rhbz#713600
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/emacs-spellchecker.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/emacs-locate-library.patch
 
 ( cd site-lisp
   # rpm-spec-mode can use compilation-mode

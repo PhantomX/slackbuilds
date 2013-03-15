@@ -1,0 +1,182 @@
+From 56ba4c93d909ef9dfab4f1101a8c3bf75bc4cdab Mon Sep 17 00:00:00 2001
+From: Mauro Carvalho Chehab <mchehab@redhat.com>
+Date: Mon, 11 Mar 2013 08:19:52 -0400
+Subject: [PATCH EDAC] edac: merge mci.mem_is_per_rank with mci.csbased
+
+Both mci.mem_is_per_rank and mci.csbased have the same meaning:
+the memory controller is csrows based. Merge both fields into one.
+
+There's no need for the driver to actually fill it, as the core
+detectsi it by checking if one of the layes has the csrows type
+as part of the memory hierarchy:
+
+	if (layers[i].type == EDAC_MC_LAYER_CHIP_SELECT)
+			per_rank = true;
+...
+	mci->csbased = per_rank;
+
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+
+From 2b6018dbd206e4af16edcfb80497b73105e97803 Mon Sep 17 00:00:00 2001
+From: Mauro Carvalho Chehab <mchehab@redhat.com>
+Date: Mon, 11 Mar 2013 08:18:24 -0400
+Subject: [PATCH EDAC] amd64_edac: Correct dimm sizes
+
+We were filling the csrow size with a wrong value. 16a528ee3975 ("EDAC:
+Fix csrow size reported in sysfs") tried to address the issue. It fixed
+the report with the old API but not with the new one. Correct it for the
+new API too.
+
+Signed-off-by: Mauro Carvalho Chehab <mchehab@redhat.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+diff --git a/drivers/edac/amd64_edac.c b/drivers/edac/amd64_edac.c
+index ad8bf2a..10ed0c7 100644
+--- a/drivers/edac/amd64_edac.c
++++ b/drivers/edac/amd64_edac.c
+@@ -2148,12 +2148,18 @@ static int init_csrows(struct mem_ctl_info *mci)
+		edac_dbg(1, "MC node: %d, csrow: %d\n",
+			    pvt->mc_node_id, i);
+
+-		if (row_dct0)
++		if (row_dct0) {
+			nr_pages = amd64_csrow_nr_pages(pvt, 0, i);
++			csrow->channels[0]->dimm->nr_pages = nr_pages;
++		}
+
+		/* K8 has only one DCT */
+-		if (boot_cpu_data.x86 != 0xf && row_dct1)
+-			nr_pages += amd64_csrow_nr_pages(pvt, 1, i);
++		if (boot_cpu_data.x86 != 0xf && row_dct1) {
++			int row_dct1_pages = amd64_csrow_nr_pages(pvt, 1, i);
++
++			csrow->channels[1]->dimm->nr_pages = row_dct1_pages;
++			nr_pages += row_dct1_pages;
++		}
+
+		mtype = amd64_determine_memory_type(pvt, i);
+
+@@ -2172,9 +2178,7 @@ static int init_csrows(struct mem_ctl_info *mci)
+			dimm = csrow->channels[j]->dimm;
+			dimm->mtype = mtype;
+			dimm->edac_mode = edac_mode;
+-			dimm->nr_pages = nr_pages;
+		}
+-		csrow->nr_pages = nr_pages;
+	}
+
+	return empty;
+@@ -2519,7 +2523,6 @@ static int amd64_init_one_instance(struct pci_dev *F2)
+
+	mci->pvt_info = pvt;
+	mci->pdev = &pvt->F2->dev;
+-	mci->csbased = 1;
+
+	setup_mci_misc_attrs(mci, fam_type);
+
+diff --git a/drivers/edac/edac_mc.c b/drivers/edac/edac_mc.c
+index cdb81aa..27e86d9 100644
+--- a/drivers/edac/edac_mc.c
++++ b/drivers/edac/edac_mc.c
+@@ -86,7 +86,7 @@ static void edac_mc_dump_dimm(struct dimm_info *dimm, int number)
+	edac_dimm_info_location(dimm, location, sizeof(location));
+
+	edac_dbg(4, "%s%i: %smapped as virtual row %d, chan %d\n",
+-		 dimm->mci->mem_is_per_rank ? "rank" : "dimm",
++		 dimm->mci->csbased ? "rank" : "dimm",
+		 number, location, dimm->csrow, dimm->cschannel);
+	edac_dbg(4, "  dimm = %p\n", dimm);
+	edac_dbg(4, "  dimm->label = '%s'\n", dimm->label);
+@@ -341,7 +341,7 @@ struct mem_ctl_info *edac_mc_alloc(unsigned mc_num,
+	memcpy(mci->layers, layers, sizeof(*layer) * n_layers);
+	mci->nr_csrows = tot_csrows;
+	mci->num_cschannel = tot_channels;
+-	mci->mem_is_per_rank = per_rank;
++	mci->csbased = per_rank;
+
+	/*
+	 * Alocate and fill the csrow/channels structs
+@@ -1235,7 +1235,7 @@ void edac_mc_handle_error(const enum hw_event_mc_err_type type,
+			 * incrementing the compat API counters
+			 */
+			edac_dbg(4, "%s csrows map: (%d,%d)\n",
+-				 mci->mem_is_per_rank ? "rank" : "dimm",
++				 mci->csbased ? "rank" : "dimm",
+				 dimm->csrow, dimm->cschannel);
+			if (row == -1)
+				row = dimm->csrow;
+diff --git a/drivers/edac/edac_mc_sysfs.c b/drivers/edac/edac_mc_sysfs.c
+index 4f4b613..6ab4a50 100644
+--- a/drivers/edac/edac_mc_sysfs.c
++++ b/drivers/edac/edac_mc_sysfs.c
+@@ -180,9 +180,6 @@ static ssize_t csrow_size_show(struct device *dev,
+	int i;
+	u32 nr_pages = 0;
+
+-	if (csrow->mci->csbased)
+-		return sprintf(data, "%u\n", PAGES_TO_MiB(csrow->nr_pages));
+-
+	for (i = 0; i < csrow->nr_channels; i++)
+		nr_pages += csrow->channels[i]->dimm->nr_pages;
+	return sprintf(data, "%u\n", PAGES_TO_MiB(nr_pages));
+@@ -612,7 +609,7 @@ static int edac_create_dimm_object(struct mem_ctl_info *mci,
+	device_initialize(&dimm->dev);
+
+	dimm->dev.parent = &mci->dev;
+-	if (mci->mem_is_per_rank)
++	if (mci->csbased)
+		dev_set_name(&dimm->dev, "rank%d", index);
+	else
+		dev_set_name(&dimm->dev, "dimm%d", index);
+@@ -778,14 +775,10 @@ static ssize_t mci_size_mb_show(struct device *dev,
+	for (csrow_idx = 0; csrow_idx < mci->nr_csrows; csrow_idx++) {
+		struct csrow_info *csrow = mci->csrows[csrow_idx];
+
+-		if (csrow->mci->csbased) {
+-			total_pages += csrow->nr_pages;
+-		} else {
+-			for (j = 0; j < csrow->nr_channels; j++) {
+-				struct dimm_info *dimm = csrow->channels[j]->dimm;
++		for (j = 0; j < csrow->nr_channels; j++) {
++			struct dimm_info *dimm = csrow->channels[j]->dimm;
+
+-				total_pages += dimm->nr_pages;
+-			}
++			total_pages += dimm->nr_pages;
+		}
+	}
+
+diff --git a/include/linux/edac.h b/include/linux/edac.h
+index 4fd4999..0b76327 100644
+--- a/include/linux/edac.h
++++ b/include/linux/edac.h
+@@ -561,7 +561,6 @@ struct csrow_info {
+
+	u32 ue_count;		/* Uncorrectable Errors for this csrow */
+	u32 ce_count;		/* Correctable Errors for this csrow */
+-	u32 nr_pages;		/* combined pages count of all channels */
+
+	struct mem_ctl_info *mci;	/* the parent */
+
+@@ -676,11 +675,11 @@ struct mem_ctl_info {
+	 * sees memory sticks ("dimms"), and the ones that sees memory ranks.
+	 * All old memory controllers enumerate memories per rank, but most
+	 * of the recent drivers enumerate memories per DIMM, instead.
+-	 * When the memory controller is per rank, mem_is_per_rank is true.
++	 * When the memory controller is per rank, csbased is true.
+	 */
+	unsigned n_layers;
+	struct edac_mc_layer *layers;
+-	bool mem_is_per_rank;
++	bool csbased;
+
+	/*
+	 * DIMM info. Will eventually remove the entire csrows_info some day
+@@ -741,8 +740,6 @@ struct mem_ctl_info {
+	u32 fake_inject_ue;
+	u16 fake_inject_count;
+ #endif
+-	__u8 csbased : 1,	/* csrow-based memory controller */
+-	     __resv  : 7;
+ };
+
+ #endif

@@ -35,7 +35,7 @@ sed \
   -e "s|__PLUGINDIR__|${plugindir}|" \
   -e "s|__VARDIR__|${vardir}|" \
   -e "s|__VIDEODIR__|${videodir}|" \
-  ${SB_PATCHDIR}/vdr-1.7.30-paths.patch | patch -F 1 -p1
+  ${SB_PATCHDIR}/vdr-1.7.41-paths.patch | patch -p1
 patch -p1 -F 2 -E --backup --verbose -i ${DOWNDIR}/${EPSRCARCHIVE03}
 # http://article.gmane.org/gmane.linux.vdr/36097
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.5.18-syncearly.patch
@@ -51,12 +51,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.7.38-mainmenuhooks101.pa
 # Modified so that it applies over the timer-info patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.7.21-timercmd.patch
 #patch -p1 -E --backup --verbose -i ${DOWNDIR}/${EPSRCARCHIVE06}
-zcat ${DOWNDIR}/${EPSRCARCHIVE07} | patch -p1 -E --backup --verbose
+#zcat ${DOWNDIR}/${EPSRCARCHIVE07} | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.7.37-fedora-pkgconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.7.21-jumpplay-finnish.patch
 #patch -p1 -F 3 -E --backup --verbose -i ${DOWNDIR}/${EPSRCARCHIVE08}
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-timer-info-1.7.28.patch
-# http://projects.vdr-developer.org/issues/819
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.7.22-ttxtsubs-on.patch
 
 set +e +o pipefail

@@ -37,7 +37,6 @@ ApplyPatch cups-lpr-help.patch
 ApplyPatch cups-peercred.patch
 ApplyPatch cups-pid.patch
 ApplyPatch cups-eggcups.patch
-ApplyPatch cups-str4276.patch
 ApplyPatch cups-driverd-timeout.patch
 ApplyPatch cups-strict-ppd-line-length.patch
 ApplyPatch cups-logrotate.patch
@@ -46,9 +45,7 @@ ApplyPatch cups-usb-paperout.patch
 ApplyPatch cups-res_init.patch
 ApplyPatch cups-filter-debug.patch
 ApplyPatch cups-uri-compat.patch
-ApplyPatch cups-directives.patch
 ApplyPatch cups-str3382.patch
-ApplyPatch cups-usblp-quirks.patch
 ApplyPatch cups-0755.patch
 ApplyPatch cups-hp-deviceid-oid.patch
 ApplyPatch cups-dnssd-deviceid.patch
@@ -56,7 +53,6 @@ ApplyPatch cups-ricoh-deviceid-oid.patch
 
 ApplyPatch cups-systemd-socket.patch
 
-ApplyPatch cups-str4223.patch
 ApplyPatch cups-lpd-manpage.patch
 
 ## SECURITY PATCHES:

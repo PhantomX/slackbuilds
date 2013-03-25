@@ -64,6 +64,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rd81b00e9a0f67ac992df1034d920477b5f8b7c1c.diff
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r326106bf5b928e7d88540e3643ab4ede7e412413.diff
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r8d4f958586ab29bcfa9c70bb919540839c9bd2ac.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rb51b9ba8bfa38fd3d12437f8b183acf7d7ea143b.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r1f6d6cfc44a909a972b974fe4b79c0ef521ddd14.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r1576fd4df15b9cced4920b7ce0f49b467c5c081c.diff
 
 # Trunk patches
 

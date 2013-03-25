@@ -49,7 +49,7 @@ VERSION=${VERSION:-2012.1.87}
 ARCH=noarch
 SLKTARGET=${SLKTARGET:-i486}
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-3}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -65,30 +65,27 @@ SB_CABDIR=/etc/ssl
 catrustdir=${PKIDIR}/ca-trust
 classic_tls_bundle=ca-bundle.crt
 trusted_all_bundle=ca-bundle.trust.crt
+neutral_bundle=ca-bundle.neutral-trust.crt
+bundle_supplement=ca-bundle.supplement.p11-kit
 java_bundle=cacerts
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=certdata.txt
 SRCARCHIVE2=update-ca-trust
-SRCARCHIVE3=generate-cacerts.pl
+SRCARCHIVE3=trust-fixes
 SRCARCHIVE4=certdata2pem.py
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
-DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+DL_URL="https://hg.mozilla.org/releases/mozilla-release/file/default/security/nss/lib/ckfw/builtins/${SRCARCHIVE}"
 FEDORADIST=fedora-dist.sh
 FEDORABRANCH=${FEDORABRANCH:-devel}
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || cvs -d :pserver:anonymous@cvs-mirror.mozilla.org:/cvsroot co -p mozilla/security/nss/lib/ckfw/builtins/certdata.txt \
-  > ${CWD}/${SRCARCHIVE} || exit 1
-#test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${FEDORADIST} ${NAME} ${FEDORABRANCH} ${SRCARCHIVE} || exit 1
-
-if ! test -s ${CWD}/${SRCARCHIVE} ;then
-  echo "Delete ${CWD}/${SRCARCHIVE} and try again."
-  exit 1
+if ! test -r ${CWD}/${SRCARCHIVE} ;then
+  link="$(lynx -nonumbers -dump ${DL_URL} | grep raw-file | grep ${SRCARCHIVE} | head -n1)"
+  ${DL_PROG} ${DL_OPTS} ${link} || exit 1
 fi
 
 RVER="$(grep \$Revision ${CWD}/${SRCARCHIVE} | awk '{print $10}' | cut -d\/ -f1 ).$(grep \$Revision ${CWD}/${SRCARCHIVE} | awk '{print $7}')"
@@ -116,7 +113,7 @@ chmod -R u+w,go+r-w,a-s .
 mkdir certs
 ( cd certs 
   cp ${CWD}/${SRCARCHIVE} . || exit 1
-  python ${CWD}/${SRCARCHIVE4} || exit 1
+  python ${CWD}/${SRCARCHIVE4} >c2p.log 2>c2p.err || exit 1
 ) || exit 1
 
 for file in ${CWD}/extra/*.crt ;do
@@ -140,7 +137,8 @@ EOF
    echo '#';
 ) > ${trusted_all_bundle}
 
-for f in certs/*.crt; do 
+for f in certs/*.crt; do
+  echo "processing ${f}"
   tbits=$(sed -n '/^# openssl-trust/{s/^.*=//;p;}' ${f})
   distbits=$(sed -n '/^# openssl-distrust/{s/^.*=//;p;}' ${f})
   targs=""
@@ -155,16 +153,26 @@ for f in certs/*.crt; do
     done
   fi
   if [ -n "${targs}" ]; then
+    echo "trust flags ${targ}s for ${f}" >> info.trust
     openssl x509 -text -in "${f}" -trustout ${targs} >> ${trusted_all_bundle} || exit $?
+  else
+    echo "no trust flags for ${f}" >> info.notrust
+    openssl x509 -text -in "${f}" >> ${neutral_bundle} || exit $?
   fi
 done
 
-mkdir -p ${PKG}/${catrustdir}/source
+for p in certs/*.p11-kit; do 
+  cat "${p}" >> ${bundle_supplement}
+done
+# Append our trust fixes
+cat ${CWD}/${SRCARCHIVE3} >> ${bundle_supplement} || exit $?
+
+mkdir -p ${PKG}/${catrustdir}/source/{anchors,blacklist}
 mkdir -p ${PKG}/${catrustdir}/extracted
 mkdir -p ${PKG}/${catrustdir}/extracted/pem
 mkdir -p ${PKG}/${catrustdir}/extracted/openssl
 mkdir -p ${PKG}/${catrustdir}/extracted/java
-mkdir -p ${PKG}/usr/share/pki/ca-trust-source
+mkdir -p ${PKG}/usr/share/pki/ca-trust-source/{anchors,blacklist}
 
 readmedir=${CWD}/readmes
 install -p -m 644 ${readmedir}/README.usr ${PKG}/usr/share/pki/ca-trust-source/README
@@ -177,7 +185,13 @@ install -p -m 644 ${readmedir}/README.src ${PKG}/${catrustdir}/source/README
 
 install -p -m 644 ${trusted_all_bundle} \
   ${PKG}/usr/share/pki/ca-trust-source/${trusted_all_bundle} || exit 1
+install -p -m 644 ${neutral_bundle} \
+  ${PKG}/usr/share/pki/ca-trust-source/${neutral_bundle} || exit 1
+install -p -m 644 ${bundle_supplement} \
+  ${PKG}/usr/share/pki/ca-trust-source/${bundle_supplement} || exit 1
 touch -r ${CWD}/${SRCARCHIVE} ${PKG}/usr/share/pki/ca-trust-source/${trusted_all_bundle}
+touch -r ${CWD}/${SRCARCHIVE} ${PKG}/usr/share/pki/ca-trust-source/${neutral_bundle}
+touch -r ${CWD}/${SRCARCHIVE} ${PKG}/usr/share/pki/ca-trust-source/${bundle_supplement}
 
 mkdir -p ${PKG}/usr/bin
 install -p -m 755 ${CWD}/${SRCARCHIVE2} ${PKG}/usr/bin/update-ca-trust || exit 1

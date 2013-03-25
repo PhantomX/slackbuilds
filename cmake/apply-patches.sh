@@ -26,5 +26,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindPostgreSQL.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=869769
 # http://public.kitware.com/Bug/view.php?id=13604
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-ccmake-del-in-first-column.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindImageMagick.patch
 
 set +e +o pipefail

@@ -8,18 +8,24 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
 # From Fedora or upstream
-patch -p0 -E --backup -z .hack --verbose -i ${SB_PATCHDIR}/gcc47-hack.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-c++-builtin-redecl.patch
-####patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr33763.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-rh330771.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libgomp-omp_h-multilib.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libtool-no-rpath.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr38757.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-no-copy-dt-needed-entries.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-libitm-fno-exceptions.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-rh837630.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-arm-hfp-ldso.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc47-pr55137.patch
+patch -p0 -E --backup -z .hack --verbose -i ${SB_PATCHDIR}/gcc48-hack.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-rh330771.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-libgomp-omp_h-multilib.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-libtool-no-rpath.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-cloog-dl.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-cloog-dl2.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr38757.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-libstdc++-docs.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-no-copy-dt-needed-entries.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr56447.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr56039.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr54764.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr52374.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr54277.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-dr657.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-n3276.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr56646.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-cp.patch
 
 # From Gentoo
 patch -p0 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_gcc-default-fortify-source.patch

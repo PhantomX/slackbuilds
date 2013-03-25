@@ -1,0 +1,140 @@
+commit 1576fd4df15b9cced4920b7ce0f49b467c5c081c
+Author: Alexander Mezin <mezin.alexander@gmail.com>
+Date:   Wed Mar 20 00:02:25 2013 +0100
+
+    Workaround races between Solid::Backends::UDisks2::DeviceManager and DeviceBackends
+    
+    DeviceManager and DeviceBackends are subscribed to the same signals. DeviceManager's
+    slots can be executed earlier than DeviceBackend's, so when deviceAdded signals are
+    emitted by DeviceManager, DeviceBackend could contain non-updated data.
+    
+    Usually the problem appears with optical disks: device notifier shows inserted disks
+    as generic storage volumes or shows wrong label.
+    
+    Possible workaround is forcing refresh of DeviceBackend's property cache before emitting
+    deviceAdded signal. For optical disks drive's properties should also be updated, because
+    pticalDisc reads drive's properties.
+    
+    REVIEW: 109418
+
+diff --git a/solid/solid/backends/udisks2/udisksdevicebackend.cpp b/solid/solid/backends/udisks2/udisksdevicebackend.cpp
+index 2a01b86..31ccbcf 100644
+--- a/solid/solid/backends/udisks2/udisksdevicebackend.cpp
++++ b/solid/solid/backends/udisks2/udisksdevicebackend.cpp
+@@ -34,7 +34,7 @@ using namespace Solid::Backends::UDisks2;
+ /* Static cache for DeviceBackends for all UDIs */
+ QMap<QString /* UDI */, DeviceBackend*> DeviceBackend::s_backends;
+ 
+-DeviceBackend* DeviceBackend::backendForUDI(const QString& udi)
++DeviceBackend* DeviceBackend::backendForUDI(const QString& udi, bool create)
+ {
+     DeviceBackend *backend = 0;
+     if (udi.isEmpty()) {
+@@ -43,7 +43,7 @@ DeviceBackend* DeviceBackend::backendForUDI(const QString& udi)
+ 
+     if (s_backends.contains(udi)) {
+         backend = s_backends.value(udi);
+-    } else {
++    } else if (create) {
+         backend = new DeviceBackend(udi);
+         s_backends.insert(udi, backend);
+     }
+@@ -154,6 +154,11 @@ QVariantMap DeviceBackend::allProperties() const
+     return m_propertyCache;
+ }
+ 
++void DeviceBackend::invalidateProperties()
++{
++    m_propertyCache.clear();
++}
++
+ QString DeviceBackend::introspect() const
+ {
+     QDBusMessage call = QDBusMessage::createMethodCall(UD2_DBUS_SERVICE, m_udi,
+diff --git a/solid/solid/backends/udisks2/udisksdevicebackend.h b/solid/solid/backends/udisks2/udisksdevicebackend.h
+index 829fa41..e7f3cc8 100644
+--- a/solid/solid/backends/udisks2/udisksdevicebackend.h
++++ b/solid/solid/backends/udisks2/udisksdevicebackend.h
+@@ -40,7 +40,7 @@ class DeviceBackend: public QObject {
+     Q_OBJECT
+ 
+   public:
+-    static DeviceBackend* backendForUDI(const QString &udi);
++    static DeviceBackend* backendForUDI(const QString &udi, bool create = true);
+     static void destroyBackend(const QString &udi);
+ 
+     DeviceBackend(const QString &udi);
+@@ -53,6 +53,7 @@ class DeviceBackend: public QObject {
+     QStringList interfaces() const;
+     const QString & udi() const;
+ 
++    void invalidateProperties();
+   Q_SIGNALS:
+     void propertyChanged(const QMap<QString, int> &changeMap);
+     void changed();
+diff --git a/solid/solid/backends/udisks2/udisksmanager.cpp b/solid/solid/backends/udisks2/udisksmanager.cpp
+index 71b9e3e..e76dfd1 100644
+--- a/solid/solid/backends/udisks2/udisksmanager.cpp
++++ b/solid/solid/backends/udisks2/udisksmanager.cpp
+@@ -198,6 +198,8 @@ void Manager::slotInterfacesAdded(const QDBusObjectPath &object_path, const QVar
+ 
+     qDebug() << udi << "has new interfaces:" << interfaces_and_properties.keys();
+ 
++    updateBackend(udi);
++
+     // new device, we don't know it yet
+     if (!m_deviceCache.contains(udi)) {
+         m_deviceCache.append(udi);
+@@ -220,6 +222,8 @@ void Manager::slotInterfacesRemoved(const QDBusObjectPath &object_path, const QS
+ 
+     qDebug() << udi << "lost interfaces:" << interfaces;
+ 
++    updateBackend(udi);
++
+     Device device(udi);
+ 
+     if (!udi.isEmpty() && (interfaces.isEmpty() || device.interfaces().isEmpty())) {
+@@ -237,6 +241,7 @@ void Manager::slotMediaChanged(const QDBusMessage & msg)
+         return;
+ 
+     const QString udi = msg.path();
++    updateBackend(udi);
+     qulonglong size = properties.value("Size").toULongLong();
+     qDebug() << "MEDIA CHANGED in" << udi << "; size is:" << size;
+ 
+@@ -260,3 +265,23 @@ const QStringList & Manager::deviceCache()
+     return m_deviceCache;
+ }
+ 
++void Manager::updateBackend(const QString & udi)
++{
++    DeviceBackend *backend = DeviceBackend::backendForUDI(udi);
++    if (!backend)
++        return;
++
++    //This doesn't emit "changed" signals. Signals are emitted later by DeviceBackend's slots
++    backend->allProperties();
++
++    QVariant driveProp = backend->prop("Drive");
++    if (!driveProp.isValid())
++        return;
++
++    QDBusObjectPath drivePath = qdbus_cast<QDBusObjectPath>(driveProp);
++    DeviceBackend *driveBackend = DeviceBackend::backendForUDI(drivePath.path(), false);
++    if (!driveBackend)
++        return;
++
++    driveBackend->invalidateProperties();
++}
+diff --git a/solid/solid/backends/udisks2/udisksmanager.h b/solid/solid/backends/udisks2/udisksmanager.h
+index fb929ce..3961984 100644
+--- a/solid/solid/backends/udisks2/udisksmanager.h
++++ b/solid/solid/backends/udisks2/udisksmanager.h
+@@ -59,6 +59,7 @@ private Q_SLOTS:
+ private:
+     const QStringList &deviceCache();
+     void introspect(const QString & path, bool checkOptical = false);
++    void updateBackend(const QString & udi);
+     QSet<Solid::DeviceInterface::Type> m_supportedInterfaces;
+     org::freedesktop::DBus::ObjectManager m_manager;
+     QStringList m_deviceCache;

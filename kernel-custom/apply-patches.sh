@@ -164,7 +164,6 @@ ApplyPatch silence-fbcon-logo.patch.gz
 
 # no-one cares about these warnings.
 ApplyPatch silence-empty-ipi-mask-warning.patch
-ApplyPatch silence-tty-null.patch
 
 # libata
 
@@ -232,12 +231,6 @@ ApplyPatch userns-avoid-recursion-in-put_user_ns.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 859346
-ApplyPatch fix-destroy_conntrack-GPF.patch
-
-#CVE-2013-1828 rhbz 919315 919316
-ApplyPatch net-sctp-Validate-parameter-size-for-SCTP_GET_ASSOC_.patch
-
 #rhbz 917353
 ApplyPatch backlight_revert.patch -R
 
@@ -247,26 +240,23 @@ ApplyPatch amd64_edac_fix_rank_count.patch
 #rhbz 921500
 ApplyPatch i7300_edac_single_mode_fixup.patch
 
-#rhbz 904182
-ApplyPatch TTY-do-not-reset-master-s-packet-mode.patch
-
-#rhbz 857954
-ApplyPatch w1-fix-oops-when-w1_search-is-called-from.patch
-
-#rhbz 911771
-ApplyPatch serial-8250-Keep-8250.-xxxx-module-options-functiona.patch
-
 #rhbz 879462
 ApplyPatch uvcvideo-suspend-fix.patch
-
-#CVE-2013-0914 rhbz 920499 920510
-ApplyPatch signal-always-clear-sa_restorer-on-execve.patch
 
 #CVE-2013-0913 rhbz 920471 920529
 ApplyPatch drm-i915-bounds-check-execbuffer-relocation-count.patch
 
 #rhbz 859282
 ApplyPatch VMX-x86-handle-host-TSC-calibration-failure.patch
+
+#CVE-2013-1798 rhbz 917017 923968
+ApplyPatch 0001-KVM-Fix-bounds-checking-in-ioapic-indirect-register-.patch
+
+#CVE-2013-1796 rhbz 917012 923966
+ApplyPatch 0002-KVM-x86-fix-for-buffer-overflow-in-handling-of-MSR_K.patch
+
+#CVE-2013-1797 rhbz 917013 923967
+ApplyPatch 0003-KVM-x86-Convert-MSR_KVM_SYSTEM_TIME-to-use-gfn_to_hv.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

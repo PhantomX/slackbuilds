@@ -84,6 +84,7 @@ ApplyPatch 0001-BZ-14317-Optimze-__xpg_strerror_r.patch
 ApplyPatch 0001-Add-new-defines-from-Linux-3.7-to-netinet-tcp.h.patch
 ApplyPatch 0002-Add-values-from-Linux-3.7-to-elf.h.patch
 ApplyPatch 0001-Fix-casinh-casin-inaccuracy-from-cancellation-bug-14.patch
+ApplyPatch 0001-Fix-localedef-posix-description.patch
 ApplyPatch 0001-Fix-casinh-casin-overflow-bug-14996.patch
 ApplyPatch 0001-BZ-14985-Remove-erroneous-EPOLL_NONBLOCK.patch
 ApplyPatch 0001-Add-MSG_FASTOPEN.patch
@@ -92,5 +93,11 @@ ApplyPatch 0001-Fix-cacos-real-part-inaccuracy-for-result-real-part-.patch
 ApplyPatch 0001-Make-bits-wchar.h-correct-for-all-architectures-bug-.patch
 ApplyPatch 0001-Fix-casinh-spurious-underflows-away-from-i-i-bug-150.patch
 ApplyPatch 0001-Fix-aliases-in-stub-lseek.patch
+ApplyPatch 0001-BZ-15055-Use-__ieee754_sqrl-in-acoshl-for-lbdl-128ib.patch
+ApplyPatch 0001-Fix-y1l-spurious-overflows-for-ldbl-96-bug-15283.patch
+ApplyPatch 0001-BZ-14812-Add-missing-translation-marker-on-some-argp.patch
+ApplyPatch 0001-BZ-14812-Add-missing-N_-markers-in-localedef.patch
+ApplyPatch 0001-BZ-11120-fix-x86_64-strcmp.S-NOT_IN_libc-safeguards.patch
+ApplyPatch 0002-BZ-13889-expl-709.75-wrongly-overflows-for-ldbl-128i.patch
 
 set +e +o pipefail

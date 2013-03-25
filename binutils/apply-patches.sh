@@ -19,5 +19,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-64-bit-th
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-as-doc-texinfo-fixes.patch
 # Revert HJ's patch for  PR15149.  This stops the reporting of weak DT_NEEDED symbols.
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-revert-pr15149.patch
+# Fix addr2line to use the dynamic symbol table if it could not find any ordinary symbols.
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-addr2line-dynsymtab.patch
 
 set +e +o pipefail

@@ -44,7 +44,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-xattrs.patch
 # ~> rh#913406
 # ~> upstream (it is part of df7b55a8f6354e)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-posix-biguid.patch
-
+# Allow store sparse files of effective size >8GB into pax archives
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-pax-big-sparse-files.patch
+# Fix: Allow extracting single volume in a multi-volume archive
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-allow-extract-single-volume.patch
+# Allow to pass arguments to commands called from tar
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-command-args.patch
 
 # Adds txz support
 zcat ${SB_PATCHDIR}/${NAME}-1.23-support_txz.diff.gz | patch -p1 -E --backup --verbose

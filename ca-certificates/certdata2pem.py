@@ -25,6 +25,7 @@ import os.path
 import re
 import sys
 import textwrap
+import urllib
 
 objects = []
 
@@ -70,7 +71,7 @@ for line in open('certdata.txt', 'r'):
         field, type = line_parts
         value = None
     else:
-        raise NotImplementedError, 'line_parts < 2 not supported.'
+        raise NotImplementedError, 'line_parts < 2 not supported.\n' + line
     if type == 'MULTILINE_OCTAL':
         in_multiline = True
         value = ""
@@ -82,11 +83,19 @@ if len(obj.items()) > 0:
 # Build up trust database.
 trustmap = dict()
 for obj in objects:
-
     if obj['CKA_CLASS'] != 'CKO_NSS_TRUST':
         continue
     label = obj['CKA_LABEL']
     trustmap[label] = obj
+    print " added trust", label
+
+# Build up cert database.
+certmap = dict()
+for obj in objects:
+    if obj['CKA_CLASS'] != 'CKO_CERTIFICATE':
+        continue
+    label = obj['CKA_LABEL']
+    certmap[label] = obj
     print " added cert", label
 
 def obj_to_filename(obj):
@@ -98,7 +107,7 @@ def obj_to_filename(obj):
         .replace(',', '_')
     label = re.sub(r'\\x[0-9a-fA-F]{2}', lambda m:chr(int(m.group(0)[2:], 16)), label)
     serial = ".".join(map(lambda x:str(ord(x)), obj['CKA_SERIAL_NUMBER']))
-    return label + ":" + serial + ".crt"
+    return label + ":" + serial
 
 trust_types = {
   "CKA_TRUST_DIGITAL_SIGNATURE": "digital-signature",
@@ -126,16 +135,13 @@ openssl_trust = {
   "CKA_TRUST_EMAIL_PROTECTION": "emailProtection",
 }
 
-for obj in objects:
-    if obj['CKA_CLASS'] == 'CKO_CERTIFICATE':
-        print "producing cert file for " + obj['CKA_LABEL']
-        fname = obj_to_filename(obj)
-        f = open(fname, 'w')
+for tobj in objects:
+    if tobj['CKA_CLASS'] == 'CKO_NSS_TRUST':
+        print "producing trust for " + tobj['CKA_LABEL']
         trustbits = []
         distrustbits = []
         openssl_trustflags = []
         openssl_distrustflags = []
-        tobj = trustmap[obj['CKA_LABEL']]
         for t in trust_types.keys():
             if tobj.has_key(t) and tobj[t] == 'CKT_NSS_TRUSTED_DELEGATOR':
                 trustbits.append(t)
@@ -145,16 +151,43 @@ for obj in objects:
                 distrustbits.append(t)
                 if t in openssl_trust:
                     openssl_distrustflags.append(openssl_trust[t])
-        f.write("# trust=" + " ".join(trustbits) + "\n")
-        f.write("# distrust=" + " ".join(distrustbits) + "\n")
-        if openssl_trustflags:
-            f.write("# openssl-trust=" + " ".join(openssl_trustflags) + "\n")
-        if openssl_distrustflags:
-            f.write("# openssl-distrust=" + " ".join(openssl_distrustflags) + "\n")
-        f.write("-----BEGIN CERTIFICATE-----\n")
-        f.write("\n".join(textwrap.wrap(base64.b64encode(obj['CKA_VALUE']), 64)))
-        f.write("\n-----END CERTIFICATE-----\n")
+
+        fname = obj_to_filename(tobj)
+        try:
+            obj = certmap[tobj['CKA_LABEL']]
+        except:
+            obj = None
+
+        if obj != None:
+            fname += ".crt"
+        else:
+            fname += ".p11-kit"
+
+        f = open(fname, 'w')
+        if obj != None:
+            f.write("# trust=" + " ".join(trustbits) + "\n")
+            f.write("# distrust=" + " ".join(distrustbits) + "\n")
+            if openssl_trustflags:
+                f.write("# openssl-trust=" + " ".join(openssl_trustflags) + "\n")
+            if openssl_distrustflags:
+                f.write("# openssl-distrust=" + " ".join(openssl_distrustflags) + "\n")
+            f.write("-----BEGIN CERTIFICATE-----\n")
+            f.write("\n".join(textwrap.wrap(base64.b64encode(obj['CKA_VALUE']), 64)))
+            f.write("\n-----END CERTIFICATE-----\n")
+        else:
+            f.write("[p11-kit-object-v1]\n")
+            f.write("label: ");
+            f.write(tobj['CKA_LABEL']);
+            f.write("\n")
+            f.write("class: certificate\n")
+            f.write("certificate-type: x-509\n")
+            f.write("issuer: \"");
+            f.write(urllib.quote(tobj['CKA_ISSUER']));
+            f.write("\"\n")
+            f.write("serial-number: \"");
+            f.write(urllib.quote(tobj['CKA_SERIAL_NUMBER']));
+            f.write("\"\n")
+            if (tobj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_NOT_TRUSTED') or (tobj['CKA_TRUST_EMAIL_PROTECTION'] == 'CKT_NSS_NOT_TRUSTED') or (tobj['CKA_TRUST_CODE_SIGNING'] == 'CKT_NSS_NOT_TRUSTED'):
+              f.write("x-distrusted: true\n")
+            f.write("\n\n")
         print " -> written as '%s', trust = %s, openssl-trust = %s, distrust = %s, openssl-distrust = %s" % (fname, trustbits, openssl_trustflags, distrustbits, openssl_distrustflags)
-
-
-

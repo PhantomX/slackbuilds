@@ -113,13 +113,6 @@ ApplyPatch qt-everywhere-opensource-src-4.8.3-QTBUG-4862.patch
 # poll support
 ApplyPatch qt-4.8-poll.patch
 
-# security patches
-# CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code
-ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
-mkdir -p tests/auto/qtipc/qsharedmemory
-touch tests/auto/qtipc/qsharedmemory/tst_qsharedmemory.cpp
-ApplyPatch qt-4.8-CVE-2013-0254.patch
- 
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore
 # UPSTREAM ME
@@ -137,9 +130,23 @@ ApplyPatch qt-everywhere-opensource-src-4.8.4-QTBUG-22829.patch
 # QSslSocket may report incorrect errors when certificate verification fails
 # https://codereview.qt-project.org/#change,42461
 ApplyPatch 0054-Fix-binary-incompatibility-between-openssl-versions.patch
+ApplyPatch 0057-Update-defaultNumberingSystem-value-for-some-indic-a.patch
+ApplyPatch 0067-Allow-qmljsdebugger-argument-and-value-to-be-separat.patch
 # http://lists.qt-project.org/pipermail/announce/2013-January/000021.html
 ApplyPatch 0080-SSL-certificates-blacklist-mis-issued-Turktrust-cert.patch
 # another set similar to 0080
 ApplyPatch 0090-QtNetwork-blacklist-two-more-certificates.patch
+ApplyPatch 0110-QUrl-fromUserInput-fix-for-urls-without-a-host.patch
+ApplyPatch 0112-Limit-the-range-of-the-QUrlPrivate-port-to-1-to-6553.patch
+ApplyPatch 0124-QtDBus-Garbage-collect-deleted-objects-now-and-then.patch
+ApplyPatch 0125-QTBUG-15319-fix-shortcuts-with-secondary-Xkb-layout.patch
+ApplyPatch 0214-Fix-multiselection-by-CTRL-click-in-QFileDialog-KDE.patch
+
+# security patches
+# CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code
+ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
+mkdir -p tests/auto/qtipc/qsharedmemory
+touch tests/auto/qtipc/qsharedmemory/tst_qsharedmemory.cpp
+ApplyPatch qt-4.8-CVE-2013-0254.patch
 
 set +e +o pipefail

@@ -15,8 +15,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.11.0-getaddrinfo.patc
 zcat ${SB_PATCHDIR}/${NAME}-0.11.0-sysname.patch.gz | patch -p1 -E --backup --verbose
 # Fix xterm terminal: "Linux" driver seems better than "VT100" (#128105)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.10.1-xterm.patch
-# Fix #157300 - Strange behavior on ppc64
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.11.0-union.patch
 # fix for open macro in new glibc 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.11.3-macropen.patch
 #upstream fix for out of screen dialogs
@@ -24,8 +22,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-scroll.patch
 # Port elinks to use NSS library for cryptography
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-nss.patch
 # Port elinks to use NSS library for cryptography (#346861) - incremental patch
-zcat ${SB_PATCHDIR}/${NAME}-nss-inc.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nss-inc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre5-js185.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre5-ddg-search.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre6-autoconf.patch
 
 if [ "$(echo ${RUBYVER} | cut -d. -f1)" -ge 1 ] && [ "$(echo ${RUBYVER} | cut -d. -f2)" -ge 9 ] ;then
   sed -i \

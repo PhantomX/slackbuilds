@@ -19,7 +19,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-manpages.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-paths.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-CLOEXEC.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-garbage-chars.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-missing-ipv6-not-fatal.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-add_timeout_when_NULL.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-64_bit_lease_parse.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-capability.patch
@@ -31,7 +30,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-rfc3442-classless-s
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.0-honor-expired.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-sharedlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-PPP.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-paranoia.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-paranoia.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-lpf-ib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-improved-xid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-gpxe-cid.patch
@@ -44,6 +43,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-failOverPeer.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P1-interval.patch 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P2-conflex-do-forward-updates.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P2-dupl-key.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-range6.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

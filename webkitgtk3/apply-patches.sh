@@ -5,9 +5,9 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/webkit-1.3.10-nspluginwrapper.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/webkitgtk-librt.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/webkit-1.11.2-Double2Ints.patch
 
 # Set to YES if autogen is needed
-SB_AUTOGEN=YES
+SB_AUTOGEN=NO
 
 set +e +o pipefail

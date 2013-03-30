@@ -21,6 +21,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.9.90-defaultremoteshell
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.10-patternnamesigsegv.patch
 # fix rawhide buildfailure by updating gnulib's stdio.in.h
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.11-stdio.in.patch
+# fix bad file name splitting while creating ustar archive (#866467)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.10-longnames-split.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio.32bit.crc.diff
 
 set +e +o pipefail

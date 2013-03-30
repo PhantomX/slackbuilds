@@ -231,9 +231,6 @@ ApplyPatch userns-avoid-recursion-in-put_user_ns.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 917353
-ApplyPatch backlight_revert.patch -R
-
 #rhbz 920586
 ApplyPatch amd64_edac_fix_rank_count.patch
 
@@ -242,9 +239,6 @@ ApplyPatch i7300_edac_single_mode_fixup.patch
 
 #rhbz 879462
 ApplyPatch uvcvideo-suspend-fix.patch
-
-#CVE-2013-0913 rhbz 920471 920529
-ApplyPatch drm-i915-bounds-check-execbuffer-relocation-count.patch
 
 #rhbz 859282
 ApplyPatch VMX-x86-handle-host-TSC-calibration-failure.patch
@@ -257,6 +251,10 @@ ApplyPatch 0002-KVM-x86-fix-for-buffer-overflow-in-handling-of-MSR_K.patch
 
 #CVE-2013-1797 rhbz 917013 923967
 ApplyPatch 0003-KVM-x86-Convert-MSR_KVM_SYSTEM_TIME-to-use-gfn_to_hv.patch
+
+# https://bugzilla.novell.com/show_bug.cgi?id=806966
+ApplyPatch e1000e-fix-accessing-to-suspended-device.patch
+ApplyPatch e1000e-fix-runtime-power-management-transitions.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

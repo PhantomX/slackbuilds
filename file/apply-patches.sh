@@ -16,6 +16,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-man-return-code.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-generic-msdos.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-x86boot.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-perl.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-elfspace.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-bad-fsmagic-space.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose

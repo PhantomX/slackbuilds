@@ -7,5 +7,6 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/honey-I-shrank-the-terminal.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=663779
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vte-alt-meta-confusion.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-widget-Only-show-the-cursor-on-motion-if-moved.patch
 
 set +e +o pipefail

@@ -30,6 +30,8 @@ if [ "${PATCHLEVEL}" -gt 0 ] ;then
 mkdir -p patches
 cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
 
+patch -p0 -E --verbose -i  ${SB_PATCHDIR}/vim-fix-p859.patch
+
 ( SB_PATCHDIR=patches
   for i in $( seq -w ${PATCHLEVEL} ) ; do
     patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${SVER}.${i}
@@ -56,5 +58,7 @@ zcat ${SB_PATCHDIR}/vim-7.0-warning.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-7.0-syncolor.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-7.0-specedit.patch.gz | patch -p1 --verbose
 patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim72-rh514717.patch
+
+patch -p0 -E --verbose -i ${SB_PATCHDIR}/vim-vimrc.patch
 
 set +e +o pipefail

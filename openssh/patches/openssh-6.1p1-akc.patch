@@ -1,20 +1,44 @@
 diff -up openssh-6.1p1/auth2-pubkey.c.akc openssh-6.1p1/auth2-pubkey.c
---- openssh-6.1p1/auth2-pubkey.c.akc	2012-09-14 20:20:48.459445650 +0200
-+++ openssh-6.1p1/auth2-pubkey.c	2012-09-14 20:20:48.520446072 +0200
-@@ -27,6 +27,7 @@
+--- openssh-6.1p1/auth2-pubkey.c.akc	2013-02-14 17:46:45.259546968 +0100
++++ openssh-6.1p1/auth2-pubkey.c	2013-02-14 17:48:19.072137541 +0100
+@@ -27,9 +27,13 @@
  
  #include <sys/types.h>
  #include <sys/stat.h>
 +#include <sys/wait.h>
  
++#include <errno.h>
  #include <fcntl.h>
++#include <paths.h>
  #include <pwd.h>
-@@ -277,27 +278,15 @@ match_principals_file(char *file, struct
++#include <signal.h>
+ #include <stdio.h>
+ #include <stdarg.h>
+ #include <string.h>
+@@ -260,7 +264,7 @@ match_principals_file(char *file, struct
+ 			if (strcmp(cp, cert->principals[i]) == 0) {
+ 				debug3("matched principal \"%.100s\" "
+ 				    "from file \"%s\" on line %lu",
+-			    	    cert->principals[i], file, linenum);
++				    cert->principals[i], file, linenum);
+ 				if (auth_parse_options(pw, line_opts,
+ 				    file, linenum) != 1)
+ 					continue;
+@@ -273,31 +277,22 @@ match_principals_file(char *file, struct
+ 	fclose(f);
+ 	restore_uid();
+ 	return 0;
+-}	
++}
  
- /* return 1 if user allows given key */
+-/* return 1 if user allows given key */
++/*
++ * Checks whether key is allowed in authorized_keys-format file,
++ * returns 1 if the key is allowed or 0 otherwise.
++ */
  static int
 -user_key_allowed2(struct passwd *pw, Key *key, char *file)
-+user_search_key_in_file(FILE *f, char *file, Key* key, struct passwd *pw)
++check_authkeys_file(FILE *f, char *file, Key* key, struct passwd *pw)
  {
  	char line[SSH_MAX_PUBKEY_BYTES];
  	const char *reason;
@@ -38,7 +62,7 @@ diff -up openssh-6.1p1/auth2-pubkey.c.akc openssh-6.1p1/auth2-pubkey.c
  	found_key = 0;
  	found = key_new(key_is_cert(key) ? KEY_UNSPEC : key->type);
  
-@@ -390,8 +379,6 @@ user_key_allowed2(struct passwd *pw, Key
+@@ -390,8 +385,6 @@ user_key_allowed2(struct passwd *pw, Key
  			break;
  		}
  	}
@@ -47,12 +71,15 @@ diff -up openssh-6.1p1/auth2-pubkey.c.akc openssh-6.1p1/auth2-pubkey.c
  	key_free(found);
  	if (!found_key)
  		debug2("key not found");
-@@ -453,13 +440,191 @@ user_cert_trusted_ca(struct passwd *pw,
+@@ -453,7 +446,180 @@ user_cert_trusted_ca(struct passwd *pw,
  	return ret;
  }
  
 -/* check whether given key is in .ssh/authorized_keys* */
-+/* return 1 if user allows given key */
++/*
++ * Checks whether key is allowed in file.
++ * returns 1 if the key is allowed or 0 otherwise.
++ */
 +static int
 +user_key_allowed2(struct passwd *pw, Key *key, char *file)
 +{
@@ -63,10 +90,8 @@ diff -up openssh-6.1p1/auth2-pubkey.c.akc openssh-6.1p1/auth2-pubkey.c
 +	temporarily_use_uid(pw);
 +
 +	debug("trying public key file %s", file);
-+	f = auth_openkeyfile(file, pw, options.strict_modes);
-+
-+ 	if (f) {
-+ 		found_key = user_search_key_in_file (f, file, key, pw);
++	if ((f = auth_openkeyfile(file, pw, options.strict_modes)) != NULL) {
++		found_key = check_authkeys_file(f, file, key, pw);
 +		fclose(f);
 +	}
 +
@@ -74,255 +99,332 @@ diff -up openssh-6.1p1/auth2-pubkey.c.akc openssh-6.1p1/auth2-pubkey.c
 +	return found_key;
 +}
 +
-+#ifdef WITH_AUTHORIZED_KEYS_COMMAND
-+
-+#define WHITESPACE " \t\r\n"
-+
-+/* return 1 if user allows given key */
++/*
++ * Checks whether key is allowed in output of command.
++ * returns 1 if the key is allowed or 0 otherwise.
++ */
 +static int
-+user_key_via_command_allowed2(struct passwd *pw, Key *key)
++user_key_command_allowed2(struct passwd *user_pw, Key *key)
 +{
 +	FILE *f;
-+	int found_key = 0;
-+	char *progname = NULL;
-+	char *cp;
-+	struct passwd *runas_pw;
++	int ok, found_key = 0;
++	struct passwd *pw;
 +	struct stat st;
-+	int childdescriptors[2], i;
-+	pid_t pstat, pid, child;
++	int status, devnull, p[2], i;
++	pid_t pid;
++	char *username, errmsg[512];
 +
-+	if (options.authorized_keys_command == NULL || options.authorized_keys_command[0] != '/')
++	if (options.authorized_keys_command == NULL ||
++	    options.authorized_keys_command[0] != '/')
 +		return 0;
 +
-+	/* get the run as identity from config */
-+	runas_pw = (options.authorized_keys_command_runas == NULL)? pw
-+	    : getpwnam (options.authorized_keys_command_runas);
-+	if (!runas_pw) {
-+		error("%s: getpwnam(\"%s\"): %s", __func__,
-+		    options.authorized_keys_command_runas, strerror(errno));
++	if (options.authorized_keys_command_user == NULL) {
++		error("No user for AuthorizedKeysCommand specified, skipping");
 +		return 0;
 +	}
 +
-+	/* Temporarily use the specified uid. */
-+	if (runas_pw->pw_uid != 0)
-+		temporarily_use_uid(runas_pw);
++	username = percent_expand(options.authorized_keys_command_user,
++	    "u", user_pw->pw_name, (char *)NULL);
++	pw = getpwnam(username);
++	if (pw == NULL) {
++		error("AuthorizedKeyCommandUser \"%s\" not found: %s",
++		    username, strerror(errno));
++		free(username);
++		return 0;
++	}
++	free(username);
 +
-+	progname = xstrdup(options.authorized_keys_command);
++	temporarily_use_uid(pw);
 +
-+	debug3("%s: checking program '%s'", __func__, progname);
-+
-+	if (stat (progname, &st) < 0) {
-+		error("%s: stat(\"%s\"): %s", __func__,
-+		    progname, strerror(errno));
-+		goto go_away;
++	if (stat(options.authorized_keys_command, &st) < 0) {
++		error("Could not stat AuthorizedKeysCommand \"%s\": %s",
++		    options.authorized_keys_command, strerror(errno));
++		goto out;
++	}
++	if (auth_secure_path(options.authorized_keys_command, &st, NULL, 0,
++	    errmsg, sizeof(errmsg)) != 0) {
++		error("Unsafe AuthorizedKeysCommand: %s", errmsg);
++		goto out;
 +	}
 +
-+	if (st.st_uid != 0 || (st.st_mode & 022) != 0) {
-+		error("bad ownership or modes for AuthorizedKeysCommand \"%s\"",
-+		    progname);
-+		goto go_away;
++	if (pipe(p) != 0) {
++		error("%s: pipe: %s", __func__, strerror(errno));
++		goto out;
 +	}
 +
-+	if (!S_ISREG(st.st_mode)) {
-+		error("AuthorizedKeysCommand \"%s\" is not a regular file",
-+		    progname);
-+		goto go_away;
-+	}
++	debug3("Running AuthorizedKeysCommand: \"%s %s\" as \"%s\"",
++	    options.authorized_keys_command, user_pw->pw_name, pw->pw_name);
 +
 +	/*
-+	 * Descend the path, checking that each component is a
-+	 * root-owned directory with strict permissions.
++	 * Don't want to call this in the child, where it can fatal() and
++	 * run cleanup_exit() code.
 +	 */
-+	do {
-+		if ((cp = strrchr(progname, '/')) == NULL)
-+			break;
-+		else
-+			*cp = '\0';
-+	
-+		debug3("%s: checking component '%s'", __func__, (*progname == '\0' ? "/" : progname));
++	restore_uid();
 +
-+		if (stat((*progname == '\0' ? "/" : progname), &st) != 0) {
-+			error("%s: stat(\"%s\"): %s", __func__,
-+			    progname, strerror(errno));
-+			goto go_away;
-+		}
-+		if (st.st_uid != 0 || (st.st_mode & 022) != 0) {
-+			error("bad ownership or modes for AuthorizedKeysCommand path component \"%s\"",
-+			    progname);
-+			goto go_away;
-+		}
-+		if (!S_ISDIR(st.st_mode)) {
-+			error("AuthorizedKeysCommand path component \"%s\" is not a directory",
-+			    progname);
-+			goto go_away;
-+		}
-+	} while (1);
++	switch ((pid = fork())) {
++	case -1: /* error */
++		error("%s: fork: %s", __func__, strerror(errno));
++		close(p[0]);
++		close(p[1]);
++		return 0;
++	case 0: /* child */
++		for (i = 0; i < NSIG; i++)
++			signal(i, SIG_DFL);
 +
-+	/* open the pipe and read the keys */
-+	if (pipe(childdescriptors)) {
-+		error("failed to pipe(2) for AuthorizedKeysCommand: %s",
-+		    strerror(errno));
-+		goto go_away;
-+	}
-+
-+	child = fork();
-+	if (child == -1) {
-+		error("failed to fork(2) for AuthorizedKeysCommand: %s",
-+		    strerror(errno));
-+		goto go_away;
-+	} else if (child == 0) {
-+		/* we're in the child process here -- we should never return from this block. */
-+		/* permanently drop privs in child process */
-+		if (runas_pw->pw_uid != 0) {
-+			restore_uid();
-+			permanently_set_uid(runas_pw);
-+	  	}
-+
-+		close(childdescriptors[0]);
-+		/* put the write end of the pipe on stdout (FD 1) */
-+		if (dup2(childdescriptors[1], 1) == -1) {
-+			error("failed to dup2(2) from AuthorizedKeysCommand: %s",
++		if ((devnull = open(_PATH_DEVNULL, O_RDWR)) == -1) {
++			error("%s: open %s: %s", __func__, _PATH_DEVNULL,
 +			    strerror(errno));
-+			_exit(127);
++			_exit(1);
++		}
++		/* Keep stderr around a while longer to catch errors */
++		if (dup2(devnull, STDIN_FILENO) == -1 ||
++		    dup2(p[1], STDOUT_FILENO) == -1) {
++			error("%s: dup2: %s", __func__, strerror(errno));
++			_exit(1);
++		}
++		closefrom(STDERR_FILENO + 1);
++
++		/* Don't use permanently_set_uid() here to avoid fatal() */
++		if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) != 0) {
++			error("setresgid %u: %s", (u_int)pw->pw_gid,
++			    strerror(errno));
++			_exit(1);
++		}
++		if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) != 0) {
++			error("setresuid %u: %s", (u_int)pw->pw_uid,
++			    strerror(errno));
++			_exit(1);
++		}
++		/* stdin is pointed to /dev/null at this point */
++		if (dup2(STDIN_FILENO, STDERR_FILENO) == -1) {
++			error("%s: dup2: %s", __func__, strerror(errno));
++			_exit(1);
 +		}
 +
-+		debug3("about to execl() AuthorizedKeysCommand: \"%s\" \"%s\"", options.authorized_keys_command, pw->pw_name);
-+		/* see session.c:child_close_fds() */
-+		for (i = 3; i < 64; ++i) {
-+			close(i);
-+		}
++		execl(options.authorized_keys_command,
++		    options.authorized_keys_command, user_pw->pw_name, NULL);
 +
-+		execl(options.authorized_keys_command, options.authorized_keys_command, pw->pw_name, NULL);
-+
-+		/* if we got here, it didn't work */
-+		error("failed to execl AuthorizedKeysCommand: %s", strerror(errno)); /* this won't work because we closed the fds above */
++		error("AuthorizedKeysCommand %s exec failed: %s",
++		    options.authorized_keys_command, strerror(errno));
 +		_exit(127);
-+	}
-+	
-+	close(childdescriptors[1]);
-+	f = fdopen(childdescriptors[0], "r");
-+	if (!f) {
-+		error("%s: could not buffer FDs from AuthorizedKeysCommand (\"%s\", \"r\"): %s", __func__,
-+		    options.authorized_keys_command, strerror (errno));
-+		goto go_away;
++	default: /* parent */
++		break;
 +	}
 +
-+	found_key = user_search_key_in_file (f, options.authorized_keys_command, key, pw);
-+	fclose (f);
-+	do {
-+		pid = waitpid(child, &pstat, 0);
-+	} while (pid == -1 && errno == EINTR);
++	temporarily_use_uid(pw);
 +
-+	/* what about the return value from the child process? */
-+go_away:
-+	if (progname)
-+		xfree (progname);
++	close(p[1]);
++	if ((f = fdopen(p[0], "r")) == NULL) {
++		error("%s: fdopen: %s", __func__, strerror(errno));
++		close(p[0]);
++		/* Don't leave zombie child */
++		kill(pid, SIGTERM);
++		while (waitpid(pid, NULL, 0) == -1 && errno == EINTR)
++			;
++		goto out;
++	}
++	ok = check_authkeys_file(f, options.authorized_keys_command, key, pw);
++	fclose(f);
 +
-+	if (runas_pw->pw_uid != 0)
-+		restore_uid();
++	while (waitpid(pid, &status, 0) == -1) {
++		if (errno != EINTR) {
++			error("%s: waitpid: %s", __func__, strerror(errno));
++			goto out;
++		}
++	}
++	if (WIFSIGNALED(status)) {
++		error("AuthorizedKeysCommand %s exited on signal %d",
++		    options.authorized_keys_command, WTERMSIG(status));
++		goto out;
++	} else if (WEXITSTATUS(status) != 0) {
++		error("AuthorizedKeysCommand %s returned status %d",
++		    options.authorized_keys_command, WEXITSTATUS(status));
++		goto out;
++	}
++	found_key = ok;
++ out:
++	restore_uid();
 +	return found_key;
 +}
-+#endif
 +
-+/* check whether given key is in <AuthorizedKeysCommand or .ssh/authorized_keys* */
++/*
++ * Check whether key authenticates and authorises the user.
++ */
  int
  user_key_allowed(struct passwd *pw, Key *key)
  {
- 	u_int success, i;
- 	char *file;
+@@ -469,9 +635,17 @@ user_key_allowed(struct passwd *pw, Key
+ 	if (success)
+ 		return success;
  
-+#ifdef WITH_AUTHORIZED_KEYS_COMMAND
-+	success = user_key_via_command_allowed2(pw, key);
++	success = user_key_command_allowed2(pw, key);
 +	if (success > 0)
 +		return success;
-+#endif
 +
- 	if (auth_key_is_revoked(key))
- 		return 0;
- 	if (key_is_cert(key) && auth_key_is_revoked(key->cert->signature_key))
-diff -up openssh-6.1p1/configure.ac.akc openssh-6.1p1/configure.ac
---- openssh-6.1p1/configure.ac.akc	2012-07-06 03:49:29.000000000 +0200
-+++ openssh-6.1p1/configure.ac	2012-09-14 20:20:48.525446106 +0200
-@@ -1512,6 +1512,18 @@ AC_ARG_WITH([audit],
- 	esac ]
- )
+ 	for (i = 0; !success && i < options.num_authkeys_files; i++) {
++
++		if (strcasecmp(options.authorized_keys_files[i], "none") == 0)
++			continue;
+ 		file = expand_authorized_keys(
+ 		    options.authorized_keys_files[i], pw);
++
+ 		success = user_key_allowed2(pw, key, file);
+ 		xfree(file);
+ 	}
+diff -up openssh-6.1p1/auth.c.akc openssh-6.1p1/auth.c
+--- openssh-6.1p1/auth.c.akc	2013-02-14 17:46:45.189547274 +0100
++++ openssh-6.1p1/auth.c	2013-02-14 17:46:45.273546907 +0100
+@@ -415,39 +415,41 @@ check_key_in_hostfiles(struct passwd *pw
  
-+# Check whether user wants AuthorizedKeysCommand support
-+AKC_MSG="no"
-+AC_ARG_WITH(authorized-keys-command,
-+	[  --with-authorized-keys-command      Enable AuthorizedKeysCommand support],
-+	[
-+		if test "x$withval" != "xno" ; then
-+			AC_DEFINE([WITH_AUTHORIZED_KEYS_COMMAND], 1, [Enable AuthorizedKeysCommand support])
-+			AKC_MSG="yes"
-+		fi
-+	]
-+)
+ 
+ /*
+- * Check a given file for security. This is defined as all components
++ * Check a given path for security. This is defined as all components
+  * of the path to the file must be owned by either the owner of
+  * of the file or root and no directories must be group or world writable.
+  *
+  * XXX Should any specific check be done for sym links ?
+  *
+- * Takes an open file descriptor, the file name, a uid and and
++ * Takes an the file name, its stat information (preferably from fstat() to
++ * avoid races), the uid of the expected owner, their home directory and an
+  * error buffer plus max size as arguments.
+  *
+  * Returns 0 on success and -1 on failure
+  */
+-static int
+-secure_filename(FILE *f, const char *file, struct passwd *pw,
+-    char *err, size_t errlen)
++int
++auth_secure_path(const char *name, struct stat *stp, const char *pw_dir,
++    uid_t uid, char *err, size_t errlen)
+ {
+-	uid_t uid = pw->pw_uid;
+ 	char buf[MAXPATHLEN], homedir[MAXPATHLEN];
+ 	char *cp;
+ 	int comparehome = 0;
+ 	struct stat st;
+ 
+-	if (realpath(file, buf) == NULL) {
+-		snprintf(err, errlen, "realpath %s failed: %s", file,
++	if (realpath(name, buf) == NULL) {
++		snprintf(err, errlen, "realpath %s failed: %s", name,
+ 		    strerror(errno));
+ 		return -1;
+ 	}
+-	if (realpath(pw->pw_dir, homedir) != NULL)
++	if (pw_dir != NULL && realpath(pw_dir, homedir) != NULL)
+ 		comparehome = 1;
+ 
+-	/* check the open file to avoid races */
+-	if (fstat(fileno(f), &st) < 0 ||
+-	    (st.st_uid != 0 && st.st_uid != uid) ||
+-	    (st.st_mode & 022) != 0) {
++	if (!S_ISREG(stp->st_mode)) {
++		snprintf(err, errlen, "%s is not a regular file", buf);
++		return -1;
++	}
++	if ((stp->st_uid != 0 && stp->st_uid != uid) ||
++	    (stp->st_mode & 022) != 0) {
+ 		snprintf(err, errlen, "bad ownership or modes for file %s",
+ 		    buf);
+ 		return -1;
+@@ -483,6 +485,31 @@ secure_filename(FILE *f, const char *fil
+ 	return 0;
+ }
+ 
++/*
++ * Version of secure_path() that accepts an open file descriptor to
++ * avoid races.
++ *
++ * Returns 0 on success and -1 on failure
++ */
++static int
++secure_filename(FILE *f, const char *file, struct passwd *pw,
++    char *err, size_t errlen)
++{
++	uid_t uid = pw->pw_uid;
++	char buf[MAXPATHLEN], homedir[MAXPATHLEN];
++	char *cp;
++	int comparehome = 0;
++	struct stat st;
 +
- dnl    Checks for library functions. Please keep in alphabetical order
- AC_CHECK_FUNCS([ \
- 	arc4random \
-@@ -4407,6 +4419,7 @@ echo "                   SELinux support
- echo "                 Smartcard support: $SCARD_MSG"
- echo "                     S/KEY support: $SKEY_MSG"
- echo "              TCP Wrappers support: $TCPW_MSG"
-+echo "     AuthorizedKeysCommand support: $AKC_MSG"
- echo "              MD5 password support: $MD5_MSG"
- echo "                   libedit support: $LIBEDIT_MSG"
- echo "  Solaris process contract support: $SPC_MSG"
++	/* check the open file to avoid races */
++	if (fstat(fileno(f), &st) < 0) {
++		snprintf(err, errlen, "cannot stat file %s: %s",
++		    buf, strerror(errno));
++		return -1;
++	}
++	return auth_secure_path(file, &st, pw->pw_dir, pw->pw_uid, err, errlen);
++}
++
+ static FILE *
+ auth_openfile(const char *file, struct passwd *pw, int strict_modes,
+     int log_missing, char *file_type)
+diff -up openssh-6.1p1/auth.h.akc openssh-6.1p1/auth.h
+--- openssh-6.1p1/auth.h.akc	2013-02-14 17:46:45.259546968 +0100
++++ openssh-6.1p1/auth.h	2013-02-14 17:46:45.274546903 +0100
+@@ -125,6 +125,10 @@ int	 auth_rhosts_rsa_key_allowed(struct
+ int	 hostbased_key_allowed(struct passwd *, const char *, char *, Key *);
+ int	 user_key_allowed(struct passwd *, Key *);
+ 
++struct stat;
++int	 auth_secure_path(const char *, struct stat *, const char *, uid_t,
++    char *, size_t);
++
+ #ifdef KRB5
+ int	auth_krb5(Authctxt *authctxt, krb5_data *auth, char **client, krb5_data *);
+ int	auth_krb5_tgt(Authctxt *authctxt, krb5_data *tgt);
 diff -up openssh-6.1p1/servconf.c.akc openssh-6.1p1/servconf.c
---- openssh-6.1p1/servconf.c.akc	2012-09-14 20:20:48.138443423 +0200
-+++ openssh-6.1p1/servconf.c	2012-09-14 20:27:34.546107295 +0200
-@@ -139,6 +139,8 @@ initialize_server_options(ServerOptions
+--- openssh-6.1p1/servconf.c.akc	2013-02-14 17:46:45.193547257 +0100
++++ openssh-6.1p1/servconf.c	2013-02-14 17:46:45.274546903 +0100
+@@ -137,6 +137,8 @@ initialize_server_options(ServerOptions
  	options->num_permitted_opens = -1;
  	options->adm_forced_command = NULL;
  	options->chroot_directory = NULL;
 +	options->authorized_keys_command = NULL;
-+	options->authorized_keys_command_runas = NULL;
++	options->authorized_keys_command_user = NULL;
  	options->zero_knowledge_password_authentication = -1;
  	options->revoked_keys_file = NULL;
  	options->trusted_user_ca_keys = NULL;
-@@ -334,6 +336,7 @@ typedef enum {
+@@ -331,6 +333,7 @@ typedef enum {
  	sZeroKnowledgePasswordAuthentication, sHostCertificate,
  	sRevokedKeys, sTrustedUserCAKeys, sAuthorizedPrincipalsFile,
  	sKexAlgorithms, sIPQoS, sVersionAddendum,
-+	sAuthorizedKeysCommand, sAuthorizedKeysCommandRunAs,
++	sAuthorizedKeysCommand, sAuthorizedKeysCommandUser,
+ 	sAuthenticationMethods,
  	sDeprecated, sUnsupported
  } ServerOpCodes;
- 
-@@ -461,6 +464,14 @@ static struct {
- 	{ "requiredauthentications2", sRequiredAuthentications2, SSHCFG_ALL },
+@@ -457,6 +460,9 @@ static struct {
+ 	{ "kexalgorithms", sKexAlgorithms, SSHCFG_GLOBAL },
  	{ "ipqos", sIPQoS, SSHCFG_ALL },
  	{ "versionaddendum", sVersionAddendum, SSHCFG_GLOBAL },
-+#ifdef WITH_AUTHORIZED_KEYS_COMMAND
 +	{ "authorizedkeyscommand", sAuthorizedKeysCommand, SSHCFG_ALL },
-+	{ "authorizedkeyscommandrunas", sAuthorizedKeysCommandRunAs, SSHCFG_ALL },
-+#else
-+	{ "authorizedkeyscommand", sUnsupported, SSHCFG_ALL },
-+	{ "authorizedkeyscommandrunas", sUnsupported, SSHCFG_ALL },
-+#endif
-+
++	{ "authorizedkeyscommandrunas", sAuthorizedKeysCommandUser, SSHCFG_ALL },
++	{ "authorizedkeyscommanduser", sAuthorizedKeysCommandUser, SSHCFG_ALL },
+ 	{ "authenticationmethods", sAuthenticationMethods, SSHCFG_ALL },
  	{ NULL, sBadOption, 0 }
  };
- 
-@@ -1532,6 +1543,24 @@ process_server_config_line(ServerOptions
+@@ -1520,6 +1526,26 @@ process_server_config_line(ServerOptions
  		}
  		return 0;
  
 +	case sAuthorizedKeysCommand:
 +		len = strspn(cp, WHITESPACE);
-+		if (*activep && options->authorized_keys_command == NULL)
++		if (*activep && options->authorized_keys_command == NULL) {
 +			options->authorized_keys_command = xstrdup(cp + len);
++			if (*options->authorized_keys_command != '/') {
++				fatal("%.200s line %d: AuthorizedKeysCommand "
++				    "must be an absolute path",
++				    filename, linenum);
++			}
++		}
 +		return 0;
 +
-+	case sAuthorizedKeysCommandRunAs:
-+		charptr = &options->authorized_keys_command_runas;
++	case sAuthorizedKeysCommandUser:
++		charptr = &options->authorized_keys_command_user;
 +
 +		arg = strdelim(&cp);
-+		if (!arg || *arg == '\0')
-+			fatal("%s line %d: missing account.",
-+			    filename, linenum);
-+
 +		if (*activep && *charptr == NULL)
 +			*charptr = xstrdup(arg);
 +		break;
@@ -330,52 +432,63 @@ diff -up openssh-6.1p1/servconf.c.akc openssh-6.1p1/servconf.c
  	case sDeprecated:
  		logit("%s line %d: Deprecated option %s",
  		    filename, linenum, arg);
-@@ -1682,6 +1711,8 @@ copy_set_server_options(ServerOptions *d
+@@ -1670,6 +1696,8 @@ copy_set_server_options(ServerOptions *d
  	M_CP_INTOPT(hostbased_uses_name_from_packet_only);
  	M_CP_INTOPT(kbd_interactive_authentication);
  	M_CP_INTOPT(zero_knowledge_password_authentication);
 +	M_CP_STROPT(authorized_keys_command);
-+	M_CP_STROPT(authorized_keys_command_runas);
++	M_CP_STROPT(authorized_keys_command_user);
  	M_CP_INTOPT(permit_root_login);
  	M_CP_INTOPT(permit_empty_passwd);
  
-@@ -1942,6 +1973,8 @@ dump_config(ServerOptions *o)
+@@ -1930,6 +1958,8 @@ dump_config(ServerOptions *o)
  	dump_cfg_string(sAuthorizedPrincipalsFile,
  	    o->authorized_principals_file);
  	dump_cfg_string(sVersionAddendum, o->version_addendum);
 +	dump_cfg_string(sAuthorizedKeysCommand, o->authorized_keys_command);
-+	dump_cfg_string(sAuthorizedKeysCommandRunAs, o->authorized_keys_command_runas);
++	dump_cfg_string(sAuthorizedKeysCommandUser, o->authorized_keys_command_user);
  
  	/* string arguments requiring a lookup */
  	dump_cfg_string(sLogLevel, log_level_name(o->log_level));
 diff -up openssh-6.1p1/servconf.h.akc openssh-6.1p1/servconf.h
---- openssh-6.1p1/servconf.h.akc	2012-09-14 20:20:48.000000000 +0200
-+++ openssh-6.1p1/servconf.h	2012-09-14 20:23:16.691844577 +0200
-@@ -169,6 +169,8 @@ typedef struct {
+--- openssh-6.1p1/servconf.h.akc	2013-02-14 17:46:45.194547252 +0100
++++ openssh-6.1p1/servconf.h	2013-02-14 17:46:45.275546898 +0100
+@@ -167,6 +167,8 @@ typedef struct {
  	char   *revoked_keys_file;
  	char   *trusted_user_ca_keys;
  	char   *authorized_principals_file;
 +	char   *authorized_keys_command;
-+	char   *authorized_keys_command_runas;
++	char   *authorized_keys_command_user;
  
  	char   *version_addendum;	/* Appended to SSH banner */
- }       ServerOptions;
-diff -up openssh-6.1p1/sshd_config.akc openssh-6.1p1/sshd_config
---- openssh-6.1p1/sshd_config.akc	2012-07-31 04:21:34.000000000 +0200
-+++ openssh-6.1p1/sshd_config	2012-09-14 20:30:46.950095769 +0200
-@@ -49,6 +49,9 @@
- # but this is overridden so installations will only check .ssh/authorized_keys
- AuthorizedKeysFile	.ssh/authorized_keys
  
-+#AuthorizedKeysCommand none
-+#AuthorizedKeysCommandRunAs nobody
+diff -up openssh-6.1p1/sshd.c.akc openssh-6.1p1/sshd.c
+--- openssh-6.1p1/sshd.c.akc	2013-02-14 17:46:45.270546920 +0100
++++ openssh-6.1p1/sshd.c	2013-02-14 17:46:45.276546894 +0100
+@@ -366,9 +366,20 @@ main_sigchld_handler(int sig)
+ static void
+ grace_alarm_handler(int sig)
+ {
++	pid_t pgid;
 +
- #AuthorizedPrincipalsFile none
+ 	if (use_privsep && pmonitor != NULL && pmonitor->m_pid > 0)
+ 		kill(pmonitor->m_pid, SIGALRM);
  
- # For this to work you will also need host keys in /etc/ssh/ssh_known_hosts
++	/*
++	 * Try to kill any processes that we have spawned, E.g. authorized
++	 * keys command helpers.
++	 */
++	if ((pgid = getpgid(0)) == getpid()) {
++		signal(SIGTERM, SIG_IGN);
++		killpg(pgid, SIGTERM);
++	}
++
+ 	/* Log error and exit. */
+ 	sigdie("Timeout before authentication for %s", get_remote_ipaddr());
+ }
 diff -up openssh-6.1p1/sshd_config.0.akc openssh-6.1p1/sshd_config.0
 --- openssh-6.1p1/sshd_config.0.akc	2012-08-29 02:53:04.000000000 +0200
-+++ openssh-6.1p1/sshd_config.0	2012-09-14 20:32:23.539624859 +0200
++++ openssh-6.1p1/sshd_config.0	2013-02-14 17:46:45.276546894 +0100
 @@ -71,6 +71,23 @@ DESCRIPTION
  
               See PATTERNS in ssh_config(5) for more information on patterns.
@@ -411,38 +524,39 @@ diff -up openssh-6.1p1/sshd_config.0.akc openssh-6.1p1/sshd_config.0
               GatewayPorts, GSSAPIAuthentication, HostbasedAuthentication,
               HostbasedUsesNameFromPacketOnly, KbdInteractiveAuthentication,
 diff -up openssh-6.1p1/sshd_config.5.akc openssh-6.1p1/sshd_config.5
---- openssh-6.1p1/sshd_config.5.akc	2012-09-14 20:20:48.142443448 +0200
-+++ openssh-6.1p1/sshd_config.5	2012-09-14 20:29:56.003873873 +0200
-@@ -151,6 +151,19 @@ See
- in
- .Xr ssh_config 5
- for more information on patterns.
+--- openssh-6.1p1/sshd_config.5.akc	2013-02-14 17:46:45.195547248 +0100
++++ openssh-6.1p1/sshd_config.5	2013-02-14 17:46:45.277546890 +0100
+@@ -173,6 +173,20 @@ Note that each authentication method lis
+ in the configuration.
+ The default is not to require multiple authentication; successful completion
+ of a single authentication method is sufficient.
 +.It Cm AuthorizedKeysCommand
-+Specifies a program to be used for lookup of the user's
-+public keys.  The program will be invoked with its first
-+argument the name of the user being authorized, and should produce
-+on standard output AuthorizedKeys lines (see AUTHORIZED_KEYS
-+in sshd(8)).  By default (or when set to the empty string) there is no
-+AuthorizedKeysCommand run.  If the AuthorizedKeysCommand does not successfully
-+authorize the user, authorization falls through to the
-+AuthorizedKeysFile.  Note that this option has an effect
-+only with PubkeyAuthentication turned on.
-+.It Cm AuthorizedKeysCommandRunAs
-+Specifies the user under whose account the AuthorizedKeysCommand is run. Empty
-+string (the default value) means the user being authorized is used.
++Specifies a program to be used for lookup of the user's public keys.
++The program will be invoked with a single argument of the username
++being authenticated, and should produce on standard output zero or
++more lines of authorized_keys output (see AUTHORIZED_KEYS in
++.Xr sshd 8 )
++If a key supplied by AuthorizedKeysCommand does not successfully authenticate
++and authorize the user then public key authentication continues using the usual
++.Cm AuthorizedKeysFile
++files.
++By default, no AuthorizedKeysCommand is run.
++.It Cm AuthorizedKeysCommandUser
++Specifies the user under whose account the AuthorizedKeysCommand is run.
++The default is the user being authenticated.
  .It Cm AuthorizedKeysFile
  Specifies the file that contains the public keys that can be used
  for user authentication.
-@@ -712,6 +725,8 @@ Available keywords are
+@@ -734,6 +748,8 @@ Available keywords are
  .Cm AllowTcpForwarding ,
  .Cm AllowUsers ,
- .Cm AuthorizedKeysFile ,
+ .Cm AuthenticationMethods ,
 +.Cm AuthorizedKeysCommand ,
-+.Cm AuthorizedKeysCommandRunAs ,
++.Cm AuthorizedKeysCommandUser ,
+ .Cm AuthorizedKeysFile ,
  .Cm AuthorizedPrincipalsFile ,
  .Cm Banner ,
- .Cm ChrootDirectory ,
-@@ -726,6 +741,7 @@ Available keywords are
+@@ -749,6 +765,7 @@ Available keywords are
  .Cm KerberosAuthentication ,
  .Cm MaxAuthTries ,
  .Cm MaxSessions ,
@@ -450,3 +564,16 @@ diff -up openssh-6.1p1/sshd_config.5.akc openssh-6.1p1/sshd_config.5
  .Cm PasswordAuthentication ,
  .Cm PermitEmptyPasswords ,
  .Cm PermitOpen ,
+diff -up openssh-6.1p1/sshd_config.akc openssh-6.1p1/sshd_config
+--- openssh-6.1p1/sshd_config.akc	2012-07-31 04:21:34.000000000 +0200
++++ openssh-6.1p1/sshd_config	2013-02-14 17:46:45.277546890 +0100
+@@ -49,6 +49,9 @@
+ # but this is overridden so installations will only check .ssh/authorized_keys
+ AuthorizedKeysFile	.ssh/authorized_keys
+ 
++#AuthorizedKeysCommand none
++#AuthorizedKeysCommandUser nobody
++
+ #AuthorizedPrincipalsFile none
+ 
+ # For this to work you will also need host keys in /etc/ssh/ssh_known_hosts

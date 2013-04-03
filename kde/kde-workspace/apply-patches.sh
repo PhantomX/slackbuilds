@@ -38,12 +38,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.2-displayEvents_de
 # Mandriva
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.71-notify_color_changes.patch
 
-# revert patch adding broken browser launcher
-# https://projects.kde.org/projects/kde/kde-workspace/repository/revisions/2bbbbdd8fe5a38ae27bab44c9515b2ba78f75277
-# https://bugzilla.redhat.com/show_bug.cgi?id=747982
-# https://bugs.kde.org/show_bug.cgi?id=284628
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.7.2-bz\#747982-launchers.patch
-
 # add ktp_presence applet to default systray
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systray_ktp_presence.patch
 
@@ -69,16 +63,8 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
 fi
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rc6ccec336987780358d316351cab4b6b77c506e2.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r15b5220cefc53321a3f82035ecc1399761595ed7.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r82ee44dd5adfef655a685d657fcc8b518ce3f590.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r20239fd28c5929a5b2f211666a7b2b93ff9e1133.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rf40d7a41e78bf229e2a7fa7d921e77157dc01ac8.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r569f79c60f8fd2b3e655433c2c53f840b4c103e9.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r4803296de2a11a1712e1c3cb77500ffc261c3945.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r95aa474fa6a14248d37022b1894b27b28c6173cd.diff 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rf41d5f969b94d3bafea56f9fcfc7db5e5d1e3f5f.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rbbb408803965c70fc2cdadadbc08f17bce4cfade.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-Allow-Rich-Text-in-QML-notifications-plasmoid-Allow-.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r3d8959ab5c3934cbc49b07b62b7ff51b1c44698c.diff
 
 ## plasma active patches
 

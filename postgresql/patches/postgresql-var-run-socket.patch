@@ -1,0 +1,91 @@
+Change the built-in default socket directory to be /var/run/postgresql.
+For backwards compatibility with (probably non-libpq-based) clients that
+might still expect to find the socket in /tmp, also create a socket in
+/tmp.  This is to resolve communication problems with clients operating
+under systemd's PrivateTmp environment, which won't be using the same
+global /tmp directory as the server; see bug #825448.
+
+Note that we apply the socket directory change at the level of the
+hard-wired defaults in the C code, not by just twiddling the setting in
+postgresql.conf.sample; this is so that the change will take effect on
+server package update, without requiring any existing postgresql.conf
+to be updated.  (Of course, a user who dislikes this behavior can still
+override it via postgresql.conf.)
+
+This patch must be applied after postgresql-multi-sockets.patch, at
+least until 9.3 when that will be part of the upstream package.
+
+
+diff -Naur postgresql-9.2.2.sockets/contrib/pg_upgrade/test.sh postgresql-9.2.2/contrib/pg_upgrade/test.sh
+--- postgresql-9.2.2.sockets/contrib/pg_upgrade/test.sh	2013-01-03 17:33:45.581567466 -0500
++++ postgresql-9.2.2/contrib/pg_upgrade/test.sh	2013-01-03 17:40:22.923364917 -0500
+@@ -78,6 +78,12 @@
+ rm -rf "$logdir"
+ mkdir "$logdir"
+ 
++# we want the Unix sockets in $temp_root
++PGHOST=$temp_root
++export PGHOST
++
++POSTMASTER_OPTS="$POSTMASTER_OPTS -c unix_socket_directories='$PGHOST'"
++
+ # enable echo so the user can see what is being executed
+ set -x
+ 
+diff -Naur postgresql-9.2.2.sockets/src/backend/utils/misc/guc.c postgresql-9.2.2/src/backend/utils/misc/guc.c
+--- postgresql-9.2.2.sockets/src/backend/utils/misc/guc.c	2013-01-03 17:37:56.632977951 -0500
++++ postgresql-9.2.2/src/backend/utils/misc/guc.c	2013-01-03 17:38:30.183271588 -0500
+@@ -2901,7 +2901,7 @@
+ 		},
+ 		&Unix_socket_directories,
+ #ifdef HAVE_UNIX_SOCKETS
+-		DEFAULT_PGSOCKET_DIR,
++		DEFAULT_PGSOCKET_DIR ", /tmp",
+ #else
+ 		"",
+ #endif
+diff -Naur postgresql-9.2.2.sockets/src/bin/initdb/initdb.c postgresql-9.2.2/src/bin/initdb/initdb.c
+--- postgresql-9.2.2.sockets/src/bin/initdb/initdb.c	2013-01-03 17:37:56.633977974 -0500
++++ postgresql-9.2.2/src/bin/initdb/initdb.c	2013-01-03 17:38:30.185271611 -0500
+@@ -1007,7 +1007,7 @@
+ 
+ #ifdef HAVE_UNIX_SOCKETS
+ 	snprintf(repltok, sizeof(repltok), "#unix_socket_directories = '%s'",
+-			 DEFAULT_PGSOCKET_DIR);
++			 DEFAULT_PGSOCKET_DIR ", /tmp");
+ #else
+ 	snprintf(repltok, sizeof(repltok), "#unix_socket_directories = ''");
+ #endif
+diff -Naur postgresql-9.2.2.sockets/src/include/pg_config_manual.h postgresql-9.2.2/src/include/pg_config_manual.h
+--- postgresql-9.2.2.sockets/src/include/pg_config_manual.h	2012-12-03 15:16:10.000000000 -0500
++++ postgresql-9.2.2/src/include/pg_config_manual.h	2013-01-03 17:38:30.185271611 -0500
+@@ -144,7 +144,7 @@
+  * here's where to twiddle it.  You can also override this at runtime
+  * with the postmaster's -k switch.
+  */
+-#define DEFAULT_PGSOCKET_DIR  "/tmp"
++#define DEFAULT_PGSOCKET_DIR  "/var/run/postgresql"
+ 
+ /*
+  * The random() function is expected to yield values between 0 and
+diff -Naur postgresql-9.2.2.sockets/src/test/regress/pg_regress.c postgresql-9.2.2/src/test/regress/pg_regress.c
+--- postgresql-9.2.2.sockets/src/test/regress/pg_regress.c	2012-12-03 15:16:10.000000000 -0500
++++ postgresql-9.2.2/src/test/regress/pg_regress.c	2013-01-03 17:38:30.186271622 -0500
+@@ -772,7 +772,7 @@
+ 		if (hostname != NULL)
+ 			doputenv("PGHOST", hostname);
+ 		else
+-			unsetenv("PGHOST");
++			doputenv("PGHOST", "/tmp");
+ 		unsetenv("PGHOSTADDR");
+ 		if (port != -1)
+ 		{
+@@ -2246,7 +2246,7 @@
+ 		 */
+ 		header(_("starting postmaster"));
+ 		snprintf(buf, sizeof(buf),
+-				 SYSTEMQUOTE "\"%s/postgres\" -D \"%s/data\" -F%s -c \"listen_addresses=%s\" > \"%s/log/postmaster.log\" 2>&1" SYSTEMQUOTE,
++				 SYSTEMQUOTE "\"%s/postgres\" -D \"%s/data\" -F%s -c \"listen_addresses=%s\" -c \"unix_socket_directories=/tmp\" > \"%s/log/postmaster.log\" 2>&1" SYSTEMQUOTE,
+ 				 bindir, temp_install,
+ 				 debug ? " -d 5" : "",
+ 				 hostname ? hostname : "",

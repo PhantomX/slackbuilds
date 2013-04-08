@@ -14,15 +14,18 @@ patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-304121.patch
 
 # Fedora specific patches
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
+[ "${ARCH}" = "x86_64" ] || patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-928353.patch
 
 # OpenSUSE
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/toolkit-download-folder.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-nongnome-proxies.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-gstreamer-760140.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-gstreamer-1.patch
 
 # Upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-791626.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-239254.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-844883.patch
 
 # OpenSuse kde integration support
 if [ "${SB_KDE}" = "YES" ] ;then

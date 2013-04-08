@@ -252,6 +252,9 @@ ApplyPatch 0002-KVM-x86-fix-for-buffer-overflow-in-handling-of-MSR_K.patch
 #CVE-2013-1797 rhbz 917013 923967
 ApplyPatch 0003-KVM-x86-Convert-MSR_KVM_SYSTEM_TIME-to-use-gfn_to_hv.patch
 
+#rhbz 927469
+ApplyPatch fix-child-thread-introspection.patch
+
 # https://bugzilla.novell.com/show_bug.cgi?id=806966
 ApplyPatch e1000e-fix-accessing-to-suspended-device.patch
 ApplyPatch e1000e-fix-runtime-power-management-transitions.patch

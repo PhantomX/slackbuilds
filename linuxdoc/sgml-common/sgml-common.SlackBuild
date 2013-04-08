@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ sgml-common.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008, 2009, 2010, 2011 Phantom X, Goiania, Brazil.
+# Copyright 2008-2013 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -44,10 +44,11 @@ NAME=sgml-common
 PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-0.6.3}
+XMLXSDVER=${XMLXSDVER:-2009/01}
 ARCH=noarch
 SLKTARGET=${SLKTARGET:-i486}
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/linuxdoc/${NAME}
@@ -57,20 +58,31 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
+DOWNDIR=${CWD}/updates
+
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tgz
+USRCARCHIVES="xml.dcl xml.soc html.dcl html.soc"
+XSDSRCARCHIVE=xml.xsd
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
 DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+XSDDL_URL="http://www.w3.org/${XMLXSDVER}/${XSDSRCARCHIVE}"
 FEDORADIST=fedora-dist.sh
 FEDORABRANCH=${FEDORABRANCH:-devel}
 
 # if source is not present, download in source rootdir if possible
-#test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
 test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${FEDORADIST} ${NAME} ${FEDORABRANCH} ${SRCARCHIVE} || exit 1
+mkdir -p ${DOWNDIR}
+( cd ${DOWNDIR} || exit 1
+  for file in ${USRCARCHIVES} ;do
+    test -r ${file} || sh ${CWD}/${FEDORADIST} ${NAME} ${FEDORABRANCH} ${file} || exit 1
+  done
+  test -r ${XSDSRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${XSDDL_URL} || exit 1
+) || exit $?
 
 if [ -d ${PKG} ]; then
   # Clean up a previous build
@@ -85,12 +97,16 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-autoreconf -ivf || exit 1
+# replace bogus links with files
+automakedir=$(ls -1d /usr/share/automake* | head -n +1)
+for file in COPYING INSTALL install-sh missing mkinstalldirs; do
+  rm -f ${file}
+  cp -p ${automakedir}/${file} .
+done
 
 ./configure \
   --prefix=/usr \
@@ -98,7 +114,6 @@ autoreconf -ivf || exit 1
   --localstatedir=/var/lib \
   --infodir=/usr/info \
   --mandir=/usr/man \
-  --with-docdir=/usr/doc/${NAME}-${VERSION} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make install DESTDIR="${PKG}" htmldir="/usr/doc/${NAME}-${VERSION}/html" INSTALL='install -p' || exit 1
@@ -110,6 +125,15 @@ touch ${PKG}/etc/sgml/catalog
 # Create an empty XML catalog.
 XMLCATALOG=${PKG}/etc/xml/catalog
 /usr/bin/xmlcatalog --noout --create ${XMLCATALOG} || exit 1
+
+for type in system uri ; do
+  for path in 2001 ${XMLXSDVER} ; do
+    /usr/bin/xmlcatalog --noout --add ${type} \
+    "http://www.w3.org/${path}/xml.xsd" \
+    "file:///usr/share/xml/xml.xsd" ${XMLCATALOG} || exit 1
+  done
+done
+
 # Now put the common DocBook entries in it
 /usr/bin/xmlcatalog --noout --add "delegatePublic" \
   "-//OASIS//ENTITIES DocBook XML" \
@@ -133,10 +157,11 @@ ln -sf ../../../../etc/sgml/docbook/xmlcatalog \
   ${PKG}/usr/share/sgml/docbook/xmlcatalog || exit 1
 
 rm -f ${PKG}/usr/share/sgml/xml.dcl
-for file in xml.dcl xml.soc html.dcl html.soc ;do
-  zcat ${CWD}/updates/${file}.gz > ${PKG}/usr/share/sgml/${file} || exit 1
+for file in ${USRCARCHIVES} ;do
+  install -pm0644 ${DOWNDIR}/${file} ${PKG}/usr/share/sgml/${file} || exit 1
 done
 rm -rf ${PKG}/usr/share/xml/*
+install -p -m0644 ${DOWNDIR}/${XSDSRCARCHIVE} ${PKG}/usr/share/xml || exit 1
 
 mv ${PKG}/etc/sgml/sgml.conf ${PKG}/etc/sgml/sgml.conf.new || exit 1
 mv ${PKG}/etc/sgml/catalog ${PKG}/etc/sgml/catalog.new || exit 1
@@ -177,7 +202,6 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -194,34 +218,59 @@ config() {
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
+
+mkdir -p ${PKG}/var/log/setup
+cat > ${PKG}/var/log/setup/setup.10.${NAME} <<'EOF'
+#!/bin/sh
+#BLURB="Updates stylesheets catalog with sgml-common"
+EOF
+
+for file in ${PKG}/install/doinst.sh ${PKG}/var/log/setup/setup.10.${NAME} ;do
+cat >> ${file} <<'EOF'
+if [ -d etc/xml ] && [ -x usr/bin/xmlcatalog ] ;then
+  catcmd='chroot . /usr/bin/xmlcatalog --noout'
+
+  for type in system uri ; do
+    for path in 2001 _XMLXSDVER_ ; do
+      ${catcmd} --add ${type} \
+        "http://www.w3.org/${path}/xml.xsd" \
+        "file:///usr/share/xml/xml.xsd" \
+        /etc/xml/catalog
+    done
+  done
+fi
+EOF
+sed -i -e "s|_XMLXSDVER_|${XMLXSDVER}|g" ${file}
+done
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/{patches,updates}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/${FEDORADIST} ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${FEDORADIST} ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
-  install -m0644 ${CWD}/patches/*.gz \
-                 ${SBDIR}/patches/
-  install -m0644 ${CWD}/updates/*.gz \
-                 ${SBDIR}/updates/
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${CWD}/patches
 fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

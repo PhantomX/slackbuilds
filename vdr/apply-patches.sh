@@ -52,6 +52,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.7.38-mainmenuhooks101.pa
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.7.21-timercmd.patch
 #patch -p1 -E --backup --verbose -i ${DOWNDIR}/${EPSRCARCHIVE06}
 #zcat ${DOWNDIR}/${EPSRCARCHIVE07} | patch -p1 -E --backup --verbose
+# http://www.linuxtv.org/pipermail/vdr/2013-April/027668.html
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-2.0.0-fixkeeptracksinit.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.7.37-fedora-pkgconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vdr-1.7.21-jumpplay-finnish.patch
 #patch -p1 -F 3 -E --backup --verbose -i ${DOWNDIR}/${EPSRCARCHIVE08}

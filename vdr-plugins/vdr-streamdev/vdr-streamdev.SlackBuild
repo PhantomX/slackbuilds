@@ -41,11 +41,18 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
+SNAPBUILD=${SNAPBUILD:-YES}
+
 PNAME=streamdev
 NAME=vdr-${PNAME}
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.6.0}
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+  SNAPBRANCH=${SNAPBRANCH:-master}
+else
+  VERSION=${VERSION:-0.6.0}
+fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -69,17 +76,33 @@ grep --quiet '^vdr:' /etc/passwd && SB_HUSER=1
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${PNAME}-${VERSION}
-SRCARCHIVE=${NAME}-${VERSION}.tgz
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  SRCDIR=${NAME}-${VERSION}
+  SRCARCHIVE=${SRCDIR}.tar.xz
+else
+  SRCDIR=${PNAME}-${VERSION}
+  SRCARCHIVE=${NAME}-${VERSION}.tgz
+fi
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="http://projects.vdr-developer.org/projects/plg-streamdev/files"
-
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
+export snapbranch=${SNAPBRANCH}
+  
 # if source is not present, download in source rootdir if possible, or in /tmp
-if ! test -r ${SRCARCHIVE}; then
-  echo "Download ${SRCARCHIVE} at ${DL_URL}" && exit 1
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+elif ! test -r ${CWD}/${SRCARCHIVE} ;then
+  link="$(lynx -nonumbers -dump ${DL_URL} | fgrep 'download/' | grep "${SRCARCHIVE}$" | head -n1)"
+  ${DL_PROG} ${DL_OPTS} ${link} -O ${CWD}/${SRCARCHIVE} || exit 1
+fi
+
+if ! test -s ${CWD}/${SRCARCHIVE} ;then
+  echo "Delete ${CWD}/${SRCARCHIVE} and try again."
+  exit 1
 fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -128,29 +151,19 @@ fi
 sed -i -e "s|VDRCONFDIR/plugins|${vdr_configdir}/plugins|g" \
   streamdev-server/externremux.sh || exit 1
 
-sed -i -e '/^DEFINES  +=/s|$| -Wno-error=overloaded-virtual|g' Makefile || exit 1
-
 export CFLAGS="${SLKCFLAGS}"
 export CXXFLAGS="${SLKCFLAGS}"
 
-make -j${NJOBS} \
-  AUTOCONFIG=0 \
-  LIBDIR=. \
-  LOCALEDIR=./locale \
-  VDRDIR=${vdr_libdir} all || exit $?
+unset VERSION
 
-mkdir -p ${PKG}/${vdr_plugindir}
-install -pm 0755 {client,server}/libvdr-*.so.${vdr_apiversion} \
-  ${PKG}/${vdr_plugindir}/ || exit $?
+make -j${NJOBS} || make || exit $?
+make install DESTDIR=${PKG} || exit $?
 
 mkdir -p ${PKG}/${vdr_configdir}/plugins/${PNAME}
 install -pm 0644 streamdev-server/streamdevhosts.conf \
   ${PKG}/${vdr_configdir}/plugins/${PNAME}/streamdevhosts.conf.new || exit 1
 install -pm 0755 streamdev-server/externremux.sh \
   ${PKG}/${vdr_configdir}/plugins/${PNAME}/externremux.sh.new || exit 1
-
-mkdir -p ${PKG}/usr/share/locale
-cp -pR {client,server}/locale/* ${PKG}/usr/share/locale/ || exit $?
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -231,7 +244,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -pm0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${SNAPUPDATE} ${SBDIR}/
   install -pm0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -pm0644 ${CWD}/patches/*.* \

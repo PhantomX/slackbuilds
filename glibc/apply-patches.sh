@@ -81,13 +81,11 @@ ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 # master
 ApplyPatch 0001-BZ-14317-Optimze-__xpg_strerror_r.patch
-ApplyPatch 0001-Add-new-defines-from-Linux-3.7-to-netinet-tcp.h.patch
 ApplyPatch 0002-Add-values-from-Linux-3.7-to-elf.h.patch
 ApplyPatch 0001-Fix-casinh-casin-inaccuracy-from-cancellation-bug-14.patch
 ApplyPatch 0001-Fix-localedef-posix-description.patch
 ApplyPatch 0001-Fix-casinh-casin-overflow-bug-14996.patch
 ApplyPatch 0001-BZ-14985-Remove-erroneous-EPOLL_NONBLOCK.patch
-ApplyPatch 0001-Add-MSG_FASTOPEN.patch
 ApplyPatch 0001-Implement-x86-SIZE32-SIZE64-relocations.patch
 ApplyPatch 0001-Fix-cacos-real-part-inaccuracy-for-result-real-part-.patch
 ApplyPatch 0001-Make-bits-wchar.h-correct-for-all-architectures-bug-.patch
@@ -99,5 +97,13 @@ ApplyPatch 0001-BZ-14812-Add-missing-translation-marker-on-some-argp.patch
 ApplyPatch 0001-BZ-14812-Add-missing-N_-markers-in-localedef.patch
 ApplyPatch 0001-BZ-11120-fix-x86_64-strcmp.S-NOT_IN_libc-safeguards.patch
 ApplyPatch 0002-BZ-13889-expl-709.75-wrongly-overflows-for-ldbl-128i.patch
+
+# From Arch
+# combination of upstream commits 318cd0b, b540704 and fc1abbe
+ApplyPatch glibc-2.17-sync-with-linux37.patch
+# CVE-2013-1914 - upstream commit 1cef1b19
+ApplyPatch glibc-2.17-getaddrinfo-stack-overflow.patch
+# CVE-2013-0242 - upstream commit a445af0b
+ApplyPatch glibc-2.17-regexp-matcher-overrun.patch
 
 set +e +o pipefail

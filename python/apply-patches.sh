@@ -8,16 +8,15 @@ zcat ${SB_PATCHDIR}/${NAME}.readline.set_pre_input_hook.diff.gz | patch -p1 --ve
 
 # From Gentoo
 for patches in \
-  05_all_verbose_building_of_extensions.patch \
-  06_all_non-zero_exit_status_on_failure.patch \
-  21_all_distutils_c++.patch \
+  05_all_Non_zero_exit_status_on_extension_build_failure.patch \
+  07_all_C___compilation_for_distutils.patch \
   ;do
-  patch -p0 --backup --verbose -i ${PVER}/${patches}
+  patch -p1 --backup --verbose -i ${PVER}/${patches}
 done
 
 if [ "${ARCH}" = "x86_64" ]; then
   # Install to lib64 instead of lib:
-  patch -p1 -E --backup -z .lib64 --verbose -i ${SB_PATCHDIR}/python-2.7rc1-lib64-slk.patch
+  patch -p1 -E --backup -z .lib64 --verbose -i ${SB_PATCHDIR}/python-2.7.3-lib64-slk.patch
   patch -p1 -E --backup -z .lib64 --verbose -i ${SB_PATCHDIR}/python-2.7-lib64-sysconfig.patch
   # Python must report /usr/lib64/python2.6/site-packages as python_lib_dir:
   zcat ${SB_PATCHDIR}/${NAME}.pure64.diff.gz |  patch -p1 --verbose
@@ -27,17 +26,16 @@ fi
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-config.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.5-cflags.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.5.1-plural-fix.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.5.1-sqlite-encoding.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.1-sqlite-encoding.patch
 # Add various constants to the socketmodule:
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-socketmodule-constants.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-socketmodule-constants2.patch
-zcat ${SB_PATCHDIR}/${NAME}-2.6-rpath.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.6-rpath.patch
 zcat ${SB_PATCHDIR}/python-2.6.4-distutils-rpath.patch.gz | patch -p1 -E --backup --verbose
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7-db51.diff
-sed -i -e 's|/usr/include/db4|/usr/include/db51|g' setup.py
+sed -i -e 's|/usr/include/db4|/usr/include/db5|g' setup.py
 
-zcat ${SB_PATCHDIR}/python-2.3.4-lib64-regex.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00101-lib64-regex.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00111-no-static-lib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00113-more-configuration-flags.patch
 # Add flags for statvfs.f_flag to the constant list in posixmodule (i.e. "os")
@@ -69,10 +67,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00147-add-debug-malloc-stats.p
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00156-gdb-autoload-safepath.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00166-fix-fake-repr-in-gdb-hooks.patch
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00157-uid-gid-overflows.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00158-fix-hashlib-leak.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
 
 set +e +o pipefail

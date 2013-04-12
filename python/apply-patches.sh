@@ -68,6 +68,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00156-gdb-autoload-safepath.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00166-fix-fake-repr-in-gdb-hooks.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00169-avoid-implicit-usage-of-md5-in-multiprocessing.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00175-fix-configure-Wformat.patch
 
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
 

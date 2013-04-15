@@ -14,5 +14,6 @@ fi
 [ "${SB_HS}" = "YES" ] && patch -p0 -E --backup -z .hiscore --verbose -i ${HSSRCARCHIVE}.diff
 
 patch -p0 -E --backup -z .nogconf --verbose -i ${SB_PATCHDIR}/sdlmame-nogconf.patch
+patch -p0 -E --backup -z .inline --verbose -i ${SB_PATCHDIR}/sdlmame-inline.patch
 
 set +e +o pipefail

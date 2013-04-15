@@ -21,8 +21,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autofs-5.0.6-respect-user-flag
 # Upstream reference: http://thread.gmane.org/gmane.linux.kernel.autofs/5371
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/autofs-5.0.5-fix-install-deadlink.patch
 # Upstream reference: http://thread.gmane.org/gmane.linux.kernel.autofs/6039
-# Disable LDAP specific code if USE="-ldap", let's see what upstream says...
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/autofs-5.0.5-fix-building-without-ldap.patch
 # https://bugs.gentoo.org/show_bug.cgi?id=361899
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/autofs-5.0.5-add-missing-endif-HAVE_SASL-in-modules-lookup_ldap.c.patch
 # https://bugs.gentoo.org/show_bug.cgi?id=381315

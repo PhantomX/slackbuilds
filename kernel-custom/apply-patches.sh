@@ -220,9 +220,6 @@ ApplyPatch Input-add-support-for-Cypress-PS2-Trackpads.patch
 #rhbz 903192
 ApplyPatch 0001-kmsg-Honor-dmesg_restrict-sysctl-on-dev-kmsg.patch
 
-#rhbz 914737
-ApplyPatch x86-mm-Fix-vmalloc_fault-oops-during-lazy-MMU-updates.patch
-
 #rhbz 916544
 ApplyPatch 0001-drivers-crypto-nx-fix-init-race-alignmasks-and-GCM-b.patch
 
@@ -254,6 +251,9 @@ ApplyPatch 0003-KVM-x86-Convert-MSR_KVM_SYSTEM_TIME-to-use-gfn_to_hv.patch
 
 #rhbz 927469
 ApplyPatch fix-child-thread-introspection.patch
+
+#rhbz 947539
+ApplyPatch md-raid1-10-Handle-REQ_WRITE_SAME-flag-in-write-bios.patch
 
 # https://bugzilla.novell.com/show_bug.cgi?id=806966
 ApplyPatch e1000e-fix-accessing-to-suspended-device.patch

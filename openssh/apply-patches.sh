@@ -36,12 +36,8 @@ ApplyPatch openssh-5.8p1-getaddrinfo.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1889
 ApplyPatch openssh-5.8p1-packet.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1641 (WONTFIX)
-######ApplyPatch openssh-6.1p1-role-mls.patch
-# https://bugzilla.mindrot.org/show_bug.cgi?id=1663
-#######ApplyPatch openssh-6.1p1-akc.patch
+ApplyPatch openssh-6.2p1-role-mls.patch
 sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.2p1-ldap.patch | patch -p1 -E --backup --verbose
-# https://bugzilla.mindrot.org/show_bug.cgi?id=1668
-#ApplyPatch openssh-5.9p1-keygen.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1644
 ApplyPatch openssh-5.2p1-allow-ip-opts.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1701
@@ -75,6 +71,8 @@ ApplyPatch openssh-6.2p1-ctr-cavstest-slk.patch
 # obsolete RequiredAuthentications options
 ApplyPatch openssh-6.2p1-required-authentications.patch
 ApplyPatch openssh-6.2p1-modpipe-cflags.patch
+# https://bugzilla.mindrot.org/show_bug.cgi?id=2084
+ApplyPatch openssh-6.2p1-track-IdentifyFile.patch
 
 set +e +o pipefail
 

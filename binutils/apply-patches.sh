@@ -21,5 +21,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-as-doc-te
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-revert-pr15149.patch
 # Fix addr2line to use the dynamic symbol table if it could not find any ordinary symbols.
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-addr2line-dynsymtab.patch
+# Check regular references without non-GOT references when building shared libraries.
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-check-regular-ifunc-refs.patch
 
 set +e +o pipefail

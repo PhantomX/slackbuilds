@@ -62,6 +62,13 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 
 # Branch upstream
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc258d2c311f88d2fd8dc462bbb1c3d6c822101ae.diff
+# revert these commits for
+#https://bugs.kde.org/315578
+# for now, causes regression,
+#https://bugs.kde.org/317138
+patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-not-break.-copy-paste-error.patch
+patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/coding-style-fixes.patch
+patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-application-icons-properly.patch
 
 # Trunk patches
 

@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ## Most patches are from Fedora
-patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.1-redhat_startkde.patch
+patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.2-redhat_startkde.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.90-plasma_konsole.patch
 # 441062: packagekit tools do not show icons correctly on KDE
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.80-krdb.patch
@@ -24,8 +24,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-classicmenu-log
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-kdm_plymouth081.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-xsession_errors_O_APPEND.patch
-# multilib QT_PLUGIN_PATH, http://bugzilla.redhat.com/704840
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.90-multilib_qt_plugin_path.patch
 # HALsectomy
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-no_HAL.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.90-no_HAL2.patch
@@ -65,6 +63,8 @@ fi
 ## upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-Allow-Rich-Text-in-QML-notifications-plasmoid-Allow-.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r3d8959ab5c3934cbc49b07b62b7ff51b1c44698c.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.10.2-clear-screenlocker-password-on-esc.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r45f568cf69334a564f6d31b4ca46f26dcb076046.diff
 
 ## plasma active patches
 

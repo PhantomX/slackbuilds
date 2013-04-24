@@ -26,6 +26,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.14.4-libdb5.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.14.4-sasl2-in-etc.patch
 # add QoS support, patch from Philip Prindeville <philipp@fedoraproject.org>
 # upstream reserved option ID 0xe7 for testing of this new feature, #576643
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.14.5-qos-slk.patch
+sed -e "s|\`/run/|\`/var/run/|g" ${SB_PATCHDIR}/${NAME}-8.14.7-qos.patch \
+  | patch -p1 -E --backup --verbose
 
 set +e +o pipefail

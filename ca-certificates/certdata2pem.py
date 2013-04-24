@@ -4,6 +4,7 @@
 # certdata2pem.py - splits certdata.txt into multiple files
 #
 # Copyright (C) 2009 Philipp Kern <pkern@debian.org>
+# Copyright (C) 2013 Kai Engert <kaie@redhat.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,6 +29,9 @@ import textwrap
 import urllib
 
 objects = []
+
+def printable_serial(obj):
+  return ".".join(map(lambda x:str(ord(x)), obj['CKA_SERIAL_NUMBER']))
 
 # Dirty file parser.
 in_data, in_multiline, in_obj = False, False, False
@@ -85,18 +89,18 @@ trustmap = dict()
 for obj in objects:
     if obj['CKA_CLASS'] != 'CKO_NSS_TRUST':
         continue
-    label = obj['CKA_LABEL']
-    trustmap[label] = obj
-    print " added trust", label
+    key = obj['CKA_LABEL'] + printable_serial(obj)
+    trustmap[key] = obj
+    print " added trust", key
 
 # Build up cert database.
 certmap = dict()
 for obj in objects:
     if obj['CKA_CLASS'] != 'CKO_CERTIFICATE':
         continue
-    label = obj['CKA_LABEL']
-    certmap[label] = obj
-    print " added cert", label
+    key = obj['CKA_LABEL'] + printable_serial(obj)
+    certmap[key] = obj
+    print " added cert", key
 
 def obj_to_filename(obj):
     label = obj['CKA_LABEL'][1:-1]
@@ -106,7 +110,7 @@ def obj_to_filename(obj):
         .replace(')', '=')\
         .replace(',', '_')
     label = re.sub(r'\\x[0-9a-fA-F]{2}', lambda m:chr(int(m.group(0)[2:], 16)), label)
-    serial = ".".join(map(lambda x:str(ord(x)), obj['CKA_SERIAL_NUMBER']))
+    serial = printable_serial(obj)
     return label + ":" + serial
 
 trust_types = {
@@ -137,7 +141,8 @@ openssl_trust = {
 
 for tobj in objects:
     if tobj['CKA_CLASS'] == 'CKO_NSS_TRUST':
-        print "producing trust for " + tobj['CKA_LABEL']
+        key = tobj['CKA_LABEL'] + printable_serial(tobj)
+        print "producing trust for " + key
         trustbits = []
         distrustbits = []
         openssl_trustflags = []
@@ -154,7 +159,7 @@ for tobj in objects:
 
         fname = obj_to_filename(tobj)
         try:
-            obj = certmap[tobj['CKA_LABEL']]
+            obj = certmap[key]
         except:
             obj = None
 

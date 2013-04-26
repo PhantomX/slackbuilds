@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="http://audacity.googlecode.com/svn/audacity-src/trunk/lib-src/${module}"
+snaproot="git://git.code.sf.net/p/${module}/code"
 
 tmp=$(mktemp -d)
 

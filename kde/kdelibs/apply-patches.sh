@@ -47,7 +47,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-SOLID_UPNP.patch
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
 
 # patch FindSamba.cmake to find samba4 libs (using pkg-config hints)
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.90-FindSamba_samba4.patch
+# https://git.reviewboard.kde.org/r/106861/
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/FindSamba.cmake-help-find-samba4-more-reliably.patch
 
 # make filter working
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-kcm_ssl.patch
@@ -69,6 +70,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc258d2c311f88d2fd8dc46
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-not-break.-copy-paste-error.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/coding-style-fixes.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-application-icons-properly.patch
+
+# https://git.reviewboard.kde.org/r/110158/
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-reviewboard-r110158.patch
 
 # Trunk patches
 

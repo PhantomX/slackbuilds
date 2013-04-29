@@ -1,0 +1,743 @@
+commit 81d24c396c66dde7db2d9b567451f99081a2eab7
+Author: philippe <philippe@a5019735-40e9-0310-863c-91ae7b9d1cf9>
+Date:   Wed Dec 5 21:08:24 2012 +0000
+
+    fix 310424  --read-var-info does not properly describe static variables
+    
+    This patch changes the way static variables are
+    recorded by readdwarf3.c (when giving --read-var-info=yes),
+    improving the way such variables are described.
+    
+    Currently:
+    A static variable does not have the DW_AT_external tag.
+    So, readdwarf3.c does not consider it a global variable.
+    It is rather considered a "local" variable.
+    When it is recorded, it is associated to a range of program counters
+    (the functions in the file where it is visible).
+    However, even if the static variable is only visible
+    in the source file where it is declared, it can in reality
+    be used by any range of program counters, typically
+    by having the address of the local variable passed
+    to other functions.
+    
+    Such local variable can then only be described
+    when the program counter is in the range of program
+    counters for which it has been recorded.
+    However, this (local) description is obtained
+    by a kludge in debuginfo.c (around line 3285).
+    
+    This kludge then produces a strange description,
+    telling that the variable has been declared in
+    frame 0 of a thread (see second example below).
+    
+    The kludge is not always able to describe
+    the address (if the IP of the tid is in another file than
+    where the variable has been declared).
+    
+    I suspect the kludge can sometimes describe the var as being
+    declared in an unrelated thread
+    (e.g. if an error is triggered by tid 5, but tid1 is by
+    luck in an IP corresponding to the recorded range).
+    
+    
+    The patch changes the way a static variable is recorded:
+    if DW_AT_external tag is found, a variable is marked as global.
+    If a variable is not external, but is seen when level is 1,
+    then we record the variable as a global variable (i.e.
+    with a full IP range).
+    This improves the way such static variable are described:
+    * they are described even if being accessed by other files.
+    * their description is not in an artificial "thread frame".
+    
+    
+    
+    
+    First example:
+    **************
+    a variable cannot be described because it is
+    accessed by a function in another file:
+    
+    with the trunk:
+    ==20410== ----------------------------------------------------------------
+    ==20410==
+    ==20410== Possible data race during read of size 4 at 0x600F54 by thread #1
+    ==20410== Locks held: none
+    ==20410==    at 0x4007E4: a (abc.c:42)
+    ==20410==    by 0x4006BC: main (mabc.c:24)
+    ==20410==
+    ==20410== This conflicts with a previous write of size 4 by thread #2
+    ==20410== Locks held: none
+    ==20410==    at 0x4007ED: a (abc.c:42)
+    ==20410==    by 0x400651: brussels_fn (mabc.c:9)
+    ==20410==    by 0x4C2B54E: mythread_wrapper (hg_intercepts.c:219)
+    ==20410==    by 0x4E348C9: start_thread (pthread_create.c:300)
+    ==20410==
+    ==20410== ----------------------------------------------------------------
+    
+    
+    with the patch:
+    ==4515== ----------------------------------------------------------------
+    ==4515==
+    ==4515== Possible data race during read of size 4 at 0x600F54 by thread #1
+    ==4515== Locks held: none
+    ==4515==    at 0x4007E4: a (abc.c:42)
+    ==4515==    by 0x4006BC: main (mabc.c:24)
+    ==4515==
+    ==4515== This conflicts with a previous write of size 4 by thread #2
+    ==4515== Locks held: none
+    ==4515==    at 0x4007ED: a (abc.c:42)
+    ==4515==    by 0x400651: brussels_fn (mabc.c:9)
+    ==4515==    by 0x4C2B54E: mythread_wrapper (hg_intercepts.c:219)
+    ==4515==    by 0x4E348C9: start_thread (pthread_create.c:300)
+    ==4515==
+    ==4515== Location 0x600f54 is 0 bytes inside global var "static_global"
+    ==4515== declared at mabc.c:4
+    ==4515==
+    ==4515== ----------------------------------------------------------------
+    
+    
+    Second example:
+    ***************
+    When the kludge can describe the variable, it is strangely described
+    as being declared in a frame of a thread, while for sure the declaration
+    has nothing to do with a thread
+    With the trunk:
+    ==20410== Location 0x600f68 is 0 bytes inside local var "static_global_a"
+    ==20410== declared at abc.c:3, in frame #0 of thread 1
+    
+    With the patch:
+    ==4515== Location 0x600f68 is 0 bytes inside global var "static_global_a"
+    ==4515== declared at abc.c:3
+    
+    #include <stdio.h>
+    
+    static int static_global_a = 0; //// <<<< this is abc.c:3
+    
+    
+    
+    
+    git-svn-id: svn://svn.valgrind.org/valgrind/trunk@13153 a5019735-40e9-0310-863c-91ae7b9d1cf9
+
+diff --git a/coregrind/m_debuginfo/debuginfo.c b/coregrind/m_debuginfo/debuginfo.c
+index 59f920d..d3b8ef4 100644
+--- a/coregrind/m_debuginfo/debuginfo.c
++++ b/coregrind/m_debuginfo/debuginfo.c
+@@ -3282,28 +3282,6 @@ Bool VG_(get_data_description)(
+       in the stacks of all the threads.  First try to figure out which
+       thread's stack data_addr is in. */
+ 
+-   /* --- KLUDGE --- Try examining the top frame of all thread stacks.
+-      This finds variables which are not stack allocated but are not
+-      globally visible either; specifically it appears to pick up
+-      variables which are visible only within a compilation unit.
+-      These will have the address range of the compilation unit and
+-      tend to live at Scope level 1. */
+-   VG_(thread_stack_reset_iter)(&tid);
+-   while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
+-      if (stack_min >= stack_max)
+-         continue; /* ignore obviously stupid cases */
+-      if (consider_vars_in_frame( dname1, dname2,
+-                                  data_addr,
+-                                  VG_(get_IP)(tid),
+-                                  VG_(get_SP)(tid), 
+-                                  VG_(get_FP)(tid), tid, 0 )) {
+-         zterm_XA( dname1 );
+-         zterm_XA( dname2 );
+-         return True;
+-      }
+-   }
+-   /* --- end KLUDGE --- */
+-
+    /* Perhaps it's on a thread's stack? */
+    found = False;
+    VG_(thread_stack_reset_iter)(&tid);
+@@ -3328,9 +3306,6 @@ Bool VG_(get_data_description)(
+    n_frames = VG_(get_StackTrace)( tid, ips, N_FRAMES,
+                                    sps, fps, 0/*first_ip_delta*/ );
+ 
+-   /* As a result of KLUDGE above, starting the loop at j = 0
+-      duplicates examination of the top frame and so isn't necessary.
+-      Oh well. */
+    vg_assert(n_frames >= 0 && n_frames <= N_FRAMES);
+    for (j = 0; j < n_frames; j++) {
+       if (consider_vars_in_frame( dname1, dname2,
+diff --git a/drd/tests/annotate_ignore_rw.stderr.exp b/drd/tests/annotate_ignore_rw.stderr.exp
+index 24684da..416be80 100644
+--- a/drd/tests/annotate_ignore_rw.stderr.exp
++++ b/drd/tests/annotate_ignore_rw.stderr.exp
+@@ -1,8 +1,8 @@
+ 
+ Conflicting load by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_rw.c:?)
+-Location 0x........ is 0 bytes inside local var "s_c"
+-declared at annotate_ignore_rw.c:12, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_c"
++declared at annotate_ignore_rw.c:12
+ 
+ Finished.
+ 
+diff --git a/drd/tests/annotate_ignore_rw2.stderr.exp b/drd/tests/annotate_ignore_rw2.stderr.exp
+index ffdb76f..4e96bf3 100644
+--- a/drd/tests/annotate_ignore_rw2.stderr.exp
++++ b/drd/tests/annotate_ignore_rw2.stderr.exp
+@@ -1,18 +1,18 @@
+ 
+ Conflicting load by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_rw.c:?)
+-Location 0x........ is 0 bytes inside local var "s_b"
+-declared at annotate_ignore_rw.c:11, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_b"
++declared at annotate_ignore_rw.c:11
+ 
+ Conflicting store by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_rw.c:?)
+-Location 0x........ is 0 bytes inside local var "s_a"
+-declared at annotate_ignore_rw.c:10, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_a"
++declared at annotate_ignore_rw.c:10
+ 
+ Conflicting load by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_rw.c:?)
+-Location 0x........ is 0 bytes inside local var "s_c"
+-declared at annotate_ignore_rw.c:12, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_c"
++declared at annotate_ignore_rw.c:12
+ 
+ Finished.
+ 
+diff --git a/drd/tests/annotate_ignore_write.stderr.exp b/drd/tests/annotate_ignore_write.stderr.exp
+index f26242e..2204d5b 100644
+--- a/drd/tests/annotate_ignore_write.stderr.exp
++++ b/drd/tests/annotate_ignore_write.stderr.exp
+@@ -1,18 +1,18 @@
+ 
+ Conflicting load by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_write.c:?)
+-Location 0x........ is 0 bytes inside local var "s_b"
+-declared at annotate_ignore_write.c:11, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_b"
++declared at annotate_ignore_write.c:11
+ 
+ Conflicting load by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_write.c:?)
+-Location 0x........ is 0 bytes inside local var "s_c"
+-declared at annotate_ignore_write.c:12, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_c"
++declared at annotate_ignore_write.c:12
+ 
+ Conflicting store by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_write.c:?)
+-Location 0x........ is 0 bytes inside local var "s_a"
+-declared at annotate_ignore_write.c:10, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_a"
++declared at annotate_ignore_write.c:10
+ 
+ Finished.
+ 
+diff --git a/drd/tests/annotate_ignore_write2.stderr.exp b/drd/tests/annotate_ignore_write2.stderr.exp
+index 03c7766..9b58325 100644
+--- a/drd/tests/annotate_ignore_write2.stderr.exp
++++ b/drd/tests/annotate_ignore_write2.stderr.exp
+@@ -1,23 +1,23 @@
+ 
+ Conflicting load by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_write.c:?)
+-Location 0x........ is 0 bytes inside local var "s_b"
+-declared at annotate_ignore_write.c:11, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_b"
++declared at annotate_ignore_write.c:11
+ 
+ Conflicting store by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_write.c:?)
+-Location 0x........ is 0 bytes inside local var "s_a"
+-declared at annotate_ignore_write.c:10, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_a"
++declared at annotate_ignore_write.c:10
+ 
+ Conflicting load by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_write.c:?)
+-Location 0x........ is 0 bytes inside local var "s_c"
+-declared at annotate_ignore_write.c:12, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_c"
++declared at annotate_ignore_write.c:12
+ 
+ Conflicting store by thread 1 at 0x........ size 1
+    at 0x........: main (annotate_ignore_write.c:?)
+-Location 0x........ is 0 bytes inside local var "s_a"
+-declared at annotate_ignore_write.c:10, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_a"
++declared at annotate_ignore_write.c:10
+ 
+ Finished.
+ 
+diff --git a/drd/tests/atomic_var.stderr.exp b/drd/tests/atomic_var.stderr.exp
+index 7fa1e0e..ad05687 100644
+--- a/drd/tests/atomic_var.stderr.exp
++++ b/drd/tests/atomic_var.stderr.exp
+@@ -3,8 +3,8 @@ Start of test.
+ Conflicting load by thread x at 0x........ size 4
+    at 0x........: thread_func_2 (atomic_var.c:?)
+    by 0x........: vgDrd_thread_wrapper (drd_pthread_intercepts.c:?)
+-Location 0x........ is 0 bytes inside local var "s_y"
+-declared at atomic_var.c:35, in frame #? of thread x
++Location 0x........ is 0 bytes inside global var "s_y"
++declared at atomic_var.c:35
+ 
+ y = 1
+ Test finished.
+diff --git a/drd/tests/fp_race.stderr.exp b/drd/tests/fp_race.stderr.exp
+index 23873d2..68bd254 100644
+--- a/drd/tests/fp_race.stderr.exp
++++ b/drd/tests/fp_race.stderr.exp
+@@ -1,8 +1,8 @@
+ 
+ Conflicting load by thread 1 at 0x........ size 8
+    at 0x........: main (fp_race.c:?)
+-Location 0x........ is 0 bytes inside local var "s_d3"
+-declared at fp_race.c:24, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_d3"
++declared at fp_race.c:24
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+@@ -10,8 +10,8 @@ Other segment end (thread 2)
+ 
+ Conflicting store by thread 1 at 0x........ size 8
+    at 0x........: main (fp_race.c:?)
+-Location 0x........ is 0 bytes inside local var "s_d3"
+-declared at fp_race.c:24, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_d3"
++declared at fp_race.c:24
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+diff --git a/drd/tests/fp_race_xml.stderr.exp b/drd/tests/fp_race_xml.stderr.exp
+index 73a530e..05ffe71 100644
+--- a/drd/tests/fp_race_xml.stderr.exp
++++ b/drd/tests/fp_race_xml.stderr.exp
+@@ -48,8 +48,8 @@
+       <line>...</line>
+     </frame>
+   </stack>
+-  <auxwhat>Location 0x........ is 0 bytes inside local var "s_d3"</auxwhat>
+-  <xauxwhat><text>declared at fp_race.c:24, in frame #? of thread x</text> <file>fp_race.c</file> <line>...</line> </xauxwhat>
++  <auxwhat>Location 0x........ is 0 bytes inside global var "s_d3"</auxwhat>
++  <xauxwhat><text>declared at fp_race.c:24</text> <file>fp_race.c</file> <line>...</line> </xauxwhat>
+   <other_segment_start>
+   </other_segment_start>
+   <other_segment_end>
+@@ -71,8 +71,8 @@
+       <line>...</line>
+     </frame>
+   </stack>
+-  <auxwhat>Location 0x........ is 0 bytes inside local var "s_d3"</auxwhat>
+-  <xauxwhat><text>declared at fp_race.c:24, in frame #? of thread x</text> <file>fp_race.c</file> <line>...</line> </xauxwhat>
++  <auxwhat>Location 0x........ is 0 bytes inside global var "s_d3"</auxwhat>
++  <xauxwhat><text>declared at fp_race.c:24</text> <file>fp_race.c</file> <line>...</line> </xauxwhat>
+   <other_segment_start>
+   </other_segment_start>
+   <other_segment_end>
+diff --git a/drd/tests/hg03_inherit.stderr.exp b/drd/tests/hg03_inherit.stderr.exp
+index 62a8d5d..72eb236 100644
+--- a/drd/tests/hg03_inherit.stderr.exp
++++ b/drd/tests/hg03_inherit.stderr.exp
+@@ -4,13 +4,13 @@ Conflicting store by thread 3 at 0x........ size 4
+    at 0x........: t2 (hg03_inherit.c:28)
+    by 0x........: vgDrd_thread_wrapper (drd_pthread_intercepts.c:?)
+ Location 0x........ is 0 bytes inside shared[1],
+-declared at hg03_inherit.c:11, in frame #? of thread 3
++a global variable declared at hg03_inherit.c:11
+ 
+ Conflicting store by thread 3 at 0x........ size 4
+    at 0x........: t2 (hg03_inherit.c:29)
+    by 0x........: vgDrd_thread_wrapper (drd_pthread_intercepts.c:?)
+ Location 0x........ is 0 bytes inside shared[1],
+-declared at hg03_inherit.c:11, in frame #? of thread 3
++a global variable declared at hg03_inherit.c:11
+ 
+ 
+ ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)
+diff --git a/drd/tests/hg04_race.stderr.exp b/drd/tests/hg04_race.stderr.exp
+index 9ea3ccd..5b5969c 100644
+--- a/drd/tests/hg04_race.stderr.exp
++++ b/drd/tests/hg04_race.stderr.exp
+@@ -3,8 +3,8 @@ Thread 3:
+ Conflicting load by thread 3 at 0x........ size 4
+    at 0x........: th (hg04_race.c:10)
+    by 0x........: vgDrd_thread_wrapper (drd_pthread_intercepts.c:?)
+-Location 0x........ is 0 bytes inside local var "shared"
+-declared at hg04_race.c:6, in frame #? of thread 2
++Location 0x........ is 0 bytes inside global var "shared"
++declared at hg04_race.c:6
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+@@ -13,8 +13,8 @@ Other segment end (thread 2)
+ Conflicting store by thread 3 at 0x........ size 4
+    at 0x........: th (hg04_race.c:10)
+    by 0x........: vgDrd_thread_wrapper (drd_pthread_intercepts.c:?)
+-Location 0x........ is 0 bytes inside local var "shared"
+-declared at hg04_race.c:6, in frame #? of thread 2
++Location 0x........ is 0 bytes inside global var "shared"
++declared at hg04_race.c:6
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+diff --git a/drd/tests/rwlock_race.stderr.exp b/drd/tests/rwlock_race.stderr.exp
+index 8350b50..d3e0b37 100644
+--- a/drd/tests/rwlock_race.stderr.exp
++++ b/drd/tests/rwlock_race.stderr.exp
+@@ -2,14 +2,14 @@
+ Conflicting load by thread x at 0x........ size 4
+    at 0x........: thread_func (rwlock_race.c:?)
+    by 0x........: vgDrd_thread_wrapper (drd_pthread_intercepts.c:?)
+-Location 0x........ is 0 bytes inside local var "s_racy"
+-declared at rwlock_race.c:18, in frame #? of thread x
++Location 0x........ is 0 bytes inside global var "s_racy"
++declared at rwlock_race.c:18
+ 
+ Conflicting store by thread x at 0x........ size 4
+    at 0x........: thread_func (rwlock_race.c:?)
+    by 0x........: vgDrd_thread_wrapper (drd_pthread_intercepts.c:?)
+-Location 0x........ is 0 bytes inside local var "s_racy"
+-declared at rwlock_race.c:18, in frame #? of thread x
++Location 0x........ is 0 bytes inside global var "s_racy"
++declared at rwlock_race.c:18
+ 
+ Result: 2
+ 
+diff --git a/drd/tests/sem_as_mutex.stderr.exp b/drd/tests/sem_as_mutex.stderr.exp
+index 1646a6c..1fbd91a 100644
+--- a/drd/tests/sem_as_mutex.stderr.exp
++++ b/drd/tests/sem_as_mutex.stderr.exp
+@@ -1,8 +1,8 @@
+ 
+ Conflicting load by thread 1 at 0x........ size 8
+    at 0x........: main (sem_as_mutex.c:?)
+-Location 0x........ is 0 bytes inside local var "s_d3"
+-declared at sem_as_mutex.c:25, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_d3"
++declared at sem_as_mutex.c:25
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+@@ -10,8 +10,8 @@ Other segment end (thread 2)
+ 
+ Conflicting store by thread 1 at 0x........ size 8
+    at 0x........: main (sem_as_mutex.c:?)
+-Location 0x........ is 0 bytes inside local var "s_d3"
+-declared at sem_as_mutex.c:25, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_d3"
++declared at sem_as_mutex.c:25
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+diff --git a/drd/tests/sem_as_mutex3.stderr.exp b/drd/tests/sem_as_mutex3.stderr.exp
+index 97b09a1..efd47ff 100644
+--- a/drd/tests/sem_as_mutex3.stderr.exp
++++ b/drd/tests/sem_as_mutex3.stderr.exp
+@@ -1,8 +1,8 @@
+ 
+ Conflicting load by thread 1 at 0x........ size 8
+    at 0x........: main (sem_as_mutex.c:?)
+-Location 0x........ is 0 bytes inside local var "s_d3"
+-declared at sem_as_mutex.c:25, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_d3"
++declared at sem_as_mutex.c:25
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+diff --git a/drd/tests/sem_open.stderr.exp b/drd/tests/sem_open.stderr.exp
+index 4e769e5..e926d05 100644
+--- a/drd/tests/sem_open.stderr.exp
++++ b/drd/tests/sem_open.stderr.exp
+@@ -1,8 +1,8 @@
+ 
+ Conflicting load by thread 1 at 0x........ size 8
+    at 0x........: main (sem_open.c:?)
+-Location 0x........ is 0 bytes inside local var "s_d3"
+-declared at sem_open.c:25, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_d3"
++declared at sem_open.c:25
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+@@ -10,8 +10,8 @@ Other segment end (thread 2)
+ 
+ Conflicting store by thread 1 at 0x........ size 8
+    at 0x........: main (sem_open.c:?)
+-Location 0x........ is 0 bytes inside local var "s_d3"
+-declared at sem_open.c:25, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_d3"
++declared at sem_open.c:25
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+diff --git a/drd/tests/sem_open3.stderr.exp b/drd/tests/sem_open3.stderr.exp
+index 3c2d392..fb994f5 100644
+--- a/drd/tests/sem_open3.stderr.exp
++++ b/drd/tests/sem_open3.stderr.exp
+@@ -1,8 +1,8 @@
+ 
+ Conflicting load by thread 1 at 0x........ size 8
+    at 0x........: main (sem_open.c:?)
+-Location 0x........ is 0 bytes inside local var "s_d3"
+-declared at sem_open.c:25, in frame #? of thread 1
++Location 0x........ is 0 bytes inside global var "s_d3"
++declared at sem_open.c:25
+ Other segment start (thread 2)
+    (thread finished, call stack no longer available)
+ Other segment end (thread 2)
+diff --git a/helgrind/tests/hg03_inherit.stderr.exp b/helgrind/tests/hg03_inherit.stderr.exp
+index 1c4a91e..ee21cf0 100644
+--- a/helgrind/tests/hg03_inherit.stderr.exp
++++ b/helgrind/tests/hg03_inherit.stderr.exp
+@@ -24,7 +24,7 @@ Locks held: none
+    at 0x........: main (hg03_inherit.c:60)
+ 
+ Location 0x........ is 0 bytes inside shared[1],
+-declared at hg03_inherit.c:11, in frame #x of thread x
++a global variable declared at hg03_inherit.c:11
+ 
+ 
+ ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)
+diff --git a/helgrind/tests/hg04_race.stderr.exp b/helgrind/tests/hg04_race.stderr.exp
+index 982f940..bf2a185 100644
+--- a/helgrind/tests/hg04_race.stderr.exp
++++ b/helgrind/tests/hg04_race.stderr.exp
+@@ -29,8 +29,8 @@ Locks held: none
+    by 0x........: mythread_wrapper (hg_intercepts.c:...)
+    ...
+ 
+-Location 0x........ is 0 bytes inside local var "shared"
+-declared at hg04_race.c:6, in frame #x of thread x
++Location 0x........ is 0 bytes inside global var "shared"
++declared at hg04_race.c:6
+ 
+ ----------------------------------------------------------------
+ 
+@@ -46,8 +46,8 @@ Locks held: none
+    by 0x........: mythread_wrapper (hg_intercepts.c:...)
+    ...
+ 
+-Location 0x........ is 0 bytes inside local var "shared"
+-declared at hg04_race.c:6, in frame #x of thread x
++Location 0x........ is 0 bytes inside global var "shared"
++declared at hg04_race.c:6
+ 
+ 
+ ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)
+diff --git a/helgrind/tests/rwlock_race.stderr.exp b/helgrind/tests/rwlock_race.stderr.exp
+index 4a44713..47c3bd5 100644
+--- a/helgrind/tests/rwlock_race.stderr.exp
++++ b/helgrind/tests/rwlock_race.stderr.exp
+@@ -29,8 +29,8 @@ Locks held: none
+    by 0x........: mythread_wrapper (hg_intercepts.c:...)
+    ...
+ 
+-Location 0x........ is 0 bytes inside local var "s_racy"
+-declared at rwlock_race.c:18, in frame #x of thread x
++Location 0x........ is 0 bytes inside global var "s_racy"
++declared at rwlock_race.c:18
+ 
+ Result: 2
+ 
+diff --git a/helgrind/tests/tc21_pthonce.stderr.exp b/helgrind/tests/tc21_pthonce.stderr.exp
+index 3e7d241..700b492 100644
+--- a/helgrind/tests/tc21_pthonce.stderr.exp
++++ b/helgrind/tests/tc21_pthonce.stderr.exp
+@@ -29,8 +29,8 @@ Locks held: none
+    by 0x........: mythread_wrapper (hg_intercepts.c:...)
+    ...
+ 
+-Location 0x........ is 0 bytes inside local var "unprotected2"
+-declared at tc21_pthonce.c:51, in frame #x of thread x
++Location 0x........ is 0 bytes inside global var "unprotected2"
++declared at tc21_pthonce.c:51
+ 
+ ----------------------------------------------------------------
+ 
+@@ -46,8 +46,8 @@ Locks held: none
+    by 0x........: mythread_wrapper (hg_intercepts.c:...)
+    ...
+ 
+-Location 0x........ is 0 bytes inside local var "unprotected2"
+-declared at tc21_pthonce.c:51, in frame #x of thread x
++Location 0x........ is 0 bytes inside global var "unprotected2"
++declared at tc21_pthonce.c:51
+ 
+ 
+ ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)
+diff --git a/memcheck/tests/varinfo3.stderr.exp b/memcheck/tests/varinfo3.stderr.exp
+index d24ddb8..73130b7 100644
+--- a/memcheck/tests/varinfo3.stderr.exp
++++ b/memcheck/tests/varinfo3.stderr.exp
+@@ -3,7 +3,7 @@ Uninitialised byte(s) found during client check request
+    by 0x........: foo (varinfo3.c:54)
+    by 0x........: main (varinfo3.c:66)
+  Location 0x........ is 0 bytes inside static_global_def[1],
+- declared at varinfo3.c:35, in frame #0 of thread 1
++ a global variable declared at varinfo3.c:35
+ 
+ Uninitialised byte(s) found during client check request
+    at 0x........: croak (varinfo3.c:28)
+@@ -17,7 +17,7 @@ Uninitialised byte(s) found during client check request
+    by 0x........: foo (varinfo3.c:56)
+    by 0x........: main (varinfo3.c:66)
+  Location 0x........ is 0 bytes inside static_global_undef[3],
+- declared at varinfo3.c:37, in frame #0 of thread 1
++ a global variable declared at varinfo3.c:37
+ 
+ Uninitialised byte(s) found during client check request
+    at 0x........: croak (varinfo3.c:28)
+diff --git a/memcheck/tests/varinfo3.stderr.exp-ppc64 b/memcheck/tests/varinfo3.stderr.exp-ppc64
+index e02a3c8..8dff370 100644
+--- a/memcheck/tests/varinfo3.stderr.exp-ppc64
++++ b/memcheck/tests/varinfo3.stderr.exp-ppc64
+@@ -3,7 +3,7 @@ Uninitialised byte(s) found during client check request
+    by 0x........: foo (varinfo3.c:54)
+    by 0x........: main (varinfo3.c:66)
+  Location 0x........ is 0 bytes inside static_global_def[1],
+- declared at varinfo3.c:35, in frame #0 of thread 1
++ a global variable declared at varinfo3.c:35
+ 
+ Uninitialised byte(s) found during client check request
+    at 0x........: croak (varinfo3.c:29)
+@@ -17,7 +17,7 @@ Uninitialised byte(s) found during client check request
+    by 0x........: foo (varinfo3.c:56)
+    by 0x........: main (varinfo3.c:66)
+  Location 0x........ is 0 bytes inside static_global_undef[3],
+- declared at varinfo3.c:37, in frame #0 of thread 1
++ a global variable declared at varinfo3.c:37
+ 
+ Uninitialised byte(s) found during client check request
+    at 0x........: croak (varinfo3.c:29)
+diff --git a/memcheck/tests/varinfo5.stderr.exp b/memcheck/tests/varinfo5.stderr.exp
+index 3be0984..5fa9d97 100644
+--- a/memcheck/tests/varinfo5.stderr.exp
++++ b/memcheck/tests/varinfo5.stderr.exp
+@@ -83,7 +83,7 @@ Uninitialised byte(s) found during client check request
+    by 0x........: varinfo5_main (varinfo5so.c:156)
+    by 0x........: main (varinfo5.c:5)
+  Location 0x........ is 0 bytes inside static_global_def[1],
+- declared at varinfo5so.c:87, in frame #0 of thread 1
++ a global variable declared at varinfo5so.c:87
+ 
+ Uninitialised byte(s) found during client check request
+    at 0x........: croak (varinfo5so.c:29)
+@@ -101,7 +101,7 @@ Uninitialised byte(s) found during client check request
+    by 0x........: varinfo5_main (varinfo5so.c:156)
+    by 0x........: main (varinfo5.c:5)
+  Location 0x........ is 0 bytes inside static_global_undef[3],
+- declared at varinfo5so.c:89, in frame #0 of thread 1
++ a global variable declared at varinfo5so.c:89
+ 
+ Uninitialised byte(s) found during client check request
+    at 0x........: croak (varinfo5so.c:29)
+diff --git a/memcheck/tests/varinfo5.stderr.exp-ppc64 b/memcheck/tests/varinfo5.stderr.exp-ppc64
+index db0c4fd..f5ebf0b 100644
+--- a/memcheck/tests/varinfo5.stderr.exp-ppc64
++++ b/memcheck/tests/varinfo5.stderr.exp-ppc64
+@@ -83,7 +83,7 @@ Uninitialised byte(s) found during client check request
+    by 0x........: varinfo5_main (varinfo5so.c:156)
+    by 0x........: main (varinfo5.c:5)
+  Location 0x........ is 0 bytes inside static_global_def[1],
+- declared at varinfo5so.c:87, in frame #0 of thread 1
++ a global variable declared at varinfo5so.c:87
+ 
+ Uninitialised byte(s) found during client check request
+    at 0x........: croak (varinfo5so.c:30)
+@@ -101,7 +101,7 @@ Uninitialised byte(s) found during client check request
+    by 0x........: varinfo5_main (varinfo5so.c:156)
+    by 0x........: main (varinfo5.c:5)
+  Location 0x........ is 0 bytes inside static_global_undef[3],
+- declared at varinfo5so.c:89, in frame #0 of thread 1
++ a global variable declared at varinfo5so.c:89
+ 
+ Uninitialised byte(s) found during client check request
+    at 0x........: croak (varinfo5so.c:30)
+--- valgrind-3.8.1/coregrind/m_debuginfo/readdwarf3.c.orig	2012-08-17 08:59:56.000000000 +0200
++++ valgrind-3.8.1/coregrind/m_debuginfo/readdwarf3.c	2013-02-19 15:39:55.965382081 +0100
+@@ -1853,7 +1853,7 @@
+    if (dtag == DW_TAG_variable || dtag == DW_TAG_formal_parameter) {
+       UChar* name        = NULL;
+       UWord  typeR       = D3_INVALID_CUOFF;
+-      Bool   external    = False;
++      Bool   global      = False;
+       GExpr* gexpr       = NULL;
+       Int    n_attrs     = 0;
+       UWord  abs_ori     = (UWord)D3_INVALID_CUOFF;
+@@ -1880,7 +1880,7 @@
+             typeR = cook_die_using_form( cc, (UWord)cts, form );
+          }
+          if (attr == DW_AT_external && ctsSzB > 0 && cts > 0) {
+-            external = True;
++            global = True;
+          }
+          if (attr == DW_AT_abstract_origin && ctsSzB > 0) {
+             abs_ori = (UWord)cts;
+@@ -1902,6 +1902,14 @@
+             if (0) VG_(printf)("XXX filename = %s\n", fileName);
+          }
+       }
++      if (!global && dtag == DW_TAG_variable && level == 1) {
++         /* Case of a static variable. It is better to declare
++            it global as the variable is not really related to
++            a PC range, as its address can be used by program
++            counters outside of the ranges where it is visible . */
++         global = True;
++      }
++
+       /* We'll collect it under if one of the following three
+          conditions holds:
+          (1) has location and type    -> completed
+@@ -1927,7 +1935,7 @@
+             this CU. */
+          vg_assert(parser->sp >= 0);
+ 
+-         /* If this is a local variable (non-external), try to find
++         /* If this is a local variable (non-global), try to find
+             the GExpr for the DW_AT_frame_base of the containing
+             function.  It should have been pushed on the stack at the
+             time we encountered its DW_TAG_subprogram DIE, so the way
+@@ -1939,7 +1947,7 @@
+             if the containing DT_TAG_subprogram didn't supply a
+             DW_AT_frame_base -- that's OK, but there must actually be
+             a containing DW_TAG_subprogram. */
+-         if (!external) {
++         if (!global) {
+             Bool found = False;
+             for (i = parser->sp; i >= 0; i--) {
+                if (parser->isFunc[i]) {
+@@ -1951,7 +1959,7 @@
+             if (!found) {
+                if (0 && VG_(clo_verbosity) >= 0) {
+                   VG_(message)(Vg_DebugMsg, 
+-                     "warning: parse_var_DIE: non-external variable "
++                     "warning: parse_var_DIE: non-global variable "
+                      "outside DW_TAG_subprogram\n");
+                }
+                /* goto bad_DIE; */
+@@ -1964,18 +1972,18 @@
+             }
+          }
+ 
+-         /* re "external ? 0 : parser->sp" (twice), if the var is
+-            marked 'external' then we must put it at the global scope,
++         /* re "global ? 0 : parser->sp" (twice), if the var is
++            marked 'global' then we must put it at the global scope,
+             as only the global scope (level 0) covers the entire PC
+             address space.  It is asserted elsewhere that level 0 
+             always covers the entire address space. */
+-         xa = parser->ranges[external ? 0 : parser->sp];
++         xa = parser->ranges[global ? 0 : parser->sp];
+          nRanges = VG_(sizeXA)(xa);
+          vg_assert(nRanges >= 0);
+ 
+          tv = ML_(dinfo_zalloc)( "di.readdwarf3.pvD.1", sizeof(TempVar) );
+          tv->name   = name;
+-         tv->level  = external ? 0 : parser->sp;
++         tv->level  = global ? 0 : parser->sp;
+          tv->typeR  = typeR;
+          tv->gexpr  = gexpr;
+          tv->fbGX   = fbGX;

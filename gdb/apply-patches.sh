@@ -27,6 +27,7 @@ ApplyPatch() {
   if [ ! -f ${SB_PATCHDIR}/${patch} ]; then
     exit 1
   fi
+  echo "Applying ${patch}"
   case "${patch}" in
   *.bz2) bzcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
   *.gz) zcat "${SB_PATCHDIR}/${patch}" | ${PATCHCOM} ${1+"$@"} ;;
@@ -38,6 +39,12 @@ ApplyPatch() {
 
 # The merged branch `archer' of: http://sourceware.org/gdb/wiki/ProjectArcher
 ApplyPatch gdb-archer.patch
+
+# Backported fixups post the source tarball.
+#Xdrop: Just backports.
+ApplyPatch gdb-upstream.patch
+ApplyPatch gdb-upstream-man-gcore-1of2.patch
+ApplyPatch gdb-upstream-man-gcore-2of2.patch
 
 # Work around out-of-date dejagnu that does not have KFAIL
 ApplyPatch gdb-6.3-rh-dummykfail-20041202.patch.gz
@@ -146,7 +153,7 @@ ApplyPatch gdb-6.3-bz140532-ppc-unwinding-test.patch
 ApplyPatch gdb-6.3-bz202689-exec-from-pthread-test.patch
 
 # Testcase for PPC Power6/DFP instructions disassembly (BZ 230000).
-ApplyPatch gdb-6.6-bz230000-power6-disassembly-test.patch.gz
+ApplyPatch gdb-6.6-bz230000-power6-disassembly-test.patch
 
 # Temporary support for shared libraries >2GB on 64bit hosts. (BZ 231832)
 ApplyPatch gdb-6.3-bz231832-obstack-2gb.patch
@@ -230,9 +237,6 @@ ApplyPatch gdb-6.5-section-num-fixup-test.patch.gz
 # Create a single binary `gdb' autodetecting --tui by its argv[0].
 ApplyPatch gdb-6.8-tui-singlebinary.patch.gz
 
-# Fix PRPSINFO in the core files dumped by gcore (BZ 254229).
-ApplyPatch gdb-6.8-bz254229-gcore-prpsinfo.patch
-
 # Fix register assignments with no GDB stack frames (BZ 436037).
 ApplyPatch gdb-6.8-bz436037-reg-no-longer-active.patch.gz
 
@@ -267,10 +271,6 @@ ApplyPatch gdb-follow-child-stale-parent.patch.gz
 # Workaround ccache making lineno non-zero for command-line definitions.
 ApplyPatch gdb-ccache-workaround.patch
 
-# Implement 'info common' for Fortran.
-ApplyPatch gdb-fortran-common-reduce.patch
-ApplyPatch gdb-fortran-common.patch
-
 #=maybepush: May get obsoleted by Tom's unrelocated objfiles patch.
 ApplyPatch gdb-archer-pie-addons.patch
 #=push+work: Breakpoints disabling matching should not be based on address.
@@ -304,10 +304,6 @@ ApplyPatch gdb-gdb-add-index-script.patch
 # Out of memory is just an error, not fatal (uninitialized VLS vars, BZ 568248).
 ApplyPatch gdb-bz568248-oom-is-error.patch
 
-# Fix gcore writer for -Wl,-z,relro (PR corefiles/11804).
-#=push: There is different patch on gdb-patches, waiting now for resolution in kernel.
-ApplyPatch gdb-bz623749-gcore-relro.patch
-
 # Verify GDB Python built-in function gdb.solib_address exists (BZ # 634108).
 #=fedoratest
 ApplyPatch gdb-bz634108-solib_address.patch
@@ -328,8 +324,6 @@ ApplyPatch gdb-7.2.50-sparc-add-workaround-to-broken-debug-files.patch
 
 # Fix dlopen of libpthread.so, patched glibc required (Gary Benson, BZ 669432).
 #=push
-ApplyPatch gdb-dlopen-stap-probe-1of7.patch
-ApplyPatch gdb-dlopen-stap-probe-2of7.patch
 ApplyPatch gdb-dlopen-stap-probe-3of7.patch
 ApplyPatch gdb-dlopen-stap-probe-4of7.patch
 ApplyPatch gdb-dlopen-stap-probe-5of7.patch
@@ -337,6 +331,8 @@ ApplyPatch gdb-dlopen-stap-probe-6of7.patch
 ApplyPatch gdb-dlopen-stap-probe-7of7.patch
 ApplyPatch gdb-dlopen-stap-probe-test.patch
 ApplyPatch gdb-dlopen-stap-probe-test2.patch
+ApplyPatch gdb-dlopen-stap-probe-mapfailed.patch
+ApplyPatch gdb-dlopen-stap-probe-inhibit.patch
 
 # Work around PR libc/13097 "linux-vdso.so.1" warning message.
 #=push
@@ -345,10 +341,6 @@ ApplyPatch gdb-glibc-vdso-workaround.patch
 # Hack for proper PIE run of the testsuite.
 #=push+work
 ApplyPatch gdb-runtest-pie-override.patch
-
-# Enable smaller %{_bindir}/gdb in future by no longer using -rdynamic.
-#=push
-ApplyPatch gdb-python-rdynamic.patch
 
 # Print reasons for failed attach/spawn incl. SELinux deny_ptrace (BZ 786878).
 #=push
@@ -371,8 +363,20 @@ ApplyPatch gdb-rhel5.9-testcase-xlf-var-inside-mod.patch
 #=fedoratest
 ApplyPatch gdb-rhbz-818343-set-solib-absolute-prefix-testcase.patch
 
-# Implement MiniDebugInfo F-18 Feature consumer (Alexander Larsson, BZ 834068).
-#=fedora
-ApplyPatch gdb-minidebuginfo.patch
+# Fix "GDB cannot access struct member whose offset is larger than 256MB"
+# (RH BZ 795424).
+#=push+work
+ApplyPatch gdb-rhbz795424-bitpos-20of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-21of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-22of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-23of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-25of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-25of25-test.patch
+ApplyPatch gdb-rhbz795424-bitpos-lazyvalue.patch
+
+# Import regression test for `gdb/findvar.c:417: internal-error:
+# read_var_value: Assertion `frame' failed.' (RH BZ 947564) from RHEL 6.5.
+#=fedoratest
+ApplyPatch gdb-rhbz947564-findvar-assertion-frame-failed-testcase.patch
 
 set +e +o pipefail

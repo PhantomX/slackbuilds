@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ tor.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008-2012 Phantom X, Goiania, Brazil.
+# Copyright 2008-2013 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -43,7 +43,7 @@ fi
 NAME=tor
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.2.2.39}
+VERSION=${VERSION:-0.2.3.25}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -116,13 +116,6 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-sed -i -e 's!^\(\# *\)\?DataDirectory .*!DataDirectory %homedir/.tor!' \
-           src/config/torrc.sample.in
-cat >> src/config/torrc.sample.in <<EOF
-Group toranon
-User  toranon
-EOF
-
 export LDFLAGS="-Wl,--as-needed ${LDFLAGS}"
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -134,33 +127,36 @@ CXXFLAGS="${SLKCFLAGS}" \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
+  --with-tor-user=toranon \
+  --with-tor-group=toranon \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} || exit 1
-make -C doc/design-paper tor-design.pdf
 
 mv ${PKG}/etc/tor/torrc.{sample,new} || exit 1
 
 mkdir -p ${PKG}/etc/logrotate.d
 cat > ${PKG}/etc/logrotate.d/tor.new <<'EOF'
 /var/log/tor/*.log {
-	delaycompress
-	notifempty
-	sharedscripts
-	missingok
-	postrotate
-		/bin/systemctl reload tor.service > /dev/null 2>/dev/null || test -x /etc/rc.d/rc.tor && /etc/rc.d/rc.tor reload >/dev/null 2>/dev/null || :
-	endscript
+    daily
+    rotate 5
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 toranon toranon
+    sharedscripts
+    postrotate
+        /bin/systemctl reload tor.service > /dev/null 2>/dev/null || test -x /etc/rc.d/rc.tor && /etc/rc.d/rc.tor reload >/dev/null 2>/dev/null || :
+    endscript
 }
 EOF
      
-mkdir -p ${PKG}/var/{lib,log,run}/${NAME} ${PKG}/var/lib/tor-data
-
-ln -s /usr/share/tor/geoip ${PKG}/var/lib/tor-data/geoip
+mkdir -p ${PKG}/var/{lib,log,run}/${NAME}
 
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.${NAME}.gz > ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
+install -pm0755 ${CWD}/rc.${NAME} ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 chmod 0644 ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
 
 mkdir -p ${PKG}/var/log/setup
@@ -173,7 +169,7 @@ install -pm0644 ${CWD}/tor.service ${PKG}/lib/systemd/system/ || exit 1
 
 chmod 0640 ${PKG}/etc/tor/torrc*
 chmod 0700 ${PKG}/var/lib/tor
-chmod 0730 ${PKG}/var/log/tor
+chmod 0700 ${PKG}/var/log/tor
 chmod 0755 ${PKG}/var/run/tor
 
 rm -f ${PKG}/usr/bin/torify
@@ -183,14 +179,27 @@ rm -f ${PKG}/etc/tor/tor-tsocks.conf
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+cat > ${PKG}/usr/share/tor/defaults-torrc <<'EOF'
+DataDirectory /var/lib/tor
+User toranon
+Log notice syslog
+EOF
+
+mkdir -p ${PKG}/usr/lib/tmpfiles.d
+cat > ${PKG}/usr/lib/tmpfiles.d/${NAME}.conf <<EOF
+d /run/${NAME} 0755 toranon toranon
+EOF
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  doc/{HACKING,TODO,spec/*.txt,design-paper/tor-design.pdf,website} \
-  AUTHORS LICENSE README ChangeLog ReleaseNotes ${CWD}/ChangeLog.SB \
+  doc/{HACKING,TODO,spec/*.txt} \
+  AUTHORS LICENSE README ReleaseNotes ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -316,8 +325,8 @@ ${CHROOT} /bin/chmod 0640 /etc/tor/torrc*
 
 ${CHROOT} /bin/chown toranon.toranon /var/lib/tor
 ${CHROOT} /bin/chmod 0700 /var/lib/tor
-${CHROOT} /bin/chown root.toranon /var/log/tor
-${CHROOT} /bin/chmod 0730 /var/log/tor
+${CHROOT} /bin/chown toranon.toranon /var/log/tor
+${CHROOT} /bin/chmod 0700 /var/log/tor
 ${CHROOT} /bin/chown toranon.toranon /var/run/tor
 
 if [ -x bin/systemctl ] ; then
@@ -343,14 +352,12 @@ fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
-  /bin/chmod 0640 ./etc/tor/torrc* ;
-  /bin/chmod 0700 ./var/lib/tor ;
-  /bin/chmod 0730 ./var/log/tor ;
-  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.toranon ./etc/tor/torrc* ./var/log/tor ; 
-  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown toranon.toranon ./var/{run,lib}/tor ; "
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chown root.toranon ./etc/tor/torrc* ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown toranon.toranon ./var/{run,lib,log}/tor ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

@@ -243,39 +243,6 @@ ApplyPatch VMX-x86-handle-host-TSC-calibration-failure.patch
 #rhbz 927469
 ApplyPatch fix-child-thread-introspection.patch
 
-#CVE-2013-3222 rhbz 955216 955228
-ApplyPatch atm-update-msg_namelen-in-vcc_recvmsg.patch
-
-#CVE-2013-3224 rhbz 955599 955607
-ApplyPatch Bluetooth-fix-possible-info-leak-in-bt_sock_recvmsg.patch
-
-#CVE-2013-1979 rhbz 955629 955647
-ApplyPatch net-fix-incorrect-credentials-passing.patch
-
-#CVE-2013-3225 rhbz 955649 955658
-ApplyPatch Bluetooth-RFCOMM-Fix-missing-msg_namelen-update-in-r.patch
-
-#CVE-2013-3223 rhbz 955662 955666
-ApplyPatch ax25-fix-info-leak-via-msg_name-in-ax25_recvmsg.patch
-
-#CVE-2013-3234 956135 956139
-ApplyPatch rose-fix-info-leak-via-msg_name-in-rose_recvmsg.patch
-
-#CVE-2013-3233 956125 956129
-ApplyPatch NFC-llcp-fix-info-leaks-via-msg_name-in-llcp_sock_re.patch
-
-#CVE-2013-3232 956110 956113
-ApplyPatch netrom-fix-invalid-use-of-sizeof-in-nr_recvmsg.patch
-
-#CVE-2013-3231 956094 956104
-ApplyPatch llc-Fix-missing-msg_namelen-update-in-llc_ui_recvmsg.patch
-
-#CVE-2013-3230 956088 956089
-ApplyPatch l2tp-fix-info-leak-in-l2tp_ip6_recvmsg.patch
-
-#CVE-2013-3228 956069 956071
-ApplyPatch irda-Fix-missing-msg_namelen-update-in-irda_recvmsg_.patch
-
 # https://bugzilla.novell.com/show_bug.cgi?id=806966
 ApplyPatch e1000e-fix-accessing-to-suspended-device.patch
 ApplyPatch e1000e-fix-runtime-power-management-transitions.patch

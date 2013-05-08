@@ -61,10 +61,7 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
 fi
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-Allow-Rich-Text-in-QML-notifications-plasmoid-Allow-.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r3d8959ab5c3934cbc49b07b62b7ff51b1c44698c.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.10.2-clear-screenlocker-password-on-esc.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r45f568cf69334a564f6d31b4ca46f26dcb076046.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r7aab4daae187ed4c101ce280728487effd58f348.diff
 
 ## plasma active patches
 

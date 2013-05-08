@@ -62,7 +62,7 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc258d2c311f88d2fd8dc462bbb1c3d6c822101ae.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc0daa108d8f6935d4e451e3f3ec3ecbdf5a5944f.diff
 # revert these commits for
 #https://bugs.kde.org/315578
 # for now, causes regression,
@@ -70,9 +70,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc258d2c311f88d2fd8dc46
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-not-break.-copy-paste-error.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/coding-style-fixes.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-application-icons-properly.patch
-
-# https://git.reviewboard.kde.org/r/110158/
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-reviewboard-r110158.patch
 
 # Trunk patches
 

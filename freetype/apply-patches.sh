@@ -22,6 +22,6 @@ fi
 # Assorted fixes for 2.1.10 (thanks to Frederic Crozat)
 # CVS bug fixes, mostly for embolding
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/freetype-multilib.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup -z .multilib --verbose -i ${SB_PATCHDIR}/freetype-multilib.patch
 
 set +e +o pipefail

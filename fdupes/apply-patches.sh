@@ -4,15 +4,15 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-zcat ${CWD}/${PSRCARCHIVE} | patch -p1 -E --verbose 
 
-for ignore in 05;do
-  sed -i -e "/^${ignore}_.*$/d" debian/patches/00list
+sed -i -e '/^#/d' debian/patches/series
+for ignore in 05 20 60 ; do
+  sed -i -e "/^${ignore}-.*$/d" debian/patches/series
 done
-for i in $(<debian/patches/00list); do
-  patch -p1 --verbose --backup --suffix=".pdeb" -i debian/patches/${i}.dpatch
+for i in $(<debian/patches/series); do
+  patch -p1 --verbose --backup --suffix=".pdeb" -i debian/patches/${i}
 done
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fdupes-1.50-destdir.patch
+patch -p1 -E --backup -z.destdir --verbose -i ${SB_PATCHDIR}/fdupes-1.51-destdir.patch
 
 set +e +o pipefail

@@ -63,9 +63,13 @@ ApplyOptionalPatch hotfixes.patch
 
 # vm patches
 ApplyPatch oom-warning.patch
+ApplyPatch fs-partitions-efi-c-corrupted-guid-partition-tables-can-cause-kernel-oops.patch
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 
 ApplyPatch vmbugon-warnon.patch
+
+ApplyPatch debug-bad-pte-dmi.patch
+ApplyPatch debug-bad-pte-modules.patch
 
 # mm patches
 
@@ -107,7 +111,6 @@ ApplyPatch remount-no-shrink-dcache.patch
 # ACPI
 ApplyPatch defaults-acpi-video.patch
 ApplyPatch acpi-video-dos.patch
-ApplyPatch acpi-debug-infinite-loop.patch
 ApplyPatch acpi-sony-nonvs-blacklist.patch
 # list acpi fixed events at /proc/acpi/fixed_events
 ApplyPatch acpi-add-proc-event-regs.patch
@@ -134,7 +137,6 @@ done
     ApplyPatch ${file}
   done
 )
-ApplyPatch 0001-block-bfq-attempt-to-fix-use-after-free-which-3.3.0-to-3.8.0.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -162,9 +164,6 @@ ApplyPatch silence-noise.patch
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch silence-fbcon-logo.patch.gz
 
-# no-one cares about these warnings.
-ApplyPatch silence-empty-ipi-mask-warning.patch
-
 # libata
 
 #
@@ -177,6 +176,8 @@ ApplyPatch crash-driver.patch
 # crypto/
 
 # DRM core
+ApplyPatch drm-ttm-exports-for-qxl.patch
+ApplyPatch drm-qxl-driver.patch
 #ApplyPatch drm-vgem.patch
 
 # Nouveau DRM
@@ -187,7 +188,6 @@ ApplyPatch drm-i915-dp-stfu.patch
 
 # silence the ACPI blacklist code
 ApplyPatch silence-acpi-blacklist.patch
-ApplyPatch quiet-apm.patch
 
 # Media (V4L/DVB/IR) updates/fixes/experimental drivers
 ApplyOptionalPatch drivers-media-update.patch
@@ -209,43 +209,22 @@ ApplyPatch lis3-improve-handling-of-null-rate.patch
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
+ApplyPatch debug-idle-sched-warn-once.patch
 
 #rhbz 859485
 ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
 
-#rhbz 799564
-ApplyPatch Input-increase-struct-ps2dev-cmdbuf-to-8-bytes.patch
-ApplyPatch Input-add-support-for-Cypress-PS2-Trackpads.patch
-
-#rhbz 903192
-ApplyPatch 0001-kmsg-Honor-dmesg_restrict-sysctl-on-dev-kmsg.patch
-
-#rhbz 916544
-ApplyPatch 0001-drivers-crypto-nx-fix-init-race-alignmasks-and-GCM-b.patch
-
-ApplyPatch userns-avoid-recursion-in-put_user_ns.patch
-
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 920586
-ApplyPatch amd64_edac_fix_rank_count.patch
-
-#rhbz 921500
-ApplyPatch i7300_edac_single_mode_fixup.patch
-
-#rhbz 879462
-ApplyPatch uvcvideo-suspend-fix.patch
+#rhbz 903192
+ApplyPatch 0001-kmsg-Honor-dmesg_restrict-sysctl-on-dev-kmsg.patch
 
 #rhbz 859282
 ApplyPatch VMX-x86-handle-host-TSC-calibration-failure.patch
 
 #rhbz 927469
 ApplyPatch fix-child-thread-introspection.patch
-
-# https://bugzilla.novell.com/show_bug.cgi?id=806966
-ApplyPatch e1000e-fix-accessing-to-suspended-device.patch
-ApplyPatch e1000e-fix-runtime-power-management-transitions.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

@@ -93,10 +93,23 @@ ApplyPatch 0001-Fix-casinh-spurious-underflows-away-from-i-i-bug-150.patch
 ApplyPatch 0001-Fix-aliases-in-stub-lseek.patch
 ApplyPatch 0001-BZ-15055-Use-__ieee754_sqrl-in-acoshl-for-lbdl-128ib.patch
 ApplyPatch 0001-Fix-y1l-spurious-overflows-for-ldbl-96-bug-15283.patch
+ApplyPatch 0001-Fix-types-of-constants-in-k_casinh-.c.patch
+ApplyPatch 0001-Fix-casinh-inaccuracy-for-argument-with-imaginary-pa.patch
 ApplyPatch 0001-BZ-14812-Add-missing-translation-marker-on-some-argp.patch
 ApplyPatch 0001-BZ-14812-Add-missing-N_-markers-in-localedef.patch
 ApplyPatch 0001-BZ-11120-fix-x86_64-strcmp.S-NOT_IN_libc-safeguards.patch
 ApplyPatch 0002-BZ-13889-expl-709.75-wrongly-overflows-for-ldbl-128i.patch
+ApplyPatch 0001-Don-t-add-input-group-during-initgroups_dyn-in-hesio.patch
+ApplyPatch 0002-Fix-e_logl-128ibm-spurious-underflow.patch
+ApplyPatch 0001-Fix-casinh-inaccuracy-near-i-imaginary-part-1-bug-15.patch
+ApplyPatch 0001-Fix-casinh-inaccuracy-for-imaginary-part-1.0-real-pa.patch
+ApplyPatch 0001-Fix-cacosh-inaccuracy-and-spurious-exceptions-bug-15.patch
+ApplyPatch 0001-Fix-missing-underflow-from-cexp-bug-14478.patch
+ApplyPatch 0001-BZ-15086-Fix-res_debug-printing-of-options.patch
+ApplyPatch 0002-BZ-15380-Fix-initstate-error-return.patch
+ApplyPatch 0003-BZ-15085-Fix-comments-strings-for-RES_NOCHECKNAME.patch
+ApplyPatch 0004-BZ-15084-Apparent-typos-in-strings-in-res_debug.c.patch
+ApplyPatch 0001-Use-stat64-instead-of-stat-in-installed-programs.patch
 
 # From Arch
 # combination of upstream commits 318cd0b, b540704 and fc1abbe
@@ -105,5 +118,7 @@ ApplyPatch glibc-2.17-sync-with-linux37.patch
 ApplyPatch glibc-2.17-getaddrinfo-stack-overflow.patch
 # CVE-2013-0242 - upstream commit a445af0b
 ApplyPatch glibc-2.17-regexp-matcher-overrun.patch
+
+ApplyPatch 0001-Sync-with-Linux-3.9.patch
 
 set +e +o pipefail

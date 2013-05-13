@@ -63,6 +63,11 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 
 # Branch upstream
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc0daa108d8f6935d4e451e3f3ec3ecbdf5a5944f.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-CVE-2009-2702.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0005-Already-trimmed-string.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0006-Use-just-calculated-variable.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0007-Don-t-show-passwords-contained-in-HTTP-URLs-in-error.patch
+
 # revert these commits for
 #https://bugs.kde.org/315578
 # for now, causes regression,
@@ -71,10 +76,10 @@ patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-not-break.-copy-paste-e
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/coding-style-fixes.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-application-icons-properly.patch
 
-# Trunk patches
+# workaround "Crash in DialogShadows::Private::freeX11Pixmaps()"
+# https://bugs.kde.org/319137
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.3-kde319137.patch
 
-# security fix
-## Not Upstreamed? why not ? -- Rex
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-CVE-2009-2702.patch
+# Trunk patches
 
 set +e +o pipefail

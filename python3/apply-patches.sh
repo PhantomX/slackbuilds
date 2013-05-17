@@ -29,10 +29,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00131-disable-tests-in-test_io
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00134-fix-COUNT_ALLOCS-failure-in-test_sys.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00135-fix-test-within-test_weakref-in-debug-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00141-fix-test_gc_with_COUNT_ALLOCS.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00156-gdb-autoload-safepath.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00157-uid-gid-overflows.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00175-fix-configure-Wformat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00177-platform-unicode.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00178-dont-duplicate-flags-in-sysconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00179-dont-raise-error-on-gdb-corrupted-frames-in-backtrace.patch

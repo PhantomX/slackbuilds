@@ -10,7 +10,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-install-dir.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.0-chromium-types.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-15.0-gcc47.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-304121.patch
 
 # Fedora specific patches
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
@@ -20,11 +19,8 @@ patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/toolkit-download-folder.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-nongnome-proxies.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-gstreamer-760140.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-gstreamer-1.patch
 
 # Upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-791626.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-239254.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-844883.patch
 
 # OpenSuse kde integration support

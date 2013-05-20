@@ -22,10 +22,17 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-findruby.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=828467
 # http://public.kitware.com/Bug/view.php?id=13378
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindPostgreSQL.patch
+# Patch FindImageMagick.cmake for newer ImageMagick versions
+# http://public.kitware.com/Bug/view.php?id=14012
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-2.8.11-rc1-IM_pkgconfig_hints.patch
+# Add FindLua52.cmake
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-2.8.11-rc4-lua-5.2.patch
+
+
 # Patch to fix ccmake DEL issue
 # https://bugzilla.redhat.com/show_bug.cgi?id=869769
 # http://public.kitware.com/Bug/view.php?id=13604
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-ccmake-del-in-first-column.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindImageMagick.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-ccmake-del-in-first-column.patch
+#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindImageMagick.patch
 
 set +e +o pipefail

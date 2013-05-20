@@ -20,10 +20,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/004_all_strict_aliasing.patch
 # Fixes for extension modules
 # https://bugs.php.net/63171 no odbc call during timeout
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.7-odbctimer.patch
-# https://bugs.php.net/64128 buit-in web server is broken on ppc64
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.11-select.patch
-# https://bugs.php.net/64142 dval to lval issue on ppc64
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.11-conv.patch
 
 # Functional changes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-dlopen.patch
@@ -32,16 +28,13 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.1-systzdata-v9.patch
 # See http://bugs.php.net/53436
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-phpize.patch
 # Use system libzip instead of bundled one
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.5-system-libzip.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.15-system-libzip.patch
 # Use -lldap_r for OpenLDAP
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.8-ldap_r.patch
 # Make php_config.h constant across builds
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.9-fixheader.patch
 # drop "Configure command" from phpinfo output
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.9-phpinfo.patch
-
-# Fixes for tests
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.11-sockets.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

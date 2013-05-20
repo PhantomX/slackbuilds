@@ -24,6 +24,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-iccprofiles-initdir.patch
 # gdevcups: don't use uninitialized variables in debugging output.
 patch -p1 -E --backup -z .gdevcups-debug-uninit --verbose -i ${SB_PATCHDIR}/ghostscript-gdevcups-debug-uninit.patch
+# Back-ported locale fix (bug #961149).
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-gs_sprintf.patch
+# Upstream patch to fix pdfwrite segfault (bug #962120).
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-pdfwrite-segfault.patch
 
 
 set +e +o pipefail

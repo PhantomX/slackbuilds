@@ -20,6 +20,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.5.95-compiz.
 ## upstreamable patches
 # make nepomuk menu items (with oxygen-only icons atm) OnlyShowIn=KDE;
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.90-nepomuk_onlyshowin_kde.patch
+# do not set Phonon KCM as changed at startup when using PulseAudio
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-phononkcm.patch
 
 ## upstream patches
 

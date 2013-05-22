@@ -260,7 +260,7 @@ ApplyPatch gdb-simultaneous-step-resume-breakpoint-test.patch.gz
 ApplyPatch gdb-core-open-vdso-warning.patch
 
 # Fix syscall restarts for amd64->i386 biarch.
-ApplyPatch gdb-x86_64-i386-syscall-restart.patch.gz
+ApplyPatch gdb-x86_64-i386-syscall-restart.patch
 
 # Fix stepping with OMP parallel Fortran sections (BZ 533176).
 ApplyPatch gdb-bz533176-fortran-omp-step.patch
@@ -323,16 +323,16 @@ ApplyPatch gdb-test-expr-cumulative-archer.patch
 ApplyPatch gdb-7.2.50-sparc-add-workaround-to-broken-debug-files.patch
 
 # Fix dlopen of libpthread.so, patched glibc required (Gary Benson, BZ 669432).
+# Fix crash regression from the dlopen of libpthread.so fix (BZ 911712).
+# Fix performance regression when inferior opens many libraries (Gary Benson).
 #=push
+ApplyPatch gdb-dlopen-stap-probe-1of7.patch
+ApplyPatch gdb-dlopen-stap-probe-2of7.patch
 ApplyPatch gdb-dlopen-stap-probe-3of7.patch
 ApplyPatch gdb-dlopen-stap-probe-4of7.patch
 ApplyPatch gdb-dlopen-stap-probe-5of7.patch
 ApplyPatch gdb-dlopen-stap-probe-6of7.patch
 ApplyPatch gdb-dlopen-stap-probe-7of7.patch
-ApplyPatch gdb-dlopen-stap-probe-test.patch
-ApplyPatch gdb-dlopen-stap-probe-test2.patch
-ApplyPatch gdb-dlopen-stap-probe-mapfailed.patch
-ApplyPatch gdb-dlopen-stap-probe-inhibit.patch
 
 # Work around PR libc/13097 "linux-vdso.so.1" warning message.
 #=push
@@ -378,5 +378,11 @@ ApplyPatch gdb-rhbz795424-bitpos-lazyvalue.patch
 # read_var_value: Assertion `frame' failed.' (RH BZ 947564) from RHEL 6.5.
 #=fedoratest
 ApplyPatch gdb-rhbz947564-findvar-assertion-frame-failed-testcase.patch
+
+# Fix gcore for vDSO (on ppc64).
+ApplyPatch gdb-vdso-gcore.patch
+
+# Fix needless expansion of non-gdbindex symtabs (Doug Evans).
+ApplyPatch gdb-psymtab-expand.patch
 
 set +e +o pipefail

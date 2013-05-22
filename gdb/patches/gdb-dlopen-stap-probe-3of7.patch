@@ -1,98 +1,314 @@
-2012-07-19  Gary Benson  <gbenson@redhat.com>
+http://sourceware.org/ml/gdb-patches/2013-05/msg00626.html
+Subject: [RFA 3/7] New gdbserver functionality
 
-	* probe.h (get_probe_argument_count): New declaration.
-	(evaluate_probe_argument): Likewise.
-	* probe.c (get_probe_argument_count): New function.
-	(evaluate_probe_argument): Likewise.
-	(probe_safe_evaluate_at_pc): Use the above new functions.
 
-diff --git a/gdb/probe.h b/gdb/probe.h
-index 8d44ca2..1d29b87 100644
---- a/gdb/probe.h
-+++ b/gdb/probe.h
-@@ -214,6 +214,16 @@ extern void info_probes_for_ops (char *arg, int from_tty,
+--Kc9HNjpzOXVc7FFU
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline
+
+This patch updates gdbserver to allow arguments to be passed in the
+annex of qXfer:libraries-svr4:read to allow that function to transfer
+partial lists of libraries.  The ability of gdbserver to support
+these arguments is indicated by a qSupported response containing
+"augmented-libraries-svr4-read+".
+
+--Kc9HNjpzOXVc7FFU
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: attachment; filename="rtld-probes-3-gdbserver.patch"
+
+2013-05-16  Gary Benson  <gbenson@redhat.com>
+
+	* server.c (handle_query): Add "augmented-libraries-svr4-read+"
+	to qSupported response when appropriate.
+	(handle_qxfer_libraries_svr4): Allow qXfer:libraries-svr4:read
+	with nonzero-length annex.
+	* linux-low.c (linux_qxfer_libraries_svr4): Parse and handle
+	arguments supplied in annex.
+
+diff --git a/gdb/gdbserver/server.c b/gdb/gdbserver/server.c
+index 6bb36d8..0a8f68b 100644
+--- a/gdb/gdbserver/server.c
++++ b/gdb/gdbserver/server.c
+@@ -1115,8 +1115,7 @@ handle_qxfer_libraries_svr4 (const char *annex,
+   if (writebuf != NULL)
+     return -2;
  
- extern struct cmd_list_element **info_probes_cmdlist_get (void);
+-  if (annex[0] != '\0' || !target_running ()
+-      || the_target->qxfer_libraries_svr4 == NULL)
++  if (!target_running () || the_target->qxfer_libraries_svr4 == NULL)
+     return -1;
  
-+/* Return the argument count of the specified probe.  */
-+
-+extern unsigned get_probe_argument_count (struct probe *probe);
-+
-+/* Evaluate argument N of the specified probe.  N must be between 0
-+   inclusive and get_probe_argument_count exclusive.  */
-+
-+extern struct value *evaluate_probe_argument (struct probe *probe,
-+					      unsigned n);
-+
- /* A convenience function that finds a probe at the PC in FRAME and
-    evaluates argument N, with 0 <= N < number_of_args.  If there is no
-    probe at that location, or if the probe does not have enough arguments,
-diff --git a/gdb/probe.c b/gdb/probe.c
-index 77f3b13..a61f4ea 100644
---- a/gdb/probe.c
-+++ b/gdb/probe.c
-@@ -632,28 +632,55 @@ info_probes_command (char *arg, int from_tty)
+   return the_target->qxfer_libraries_svr4 (annex, readbuf, writebuf, offset, len);
+@@ -1743,7 +1742,8 @@ handle_query (char *own_buf, int packet_len, int *new_packet_len_p)
+ 	       PBUFSIZ - 1);
  
- /* See comments in probe.h.  */
+       if (the_target->qxfer_libraries_svr4 != NULL)
+-	strcat (own_buf, ";qXfer:libraries-svr4:read+");
++	strcat (own_buf, ";qXfer:libraries-svr4:read+"
++		";augmented-libraries-svr4-read+");
+       else
+ 	{
+ 	  /* We do not have any hook to indicate whether the non-SVR4 target
+diff --git a/gdb/gdbserver/linux-low.c b/gdb/gdbserver/linux-low.c
+index 72c51e0..beb3b8f 100644
+--- a/gdb/gdbserver/linux-low.c
++++ b/gdb/gdbserver/linux-low.c
+@@ -5677,6 +5677,12 @@ linux_qxfer_libraries_svr4 (const char *annex, unsigned char *readbuf,
+     };
+   const struct link_map_offsets *lmo;
+   unsigned int machine;
++  int ptr_size;
++  CORE_ADDR lm_addr = 0, lm_prev = 0;
++  int allocated = 1024;
++  char *p;
++  CORE_ADDR l_name, l_addr, l_ld, l_next, l_prev;
++  int header_done = 0;
  
-+unsigned
-+get_probe_argument_count (struct probe *probe)
-+{
-+  const struct sym_probe_fns *probe_fns;
-+
-+  gdb_assert (probe->objfile != NULL);
-+  gdb_assert (probe->objfile->sf != NULL);
-+
-+  probe_fns = probe->objfile->sf->sym_probe_fns;
-+
-+  gdb_assert (probe_fns != NULL);
-+
-+  return probe_fns->sym_get_probe_argument_count (probe);
-+}
-+
-+/* See comments in probe.h.  */
-+
-+struct value *
-+evaluate_probe_argument (struct probe *probe, unsigned n)
-+{
-+  const struct sym_probe_fns *probe_fns;
-+
-+  gdb_assert (probe->objfile != NULL);
-+  gdb_assert (probe->objfile->sf != NULL);
-+
-+  probe_fns = probe->objfile->sf->sym_probe_fns;
-+
-+  gdb_assert (probe_fns != NULL);
-+
-+  return probe_fns->sym_evaluate_probe_argument (probe, n);
-+}
-+
-+/* See comments in probe.h.  */
-+
- struct value *
- probe_safe_evaluate_at_pc (struct frame_info *frame, unsigned n)
- {
-   struct probe *probe;
--  const struct sym_probe_fns *probe_fns;
-   unsigned n_args;
+   if (writebuf != NULL)
+     return -2;
+@@ -5687,128 +5693,146 @@ linux_qxfer_libraries_svr4 (const char *annex, unsigned char *readbuf,
+   xsnprintf (filename, sizeof filename, "/proc/%d/exe", pid);
+   is_elf64 = elf_64_file_p (filename, &machine);
+   lmo = is_elf64 ? &lmo_64bit_offsets : &lmo_32bit_offsets;
++  ptr_size = is_elf64 ? 8 : 4;
  
-   probe = find_probe_by_pc (get_frame_pc (frame));
-   if (!probe)
-     return NULL;
+-  if (priv->r_debug == 0)
+-    priv->r_debug = get_r_debug (pid, is_elf64);
++  if (annex[0] == '\0')
++    {
++      int r_version = 0;
  
--  gdb_assert (probe->objfile != NULL);
--  gdb_assert (probe->objfile->sf != NULL);
--  gdb_assert (probe->objfile->sf->sym_probe_fns != NULL);
+-  /* We failed to find DT_DEBUG.  Such situation will not change for this
+-     inferior - do not retry it.  Report it to GDB as E01, see for the reasons
+-     at the GDB solib-svr4.c side.  */
+-  if (priv->r_debug == (CORE_ADDR) -1)
+-    return -1;
++      if (priv->r_debug == 0)
++	priv->r_debug = get_r_debug (pid, is_elf64);
+ 
+-  if (priv->r_debug == 0)
+-    {
+-      document = xstrdup ("<library-list-svr4 version=\"1.0\"/>\n");
++      /* We failed to find DT_DEBUG.  Such situation will not change
++	 for this inferior - do not retry it.  Report it to GDB as
++	 E01, see for the reasons at the GDB solib-svr4.c side.  */
++      if (priv->r_debug == (CORE_ADDR) -1)
++	return -1;
++
++      if (priv->r_debug != 0)
++	{
++	  if (linux_read_memory (priv->r_debug + lmo->r_version_offset,
++				 (unsigned char *) &r_version,
++				 sizeof (r_version)) != 0
++	      || r_version != 1)
++	    {
++	      warning ("unexpected r_debug version %d", r_version);
++	    }
++	  else if (read_one_ptr (priv->r_debug + lmo->r_map_offset,
++				 &lm_addr, ptr_size) != 0)
++	    {
++	      warning ("unable to read r_map from 0x%lx",
++		       (long) priv->r_debug + lmo->r_map_offset);
++	    }
++	}
+     }
+   else
+     {
+-      int allocated = 1024;
+-      char *p;
+-      const int ptr_size = is_elf64 ? 8 : 4;
+-      CORE_ADDR lm_addr, lm_prev, l_name, l_addr, l_ld, l_next, l_prev;
+-      int r_version, header_done = 0;
 -
--  probe_fns = probe->objfile->sf->sym_probe_fns;
--  n_args = probe_fns->sym_get_probe_argument_count (probe);
+-      document = xmalloc (allocated);
+-      strcpy (document, "<library-list-svr4 version=\"1.0\"");
+-      p = document + strlen (document);
 -
-+  n_args = get_probe_argument_count (probe);
-   if (n >= n_args)
-     return NULL;
+-      r_version = 0;
+-      if (linux_read_memory (priv->r_debug + lmo->r_version_offset,
+-			     (unsigned char *) &r_version,
+-			     sizeof (r_version)) != 0
+-	  || r_version != 1)
++      while (annex[0] != '\0')
+ 	{
+-	  warning ("unexpected r_debug version %d", r_version);
+-	  goto done;
++	  const char *sep;
++	  CORE_ADDR *addrp;
++	  int len;
++
++	  sep = strchr (annex, '=');
++	  if (!sep)
++	    break;
++
++	  len = sep - annex;
++	  if (len == 5 && !strncmp (annex, "start", 5))
++	    addrp = &lm_addr;
++	  else if (len == 4 && !strncmp (annex, "prev", 4))
++	    addrp = &lm_prev;
++	  else
++	    {
++	      annex = strchr (sep, ';');
++	      if (!annex)
++		break;
++	      annex++;
++	      continue;
++	    }
++
++	  annex = decode_address_to_semicolon (addrp, sep + 1);
+ 	}
++    }
  
--  return probe_fns->sym_evaluate_probe_argument (probe, n);
-+  return evaluate_probe_argument (probe, n);
- }
+-      if (read_one_ptr (priv->r_debug + lmo->r_map_offset,
+-			&lm_addr, ptr_size) != 0)
++  document = xmalloc (allocated);
++  strcpy (document, "<library-list-svr4 version=\"1.0\"");
++  p = document + strlen (document);
++
++  while (lm_addr
++	 && read_one_ptr (lm_addr + lmo->l_name_offset,
++			  &l_name, ptr_size) == 0
++	 && read_one_ptr (lm_addr + lmo->l_addr_offset,
++			  &l_addr, ptr_size) == 0
++	 && read_one_ptr (lm_addr + lmo->l_ld_offset,
++			  &l_ld, ptr_size) == 0
++	 && read_one_ptr (lm_addr + lmo->l_prev_offset,
++			  &l_prev, ptr_size) == 0
++	 && read_one_ptr (lm_addr + lmo->l_next_offset,
++			  &l_next, ptr_size) == 0)
++    {
++      unsigned char libname[PATH_MAX];
++
++      if (lm_prev != l_prev)
+ 	{
+-	  warning ("unable to read r_map from 0x%lx",
+-		   (long) priv->r_debug + lmo->r_map_offset);
+-	  goto done;
++	  warning ("Corrupted shared library list: 0x%lx != 0x%lx",
++		   (long) lm_prev, (long) l_prev);
++	  break;
+ 	}
  
- /* See comment in probe.h.  */
+-      lm_prev = 0;
+-      while (read_one_ptr (lm_addr + lmo->l_name_offset,
+-			   &l_name, ptr_size) == 0
+-	     && read_one_ptr (lm_addr + lmo->l_addr_offset,
+-			      &l_addr, ptr_size) == 0
+-	     && read_one_ptr (lm_addr + lmo->l_ld_offset,
+-			      &l_ld, ptr_size) == 0
+-	     && read_one_ptr (lm_addr + lmo->l_prev_offset,
+-			      &l_prev, ptr_size) == 0
+-	     && read_one_ptr (lm_addr + lmo->l_next_offset,
+-			      &l_next, ptr_size) == 0)
++      /* Not checking for error because reading may stop before
++	 we've got PATH_MAX worth of characters.  */
++      libname[0] = '\0';
++      linux_read_memory (l_name, libname, sizeof (libname) - 1);
++      libname[sizeof (libname) - 1] = '\0';
++      if (libname[0] != '\0')
+ 	{
+-	  unsigned char libname[PATH_MAX];
++	  /* 6x the size for xml_escape_text below.  */
++	  size_t len = 6 * strlen ((char *) libname);
++	  char *name;
+ 
+-	  if (lm_prev != l_prev)
++	  if (!header_done)
+ 	    {
+-	      warning ("Corrupted shared library list: 0x%lx != 0x%lx",
+-		       (long) lm_prev, (long) l_prev);
+-	      break;
++	      /* Terminate `<library-list-svr4'.  */
++	      *p++ = '>';
++	      header_done = 1;
+ 	    }
+ 
+-	  /* Not checking for error because reading may stop before
+-	     we've got PATH_MAX worth of characters.  */
+-	  libname[0] = '\0';
+-	  linux_read_memory (l_name, libname, sizeof (libname) - 1);
+-	  libname[sizeof (libname) - 1] = '\0';
+-	  if (libname[0] != '\0')
++	  while (allocated < p - document + len + 200)
+ 	    {
+-	      /* 6x the size for xml_escape_text below.  */
+-	      size_t len = 6 * strlen ((char *) libname);
+-	      char *name;
+-
+-	      if (!header_done)
+-		{
+-		  /* Terminate `<library-list-svr4'.  */
+-		  *p++ = '>';
+-		  header_done = 1;
+-		}
+-
+-	      while (allocated < p - document + len + 200)
+-		{
+-		  /* Expand to guarantee sufficient storage.  */
+-		  uintptr_t document_len = p - document;
+-
+-		  document = xrealloc (document, 2 * allocated);
+-		  allocated *= 2;
+-		  p = document + document_len;
+-		}
++	      /* Expand to guarantee sufficient storage.  */
++	      uintptr_t document_len = p - document;
+ 
+-	      name = xml_escape_text ((char *) libname);
+-	      p += sprintf (p, "<library name=\"%s\" lm=\"0x%lx\" "
+-			       "l_addr=\"0x%lx\" l_ld=\"0x%lx\"/>",
+-			    name, (unsigned long) lm_addr,
+-			    (unsigned long) l_addr, (unsigned long) l_ld);
+-	      free (name);
+-	    }
+-	  else if (lm_prev == 0)
+-	    {
+-	      sprintf (p, " main-lm=\"0x%lx\"", (unsigned long) lm_addr);
+-	      p = p + strlen (p);
++	      document = xrealloc (document, 2 * allocated);
++	      allocated *= 2;
++	      p = document + document_len;
+ 	    }
+ 
+-	  if (l_next == 0)
+-	    break;
+-
+-	  lm_prev = lm_addr;
+-	  lm_addr = l_next;
++	  name = xml_escape_text ((char *) libname);
++	  p += sprintf (p, "<library name=\"%s\" lm=\"0x%lx\" "
++			"l_addr=\"0x%lx\" l_ld=\"0x%lx\"/>",
++			name, (unsigned long) lm_addr,
++			(unsigned long) l_addr, (unsigned long) l_ld);
++	  free (name);
+ 	}
+-    done:
+-      if (!header_done)
++      else if (lm_prev == 0)
+ 	{
+-	  /* Empty list; terminate `<library-list-svr4'.  */
+-	  strcpy (p, "/>");
++	  sprintf (p, " main-lm=\"0x%lx\"", (unsigned long) lm_addr);
++	  p = p + strlen (p);
+ 	}
+-      else
+-	strcpy (p, "</library-list-svr4>");
++
++      lm_prev = lm_addr;
++      lm_addr = l_next;
+     }
+ 
++  if (!header_done)
++    {
++      /* Empty list; terminate `<library-list-svr4'.  */
++      strcpy (p, "/>");
++    }
++  else
++    strcpy (p, "</library-list-svr4>");
++
+   document_len = strlen (document);
+   if (offset < document_len)
+     document_len -= offset;
+
+--Kc9HNjpzOXVc7FFU--
+

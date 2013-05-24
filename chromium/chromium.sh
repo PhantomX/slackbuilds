@@ -29,9 +29,13 @@ fi
 # Allow the user to override command-line flags, bug gentoo#357629.
 # This is based on Debian's chromium-browser package, and is intended
 # to be consistent with Debian.
-if [ -f /etc/chromium/default ] ; then
-  . /etc/chromium/default
-fi
+for f in /etc/chromium/*; do
+  [[ -f ${f} ]] && source "${f}"
+done
+
+for f in "${HOME}"/.config/chromium/user/*; do
+  [[ -f ${f} ]] && source "${f}"
+done
 
 # Prefer user defined CHROMIUM_USER_FLAGS (from env) over system
 # default CHROMIUM_FLAGS (from /etc/chromium/default).

@@ -42,16 +42,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00113-more-configuration-flags
 # (rhbz:553020); partially upstream as http://bugs.python.org/issue7647
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00114-statvfs-f_flag-constants.patch
 
-patch -p0 -R -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc2-r79310.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00121-add-Modules-to-build-path.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00125-less-verbose-COUNT_ALLOCS.patch
 
-# Fix dbm module on big-endian 64-bit
-# Sent upstream as http://bugs.python.org/issue9687 (rhbz#626756)
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/fix-dbm_contains-on-64bit-bigendian.patch
-# Fix test_structmember on big-endian 64-bit
-# Sent upstream as http://bugs.python.org/issue9960
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-test_structmember-on-64bit-bigendian.patch
 # 2.7.1 (in r84230) added a test to test_abc which fails if python is
 # configured with COUNT_ALLOCS, which is the case for our debug build
 # (the COUNT_ALLOCS instrumentation keeps "C" alive).
@@ -69,7 +63,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00156-gdb-autoload-safepath.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00166-fix-fake-repr-in-gdb-hooks.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00169-avoid-implicit-usage-of-md5-in-multiprocessing.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00175-fix-configure-Wformat.patch
 
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
 

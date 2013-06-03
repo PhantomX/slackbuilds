@@ -40,6 +40,10 @@ ApplyPatch xserver-1.6.0-less-acpi-brokenness.patch
 ApplyPatch xserver-1.6.99-right-of.patch
 #zcat ${SB_PATCHDIR}/xserver-1.6.99-hush-prerelease-warning.patch.gz | patch -p1 --verbose
 
+# upstream submitted
+ApplyPatch 0001-randr-upstream-set-changed-fixes.patch
+ApplyPatch 0001-gpu-screen-upstream-fixes.patch
+
 # backport pci slot claiming fix for kms drivers
 # needed when building without xorg (aka s390x)
 ApplyPatch xserver-1.12.2-xorg-touch-test.patch
@@ -51,16 +55,9 @@ ApplyPatch 0001-xf86-return-NULL-for-compat-output-if-no-outputs.patch
 # mustard: make the default queue length bigger to calm abrt down
 ApplyPatch 0001-mieq-Bump-default-queue-size-to-512.patch
 
-# some hotplug fixes/workaround
-ApplyPatch 0001-xf86crtc-don-t-use-display-for-vx-vy-for-gpu-screens.patch
-# autoconfig: send events
-ApplyPatch 0001-randr-don-t-directly-set-changed-bits-in-randr-scree.patch
-ApplyPatch 0001-randr-make-SetChanged-modify-the-main-protocol-scree.patch
-ApplyPatch 0001-randr-only-respected-changed-on-the-protocol-screen.patch
-ApplyPatch 0001-randr-report-changes-when-we-disconnect-a-GPU-slave.patch
-
-# on way upstream: fixes for reverse optimus
-ApplyPatch 0001-dix-allow-pixmap-dirty-helper-to-be-used-for-non-sha.patch
+# Bug 962572 - X-sandboxes are not resizeable
+# enabled by default until sandbox -X uses the option
+ApplyPatch 0001-ephyr-Add-resizeable-option.patch
 
 # misc
 ApplyPatch 0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch

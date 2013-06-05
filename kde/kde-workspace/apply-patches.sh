@@ -61,7 +61,7 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
 fi
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r7aab4daae187ed4c101ce280728487effd58f348.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_ra781558d055c4840b2b322551e765e22d6be30f4.diff
 
 ## plasma active patches
 

@@ -1,0 +1,144 @@
+>From 51ab359d7cc6643cfd4fac28def2e1c756553201 Mon Sep 17 00:00:00 2001
+From: Stef Walter <stefw@redhat.com>
+Date: Thu, 23 May 2013 08:44:43 +0200
+Subject: [PATCH 2/2] krb5: Fix ticket start and end time to respect skew
+
+Since the kerberos protocol uses timestamp rather than duration deltas
+for its starttime, endtime, and renewtime KDC AS REQ fields, we have
+to calculate these with respect to the offsets we know about received
+from the server.
+
+Leverage the unauthenticated server time we received during preauth when
+calculating these these timestamps from the duration deltas we use
+in our krb5 api and tools.
+
+In order to do this we have to update certain fields of the AS REQ
+each time we encode it for sending to the KDC.
+---
+ src/lib/krb5/krb/get_in_tkt.c | 44 +++++++++++++++++++++++--------------------
+ src/lib/krb5/krb/int-proto.h  |  5 +++++
+ src/lib/krb5/krb/preauth2.c   |  8 ++++++++
+ 3 files changed, 37 insertions(+), 20 deletions(-)
+
+diff --git a/src/lib/krb5/krb/get_in_tkt.c b/src/lib/krb5/krb/get_in_tkt.c
+index 1058112..694c9b0b 100644
+--- a/src/lib/krb5/krb/get_in_tkt.c
++++ b/src/lib/krb5/krb/get_in_tkt.c
+@@ -656,6 +656,8 @@ update_req_before_encoding(krb5_context context, krb5_init_creds_context ctx)
+     krb5_error_code code = 0;
+     unsigned char random_buf[4];
+     krb5_data random_data;
++    krb5_timestamp from;
++    krb5_int32 unused;
+ 
+     /*
+      * RFC 6113 requires a new nonce for the inner request on each try. It's
+@@ -674,6 +676,28 @@ update_req_before_encoding(krb5_context context, krb5_init_creds_context ctx)
+      */
+     ctx->request->nonce = 0x7fffffff & load_32_n(random_buf);
+ 
++    code = k5_preauth_get_time(context, &ctx->preauth_rock, TRUE, &ctx->request_time, &unused);
++    if (code != 0)
++        goto cleanup;
++
++    /* Omit request start time in the common case.  MIT and Heimdal KDCs will
++     * ignore it for non-postdated tickets anyway. */
++    from = krb5int_addint32(ctx->request_time, ctx->start_time);
++    if (ctx->start_time != 0)
++        ctx->request->from = from;
++    ctx->request->till = krb5int_addint32(from, ctx->tkt_life);
++
++    if (ctx->renew_life > 0) {
++        ctx->request->rtime =
++            krb5int_addint32(from, ctx->renew_life);
++        if (ctx->request->rtime < ctx->request->till) {
++            /* don't ask for a smaller renewable time than the lifetime */
++            ctx->request->rtime = ctx->request->till;
++        }
++        ctx->request->kdc_options &= ~(KDC_OPT_RENEWABLE_OK);
++    } else
++        ctx->request->rtime = 0;
++
+ cleanup:
+     return code;
+ }
+@@ -692,7 +716,6 @@ restart_init_creds_loop(krb5_context context, krb5_init_creds_context ctx,
+                         krb5_pa_data **padata)
+ {
+     krb5_error_code code = 0;
+-    krb5_timestamp from;
+ 
+     if (ctx->preauth_to_use) {
+         krb5_free_pa_data(context, ctx->preauth_to_use);
+@@ -732,8 +755,6 @@ restart_init_creds_loop(krb5_context context, krb5_init_creds_context ctx,
+     if (code != 0)
+         goto cleanup;
+ 
+-    ctx->request_time = time(NULL);
+-
+     code = krb5int_fast_as_armor(context, ctx->fast_state,
+                                  ctx->opte, ctx->request);
+     if (code != 0)
+@@ -747,23 +768,6 @@ restart_init_creds_loop(krb5_context context, krb5_init_creds_context ctx,
+     /* give the preauth plugins a chance to prep the request body */
+     krb5_preauth_prepare_request(context, ctx->opte, ctx->request);
+ 
+-    /* Omit request start time in the common case.  MIT and Heimdal KDCs will
+-     * ignore it for non-postdated tickets anyway. */
+-    from = krb5int_addint32(ctx->request_time, ctx->start_time);
+-    if (ctx->start_time != 0)
+-        ctx->request->from = from;
+-    ctx->request->till = krb5int_addint32(from, ctx->tkt_life);
+-
+-    if (ctx->renew_life > 0) {
+-        ctx->request->rtime =
+-            krb5int_addint32(from, ctx->renew_life);
+-        if (ctx->request->rtime < ctx->request->till) {
+-            /* don't ask for a smaller renewable time than the lifetime */
+-            ctx->request->rtime = ctx->request->till;
+-        }
+-        ctx->request->kdc_options &= ~(KDC_OPT_RENEWABLE_OK);
+-    } else
+-        ctx->request->rtime = 0;
+     code = krb5int_fast_prep_req_body(context, ctx->fast_state,
+                                       ctx->request,
+                                       &ctx->outer_request_body);
+diff --git a/src/lib/krb5/krb/int-proto.h b/src/lib/krb5/krb/int-proto.h
+index 3326154..83a47c0 100644
+--- a/src/lib/krb5/krb/int-proto.h
++++ b/src/lib/krb5/krb/int-proto.h
+@@ -142,6 +142,11 @@ krb5_preauth_supply_preauth_data(krb5_context context,
+                                  const char *value);
+ 
+ krb5_error_code
++k5_preauth_get_time(krb5_context context, krb5_clpreauth_rock rock,
++                    krb5_boolean allow_unauth_time, krb5_timestamp *time_out,
++                    krb5_int32 *usec_out);
++
++krb5_error_code
+ clpreauth_encrypted_challenge_initvt(krb5_context context, int maj_ver,
+                                      int min_ver, krb5_plugin_vtable vtable);
+ 
+diff --git a/src/lib/krb5/krb/preauth2.c b/src/lib/krb5/krb/preauth2.c
+index 747611e..167f611 100644
+--- a/src/lib/krb5/krb/preauth2.c
++++ b/src/lib/krb5/krb/preauth2.c
+@@ -397,6 +397,15 @@ get_preauth_time(krb5_context context, krb5_clpreauth_rock rock,
+                  krb5_boolean allow_unauth_time, krb5_timestamp *time_out,
+                  krb5_int32 *usec_out)
+ {
++    return k5_preauth_get_time(context, rock, allow_unauth_time,
++                               time_out, usec_out);
++}
++ 
++krb5_error_code
++k5_preauth_get_time(krb5_context context, krb5_clpreauth_rock rock,
++                    krb5_boolean allow_unauth_time, krb5_timestamp *time_out,
++                    krb5_int32 *usec_out)
++{
+     if (rock->pa_offset_state != NO_OFFSET &&
+         (allow_unauth_time || rock->pa_offset_state == AUTH_OFFSET) &&
+         (context->library_options & KRB5_LIBOPT_SYNC_KDCTIME)) {
+-- 
+1.8.1.4
+

@@ -22,6 +22,15 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.9-debuginfo.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-kvno-230379.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-alpha1-init.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-gss-client-keytab.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-cccol-primary.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11.2-empty_passwords.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11.2-arcfour_short.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11.2-skew1.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11.2-skew2.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-test_gss_no_udp.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-test_no_pmap.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-init_referral.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11.3-skew3.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

@@ -1,0 +1,115 @@
+>From 8f6d12bae1a0f1d274593c4a06dfa5948aa61418 Mon Sep 17 00:00:00 2001
+From: Stef Walter <stefw@redhat.com>
+Date: Thu, 23 May 2013 08:38:20 +0200
+Subject: [PATCH 1/2] krb5: Refator duplicate code for setting the AS REQ nonce
+
+---
+ src/lib/krb5/krb/get_in_tkt.c | 64 +++++++++++++++++++++++--------------------
+ 1 file changed, 35 insertions(+), 29 deletions(-)
+
+diff --git a/src/lib/krb5/krb/get_in_tkt.c b/src/lib/krb5/krb/get_in_tkt.c
+index 828b0fb..1058112 100644
+--- a/src/lib/krb5/krb/get_in_tkt.c
++++ b/src/lib/krb5/krb/get_in_tkt.c
+@@ -650,6 +650,34 @@ cleanup:
+     return code;
+ }
+ 
++static krb5_error_code
++update_req_before_encoding(krb5_context context, krb5_init_creds_context ctx)
++{
++    krb5_error_code code = 0;
++    unsigned char random_buf[4];
++    krb5_data random_data;
++
++    /*
++     * RFC 6113 requires a new nonce for the inner request on each try. It's
++     * permitted to change the nonce even for non-FAST as well.
++     */
++    random_data.length = 4;
++    random_data.data = (char *)random_buf;
++    code = krb5_c_random_make_octets(context, &random_data);
++    if (code != 0)
++        goto cleanup;
++
++    /*
++     * See RT ticket 3196 at MIT.  If we set the high bit, we may have
++     * compatibility problems with Heimdal, because we (incorrectly) encode
++     * this value as signed.
++     */
++    ctx->request->nonce = 0x7fffffff & load_32_n(random_buf);
++
++cleanup:
++    return code;
++}
++
+ /**
+  * Throw away any state related to specific realm either at the beginning of a
+  * request, or when a realm changes, or when we start to use FAST after
+@@ -664,8 +692,6 @@ restart_init_creds_loop(krb5_context context, krb5_init_creds_context ctx,
+                         krb5_pa_data **padata)
+ {
+     krb5_error_code code = 0;
+-    unsigned char random_buf[4];
+-    krb5_data random_data;
+     krb5_timestamp from;
+ 
+     if (ctx->preauth_to_use) {
+@@ -693,18 +719,10 @@ restart_init_creds_loop(krb5_context context, krb5_init_creds_context ctx,
+             goto cleanup;
+     }
+ 
+-    /* Set the request nonce. */
+-    random_data.length = 4;
+-    random_data.data = (char *)random_buf;
+-    code = krb5_c_random_make_octets(context, &random_data);
+-    if (code !=0)
++    code = update_req_before_encoding(context, ctx);
++    if (code != 0)
+         goto cleanup;
+-    /*
+-     * See RT ticket 3196 at MIT.  If we set the high bit, we may have
+-     * compatibility problems with Heimdal, because we (incorrectly) encode
+-     * this value as signed.
+-     */
+-    ctx->request->nonce = 0x7fffffff & load_32_n(random_buf);
++
+     krb5_free_principal(context, ctx->request->server);
+     ctx->request->server = NULL;
+ 
+@@ -1188,28 +1206,16 @@ init_creds_step_request(krb5_context context,
+ {
+     krb5_error_code code;
+     krb5_boolean got_real;
+-    char random_buf[4];
+-    krb5_data random_data;
+ 
+     if (ctx->loopcount >= MAX_IN_TKT_LOOPS) {
+         code = KRB5_GET_IN_TKT_LOOP;
+         goto cleanup;
+     }
+-    /*
+-     * RFC 6113 requires a new nonce for the inner request on each try. It's
+-     * permitted to change the nonce even for non-FAST so we do here.
+-     */
+-    random_data.length = 4;
+-    random_data.data = (char *)random_buf;
+-    code = krb5_c_random_make_octets(context, &random_data);
+-    if (code !=0)
++
++    code = update_req_before_encoding(context, ctx);
++    if (code != 0)
+         goto cleanup;
+-    /*
+-     * See RT ticket 3196 at MIT.  If we set the high bit, we may have
+-     * compatibility problems with Heimdal, because we (incorrectly) encode
+-     * this value as signed.
+-     */
+-    ctx->request->nonce = 0x7fffffff & load_32_n(random_buf);
++
+     krb5_free_data(context, ctx->inner_request_body);
+     ctx->inner_request_body = NULL;
+     code = encode_krb5_kdc_req_body(ctx->request, &ctx->inner_request_body);
+-- 
+1.8.1.4
+

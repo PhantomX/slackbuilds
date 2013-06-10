@@ -226,6 +226,18 @@ ApplyPatch VMX-x86-handle-host-TSC-calibration-failure.patch
 #rhbz 927469
 ApplyPatch fix-child-thread-introspection.patch
 
+#CVE-2013-2140 rhbz 971146 971148
+ApplyPatch xen-blkback-Check-device-permissions-before-allowing.patch
+
+#CVE-2013-2147 rhbz 971242 971249
+ApplyPatch cve-2013-2147-ciss-info-leak.patch
+
+#CVE-2013-2148 rhbz 971258 971261
+ApplyPatch fanotify-info-leak-in-copy_event_to_user.patch
+
+#CVE-2013-2851 rhbz 969515 971662
+ApplyPatch block-do-not-pass-disk-names-as-format-strings.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch
 

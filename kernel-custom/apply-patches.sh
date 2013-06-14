@@ -205,6 +205,9 @@ ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch lis3-improve-handling-of-null-rate.patch
 
+# Disable watchdog on virtual machines.
+ApplyPatch nowatchdog-on-virt.patch
+
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
@@ -237,6 +240,24 @@ ApplyPatch fanotify-info-leak-in-copy_event_to_user.patch
 
 #CVE-2013-2851 rhbz 969515 971662
 ApplyPatch block-do-not-pass-disk-names-as-format-strings.patch
+
+#rhbz 954252
+ApplyPatch scsi-ipr-possible-irq-lock-inversion-dependency-detected.patch
+
+#CVE-2013-2164 rhbz 973100 973109
+ApplyPatch cdrom-use-kzalloc-for-failing-hardware.patch
+
+#rhbz 954181
+ApplyPatch vhost_net-clear-msg.control-for-non-zerocopy-case-during-tx.patch
+ApplyPatch tuntap-set-SOCK_ZEROCOPY-flag-during-open.patch
+
+#rhbz 973185
+ApplyPatch x86-mtrr-Fix-original-mtrr-range-get-for-mtrr_cleanup.patch
+ApplyPatch x86-range-make-add_range-use-blank-slot.patch
+
+#rhbz 967230
+ApplyPatch vfio-Set-container-device-mode.patch
+ApplyPatch vfio-fix-crash-on-rmmod.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

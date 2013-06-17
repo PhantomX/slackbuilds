@@ -110,6 +110,10 @@ ApplyPatch 0002-BZ-15380-Fix-initstate-error-return.patch
 ApplyPatch 0003-BZ-15085-Fix-comments-strings-for-RES_NOCHECKNAME.patch
 ApplyPatch 0004-BZ-15084-Apparent-typos-in-strings-in-res_debug.c.patch
 ApplyPatch 0001-Use-stat64-instead-of-stat-in-installed-programs.patch
+ApplyPatch 0001-Use-movq-for-64-bit-operations.patch
+ApplyPatch 0001-Avoid-crashing-in-LD_DEBUG-when-program-name-is-unav.patch
+ApplyPatch 0001-Avoid-access-beyond-memory-bounds-in-pthread_attr_ge.patch
+ApplyPatch 0001-Add-rtld-memset.S-for-x86_64.patch
 
 # From Arch
 # combination of upstream commits 318cd0b, b540704 and fc1abbe

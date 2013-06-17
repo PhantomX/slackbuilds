@@ -1,0 +1,121 @@
+From 5865a56bf4e31c5a152e46454367a99c5971ac02 Mon Sep 17 00:00:00 2001
+From: Siddhesh Poyarekar <siddhesh@redhat.com>
+Date: Fri, 14 Jun 2013 01:20:06 +0530
+Subject: [PATCH] Avoid access beyond memory bounds in
+ pthread_attr_getaffinity_np
+
+Resolves BZ #15618.
+
+pthread_attr_getaffinity_np may write beyond bounds of the input
+cpuset buffer if the size of the input buffer is smaller than the
+buffer present in the input pthread attributes.  Fix is to copy to the
+extent of the minimum of the source and the destination.
+---
+ nptl/Makefile                                      |  1 +
+ .../unix/sysv/linux/pthread_attr_getaffinity.c     |  7 ++-
+ nptl/tst-pthread-attr-affinity.c                   | 63 ++++++++++++++++++++++
+ 5 files changed, 81 insertions(+), 2 deletions(-)
+ create mode 100644 nptl/tst-pthread-attr-affinity.c
+
+diff --git a/nptl/Makefile b/nptl/Makefile
+index 7fa991b..4788bd8 100644
+--- a/nptl/Makefile
++++ b/nptl/Makefile
+@@ -252,6 +252,7 @@ tests = tst-typesizes \
+ 	tst-exit1 tst-exit2 tst-exit3 \
+ 	tst-stdio1 tst-stdio2 \
+ 	tst-stack1 tst-stack2 tst-stack3 tst-pthread-getattr \
++	tst-pthread-attr-affinity \
+ 	tst-unload \
+ 	tst-dlsym1 \
+ 	tst-sysconf \
+diff --git a/nptl/sysdeps/unix/sysv/linux/pthread_attr_getaffinity.c b/nptl/sysdeps/unix/sysv/linux/pthread_attr_getaffinity.c
+index 00bb29b..2a60f8e 100644
+--- a/nptl/sysdeps/unix/sysv/linux/pthread_attr_getaffinity.c
++++ b/nptl/sysdeps/unix/sysv/linux/pthread_attr_getaffinity.c
+@@ -42,7 +42,12 @@ __pthread_attr_getaffinity_new (const pthread_attr_t *attr, size_t cpusetsize,
+ 	if (((char *) iattr->cpuset)[cnt] != 0)
+ 	  return EINVAL;
+ 
+-      void *p = mempcpy (cpuset, iattr->cpuset, iattr->cpusetsize);
++      /* Copy over the cpuset from the thread attribute object.  Limit the copy
++	 to the minimum of the source and destination sizes to prevent a buffer
++	 overrun.  If the destination is larger, fill the remaining space with
++	 zeroes.  */
++      void *p = mempcpy (cpuset, iattr->cpuset,
++			 MIN (iattr->cpusetsize, cpusetsize));
+       if (cpusetsize > iattr->cpusetsize)
+ 	memset (p, '\0', cpusetsize - iattr->cpusetsize);
+     }
+diff --git a/nptl/tst-pthread-attr-affinity.c b/nptl/tst-pthread-attr-affinity.c
+new file mode 100644
+index 0000000..eab0820
+--- /dev/null
++++ b/nptl/tst-pthread-attr-affinity.c
+@@ -0,0 +1,63 @@
++/* Make sure that pthread_attr_getaffinity_np does not crash when the input
++   cpuset size is smaller than that in the attribute structure.
++
++   Copyright (C) 2013 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#include <pthread.h>
++#include <stdio.h>
++#include <sched.h>
++#include <errno.h>
++#include <sys/param.h>
++
++
++#define RETURN_IF_FAIL(f, ...) \
++  ({									      \
++    int ret = f (__VA_ARGS__);						      \
++    if (ret != 0)							      \
++      {									      \
++	printf ("%s:%d: %s returned %d (errno = %d)\n", __FILE__, __LINE__,   \
++		#f, ret, errno);					      \
++	return ret;							      \
++      }									      \
++  })
++
++static int
++do_test (void)
++{
++  for (int i = 0; i < 10; i++)
++    {
++      pthread_attr_t attr;
++      cpu_set_t *cpuset = CPU_ALLOC (512);
++      size_t cpusetsize = CPU_ALLOC_SIZE (512);
++      CPU_ZERO_S (cpusetsize, cpuset);
++
++      RETURN_IF_FAIL (pthread_attr_init, &attr);
++      RETURN_IF_FAIL (pthread_attr_setaffinity_np, &attr, cpusetsize, cpuset);
++      CPU_FREE (cpuset);
++
++      cpuset = CPU_ALLOC (1);
++      cpusetsize = CPU_ALLOC_SIZE (1);
++      RETURN_IF_FAIL (pthread_attr_getaffinity_np, &attr, cpusetsize, cpuset);
++      CPU_FREE (cpuset);
++    }
++  return 0;
++}
++
++
++#define TEST_FUNCTION do_test ()
++#include "../test-skeleton.c"
+-- 
+1.8.3.1
+

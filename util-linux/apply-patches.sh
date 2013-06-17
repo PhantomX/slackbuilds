@@ -11,6 +11,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-ng.fdisk-no-solaris
 
 # 151635 - makeing /var/log/lastlog
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-ng-2.22-login-lastlog.patch
+### Backport from v2.24 + #972457
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-2.23-agetty-clocal.patch
+### 962145 - in.telnetd immediately closes connection
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-2.23-login-TCSANOW.patch
 
 ### Upstream Patches
 ###

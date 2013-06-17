@@ -1,0 +1,1157 @@
+diff -up linphone-3.6.0/coreapi/sal_eXosip2.c.exosip400 linphone-3.6.0/coreapi/sal_eXosip2.c
+--- linphone-3.6.0/coreapi/sal_eXosip2.c.exosip400	2013-05-10 10:07:00.000000000 -0300
++++ linphone-3.6.0/coreapi/sal_eXosip2.c	2013-06-15 20:17:02.054398532 -0300
+@@ -35,6 +35,7 @@ static void masquerade_via(osip_message_
+ static bool_t fix_message_contact(SalOp *op, osip_message_t *request,osip_message_t *last_answer, bool_t expire_last_contact);
+ static void update_contact_from_response(SalOp *op, osip_message_t *response);
+ 
++struct eXosip_t *eXo = 0;
+ 
+ void _osip_list_set_empty(osip_list_t *l, void (*freefunc)(void*)){
+ 	void *data;
+@@ -46,7 +47,7 @@ void _osip_list_set_empty(osip_list_t *l
+ }
+ 
+ void sal_get_default_local_ip(Sal *sal, int address_family,char *ip, size_t iplen){
+-	if (eXosip_guess_localip(address_family,ip,iplen)<0){
++	if (eXosip_guess_localip(eXo,address_family,ip,iplen)<0){
+ 		/*default to something */
+ 		strncpy(ip,address_family==AF_INET6 ? "::1" : "127.0.0.1",iplen);
+ 		ms_error("Could not find default routable ip address !");
+@@ -192,7 +193,7 @@ void sal_op_release(SalOp *op){
+ 		eXosip_event_free(op->pending_auth);
+ 	if (op->rid!=-1){
+ 		sal_remove_register(op->base.root,op->rid);
+-		eXosip_register_remove(op->rid);
++		eXosip_register_remove(eXo,op->rid);
+ 	}
+ 	if (op->cid!=-1){
+ 		ms_message("Cleaning cid %i",op->cid);
+@@ -273,7 +274,8 @@ Sal * sal_init(){
+ 		osip_trace_initialize_func (OSIP_INFO4,&_osip_trace_func);
+ 		firsttime=FALSE;
+ 	}
+-	eXosip_init();
++	eXo=eXosip_malloc();
++	eXosip_init(eXo);
+ 	sal=ms_new0(Sal,1);
+ 	sal->keepalive_period=30;
+ 	sal->double_reg=TRUE;
+@@ -290,7 +292,8 @@ Sal * sal_init(){
+ }
+ 
+ void sal_uninit(Sal* sal){
+-	eXosip_quit();
++	eXosip_quit(eXo);
++	free(eXo);
+ 	if (sal->rootCa)
+ 		ms_free(sal->rootCa);
+ 	ms_free(sal);
+@@ -348,8 +351,8 @@ void sal_set_callbacks(Sal *ctx, const S
+ 
+ int sal_unlisten_ports(Sal *ctx){
+ 	if (ctx->running){
+-		eXosip_quit();
+-		eXosip_init();
++		eXosip_quit(eXo);
++		eXosip_init(eXo);
+ 		ctx->running=FALSE;
+ 	}
+ 	return 0;
+@@ -359,7 +362,7 @@ int sal_reset_transports(Sal *ctx){
+ #ifdef HAVE_EXOSIP_RESET_TRANSPORTS
+ 	if (ctx->running){
+ 		ms_message("Exosip transports reset.");
+-		eXosip_reset_transports();
++		eXosip_reset_transports(eXo);
+ 	}
+ 	return 0;
+ #else
+@@ -374,10 +377,10 @@ static void set_tls_options(Sal *ctx){
+ 		eXosip_tls_ctx_t tlsCtx;
+ 		memset(&tlsCtx, 0, sizeof(tlsCtx));
+ 		snprintf(tlsCtx.root_ca_cert, sizeof(tlsCtx.client.cert), "%s", ctx->rootCa);
+-		eXosip_set_tls_ctx(&tlsCtx);
++		eXosip_set_option(eXo, EXOSIP_OPT_SET_TLS_CERTIFICATES_INFO, (void*)&tlsCtx);
+ 	}                       
+ #ifdef HAVE_EXOSIP_TLS_VERIFY_CERTIFICATE
+-	eXosip_tls_verify_certificate(ctx->verify_server_certs);
++	eXosip_set_option(eXo, EXOSIP_OPT_SET_TLS_VERIFY_CERTIFICATE, (void*)&ctx->verify_server_certs);
+ #endif
+ #ifdef HAVE_EXOSIP_TLS_VERIFY_CN
+ 	eXosip_tls_verify_cn(ctx->verify_server_cn);
+@@ -402,13 +405,13 @@ int sal_listen_port(Sal *ctx, const char
+ 	switch (tr) {
+ 	case SalTransportUDP:
+ 		proto=IPPROTO_UDP;
+-		eXosip_set_option (EXOSIP_OPT_UDP_KEEP_ALIVE, &keepalive);
++		eXosip_set_option (eXo, EXOSIP_OPT_UDP_KEEP_ALIVE, &keepalive);
+ 		break;
+ 	case SalTransportTCP:
+ 	case SalTransportTLS:
+ 		proto= IPPROTO_TCP;
+ 		if (!ctx->tcp_tls_keepalive) keepalive=-1;
+-		eXosip_set_option (EXOSIP_OPT_UDP_KEEP_ALIVE,&keepalive);
++		eXosip_set_option (eXo, EXOSIP_OPT_UDP_KEEP_ALIVE,&keepalive);
+ 		set_tls_options(ctx);
+ 		break;
+ 	default:
+@@ -416,9 +419,9 @@ int sal_listen_port(Sal *ctx, const char
+ 	}
+ 	/*see if it looks like an IPv6 address*/
+ 	int use_rports = ctx->use_rports; // Copy char to int to avoid bad alignment
+-	eXosip_set_option(EXOSIP_OPT_USE_RPORT,&use_rports);
+-	int dont_use_101 = !ctx->use_101; // Copy char to int to avoid bad alignment
+-	eXosip_set_option(EXOSIP_OPT_DONT_SEND_101,&dont_use_101);
++	eXosip_set_option(eXo,EXOSIP_OPT_USE_RPORT,&use_rports);
++	//int dont_use_101 = !ctx->use_101; // Copy char to int to avoid bad alignment
++	//eXosip_set_option(eXo,EXOSIP_OPT_DONT_SEND_101,&dont_use_101);
+ 	sal_set_dscp(ctx,ctx->dscp);
+ 	sal_use_dates(ctx,ctx->add_dates);
+ 
+@@ -429,14 +432,14 @@ int sal_listen_port(Sal *ctx, const char
+ 		ms_fatal("SIP over DTLS is not supported yet.");
+ 		return -1;
+ 	}
+-	err=eXosip_listen_addr(proto, addr, port, ipv6 ?  PF_INET6 : PF_INET, is_secure);
++	err=eXosip_listen_addr(eXo, proto, addr, port, ipv6 ?  PF_INET6 : PF_INET, is_secure);
+ 	ctx->running=TRUE;
+ 	return err;
+ }
+ 
+ ortp_socket_t sal_get_socket(Sal *ctx){
+ #ifdef HAVE_EXOSIP_GET_SOCKET
+-	return eXosip_get_socket(IPPROTO_UDP);
++	return eXosip_get_socket(eXo, IPPROTO_UDP);
+ #else
+ 	ms_warning("Sorry, eXosip does not have eXosip_get_socket() method");
+ 	return -1;
+@@ -444,7 +447,7 @@ ortp_socket_t sal_get_socket(Sal *ctx){
+ }
+ 
+ void sal_set_user_agent(Sal *ctx, const char *user_agent){
+-	eXosip_set_user_agent(user_agent);
++	eXosip_set_user_agent(eXo, user_agent);
+ }
+ 
+ void sal_use_session_timers(Sal *ctx, int expires){
+@@ -472,7 +475,7 @@ void sal_use_dates(Sal *ctx, bool_t enab
+ #ifdef EXOSIP_OPT_REGISTER_WITH_DATE
+ 	{
+ 		int tmp=enabled;
+-		eXosip_set_option(EXOSIP_OPT_REGISTER_WITH_DATE,&tmp);
++		eXosip_set_option(eXo,EXOSIP_OPT_REGISTER_WITH_DATE,&tmp);
+ 	}
+ #else
+ 	if (enabled) ms_warning("Exosip does not support EXOSIP_OPT_REGISTER_WITH_DATE option.");
+@@ -500,7 +503,7 @@ const char *sal_get_root_ca(Sal* ctx) {
+ void sal_verify_server_certificates(Sal *ctx, bool_t verify){
+ 	ctx->verify_server_certs=verify;
+ #ifdef HAVE_EXOSIP_TLS_VERIFY_CERTIFICATE
+-	eXosip_tls_verify_certificate(verify);
++	eXosip_set_option(eXo, EXOSIP_OPT_SET_TLS_VERIFY_CERTIFICATE, (void*)&verify);
+ #endif
+ }
+ 
+@@ -638,7 +641,7 @@ int sal_call(SalOp *h, const char *from,
+ 	h->terminated = FALSE;
+ 
+ 	route = sal_op_get_route(h);
+-	err=eXosip_call_build_initial_invite(&invite,to,from,route,"Phone call");
++	err=eXosip_call_build_initial_invite(eXo,&invite,to,from,route,"Phone call");
+ 	if (err!=0){
+ 		ms_error("Could not create call. Error %d (from=%s to=%s route=%s)",
+ 				err, from, to, route);
+@@ -664,9 +667,9 @@ int sal_call(SalOp *h, const char *from,
+ 			osip_message_set_header(invite,"Referred-By",h->referred_by);
+ 	}
+ 	
+-	eXosip_lock();
+-	err=eXosip_call_send_initial_invite(invite);
+-	eXosip_unlock();
++	eXosip_lock(eXo);
++	err=eXosip_call_send_initial_invite(eXo,invite);
++	eXosip_unlock(eXo);
+ 	h->cid=err;
+ 	if (err<0){
+ 		ms_error("Fail to send invite ! Error code %d", err);
+@@ -688,8 +691,8 @@ int sal_call_notify_ringing(SalOp *h, bo
+ 	/*if early media send also 180 and 183 */
+ 	if (early_media){
+ 		msg=NULL;
+-		eXosip_lock();
+-		eXosip_call_build_answer(h->tid,183,&msg);
++		eXosip_lock(eXo);
++		eXosip_call_build_answer(eXo,h->tid,183,&msg);
+ 		if (msg){
+ 			sdp_process(h);
+ 			if (h->sdp_answer){
+@@ -697,13 +700,13 @@ int sal_call_notify_ringing(SalOp *h, bo
+ 				sdp_message_free(h->sdp_answer);
+ 				h->sdp_answer=NULL;
+ 			}
+-			eXosip_call_send_answer(h->tid,183,msg);
++			eXosip_call_send_answer(eXo,h->tid,183,msg);
+ 		}
+-		eXosip_unlock();
++		eXosip_unlock(eXo);
+ 	}else{
+-		eXosip_lock();
+-		eXosip_call_send_answer(h->tid,180,NULL);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		eXosip_call_send_answer(eXo,h->tid,180,NULL);
++		eXosip_unlock(eXo);
+ 	}
+ 	return 0;
+ }
+@@ -712,7 +715,7 @@ int sal_call_accept(SalOp * h){
+ 	osip_message_t *msg;
+ 	const char *contact=sal_op_get_contact(h);
+ 	/* sends a 200 OK */
+-	int err=eXosip_call_build_answer(h->tid,200,&msg);
++	int err=eXosip_call_build_answer(eXo,h->tid,200,&msg);
+ 	if (err<0 || msg==NULL){
+ 		ms_error("Fail to build answer for call: err=%i",err);
+ 		return -1;
+@@ -741,38 +744,38 @@ int sal_call_accept(SalOp * h){
+ 	}else{
+ 		ms_error("You are accepting a call but not defined any media capabilities !");
+ 	}
+-	eXosip_call_send_answer(h->tid,200,msg);
++	eXosip_call_send_answer(eXo,h->tid,200,msg);
+ 	return 0;
+ }
+ 
+ int sal_call_decline(SalOp *h, SalReason reason, const char *redirect){
+ 	if (reason==SalReasonBusy){
+-		eXosip_lock();
+-		eXosip_call_send_answer(h->tid,486,NULL);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		eXosip_call_send_answer(eXo,h->tid,486,NULL);
++		eXosip_unlock(eXo);
+ 	}
+ 	else if (reason==SalReasonTemporarilyUnavailable){
+-		eXosip_lock();
+-		eXosip_call_send_answer(h->tid,480,NULL);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		eXosip_call_send_answer(eXo,h->tid,480,NULL);
++		eXosip_unlock(eXo);
+ 	}else if (reason==SalReasonDoNotDisturb){
+-		eXosip_lock();
+-		eXosip_call_send_answer(h->tid,600,NULL);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		eXosip_call_send_answer(eXo,h->tid,600,NULL);
++		eXosip_unlock(eXo);
+ 	}else if (reason==SalReasonMedia){
+-		eXosip_lock();
+-		eXosip_call_send_answer(h->tid,415,NULL);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		eXosip_call_send_answer(eXo,h->tid,415,NULL);
++		eXosip_unlock(eXo);
+ 	}else if (redirect!=NULL && reason==SalReasonRedirect){
+ 		osip_message_t *msg;
+ 		int code;
+ 		if (strstr(redirect,"sip:")!=0) code=302;
+ 		else code=380;
+-		eXosip_lock();
+-		eXosip_call_build_answer(h->tid,code,&msg);
++		eXosip_lock(eXo);
++		eXosip_call_build_answer(eXo,h->tid,code,&msg);
+ 		osip_message_set_contact(msg,redirect);
+-		eXosip_call_send_answer(h->tid,code,msg);
+-		eXosip_unlock();
++		eXosip_call_send_answer(eXo,h->tid,code,msg);
++		eXosip_unlock(eXo);
+ 	}else sal_call_terminate(h);
+ 	return 0;
+ }
+@@ -798,18 +801,18 @@ int sal_call_set_referer(SalOp *h, SalOp
+ 
+ static int send_notify_for_refer(int did, const char *sipfrag){
+ 	osip_message_t *msg;
+-	eXosip_lock();
+-	eXosip_call_build_notify(did,EXOSIP_SUBCRSTATE_ACTIVE,&msg);
++	eXosip_lock(eXo);
++	eXosip_call_build_notify(eXo, did,EXOSIP_SUBCRSTATE_ACTIVE,&msg);
+ 	if (msg==NULL){
+-		eXosip_unlock();
++		eXosip_unlock(eXo);
+ 		ms_warning("Could not build NOTIFY for refer.");
+ 		return -1;
+ 	}
+ 	osip_message_set_content_type(msg,"message/sipfrag");
+ 	osip_message_set_header(msg,"Event","refer");
+ 	osip_message_set_body(msg,sipfrag,strlen(sipfrag));
+-	eXosip_call_send_request(did,msg);
+-	eXosip_unlock();
++	eXosip_call_send_request(eXo,did,msg);
++	eXosip_unlock(eXo);
+ 	return 0;
+ }
+ 
+@@ -845,7 +848,7 @@ int sal_ping(SalOp *op, const char *from
+ 	sal_op_set_to(op,to);
+ 	sal_exosip_fix_route(op);
+ 
+-	eXosip_options_build_request (&options, sal_op_get_to(op),
++	eXosip_options_build_request (eXo, &options, sal_op_get_to(op),
+ 			sal_op_get_from(op),sal_op_get_route(op));
+ 	if (options){
+ 		if (op->base.root->session_expires!=0){
+@@ -853,7 +856,7 @@ int sal_ping(SalOp *op, const char *from
+ 			osip_message_set_supported(options, "timer");
+ 		}
+ 		sal_add_other(sal_op_get_sal(op),op,options);
+-		return eXosip_options_send_request(options);
++		return eXosip_options_send_request(eXo, options);
+ 	}
+ 	return -1;
+ }
+@@ -861,11 +864,11 @@ int sal_ping(SalOp *op, const char *from
+ int sal_call_refer(SalOp *h, const char *refer_to){
+ 	osip_message_t *msg=NULL;
+ 	int err=0;
+-	eXosip_lock();
+-	eXosip_call_build_refer(h->did,refer_to, &msg);
+-	if (msg) err=eXosip_call_send_request(h->did, msg);
++	eXosip_lock(eXo);
++	eXosip_call_build_refer(eXo,h->did,refer_to, &msg);
++	if (msg) err=eXosip_call_send_request(eXo,h->did, msg);
+ 	else err=-1;
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	return err;
+ }
+ 
+@@ -873,26 +876,26 @@ int sal_call_refer_with_replaces(SalOp *
+ 	osip_message_t *msg=NULL;
+ 	char referto[256]={0};
+ 	int err=0;
+-	eXosip_lock();
+-	if (eXosip_call_get_referto(other_call_h->did,referto,sizeof(referto)-1)!=0){
++	eXosip_lock(eXo);
++	if (eXosip_call_get_referto(eXo,other_call_h->did,referto,sizeof(referto)-1)!=0){
+ 		ms_error("eXosip_call_get_referto() failed for did=%i",other_call_h->did);
+-		eXosip_unlock();
++		eXosip_unlock(eXo);
+ 		return -1;
+ 	}
+-	eXosip_call_build_refer(h->did,referto, &msg);
++	eXosip_call_build_refer(eXo,h->did,referto, &msg);
+ 	osip_message_set_header(msg,"Referred-By",h->base.from);
+-	if (msg) err=eXosip_call_send_request(h->did, msg);
++	if (msg) err=eXosip_call_send_request(eXo, h->did, msg);
+ 	else err=-1;
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	return err;
+ }
+ 
+ SalOp *sal_call_get_replaces(SalOp *h){
+ 	if (h!=NULL && h->replaces!=NULL){
+ 		int cid;
+-		eXosip_lock();
+-		cid=eXosip_call_find_by_replaces(h->replaces);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		cid=eXosip_call_find_by_replaces(eXo,h->replaces);
++		eXosip_unlock(eXo);
+ 		if (cid>0){
+ 			SalOp *ret=sal_find_call(h->base.root,cid);
+ 			return ret;
+@@ -906,17 +909,17 @@ int sal_call_send_dtmf(SalOp *h, char dt
+ 	char dtmf_body[128];
+ 	char clen[10];
+ 
+-	eXosip_lock();
+-	eXosip_call_build_info(h->did,&msg);
++	eXosip_lock(eXo);
++	eXosip_call_build_info(eXo,h->did,&msg);
+ 	if (msg){
+ 		snprintf(dtmf_body, sizeof(dtmf_body), "Signal=%c\r\nDuration=250\r\n", dtmf);
+ 		osip_message_set_body(msg,dtmf_body,strlen(dtmf_body));
+ 		osip_message_set_content_type(msg,"application/dtmf-relay");
+ 		snprintf(clen,sizeof(clen),"%lu",(unsigned long)strlen(dtmf_body));
+ 		osip_message_set_content_length(msg,clen);		
+-		eXosip_call_send_request(h->did,msg);
++		eXosip_call_send_request(eXo,h->did,msg);
+ 	}
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	return 0;
+ }
+ 
+@@ -925,23 +928,23 @@ static void push_auth_to_exosip(const Sa
+ 	if (info->userid==NULL || info->userid[0]=='\0') userid=info->username;
+ 	else userid=info->userid;
+ 	ms_message("Authentication info for username [%s], id[%s], realm [%s] added to eXosip", info->username,userid, info->realm);
+-	eXosip_add_authentication_info (info->username,userid,
++	eXosip_add_authentication_info (eXo,info->username,userid,
+                                   info->password, NULL,info->realm);
+ }
+ /*
+  * Just for symmetry ;-)
+  */
+ static void pop_auth_from_exosip() {
+-	eXosip_clear_authentication_info();
++	eXosip_clear_authentication_info(eXo);
+ }
+ 
+ int sal_call_terminate(SalOp *h){
+ 	int err;
+ 	if (h == NULL) return -1;
+ 	if (h->auth_info) push_auth_to_exosip(h->auth_info);
+-	eXosip_lock();
+-	err=eXosip_call_terminate(h->cid,h->did);
+-	eXosip_unlock();
++	eXosip_lock(eXo);
++	err=eXosip_call_terminate(eXo,h->cid,h->did);
++	eXosip_unlock(eXo);
+ 	if (!h->base.root->reuse_authorization) pop_auth_from_exosip();
+ 	if (err!=0){
+ 		ms_warning("Exosip could not terminate the call: cid=%i did=%i", h->cid,h->did);
+@@ -967,9 +970,9 @@ void sal_op_authenticate(SalOp *h, const
+         };
+ 	*/
+ 		update_contact_from_response(h,h->pending_auth->response);
+-		eXosip_lock();
+-		eXosip_default_action(h->pending_auth);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		eXosip_default_action(eXo,h->pending_auth);
++		eXosip_unlock(eXo);
+ 		ms_message("eXosip_default_action() done");
+ 		if (!h->base.root->reuse_authorization) pop_auth_from_exosip();
+ 		
+@@ -1210,9 +1213,9 @@ static int call_proceeding(Sal *sal, eXo
+ 
+ 	if (op==NULL || op->terminated==TRUE) {
+ 		ms_warning("This call has been canceled.");
+-		eXosip_lock();
+-		eXosip_call_terminate(ev->cid,ev->did);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		eXosip_call_terminate(eXo,ev->cid,ev->did);
++		eXosip_unlock(eXo);
+ 		return -1;
+ 	}
+ 	if (ev->did>0)
+@@ -1249,9 +1252,9 @@ static void call_accepted(Sal *sal, eXos
+ 	
+ 	if (op==NULL || op->terminated==TRUE) {
+ 		ms_warning("This call has been already terminated.");
+-		eXosip_lock();
+-		eXosip_call_terminate(ev->cid,ev->did);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		eXosip_call_terminate(eXo,ev->cid,ev->did);
++		eXosip_unlock(eXo);
+ 		return ;
+ 	}
+ 
+@@ -1266,12 +1269,12 @@ static void call_accepted(Sal *sal, eXos
+ 		sdp_message_free(sdp);
+ 		if (op->base.local_media) sdp_process(op);
+ 	}
+-	eXosip_call_build_ack(ev->did,&msg);
++	eXosip_call_build_ack(eXo,ev->did,&msg);
+ 	if (msg==NULL) {
+ 		ms_warning("This call has been already terminated.");
+-		eXosip_lock();
+-		eXosip_call_terminate(ev->cid,ev->did);
+-		eXosip_unlock();
++		eXosip_lock(eXo);
++		eXosip_call_terminate(eXo,ev->cid,ev->did);
++		eXosip_unlock(eXo);
+ 		return ;
+ 	}
+ 	contact=sal_op_get_contact(op);
+@@ -1284,7 +1287,7 @@ static void call_accepted(Sal *sal, eXos
+ 		sdp_message_free(op->sdp_answer);
+ 		op->sdp_answer=NULL;
+ 	}
+-	eXosip_call_send_ack(ev->did,msg);
++	eXosip_call_send_ack(eXo,ev->did,msg);
+ 	sal->callbacks.call_accepted(op);
+ }
+ 
+@@ -1458,7 +1461,7 @@ static bool_t call_failure(Sal *sal, eXo
+ 			sr=SalReasonMedia;
+ 		break;
+ 		case 422:
+-			eXosip_default_action(ev);
++			eXosip_default_action(eXo,ev);
+ 			return TRUE;
+ 		break;
+ 		case 480:
+@@ -1508,17 +1511,17 @@ void sal_call_send_vfu_request(SalOp *h)
+ 
+ 	char clen[10];
+ 
+-	eXosip_lock();
+-	eXosip_call_build_info(h->did,&msg);
++	eXosip_lock(eXo);
++	eXosip_call_build_info(eXo,h->did,&msg);
+ 	if (msg){
+ 		osip_message_set_body(msg,info_body,strlen(info_body));
+ 		osip_message_set_content_type(msg,"application/media_control+xml");
+ 		snprintf(clen,sizeof(clen),"%lu",(unsigned long)strlen(info_body));
+ 		osip_message_set_content_length(msg,clen);
+-		eXosip_call_send_request(h->did,msg);
++		eXosip_call_send_request(eXo,h->did,msg);
+ 		ms_message("Sending VFU request !");
+ 	}
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ }
+ 
+ static void process_media_control_xml(Sal *sal, eXosip_event_t *ev){
+@@ -1537,20 +1540,20 @@ static void process_media_control_xml(Sa
+ 		ms_message("Receiving VFU request !");
+ 		if (sal->callbacks.vfu_request){
+ 			sal->callbacks.vfu_request(op);
+-			eXosip_call_build_answer(ev->tid,200,&ans);
++			eXosip_call_build_answer(eXo,ev->tid,200,&ans);
+ 			if (ans)
+-				eXosip_call_send_answer(ev->tid,200,ans);
++				eXosip_call_send_answer(eXo,ev->tid,200,ans);
+ 			return;
+ 		}
+ 	}
+ 	/*in all other cases we must say it is not implemented.*/
+ 	{
+ 		osip_message_t *ans=NULL;
+-		eXosip_lock();
+-		eXosip_call_build_answer(ev->tid,501,&ans);
++		eXosip_lock(eXo);
++		eXosip_call_build_answer(eXo,ev->tid,501,&ans);
+ 		if (ans)
+-			eXosip_call_send_answer(ev->tid,501,ans);
+-		eXosip_unlock();
++			eXosip_call_send_answer(eXo,ev->tid,501,ans);
++		eXosip_unlock(eXo);
+ 	}
+ }
+ 
+@@ -1579,11 +1582,11 @@ static void process_dtmf_relay(Sal *sal,
+ 					sal->callbacks.dtmf_received(op, tmp[0]);
+ 			}
+ 		}
+-		eXosip_lock();
+-		eXosip_call_build_answer(ev->tid,200,&ans);
++		eXosip_lock(eXo);
++		eXosip_call_build_answer(eXo,ev->tid,200,&ans);
+ 		if (ans)
+-			eXosip_call_send_answer(ev->tid,200,ans);
+-		eXosip_unlock();
++			eXosip_call_send_answer(eXo,ev->tid,200,ans);
++		eXosip_unlock(eXo);
+ 	}
+ }
+ 
+@@ -1628,11 +1631,11 @@ static void process_refer(Sal *sal, SalO
+ 			osip_free(tmp);
+ 			osip_from_free(from);
+ 		}
+-		eXosip_lock();
+-		eXosip_call_build_answer(ev->tid,202,&ans);
++		eXosip_lock(eXo);
++		eXosip_call_build_answer(eXo,ev->tid,202,&ans);
+ 		if (ans)
+-			eXosip_call_send_answer(ev->tid,202,ans);
+-		eXosip_unlock();
++			eXosip_call_send_answer(eXo,ev->tid,202,ans);
++		eXosip_unlock(eXo);
+ 	}
+ 	else
+ 	{
+@@ -1677,11 +1680,11 @@ static void process_notify(Sal *sal, eXo
+ 		}
+ 	}
+ 	/*answer that we received the notify*/
+-	eXosip_lock();
+-	eXosip_call_build_answer(ev->tid,200,&ans);
++	eXosip_lock(eXo);
++	eXosip_call_build_answer(eXo,ev->tid,200,&ans);
+ 	if (ans)
+-		eXosip_call_send_answer(ev->tid,200,ans);
+-	eXosip_unlock();
++		eXosip_call_send_answer(eXo,ev->tid,200,ans);
++	eXosip_unlock(eXo);
+ 	osip_free(from);
+ }
+ 
+@@ -1699,28 +1702,28 @@ static void call_message_new(Sal *sal, e
+ 				else {
+ 					ms_message("Unhandled SIP INFO.");
+ 					/*send an "Not implemented" answer*/
+-					eXosip_lock();
+-					eXosip_call_build_answer(ev->tid,501,&ans);
++					eXosip_lock(eXo);
++					eXosip_call_build_answer(eXo,ev->tid,501,&ans);
+ 					if (ans)
+-						eXosip_call_send_answer(ev->tid,501,ans);
+-					eXosip_unlock();
++						eXosip_call_send_answer(eXo,ev->tid,501,ans);
++					eXosip_unlock(eXo);
+ 				}
+ 			}else{
+ 				/*empty SIP INFO, probably to test we are alive. Send an empty answer*/
+-				eXosip_lock();
+-				eXosip_call_build_answer(ev->tid,200,&ans);
++				eXosip_lock(eXo);
++				eXosip_call_build_answer(eXo,ev->tid,200,&ans);
+ 				if (ans)
+-					eXosip_call_send_answer(ev->tid,200,ans);
+-				eXosip_unlock();
++					eXosip_call_send_answer(eXo,ev->tid,200,ans);
++				eXosip_unlock(eXo);
+ 			}
+ 		}else if(MSG_IS_MESSAGE(ev->request)){
+ 			/* SIP messages could be received into call */
+ 			text_received(sal, ev);
+-			eXosip_lock();
+-			eXosip_call_build_answer(ev->tid,200,&ans);
++			eXosip_lock(eXo);
++			eXosip_call_build_answer(eXo,ev->tid,200,&ans);
+ 			if (ans)
+-				eXosip_call_send_answer(ev->tid,200,ans);
+-			eXosip_unlock();
++				eXosip_call_send_answer(eXo,ev->tid,200,ans);
++			eXosip_unlock(eXo);
+ 		}else if(MSG_IS_REFER(ev->request)){
+ 			SalOp *op=find_op(sal,ev);
+ 			
+@@ -1729,13 +1732,13 @@ static void call_message_new(Sal *sal, e
+ 		}else if(MSG_IS_NOTIFY(ev->request)){
+ 			process_notify(sal,ev);
+ 		}else if (MSG_IS_OPTIONS(ev->request)){
+-			eXosip_lock();
+-			eXosip_call_build_answer(ev->tid,200,&ans);
++			eXosip_lock(eXo);
++			eXosip_call_build_answer(eXo,ev->tid,200,&ans);
+ 			if (ans){
+ 				fill_options_answer(ans);
+-				eXosip_call_send_answer(ev->tid,200,ans);
++				eXosip_call_send_answer(eXo,ev->tid,200,ans);
+ 			}
+-			eXosip_unlock();
++			eXosip_unlock(eXo);
+ 		}
+ 	}else ms_warning("call_message_new: No request ?");
+ }
+@@ -1743,11 +1746,11 @@ static void call_message_new(Sal *sal, e
+ static void inc_update(Sal *sal, eXosip_event_t *ev){
+ 	osip_message_t *msg=NULL;
+ 	ms_message("Processing incoming UPDATE");
+-	eXosip_lock();
+-	eXosip_message_build_answer(ev->tid,200,&msg);
++	eXosip_lock(eXo);
++	eXosip_message_build_answer(eXo,ev->tid,200,&msg);
+ 	if (msg!=NULL)
+-		eXosip_message_send_answer(ev->tid,200,msg);
+-	eXosip_unlock();
++		eXosip_message_send_answer(eXo,ev->tid,200,msg);
++	eXosip_unlock(eXo);
+ }
+ 
+ static bool_t comes_from_local_if(osip_message_t *msg){
+@@ -1874,12 +1877,12 @@ static void other_request(Sal *sal, eXos
+ 	if (ev->request==NULL) return;
+ 	if (strcmp(ev->request->sip_method,"MESSAGE")==0){
+ 		text_received(sal,ev);
+-		eXosip_message_send_answer(ev->tid,200,NULL);
++		eXosip_message_send_answer(eXo,ev->tid,200,NULL);
+ 	}else if (strcmp(ev->request->sip_method,"OPTIONS")==0){
+ 		osip_message_t *options=NULL;
+-		eXosip_options_build_answer(ev->tid,200,&options);
++		eXosip_options_build_answer(eXo,ev->tid,200,&options);
+ 		fill_options_answer(options);
+-		eXosip_options_send_answer(ev->tid,200,options);
++		eXosip_options_send_answer(eXo,ev->tid,200,options);
+ 	}else if (strncmp(ev->request->sip_method, "REFER", 5) == 0){
+ 		ms_message("Receiving REFER request !");
+ 		if (comes_from_local_if(ev->request)) {
+@@ -1896,7 +1899,7 @@ static void other_request(Sal *sal, eXos
+ 			osip_free(tmp);
+ 		}
+ 		/*answer with a 501 Not implemented*/
+-		eXosip_message_send_answer(ev->tid,501,NULL);
++		eXosip_message_send_answer(eXo,ev->tid,501,NULL);
+ 	}
+ }
+ 
+@@ -2007,25 +2010,25 @@ static bool_t register_again_with_update
+ 		ms_message("Contact do not match, resending register.");
+ 	else return FALSE;
+ 
+-	eXosip_lock();
+-	eXosip_register_build_register(op->rid,op->expires,&msg);
++	eXosip_lock(eXo);
++	eXosip_register_build_register(eXo,op->rid,op->expires,&msg);
+ 	if (msg==NULL){
+-	    eXosip_unlock();
++	    eXosip_unlock(eXo);
+ 	    ms_warning("Fail to create a contact updated register.");
+ 	    return FALSE;
+ 	}
+ 	if (fix_message_contact(op,msg,last_answer,op->base.root->expire_old_contact)) {
+-		eXosip_register_send_register(op->rid,msg);
+-		eXosip_unlock();  
++		eXosip_register_send_register(eXo,op->rid,msg);
++		eXosip_unlock(eXo);  
+ 		ms_message("Resending new register with updated contact");
+ 		update_contact_from_response(op,last_answer);
+ 		return TRUE;
+ 	} else {
+ 	    ms_warning("Fail to send updated register.");
+-	    eXosip_unlock();
++	    eXosip_unlock(eXo);
+ 	    return FALSE;
+ 	}
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	return FALSE;
+ }
+ 
+@@ -2078,10 +2081,10 @@ static bool_t registration_failure(Sal *
+ 					if (val>op->expires)
+ 						op->expires=val;
+ 				}else op->expires*=2;
+-				eXosip_lock();
+-				eXosip_register_build_register(op->rid,op->expires,&msg);
+-				eXosip_register_send_register(op->rid,msg);
+-				eXosip_unlock();
++				eXosip_lock(eXo);
++				eXosip_register_build_register(eXo,op->rid,op->expires,&msg);
++				eXosip_register_send_register(eXo,op->rid,msg);
++				eXosip_unlock(eXo);
+ 			}
+ 		break;
+ 		case 606: /*Not acceptable, workaround for proxies that don't like private addresses
+@@ -2156,7 +2159,9 @@ static bool_t process_event(Sal *sal, eX
+ 			ms_message("CALL_CLOSED or CANCELLED\n");
+ 			call_terminated(sal,ev);
+ 			break;
++#ifdef EXOSIP_CALL_TIMEOUT
+ 		case EXOSIP_CALL_TIMEOUT:
++#endif
+ 		case EXOSIP_CALL_NOANSWER:
+ 			ms_message("CALL_TIMEOUT or NOANSWER\n");
+ 			return call_failure(sal,ev);
+@@ -2184,7 +2189,7 @@ static bool_t process_event(Sal *sal, eX
+ 			break;
+ 		case EXOSIP_CALL_REDIRECTED:
+ 			ms_message("CALL_REDIRECTED");
+-			eXosip_default_action(ev);
++			eXosip_default_action(eXo,ev);
+ 			break;
+ 		case EXOSIP_CALL_PROCEEDING:
+ 			ms_message("CALL_PROCEEDING");
+@@ -2213,13 +2218,17 @@ static bool_t process_event(Sal *sal, eX
+ 			ms_message("CALL_IN_SUBSCRIPTION_NEW ");
+ 			sal_exosip_subscription_recv(sal,ev);
+ 			break;
++#ifdef EXOSIP_IN_SUBSCRIPTION_RELEASED
+ 		case EXOSIP_IN_SUBSCRIPTION_RELEASED:
+ 			ms_message("CALL_SUBSCRIPTION_NEW ");
+ 			sal_exosip_in_subscription_closed(sal,ev);
+ 			break;
++#endif
++#ifdef EXOSIP_SUBSCRIPTION_UPDATE
+ 		case EXOSIP_SUBSCRIPTION_UPDATE:
+ 			ms_message("CALL_SUBSCRIPTION_UPDATE");
+ 			break;
++#endif
+ 		case EXOSIP_SUBSCRIPTION_NOTIFY:
+ 			ms_message("CALL_SUBSCRIPTION_NOTIFY");
+ 			sal_exosip_notify_recv(sal,ev);
+@@ -2228,10 +2237,12 @@ static bool_t process_event(Sal *sal, eX
+ 			ms_message("EXOSIP_SUBSCRIPTION_ANSWERED, ev->sid=%i, ev->did=%i\n",ev->sid,ev->did);
+ 			sal_exosip_subscription_answered(sal,ev);
+ 			break;
++#ifdef EXOSIP_SUBSCRIPTION_CLOSED
+ 		case EXOSIP_SUBSCRIPTION_CLOSED:
+ 			ms_message("EXOSIP_SUBSCRIPTION_CLOSED\n");
+ 			sal_exosip_subscription_closed(sal,ev);
+ 			break;
++#endif
+ 		case EXOSIP_SUBSCRIPTION_REQUESTFAILURE:   /**< announce a request failure      */
+ 			if (ev->response && (ev->response->status_code == 407 || ev->response->status_code == 401)){
+ 				return process_authentication(sal,ev);
+@@ -2266,7 +2277,7 @@ static bool_t process_event(Sal *sal, eX
+ 					case 401:
+ 						return process_authentication(sal,ev);
+ 					case 412: {
+-						eXosip_automatic_action ();
++						eXosip_automatic_action (eXo);
+ 						return 1;
+ 					}
+ 				}
+@@ -2282,21 +2293,21 @@ static bool_t process_event(Sal *sal, eX
+ 
+ int sal_iterate(Sal *sal){
+ 	eXosip_event_t *ev;
+-	while((ev=eXosip_event_wait(0,0))!=NULL){
++	while((ev=eXosip_event_wait(eXo,0,0))!=NULL){
+ 		if (process_event(sal,ev))
+ 			eXosip_event_free(ev);
+ 	}
+ #ifdef HAVE_EXOSIP_TRYLOCK
+ 	if (eXosip_trylock()==0){
+-		eXosip_automatic_refresh();
+-		eXosip_unlock();
++		eXosip_automatic_refresh(eXo);
++		eXosip_unlock(eXo);
+ 	}else{
+ 		ms_warning("eXosip_trylock busy.");
+ 	}
+ #else
+-	eXosip_lock();
+-	eXosip_automatic_refresh();
+-	eXosip_unlock();
++	eXosip_lock(eXo);
++	eXosip_automatic_refresh(eXo);
++	eXosip_unlock(eXo);
+ #endif
+ 	return 0;
+ }
+@@ -2361,26 +2372,26 @@ int sal_register(SalOp *h, const char *p
+ 		}
+ 		if (uri) ms_free(uri);
+ 		sal_address_destroy(from_parsed);
+-		eXosip_lock();
+-		h->rid=eXosip_register_build_initial_register(from,domain,NULL,expires,&msg);
++		eXosip_lock(eXo);
++		h->rid=eXosip_register_build_initial_register(eXo,from,domain,NULL,expires,&msg);
+ 		if (msg){
+ 			if (contact) register_set_contact(msg,contact);
+ 			sal_message_add_route(msg,proxy);
+ 			sal_add_register(h->base.root,h);
+ 		}else{
+ 			ms_error("Could not build initial register.");
+-			eXosip_unlock();
++			eXosip_unlock(eXo);
+ 			return -1;
+ 		}
+ 	}else{
+-		eXosip_lock();
+-		eXosip_register_build_register(h->rid,expires,&msg);
++		eXosip_lock(eXo);
++		eXosip_register_build_register(eXo,h->rid,expires,&msg);
+ 		sal_message_add_route(msg,proxy);
+ 	}
+ 	if (msg){
+-		eXosip_register_send_register(h->rid,msg);
++		eXosip_register_send_register(eXo,h->rid,msg);
+ 	}
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	h->expires=expires;
+ 	return (msg != NULL) ? 0 : -1;
+ }
+@@ -2409,26 +2420,26 @@ int sal_register_refresh(SalOp *op, int
+ 		}
+ 	}
+ #else
+-	eXosip_lock();
++	eXosip_lock(eXo);
+ #endif
+-	eXosip_register_build_register(op->rid,expires,&msg);
++	eXosip_register_build_register(eXo,op->rid,expires,&msg);
+ 	if (msg!=NULL){
+ 		if (contact) register_set_contact(msg,contact);
+ 		sal_message_add_route(msg,sal_op_get_route(op));
+-		eXosip_register_send_register(op->rid,msg);
++		eXosip_register_send_register(eXo,op->rid,msg);
+ 	}else ms_error("Could not build REGISTER refresh message.");
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	return (msg != NULL) ? 0 : -1;
+ }
+ 
+ 
+ int sal_unregister(SalOp *h){
+ 	osip_message_t *msg=NULL;
+-	eXosip_lock();
+-	eXosip_register_build_register(h->rid,0,&msg);
+-	if (msg) eXosip_register_send_register(h->rid,msg);
++	eXosip_lock(eXo);
++	eXosip_register_build_register(eXo,h->rid,0,&msg);
++	if (msg) eXosip_register_send_register(eXo,h->rid,msg);
+ 	else ms_warning("Could not build unREGISTER !");
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	return 0;
+ }
+ 
+@@ -2598,7 +2609,7 @@ void sal_set_keepalive_period(Sal *ctx,u
+ 		default:
+ 			break;
+ 	}
+-	eXosip_set_option (EXOSIP_OPT_UDP_KEEP_ALIVE, &ctx->keepalive_period);
++	eXosip_set_option (eXo, EXOSIP_OPT_UDP_KEEP_ALIVE, &ctx->keepalive_period);
+ }
+ unsigned int sal_get_keepalive_period(Sal *ctx) {
+ 	return ctx->keepalive_period;
+@@ -2636,12 +2647,12 @@ int sal_call_update(SalOp *h, const char
+ 	int err=0;
+ 	osip_message_t *reinvite=NULL;
+ 
+-	eXosip_lock();
+-	if(eXosip_call_build_request(h->did,"INVITE",&reinvite) != 0 || reinvite==NULL){
+-		eXosip_unlock();
++	eXosip_lock(eXo);
++	if(eXosip_call_build_request(eXo,h->did,"INVITE",&reinvite) != 0 || reinvite==NULL){
++		eXosip_unlock(eXo);
+ 		return -1;
+ 	}
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	osip_message_set_subject(reinvite,subject);
+ 	osip_message_set_allow(reinvite, "INVITE, ACK, CANCEL, OPTIONS, BYE, REFER, NOTIFY, MESSAGE, SUBSCRIBE, INFO");
+ 	if (h->base.contact){
+@@ -2656,9 +2667,9 @@ int sal_call_update(SalOp *h, const char
+ 		h->sdp_offering=TRUE;
+ 		set_sdp_from_desc(reinvite,h->base.local_media);
+ 	}else h->sdp_offering=FALSE;
+-	eXosip_lock();
+-	err = eXosip_call_send_request(h->did, reinvite);
+-	eXosip_unlock();
++	eXosip_lock(eXo);
++	err = eXosip_call_send_request(eXo,h->did, reinvite);
++	eXosip_unlock(eXo);
+ 	return err;
+ }
+ 
+diff -up linphone-3.6.0/coreapi/sal_eXosip2_presence.c.exosip400 linphone-3.6.0/coreapi/sal_eXosip2_presence.c
+--- linphone-3.6.0/coreapi/sal_eXosip2_presence.c.exosip400	2013-04-30 05:33:49.000000000 -0300
++++ linphone-3.6.0/coreapi/sal_eXosip2_presence.c	2013-06-15 20:08:07.140245693 -0300
+@@ -32,6 +32,8 @@ typedef enum {
+  */
+ static presence_type_t presence_style = PIDF;
+ 
++extern struct eXosip_t *eXo;
++
+ SalOp * sal_find_out_subscribe(Sal *sal, int sid){
+ 	const MSList *elem;
+ 	SalOp *op;
+@@ -113,8 +115,8 @@ int sal_message_send(SalOp *op, const ch
+ 			sal_op_set_to(op,to);
+ 
+ 		sal_exosip_fix_route(op);
+-		eXosip_lock();
+-		eXosip_message_build_request(&sip,"MESSAGE",sal_op_get_to(op),
++		eXosip_lock(eXo);
++		eXosip_message_build_request(eXo,&sip,"MESSAGE",sal_op_get_to(op),
+ 			sal_op_get_from(op),sal_op_get_route(op));
+ 		if (sip!=NULL){
+ 			sal_exosip_add_custom_headers(sip,op->base.custom_headers);
+@@ -122,30 +124,30 @@ int sal_message_send(SalOp *op, const ch
+ 			osip_message_set_content_type(sip,content_type);
+ 			if (msg) osip_message_set_body(sip,msg,strlen(msg));
+ 			sal_add_other(op->base.root,op,sip);
+-			eXosip_message_send_request(sip);
++			eXosip_message_send_request(eXo,sip);
+ 		}else{
+ 			ms_error("Could not build MESSAGE request !");
+ 		}
+-		eXosip_unlock();
++		eXosip_unlock(eXo);
+ 	}
+ 	else
+ 	{
+ 		/* we are currently in communication with the destination */
+-		eXosip_lock();
++		eXosip_lock(eXo);
+ 		//First we generate an INFO message to get the current call_id and a good cseq
+-		eXosip_call_build_request(op->did,"MESSAGE",&sip);
++		eXosip_call_build_request(eXo,op->did,"MESSAGE",&sip);
+ 		if(sip == NULL)
+ 		{
+ 			ms_warning("could not get a build info to send MESSAGE, maybe no previous call established ?");
+-			eXosip_unlock();
++			eXosip_unlock(eXo);
+ 			return -1;
+ 		}
+ 		sal_exosip_add_custom_headers(sip,op->base.custom_headers);
+ 		msg_add_current_date(sip);
+ 		osip_message_set_content_type(sip,content_type);
+ 		if (msg) osip_message_set_body(sip,msg,strlen(msg));
+-		eXosip_call_send_request(op->did,sip);
+-		eXosip_unlock();
++		eXosip_call_send_request(eXo,op->did,sip);
++		eXosip_unlock(eXo);
+ 	}
+ 	return 0;
+ }
+@@ -161,20 +163,20 @@ int sal_subscribe_presence(SalOp *op, co
+ 	if (to)
+ 		sal_op_set_to(op,to);
+ 	sal_exosip_fix_route(op);
+-	eXosip_lock();
+-	eXosip_subscribe_build_initial_request(&msg,sal_op_get_to(op),sal_op_get_from(op),
++	eXosip_lock(eXo);
++	eXosip_subscribe_build_initial_request(eXo,&msg,sal_op_get_to(op),sal_op_get_from(op),
+ 	    	sal_op_get_route(op),"presence",600);
+ 	if (msg==NULL){
+ 		ms_error("Could not build subscribe request to %s",to);
+-		eXosip_unlock();
++		eXosip_unlock(eXo);
+ 		return -1;
+ 	}
+ 	if (op->base.contact){
+ 		_osip_list_set_empty(&msg->contacts,(void (*)(void*))osip_contact_free);
+ 		osip_message_set_contact(msg,op->base.contact);
+ 	}
+-	op->sid=eXosip_subscribe_send_initial_request(msg);
+-	eXosip_unlock();
++	op->sid=eXosip_subscribe_send_initial_request(eXo,msg);
++	eXosip_unlock(eXo);
+ 	if (op->sid==-1){
+ 		osip_message_free(msg);
+ 		return -1;
+@@ -189,39 +191,39 @@ int sal_unsubscribe(SalOp *op){
+ 		ms_error("cannot unsubscribe, no dialog !");
+ 		return -1;
+ 	}
+-	eXosip_lock();
+-	eXosip_subscribe_build_refresh_request(op->did,&msg);
++	eXosip_lock(eXo);
++	eXosip_subscribe_build_refresh_request(eXo,op->did,&msg);
+ 	if (msg){
+ 		osip_message_set_expires(msg,"0");
+-		eXosip_subscribe_send_refresh_request(op->did,msg);
++		eXosip_subscribe_send_refresh_request(eXo,op->did,msg);
+ 	}else ms_error("Could not build subscribe refresh request ! op->sid=%i, op->did=%i",
+ 	    	op->sid,op->did);
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	return 0;
+ }
+ 
+ int sal_subscribe_accept(SalOp *op){
+ 	osip_message_t *msg=NULL;
+-	eXosip_lock();
+-	eXosip_insubscription_build_answer(op->tid,202,&msg);
++	eXosip_lock(eXo);
++	eXosip_insubscription_build_answer(eXo,op->tid,202,&msg);
+ 	if (msg==NULL){
+ 		ms_error("Fail to build answer to subscribe.");
+-		eXosip_unlock();
++		eXosip_unlock(eXo);
+ 		return -1;
+ 	}
+ 	if (op->base.contact){
+ 		_osip_list_set_empty(&msg->contacts,(void (*)(void*))osip_contact_free);
+ 		osip_message_set_contact(msg,op->base.contact);
+ 	}
+-	eXosip_insubscription_send_answer(op->tid,202,msg);
+-	eXosip_unlock();
++	eXosip_insubscription_send_answer(eXo,op->tid,202,msg);
++	eXosip_unlock(eXo);
+ 	return 0;
+ }
+ 
+ int sal_subscribe_decline(SalOp *op){
+-	eXosip_lock();
+-	eXosip_insubscription_send_answer(op->tid,401,NULL);
+-	eXosip_unlock();
++	eXosip_lock(eXo);
++	eXosip_insubscription_send_answer(eXo,op->tid,401,NULL);
++	eXosip_unlock(eXo);
+ 	return 0;
+ }
+ 
+@@ -597,39 +599,39 @@ static void add_presence_body(osip_messa
+ 
+ int sal_notify_presence(SalOp *op, SalPresenceStatus status, const char *status_message){
+ 	osip_message_t *msg=NULL;
+-	eXosip_ss_t ss=EXOSIP_SUBCRSTATE_ACTIVE;
++	int ss=EXOSIP_SUBCRSTATE_ACTIVE;
+ 	if (op->nid==-1){
+ 		ms_warning("Cannot notify, subscription was closed.");
+ 		return -1;
+ 	}
+ 	
+-	eXosip_lock();
+-	eXosip_insubscription_build_notify(op->did,ss,DEACTIVATED,&msg);
++	eXosip_lock(eXo);
++	eXosip_insubscription_build_notify(eXo,op->did,ss,DEACTIVATED,&msg);
+ 	if (msg!=NULL){
+ 		const char *identity=sal_op_get_contact(op);
+ 		if (identity==NULL) identity=sal_op_get_to(op);
+ 		_osip_list_set_empty(&msg->contacts,(void (*)(void*))osip_contact_free);
+ 		osip_message_set_contact(msg,identity);
+ 		add_presence_body(msg,status);
+-		eXosip_insubscription_send_request(op->did,msg);
++		eXosip_insubscription_send_request(eXo,op->did,msg);
+ 	}else ms_error("could not create notify for incoming subscription.");
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	return 0;
+ }
+ 
+ int sal_notify_close(SalOp *op){
+ 	osip_message_t *msg=NULL;
+-	eXosip_lock();
+-	eXosip_insubscription_build_notify(op->did,EXOSIP_SUBCRSTATE_TERMINATED,DEACTIVATED,&msg);
++	eXosip_lock(eXo);
++	eXosip_insubscription_build_notify(eXo,op->did,EXOSIP_SUBCRSTATE_TERMINATED,DEACTIVATED,&msg);
+ 	if (msg!=NULL){
+ 		const char *identity=sal_op_get_contact(op);
+ 		if (identity==NULL) identity=sal_op_get_to(op);
+ 		osip_message_set_contact(msg,identity);
+ 		add_presence_body(msg,SalPresenceOffline);
+-		eXosip_insubscription_send_request(op->did,msg);
++		eXosip_insubscription_send_request(eXo,op->did,msg);
+ 	}else ms_error("sal_notify_close(): could not create notify for incoming subscription"
+ 	    " did=%i, nid=%i",op->did,op->nid);
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	return 0;
+ }
+ 
+@@ -641,7 +643,7 @@ int sal_publish(SalOp *op, const char *f
+ 
+ 	mk_presence_body (presence_mode, from, buf, sizeof (buf), presence_style);
+ 
+-	i = eXosip_build_publish(&pub,to, from, NULL, "presence", "600", 
++	i = eXosip_build_publish(eXo,&pub,to, from, NULL, "presence", "600", 
+ 		presence_style ? "application/xpidf+xml" : "application/pidf+xml", buf);
+ 	if (i<0){
+ 		ms_warning("Failed to build publish request.");
+@@ -650,10 +652,10 @@ int sal_publish(SalOp *op, const char *f
+ 	if (route)
+ 		sal_message_add_route(pub,route);
+ 	
+-	eXosip_lock();
+-	i = eXosip_publish(pub, to); /* should update the sip-if-match parameter
++	eXosip_lock(eXo);
++	i = eXosip_publish(eXo,pub, to); /* should update the sip-if-match parameter
+ 				    from sip-etag  from last 200ok of PUBLISH */
+-	eXosip_unlock();
++	eXosip_unlock(eXo);
+ 	if (i<0){
+ 		ms_message("Failed to send publish request.");
+ 		return -1;
+@@ -693,10 +695,10 @@ void sal_exosip_subscription_recv(Sal *s
+ 		}else {
+ 			osip_message_t *msg=NULL;
+ 			ms_warning("Probably a refresh subscribe");
+-			eXosip_lock();
+-			eXosip_insubscription_build_answer(ev->tid,202,&msg);
+-			eXosip_insubscription_send_answer(ev->tid,202,msg);
+-			eXosip_unlock();
++			eXosip_lock(eXo);
++			eXosip_insubscription_build_answer(eXo,ev->tid,202,&msg);
++			eXosip_insubscription_send_answer(eXo,ev->tid,202,msg);
++			eXosip_unlock(eXo);
+ 		}
+ 	}else _sal_exosip_subscription_recv(sal,ev);
+ }

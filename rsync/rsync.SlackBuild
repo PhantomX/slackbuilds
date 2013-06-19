@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-4}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -142,6 +142,18 @@ make install DESTDIR=${PKG} || exit $?
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+# config and systemd files borrowed from Fedora
+mkdir -p ${PKG}/etc
+install -pm0644 ${CWD}/rsyncd.conf ${PKG}/etc/rsyncd.conf.new || exit 1
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/systemd/*.{service,socket} ${PKG}/lib/systemd/system/ || exit 1
+
+mkdir -p ${PKG}/etc/default
+cat >> ${PKG}/etc/default/rsyncd.new  <<'EOF'
+OPTIONS="" 
+EOF
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
@@ -177,18 +189,56 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
+cat > ${PKG}/install/doinst.sh <<EOF
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
+fi
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
   ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/patches
+  mkdir -p ${SBDIR}/{patches,systemd}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/rsyncd.conf ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
+  install -m0644 ${CWD}/systemd/*.* \
+    ${SBDIR}/systemd/
   rmdir ${SBDIR}/patches
 fi
 
@@ -199,7 +249,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

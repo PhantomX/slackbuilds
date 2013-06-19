@@ -44,6 +44,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P1-interval.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P2-conflex-do-forward-updates.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P2-dupl-key.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-range6.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-next-server.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

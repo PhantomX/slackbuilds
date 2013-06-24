@@ -36,7 +36,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-strings.pat
 patch -p1 -E --backup -z .libcxx --verbose -i ${SB_PATCHDIR}/${PNAME}-4.2.0-libcxx.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-3.2.10-noansi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.1.2-testmangle.patch
-# gcc 4.8 fixes from Arch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/003-gcc-48.patch
 
 set +e +o pipefail

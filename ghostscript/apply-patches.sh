@@ -10,7 +10,7 @@ zcat ${SB_PATCHDIR}/ghostscript-8.62-versioned_ijs.patch.gz | patch -p0 --verbos
 zcat ${SB_PATCHDIR}/ghostscript-multilib.patch.gz | patch -p1 --verbose
 # Fix some shell scripts
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-scripts.patch
-# Build igcref.c with -O0 to work around bug #150771.
+# Build igcref.c with -O0 to work around bug rh#150771.
 zcat ${SB_PATCHDIR}/ghostscript-noopt.patch.gz | patch -p1 --verbose
 # Fix ./autgen.sh in ijs sub-project
 # Define .runlibfileifexists.
@@ -24,10 +24,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-iccprofiles-initdir.patch
 # gdevcups: don't use uninitialized variables in debugging output.
 patch -p1 -E --backup -z .gdevcups-debug-uninit --verbose -i ${SB_PATCHDIR}/ghostscript-gdevcups-debug-uninit.patch
-# Back-ported locale fix (bug #961149).
+# Back-ported locale fix (bug rh#961149).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-gs_sprintf.patch
-# Upstream patch to fix pdfwrite segfault (bug #962120).
+# Upstream patch to fix pdfwrite segfault (bug rh#962120).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-pdfwrite-segfault.patch
+# Upstream patch from bug #690692 to handle strange fonts (bug rh#969660).
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-strange-fonts.patch
 
 
 set +e +o pipefail

@@ -11,5 +11,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dcmtk-3.6.0-0004-Use-system-ch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dcmtk-3.6.0-0005-Fixed-includes-for-CharLS-1.0.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dcmtk-3.6.0-0006-Added-optional-support-for-building-shared-libraries.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dcmtk-3.6.0-0007-Add-soname-generation-for-modules-which-are-not-in-D.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dcmtk-3.6.0-0008-Compiler-Fixes.patch
 
 set +e +o pipefail

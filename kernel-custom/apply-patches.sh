@@ -220,9 +220,6 @@ ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 903192
-ApplyPatch 0001-kmsg-Honor-dmesg_restrict-sysctl-on-dev-kmsg.patch
-
 #rhbz 859282
 ApplyPatch VMX-x86-handle-host-TSC-calibration-failure.patch
 

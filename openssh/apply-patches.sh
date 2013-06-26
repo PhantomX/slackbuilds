@@ -71,8 +71,8 @@ ApplyPatch openssh-6.2p1-ctr-cavstest-slk.patch
 # obsolete RequiredAuthentications options
 ApplyPatch openssh-6.2p1-required-authentications.patch
 ApplyPatch openssh-6.2p1-modpipe-cflags.patch
-# https://bugzilla.mindrot.org/show_bug.cgi?id=2084
-ApplyPatch openssh-6.2p1-track-IdentifyFile.patch
+# make sftp's libedit interface marginally multibyte aware (#841771)
+ApplyPatch openssh-6.2p2-sftp-multibyte.patch
 
 set +e +o pipefail
 

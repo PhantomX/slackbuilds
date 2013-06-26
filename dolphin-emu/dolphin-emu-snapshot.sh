@@ -43,7 +43,7 @@ pushd "${tmp}"
       fi
     fi
     pushd Externals
-      rm -rf Cg* GLew gettext libjpeg libpng LZO portaudio SDL SFML SOIL zlib
+      rm -rf Cg* GLew gettext libjpeg libpng LZO portaudio SDL SFML SOIL wxWidgets3 zlib
     popd >/dev/null
     echo "$(git rev-parse HEAD 2> /dev/null)" > wcrev
     echo "$(git describe --always --long --dirty 2> /dev/null)" > wcdesc

@@ -25,7 +25,7 @@ pushd "${tmp}"
   pushd ${module}-${snap}
     for dir in \
       Client Common ContentDecoder ContentDownloader DisplayOutput MSVC Networking \
-      Runtime TupleStorage menu-entries mk tinyXml
+      Runtime TupleStorage lua5.1 menu-entries mk tinyXml
     do
       svn export ${SNAP_COOPTS} ${snaproot}/${dir}
     done

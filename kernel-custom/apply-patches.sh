@@ -244,17 +244,19 @@ ApplyPatch scsi-ipr-possible-irq-lock-inversion-dependency-detected.patch
 #CVE-2013-2164 rhbz 973100 973109
 ApplyPatch cdrom-use-kzalloc-for-failing-hardware.patch
 
-#rhbz 954181
-ApplyPatch vhost_net-clear-msg.control-for-non-zerocopy-case-during-tx.patch
-ApplyPatch tuntap-set-SOCK_ZEROCOPY-flag-during-open.patch
-
-#rhbz 973185
-ApplyPatch x86-mtrr-Fix-original-mtrr-range-get-for-mtrr_cleanup.patch
-ApplyPatch x86-range-make-add_range-use-blank-slot.patch
-
 #rhbz 967230
 ApplyPatch vfio-Set-container-device-mode.patch
 ApplyPatch vfio-fix-crash-on-rmmod.patch
+
+#rhbz 969644
+ApplyPatch KVM-x86-handle-idiv-overflow-at-kvm_write_tsc.patch
+
+#rhbz 903741
+ApplyPatch HID-input-return-ENODATA-if-reading-battery-attrs-fails.patch
+
+#rhbz 880035
+ApplyPatch bridge-only-expire-the-mdb-entry-when-query-is-received.patch
+ApplyPatch bridge-send-query-as-soon-as-leave-is-received.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

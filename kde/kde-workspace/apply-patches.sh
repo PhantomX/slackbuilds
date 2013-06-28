@@ -51,6 +51,18 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.2-bz\#732830-login
 # http://bugs.kde.org/242065
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.95-kdm_xauth.patch
 
+# don't modify font settings on load (without explicit save)
+# http://bugs.kde.org/105797
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-kcm_fonts_dont_change_on_load.patch
+
+# support BUILD_KCM_RANDR (default ON) option
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.2-BUILD_KCM_RANDR.patch
+
+# oxygen animiations memleak (exposed easily by kmix+pulseaudio)
+# https://bugs.kde.org/309464
+# https://bugzilla.redhat.com/912457
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.4-kmix_oxygen_memleak.patch
+
 if [ "${SB_SYSTEMD}" = "YES" ] ;then
   # pam/systemd bogosity: kdm restart/shutdown does not work 
   # http://bugzilla.redhat.com/796969
@@ -62,6 +74,9 @@ fi
 
 ## upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_ra781558d055c4840b2b322551e765e22d6be30f4.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11-bz\#921781-check-max-viewport-size.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10-bz\#921742.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.5-kickoff-kbd-navigation.patch
 
 ## plasma active patches
 

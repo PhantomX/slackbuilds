@@ -1,0 +1,117 @@
+diff --git a/powerdevil/daemon/powerdevilactionpool.h b/powerdevil/daemon/powerdevilactionpool.h
+index 8a94eacc8ef2c2aead8cb075cbc80b783c1aeb4c..c5173abbc90b60f83b30b7527d8715454327f992 100644
+--- a/powerdevil/daemon/powerdevilactionpool.h
++++ b/powerdevil/daemon/powerdevilactionpool.h
+@@ -34,6 +34,11 @@ class Action;
+ class ActionPool
+ {
+ public:
++    enum ErrorCode {
++        NoAction,
++        LoadFailed,
++        NotSupported
++    };
+     static ActionPool *instance();
+ 
+     virtual ~ActionPool();
+@@ -46,11 +51,15 @@ public:
+ 
+     void clearCache();
+ 
++    ErrorCode error();
++
+ private:
+     ActionPool();
+ 
+     QHash< QString, Action* > m_actionPool;
+     QStringList m_activeActions;
++    ErrorCode m_error;
++    QHash< QString, ErrorCode > m_initErrors;
+ };
+ 
+ }
+diff --git a/powerdevil/daemon/powerdevilactionpool.cpp b/powerdevil/daemon/powerdevilactionpool.cpp
+index a9950f174fe184b8faa54c54fc00654984c65b3f..33fec684b2ac7e1c801c6663675d1d177cb3f067 100644
+--- a/powerdevil/daemon/powerdevilactionpool.cpp
++++ b/powerdevil/daemon/powerdevilactionpool.cpp
+@@ -79,6 +79,7 @@ void ActionPool::clearCache()
+         i.value()->deleteLater();
+         i = m_actionPool.erase(i);
+     }
++    m_initErrors.clear();
+ }
+ 
+ void ActionPool::init(PowerDevil::Core *parent)
+@@ -96,6 +97,7 @@ void ActionPool::init(PowerDevil::Core *parent)
+         if (!retaction) {
+             // Troubles...
+             kWarning() << "failed to load" << offer->desktopEntryName();
++            m_initErrors.insert(actionId, LoadFailed);
+             continue;
+         }
+ 
+@@ -103,6 +105,7 @@ void ActionPool::init(PowerDevil::Core *parent)
+         if (!retaction->isSupported()) {
+             // Skip that
+             retaction->deleteLater();
++            m_initErrors.insert(actionId, NotSupported);
+             continue;
+         }
+ 
+@@ -140,7 +143,13 @@ Action* ActionPool::loadAction(const QString& actionId, const KConfigGroup& grou
+ 
+         return retaction;
+     } else {
+-        // Hmm... troubles in configuration. Np, let's just return 0 and let the core handle this
++        // may be a misconfiguration.
++        // Set the error code and return 0 and let the caller handle this as it sees fit
++        if (m_initErrors.contains(actionId)) {
++            m_error = m_initErrors[actionId];
++        } else {  // no error recorded during initialisation, therefore action does not exist
++            m_error = NoAction;
++        }
+         return 0;
+     }
+ }
+@@ -154,4 +163,8 @@ void ActionPool::unloadAllActiveActions()
+     m_activeActions.clear();
+ }
+ 
++ActionPool::ErrorCode ActionPool::error()
++{
++    return m_error;
++}
+ }
+diff --git a/powerdevil/daemon/powerdevilcore.cpp b/powerdevil/daemon/powerdevilcore.cpp
+index 2dcdbc62236d5c1fae384fdb9111825a2ebf5204..64e951a170c8ee5cf60d0f76a8f8a81379caf639 100644
+--- a/powerdevil/daemon/powerdevilcore.cpp
++++ b/powerdevil/daemon/powerdevilcore.cpp
+@@ -376,11 +376,23 @@ void Core::loadProfile(bool force)
+             if (action) {
+                 action->onProfileLoad();
+             } else {
+-                // Ouch, error. But let's just warn and move on anyway
+-                emitNotification("powerdevilerror", i18n("The profile \"%1\" tried to activate %2, "
+-                                "a non existent action. This is usually due to an installation problem"
+-                                " or to a configuration problem.",
+-                                profileId, actionName));
++                switch (ActionPool::instance()->error()) {
++                    case ActionPool::NotSupported:
++                        kWarning().nospace() << "Attempted to load unsupported action " << actionName
++                                             << ", skipping";
++                        break;
++                    case ActionPool::LoadFailed:
++                        kWarning() << "Action" << actionName << "failed during initialisation";
++                        // fallthrough
++                    case ActionPool::NoAction:
++                    default:
++                        // Ouch, error. But let's just warn and move on anyway
++                        emitNotification("powerdevilerror", i18n("The profile \"%1\" tried to activate %2, "
++                                        "a non existent action. This is usually due to an installation problem"
++                                        " or to a configuration problem.",
++                                        profileId, actionName));
++                        break;
++                }
+             }
+         }
+ 

@@ -9,7 +9,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-search-box.patch
 
 # Build patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-install-dir.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-packager-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-5.0-asciidel.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-15.0-enable-addons.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-duckduckgo.patch

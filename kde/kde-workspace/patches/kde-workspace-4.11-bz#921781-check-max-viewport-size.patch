@@ -1,0 +1,345 @@
+diff --git a/kwin/kcmkwin/kwincompositing/dbus.h b/kwin/kcmkwin/kwincompositing/dbus.h
+new file mode 100644
+index 0000000..05f5d23
+--- /dev/null
++++ b/kwin/kcmkwin/kwincompositing/dbus.h
+@@ -0,0 +1,46 @@
++/********************************************************************
++ KWin - the KDE window manager
++ This file is part of the KDE project.
++
++Copyright (C) 2012 Thomas Lübking <thomas.luebking@gmail.com>
++
++This program is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 2 of the License, or
++(at your option) any later version.
++
++This program is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*********************************************************************/
++
++#ifndef MAIN_ADAPTOR_H
++#define MAIN_ADAPTOR_H
++
++#include <QtDBus/QDBusAbstractAdaptor>
++#include "main.h"
++
++namespace KWin
++{
++class MainAdaptor : public QDBusAbstractAdaptor
++{
++   Q_OBJECT
++   Q_CLASSINFO("D-Bus Interface", "org.kde.kwinCompositingDialog")
++
++private:
++    KWinCompositingConfig *m_config;
++
++public:
++    MainAdaptor(KWinCompositingConfig *config) : QDBusAbstractAdaptor(config), m_config(config) { }
++
++public slots:
++    Q_NOREPLY void warn(QString message, QString details, QString dontAgainKey) {
++        m_config->warn(message, details, dontAgainKey);
++    }
++};
++}
++#endif
+\ No newline at end of file
+diff --git a/kwin/kcmkwin/kwincompositing/main.cpp b/kwin/kcmkwin/kwincompositing/main.cpp
+index 6e39479..e802b46 100644
+--- a/kwin/kcmkwin/kwincompositing/main.cpp
++++ b/kwin/kcmkwin/kwincompositing/main.cpp
+@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *********************************************************************/
+ 
+ #include "main.h"
++#include "dbus.h"
+ 
+ #include "kwin_interface.h"
+ #include "kwinglobals.h"
+@@ -76,13 +77,17 @@ ConfirmDialog::ConfirmDialog() :
+ }
+ 
+ 
+-KWinCompositingConfig::KWinCompositingConfig(QWidget *parent, const QVariantList &)
++KWinCompositingConfig::KWinCompositingConfig(QWidget *parent, const QVariantList &args)
+     : KCModule(KWinCompositingConfigFactory::componentData(), parent)
+     , mKWinConfig(KSharedConfig::openConfig("kwinrc"))
+     , m_showConfirmDialog(false)
+     , m_showDetailedErrors(new QAction(i18nc("Action to open a dialog showing detailed information why an effect could not be loaded",
+                                              "Details"), this))
++    , m_dontShowAgain(new QAction(i18nc("Prevent warning from bein displayed again", "Don't show again!"), this))
+ {
++    QDBusConnection::sessionBus().registerService("org.kde.kwinCompositingDialog");
++    QDBusConnection::sessionBus().registerObject("/CompositorSettings", this);
++    new MainAdaptor(this);
+     KGlobal::locale()->insertCatalog("kwin_effects");
+     ui.setupUi(this);
+     layout()->setMargin(0);
+@@ -90,9 +95,34 @@ KWinCompositingConfig::KWinCompositingConfig(QWidget *parent, const QVariantList
+     ui.tabWidget->setCurrentIndex(0);
+     ui.statusTitleWidget->hide();
+     ui.rearmGlSupport->hide();
+-    ui.messageBox->setVisible(false);
+-    ui.messageBox->addAction(m_showDetailedErrors);
+     ui.messageBox->setMessageType(KMessageWidget::Warning);
++    ui.messageBox->addAction(m_dontShowAgain);
++    foreach (QWidget *w, m_dontShowAgain->associatedWidgets())
++        w->setVisible(false);
++    ui.messageBox->addAction(m_showDetailedErrors);
++
++    bool showMessage = false;
++    QString message, details, dontAgainKey;
++    if (args.count() > 1) {
++        for (int i = 0; i < args.count() - 1; ++i) {
++            if (args.at(i).toString() == "warn") {
++                showMessage = true;
++                message = QString::fromLocal8Bit(QByteArray::fromBase64(args.at(i+1).toByteArray()));
++            } else if (args.at(i).toString() == "details") {
++                showMessage = true;
++                details = QString::fromLocal8Bit(QByteArray::fromBase64(args.at(i+1).toByteArray()));
++            } else if (args.at(i).toString() == "dontagain") {
++                showMessage = true;
++                dontAgainKey = args.at(i+1).toString();
++            }
++        }
++    }
++
++    if (showMessage) {
++        ui.messageBox->setVisible(showMessage); // first show, animation is broken on init
++        warn(message, details, dontAgainKey);
++    } else
++        ui.messageBox->setVisible(false);
+     ui.ghns->setIcon(KIcon("get-hot-new-stuff"));
+ 
+     // For future use
+@@ -133,6 +163,7 @@ KWinCompositingConfig::KWinCompositingConfig(QWidget *parent, const QVariantList
+     connect(ui.glShaders, SIGNAL(toggled(bool)), this, SLOT(changed()));
+     connect(ui.glColorCorrection, SIGNAL(toggled(bool)), this, SLOT(changed()));
+     connect(m_showDetailedErrors, SIGNAL(triggered(bool)), SLOT(showDetailedEffectLoadingInformation()));
++    connect(m_dontShowAgain, SIGNAL(triggered(bool)), SLOT(blockFutureWarnings()));
+     connect(ui.ghns, SIGNAL(clicked(bool)), SLOT(slotGHNS()));
+ 
+     // Open the temporary config file
+@@ -615,10 +646,15 @@ void KWinCompositingConfig::checkLoadedEffects()
+         }
+         if (!disabledEffects.isEmpty()) {
+             m_showDetailedErrors->setData(disabledEffects);
++            foreach (QWidget *w, m_showDetailedErrors->associatedWidgets())
++                w->setVisible(true);
+             ui.messageBox->setText(i18ncp("Error Message shown when a desktop effect could not be loaded",
+                                           "One desktop effect could not be loaded.",
+                                           "%1 desktop effects could not be loaded.", disabledEffects.count()));
+             ui.messageBox->animatedShow();
++        } else {
++            foreach (QWidget *w, m_showDetailedErrors->associatedWidgets())
++                w->setVisible(false);
+         }
+     }
+ }
+@@ -653,7 +689,9 @@ void KWinCompositingConfig::showDetailedEffectLoadingInformation()
+     label->setOpenExternalLinks(true);
+     vboxLayout->addWidget(titleWidget);
+     vboxLayout->addWidget(label);
+-    if (compositingType != "none") {
++    if (!m_externErrorDetails.isNull()) {
++        label->setText(m_externErrorDetails);
++    } else if (compositingType != "none") {
+         QString text;
+         if (disabledEffects.count() > 1) {
+             text = "<ul>";
+@@ -716,6 +754,31 @@ void KWinCompositingConfig::showDetailedEffectLoadingInformation()
+     dialog->show();
+ }
+ 
++void KWinCompositingConfig::warn(QString message, QString details, QString dontAgainKey)
++{
++    ui.messageBox->setText(message);
++    m_dontShowAgain->setData(dontAgainKey);
++    foreach (QWidget *w, m_dontShowAgain->associatedWidgets())
++        w->setVisible(!dontAgainKey.isEmpty());
++    m_externErrorDetails = details.isNull() ? "" : details;
++    foreach (QWidget *w, m_showDetailedErrors->associatedWidgets())
++        w->setVisible(!m_externErrorDetails.isEmpty());
++    ui.messageBox->animatedShow();
++}
++
++void KWinCompositingConfig::blockFutureWarnings() {
++    QString key;
++    if (QAction *act = qobject_cast<QAction*>(sender()))
++        key = act->data().toString();
++    if (key.isEmpty())
++        return;
++    QStringList l = key.split(':', QString::SkipEmptyParts);
++    KConfig cfg(l.count() > 1 ? l.at(0) : "kwin_dialogsrc");
++    KConfigGroup(&cfg, "Notification Messages").writeEntry(l.last(), false);
++    cfg.sync();
++    ui.messageBox->animatedHide();
++}
++
+ void KWinCompositingConfig::configChanged(bool reinitCompositing)
+ {
+     // Send signal to kwin
+@@ -779,4 +842,5 @@ void KWinCompositingConfig::slotGHNS()
+ 
+ } // namespace
+ 
++#include "dbus.moc"
+ #include "main.moc"
+diff --git a/kwin/kcmkwin/kwincompositing/main.h b/kwin/kcmkwin/kwincompositing/main.h
+index 35079c3..d806531 100644
+--- a/kwin/kcmkwin/kwincompositing/main.h
++++ b/kwin/kcmkwin/kwincompositing/main.h
+@@ -74,6 +74,8 @@ public slots:
+     void configChanged(bool reinitCompositing);
+     void initEffectSelector();
+ 
++    void warn(QString message, QString details, QString dontAgainKey);
++
+ private slots:
+     void confirmReInit() { showConfirmDialog(true); }
+     void rearmGlSupport();
+@@ -82,6 +84,7 @@ private slots:
+     void toggleEffectShortcutChanged(const QKeySequence &seq);
+     void updateStatusUI(bool compositingIsPossible);
+     void showDetailedEffectLoadingInformation();
++    void blockFutureWarnings();
+     void slotGHNS();
+ 
+ private:
+@@ -97,6 +100,8 @@ private:
+     KActionCollection* m_actionCollection;
+     QString originalGraphicsSystem;
+     QAction *m_showDetailedErrors;
++    QAction *m_dontShowAgain;
++    QString m_externErrorDetails;
+ };
+ 
+ } // namespace
+diff --git a/kwin/scene_opengl.cpp b/kwin/scene_opengl.cpp
+index 6cf62c6..7df85ce 100644
+--- a/kwin/scene_opengl.cpp
++++ b/kwin/scene_opengl.cpp
+@@ -97,11 +97,18 @@ Sources and other compositing managers:
+ #include <X11/extensions/Xcomposite.h>
+ 
+ #include <qpainter.h>
++#include <QDBusConnection>
++#include <QDBusConnectionInterface>
++#include <QDBusInterface>
+ #include <QDesktopWidget>
++#include <QStringList>
+ #include <QVector2D>
+ #include <QVector4D>
+ #include <QMatrix4x4>
+ 
++#include <KLocale>
++#include <KProcess>
++
+ namespace KWin
+ {
+ 
+@@ -152,6 +159,8 @@ SceneOpenGL::SceneOpenGL(Workspace* ws, OpenGLBackend *backend)
+         init_ok = false;
+         return;
+     }
++    if (!viewportLimitsMatched(QSize(displayWidth(), displayHeight())))
++        return;
+ 
+     // perform Scene specific checks
+     GLPlatform *glPlatform = GLPlatform::instance();
+@@ -434,8 +443,75 @@ SceneOpenGL::Texture *SceneOpenGL::createTexture(const QPixmap &pix, GLenum targ
+     return new Texture(m_backend, pix, target);
+ }
+ 
++bool SceneOpenGL::viewportLimitsMatched(const QSize &size) const {
++    GLint limit[2];
++    glGetIntegerv(GL_MAX_VIEWPORT_DIMS, limit);
++    if (limit[0] < size.width() || limit[1] < size.height()) {
++        QMetaObject::invokeMethod(Compositor::self(), "suspend",
++                                  Qt::QueuedConnection);
++        const QString message = i18n("<h1>OpenGL desktop effects not possible</h1>"
++                                     "Your system cannot perform OpenGL Desktop Effects at the "
++                                     "current resolution<br><br>"
++                                     "You can try to select the XRender backend , but it "
++                                     "might be very slow for this resolution as well.<br>"
++                                     "Alternatively, lower the combined resolution of all screens "
++                                     "to %1x%2 ", limit[0], limit[1]);
++        const QString details = i18n("The demanded resolution exceeds the GL_MAX_VIEWPORT_DIMS "
++                                     "limitation of your GPU and is therefore not compatible "
++                                     "with the OpenGL compositor.<br>"
++                                     "XRender does not know such limitation, but the performance "
++                                     "will usually be impacted by the hardware limitations that"
++                                     "restrict the OpenGL viewport size.");
++        const int oldTimeout = QDBusConnection::sessionBus().interface()->timeout();
++        QDBusConnection::sessionBus().interface()->setTimeout(500);
++        if (QDBusConnection::sessionBus().interface()->isServiceRegistered("org.kde.kwinCompositingDialog").value()) {
++            QDBusInterface dialog( "org.kde.kwinCompositingDialog", "/CompositorSettings", "org.kde.kwinCompositingDialog" );
++            dialog.asyncCall("warn", message, details, "");
++        } else {
++            const QString args = "warn " + message.toLocal8Bit().toBase64() + " details " + details.toLocal8Bit().toBase64();
++            KProcess::startDetached("kcmshell4", QStringList() << "kwincompositing" << "--args" << args);
++        }
++        QDBusConnection::sessionBus().interface()->setTimeout(oldTimeout);
++        return false;
++    }
++    glGetIntegerv(GL_MAX_TEXTURE_SIZE, limit);
++    if (limit[0] < size.width() || limit[0] < size.height()) {
++        KConfig cfg("kwin_dialogsrc");
++
++        if (!KConfigGroup(&cfg, "Notification Messages").readEntry("max_tex_warning", true))
++            return true;
++
++        const QString message = i18n("<h1>OpenGL desktop effects might be unusable</h1>"
++                                     "OpenGL Desktop Effects at the current resolution are supported "
++                                     "but might be exceptionally slow.<br>"
++                                     "Also large windows will turn entirely black.<br><br>"
++                                     "Consider to suspend compositing, switch to the XRender backend "
++                                     "or lower the resolution to %1x%1." , limit[0]);
++        const QString details = i18n("The demanded resolution exceeds the GL_MAX_TEXTURE_SIZE "
++                                     "limitation of your GPU, thus windows of that size cannot be "
++                                     "assigned to textures and will be entirely black.<br>"
++                                     "Also this limit will often be a performance level barrier despite "
++                                     "below GL_MAX_VIEWPORT_DIMS, because the driver might fall back to "
++                                     "software rendering in this case.");
++        const int oldTimeout = QDBusConnection::sessionBus().interface()->timeout();
++        QDBusConnection::sessionBus().interface()->setTimeout(500);
++        if (QDBusConnection::sessionBus().interface()->isServiceRegistered("org.kde.kwinCompositingDialog").value()) {
++            QDBusInterface dialog( "org.kde.kwinCompositingDialog", "/CompositorSettings", "org.kde.kwinCompositingDialog" );
++            dialog.asyncCall("warn", message, details, "kwin_dialogsrc:max_tex_warning");
++        } else {
++            const QString args = "warn " + message.toLocal8Bit().toBase64() + " details " +
++                                 details.toLocal8Bit().toBase64() + " dontagain kwin_dialogsrc:max_tex_warning";
++            KProcess::startDetached("kcmshell4", QStringList() << "kwincompositing" << "--args" << args);
++        }
++        QDBusConnection::sessionBus().interface()->setTimeout(oldTimeout);
++    }
++    return true;
++}
++
+ void SceneOpenGL::screenGeometryChanged(const QSize &size)
+ {
++    if (!viewportLimitsMatched(size))
++        return;
+     Scene::screenGeometryChanged(size);
+     glViewport(0,0, size.width(), size.height());
+     m_backend->screenGeometryChanged(size);
+diff --git a/kwin/scene_opengl.h b/kwin/scene_opengl.h
+index e6142c0..c10c611 100644
+--- a/kwin/scene_opengl.h
++++ b/kwin/scene_opengl.h
+@@ -79,6 +79,8 @@ public Q_SLOTS:
+ protected:
+     bool init_ok;
+ private:
++    bool viewportLimitsMatched(const QSize &size) const;
++private:
+     QHash< Toplevel*, Window* > windows;
+     bool debug;
+     OpenGLBackend *m_backend;

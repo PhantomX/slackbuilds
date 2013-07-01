@@ -45,9 +45,10 @@ IgnorePatch() {
 
 # patch -p0 -E --backup --verbose ${SB_PATCHDIR}/${NAME}.patch
 # don't use -b on mkspec files, else they get installed too.
-ApplyPatch qt-everywhere-opensource-src-4.8.0-tp-multilib-optflags.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.0-tp-multilib-optflags.patch -z .multilib-optflags
+rm -fv mkspecs/linux-g++*/qmake.conf.multilib-optflags
 # get rid of timestamp which causes multilib problem
-ApplyPatch qt-everywhere-opensource-src-4.7.0-beta1-uic_multilib.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.5-uic_multilib.patch
 # enable ft lcdfilter
 ApplyPatch qt-x11-opensource-src-4.5.1-enable_ft_lcdfilter.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch 
@@ -62,6 +63,8 @@ ApplyPatch qt-everywhere-opensource-src-4.8.3-qdbusconnection_no_debug.patch
 ApplyPatch qt-everywhere-opensource-src-4.8.1-linguist_qmake-qt4.patch
 # enable debuginfo in libQt3Support
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qt3support_debuginfo.patch
+# kde4/multilib QT_PLUGIN_PATH
+ApplyPatch qt-everywhere-opensource-src-4.8.5-qt_plugin_path.patch
 
 ## upstreamable bits
 # add support for pkgconfig's Requires.private to qmake
@@ -80,7 +83,7 @@ ApplyPatch qt-everywhere-opensource-src-4.6.2-cups.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-beta1-qtwebkit_pluginpath.patch
 
 # Fails to create debug build of Qt projects on mingw (rhbz#653674)
-ApplyPatch qt-everywhere-opensource-src-4.7.1-QTBUG-14467.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-14467.patch
 
 # fix QTreeView crash triggered by KPackageKit (patch by David Faure)
 ApplyPatch qt-everywhere-opensource-src-4.8.0-tp-qtreeview-kpackagekit-crash.patch
@@ -93,11 +96,11 @@ ApplyPatch qt-everywhere-opensource-src-4.8.3-no_Werror.patch
 ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-22037.patch
 
 # Buttons in Qt applications not clickable when run under gnome-shell (#742658, QTBUG-21900)
-ApplyPatch qt-everywhere-opensource-src-4.8.0-QTBUG-21900.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-21900.patch
 
 # workaround
 # sql/drivers/tds/qsql_tds.cpp:341:49: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
-ApplyPatch qt-everywhere-opensource-src-4.7.4-tds_no_strict_aliasing.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.5-tds_no_strict_aliasing.patch
 # don't spam if libicu is not present at runtime
 ApplyPatch qt-everywhere-opensource-src-4.8.3-icu_no_debug.patch
 # gcc doesn't support flag -fuse-ld=gold
@@ -108,7 +111,7 @@ ApplyPatch qt-everywhere-opensource-src-4.8.2--assistant-crash.patch
 # https://bugs.kde.org/show_bug.cgi?id=249217
 # https://bugreports.qt-project.org/browse/QTBUG-4862
 # QDir::homePath() should account for an empty HOME environment variable on X11
-ApplyPatch qt-everywhere-opensource-src-4.8.3-QTBUG-4862.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-4862.patch
 
 # poll support
 ApplyPatch qt-4.8-poll.patch
@@ -119,34 +122,14 @@ ApplyPatch qt-4.8-poll.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
-#  https://bugreports.qt-project.org/browse/QTBUG-29082
-ApplyPatch qt-everywhere-opensource-src-4.8.4-QTBUG-29082.patch
 # backported from Qt5 (essentially)
 # http://bugzilla.redhat.com/702493
 # https://bugreports.qt-project.org/browse/QTBUG-5545
-ApplyPatch qt-everywhere-opensource-src-4.8.4-qgtkstyle_disable_gtk_theme_check.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.5-qgtkstyle_disable_gtk_theme_check.patch
 # workaround for MOC issues with Boost headers (#756395,QTBUG-22829)
-ApplyPatch qt-everywhere-opensource-src-4.8.4-QTBUG-22829.patch
-# QSslSocket may report incorrect errors when certificate verification fails
-# https://codereview.qt-project.org/#change,42461
-ApplyPatch 0054-Fix-binary-incompatibility-between-openssl-versions.patch
-ApplyPatch 0057-Update-defaultNumberingSystem-value-for-some-indic-a.patch
-ApplyPatch 0067-Allow-qmljsdebugger-argument-and-value-to-be-separat.patch
-# http://lists.qt-project.org/pipermail/announce/2013-January/000021.html
-ApplyPatch 0080-SSL-certificates-blacklist-mis-issued-Turktrust-cert.patch
-# another set similar to 0080
-ApplyPatch 0090-QtNetwork-blacklist-two-more-certificates.patch
-ApplyPatch 0110-QUrl-fromUserInput-fix-for-urls-without-a-host.patch
-ApplyPatch 0112-Limit-the-range-of-the-QUrlPrivate-port-to-1-to-6553.patch
-ApplyPatch 0124-QtDBus-Garbage-collect-deleted-objects-now-and-then.patch
-ApplyPatch 0125-QTBUG-15319-fix-shortcuts-with-secondary-Xkb-layout.patch
-ApplyPatch 0214-Fix-multiselection-by-CTRL-click-in-QFileDialog-KDE.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-22829.patch
+
 
 # security patches
-# CVE-2011-3922 qt: Stack-based buffer overflow in embedded harfbuzz code
-ApplyPatch qt-4.8.0-CVE-2011-3922-bz\#772125.patch
-mkdir -p tests/auto/qtipc/qsharedmemory
-touch tests/auto/qtipc/qsharedmemory/tst_qsharedmemory.cpp
-ApplyPatch qt-4.8-CVE-2013-0254.patch
 
 set +e +o pipefail

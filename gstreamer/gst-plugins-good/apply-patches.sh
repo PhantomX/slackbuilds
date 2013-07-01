@@ -11,6 +11,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-clear_DISCONT_flag.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-v4l2src-fix.patch
 # https://bugzilla.gnome.org/show_bug.cgi?id=677722
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0004-v4l2object-Don-t-probe-UVC-devices-for-being-interla.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gst-plugins-good-linux36.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-sys-v4l2-Some-blind-compilation-fixes.patch
 
 set +e +o pipefail

@@ -1,0 +1,471 @@
+From 207fa53763d83e8031be622c9006e41b97195d48 Mon Sep 17 00:00:00 2001
+From: Christian Esken <esken@kde.org>
+Date: Mon, 4 Feb 2013 23:30:47 +0100
+Subject: [PATCH 2/8] Use a fixed volume step of n% instead of honoring mouse
+ delta (which is more appropriate for text documents). Also Mouse Wheel now
+ only affects EITHER playback OR capture CCBUGS: 313579 CCBUGS: 300783
+
+---
+ apps/kmix.cpp          |   2 +-
+ core/mixdevice.cpp     |   1 -
+ core/mixer.cpp         |  28 ++++++------
+ core/mixer.h           |   3 --
+ core/volume.cpp        |  37 ++++++++++++----
+ core/volume.h          |   7 ++-
+ gui/kmixdockwidget.cpp |  18 ++++----
+ gui/ksmallslider.cpp   |  16 ++++---
+ gui/mdwslider.cpp      | 113 +++++++++++++++++++++++++++++--------------------
+ gui/mdwslider.h        |   4 +-
+ 10 files changed, 136 insertions(+), 93 deletions(-)
+
+diff --git a/apps/kmix.cpp b/apps/kmix.cpp
+index 189bb50..dd2861a 100644
+--- a/apps/kmix.cpp
++++ b/apps/kmix.cpp
+@@ -576,7 +576,7 @@ KMixWindow::loadBaseConfig()
+     {
+       float volumePercentageStep = volumePercentageStepString.toFloat();
+       if (volumePercentageStep > 0 && volumePercentageStep <= 100)
+-        Mixer::VOLUME_STEP_DIVISOR = (100 / volumePercentageStep);
++        Volume::VOLUME_STEP_DIVISOR = (100 / volumePercentageStep);
+     }
+ 
+ 
+diff --git a/core/mixdevice.cpp b/core/mixdevice.cpp
+index 6687f38..662fd85 100644
+--- a/core/mixdevice.cpp
++++ b/core/mixdevice.cpp
+@@ -186,7 +186,6 @@ void MixDevice::addPlaybackVolume(Volume &playbackVol)
+    // Hint: "_playbackVolume" gets COPIED from "playbackVol", because the copy-constructor actually copies the volume levels.
+    _playbackVolume = playbackVol;
+    _playbackVolume.setSwitchType(Volume::PlaybackSwitch);
+-    playbackVol.hasSwitchDisallowRead(); // Only allowed to read once, and only here during migrating the switch back to MixDevice
+ }
+ 
+ void MixDevice::addCaptureVolume (Volume &captureVol)
+diff --git a/core/mixer.cpp b/core/mixer.cpp
+index ebbeb9c..77c7dbc 100644
+--- a/core/mixer.cpp
++++ b/core/mixer.cpp
+@@ -39,8 +39,6 @@
+ QList<Mixer *> Mixer::s_mixers;
+ MasterControl Mixer::_globalMasterCurrent;
+ MasterControl Mixer::_globalMasterPreferred;
+-float Mixer::VOLUME_STEP_DIVISOR = 20;
+-float Mixer::VOLUME_PAGESTEP_DIVISOR = 10;
+ bool Mixer::m_beepOnVolumeChange = false;
+ 
+ int Mixer::numDrivers()
+@@ -639,6 +637,14 @@ void Mixer::decreaseVolume( const QString& mixdeviceID )
+ 	increaseOrDecreaseVolume(mixdeviceID, true);
+ }
+ 
++/**
++ * Increase or decrease all playback and capture channels of the given control.
++ * This method is very similar to MDWSlider::increaseOrDecreaseVolume(), but it will
++ * NOT auto-unmute.
++ *
++ * @param mixdeviceID The control name
++ * @param decrease true for decrease. false for increase
++ */
+ void Mixer::increaseOrDecreaseVolume( const QString& mixdeviceID, bool decrease )
+ {
+ 
+@@ -646,21 +652,15 @@ void Mixer::increaseOrDecreaseVolume( const QString& mixdeviceID, bool decrease
+     if (md.get() != 0)
+     {
+         Volume& volP=md->playbackVolume();
+-        if ( volP.hasVolume() ) {
+-        	long volSpan = volP.volumeSpan();
+-           double step = volSpan / Mixer::VOLUME_STEP_DIVISOR;
+-           if ( step < 1 ) step = 1;
+-           if ( decrease ) step = -step;
+-           volP.changeAllVolumes(step);
++        if ( volP.hasVolume() )
++        {
++           volP.changeAllVolumes(volP.volumeStep(decrease));
+         }
+         
+         Volume& volC=md->captureVolume();
+-        if ( volC.hasVolume() ) {
+-        	long volSpan = volC.volumeSpan();
+-           double step = volSpan / Mixer::VOLUME_STEP_DIVISOR;
+-           if ( step < 1 ) step = 1;
+-           if ( decrease ) step = -step;
+-           volC.changeAllVolumes(step);
++        if ( volC.hasVolume() )
++        {
++           volC.changeAllVolumes(volC.volumeStep(decrease));
+         }
+ 
+         _mixerBackend->writeVolumeToHW(mixdeviceID, md);
+diff --git a/core/mixer.h b/core/mixer.h
+index 961eed9..97e2775 100644
+--- a/core/mixer.h
++++ b/core/mixer.h
+@@ -163,9 +163,6 @@ public:
+     /// get the actual MixSet
+     MixSet& getMixSet();
+ 
+-    static float VOLUME_STEP_DIVISOR;     // The divisor for defining volume control steps (for mouse-wheel, DBUS and Normal step for Sliders )
+-    static float VOLUME_PAGESTEP_DIVISOR; // The divisor for defining volume control steps (page-step for sliders)
+-
+     /// DBUS oriented methods
+     virtual void increaseVolume( const QString& mixdeviceID );
+     virtual void decreaseVolume( const QString& mixdeviceID );
+diff --git a/core/volume.cpp b/core/volume.cpp
+index 418f5cc..f978709 100644
+--- a/core/volume.cpp
++++ b/core/volume.cpp
+@@ -26,6 +26,10 @@
+ 
+ #include <kdebug.h>
+ 
++float Volume::VOLUME_STEP_DIVISOR = 20;
++float Volume::VOLUME_PAGESTEP_DIVISOR = 10;
++
++
+ int Volume::_channelMaskEnum[9] =
+ { MLEFT, MRIGHT, MCENTER,
+ 		MWOOFER,
+@@ -62,7 +66,6 @@ Volume::Volume()
+ 	_switchType = None;
+ 	_isCapture = false;
+ 	_chmask = MNONE;
+-	disallowSwitchDisallowRead = false;
+ }
+ 
+ // IIRC we need the default constructor implicitly for a Collection operation
+@@ -111,7 +114,6 @@ void Volume::init( ChannelMask chmask, long maxVolume, long minVolume, bool hasS
+ 	// a) Physical switches will be updated after start from the hardware.
+ 	// b) Emulated virtual/switches will not receive updates from the hardware, so they shouldn't disable the channels.
+ 	_switchActivated = true;
+-	disallowSwitchDisallowRead = false;
+ }
+ 
+ QMap<Volume::ChannelID, VolumeChannel> Volume::getVolumesWhenActive() const
+@@ -122,14 +124,33 @@ QMap<Volume::ChannelID, VolumeChannel> Volume::getVolumesWhenActive() const
+ QMap<Volume::ChannelID, VolumeChannel> Volume::getVolumes() const
+ {
+ 	return _volumesL;
+-//	if ( isSwitchActivated() )
+-//		return _volumesL;
+-//	else
+-//	{
+-//		return _volumesMuted;
+-//	}
+ }
+ 
++/**
++ * Returns the absolute change to do one "step" for this volume. This is similar to a page step in a slider,
++ * namely a fixed percentage of the range.
++ * One step is the percentage given by 100/VOLUME_STEP_DIVISOR. The
++ * default VOLUME_STEP_DIVISOR is 20, so default change is 5% of the volumeSpan().
++ *
++ * This method guarantees a minimum absolute change of 1, zero is never returned.
++ *
++ * It is NOT verified, that such a volume change would actually be possible. You might hit the upper or lower bounds
++ * of the volume range.
++ *
++ *
++ * @param decrease true, if you want a volume step that decreases the volume by one page step
++ * @return The volume step. It will be negative if you have used decrease==true
++ *
++ */
++long Volume::volumeStep(bool decrease)
++{
++  	long inc = volumeSpan() / Volume::VOLUME_STEP_DIVISOR;
++	if ( inc == 0 )	inc = 1;
++	if ( decrease ) inc *= -1;
++	return inc;
++}
++
++
+ // @ compatibility
+ void Volume::setAllVolumes(long vol)
+ {
+diff --git a/core/volume.h b/core/volume.h
+index e6efea4..19d500d 100644
+--- a/core/volume.h
++++ b/core/volume.h
+@@ -80,6 +80,8 @@ friend class MixDevice;
+ 
+     enum VolumeType { PlaybackVT = 0 , CaptureVT = 1 };
+ 
++    enum VolumeTypeFlag { Playback = 1, Capture = 2, Both = 3 };
++
+     // regular constructor (old, deprecsted)
+     //Volume( ChannelMask chmask, long maxVolume, long minVolume, bool hasSwitch, bool isCapture );
+     // regular constructor
+@@ -144,8 +146,11 @@ friend class MixDevice;
+     static int    _channelMaskEnum[9];
+     QMap<Volume::ChannelID, VolumeChannel> getVolumes() const;
+     QMap<Volume::ChannelID, VolumeChannel> getVolumesWhenActive() const;
+-    void hasSwitchDisallowRead() { disallowSwitchDisallowRead = true; };
++    long volumeStep(bool decrease);
+     
++    static float VOLUME_STEP_DIVISOR;     // The divisor for defining volume control steps (for mouse-wheel, DBUS and Normal step for Sliders )
++    static float VOLUME_PAGESTEP_DIVISOR; // The divisor for defining volume control steps (page-step for sliders)
++
+ protected:
+     long          _chmask;
+     QMap<Volume::ChannelID, VolumeChannel> _volumesL;
+diff --git a/gui/kmixdockwidget.cpp b/gui/kmixdockwidget.cpp
+index 3bda22e..ad8d21b 100644
+--- a/gui/kmixdockwidget.cpp
++++ b/gui/kmixdockwidget.cpp
+@@ -342,19 +342,19 @@ KMixDockWidget::trayWheelEvent(int delta,Qt::Orientation wheelOrientation)
+ 		return;
+ 
+ 
+-      Volume &vol = ( md->playbackVolume().hasVolume() ) ?  md->playbackVolume() : md->captureVolume();
+-      int inc = vol.volumeSpan() / Mixer::VOLUME_STEP_DIVISOR;
++	Volume &vol = ( md->playbackVolume().hasVolume() ) ?  md->playbackVolume() : md->captureVolume();
++	// bko313579 Do not use "delta", as that is setting more related to documents (Editor, Browser). KMix should
++	//           simply always use its own VOLUME_STEP_DIVISOR as a base for percentage change.
++	bool decrease = delta < 0;
++	if (wheelOrientation == Qt::Horizontal) // Reverse horizontal scroll: bko228780
++	decrease = !decrease;
++	long cv = vol.volumeStep(decrease);
+ 
+-    if ( inc < 1 ) inc = 1;
+-
+-    if (wheelOrientation == Qt::Horizontal) // Reverse horizontal scroll: bko228780 
+-    	delta = -delta;
+-
+-    long int cv = inc * (delta / 120 );
+     bool isInactive =  vol.isCapture() ? !md->isRecSource() : md->isMuted();
+     kDebug() << "Operating on capture=" << vol.isCapture() << ", isInactive=" << isInactive;
+ 	if ( cv > 0 && isInactive)
+-	{   // increasing from muted state: unmute and start with a low volume level
++	{
++		// increasing from muted state: unmute and start with a low volume level
+ 		if ( vol.isCapture())
+ 			md->setRecSource(true);
+ 		else
+diff --git a/gui/ksmallslider.cpp b/gui/ksmallslider.cpp
+index ee9788d..a681b4f 100644
+--- a/gui/ksmallslider.cpp
++++ b/gui/ksmallslider.cpp
+@@ -311,18 +311,20 @@ void KSmallSlider::mouseMoveEvent( QMouseEvent *e )
+ void KSmallSlider::wheelEvent( QWheelEvent * qwe)
+ {
+ //    kDebug(67100) << "KSmallslider::wheelEvent()";
+-    int inc = ( maximum() - minimum() ) / Mixer::VOLUME_STEP_DIVISOR;
++	// bko313579 Do not use "delta", as that is setting more related to documents (Editor, Browser). KMix should
++	//           simply always use its own VOLUME_STEP_DIVISOR as a base for percentage change.
++	bool decrease = qwe->delta() < 0;
++	if (qwe->orientation() == Qt::Horizontal) // Reverse horizontal scroll: bko228780
++		decrease = !decrease;
++
++    int inc = ( maximum() - minimum() ) / Volume::VOLUME_STEP_DIVISOR;
+     if ( inc < 1)
+-	inc = 1;
++    	inc = 1;
+ 
+     //kDebug(67100) << "KSmallslider::wheelEvent() inc=" << inc << "delta=" << e->delta();
+ 	int newVal;
+ 
+-	bool increase = (qwe->delta() > 0);
+-	if (qwe->orientation() == Qt::Horizontal) // Reverse horizontal scroll: bko228780 
+-		increase = !increase;
+-
+-    if ( increase ) {
++    if ( !decrease ) {
+        newVal = QAbstractSlider::value() + inc;
+     }
+     else {
+diff --git a/gui/mdwslider.cpp b/gui/mdwslider.cpp
+index af6e725..7c14673 100644
+--- a/gui/mdwslider.cpp
++++ b/gui/mdwslider.cpp
+@@ -548,14 +548,14 @@ void MDWSlider::addSliders( QBoxLayout *volLayout, char type, Volume& vol, QList
+ 		QAbstractSlider* slider;
+ 		if ( m_small )
+ 		{
+-			slider = new KSmallSlider( minvol, maxvol, (maxvol-minvol+1) / Mixer::VOLUME_PAGESTEP_DIVISOR,
++			slider = new KSmallSlider( minvol, maxvol, (maxvol-minvol+1) / Volume::VOLUME_PAGESTEP_DIVISOR,
+ 				                           vol.getVolume( vc.chid ), _orientation, this );
+ 		} // small
+ 		else  {
+ 			slider = new VolumeSlider( _orientation, this );
+ 			slider->setMinimum(minvol);
+ 			slider->setMaximum(maxvol);
+-			slider->setPageStep(maxvol / Mixer::VOLUME_PAGESTEP_DIVISOR);
++			slider->setPageStep(maxvol / Volume::VOLUME_PAGESTEP_DIVISOR);
+ 			slider->setValue(  vol.getVolume( vc.chid ) );
+ 			volumeValues.push_back( vol.getVolume( vc.chid ) );
+ 			
+@@ -959,54 +959,67 @@ void MDWSlider::setDisabled( bool value )
+ 
+ 
+ /**
+-   This slot is called on a MouseWheel event. Also it is called by any other
+-    associated KAction like the context menu.
++ * This slot is called on a Keyboard Shortcut event.
+  */
+ void MDWSlider::increaseVolume()
+ {
+-  increaseOrDecreaseVolume(false);
++  increaseOrDecreaseVolume(false, Volume::Both);
+ }
+ 
+ /**
+- * TOOD This should go to the Volume class, so we can use it anywhere,
+- * like mouse wheel, OSD, Keyboard Shortcuts
++ * This slot is called on a Keyboard Shortcut event.
+  */
+-long MDWSlider::calculateStepIncrement ( Volume&vol, bool decrease )
++void MDWSlider::decreaseVolume()
+ {
+-  	long inc = vol.volumeSpan() / Mixer::VOLUME_STEP_DIVISOR;
+-	if ( inc == 0 )	inc = 1;
+-	if ( decrease ) inc *= -1;
+-	return inc;
++  increaseOrDecreaseVolume(true, Volume::Both);
+ }
+ 
+-void MDWSlider::increaseOrDecreaseVolume(bool decrease)
++/**
++ * Increase or decrease all playback and capture channels of the given control.
++ * This method is very similar to Mixer::increaseOrDecreaseVolume(), but it will
++ * auto-unmute on increase.
++ *
++ * @param mixdeviceID The control name
++ * @param decrease true for decrease. false for increase
++ */
++void MDWSlider::increaseOrDecreaseVolume(bool decrease, Volume::VolumeTypeFlag volumeType)
+ {
+-	Volume& volP = m_mixdevice->playbackVolume();
+-	long inc = calculateStepIncrement(volP, decrease);
++	kDebug() << "VolumeType=" << volumeType;
++	if (volumeType & Volume::Playback)
++	{
++		kDebug() << "VolumeType=" << volumeType << "   p";
++		Volume& volP = m_mixdevice->playbackVolume();
++		long inc = volP.volumeStep(decrease);
+ 
+-	if ( mixDevice()->id() == "PCM:0" )
+-	  kDebug() << ( decrease ? "decrease by " : "increase by " ) << inc ;
++		if ( mixDevice()->id() == "PCM:0" )
++		  kDebug() << ( decrease ? "decrease by " : "increase by " ) << inc ;
+ 
+-	if (!decrease && m_mixdevice->isMuted())
+-	{
+-		// increasing from muted state: unmute and start with a low volume level
+-		if (mixDevice()->id() == "PCM:0")
+-			kDebug() << "set all to " << inc << "muted old=" << m_mixdevice->isMuted();
++		if (!decrease && m_mixdevice->isMuted())
++		{
++			// increasing from muted state: unmute and start with a low volume level
++			if (mixDevice()->id() == "PCM:0")
++				kDebug() << "set all to " << inc << "muted old=" << m_mixdevice->isMuted();
+ 
+-		m_mixdevice->setMuted(false);
+-		volP.setAllVolumes(inc);
++			m_mixdevice->setMuted(false);
++			volP.setAllVolumes(inc);
++		}
++		else
++		{
++			volP.changeAllVolumes(inc);
++			if (mixDevice()->id() == "PCM:0")
++				kDebug()
++				<< (decrease ? "decrease by " : "increase by ") << inc;
++		}
+ 	}
+-	else
++
++	if (volumeType & Volume::Capture)
+ 	{
+-		volP.changeAllVolumes(inc);
+-		if (mixDevice()->id() == "PCM:0")
+-			kDebug()
+-			<< (decrease ? "decrease by " : "increase by ") << inc;
+-	}
++		kDebug() << "VolumeType=" << volumeType << "   c";
+ 
+-	Volume& volC = m_mixdevice->captureVolume();
+-	inc = calculateStepIncrement(volC, decrease);
+-	volC.changeAllVolumes(inc);
++		Volume& volC = m_mixdevice->captureVolume();
++		long inc = volC.volumeStep(decrease);
++		volC.changeAllVolumes(inc);
++	}
+ 
+ 	// I should possibly not block, as the changes that come back from the Soundcard
+ 	//      will be ignored (e.g. because of capture groups)
+@@ -1017,14 +1030,6 @@ void MDWSlider::increaseOrDecreaseVolume(bool decrease)
+ // 	m_view->blockSignals(oldViewBlockSignalState);
+ }
+ 
+-/**
+-   This slot is called on a MouseWheel event. Also it is called by any other
+-    associated KAction like the context menu.
+- */
+-void MDWSlider::decreaseVolume()
+-{
+-  increaseOrDecreaseVolume(true);
+-}
+ 
+ 
+ void MDWSlider::moveStreamAutomatic()
+@@ -1262,12 +1267,28 @@ bool MDWSlider::eventFilter( QObject* obj, QEvent* e )
+ 		if (qwe->orientation() == Qt::Horizontal) // Reverse horizontal scroll: bko228780 
+ 			increase = !increase;
+ 
+-		if (increase) {
+-			increaseVolume();
+-		}
+-		else {
+-			decreaseVolume();
++		Volume::VolumeTypeFlag volumeType = Volume::Playback;
++		QSlider *slider = static_cast<QSlider*>(obj);
++		if (slider != 0)
++		{
++			kDebug();
++			kDebug();
++			kDebug() << "----------------------------- Slider is " << slider;
++			// Mouse is over a slider. So lets apply the wheel event to playback or capture only
++			if(m_slidersCapture.contains(slider))
++			{
++				kDebug() << "Slider is capture " << slider;
++				volumeType = Volume::Capture;
++			}
+ 		}
++
++		increaseOrDecreaseVolume(!increase, volumeType);
++//		if (increase) {
++//			increaseVolume();
++//		}
++//		else {
++//			decreaseVolume();
++//		}
+ 		
+ 		Volume& volP = m_mixdevice->playbackVolume();
+ 		volumeValues.push_back(volP.getVolume(extraData((QAbstractSlider*)obj).getChid()));
+diff --git a/gui/mdwslider.h b/gui/mdwslider.h
+index 3299859..a9b056f 100644
+--- a/gui/mdwslider.h
++++ b/gui/mdwslider.h
+@@ -101,7 +101,7 @@ public slots:
+     void update();
+     void showMoveMenu();
+     virtual void showContextMenu( const QPoint &pos = QCursor::pos() );
+-    void increaseOrDecreaseVolume(bool arg1);
++    void increaseOrDecreaseVolume(bool arg1, Volume::VolumeTypeFlag volumeType);
+     VolumeSliderExtraData& extraData(QAbstractSlider *slider);
+     void addMediaControls(QBoxLayout* arg1);
+ 
+@@ -174,8 +174,6 @@ private:
+     bool m_sliderInWork;
+     int m_waitForSoundSetComplete;
+     QList<int> volumeValues;
+-
+-    long calculateStepIncrement ( Volume&vol, bool decrease );
+ };
+ 
+ #endif
+-- 
+1.8.1.4
+

@@ -1,0 +1,97 @@
+commit 6edddf7c8e92bb499cb60fdee53622cab326f334
+Author: Christian Esken <esken@kde.org>
+Date:   Tue Jul 2 00:44:51 2013 +0200
+
+    Revert my direct use of ControlManager::instance().announce(). PA actually did call it in its own thread and so in the end we have a non-GUI thread calling GUI code. Use invokeMethod() again.
+    CCBUGS: 309464
+
+diff --git a/backends/mixer_pulse.cpp b/backends/mixer_pulse.cpp
+index e08a881..5202b5a 100644
+--- a/backends/mixer_pulse.cpp
++++ b/backends/mixer_pulse.cpp
+@@ -769,9 +769,55 @@ static devmap* get_widget_map(int type, int index)
+ 
+ void Mixer_PULSE::emitControlsReconfigured()
+ {
++	//	emit controlsReconfigured(_mixer->id());
++    // Do not emit directly to ensure all connected slots are executed
++    // in their own event loop.
++
++	/*
++	 * Comment by cesken: I am not really sure what the comment above means.
++	 *  1) IIRC coling told me "otherwise KMix crashes".
++	 *  2) There are also bug reports that heavily indicate the crash when operation the "move stream" from a popup
++	 *     menu.
++	 *  3) I don't know what the "executed in their own event loop" means. Are we in a "wrong" thread here (PA),
++	 *     which is not suitable for GUI code?!?
++	 *
++	 *  Conclusions:
++	 *  a) It seems there seems to be some object deletion hazard with a QMenu (the one for "move stream")
++	 *  b)  I do not see why executing it Queued is better, because you can never know when it is actually being
++	 *      executed: it could be "right now". It looks like Qt currently executes it after the QMenu hazard has
++	 *      resolved itselves miracously.
++	 *  c) I am definitely strongly opposed on this "execute later" approach. It is pure gambling IMO and might be
++	 *     broken any time (from DEBUG to RELEASE build, or by a new Qt or KDE version).
++	 *
++	 *     TODO Somebody with more Qt and PA internal insight might help to clear up things here.
++	 *
++	 *  Temporary solution: Do the QueuedConnection until we really know hat is going on. But the called code
++	 *                      pulseControlsReconfigured() will then do the standard announce() so that every part of
++	 *                      KMix automatically gets updated.
++	 *
++	 */
++    QMetaObject::invokeMethod(this,
++                              "pulseControlsReconfigured",
++                              Qt::QueuedConnection);
++
++//    QMetaObject::invokeMethod(this,
++//                              "pulseControlsReconfigured",
++//                              Qt::QueuedConnection,
++//                              Q_ARG(QString, _mixer->id()));
++}
++
++void Mixer_PULSE::pulseControlsReconfigured()
++{
++	kDebug() << "Reconfigure " << _mixer->id();
+     ControlManager::instance().announce(_mixer->id(), ControlChangeType::ControlList, getDriverName());
+ }
+ 
++void Mixer_PULSE::pulseControlsReconfigured(QString mixerId)
++{
++	kDebug() << "Reconfigure " << mixerId;
++    ControlManager::instance().announce(mixerId, ControlChangeType::ControlList, getDriverName());
++}
++
+ void Mixer_PULSE::addWidget(int index, bool isAppStream)
+ {
+     devmap* map = get_widget_map(m_devnum, index);
+@@ -1366,3 +1412,4 @@ QString Mixer_PULSE::getDriverName()
+         return "PulseAudio";
+ }
+ 
++#include "mixer_pulse.moc"
+diff --git a/backends/mixer_pulse.h b/backends/mixer_pulse.h
+index ac65534..ef2050c 100644
+--- a/backends/mixer_pulse.h
++++ b/backends/mixer_pulse.h
+@@ -45,6 +45,8 @@ typedef struct {
+ 
+ class Mixer_PULSE : public Mixer_Backend
+ {
++    Q_OBJECT
++
+     public:
+         Mixer_PULSE(Mixer *mixer, int devnum);
+         virtual ~Mixer_PULSE();
+@@ -77,6 +79,11 @@ class Mixer_PULSE : public Mixer_Backend
+         void addDevice(devinfo& dev, bool = false);
+         bool connectToDaemon();
+         void emitControlsReconfigured();
++
++   protected slots:
++        void pulseControlsReconfigured(QString mixerId);
++        void pulseControlsReconfigured();
++
+ public:
+         void reinit();
+ 

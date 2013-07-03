@@ -1,0 +1,186 @@
+From ff429cc9fd0889e632a7916b263bed4e4a64d4e1 Mon Sep 17 00:00:00 2001
+From: Christian Esken <esken@kde.org>
+Date: Tue, 5 Feb 2013 00:30:57 +0100
+Subject: [PATCH 3/8] Global Keyboard Shortcuts XF86Audio* now only affect
+ EITHER playback OR capture BUGS: 300783
+
+---
+ apps/kmix.cpp      | 10 ++++------
+ core/mixdevice.cpp | 48 ++++++++++++++++++++++++++++++++++++++++++++++++
+ core/mixdevice.h   |  1 +
+ gui/mdwslider.cpp  | 46 +++++-----------------------------------------
+ 4 files changed, 58 insertions(+), 47 deletions(-)
+
+diff --git a/apps/kmix.cpp b/apps/kmix.cpp
+index dd2861a..8e1fa5e 100644
+--- a/apps/kmix.cpp
++++ b/apps/kmix.cpp
+@@ -1133,12 +1133,10 @@ KMixWindow::increaseOrDecreaseVolume(bool increase)
+   if (md.get() == 0)
+     return; // shouldn't happen, but lets play safe
+ 
+-  md->setMuted(false);
+-  if (increase)
+-    mixer->increaseVolume(md->id()); // this is awkward. Better move the increaseVolume impl to the Volume class.
+-  else
+-    mixer->decreaseVolume(md->id());
+-  // md->playbackVolume().increase(); // not yet implemented
++  Volume::VolumeTypeFlag volumeType = md->playbackVolume().hasVolume() ? Volume::Playback : Volume::Capture;
++  md->increaseOrDecreaseVolume(!increase, volumeType);
++  md->mixer()->commitVolumeChange(md);
++
+   showVolumeDisplay();
+ }
+ 
+diff --git a/core/mixdevice.cpp b/core/mixdevice.cpp
+index 662fd85..06b883e 100644
+--- a/core/mixdevice.cpp
++++ b/core/mixdevice.cpp
+@@ -164,6 +164,54 @@ shared_ptr<MixDevice> MixDevice::addToPool()
+ 
+ 
+ /**
++ * Changes the internal state of this MixDevice.
++ * It does not commit the change to the hardware.
++ *
++ * You might want to call something like m_mixdevice->mixer()->commitVolumeChange(m_mixdevice); after calling this method.
++ */
++void MixDevice::increaseOrDecreaseVolume(bool decrease, Volume::VolumeTypeFlag volumeType)
++{
++	bool debugme =  id() == "PCM:0" ;
++	if (volumeType & Volume::Playback)
++	{
++		kDebug() << "VolumeType=" << volumeType << "   p";
++		Volume& volP = playbackVolume();
++		long inc = volP.volumeStep(decrease);
++
++		if (debugme)
++		  kDebug() << ( decrease ? "decrease by " : "increase by " ) << inc ;
++
++		if (!decrease && isMuted())
++		{
++			// increasing from muted state: unmute and start with a low volume level
++			if (debugme)
++				kDebug() << "set all to " << inc << "muted old=" << isMuted();
++
++			setMuted(false);
++			volP.setAllVolumes(inc);
++		}
++		else
++		{
++			volP.changeAllVolumes(inc);
++			if (debugme)
++				kDebug() << (decrease ? "decrease by " : "increase by ") << inc;
++		}
++	}
++
++	if (volumeType & Volume::Capture)
++	{
++		kDebug() << "VolumeType=" << volumeType << "   c";
++
++		Volume& volC = captureVolume();
++		long inc = volC.volumeStep(decrease);
++		volC.changeAllVolumes(inc);
++	}
++
++}
++
++
++
++/**
+  * Returns the name of the config group
+  * @param Prefix of the group, e.g. "View_ALSA_USB_01"
+  * @returns The config group name in the format "prefix.mixerId,controlId"
+diff --git a/core/mixdevice.h b/core/mixdevice.h
+index 556f809..177c3b2 100644
+--- a/core/mixdevice.h
++++ b/core/mixdevice.h
+@@ -216,6 +216,7 @@ public:
+    bool write( KConfig *config, const QString& grp );
+    int getUserfriendlyVolumeLevel();
+ 
++   void increaseOrDecreaseVolume(bool decrease, Volume::VolumeTypeFlag volumeType);
+ 
+ 
+ protected:
+diff --git a/gui/mdwslider.cpp b/gui/mdwslider.cpp
+index 7c14673..5572d63 100644
+--- a/gui/mdwslider.cpp
++++ b/gui/mdwslider.cpp
+@@ -959,7 +959,8 @@ void MDWSlider::setDisabled( bool value )
+ 
+ 
+ /**
+- * This slot is called on a Keyboard Shortcut event.
++ * This slot is called on a Keyboard Shortcut event, except for the XF86Audio* shortcuts which hare handeled by the
++ * KMixWindow class. So for 99.9% of all users, this methos is never called.
+  */
+ void MDWSlider::increaseVolume()
+ {
+@@ -967,7 +968,8 @@ void MDWSlider::increaseVolume()
+ }
+ 
+ /**
+- * This slot is called on a Keyboard Shortcut event.
++ * This slot is called on a Keyboard Shortcut event, except for the XF86Audio* shortcuts which hare handeled by the
++ * KMixWindow class. So for 99.9% of all users, this methos is never called.
+  */
+ void MDWSlider::decreaseVolume()
+ {
+@@ -984,43 +986,7 @@ void MDWSlider::decreaseVolume()
+  */
+ void MDWSlider::increaseOrDecreaseVolume(bool decrease, Volume::VolumeTypeFlag volumeType)
+ {
+-	kDebug() << "VolumeType=" << volumeType;
+-	if (volumeType & Volume::Playback)
+-	{
+-		kDebug() << "VolumeType=" << volumeType << "   p";
+-		Volume& volP = m_mixdevice->playbackVolume();
+-		long inc = volP.volumeStep(decrease);
+-
+-		if ( mixDevice()->id() == "PCM:0" )
+-		  kDebug() << ( decrease ? "decrease by " : "increase by " ) << inc ;
+-
+-		if (!decrease && m_mixdevice->isMuted())
+-		{
+-			// increasing from muted state: unmute and start with a low volume level
+-			if (mixDevice()->id() == "PCM:0")
+-				kDebug() << "set all to " << inc << "muted old=" << m_mixdevice->isMuted();
+-
+-			m_mixdevice->setMuted(false);
+-			volP.setAllVolumes(inc);
+-		}
+-		else
+-		{
+-			volP.changeAllVolumes(inc);
+-			if (mixDevice()->id() == "PCM:0")
+-				kDebug()
+-				<< (decrease ? "decrease by " : "increase by ") << inc;
+-		}
+-	}
+-
+-	if (volumeType & Volume::Capture)
+-	{
+-		kDebug() << "VolumeType=" << volumeType << "   c";
+-
+-		Volume& volC = m_mixdevice->captureVolume();
+-		long inc = volC.volumeStep(decrease);
+-		volC.changeAllVolumes(inc);
+-	}
+-
++	m_mixdevice->increaseOrDecreaseVolume(decrease, volumeType);
+ 	// I should possibly not block, as the changes that come back from the Soundcard
+ 	//      will be ignored (e.g. because of capture groups)
+ // 	kDebug() << "MDWSlider is blocking signals for " << m_view->id();
+@@ -1030,8 +996,6 @@ void MDWSlider::increaseOrDecreaseVolume(bool decrease, Volume::VolumeTypeFlag v
+ // 	m_view->blockSignals(oldViewBlockSignalState);
+ }
+ 
+-
+-
+ void MDWSlider::moveStreamAutomatic()
+ {
+     m_mixdevice->mixer()->moveStream(m_mixdevice->id(), "");
+-- 
+1.8.1.4
+

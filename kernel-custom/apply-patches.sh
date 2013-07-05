@@ -63,12 +63,11 @@ ApplyOptionalPatch hotfixes.patch
 
 # vm patches
 ApplyPatch oom-warning.patch
-ApplyPatch fs-partitions-efi-c-corrupted-guid-partition-tables-can-cause-kernel-oops.patch
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 
 ApplyPatch vmbugon-warnon.patch
 
-ApplyPatch debug-bad-pte-dmi.patch
+#ApplyPatch debug-bad-pte-dmi.patch
 ApplyPatch debug-bad-pte-modules.patch
 
 # mm patches
@@ -112,8 +111,6 @@ ApplyPatch remount-no-shrink-dcache.patch
 ApplyPatch defaults-acpi-video.patch
 ApplyPatch acpi-video-dos.patch
 ApplyPatch acpi-sony-nonvs-blacklist.patch
-# list acpi fixed events at /proc/acpi/fixed_events
-ApplyPatch acpi-add-proc-event-regs.patch
 
 # cpufreq
 #ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
@@ -176,8 +173,6 @@ ApplyPatch crash-driver.patch
 # crypto/
 
 # DRM core
-ApplyPatch drm-ttm-exports-for-qxl.patch
-ApplyPatch drm-qxl-driver.patch
 #ApplyPatch drm-vgem.patch
 
 # Nouveau DRM
@@ -212,7 +207,6 @@ ApplyPatch nowatchdog-on-virt.patch
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 ApplyPatch weird-root-dentry-name-debug.patch
-ApplyPatch debug-idle-sched-warn-once.patch
 
 #rhbz 859485
 ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
@@ -220,11 +214,11 @@ ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 859282
-ApplyPatch VMX-x86-handle-host-TSC-calibration-failure.patch
-
 #rhbz 927469
 ApplyPatch fix-child-thread-introspection.patch
+
+#rhbz 948262
+ApplyPatch intel_iommu-Downgrade-the-warning-if-enabling-irq-remapping-fails.patch
 
 #CVE-2013-2140 rhbz 971146 971148
 ApplyPatch xen-blkback-Check-device-permissions-before-allowing.patch
@@ -238,15 +232,8 @@ ApplyPatch fanotify-info-leak-in-copy_event_to_user.patch
 #CVE-2013-2851 rhbz 969515 971662
 ApplyPatch block-do-not-pass-disk-names-as-format-strings.patch
 
-#rhbz 954252
-ApplyPatch scsi-ipr-possible-irq-lock-inversion-dependency-detected.patch
-
 #CVE-2013-2164 rhbz 973100 973109
 ApplyPatch cdrom-use-kzalloc-for-failing-hardware.patch
-
-#rhbz 967230
-ApplyPatch vfio-Set-container-device-mode.patch
-ApplyPatch vfio-fix-crash-on-rmmod.patch
 
 #rhbz 969644
 ApplyPatch KVM-x86-handle-idiv-overflow-at-kvm_write_tsc.patch

@@ -1,0 +1,150 @@
+From b765e587bf737efffbfe4fff087452de7a090708 Mon Sep 17 00:00:00 2001
+From: Jim Warner <james.warner@comcast.net>
+Date: Fri, 28 Jun 2013 00:00:00 -0500
+Subject: [PATCH] top: enable screen contents preservation at end-of-job
+
+The title of this commit is actually quite misleading.
+
+Were it more accurate, it would at least mention a tty
+emulator's scrollback buffer, which was the cumulation
+of a long pursuit to reduce the SIGWINCH overhead when
+a window manager carelessly floods an application with
+that signal *while* a user is still resizing a window!
+
+Disabling and enabling that scrollback buffer resulted
+in the final top display replaced with original screen
+contents, a phenomenon acknowledged at the time but it
+also represented a user interface change which has now
+produced the first request for return to old behavior.
+
+After the SIGWINCH dust settled, another problem arose
+regarding behaviors under the 'screen' window manager.
+In response, top was refactored a bit to avoid display
+corruption. That was before discovering 'screen' could
+duplicate the scrollback buffer behavior top expected.
+
+As it turns out, the 'screen' refactoring had probably
+made scrollback buffer manipulation unnecessary. Still
+one could argue that a window should not be allowed to
+scroll while a constantly updating program was active.
+
+The solution represented in this commit returns former
+behavior at program end (retaining top's last screen).
+And if we ever wish to disable scrollback buffers, the
+associated logic was retained but made conditional. It
+is not reflected in configure.ac but might be someday.
+
+Lastly, this commit corrects cursor positioning when a
+^C is issued under 'Fields Management' at any terminal
+that didn't have a scrollback buffer (i.e. a console).
+
+Reference(s):
+https://bugzilla.redhat.com/show_bug.cgi?id=977561
+http://www.freelists.org/post/procps/top-library-miscellaneous-tweaks,1
+. screen program refactor
+commit 0fe393ff270922cd4f6edbcaabba006314e73a37
+. scrollback buffer disabled
+commit dedaf6e1a81738ff08ee8e8523871e12f555ad6d
+. sigwinch management defines
+commit adca737758e5afc7be344a736953931894cbc19f
+commit 4f33b6b8c56464b4044deb29a3bb0e32622e108f
+
+Signed-off-by: Jim Warner <james.warner@comcast.net>
+---
+ top/top.c | 18 +++++++++++-------
+ top/top.h |  1 +
+ 2 files changed, 12 insertions(+), 7 deletions(-)
+
+diff --git a/top/top.c b/top/top.c
+index 1d38c0f..cdcf3c0 100644
+--- a/top/top.c
++++ b/top/top.c
+@@ -72,8 +72,9 @@ static struct termios Tty_original,    // our inherited terminal definition
+                       Tty_raw;         // for unsolicited input
+ static int Ttychanged = 0;
+ 
+-        /* Last established cursor state/shape */
++        /* Last established cursor state/shape, and is re-position needed */
+ static const char *Cursor_state = "";
++static int         Cursor_repos;
+ 
+         /* Program name used in error messages and local 'rc' file name */
+ static char *Myname;
+@@ -350,12 +351,15 @@ static void at_eoj (void) {
+    if (Ttychanged) {
+       tcsetattr(STDIN_FILENO, TCSAFLUSH, &Tty_original);
+       if (keypad_local) putp(keypad_local);
++      if (Cursor_repos) putp(tg2(0, Screen_rows));
+       putp("\n");
++#ifdef OFF_SCROLLBK
+       if (exit_ca_mode) {
+          // this next will also replace top's most recent screen with the
+          // original display contents that were visible at our invocation
+          putp(exit_ca_mode);
+       }
++#endif
+       putp(Cap_curs_norm);
+       putp(Cap_clr_eol);
+ #ifndef RMAN_IGNORED
+@@ -591,17 +595,13 @@ static void sig_endpgm (int dont_care_sig) {
+ 
+         /*
+          * Catches:
+-         *    SIGTSTP, SIGTTIN and SIGTTOU
+-         * note:
+-         *    we don't fiddle with with those enter/exit_ca_mode strings
+-         *    because we want to retain most of the last screen contents
+-         *    as a visual reminder this program is suspended, not ended! */
++         *    SIGTSTP, SIGTTIN and SIGTTOU */
+ static void sig_paused (int dont_care_sig) {
+ // POSIX.1-2004 async-signal-safe: tcsetattr, tcdrain, raise
+    if (-1 == tcsetattr(STDIN_FILENO, TCSAFLUSH, &Tty_original))
+       error_exit(fmtmk(N_fmt(FAIL_tty_set_fmt), strerror(errno)));
+    if (keypad_local) putp(keypad_local);
+-   putp(tg2(0, Screen_rows));
++   if (Cursor_repos) putp(tg2(0, Screen_rows));
+    putp(Cap_curs_norm);
+ #ifndef RMAN_IGNORED
+    putp(Cap_smam);
+@@ -2120,6 +2120,7 @@ static void fields_utility (void) {
+    int i, key;
+    FLG_t f;
+ 
++   Cursor_repos = 1;
+    spewFI
+ signify_that:
+    putp(Cap_clr_scr);
+@@ -2180,6 +2181,7 @@ signify_that:
+             break;
+       }
+    } while (key != 'q' && key != kbd_ESC);
++   Cursor_repos = 0;
+  #undef unSCRL
+  #undef swapEM
+  #undef spewFI
+@@ -3768,8 +3770,10 @@ static void whack_terminal (void) {
+    // thanks anyway stdio, but we'll manage buffering at the frame level...
+    setbuffer(stdout, Stdout_buf, sizeof(Stdout_buf));
+ #endif
++#ifdef OFF_SCROLLBK
+    // this has the effect of disabling any troublesome scrollback buffer...
+    if (enter_ca_mode) putp(enter_ca_mode);
++#endif
+    // and don't forget to ask iokey to initialize his tinfo_tab
+    iokey(0);
+ } // end: whack_terminal
+diff --git a/top/top.h b/top/top.h
+index f356798..a8a7357 100644
+--- a/top/top.h
++++ b/top/top.h
+@@ -41,6 +41,7 @@
+ //#define INSP_SAVEBUF            /* preserve 'Insp_buf' contents in a file  */
+ //#define INSP_SLIDE_1            /* when scrolling left/right don't move 8  */
+ //#define OFF_HST_HASH            /* use BOTH qsort+bsrch vs. hashing scheme */
++//#define OFF_SCROLLBK            /* disable tty emulators scrollback buffer */
+ //#define OFF_STDIOLBF            /* disable our own stdout _IOFBF override  */
+ //#define PRETEND2_5_X            /* pretend we're linux 2.5.x (for IO-wait) */
+ //#define PRETEND8CPUS            /* pretend we're smp with 8 ticsers (sic)  */
+-- 
+1.8.1.2
+

@@ -51,11 +51,15 @@ if [ "${SB_BOOTSTRP}" = "YES" ] ;then
   ApplyPatch glibc.pthread-disable-forced-unwind-check.diff
 fi
 
-# Gentoo patches
+## Gentoo
 ( SB_PATCHDIR=patches
 
   ApplyPatch 0035_all_glibc-2.16-i386-math-feraiseexcept-overhead.patch
   ApplyPatch 0085_all_glibc-disable-ldconfig.patch
+  ApplyPatch 0065_all_glibc-2.18-qecvt-guards.patch
+  ApplyPatch 0070_all_glibc-2.18-localedef-page-align-1.patch
+  ApplyPatch 0071_all_glibc-2.18-localedef-page-align-2.patch
+  ApplyPatch 0072_all_glibc-2.18-localedef-page-align-3.patch
   ApplyPatch 1005_all_glibc-sigaction.patch
   ApplyPatch 1008_all_glibc-2.16-fortify.patch
   ApplyPatch 1040_all_2.3.3-localedef-fix-trampoline.patch
@@ -65,7 +69,43 @@ fi
 
 )
 
-# Mandriva
+## Fedora
+ApplyPatch glibc-fedora-nptl-linklibc.patch
+ApplyPatch glibc-fedora-i386-tls-direct-seg-refs.patch
+ApplyPatch glibc-fedora-gai-canonical.patch
+ApplyPatch glibc-fedora-pt_chown.patch
+ApplyPatch glibc-fedora-elf-rh737223.patch
+ApplyPatch glibc-fedora-elf-ORIGIN.patch
+ApplyPatch glibc-fedora-elf-init-hidden_undef.patch
+
+ApplyPatch glibc-rh911307.patch
+ApplyPatch glibc-rh892777.patch
+ApplyPatch glibc-rh952799.patch
+ApplyPatch glibc-rh959034.patch
+
+# CVE-2013-0242 - upstream commit a445af0b
+ApplyPatch glibc-2.17-regexp-matcher-overrun.patch
+ApplyPatch glibc-rh958652.patch
+ApplyPatch glibc-rh977870.patch
+ApplyPatch glibc-rh977872.patch
+ApplyPatch glibc-rh977874.patch
+ApplyPatch glibc-rh977875.patch
+ApplyPatch glibc-rh977887.patch
+ApplyPatch glibc-rh977887-2.patch
+
+ApplyPatch glibc-rh757881.patch
+# Upstream BZ 9954
+ApplyPatch glibc-rh739743.patch
+# Upstream BZ 13818
+ApplyPatch glibc-rh800224.patch
+# Upstream BZ 14247
+ApplyPatch glibc-rh827510.patch
+# Upstream BZ 13028
+ApplyPatch glibc-rh841787.patch
+# Upstream BZ 14185
+ApplyPatch glibc-rh819430.patch
+
+## Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
 ApplyPatch glibc-2.9-ldd-non-exec.patch.gz
 ApplyPatch glibc-2.15-nss-upgrade.patch
@@ -79,7 +119,7 @@ ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
 ApplyPatch glibc-2.16-multiarch.patch
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
-# master
+## master
 ApplyPatch 0001-BZ-14317-Optimze-__xpg_strerror_r.patch
 ApplyPatch 0002-Add-values-from-Linux-3.7-to-elf.h.patch
 ApplyPatch 0001-Fix-casinh-casin-inaccuracy-from-cancellation-bug-14.patch
@@ -114,14 +154,15 @@ ApplyPatch 0001-Use-movq-for-64-bit-operations.patch
 ApplyPatch 0001-Avoid-crashing-in-LD_DEBUG-when-program-name-is-unav.patch
 ApplyPatch 0001-Avoid-access-beyond-memory-bounds-in-pthread_attr_ge.patch
 ApplyPatch 0001-Add-rtld-memset.S-for-x86_64.patch
+ApplyPatch 0001-Avoid-spurious-failures-from-fenv.h-fallback-functio.patch
+ApplyPatch 0001-BZ-15022-Avoid-repeated-calls-to-DL_STATIC_INIT-for-.patch
+ApplyPatch 0002-Fix-buffers-overrun-in-x86_64-memcmp-ssse3.S.patch
 
-# From Arch
+## From Arch
 # combination of upstream commits 318cd0b, b540704 and fc1abbe
 ApplyPatch glibc-2.17-sync-with-linux37.patch
 # CVE-2013-1914 - upstream commit 1cef1b19
 ApplyPatch glibc-2.17-getaddrinfo-stack-overflow.patch
-# CVE-2013-0242 - upstream commit a445af0b
-ApplyPatch glibc-2.17-regexp-matcher-overrun.patch
 
 ApplyPatch 0001-Sync-with-Linux-3.9.patch
 

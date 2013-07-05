@@ -5,13 +5,6 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-
-# There's been this long standing debate about PNG and -lz
-# and this patch is the workaround.  ;-)
-#zcat ${SB_PATCHDIR}/gtk.pnglz.diff.gz | patch -p1 -E --backup --verbose
-
-patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk-lib64-slk.patch
-
 zcat ${SB_PATCHDIR}/system-python.patch.gz | patch -p1 --verbose
 # https://bugzilla.gnome.org/show_bug.cgi?id=583273
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/icon-padding.patch

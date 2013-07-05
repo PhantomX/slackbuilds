@@ -1,0 +1,337 @@
+commit 2506109403de69bd454de27835d42e6eb6ec3abc
+Author: Siddhesh Poyarekar <siddhesh@redhat.com>
+Date:   Wed Jun 12 10:36:48 2013 +0530
+
+    Set/restore rounding mode only when needed
+    
+    The most common use case of math functions is with default rounding
+    mode, i.e. rounding to nearest.  Setting and restoring rounding mode
+    is an unnecessary overhead for this, so I've added support for a
+    context, which does the set/restore only if the FP status needs a
+    change.  The code is written such that only x86 uses these.  Other
+    architectures should be unaffected by it, but would definitely benefit
+    if the set/restore has as much overhead relative to the rest of the
+    code, as the x86 bits do.
+    
+    Here's a summary of the performance improvement due to these
+    improvements; I've only mentioned functions that use the set/restore
+    and have benchmark inputs for x86_64:
+    
+    Before:
+    
+    cos(): ITERS:4.69335e+08: TOTAL:28884.6Mcy, MAX:4080.28cy, MIN:57.562cy, 16248.6 calls/Mcy
+    exp(): ITERS:4.47604e+08: TOTAL:28796.2Mcy, MAX:207.721cy, MIN:62.385cy, 15543.9 calls/Mcy
+    pow(): ITERS:1.63485e+08: TOTAL:28879.9Mcy, MAX:362.255cy, MIN:172.469cy, 5660.86 calls/Mcy
+    sin(): ITERS:3.89578e+08: TOTAL:28900Mcy, MAX:704.859cy, MIN:47.583cy, 13480.2 calls/Mcy
+    tan(): ITERS:7.0971e+07: TOTAL:28902.2Mcy, MAX:1357.79cy, MIN:388.58cy, 2455.55 calls/Mcy
+    
+    After:
+    
+    cos(): ITERS:6.0014e+08: TOTAL:28875.9Mcy, MAX:364.283cy, MIN:45.716cy, 20783.4 calls/Mcy
+    exp(): ITERS:5.48578e+08: TOTAL:28764.9Mcy, MAX:191.617cy, MIN:51.011cy, 19071.1 calls/Mcy
+    pow(): ITERS:1.70013e+08: TOTAL:28873.6Mcy, MAX:689.522cy, MIN:163.989cy, 5888.18 calls/Mcy
+    sin(): ITERS:4.64079e+08: TOTAL:28891.5Mcy, MAX:6959.3cy, MIN:36.189cy, 16062.8 calls/Mcy
+    tan(): ITERS:7.2354e+07: TOTAL:28898.9Mcy, MAX:1295.57cy, MIN:380.698cy, 2503.7 calls/Mcy
+    
+    So the improvements are:
+    
+    cos: 27.9089%
+    exp: 22.6919%
+    pow: 4.01564%
+    sin: 19.1585%
+    tan: 1.96086%
+    
+    The downside of the change is that it will have an adverse performance
+    impact on non-default rounding modes, but I think the tradeoff is
+    justified.
+
+diff --git a/include/fenv.h b/include/fenv.h
+index ed6d139..9f90d17 100644
+--- a/include/fenv.h
++++ b/include/fenv.h
+@@ -1,5 +1,6 @@
+ #ifndef _FENV_H
+ #include <math/fenv.h>
++#include <stdbool.h>
+ 
+ #ifndef _ISOMAC
+ /* Now define the internal interfaces.  */
+@@ -23,4 +24,13 @@ libm_hidden_proto (fetestexcept)
+ libm_hidden_proto (feclearexcept)
+ #endif
+ 
++/* Rounding mode context.  This allows functions to set/restore rounding mode
++   only when the desired rounding mode is different from the current rounding
++   mode.  */
++struct rm_ctx
++{
++  fenv_t env;
++  bool updated_status;
++};
++
+ #endif
+diff --git a/sysdeps/generic/math_private.h b/sysdeps/generic/math_private.h
+index e98360d..c0fc03d 100644
+--- a/sysdeps/generic/math_private.h
++++ b/sysdeps/generic/math_private.h
+@@ -553,35 +553,62 @@ default_libc_feupdateenv_test (fenv_t *e, int ex)
+ # define libc_feresetround_noexl libc_fesetenvl
+ #endif
+ 
++#if HAVE_RM_CTX
++/* Set/Restore Rounding Modes only when necessary.  If defined, these functions
++   set/restore floating point state only if the state needed within the lexical
++   block is different from the current state.  This saves a lot of time when
++   the floating point unit is much slower than the fixed point units.  */
++
++# ifndef libc_feresetround_noex_ctx
++#   define libc_feresetround_noex_ctx  libc_fesetenv_ctx
++# endif
++# ifndef libc_feresetround_noexf_ctx
++#   define libc_feresetround_noexf_ctx libc_fesetenvf_ctx
++# endif
++# ifndef libc_feresetround_noexl_ctx
++#   define libc_feresetround_noexl_ctx libc_fesetenvl_ctx
++# endif
++
++# ifndef libc_feholdsetround_53bit_ctx
++#   define libc_feholdsetround_53bit_ctx libc_feholdsetround_ctx
++# endif
++
++# ifndef libc_feresetround_53bit_ctx
++#   define libc_feresetround_53bit_ctx libc_feresetround_ctx
++# endif
++
++# define SET_RESTORE_ROUND_GENERIC(RM,ROUNDFUNC,CLEANUPFUNC) \
++  struct rm_ctx ctx __attribute__((cleanup(CLEANUPFUNC ## _ctx)));	      \
++  ROUNDFUNC ## _ctx (&ctx, (RM))
++#else
++# define SET_RESTORE_ROUND_GENERIC(RM, ROUNDFUNC, CLEANUPFUNC) \
++  fenv_t __libc_save_rm __attribute__((cleanup(CLEANUPFUNC)));	\
++  ROUNDFUNC (&__libc_save_rm, (RM))
++#endif
++
+ /* Save and restore the rounding mode within a lexical block.  */
+ 
+ #define SET_RESTORE_ROUND(RM) \
+-  fenv_t __libc_save_rm __attribute__((cleanup(libc_feresetround)));	\
+-  libc_feholdsetround (&__libc_save_rm, (RM))
++  SET_RESTORE_ROUND_GENERIC (RM, libc_feholdsetround, libc_feresetround)
+ #define SET_RESTORE_ROUNDF(RM) \
+-  fenv_t __libc_save_rm __attribute__((cleanup(libc_feresetroundf)));	\
+-  libc_feholdsetroundf (&__libc_save_rm, (RM))
++  SET_RESTORE_ROUND_GENERIC (RM, libc_feholdsetroundf, libc_feresetroundf)
+ #define SET_RESTORE_ROUNDL(RM) \
+-  fenv_t __libc_save_rm __attribute__((cleanup(libc_feresetroundl)));	\
+-  libc_feholdsetroundl (&__libc_save_rm, (RM))
++  SET_RESTORE_ROUND_GENERIC (RM, libc_feholdsetroundl, libc_feresetroundl)
+ 
+ /* Save and restore the rounding mode within a lexical block, and also
+    the set of exceptions raised within the block may be discarded.  */
+ 
+ #define SET_RESTORE_ROUND_NOEX(RM) \
+-  fenv_t __libc_save_rm __attribute__((cleanup(libc_feresetround_noex))); \
+-  libc_feholdsetround (&__libc_save_rm, (RM))
++  SET_RESTORE_ROUND_GENERIC (RM, libc_feholdsetround, libc_feresetround_noex)
+ #define SET_RESTORE_ROUND_NOEXF(RM) \
+-  fenv_t __libc_save_rm __attribute__((cleanup(libc_feresetround_noexf))); \
+-  libc_feholdsetroundf (&__libc_save_rm, (RM))
++  SET_RESTORE_ROUND_GENERIC (RM, libc_feholdsetroundf, libc_feresetround_noexf)
+ #define SET_RESTORE_ROUND_NOEXL(RM) \
+-  fenv_t __libc_save_rm __attribute__((cleanup(libc_feresetround_noexl))); \
+-  libc_feholdsetroundl (&__libc_save_rm, (RM))
++  SET_RESTORE_ROUND_GENERIC (RM, libc_feholdsetroundl, libc_feresetround_noexl)
+ 
+ /* Like SET_RESTORE_ROUND, but also set rounding precision to 53 bits.  */
+ #define SET_RESTORE_ROUND_53BIT(RM) \
+-  fenv_t __libc_save_rm __attribute__((cleanup(libc_feresetround_53bit))); \
+-  libc_feholdsetround_53bit (&__libc_save_rm, (RM))
++  SET_RESTORE_ROUND_GENERIC (RM, libc_feholdsetround_53bit,	      \
++			     libc_feresetround_53bit)
+ 
+ #define __nan(str) \
+   (__builtin_constant_p (str) && str[0] == '\0' ? NAN : __nan (str))
+diff --git a/sysdeps/i386/fpu/fenv_private.h b/sysdeps/i386/fpu/fenv_private.h
+index 1f8336c..3998387 100644
+--- a/sysdeps/i386/fpu/fenv_private.h
++++ b/sysdeps/i386/fpu/fenv_private.h
+@@ -322,6 +322,179 @@ libc_feresetround_387 (fenv_t *e)
+ # define libc_feholdsetround_53bit	libc_feholdsetround_387_53bit
+ #endif
+ 
++/* We have support for rounding mode context.  */
++#define HAVE_RM_CTX 1
++
++static __always_inline void
++libc_feholdexcept_setround_sse_ctx (struct rm_ctx *ctx, int r)
++{
++  unsigned int mxcsr, new_mxcsr;
++  asm (STMXCSR " %0" : "=m" (*&mxcsr));
++  new_mxcsr = ((mxcsr | 0x1f80) & ~0x603f) | (r << 3);
++
++  ctx->env.__mxcsr = mxcsr;
++  if (__glibc_unlikely (mxcsr != new_mxcsr))
++    {
++      asm volatile (LDMXCSR " %0" : : "m" (*&new_mxcsr));
++      ctx->updated_status = true;
++    }
++  else
++    ctx->updated_status = false;
++}
++
++/* Unconditional since we want to overwrite any exceptions that occurred in the
++   context.  This is also why all fehold* functions unconditionally write into
++   ctx->env.  */
++static __always_inline void
++libc_fesetenv_sse_ctx (struct rm_ctx *ctx)
++{
++  libc_fesetenv_sse (&ctx->env);
++}
++
++static __always_inline void
++libc_feupdateenv_sse_ctx (struct rm_ctx *ctx)
++{
++  if (__glibc_unlikely (ctx->updated_status))
++    libc_feupdateenv_test_sse (&ctx->env, 0);
++}
++
++static __always_inline void
++libc_feholdexcept_setround_387_prec_ctx (struct rm_ctx *ctx, int r)
++{
++  libc_feholdexcept_387 (&ctx->env);
++
++  fpu_control_t cw = ctx->env.__control_word;
++  fpu_control_t old_cw = cw;
++  cw &= ~(_FPU_RC_ZERO | _FPU_EXTENDED);
++  cw |= r | 0x3f;
++
++  if (__glibc_unlikely (old_cw != cw))
++    {
++      _FPU_SETCW (cw);
++      ctx->updated_status = true;
++    }
++  else
++    ctx->updated_status = false;
++}
++
++static __always_inline void
++libc_feholdexcept_setround_387_ctx (struct rm_ctx *ctx, int r)
++{
++  libc_feholdexcept_setround_387_prec_ctx (ctx, r | _FPU_EXTENDED);
++}
++
++static __always_inline void
++libc_feholdexcept_setround_387_53bit_ctx (struct rm_ctx *ctx, int r)
++{
++  libc_feholdexcept_setround_387_prec_ctx (ctx, r | _FPU_DOUBLE);
++}
++
++static __always_inline void
++libc_feholdsetround_387_prec_ctx (struct rm_ctx *ctx, int r)
++{
++  fpu_control_t cw, new_cw;
++
++  _FPU_GETCW (cw);
++  new_cw = cw;
++  new_cw &= ~(_FPU_RC_ZERO | _FPU_EXTENDED);
++  new_cw |= r;
++
++  ctx->env.__control_word = cw;
++  if (__glibc_unlikely (new_cw != cw))
++    {
++      _FPU_SETCW (new_cw);
++      ctx->updated_status = true;
++    }
++  else
++    ctx->updated_status = false;
++}
++
++static __always_inline void
++libc_feholdsetround_387_ctx (struct rm_ctx *ctx, int r)
++{
++  libc_feholdsetround_387_prec_ctx (ctx, r | _FPU_EXTENDED);
++}
++
++static __always_inline void
++libc_feholdsetround_387_53bit_ctx (struct rm_ctx *ctx, int r)
++{
++  libc_feholdsetround_387_prec_ctx (ctx, r | _FPU_DOUBLE);
++}
++
++static __always_inline void
++libc_feholdsetround_sse_ctx (struct rm_ctx *ctx, int r)
++{
++  unsigned int mxcsr, new_mxcsr;
++
++  asm (STMXCSR " %0" : "=m" (*&mxcsr));
++  new_mxcsr = (mxcsr & ~0x6000) | (r << 3);
++
++  ctx->env.__mxcsr = mxcsr;
++  if (__glibc_unlikely (new_mxcsr != mxcsr))
++    {
++      asm volatile (LDMXCSR " %0" : : "m" (*&new_mxcsr));
++      ctx->updated_status = true;
++    }
++  else
++    ctx->updated_status = false;
++}
++
++static __always_inline void
++libc_feresetround_sse_ctx (struct rm_ctx *ctx)
++{
++  if (__glibc_unlikely (ctx->updated_status))
++    libc_feresetround_sse (&ctx->env);
++}
++
++static __always_inline void
++libc_feresetround_387_ctx (struct rm_ctx *ctx)
++{
++  if (__glibc_unlikely (ctx->updated_status))
++    _FPU_SETCW (ctx->env.__control_word);
++}
++
++static __always_inline void
++libc_feupdateenv_387_ctx (struct rm_ctx *ctx)
++{
++  if (__glibc_unlikely (ctx->updated_status))
++    libc_feupdateenv_test_387 (&ctx->env, 0);
++}
++
++#ifdef __SSE_MATH__
++# define libc_feholdexcept_setroundf_ctx libc_feholdexcept_setround_sse_ctx
++# define libc_fesetenvf_ctx		libc_fesetenv_sse_ctx
++# define libc_feupdateenvf_ctx		libc_feupdateenv_sse_ctx
++# define libc_feholdsetroundf_ctx	libc_feholdsetround_sse_ctx
++# define libc_feresetroundf_ctx		libc_feresetround_sse_ctx
++#else
++# define libc_feholdexcept_setroundf_ctx libc_feholdexcept_setround_387_ctx
++# define libc_feupdateenvf_ctx		libc_feupdateenv_387_ctx
++# define libc_feholdsetroundf_ctx	libc_feholdsetround_387_ctx
++# define libc_feresetroundf_ctx		libc_feresetround_387_ctx
++#endif /* __SSE_MATH__ */
++
++#ifdef __SSE2_MATH__
++# define libc_feholdexcept_setround_ctx	libc_feholdexcept_setround_sse_ctx
++# define libc_fesetenv_ctx		libc_fesetenv_sse_ctx
++# define libc_feupdateenv_ctx		libc_feupdateenv_sse_ctx
++# define libc_feholdsetround_ctx	libc_feholdsetround_sse_ctx
++# define libc_feresetround_ctx		libc_feresetround_sse_ctx
++#else
++# define libc_feholdexcept_setround_ctx	libc_feholdexcept_setround_387_ctx
++# define libc_feupdateenv_ctx		libc_feupdateenv_387_ctx
++# define libc_feresetround_ctx		libc_feresetround_387_ctx
++#endif /* __SSE2_MATH__ */
++
++#define libc_feholdexcept_setroundl_ctx	libc_feholdexcept_setround_387_ctx
++#define libc_feupdateenvl_ctx		libc_feupdateenv_387_ctx
++#define libc_feholdsetroundl_ctx	libc_feholdsetround_387_ctx
++#define libc_feresetroundl_ctx		libc_feresetround_387_ctx
++
++#ifndef __SSE2_MATH__
++# define libc_feholdsetround_53bit_ctx	libc_feholdsetround_387_53bit_ctx
++# define libc_feresetround_53bit_ctx	libc_feresetround_387_ctx
++#endif
++
+ #undef __mxcsr
+ 
+ #endif /* FENV_PRIVATE_H */

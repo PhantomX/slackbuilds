@@ -70,6 +70,8 @@ fi
 ## upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11-bz\#921781-check-max-viewport-size.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10-bz\#921742.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.shadow.changeset_r7777194da6154375fc8103b8c4e29e385cd7ae2e.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r2c810db3e41d56ad7dd8ec3436f3cf3abcc31983.diff
 
 ## plasma active patches
 

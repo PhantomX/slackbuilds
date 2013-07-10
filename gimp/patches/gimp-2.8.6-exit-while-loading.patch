@@ -1,0 +1,172 @@
+From 9e143c6a91ba239eca11b5394f963e0b8bb291b8 Mon Sep 17 00:00:00 2001
+From: Nils Philippsen <nils@redhat.com>
+Date: Mon, 8 Jul 2013 11:55:17 +0200
+Subject: [PATCH] patch: exit-while-loading
+
+Squashed commit of the following:
+
+commit 2dd51be1ce18b11a207efc90e3e8e8c07ba6f7d7
+Author: Massimo Valentini <mvalentini@src.gnome.org>
+Date:   Thu Jul 4 21:36:40 2013 +0200
+
+    Bug 629941 - GIMP doesn't exit properly when quitting while loading images
+
+    GIMP's "exit" signal was emitted before the handler was connected.
+
+    Don't start loading command line images or batch processing before
+    app_exit_after_callback() is connected. Make sure we don't use
+    dangling main loop pointers or try to stop a non-running main loop.
+
+    (cherry picked from commit 09682d62ae675125e91d537c3ccbdd4571a0b28e)
+
+commit bc44719702a5cdcc4944a9a5e1f310c1740c6308
+Author: Massimo Valentini <mvalentini@src.gnome.org>
+Date:   Thu Jul 4 21:05:25 2013 +0200
+
+    app: file_open_from_command_line(): don't access a dangling display pointer
+
+    Happens if GIMP is quit while the image is being loaded.
+
+    (cherry picked from commit 6c62eb2238d2167ebe20ee02ad32ef733db475b1)
+---
+ app/app.c            | 53 +++++++++++++++++++++++++++++++---------------------
+ app/file/file-open.c |  7 ++++++-
+ 2 files changed, 38 insertions(+), 22 deletions(-)
+
+diff --git a/app/app.c b/app/app.c
+index e6b7407..dbbc1b3 100644
+--- a/app/app.c
++++ b/app/app.c
+@@ -72,12 +72,12 @@
+ 
+ /*  local prototypes  */
+ 
+-static void       app_init_update_noop    (const gchar *text1,
+-                                           const gchar *text2,
+-                                           gdouble      percentage);
+-static gboolean   app_exit_after_callback (Gimp        *gimp,
+-                                           gboolean     kill_it,
+-                                           GMainLoop   *loop);
++static void       app_init_update_noop    (const gchar  *text1,
++                                           const gchar  *text2,
++                                           gdouble       percentage);
++static gboolean   app_exit_after_callback (Gimp         *gimp,
++                                           gboolean      kill_it,
++                                           GMainLoop   **loop);
+ 
+ 
+ /*  public functions  */
+@@ -149,6 +149,7 @@ app_run (const gchar         *full_prog_name,
+   Gimp               *gimp;
+   GimpBaseConfig     *config;
+   GMainLoop          *loop;
++  GMainLoop          *run_loop;
+   gboolean            swap_is_ok;
+ 
+   /*  Create an instance of the "Gimp" object which is the root of the
+@@ -234,6 +235,12 @@ app_run (const gchar         *full_prog_name,
+    */
+   gimp_rc_set_autosave (GIMP_RC (gimp->edit_config), TRUE);
+ 
++  loop = run_loop = g_main_loop_new (NULL, FALSE);
++
++  g_signal_connect_after (gimp, "exit",
++                          G_CALLBACK (app_exit_after_callback),
++                          &run_loop);
++
+   /*  Load the images given on the command-line.
+    */
+   if (filenames)
+@@ -241,20 +248,21 @@ app_run (const gchar         *full_prog_name,
+       gint i;
+ 
+       for (i = 0; filenames[i] != NULL; i++)
+-        file_open_from_command_line (gimp, filenames[i], as_new);
++        {
++          if (run_loop)
++            file_open_from_command_line (gimp, filenames[i], as_new);
++        }
+     }
+ 
+-  batch_run (gimp, batch_interpreter, batch_commands);
+-
+-  loop = g_main_loop_new (NULL, FALSE);
++  if (run_loop)
++    batch_run (gimp, batch_interpreter, batch_commands);
+ 
+-  g_signal_connect_after (gimp, "exit",
+-                          G_CALLBACK (app_exit_after_callback),
+-                          loop);
+-
+-  gimp_threads_leave (gimp);
+-  g_main_loop_run (loop);
+-  gimp_threads_enter (gimp);
++  if (run_loop)
++    {
++      gimp_threads_leave (gimp);
++      g_main_loop_run (loop);
++      gimp_threads_enter (gimp);
++    }
+ 
+   g_main_loop_unref (loop);
+ 
+@@ -279,9 +287,9 @@ app_init_update_noop (const gchar *text1,
+ }
+ 
+ static gboolean
+-app_exit_after_callback (Gimp      *gimp,
+-                         gboolean   kill_it,
+-                         GMainLoop *loop)
++app_exit_after_callback (Gimp       *gimp,
++                         gboolean    kill_it,
++                         GMainLoop **loop)
+ {
+   if (gimp->be_verbose)
+     g_print ("EXIT: %s\n", G_STRFUNC);
+@@ -297,7 +305,10 @@ app_exit_after_callback (Gimp      *gimp,
+ 
+ #ifdef GIMP_UNSTABLE
+ 
+-  g_main_loop_quit (loop);
++  if (g_main_loop_is_running (*loop))
++    g_main_loop_quit (*loop);
++
++  *loop = NULL;
+ 
+ #else
+ 
+diff --git a/app/file/file-open.c b/app/file/file-open.c
+index 8abb19e..fdf73f3 100644
+--- a/app/file/file-open.c
++++ b/app/file/file-open.c
+@@ -562,6 +562,8 @@ file_open_from_command_line (Gimp        *gimp,
+       GimpObject        *display = gimp_get_empty_display (gimp);
+       GimpPDBStatusType  status;
+ 
++      g_object_add_weak_pointer (G_OBJECT (display), (gpointer) &display);
++
+       image = file_open_with_display (gimp,
+                                       gimp_get_user_context (gimp),
+                                       GIMP_PROGRESS (display),
+@@ -575,7 +577,7 @@ file_open_from_command_line (Gimp        *gimp,
+           g_object_set_data_full (G_OBJECT (gimp), GIMP_FILE_OPEN_LAST_URI_KEY,
+                                   uri, (GDestroyNotify) g_free);
+         }
+-      else if (status != GIMP_PDB_CANCEL)
++      else if (status != GIMP_PDB_CANCEL && display)
+         {
+           gchar *filename = file_utils_uri_display_name (uri);
+ 
+@@ -587,6 +589,9 @@ file_open_from_command_line (Gimp        *gimp,
+           g_free (filename);
+           g_free (uri);
+         }
++
++      if (display)
++        g_object_remove_weak_pointer (G_OBJECT (display), (gpointer) &display);
+     }
+   else
+     {
+-- 
+1.8.3.1
+

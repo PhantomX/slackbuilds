@@ -170,6 +170,7 @@ for tobj in objects:
 
         f = open(fname, 'w')
         if obj != None:
+            f.write("# alias=%s\n"%tobj['CKA_LABEL'])
             f.write("# trust=" + " ".join(trustbits) + "\n")
             f.write("# distrust=" + " ".join(distrustbits) + "\n")
             if openssl_trustflags:

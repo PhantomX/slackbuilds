@@ -187,7 +187,7 @@ case $1 in
   *)
     txt
     exit 0
-;;
+  ;;
 esac
 
 while [ -n "$1" ] ;do

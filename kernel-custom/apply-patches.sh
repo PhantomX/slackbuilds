@@ -229,12 +229,6 @@ ApplyPatch cve-2013-2147-ciss-info-leak.patch
 #CVE-2013-2148 rhbz 971258 971261
 ApplyPatch fanotify-info-leak-in-copy_event_to_user.patch
 
-#CVE-2013-2851 rhbz 969515 971662
-ApplyPatch block-do-not-pass-disk-names-as-format-strings.patch
-
-#CVE-2013-2164 rhbz 973100 973109
-ApplyPatch cdrom-use-kzalloc-for-failing-hardware.patch
-
 #rhbz 969644
 ApplyPatch KVM-x86-handle-idiv-overflow-at-kvm_write_tsc.patch
 

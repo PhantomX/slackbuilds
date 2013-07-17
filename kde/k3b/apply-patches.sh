@@ -24,6 +24,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/k3b-2.0.2-overburn-cdr90.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/k3b-2.0.2-overburn-usedcapacity.patch
 # http://mail.kde.org/pipermail/k3b/2011-April/000227.html
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/k3b-2.0.2-ffmpeg.patch
-patch -p1 -E --backup -z .ffmpeg --verbose -i ${SB_PATCHDIR}/k3b-2.0.2-ffmpeg55.patch
 
 set +e +o pipefail

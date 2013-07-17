@@ -2,7 +2,7 @@
 
 set -e
 
-module=$(basename $0 .sh)
+module=$(basename $0 -snapshot.sh)
 snaproot="http://hg.debian.org/hg/${module}/xine-lib"
 
 tmp=$(mktemp -d)

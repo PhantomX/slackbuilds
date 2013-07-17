@@ -18,8 +18,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-long-double-1.pat
 # https://bugzilla.redhat.com/show_bug.cgi?id=784654
 patch -p3 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-polygon.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-pool.patch
-# https://bugzilla.redhat.com/show_bug.cgi?id=909888
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.53.0-context.patch
 
 # Gentoo
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.51.0-respect_python-buildid.patch

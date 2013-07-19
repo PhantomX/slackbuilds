@@ -37,7 +37,7 @@ if [ "$ARCH" = "x86_64" ]; then # adopted from "Cross Linux From Scratch"
   echo 'installstyle="lib64/perl5"' >>hints/linux.sh
 fi
 
-ApplyPatch porting-podcheck-regen.patch
+### Fedora
 
 # Fedora/RHEL specific (use libresolv instead of libbind)
 ApplyPatch perl-5.10.0-libresolv.patch
@@ -62,37 +62,32 @@ ApplyPatch perl-5.14.1-offtest.patch
 # Fix find2perl to translate ? glob properly, rhbz#825701, RT#113054
 ApplyPatch perl-5.14.2-find2perl-transtate-question-mark-properly.patch
 
-# Fix broken atof, rhbz#835452, RT#109318
-ApplyPatch perl-5.16.0-fix-broken-atof.patch
+# Update h2ph(1) documentation, rhbz#948538, RT#117647
+ApplyPatch perl-5.19.0-Synchronize-h2ph-POD-text-with-usage-output.patch
 
-# Clear $@ before `do' I/O error, rhbz#834226, RT#113730
-ApplyPatch perl-5.16.1-RT-113730-should-be-cleared-on-do-IO-error.patch
+# Update pod2html(1) documentation, rhbz#948538, RT#117623
+ApplyPatch perl-5.16.3-Synchronize-pod2html-usage-output-and-its-POD-text.patch
 
-# Do not truncate syscall() return value to 32 bits, rhbz#838551, RT#113980
-ApplyPatch perl-5.16.1-perl-113980-pp_syscall-I32-retval-truncates-the-retu.patch
+# Fix a test failure in perl5db.t when TERM=vt100, RT#118817
+ApplyPatch perl-5.18.0-Disable-ornaments-on-perl5db-AutoTrace-tests.patch
 
-# Override the Pod::Simple::parse_file, rhbz#826872, CPANRT#77530, in
-# podlators-2.4.1
-ApplyPatch perl-5.14.2-Override-the-Pod-Simple-parse_file.patch
+# Fix regmatch pointer 32-bit wraparound regression, RT#118175
+ApplyPatch perl-5.18.0-Fix-regmatch-pointer-32-bit-wraparound-regression.patch
 
-# Do not leak with attribute on my variable, rhbz#858966, RT#114764,
-# fixed after 5.17.4
-ApplyPatch perl-5.16.1-perl-114764-Stop-my-vars-with-attrs-from-leaking.patch
+# Prevent from loading system Term::ReadLine::Gnu while running tests,
+# RT#118821
+ApplyPatch perl-5.18.0-Suppress-system-Term-ReadLine-Gnu.patch
 
-# Allow operator after numeric keyword argument, rhbz#859328, RT#105924,
-# fixed after 5.17.4
-ApplyPatch perl-5.16.1-perl-105924-require-1-2.patch
+# Define SONAME for libperl.so
+ApplyPatch perl-5.16.3-create_libperl_soname.patch
 
-# Extend stack in File::Glob::glob, rhbz#859332, RT#114984, fixed after 5.17.4
-ApplyPatch perl-5.16.1-perl-114984-Glob.xs-Extend-stack-when-returning.patch
+# Install libperl.so to -Dshrpdir value
+ApplyPatch perl-5.16.3-Install-libperl.so-to-shrpdir-on-Linux.patch
 
-# Do not crash when vivifying $|, rhbz#865296, RT#115206
-ApplyPatch perl-5.16.1-perl-115206-Don-t-crash-when-vivifying.patch
+# Link XS modules to libperl.so with EU::CBuilder on Linux, bug #960048
+ApplyPatch perl-5.16.3-Link-XS-modules-to-libperl.so-with-EU-CBuilder-on-Li.patch
 
-# Fix CVE-2012-6329, rhbz#884354
-ApplyPatch perl-5.17.6-Fix-misparsing-of-maketext-strings.patch
-
-# Add NAME heading into CPAN PODs, rhbz#908113, CPANRT#73396
-ApplyPatch perl-5.16.2-cpan-CPAN-add-NAME-headings-in-modules-with-POD.patch
+# Link XS modules to libperl.so with EU::MM on Linux, bug #960048
+ApplyPatch perl-5.16.3-Link-XS-modules-to-libperl.so-with-EU-MM-on-Linux.patch
 
 set +e +o pipefail

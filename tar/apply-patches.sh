@@ -10,6 +10,8 @@ SB_PATCHDIR=${CWD}/patches
 )
 # Stop issuing lone zero block warnings
 zcat ${SB_PATCHDIR}/${NAME}.nolonezero.diff.gz | patch -p1 --verbose
+
+### Fedora
 # Fix extracting sparse files to a filesystem like vfat,
 # when ftruncate may fail to grow the size of a file.(rh #179507)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.15.1-vfatTruncate.patch
@@ -50,6 +52,15 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-pax-big-sparse-files.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-allow-extract-single-volume.patch
 # Allow to pass arguments to commands called from tar
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-command-args.patch
+# Use a birthtime instead of ctime.
+# ~> upstream (189e43 & 49bd10)
+# ~> http://lists.gnu.org/archive/html/bug-tar/2011-06/msg00000.html
+# ~> http://lists.gnu.org/archive/html/bug-tar/2013-05/msg00022.html
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-fix-symlink-eating-bug.patch
+# Silence gcc warnings
+# ~> upstream tar: 17f99bc6f, 5bb0433
+# ~> upstream paxutils: 0b3d84a0
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-silence-gcc.patch
 
 # Adds txz support
 zcat ${SB_PATCHDIR}/${NAME}-1.23-support_txz.diff.gz | patch -p1 -E --backup --verbose

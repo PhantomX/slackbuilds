@@ -32,7 +32,9 @@ lesspipe() {
   *.tar.gz|*.tgz) tar tzvvf "$1" 2>/dev/null ;;
   *.tar.z|*.tar.Z) tar tzvvf "$1" 2>/dev/null ;;
   *.tar.bz2|*.tbz|*.tbz2) tar tjvvf "$1" 2>/dev/null ;;
+  *.tar.lz) tar -tvvf "$1" 2>/dev/null ;;
   *.tar.lzma|*.tlz) tar -tJvvf "$1" 2>/dev/null ;;
+  *.tar.lzo|*.tlzo) tar -tvvf "$1" 2>/dev/null ;;
   *.tar.xz|*.txz) tar -tJvvf "$1" 2>/dev/null ;;
   *.z|*.Z) gzip -dc "$1" 2>/dev/null ;; # View compressed files correctly
   *.zip|*.ZIP|*.cbz|*.CBZ|*.jar|*.JAR|*.xpi|*.XPI) unzip -l "$1" 2>/dev/null ;;
@@ -64,9 +66,17 @@ lesspipe() {
     if bzip2 -dc "$1" | file - | grep roff 1> /dev/null ; then
       bzip2 -dc "$1" | nroff -S -mandoc -
     fi ;;
+  *.1.lz|*.2.lz|*.3.lz|*.4.lz|*.5.lz|*.6.lz|*.7.lz|*.8.lz|*.9.lz|*.n.lz|*.man.lz) # compressed *roff src?
+    if lz -dc "$1" | file - | grep roff 1> /dev/null ; then
+      lz -dc "$1" | nroff -S -mandoc -
+    fi ;;
   *.1.lzma|*.2.lzma|*.3.lzma|*.4.lzma|*.5.lzma|*.6.lzma|*.7.lzma|*.8.lzma|*.9.lzma|*.n.lzma|*.man.lzma) # compressed *roff src?
     if lzma -dc "$1" | file - | grep roff 1> /dev/null ; then
       lzma -dc "$1" | nroff -S -mandoc -
+    fi ;;
+  *.1.lzo|*.2.lzo|*.3.lzo|*.4.lzo|*.5.lzo|*.6.lzo|*.7.lzo|*.8.lzo|*.9.lzo|*.n.lzo|*.man.lzo) # compressed *roff src?
+    if lzop -dc "$1" | file - | grep roff 1> /dev/null ; then
+      lzop -dc "$1" | nroff -S -mandoc -
     fi ;;
   *.1.xz|*.2.xz|*.3.xz|*.4.xz|*.5.xz|*.6.xz|*.7.xz|*.8.xz|*.9.xz|*.n.xz|*.man.xz) # compressed *roff src?
     if xz -dc "$1" | file - | grep roff 1> /dev/null ; then
@@ -74,7 +84,9 @@ lesspipe() {
     fi ;;
   *.gz) gzip -dc "$1"  2>/dev/null ;;
   *.bz2) bzip2 -dc "$1" 2>/dev/null ;;
+  *.lz) lzip -dc "$1" 2>/dev/null ;;
   *.lzma) lzma -dc "$1" 2>/dev/null ;;
+  *.lzo) lzop -dc "$1" 2>/dev/null | cat ;;
   *.xz) xz -dc "$1" 2>/dev/null ;;
 #  *) FILE=`file -L "$1"` ; # Check to see if binary, if so -- view with 'strings'
 #    FILE1=`echo $FILE | cut -d ' ' -f 2`

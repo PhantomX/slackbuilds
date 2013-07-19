@@ -24,7 +24,7 @@ pushd "${tmp}"
       hgdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
       hg checkout -d "${hgdate}"
     fi
-    find . -type d -name .hig -print0 | xargs -0r rm -rf
+    find . -type d -name .hg -print0 | xargs -0r rm -rf
     rm -f .hgignore .hgsigs .hgtags
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}

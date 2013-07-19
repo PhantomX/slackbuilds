@@ -17,5 +17,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.11-dvdman.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.11-paranoiacdda.patch
 patch -p1 -E --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.11-utf8.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.11-cmakewarn.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.11-memset.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.11-paranoiacdio.patch
 
 set +e +o pipefail

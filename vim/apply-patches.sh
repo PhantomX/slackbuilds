@@ -33,7 +33,7 @@ cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
 patch -p0 -E --verbose -i  ${SB_PATCHDIR}/vim-fix-p859.patch
 
 ( SB_PATCHDIR=patches
-  for i in $( seq -w ${PATCHLEVEL} ) ; do
+  for i in $( seq -w ${PATCHLEVEL} ) $( seq 1000 ${OVERPATCHLEVEL} ) ; do
     patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${SVER}.${i}
   done
 )

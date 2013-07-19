@@ -1,0 +1,91 @@
+diff --git a/gnu/stat-time.h b/gnu/stat-time.h
+index 1dc4098..7b8428e 100644
+--- a/gnu/stat-time.h
++++ b/gnu/stat-time.h
+@@ -144,7 +144,7 @@ get_stat_mtime (struct stat const *st)
+ }
+ 
+ /* Return *ST's birth time, if available; otherwise return a value
+-   with negative tv_nsec.  */
++   with tv_sec and tv_nsec both equal to -1.  */
+ static inline struct timespec
+ get_stat_birthtime (struct stat const *st)
+ {
+@@ -163,7 +163,7 @@ get_stat_birthtime (struct stat const *st)
+   t.tv_sec = st->st_ctime;
+   t.tv_nsec = 0;
+ #else
+-  /* Birth time is not supported.  Set tv_sec to avoid undefined behavior.  */
++  /* Birth time is not supported.  */
+   t.tv_sec = -1;
+   t.tv_nsec = -1;
+   /* Avoid a "parameter unused" warning.  */
+@@ -177,10 +177,12 @@ get_stat_birthtime (struct stat const *st)
+      using zero.  Attempt to work around this problem.  Alas, this can
+      report failure even for valid time stamps.  Also, NetBSD
+      sometimes returns junk in the birth time fields; work around this
+-     bug if it it is detected.  There's no need to detect negative
+-     tv_nsec junk as negative tv_nsec already indicates an error.  */
+-  if (t.tv_sec == 0 || 1000000000 <= t.tv_nsec)
+-    t.tv_nsec = -1;
++     bug if it is detected.  */
++  if (! (t.tv_sec && 0 <= t.tv_nsec && t.tv_nsec < 1000000000))
++    {
++      t.tv_sec = -1;
++      t.tv_nsec = -1;
++    }
+ #endif
+ 
+   return t;
+diff --git a/src/extract.c b/src/extract.c
+index 340beea..3afb95d 100644
+--- a/src/extract.c
++++ b/src/extract.c
+@@ -119,12 +119,15 @@ struct delayed_link
+     /* The next delayed link in the list.  */
+     struct delayed_link *next;
+ 
+-    /* The device, inode number and ctime of the placeholder.  Use
+-       ctime, not mtime, to make false matches less likely if some
+-       other process removes the placeholder.  */
++    /* The device, inode number and birthtime of the placeholder.
++       birthtime.tv_nsec is negative if the birthtime is not available.
++       Don't use mtime as this would allow for false matches if some
++       other process removes the placeholder.  Don't use ctime as
++       this would cause race conditions and other screwups, e.g.,
++       when restoring hard-linked symlinks.  */
+     dev_t dev;
+     ino_t ino;
+-    struct timespec ctime;
++    struct timespec birthtime;
+ 
+     /* True if the link is symbolic.  */
+     bool is_symlink;
+@@ -1200,7 +1203,7 @@ create_placeholder_file (char *file_name, bool is_symlink, bool *interdir_made)
+       delayed_link_head = p;
+       p->dev = st.st_dev;
+       p->ino = st.st_ino;
+-      p->ctime = get_stat_ctime (&st);
++      p->birthtime = get_stat_birthtime (&st);
+       p->is_symlink = is_symlink;
+       if (is_symlink)
+ 	{
+@@ -1265,7 +1268,8 @@ extract_link (char *file_name, int typeflag)
+ 	      if (ds->change_dir == chdir_current
+ 		  && ds->dev == st1.st_dev
+ 		  && ds->ino == st1.st_ino
+-		  && timespec_cmp (ds->ctime, get_stat_ctime (&st1)) == 0)
++		  && (timespec_cmp (ds->birthtime, get_stat_birthtime (&st1))
++		      == 0))
+ 		{
+ 		  struct string_list *p =  xmalloc (offsetof (struct string_list, string)
+ 						    + strlen (file_name) + 1);
+@@ -1638,7 +1642,7 @@ apply_delayed_links (void)
+ 	  if (fstatat (chdir_fd, source, &st, AT_SYMLINK_NOFOLLOW) == 0
+ 	      && st.st_dev == ds->dev
+ 	      && st.st_ino == ds->ino
+-	      && timespec_cmp (get_stat_ctime (&st), ds->ctime) == 0)
++	      && timespec_cmp (get_stat_birthtime (&st), ds->birthtime) == 0)
+ 	    {
+ 	      /* Unlink the placeholder, then create a hard link if possible,
+ 		 a symbolic link otherwise.  */

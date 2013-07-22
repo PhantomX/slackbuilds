@@ -56,13 +56,16 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-4}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+grep --quiet '^xmms2:' /etc/group && SB_HGROUP=1
+grep --quiet '^xmms2:' /etc/passwd && SB_HUSER=1
 
 # Set to YES to enable libavcodec plugin
 SB_FFMPEG=${SB_FFMPEG:-YES}
@@ -133,6 +136,7 @@ export LIBDIR="/usr/lib${LIBDIRSUFFIX}"
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
+CPPFLAGS="${CPPFLAGS} $(pkg-config smbclient --cflags)" \
 LINKFLAGS="${LDFLAGS}" \
 ./waf configure -j1 \
   --prefix=/usr \
@@ -148,6 +152,7 @@ LINKFLAGS="${LDFLAGS}" \
   --with-ruby-libdir=${RBVENDORLIB} \
   --with-ruby-archdir=${RBVENDORARCH} \
   --with-custom-version=${BUILD}${PACKAGER_ID} \
+  --no-cython \
   || exit 1
 
 ./waf build -j${NJOBS} -v || exit 1
@@ -166,15 +171,50 @@ mkdir -p ${PKG}/etc/${NAME}
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-for res in 16 32 48 128 ;do
-  dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
-  mkdir -p ${dir}
-  install -m0644 pixmaps/${NAME}-${res}.png \
-                 ${dir}/${NAME}.png || exit 1
-done
 mkdir -p ${PKG}/usr/share/icons/hicolor/scalable/apps
 install -m0644 pixmaps/${NAME}.svg \
-               ${PKG}/usr/share/icons/hicolor/scalable/apps/${NAME}.svg || exit 1
+  ${PKG}/usr/share/icons/hicolor/scalable/apps/${NAME}.svg || exit 1
+
+if [ -x /usr/bin/rsvg-convert ] ;then
+  for res in 16 20 22 24 32 36 48 64 72 96 128 192 256 512 ;do
+    dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
+    mkdir -p ${dir}
+    rsvg-convert pixmaps/${NAME}.svg -h ${res} -w ${res} \
+      -o ${dir}/${NAME}.png || exit 1
+  done
+else
+  for res in 16 32 48 128 ;do
+    dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
+    mkdir -p ${dir}
+    install -m0644 pixmaps/${NAME}-${res}.png \
+      ${dir}/${NAME}.png || exit 1
+  done
+fi
+
+mkdir -p ${PKG}/etc/default
+cat > ${PKG}/etc/default/xmms2d.new <<EOF
+# /etc/default/mpd
+# Change this to the user you want to run xmms2 as.
+# You may specify a group too, after a colon
+XMMS2_USER="xmms2:xmms2"
+
+# xmms2d daemon extra parameters
+#XMMS2_OPTIONS=
+EOF
+
+# Startup scripts.
+mkdir -p ${PKG}/etc/rc.d
+install -pm0755 ${CWD}/rc.${NAME}d \
+  ${PKG}/etc/rc.d/rc.${NAME}d.new || exit 1
+
+mkdir -p ${PKG}/var/log/setup
+install -pm0755 ${CWD}/setup.onlyonce.rc${NAME}d \
+  ${PKG}/var/log/setup/setup.onlyonce.rc${NAME}d || exit 1
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 ${CWD}/${NAME}d.service ${PKG}/lib/systemd/system/ || exit 1
+
+mkdir -p ${PKG}/var/lib/${NAME}
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -209,21 +249,113 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
+cat > ${PKG}/install/doinst.sh <<'EOF'
+function free_user_id {
+  # Find a free user-ID >= 120 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
 # Figure out our root directory
-ROOTDIR=\$(pwd)
+ROOTDIR=$(pwd)
 unset CHROOT
-if test "\${ROOTDIR}" != "/"; then
-  CHROOT="chroot \${ROOTDIR} "
-  ROOTDIR="\${ROOTDIR}/"
+if test "${ROOTDIR}" != "/"; then
+  CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
-if [ -x usr/bin/update-desktop-database ]; then
-  \${CHROOT} /usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1
+
+# Set up group.
+if ! grep --quiet '^xmms2:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    xmms2 2> /dev/null
 fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^xmms2:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/lib/xmms2:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "xmms2"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+    -d /var/lib/xmms2 \
+    -u ${USER_ID} \
+    -s /bin/false \
+    -g xmms2 \
+    -G audio \
+    ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -d /var/lib/xmms2 \
+    -c "XMMS2 daemon" \
+    -u $(free_user_id) \
+    -s /bin/false \
+    -g xmms2 \
+    -G audio \
+    xmms2
+fi
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
 if [ -x usr/bin/gtk-update-icon-cache ]; then
   \${CHROOT} /usr/bin/touch --no-create /usr/share/icons/hicolor >/dev/null 2>&1
   \${CHROOT} /usr/bin/gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1
+fi
+
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+# Keep same perms on rc.${NAME}d.new:
+if [ -r etc/rc.d/rc.${NAME}d -a -r etc/rc.d/rc.${NAME}d.new ]; then
+  chmod --reference=etc/rc.d/rc.${NAME}d etc/rc.d/rc.${NAME}d.new
+fi
+
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+# Fix permissions
+${CHROOT} /bin/chown -R xmms2.xmms2 /var/lib/xmms2
+
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
 fi
 EOF
 
@@ -234,11 +366,12 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${CWD}/*-launcher.sh ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/*-launcher.sh ${CWD}/rc.${NAME}d \
+    ${CWD}/setup.*.rc${NAME}d ${CWD}/*.service ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
   rmdir ${SBDIR}/patches
 fi
 
@@ -246,10 +379,11 @@ fi
 set +o xtrace        # no longer print commands upon execution
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown -R xmms2.xmms2 ./var/lib/xmms2 ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

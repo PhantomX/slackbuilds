@@ -23,8 +23,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-cachehardmax.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-sslmultiproxy.patch
 
 # Bug fixes
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.2-r1374214+.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.3-sslsninotreq.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-dump-vhost-twice.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-malformed-host.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-mod_unique_id.patch
 
 # Security fixes
 

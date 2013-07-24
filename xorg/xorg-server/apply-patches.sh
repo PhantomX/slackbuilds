@@ -55,12 +55,23 @@ ApplyPatch 0001-xf86-return-NULL-for-compat-output-if-no-outputs.patch
 # mustard: make the default queue length bigger to calm abrt down
 ApplyPatch 0001-mieq-Bump-default-queue-size-to-512.patch
 
-# Bug 962572 - X-sandboxes are not resizeable
+# scale events from abs devices in relative mode to something useful
+ApplyPatch 0004-dix-pre-scale-x-by-the-screen-device-resolution-rati.patch
+ApplyPatch 0005-dix-scale-y-back-instead-of-x-up-when-pre-scaling-co.patch
+
+# Bug rh#972095 - X server fails on 32-bit Fedora 19 with VirtualBox Guest Additions installed 
+# https://bugzilla.redhat.com/show_bug.cgi?id=972095
+ApplyPatch 0001-glx-fix-uninitialized-var-in-__glXDRIscreenProbe.patch
+
+# Bug rh#962572 - X-sandboxes are not resizeable
 # enabled by default until sandbox -X uses the option
 ApplyPatch 0001-ephyr-Add-resizeable-option.patch
 
 # misc
 ApplyPatch 0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
+
+# Fix cursor jumps in gimp
+ApplyPatch 0001-dix-set-the-valuator-mask-to-ensure-XI-1.x-events-ha.patch
 
 ApplyPatch xserver-force-hal-disable.patch
 

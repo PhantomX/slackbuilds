@@ -238,6 +238,14 @@ ApplyPatch HID-input-return-ENODATA-if-reading-battery-attrs-fails.patch
 #rhbz 880035
 ApplyPatch bridge-only-expire-the-mdb-entry-when-query-is-received.patch
 ApplyPatch bridge-send-query-as-soon-as-leave-is-received.patch
+#rhbz 980254
+ApplyPatch bridge-timer-fix.patch
+ApplyPatch bridge-do-not-call-setup_timer-multiple-times.patch
+
+#rhbz 976789 980643
+ApplyPatch vhost-net-fix-use-after-free-in-vhost_net_flush.patch
+
+ApplyPatch cve-2013-4125.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

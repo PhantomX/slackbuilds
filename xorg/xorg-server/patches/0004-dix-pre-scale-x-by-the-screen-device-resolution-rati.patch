@@ -1,0 +1,103 @@
+From 14d89b9a466b521b985bc95fc4994637367362a8 Mon Sep 17 00:00:00 2001
+From: Peter Hutterer <peter.hutterer@who-t.net>
+Date: Sat, 9 Mar 2013 20:43:51 +1000
+Subject: [PATCH 04/35] dix: pre-scale x by the screen:device:resolution ratio
+
+commit 61a99aff9d33728a0b67920254d2d4d79f80cf39
+    dix: pre-scale relative events from abs devices to desktop ratio (#31636)
+
+added pre-scaling of relative coordinates coming from absolute devices to
+undo uneven scaling based on the screen dimensions.
+
+Devices have their own device width/height ratio as well (in a specific
+resolution) and this must be applied for relative devices as well to avoid
+scaling of the relative events into the device's ratio.
+
+e.g. a Wacom Intuos4 6x9 is in 16:10 format with equal horiz/vert
+resolution (dpi). A movement by 1000/1000 coordinates is a perfect diagonal
+on the tablet and must be reflected as such on the screen.
+
+However, we map the relative device-coordinate events to absolute screen
+coordinates based on the axis ranges. This results in an effective scaling
+of 1000/(1000 * 1.6) and thus an uneven x/y axis movement - the y
+axis is always faster.
+
+So we need to pre-scale not only by the desktop dimenstions but also by the
+device width/height ratio _and_ the resolution ratio.
+
+Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+(cherry picked from commit 5cc2c96f824dbb28b9f8da61efc41596f8bd0561)
+---
+ dix/getevents.c | 46 ++++++++++++++++++++++++++++------------------
+ 1 file changed, 28 insertions(+), 18 deletions(-)
+
+diff --git a/dix/getevents.c b/dix/getevents.c
+index 241c7ec..ac0ccb2 100644
+--- a/dix/getevents.c
++++ b/dix/getevents.c
+@@ -770,6 +770,29 @@ add_to_scroll_valuator(DeviceIntPtr dev, ValuatorMask *mask, int valuator, doubl
+ }
+ 
+ 
++static void
++scale_for_device_resolution(DeviceIntPtr dev, ValuatorMask *mask)
++{
++    double x;
++    ValuatorClassPtr v = dev->valuator;
++    int xrange = v->axes[0].max_value - v->axes[0].min_value + 1;
++    int yrange = v->axes[1].max_value - v->axes[1].min_value + 1;
++
++    double screen_ratio = 1.0 * screenInfo.width/screenInfo.height;
++    double device_ratio = 1.0 * xrange/yrange;
++    double resolution_ratio = 1.0;
++    double ratio;
++
++    if (!valuator_mask_fetch_double(mask, 0, &x))
++        return;
++
++    if (v->axes[0].resolution != 0 && v->axes[1].resolution != 0)
++        resolution_ratio = 1.0 * v->axes[0].resolution/v->axes[1].resolution;
++
++    ratio = device_ratio/resolution_ratio/screen_ratio;
++    valuator_mask_set_double(mask, 0, x * ratio);
++}
++
+ /**
+  * Move the device's pointer by the values given in @valuators.
+  *
+@@ -781,27 +804,14 @@ moveRelative(DeviceIntPtr dev, int flags, ValuatorMask *mask)
+ {
+     int i;
+     Bool clip_xy = IsMaster(dev) || !IsFloating(dev);
++    ValuatorClassPtr v = dev->valuator;
+ 
+     /* for abs devices in relative mode, we've just scaled wrong, since we
+        mapped the device's shape into the screen shape. Undo this. */
+-    if ((flags & POINTER_ABSOLUTE) == 0 && dev->valuator &&
+-        dev->valuator->axes[0].min_value < dev->valuator->axes[0].max_value) {
+-
+-        double ratio = 1.0 * screenInfo.width/screenInfo.height;
+-
+-        if (ratio > 1.0) {
+-            double y;
+-            if (valuator_mask_fetch_double(mask, 1, &y)) {
+-                y *= ratio;
+-                valuator_mask_set_double(mask, 1, y);
+-            }
+-        } else {
+-            double x;
+-            if (valuator_mask_fetch_double(mask, 0, &x)) {
+-                x *= ratio;
+-                valuator_mask_set_double(mask, 0, x);
+-            }
+-        }
++    if ((flags & POINTER_ABSOLUTE) == 0 && v && v->numAxes > 1 &&
++        v->axes[0].min_value < v->axes[0].max_value &&
++        v->axes[1].min_value < v->axes[1].max_value) {
++        scale_for_device_resolution(dev, mask);
+     }
+ 
+     /* calc other axes, clip, drop back into valuators */
+-- 
+1.8.2.1
+

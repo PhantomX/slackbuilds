@@ -76,8 +76,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-addprinter.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dbus-exception.patch
 # Catch GError exception when notification showing failed.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-notification-exception.patch
-# Applied patch to fix CVE-2010-4267, remote stack overflow vulnerability.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-CVE-2010-4267.patch
 # Avoid KeyError in ui4/wifisetupdialog.py (bug #680939).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-wifisetup.patch
 # Don't run 'chgrp lp /var/log/hp' in makefile

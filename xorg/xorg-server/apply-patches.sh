@@ -42,7 +42,6 @@ ApplyPatch xserver-1.6.99-right-of.patch
 
 # upstream submitted
 ApplyPatch 0001-randr-upstream-set-changed-fixes.patch
-ApplyPatch 0001-gpu-screen-upstream-fixes.patch
 
 # backport pci slot claiming fix for kms drivers
 # needed when building without xorg (aka s390x)
@@ -58,10 +57,6 @@ ApplyPatch 0001-mieq-Bump-default-queue-size-to-512.patch
 # scale events from abs devices in relative mode to something useful
 ApplyPatch 0004-dix-pre-scale-x-by-the-screen-device-resolution-rati.patch
 ApplyPatch 0005-dix-scale-y-back-instead-of-x-up-when-pre-scaling-co.patch
-
-# Bug rh#972095 - X server fails on 32-bit Fedora 19 with VirtualBox Guest Additions installed 
-# https://bugzilla.redhat.com/show_bug.cgi?id=972095
-ApplyPatch 0001-glx-fix-uninitialized-var-in-__glXDRIscreenProbe.patch
 
 # Bug rh#962572 - X-sandboxes are not resizeable
 # enabled by default until sandbox -X uses the option

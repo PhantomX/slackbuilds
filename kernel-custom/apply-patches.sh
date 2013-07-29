@@ -242,11 +242,6 @@ ApplyPatch bridge-send-query-as-soon-as-leave-is-received.patch
 ApplyPatch bridge-timer-fix.patch
 ApplyPatch bridge-do-not-call-setup_timer-multiple-times.patch
 
-#rhbz 976789 980643
-ApplyPatch vhost-net-fix-use-after-free-in-vhost_net_flush.patch
-
-ApplyPatch cve-2013-4125.patch
-
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch
 

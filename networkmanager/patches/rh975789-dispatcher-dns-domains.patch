@@ -1,0 +1,141 @@
+commit 6b93150d0d1d28640141b35a94fd5c8543ca0913
+Author: Tomas Hozza <thozza@redhat.com>
+Date:   Fri Jun 21 17:44:58 2013 +0200
+
+    dispatcher: publish vpn_ip6_config
+
+diff --git a/src/nm-dispatcher.c b/src/nm-dispatcher.c
+index 36fe1fc..45715a9 100644
+--- a/src/nm-dispatcher.c
++++ b/src/nm-dispatcher.c
+@@ -331,7 +331,7 @@ _dispatcher_call (DispatcherAction action,
+ 		                   device_dhcp4_props,
+ 		                   device_dhcp6_props);
+ 		if (vpn_iface)
+-			fill_vpn_props (vpn_ip4_config, NULL, vpn_ip4_props, vpn_ip6_props);
++			fill_vpn_props (vpn_ip4_config, vpn_ip6_config, vpn_ip4_props, vpn_ip6_props);
+ 	}
+ 
+ 	info = g_malloc0 (sizeof (*info));
+commit ac536c212473dadbf49b9e0129f745f497728c7d
+Author: Tomas Hozza <thozza@redhat.com>
+Date:   Fri Jun 21 16:19:01 2013 +0200
+
+    dispatcher: expose domains in IP4/6 config
+    
+    Previously the function add_domains() expected the
+    "domains" value to be of type DBUS_TYPE_G_ARRAY_OF_STRING
+    but the value is in fact of type G_TYPE_STRV. Also
+    added check to log critical message in case of "val"
+    not holding G_TYPE_STRV type.
+    
+    This caused dispatcher not to export IPx_DOMAINS
+    environment variable.
+    
+    Signed-off-by: Tomas Hozza <thozza@redhat.com>
+
+diff --git a/callouts/nm-dispatcher-utils.c b/callouts/nm-dispatcher-utils.c
+index 887e80d..8824295 100644
+--- a/callouts/nm-dispatcher-utils.c
++++ b/callouts/nm-dispatcher-utils.c
+@@ -60,25 +60,27 @@ add_domains (GSList *items,
+              const char four_or_six)
+ {
+ 	GValue *val;
+-	GPtrArray *domains = NULL;
++	char **domains = NULL;
+ 	GString *tmp;
+ 	guint i;
+ 
+ 	/* Search domains */
+ 	val = g_hash_table_lookup (hash, "domains");
+-	if (!val || !G_VALUE_HOLDS (val, DBUS_TYPE_G_ARRAY_OF_STRING))
++	if (!val)
+ 		return items;
+ 
+-	domains = (GPtrArray *) g_value_get_boxed (val);
+-	if (!domains || (domains->len == 0))
++	g_return_val_if_fail (G_VALUE_HOLDS (val, G_TYPE_STRV), items);
++
++	domains = (char **) g_value_get_boxed (val);
++	if (!domains || !domains[0])
+ 		return items;
+ 
+ 	tmp = g_string_new (NULL);
+ 	g_string_append_printf (tmp, "%sIP%c_DOMAINS=", prefix, four_or_six);
+-	for (i = 0; i < domains->len; i++) {
++	for (i = 0; domains[i]; i++) {
+ 		if (i > 0)
+ 			g_string_append_c (tmp, ' ');
+-		g_string_append (tmp, (char *) g_ptr_array_index (domains, i));
++		g_string_append (tmp, domains[i]);
+ 	}
+ 	items = g_slist_prepend (items, tmp->str);
+ 	g_string_free (tmp, FALSE);
+commit 12955fcda60607971bc6344ecc2abbeae75560f1
+Author: Jiří Klimeš <jklimes@redhat.com>
+Date:   Mon Jun 24 13:57:52 2013 +0200
+
+    dispatcher: fix tests after ac536c212473dadbf49b9e0129f745f497728c7d
+    
+    We need to use G_TYPE_STRV instead of DBUS_TYPE_G_ARRAY_OF_STRING, because
+    G_TYPE_STRV will be the type that will come to the dispatcher over D-Bus.
+
+diff --git a/callouts/tests/test-dispatcher-envp.c b/callouts/tests/test-dispatcher-envp.c
+index a93882f..65f3b53 100644
+--- a/callouts/tests/test-dispatcher-envp.c
++++ b/callouts/tests/test-dispatcher-envp.c
+@@ -101,14 +101,14 @@ value_hash_add_uint (GHashTable *hash,
+ 
+ static void
+ value_hash_add_strv (GHashTable *hash,
+-					 const char *key,
+-					 GPtrArray *array)
++                     const char *key,
++                     char **strv)
+ {
+ 	GValue *value;
+ 
+ 	value = g_slice_new0 (GValue);
+-	g_value_init (value, DBUS_TYPE_G_ARRAY_OF_STRING);
+-	g_value_take_boxed (value, array);
++	g_value_init (value, G_TYPE_STRV);
++	g_value_take_boxed (value, strv);
+ 	value_hash_add (hash, key, value);
+ }
+ 
+@@ -255,13 +255,15 @@ parse_ip4 (GKeyFile *kf, GHashTable **out_props, const char *section, GError **e
+ {
+ 	char *tmp;
+ 	char **split, **iter;
+-	GPtrArray *domains;
+ 	GSList *list;
+ 	GValue *val;
+ 
+ 	*out_props = value_hash_create ();
+ 
+ 	/* search domains */
++	/* Use char** for domains. (DBUS_TYPE_G_ARRAY_OF_STRING of NMIP4Config
++	 * becomes G_TYPE_STRV when sending the value over D-Bus)
++	 */
+ 	tmp = g_key_file_get_string (kf, section, "domains", error);
+ 	if (tmp == NULL)
+ 		return FALSE;
+@@ -269,14 +271,10 @@ parse_ip4 (GKeyFile *kf, GHashTable **out_props, const char *section, GError **e
+ 	g_free (tmp);
+ 
+ 	if (g_strv_length (split) > 0) {
+-		domains = g_ptr_array_sized_new (g_strv_length (split));
+-		for (iter = split; iter && *iter; iter++) {
+-			if (strlen (g_strstrip (*iter)))
+-				g_ptr_array_add (domains, g_strdup (*iter));
+-		}
+-		value_hash_add_strv (*out_props, "domains", domains);
++		for (iter = split; iter && *iter; iter++)
++			g_strstrip (*iter);
++		value_hash_add_strv (*out_props, "domains", split);
+ 	}
+-	g_strfreev (split);
+ 
+ 	/* nameservers */
+ 	if (!add_uint_array (kf, *out_props, "ip4", "nameservers", error))

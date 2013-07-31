@@ -1,11 +1,13 @@
 
-set -x -e -o pipefail
+set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # From Fedora
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nss-error.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/root-session.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rh975789-dispatcher-dns-domains.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rh978435-dns-none.patch
 
 # From Debian
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/02-dbus_access_network_manager.patch

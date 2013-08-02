@@ -4,6 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 -E --backup -z .jx --verbose -i ${SB_PATCHDIR}/glew-1.10.0-makefile.patch
+
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
 
 set +e +o pipefail

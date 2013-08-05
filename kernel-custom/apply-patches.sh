@@ -220,9 +220,6 @@ ApplyPatch fix-child-thread-introspection.patch
 #rhbz 948262
 ApplyPatch intel_iommu-Downgrade-the-warning-if-enabling-irq-remapping-fails.patch
 
-#CVE-2013-2140 rhbz 971146 971148
-ApplyPatch xen-blkback-Check-device-permissions-before-allowing.patch
-
 #CVE-2013-2147 rhbz 971242 971249
 ApplyPatch cve-2013-2147-ciss-info-leak.patch
 

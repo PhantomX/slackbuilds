@@ -41,7 +41,7 @@ pushd "${tmp}"
     sed -i \
       -e "/SVN_REV/s|\${tmpvar_WC_REVISION}|${SVNREV}|g" \
       -e "/SVN_REV/s|SVN_REV 0|SVN_REV ${SVNREV}|g" \
-      pcsx2/CMakeLists.txt
+      cmake/Pcsx2Utils.cmake
     # Force revision number
     find . -type d -name .svn -print0 | xargs -0r rm -rf
   popd

@@ -19,11 +19,25 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr38757.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-libstdc++-docs.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-no-copy-dt-needed-entries.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr56564.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr56493.patch
 
 # From Gentoo
-patch -p0 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_gcc-default-fortify-source.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/15_all_gcc-libgomp-no-werror.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/40_all_gcc-4.4-libiberty.h-asprintf.patch
+patch -p1 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_default-fortify-source.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/15_all_libgfortran-Werror.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/16_all_libgomp-Werror.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/50_all_libiberty-asprintf.patch
 
+### Arch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc-4.8-filename-output.patch
+
+# Test CLSOVER
+CLSORVER="$(grep -F 'libcloog-isl.so.' ${SB_PATCHDIR}/gcc48-cloog-dl.patch |awk -F\" '{print $2}' | cut -d. -f3)"
+if [ "${CLSOVER}" != "${CLSORVER}" ] ;then
+  echo "cloog-dl version mismatch. You have CLSOVER ${CLSORVER} in"
+  echo "${SB_PATCHDIR}/gcc48-cloog-dl.patch instead ${CLSOVER}."
+  echo "Change CLSOVER and try again"
+  exit 1
+fi
+unset CLSORVER
 
 set +e +o pipefail

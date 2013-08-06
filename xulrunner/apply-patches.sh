@@ -18,7 +18,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-966424.patch
 
 # Gentoo
 [ "${SB_CAIRO}" = "YES" ]  && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/6009_fix_system_cairo_support.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/8000_version_symbols_to_prevent_conflicts.patch
 
 # OpenSUSE
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/toolkit-download-folder.patch

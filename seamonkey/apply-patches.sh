@@ -13,7 +13,6 @@ patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.19-elfhack.patch
 
 # Gentoo
 [ "${SB_CAIRO}" = "YES" ]  && patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/6009_fix_system_cairo_support.patch
-patch -p2 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/8000_version_symbols_to_prevent_conflicts.patch
 
 # OpenSUSE
 patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-nongnome-proxies.patch

@@ -122,6 +122,10 @@ ApplyPatch qt-4.8-poll.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
+# REVERT fix for https://bugreports.qt-project.org/browse/QTBUG-30076
+# (hopefully just a short-term fix/hack until there's something better)
+# regresses/changes postgresql driver behavior
+ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-30076.patch -R
 # backported from Qt5 (essentially)
 # http://bugzilla.redhat.com/702493
 # https://bugreports.qt-project.org/browse/QTBUG-5545

@@ -71,9 +71,6 @@ ApplyPatch perl-5.16.3-Synchronize-pod2html-usage-output-and-its-POD-text.patch
 # Fix a test failure in perl5db.t when TERM=vt100, RT#118817
 ApplyPatch perl-5.18.0-Disable-ornaments-on-perl5db-AutoTrace-tests.patch
 
-# Fix regmatch pointer 32-bit wraparound regression, RT#118175
-ApplyPatch perl-5.18.0-Fix-regmatch-pointer-32-bit-wraparound-regression.patch
-
 # Prevent from loading system Term::ReadLine::Gnu while running tests,
 # RT#118821
 ApplyPatch perl-5.18.0-Suppress-system-Term-ReadLine-Gnu.patch

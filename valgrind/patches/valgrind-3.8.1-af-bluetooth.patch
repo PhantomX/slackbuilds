@@ -1,0 +1,288 @@
+commit ada5ad79e5d8ecf47838319a46ea4671079e6291
+Author: mjw <mjw@a5019735-40e9-0310-863c-91ae7b9d1cf9>
+Date:   Wed May 22 10:21:10 2013 +0000
+
+    Support Linux kernel AF_BLUETOOTH for bind().
+    
+    Bug #320116. sockaddr_rc might contain some padding which might not be
+    initialized. Explicitly check the sockaddr_rc fields are set. That also
+    produces better diagnostics about which field is unitialized.
+    
+    git-svn-id: svn://svn.valgrind.org/valgrind/trunk@13404 a5019735-40e9-0310-863c-91ae7b9d1cf9
+
+diff --git a/coregrind/m_syswrap/syswrap-generic.c b/coregrind/m_syswrap/syswrap-generic.c
+index 40a4bbe..3a6ea82 100644
+--- a/coregrind/m_syswrap/syswrap-generic.c
++++ b/coregrind/m_syswrap/syswrap-generic.c
+@@ -941,6 +941,7 @@ void pre_mem_read_sockaddr ( ThreadId tid,
+    struct vki_sockaddr_un*  sun  = (struct vki_sockaddr_un *)sa;
+    struct vki_sockaddr_in*  sin  = (struct vki_sockaddr_in *)sa;
+    struct vki_sockaddr_in6* sin6 = (struct vki_sockaddr_in6 *)sa;
++   struct vki_sockaddr_rc*  rc   = (struct vki_sockaddr_rc *)sa;
+ 
+    /* NULL/zero-length sockaddrs are legal */
+    if ( sa == NULL || salen == 0 ) return;
+@@ -981,6 +982,13 @@ void pre_mem_read_sockaddr ( ThreadId tid,
+             (Addr) &sin6->sin6_scope_id, sizeof (sin6->sin6_scope_id) );
+          break;
+                
++      case VKI_AF_BLUETOOTH:
++         VG_(sprintf) ( outmsg, description, "rc_bdaddr" );
++         PRE_MEM_READ( outmsg, (Addr) &rc->rc_bdaddr, sizeof (rc->rc_bdaddr) );
++         VG_(sprintf) ( outmsg, description, "rc_channel" );
++         PRE_MEM_READ( outmsg, (Addr) &rc->rc_channel, sizeof (rc->rc_channel) );
++         break;
++
+       default:
+          VG_(sprintf) ( outmsg, description, "" );
+          PRE_MEM_READ( outmsg, (Addr) sa, salen );
+diff --git a/include/vki/vki-linux.h b/include/vki/vki-linux.h
+index c57cabd..08ab138 100644
+--- a/include/vki/vki-linux.h
++++ b/include/vki/vki-linux.h
+@@ -676,6 +676,7 @@ __KINLINE struct vki_cmsghdr * vki_cmsg_nxthdr (struct vki_msghdr *__msg, struct
+ #define VKI_AF_UNIX	1	/* Unix domain sockets 		*/
+ #define VKI_AF_INET	2	/* Internet IP Protocol		*/
+ #define VKI_AF_INET6	10	/* IP version 6			*/
++#define VKI_AF_BLUETOOTH 31	/* Bluetooth sockets		*/
+ 
+ #define VKI_MSG_NOSIGNAL	0x4000	/* Do not generate SIGPIPE */
+ 
+@@ -2968,6 +2969,16 @@ struct vki_hci_inquiry_req {
+ };
+ 
+ //----------------------------------------------------------------------
++// From linux-3.9.2/include/net/bluetooth/rfcomm.h
++//----------------------------------------------------------------------
++
++struct vki_sockaddr_rc {
++        vki_sa_family_t     rc_family;
++        vki_bdaddr_t        rc_bdaddr;
++        __vki_u8            rc_channel;
++};
++
++//----------------------------------------------------------------------
+ // From linux-3.4/include/linux/kvm.h
+ //----------------------------------------------------------------------
+ #define KVMIO 0xAE
+diff --git a/memcheck/tests/linux/Makefile.am b/memcheck/tests/linux/Makefile.am
+index 4cc9113..9755f5c 100644
+--- a/memcheck/tests/linux/Makefile.am
++++ b/memcheck/tests/linux/Makefile.am
+@@ -8,6 +8,7 @@ EXTRA_DIST = \
+ 	capget.vgtest capget.stderr.exp capget.stderr.exp2 \
+ 	lsframe1.vgtest lsframe1.stdout.exp lsframe1.stderr.exp \
+ 	lsframe2.vgtest lsframe2.stdout.exp lsframe2.stderr.exp \
++	rfcomm.vgtest rfcomm.stderr.exp \
+ 	sigqueue.vgtest sigqueue.stderr.exp \
+ 	stack_changes.stderr.exp stack_changes.stdout.exp \
+ 	    stack_changes.stdout.exp2 stack_changes.vgtest \
+@@ -26,6 +27,7 @@ check_PROGRAMS = \
+ 	getregset \
+ 	lsframe1 \
+ 	lsframe2 \
++	rfcomm \
+ 	sigqueue \
+ 	stack_changes \
+ 	stack_switch \
+diff --git a/memcheck/tests/linux/rfcomm.c b/memcheck/tests/linux/rfcomm.c
+new file mode 100644
+index 0000000..02dcd7e
+--- /dev/null
++++ b/memcheck/tests/linux/rfcomm.c
+@@ -0,0 +1,54 @@
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <sys/types.h>
++#include <sys/socket.h>
++
++/* user space headers might not be there, define things ourselves. */
++typedef struct {
++   uint8_t b[6];
++} __attribute__((packed)) vui_bdaddr_t;
++
++struct vui_sockaddr_rc {
++	sa_family_t	rc_family;
++	vui_bdaddr_t	rc_bdaddr;
++	uint8_t		rc_channel;
++};
++
++#define VUI_AF_BLUETOOTH 31
++#define VUI_BTPROTO_RFCOMM 3
++
++#define VUI_BDADDR_ANY (&(vui_bdaddr_t) {{0, 0, 0, 0, 0, 0}})
++
++int
++main (int argc, char **argv)
++{
++  int nSocket;
++
++  nSocket = socket(VUI_AF_BLUETOOTH, SOCK_STREAM, VUI_BTPROTO_RFCOMM);
++
++  if (nSocket < 0)
++    {
++      // Not supported, nothing to test...
++      return 1;
++    }
++
++  struct vui_sockaddr_rc aAddr;
++  // Ignore return values.
++
++  // Missing family
++  bind(nSocket, (struct sockaddr *) &aAddr, sizeof(aAddr));
++
++  aAddr.rc_family = VUI_AF_BLUETOOTH;
++  // Missing bdaddr.
++  bind(nSocket, (struct sockaddr *) &aAddr, sizeof(aAddr));
++
++  aAddr.rc_bdaddr = *VUI_BDADDR_ANY;
++  // Missing channel.
++  bind(nSocket, (struct sockaddr *) &aAddr, sizeof(aAddr));
++
++  aAddr.rc_channel = 5;
++  bind(nSocket, (struct sockaddr *) &aAddr, sizeof(aAddr));
++
++  return 0;
++}
+diff --git a/memcheck/tests/linux/rfcomm.stderr.exp b/memcheck/tests/linux/rfcomm.stderr.exp
+new file mode 100644
+index 0000000..4df935b
+--- /dev/null
++++ b/memcheck/tests/linux/rfcomm.stderr.exp
+@@ -0,0 +1,21 @@
++Syscall param socketcall.bind(my_addr.sa_family) points to uninitialised byte(s)
++   ...
++   by 0x........: main (rfcomm.c:40)
++ Address 0x........ is on thread 1's stack
++ Uninitialised value was created by a stack allocation
++   at 0x........: main (rfcomm.c:25)
++
++Syscall param socketcall.bind(my_addr.rc_bdaddr) points to uninitialised byte(s)
++   ...
++   by 0x........: main (rfcomm.c:44)
++ Address 0x........ is on thread 1's stack
++ Uninitialised value was created by a stack allocation
++   at 0x........: main (rfcomm.c:25)
++
++Syscall param socketcall.bind(my_addr.rc_channel) points to uninitialised byte(s)
++   ...
++   by 0x........: main (rfcomm.c:48)
++ Address 0x........ is on thread 1's stack
++ Uninitialised value was created by a stack allocation
++   at 0x........: main (rfcomm.c:25)
++
+diff --git a/memcheck/tests/linux/rfcomm.vgtest b/memcheck/tests/linux/rfcomm.vgtest
+new file mode 100644
+index 0000000..490aef4
+--- /dev/null
++++ b/memcheck/tests/linux/rfcomm.vgtest
+@@ -0,0 +1,5 @@
++prog: rfcomm
++vgopts: -q --track-origins=yes
++
++# Will exit -1 if AF_BLUETOOTH not supported
++prereq: ./rfcomm
+
+commit 4cb663fdaa2a63efc447f7251270446c4e8c9611
+Author: mjw <mjw@a5019735-40e9-0310-863c-91ae7b9d1cf9>
+Date:   Wed May 22 10:37:52 2013 +0000
+
+    Don't break platforms without AF_BLUETOOTH.
+    
+    git-svn-id: svn://svn.valgrind.org/valgrind/trunk@13405 a5019735-40e9-0310-863c-91ae7b9d1cf9
+
+diff --git a/coregrind/m_syswrap/syswrap-generic.c b/coregrind/m_syswrap/syswrap-generic.c
+index 3a6ea82..b85fd9c 100644
+--- a/coregrind/m_syswrap/syswrap-generic.c
++++ b/coregrind/m_syswrap/syswrap-generic.c
+@@ -941,7 +941,9 @@ void pre_mem_read_sockaddr ( ThreadId tid,
+    struct vki_sockaddr_un*  sun  = (struct vki_sockaddr_un *)sa;
+    struct vki_sockaddr_in*  sin  = (struct vki_sockaddr_in *)sa;
+    struct vki_sockaddr_in6* sin6 = (struct vki_sockaddr_in6 *)sa;
++#ifdef VKI_AF_BLUETOOTH
+    struct vki_sockaddr_rc*  rc   = (struct vki_sockaddr_rc *)sa;
++#endif
+ 
+    /* NULL/zero-length sockaddrs are legal */
+    if ( sa == NULL || salen == 0 ) return;
+@@ -981,13 +983,15 @@ void pre_mem_read_sockaddr ( ThreadId tid,
+          PRE_MEM_READ( outmsg,
+             (Addr) &sin6->sin6_scope_id, sizeof (sin6->sin6_scope_id) );
+          break;
+-               
++
++#ifdef VKI_AF_BLUETOOTH
+       case VKI_AF_BLUETOOTH:
+          VG_(sprintf) ( outmsg, description, "rc_bdaddr" );
+          PRE_MEM_READ( outmsg, (Addr) &rc->rc_bdaddr, sizeof (rc->rc_bdaddr) );
+          VG_(sprintf) ( outmsg, description, "rc_channel" );
+          PRE_MEM_READ( outmsg, (Addr) &rc->rc_channel, sizeof (rc->rc_channel) );
+          break;
++#endif
+ 
+       default:
+          VG_(sprintf) ( outmsg, description, "" );
+--- valgrind-3.8.1.orig/memcheck/tests/linux/Makefile.in	2013-07-08 15:15:20.579962577 +0200
++++ valgrind-3.8.1/memcheck/tests/linux/Makefile.in	2013-07-08 16:12:36.353352626 +0200
+@@ -55,8 +55,8 @@
+ @VGCONF_HAVE_PLATFORM_SEC_TRUE@		-DVGP_SEC_@VGCONF_ARCH_PRI@_@VGCONF_OS@=1
+ 
+ check_PROGRAMS = brk$(EXEEXT) capget$(EXEEXT) getregset$(EXEEXT) \
+-	lsframe1$(EXEEXT) lsframe2$(EXEEXT) sigqueue$(EXEEXT) \
+-	stack_changes$(EXEEXT) stack_switch$(EXEEXT) \
++	lsframe1$(EXEEXT) lsframe2$(EXEEXT) rfcomm$(EXEEXT) \
++	sigqueue$(EXEEXT) stack_changes$(EXEEXT) stack_switch$(EXEEXT) \
+ 	syscalls-2007$(EXEEXT) syslog-syscall$(EXEEXT) \
+ 	timerfd-syscall$(EXEEXT) proc-auxv$(EXEEXT)
+ subdir = memcheck/tests/linux
+@@ -86,6 +86,9 @@
+ proc_auxv_SOURCES = proc-auxv.c
+ proc_auxv_OBJECTS = proc-auxv.$(OBJEXT)
+ proc_auxv_LDADD = $(LDADD)
++rfcomm_SOURCES = rfcomm.c
++rfcomm_OBJECTS = rfcomm.$(OBJEXT)
++rfcomm_LDADD = $(LDADD)
+ sigqueue_SOURCES = sigqueue.c
+ sigqueue_OBJECTS = sigqueue.$(OBJEXT)
+ sigqueue_LDADD = $(LDADD)
+@@ -114,10 +117,10 @@
+ CCLD = $(CC)
+ LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
+ SOURCES = brk.c capget.c getregset.c lsframe1.c lsframe2.c proc-auxv.c \
+-	sigqueue.c stack_changes.c stack_switch.c syscalls-2007.c \
+-	syslog-syscall.c timerfd-syscall.c
++	rfcomm.c sigqueue.c stack_changes.c stack_switch.c \
++	syscalls-2007.c syslog-syscall.c timerfd-syscall.c
+ DIST_SOURCES = brk.c capget.c getregset.c lsframe1.c lsframe2.c \
+-	proc-auxv.c sigqueue.c stack_changes.c stack_switch.c \
++	proc-auxv.c rfcomm.c sigqueue.c stack_changes.c stack_switch.c \
+ 	syscalls-2007.c syslog-syscall.c timerfd-syscall.c
+ ETAGS = etags
+ CTAGS = ctags
+@@ -405,6 +408,7 @@
+ 	capget.vgtest capget.stderr.exp capget.stderr.exp2 \
+ 	lsframe1.vgtest lsframe1.stdout.exp lsframe1.stderr.exp \
+ 	lsframe2.vgtest lsframe2.stdout.exp lsframe2.stderr.exp \
++	rfcomm.vgtest rfcomm.stderr.exp \
+ 	sigqueue.vgtest sigqueue.stderr.exp \
+ 	stack_changes.stderr.exp stack_changes.stdout.exp \
+ 	    stack_changes.stdout.exp2 stack_changes.vgtest \
+@@ -473,6 +477,9 @@
+ proc-auxv$(EXEEXT): $(proc_auxv_OBJECTS) $(proc_auxv_DEPENDENCIES) 
+ 	@rm -f proc-auxv$(EXEEXT)
+ 	$(LINK) $(proc_auxv_OBJECTS) $(proc_auxv_LDADD) $(LIBS)
++rfcomm$(EXEEXT): $(rfcomm_OBJECTS) $(rfcomm_DEPENDENCIES) 
++	@rm -f rfcomm$(EXEEXT)
++	$(LINK) $(rfcomm_OBJECTS) $(rfcomm_LDADD) $(LIBS)
+ sigqueue$(EXEEXT): $(sigqueue_OBJECTS) $(sigqueue_DEPENDENCIES) 
+ 	@rm -f sigqueue$(EXEEXT)
+ 	$(LINK) $(sigqueue_OBJECTS) $(sigqueue_LDADD) $(LIBS)
+@@ -504,6 +511,7 @@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lsframe1.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lsframe2.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/proc-auxv.Po@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rfcomm.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sigqueue.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/stack_changes.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/stack_switch.Po@am__quote@

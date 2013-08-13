@@ -99,7 +99,7 @@ ApplyPatch ${NAME}-3.8.1-ppc-32-mode-64-bit-instr.patch
 ApplyPatch ${NAME}-3.8.1-sigill_diag.patch
 
 # Allow building against glibc-2.17. Upstream commit svn 13228.
-ApplyPatch ${NAME}-3.8.1-glibc-2.17.patch
+ApplyPatch ${NAME}-3.8.1-glibc-2.18.patch
 
 # KDE#315441 - sendmsg syscall should ignore unset msghdr msg_flags
 ApplyPatch ${NAME}-3.8.1-sendmsg-flags.patch
@@ -121,6 +121,15 @@ ApplyPatch ${NAME}-3.8.1-regtest-fixlets.patch
 
 # KDE#309600 - valgrind is a bit confused about 0-sized sections
 ApplyPatch ${NAME}-3.8.1-zero-size-sections.patch
+
+# KDE#320063 Support PTRACE_GET/SET_THREAD_AREA on x86.
+ApplyPatch valgrind-3.8.1-ptrace-thread-area.patch
+
+# KDE#320116 Support Linux kernel AF_BLUETOOTH for bind()
+ApplyPatch valgrind-3.8.1-af-bluetooth.patch
+
+# Don't include linux/ptrace.h. Upstream commits r13471 and r13482.
+ApplyPatch valgrind-3.8.1-ptrace-include-configure.patch
 
 rm -f gdbserver_tests/filter_gdb.orig
 

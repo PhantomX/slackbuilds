@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-#-- fake-aaa_elflibs 0.3 --
+#-- fake-aaa_elflibs 0.4 --
 # Generate a fake aaa_elflibs file list to use in /var/log/packages to fool
 # pkgtools to not remove essential libraries.
 #--
@@ -174,7 +174,9 @@ ctemplate(){
 VERSION=
 # put build of resulted file
 BUILD=
-# Now put library names after this header
+#
+#### Insert library names after this line. Lines starting with # or blank are ignored.
+################################################################################
 libacl
 EOF
   filetest $? "${tempfile}"

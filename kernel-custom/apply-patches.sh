@@ -223,9 +223,6 @@ ApplyPatch intel_iommu-Downgrade-the-warning-if-enabling-irq-remapping-fails.pat
 #CVE-2013-2147 rhbz 971242 971249
 ApplyPatch cve-2013-2147-ciss-info-leak.patch
 
-#CVE-2013-2148 rhbz 971258 971261
-ApplyPatch fanotify-info-leak-in-copy_event_to_user.patch
-
 #rhbz 969644
 ApplyPatch KVM-x86-handle-idiv-overflow-at-kvm_write_tsc.patch
 

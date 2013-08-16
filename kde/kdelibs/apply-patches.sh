@@ -62,6 +62,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0002-Fix-detection-of-lzma-and-xz-tar-archives-downloaded.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0003-Support-xz-and-lzma-compressed-tars-in-PackageStruct.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0004-when-the-request-theme-does-not-exist-delete-all-old.patch
 
 # revert these commits for
 #https://bugs.kde.org/315578

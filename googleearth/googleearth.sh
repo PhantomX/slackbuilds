@@ -29,7 +29,7 @@ fi
 
 LD_LIBRARY_PATH=.:${GOOGLEEARTH_LIB_DIR}:${LD_LIBRARY_PATH}
 export LD_LIBRARY_PATH
-export LC_NUMERIC=C
+export LC_NUMERIC=en_US.UTF-8
 
 # Let's boogie!
 if [ -x "${GOOGLEEARTH_LIB_DIR}/googleearth/googleearth-bin" ]

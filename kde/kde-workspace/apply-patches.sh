@@ -5,8 +5,10 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ## Most patches are from Fedora
-patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.2-redhat_startkde.patch
+patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.90-redhat_startkde.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.90-plasma_konsole.patch
+# Force kdm and kdm_greet to be hardened
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.4-kdm-harden.patch
 # 441062: packagekit tools do not show icons correctly on KDE
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.80-krdb.patch
 zcat ${SB_PATCHDIR}/kdebase-workspace-4.2.85-klipper-url.patch.gz | patch -p1 -E --backup --verbose
@@ -15,15 +17,15 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.90-rootp
 zcat ${SB_PATCHDIR}/kdebase-workspace-4.3.75-kio_sysinfo.patch.gz | patch -p1 -E --backup --verbose
 # show the remaining time in the battery plasmoid's popup (as in 4.2) (#515166)
 # currently requires backport from pre-4.3.80 trunk (Patch100)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kde-workspace-4.8.80-battery-plasmoid-showremainingtime.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.90-battery-plasmoid-showremainingtime.patch
 # allow adding a "Leave..." button which brings up the complete shutdown dialog
 # to the classic menu (as in KDE <= 4.2.x); the default is still the upstream
 # default Leave submenu
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-classicmenu-logout.patch
 # kubuntu kudos! bulletproof-X bits ripped out
-#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-kdm_plymouth081.patch
-
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-xsession_errors_O_APPEND.patch
+# support the widgetStyle4 hack in the Qt KDE platform plugin
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.3.98-platformplugin-widgetstyle4.patch
 # HALsectomy
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-no_HAL.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.90-no_HAL2.patch
@@ -36,12 +38,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.2-displayEvents_de
 # Mandriva
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.71-notify_color_changes.patch
 
-# add ktp_presence applet to default systray
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-systray_ktp_presence.patch
+# add org.kde.ktp-presence applet to default systray
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.2-systray_org.kde.ktp-presence.patch
 
 # upstreamable patches:
 # "keyboard stops working", https://bugs.kde.org/show_bug.cgi?id=171685#c135
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-kde\#171685.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.90-kde\#171685.patch
 
 # use /etc/login.defs to define a 'system' account instead of hard-coding 500 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.2-bz\#732830-login.patch
@@ -59,19 +61,19 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-kcm_fonts_dont_change_
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.2-BUILD_KCM_RANDR.patch
 
 if [ "${SB_SYSTEMD}" = "YES" ] ;then
+  # add support for automatic multi-seat provided by systemd using existing reserve seats in KDM
+  # needs having ServerCmd=/usr/lib/systemd/systemd-multi-seat-x set in /etc/kde/kdm/kdmrc
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.90-kdm-logind-multiseat.patch
   # pam/systemd bogosity: kdm restart/shutdown does not work 
   # http://bugzilla.redhat.com/796969
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
-  # merged patches: systemd-switch-user{,2} systemd-shutdown
-  # Support for systemd AND ConsoleKit in kworkspace
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.3-systemd-displaymanager.patch
 fi
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11-bz\#921781-check-max-viewport-size.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10-bz\#921742.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.shadow.changeset_r7777194da6154375fc8103b8c4e29e385cd7ae2e.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r2c810db3e41d56ad7dd8ec3436f3cf3abcc31983.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r97f94f8805d47c092424017c7dc860ea1f5d0239.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re7b8ac8397721f7870ccb2158275afe4a463878f.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re74a264325e8af834d800ee650c4bf208e1b2fb1.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r4f4290491b517ce0288aa9ea07c5885c985f6093.diff
 
 ## plasma active patches
 

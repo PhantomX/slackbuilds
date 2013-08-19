@@ -45,16 +45,16 @@ if [ "${SB_BOOTSTRP}" = "YES" ] ;then
 fi
 
 ### Gentoo
-ApplyPatch 3020_all_glibc-tests-sandbox-libdl-paths.patch
-ApplyPatch 5063_all_glibc-dont-build-timezone.patch
 ( SB_PATCHDIR=patches
 
-  ApplyPatch 0085_all_glibc-disable-ldconfig.patch
-  ApplyPatch 1005_all_glibc-sigaction.patch
-  ApplyPatch 1008_all_glibc-2.16-fortify.patch
-  ApplyPatch 1040_all_2.3.3-localedef-fix-trampoline.patch
-  ApplyPatch 1055_all_glibc-resolv-dynamic.patch
-
+  ApplyPatch 00_all_0001-disable-ldconfig-during-install.patch
+  ApplyPatch 00_all_0002-workaround-crash-when-handling-signals-in-static-PIE.patch
+  ApplyPatch 00_all_0003-make-fortify-logic-checks-less-angry.patch
+  ApplyPatch 00_all_0004-Fix-localedef-segfault-when-run-under-exec-shield-Pa.patch
+  ApplyPatch 00_all_0005-reload-etc-resolv.conf-when-it-has-changed.patch
+  ApplyPatch 00_all_0009-gentoo-support-running-tests-under-sandbox.patch
+  ApplyPatch 00_all_0010-gentoo-disable-building-in-timezone-subdir.patch
+  
 )
 
 ## Fedora
@@ -99,7 +99,9 @@ ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 ## master
 ApplyPatch 0001-Fix-cbrtl-for-ldbl-96.patch
+ApplyPatch glibc-2.18-readdir_r-CVE-2013-4237.patch
 
 ## From Arch
+ApplyPatch glibc-2.18-strstr-hackfix.patch
 
 set +e +o pipefail

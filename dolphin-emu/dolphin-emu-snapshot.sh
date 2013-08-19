@@ -46,7 +46,7 @@ pushd "${tmp}"
       rm -rf Cg* GLew gettext libjpeg libpng LZO portaudio SDL SFML SOIL wxWidgets3 zlib
     popd >/dev/null
     echo "$(git rev-parse HEAD 2> /dev/null)" > wcrev
-    echo "$(git describe --always --long --dirty 2> /dev/null)" > wcdesc
+    echo "$(git describe --always --long 2> /dev/null)" > wcdesc
     echo "$(git rev-parse --abbrev-ref HEAD 2> /dev/null)" > wcbranch
     find . -type d -name .git -print0 | xargs -0r rm -rf
     rm -rf Installer .hgeol .hgignore .gitignore config.git-hash

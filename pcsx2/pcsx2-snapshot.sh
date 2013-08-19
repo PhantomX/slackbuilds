@@ -34,7 +34,7 @@ pushd "${tmp}"
     svn export ${SNAP_COOPTS} ${snaproot}/plugins
     svn export ${SNAP_COOPTS} ${snaproot}/tools
     svn co --depth=files --force ${SNAP_COOPTS} ${snaproot}/3rdparty
-    pushd "${pwd}/${module}/3rdparty"
+    pushd "3rdparty"
       svn export ${SNAP_COOPTS} ${snaproot}/3rdparty/tinyxml
     popd >/dev/null
     SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"

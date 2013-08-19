@@ -82,4 +82,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r4f4290491b517ce0288
 # Arch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/terminate-server.patch
 
+# Set Chinforinfula defaults
+patch -p0 -E --backup -z .classicmenudefs --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.0-classicmenu-defaults.patch
+
 set +e +o pipefail

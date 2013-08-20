@@ -14,7 +14,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.6.80-krdb.
 zcat ${SB_PATCHDIR}/kdebase-workspace-4.2.85-klipper-url.patch.gz | patch -p1 -E --backup --verbose
 # 434824: KDE4 System Settings - No Method To Enter Administrative Mode
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.90-rootprivs.patch
-zcat ${SB_PATCHDIR}/kdebase-workspace-4.3.75-kio_sysinfo.patch.gz | patch -p1 -E --backup --verbose
 # show the remaining time in the battery plasmoid's popup (as in 4.2) (#515166)
 # currently requires backport from pre-4.3.80 trunk (Patch100)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.90-battery-plasmoid-showremainingtime.patch
@@ -59,6 +58,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-kcm_fonts_dont_change_
 
 # support BUILD_KCM_RANDR (default ON) option
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.2-BUILD_KCM_RANDR.patch
+
+# plasma-4.10.80+ startup delay 4-7 seconds
+# http://bugs.kde.org/321695
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.0-plasma_startup_delay.patch
 
 if [ "${SB_SYSTEMD}" = "YES" ] ;then
   # add support for automatic multi-seat provided by systemd using existing reserve seats in KDM

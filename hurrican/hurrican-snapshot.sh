@@ -24,7 +24,7 @@ pushd "${tmp}"
   svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
     find . -type d -name .svn -print0 | xargs -0r rm -rf
-    rm -rf Hurrican/{*.{exe,dll},data/*Thumbs.db,src/unrarlib040/samples/win32}
+    rm -rf Hurrican/{*.{exe,dll,old},data/*Thumbs.db,src/unrarlib040/samples/win32}
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

@@ -65,9 +65,6 @@ ApplyPatch 0001-ephyr-Add-resizeable-option.patch
 # misc
 ApplyPatch 0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
 
-# Fix cursor jumps in gimp
-ApplyPatch 0001-dix-set-the-valuator-mask-to-ensure-XI-1.x-events-ha.patch
-
 ApplyPatch xserver-force-hal-disable.patch
 
 # Set to YES if autogen is needed

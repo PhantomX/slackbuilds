@@ -26,8 +26,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-dlopen.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.3.1-systzdata-v10.patch
 # See http://bugs.php.net/53436
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-phpize.patch
-# Use system libzip instead of bundled one
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.5.2-system-libzip.patch
 # Use -lldap_r for OpenLDAP
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.8-ldap_r.patch
 # Make php_config.h constant across builds

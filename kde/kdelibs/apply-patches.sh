@@ -67,6 +67,10 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0003-Support-xz-and-lzma-compress
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0004-when-the-request-theme-does-not-exist-delete-all-old.patch
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r31fdb4ab1b72fa39290931f6a8934eda4eb4f636.diff
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r14e2ff5b7359d572cd520fd7da3791230ded169a.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r50050b96b369f0d518cbe4481989fd066fc80ef7.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r7f42bf2530090526d0150428fe58b87123317e2e.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc8449628514d4bf6013d257520c859f4393f498a.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_ra0c2a11f450878f8c6b7c0eb91c326d2eb41f77e.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578

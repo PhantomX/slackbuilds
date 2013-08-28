@@ -1,0 +1,137 @@
+commit 7f42bf2530090526d0150428fe58b87123317e2e
+Author: David Faure <faure@kde.org>
+Date:   Mon Aug 26 15:46:22 2013 +0200
+
+    Fix reordering of apps for a derived mimetype.
+    
+    This fixes a bug introduced by 871cccc8a88a60 that made it impossible to re-order
+    file type associations both in System settings and in the open with list. Hence
+    it contains a new way of detecting duplicate (inherited) mimetype entries, that
+    the original was supposed to fix.
+    
+    Unittest is in kde-runtime, commit 967979f (if I can commit it fast enough ;)
+    
+    Patch by Mathias Tillman.
+    REVIEW: 111951
+    BUG: 321706
+    FIXED-IN: 4.11.1
+
+diff --git a/kdecore/services/kservice.cpp b/kdecore/services/kservice.cpp
+index 8e81929..d7945bf 100644
+--- a/kdecore/services/kservice.cpp
++++ b/kdecore/services/kservice.cpp
+@@ -227,17 +227,44 @@ void KServicePrivate::init( const KDesktopFile *config, KService* q )
+                            << "has an empty mimetype!";
+             continue;
+         }
+-        int initialPreference = m_initialPreference;
+-        if ( st_it.hasNext() ) {
+-            // TODO better syntax - separate group with mimetype=number entries?
+-            bool isNumber;
+-            const int val = st_it.peekNext().toInt(&isNumber);
+-            if (isNumber) {
+-                initialPreference = val;
+-                st_it.next();
++
++        // The following searches through the list for duplicate, inherited mimetypes
++        // For example, if application/rtf and text/plain are both listed application/rtf is removed
++        // since it is inherited from text/plain
++        // This is a reworked fix for revision 871cccc8a88a600c8f850a020d44bfc5f5858caa
++        bool shouldAdd = true;
++        KMimeType::Ptr mimeType1 = KMimeTypeRepository::self()->findMimeTypeByName(st);
++        if (mimeType1) {
++            foreach(const QString mime2, lstServiceTypes) {
++                // Don't compare the mimetype with itself
++                if (st == mime2) {
++                    continue;
++                }
++
++                // is checks for inheritance and aliases, so this should suffice
++                if (mimeType1->is(mime2)) {
++                    shouldAdd = false;
++                    break;
++                }
+             }
+         }
+-        m_serviceTypes.push_back(KService::ServiceTypeAndPreference(initialPreference, st));
++
++        // Only add unique mimetypes
++        if (shouldAdd) {
++            int initialPreference = m_initialPreference;
++            if (st_it.hasNext()) {
++                // TODO better syntax - separate group with mimetype=number entries?
++                bool isNumber;
++                const int val = st_it.peekNext().toInt(&isNumber);
++                if (isNumber) {
++                    initialPreference = val;
++                    st_it.next();
++                }
++            }
++            m_serviceTypes.push_back(KService::ServiceTypeAndPreference(initialPreference, st));
++        } else {
++            //kDebug(servicesDebugArea())<<"Not adding"<<st<<"from"<<entryPath;
++        }
+     }
+ 
+     if (entryMap.contains(QLatin1String("Actions"))) {
+diff --git a/kded/kbuildservicefactory.cpp b/kded/kbuildservicefactory.cpp
+index 7f89a99..5fb091b 100644
+--- a/kded/kbuildservicefactory.cpp
++++ b/kded/kbuildservicefactory.cpp
+@@ -183,7 +183,7 @@ void KBuildServiceFactory::collectInheritedServices(const QString& mimeTypeName,
+                 KServiceOffer offer(*itserv);
+                 offer.setMimeTypeInheritanceLevel(mimeTypeInheritanceLevel);
+                 //kDebug(7021) << "INHERITANCE: Adding service" << (*itserv).service()->entryPath() << "to" << mimeTypeName << "mimeTypeInheritanceLevel=" << mimeTypeInheritanceLevel;
+-                m_offerHash.addInheritedServiceOffer( mimeTypeName, offer );
++                m_offerHash.addServiceOffer( mimeTypeName, offer );
+             }
+         }
+     }
+diff --git a/kded/kmimeassociations.cpp b/kded/kmimeassociations.cpp
+index b0af7bc..052251d 100644
+--- a/kded/kmimeassociations.cpp
++++ b/kded/kmimeassociations.cpp
+@@ -137,31 +137,6 @@ void KOfferHash::addServiceOffer(const QString& serviceType, const KServiceOffer
+     }
+ }
+ 
+-void KOfferHash::addInheritedServiceOffer(const QString& serviceType, const KServiceOffer& offer)
+-{
+-    KService::Ptr service = offer.service();
+-    //kDebug(7021) << "Adding" << service->entryPath() << "to" << serviceType << offer.preference();
+-    ServiceTypeOffersData& data = m_serviceTypeData[serviceType]; // find or create
+-    QList<KServiceOffer>& offers = data.offers;
+-    QSet<KService::Ptr>& offerSet = data.offerSet;
+-    if ( !offerSet.contains( service ) ) {
+-        offers.append( offer );
+-        offerSet.insert( service );
+-    } else {
+-        // This happens when a desktop file mentions both a base mimetype and a derived one.
+-        // Example: emacs.desktop: MimeType=text/plain;text/x-csrc;
+-        // We want to ignore the derived mimetype, and only keep the base one, so that
+-        // the user can choose another text/plain editor in mimeapps.list (cf xdg-list, jan 2013).
+-        QMutableListIterator<KServiceOffer> sfit(data.offers);
+-        while (sfit.hasNext()) {
+-            if (sfit.next().service() == service) { // we can compare KService::Ptrs because they are from the memory hash
+-                sfit.remove();
+-                sfit.insert( offer );
+-            }
+-        }
+-    }
+-}
+-
+ void KOfferHash::removeServiceOffer(const QString& serviceType, KService::Ptr service)
+ {
+     ServiceTypeOffersData& data = m_serviceTypeData[serviceType]; // find or create
+diff --git a/kded/kmimeassociations.h b/kded/kmimeassociations.h
+index 4a2c713..e8d1612 100644
+--- a/kded/kmimeassociations.h
++++ b/kded/kmimeassociations.h
+@@ -45,7 +45,6 @@ public:
+         return QList<KServiceOffer>();
+     }
+     void addServiceOffer(const QString& serviceType, const KServiceOffer& offer);
+-    void addInheritedServiceOffer(const QString& serviceType, const KServiceOffer& offer);
+     void removeServiceOffer(const QString& serviceType, KService::Ptr service);
+     bool hasRemovedOffer(const QString& serviceType, KService::Ptr service) const;
+ 

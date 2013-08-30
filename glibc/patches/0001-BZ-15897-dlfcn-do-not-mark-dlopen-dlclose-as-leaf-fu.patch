@@ -1,0 +1,235 @@
+From 3b813b29653a3ebfd78c2529127a9967d8f2857d Mon Sep 17 00:00:00 2001
+From: Mike Frysinger <vapier@gentoo.org>
+Date: Mon, 26 Aug 2013 00:21:26 -0400
+Subject: [PATCH] [BZ #15897] dlfcn: do not mark dlopen/dlclose as leaf
+ functions
+
+Since the dlopen funcs might invoke a constructor that calls a func
+that is in the same compilation unit as the caller, we cannot mark
+them as leaf funcs.
+
+Similarly, dlclose might invoke a destructor that calls a func that
+is in the same compilation unit as the caller.
+
+URL: https://sourceware.org/bugzilla/show_bug.cgi?id=15897
+Reportedy-by: Fabrice Bauzac <libnoon@gmail.com>
+Signed-off-by: Mike Frysinger <vapier@gentoo.org>
+---
+ dlfcn/Makefile             | 10 +++++--
+ dlfcn/bug-dl-leaf-lib-cb.c | 35 +++++++++++++++++++++++
+ dlfcn/bug-dl-leaf-lib.c    | 71 ++++++++++++++++++++++++++++++++++++++++++++++
+ dlfcn/bug-dl-leaf.c        | 25 ++++++++++++++++
+ dlfcn/dlfcn.h              |  6 ++--
+ 7 files changed, 160 insertions(+), 6 deletions(-)
+ create mode 100644 dlfcn/bug-dl-leaf-lib-cb.c
+ create mode 100644 dlfcn/bug-dl-leaf-lib.c
+ create mode 100644 dlfcn/bug-dl-leaf.c
+
+diff --git a/dlfcn/Makefile b/dlfcn/Makefile
+index 57a7271..f3c6df9 100644
+--- a/dlfcn/Makefile
++++ b/dlfcn/Makefile
+@@ -35,12 +35,13 @@ endif
+ ifeq (yes,$(build-shared))
+ tests = glrefmain failtest tst-dladdr default errmsg1 tstcxaatexit \
+ 	bug-dlopen1 bug-dlsym1 tst-dlinfo bug-atexit1 bug-atexit2 \
+-	bug-atexit3 tstatexit
++	bug-atexit3 tstatexit bug-dl-leaf
+ endif
+ modules-names = glreflib1 glreflib2 glreflib3 failtestmod defaultmod1 \
+ 		defaultmod2 errmsg1mod modatexit modcxaatexit \
+ 		bug-dlsym1-lib1 bug-dlsym1-lib2 bug-atexit1-lib \
+-		bug-atexit2-lib bug-atexit3-lib
++		bug-atexit2-lib bug-atexit3-lib bug-dl-leaf-lib \
++		bug-dl-leaf-lib-cb
+ 
+ failtestmod.so-no-z-defs = yes
+ glreflib2.so-no-z-defs = yes
+@@ -132,3 +133,8 @@ $(objpfx)bug-atexit2.out: $(objpfx)bug-atexit2-lib.so
+ LDLIBS-bug-atexit3-lib.so = -lstdc++ -lgcc_eh
+ $(objpfx)bug-atexit3: $(libdl)
+ $(objpfx)bug-atexit3.out: $(objpfx)bug-atexit3-lib.so
++
++$(objpfx)bug-dl-leaf: $(objpfx)bug-dl-leaf-lib.so
++$(objpfx)bug-dl-leaf.out: $(objpfx)bug-dl-leaf-lib-cb.so
++$(objpfx)bug-dl-leaf-lib.so: $(libdl)
++$(objpfx)bug-dl-leaf-lib-cb.so: $(objpfx)bug-dl-leaf-lib.so
+diff --git a/dlfcn/bug-dl-leaf-lib-cb.c b/dlfcn/bug-dl-leaf-lib-cb.c
+new file mode 100644
+index 0000000..e028c04
+--- /dev/null
++++ b/dlfcn/bug-dl-leaf-lib-cb.c
+@@ -0,0 +1,35 @@
++/* Make sure dlopen/dlclose are not marked as leaf functions.
++   See bug-dl-leaf-lib.c for details.
++
++   Copyright (C) 2013 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++   Contributed by Mike Frysinger <vapier@gentoo.org>
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++extern void check_val_init (void);
++extern void check_val_fini (void);
++
++__attribute__ ((__constructor__))
++void construct (void)
++{
++  check_val_init ();
++}
++
++__attribute__ ((__destructor__))
++void destruct (void)
++{
++  check_val_fini ();
++}
+diff --git a/dlfcn/bug-dl-leaf-lib.c b/dlfcn/bug-dl-leaf-lib.c
+new file mode 100644
+index 0000000..e595542
+--- /dev/null
++++ b/dlfcn/bug-dl-leaf-lib.c
+@@ -0,0 +1,71 @@
++/* Make sure dlopen/dlclose are not marked as leaf functions.
++
++   Copyright (C) 2013 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++   Contributed by Mike Frysinger <vapier@gentoo.org>
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++/* The bug-dl-leaf.c file will call our lib_main directly.  We do this to
++   keep things simple -- no need to use --export-dynamic with the linker
++   or build the main ELF as a PIE.
++
++   The lib_main func will modify some of its state while dlopening and
++   dlclosing the bug-dl-leaf-lib-cb.so library.  The constructors and
++   destructors in that library will call back into this library to also
++   muck with state (the check_val_xxx funcs).
++
++   If dlclose/dlopen are marked as "leaf" functions, then with newer
++   versions of gcc, the state modification won't work correctly.  */
++
++#include <assert.h>
++#include <dlfcn.h>
++
++static int val = 1;
++static int called = 0;
++
++void check_val_init (void)
++{
++  called = 1;
++  assert (val == 2);
++}
++
++void check_val_fini (void)
++{
++  called = 2;
++  assert (val == 4);
++}
++
++int lib_main (void)
++{
++  int ret;
++  void *hdl;
++
++  /* Make sure the constructor sees the updated val.  */
++  val = 2;
++  hdl = dlopen ("bug-dl-leaf-lib-cb.so", RTLD_GLOBAL | RTLD_LAZY);
++  val = 3;
++  assert (hdl);
++  assert (called == 1);
++
++  /* Make sure the destructor sees the updated val.  */
++  val = 4;
++  ret = dlclose (hdl);
++  val = 5;
++  assert (ret == 0);
++  assert (called == 2);
++
++  return !val;
++}
+diff --git a/dlfcn/bug-dl-leaf.c b/dlfcn/bug-dl-leaf.c
+new file mode 100644
+index 0000000..c3fbe75
+--- /dev/null
++++ b/dlfcn/bug-dl-leaf.c
+@@ -0,0 +1,25 @@
++/* Make sure dlopen/dlclose are not marked as leaf functions.
++   See bug-dl-leaf-lib.c for details.
++
++   Copyright (C) 2013 Free Software Foundation, Inc.
++   This file is part of the GNU C Library.
++   Contributed by Mike Frysinger <vapier@gentoo.org>
++
++   The GNU C Library is free software; you can redistribute it and/or
++   modify it under the terms of the GNU Lesser General Public
++   License as published by the Free Software Foundation; either
++   version 2.1 of the License, or (at your option) any later version.
++
++   The GNU C Library is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++   Lesser General Public License for more details.
++
++   You should have received a copy of the GNU Lesser General Public
++   License along with the GNU C Library; if not, see
++   <http://www.gnu.org/licenses/>.  */
++
++#define TEST_FUNCTION lib_main ()
++extern int lib_main (void);
++
++#include "../test-skeleton.c"
+diff --git a/dlfcn/dlfcn.h b/dlfcn/dlfcn.h
+index 241b554..1ed47b1 100644
+--- a/dlfcn/dlfcn.h
++++ b/dlfcn/dlfcn.h
+@@ -53,11 +53,11 @@ __BEGIN_DECLS
+ 
+ /* Open the shared object FILE and map it in; return a handle that can be
+    passed to `dlsym' to get symbol values from it.  */
+-extern void *dlopen (const char *__file, int __mode) __THROW;
++extern void *dlopen (const char *__file, int __mode) __THROWNL;
+ 
+ /* Unmap and close a shared object opened by `dlopen'.
+    The handle cannot be used again after calling `dlclose'.  */
+-extern int dlclose (void *__handle) __THROW __nonnull ((1));
++extern int dlclose (void *__handle) __THROWNL __nonnull ((1));
+ 
+ /* Find the run-time address in the shared object HANDLE refers to
+    of the symbol called NAME.  */
+@@ -66,7 +66,7 @@ extern void *dlsym (void *__restrict __handle,
+ 
+ #ifdef __USE_GNU
+ /* Like `dlopen', but request object to be allocated in a new namespace.  */
+-extern void *dlmopen (Lmid_t __nsid, const char *__file, int __mode) __THROW;
++extern void *dlmopen (Lmid_t __nsid, const char *__file, int __mode) __THROWNL;
+ 
+ /* Find the run-time address in the shared object HANDLE refers to
+    of the symbol called NAME with VERSION.  */
+-- 
+1.8.4
+

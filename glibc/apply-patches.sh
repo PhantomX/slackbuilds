@@ -82,6 +82,8 @@ ApplyPatch glibc-rh841787.patch
 ApplyPatch glibc-rh819430.patch
 #Upstream BZ 14547
 ApplyPatch glibc-strcoll-cve.patch
+# Initialize res_hconf in nscd
+ApplyPatch glibc-rh1000924.patch
 
 ## Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
@@ -100,6 +102,7 @@ ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 ## master
 ApplyPatch 0001-Fix-cbrtl-for-ldbl-96.patch
 ApplyPatch glibc-2.18-readdir_r-CVE-2013-4237.patch
+ApplyPatch 0001-BZ-15897-dlfcn-do-not-mark-dlopen-dlclose-as-leaf-fu.patch
 
 ## From Arch
 ApplyPatch glibc-2.18-strstr-hackfix.patch

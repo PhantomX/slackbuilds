@@ -237,6 +237,9 @@ ApplyPatch bridge-send-query-as-soon-as-leave-is-received.patch
 ApplyPatch bridge-timer-fix.patch
 ApplyPatch bridge-do-not-call-setup_timer-multiple-times.patch
 
+#CVE-2013-0343 rhbz 914664 999380
+ApplyPatch ipv6-remove-max_addresses-check-from-ipv6_create_tempaddr.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch
 

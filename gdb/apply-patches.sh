@@ -37,6 +37,7 @@ ApplyPatch() {
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
+### Fedora
 # The merged branch `archer' of: http://sourceware.org/gdb/wiki/ProjectArcher
 ApplyPatch gdb-archer.patch
 
@@ -127,7 +128,7 @@ ApplyPatch gdb-6.5-sharedlibrary-path.patch.gz
 ApplyPatch gdb-6.5-bz190810-gdbserver-arch-advice.patch.gz
 
 # Improved testsuite results by the testsuite provided by the courtesy of BEA.
-ApplyPatch gdb-6.5-BEA-testsuite.patch.gz
+ApplyPatch gdb-6.5-BEA-testsuite.patch
 
 # Testcase for deadlocking on last address space byte; for corrupted backtraces.
 ApplyPatch gdb-6.5-last-address-space-byte-test.patch.gz
@@ -384,5 +385,9 @@ ApplyPatch gdb-vdso-gcore.patch
 
 # Fix needless expansion of non-gdbindex symtabs (Doug Evans).
 ApplyPatch gdb-psymtab-expand.patch
+
+# Fix crash on 'enable count' (Simon Marchi, BZ 993118).
+ApplyPatch gdb-enable-count-crash.patch
+### END Fedora
 
 set +e +o pipefail

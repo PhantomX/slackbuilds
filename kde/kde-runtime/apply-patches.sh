@@ -19,11 +19,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.5.95-compiz.
 
 ## upstreamable patches
 
-# avoid X3 mouse events
-# https://bugs.kde.org/show_bug.cgi?id=316546
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-mouseeventlistener.patch
-
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r7b69cd2f6c28a088c886a51549005b8edcbb91f1.diff
 
 set +e +o pipefail

@@ -1,0 +1,218 @@
+From 0007fc9bdd1d9efcd52d07837f2cd085b5a8f58b Mon Sep 17 00:00:00 2001
+From: Thomas Schwinge <thomas@codesourcery.com>
+Date: Thu, 23 May 2013 18:00:10 +0200
+Subject: [PATCH] [BZ #15522] strtod ("nan(N)") returning a sNaN in some cases
+
+---
+ stdlib/strtod_l.c                       |  9 ++++-----
+ stdlib/strtof_l.c                       |  7 +++----
+ stdlib/tst-strtod6.c                    | 24 ++++++++++++++++++++++--
+ sysdeps/ieee754/ldbl-128/strtold_l.c    | 12 +++++++-----
+ sysdeps/ieee754/ldbl-128ibm/ieee754.h   | 19 +++++++++++++++++++
+ sysdeps/ieee754/ldbl-128ibm/strtold_l.c |  9 ++++-----
+ sysdeps/ieee754/ldbl-64-128/strtold_l.c | 12 +++++++-----
+ sysdeps/ieee754/ldbl-96/strtold_l.c     |  9 ++++-----
+ 10 files changed, 87 insertions(+), 32 deletions(-)
+
+diff --git a/stdlib/strtod_l.c b/stdlib/strtod_l.c
+index 5b41e2b..8f60653 100644
+--- a/stdlib/strtod_l.c
++++ b/stdlib/strtod_l.c
+@@ -42,11 +42,10 @@ extern unsigned long long int ____strtoull_l_internal (const char *, char **,
+ # define SET_MANTISSA(flt, mant) \
+   do { union ieee754_double u;						      \
+        u.d = (flt);							      \
+-       if ((mant & 0xfffffffffffffULL) == 0)				      \
+-	 mant = 0x8000000000000ULL;					      \
+-       u.ieee.mantissa0 = ((mant) >> 32) & 0xfffff;			      \
+-       u.ieee.mantissa1 = (mant) & 0xffffffff;				      \
+-       (flt) = u.d;							      \
++       u.ieee_nan.mantissa0 = (mant) >> 32;				      \
++       u.ieee_nan.mantissa1 = (mant);					      \
++       if ((u.ieee.mantissa0 | u.ieee.mantissa1) != 0)			      \
++	 (flt) = u.d;							      \
+   } while (0)
+ #endif
+ /* End of configuration part.  */
+diff --git a/stdlib/strtof_l.c b/stdlib/strtof_l.c
+index 6fb44bd..c4c1c1f 100644
+--- a/stdlib/strtof_l.c
++++ b/stdlib/strtof_l.c
+@@ -37,10 +37,9 @@ extern unsigned long long int ____strtoull_l_internal (const char *, char **,
+ #define SET_MANTISSA(flt, mant) \
+   do { union ieee754_float u;						      \
+        u.f = (flt);							      \
+-       if ((mant & 0x7fffff) == 0)					      \
+-	 mant = 0x400000;						      \
+-       u.ieee.mantissa = (mant) & 0x7fffff;				      \
+-       (flt) = u.f;							      \
++       u.ieee_nan.mantissa = (mant);					      \
++       if (u.ieee.mantissa != 0)					      \
++	 (flt) = u.f;							      \
+   } while (0)
+ 
+ #include "strtod_l.c"
+diff --git a/stdlib/tst-strtod6.c b/stdlib/tst-strtod6.c
+index 1d87266..15e79fd 100644
+--- a/stdlib/tst-strtod6.c
++++ b/stdlib/tst-strtod6.c
+@@ -4,12 +4,13 @@
+ #include <string.h>
+ 
+ static int
+-do_test (void)
++test (const char str[])
+ {
+-  static const char str[] = "NaN(blabla)something";
+   char *endp;
+   int result = 0;
+ 
++  puts (str);
++
+   double d = strtod (str, &endp);
+   if (!isnan (d))
+     {
+@@ -64,5 +65,24 @@ do_test (void)
+   return result;
+ }
+ 
++static int
++do_test (void)
++{
++  int result = 0;
++
++  result |= test ("NaN(blabla)something");
++  result |= test ("NaN(1234)something");
++  /* UINT32_MAX.  */
++  result |= test ("NaN(4294967295)something");
++  /* UINT64_MAX.  */
++  result |= test ("NaN(18446744073709551615)something");
++  /* The case of zero is special in that "something" has to be done to make the
++     mantissa different from zero, which would mean infinity instead of
++     NaN.  */
++  result |= test ("NaN(0)something");
++
++  return result;
++}
++
+ #define TEST_FUNCTION do_test ()
+ #include "../test-skeleton.c"
+diff --git a/sysdeps/ieee754/ldbl-128/strtold_l.c b/sysdeps/ieee754/ldbl-128/strtold_l.c
+index 8e0bc03..d3a1d1e 100644
+--- a/sysdeps/ieee754/ldbl-128/strtold_l.c
++++ b/sysdeps/ieee754/ldbl-128/strtold_l.c
+@@ -34,11 +34,13 @@
+ #define SET_MANTISSA(flt, mant) \
+   do { union ieee854_long_double u;					      \
+        u.d = (flt);							      \
+-       u.ieee.mantissa0 = 0x8000;					      \
+-       u.ieee.mantissa1 = 0;						      \
+-       u.ieee.mantissa2 = ((mant) >> 32);	      			      \
+-       u.ieee.mantissa3 = (mant) & 0xffffffff;				      \
+-       (flt) = u.d;							      \
++       u.ieee_nan.mantissa0 = 0;					      \
++       u.ieee_nan.mantissa1 = 0;					      \
++       u.ieee_nan.mantissa2 = (mant) >> 32;				      \
++       u.ieee_nan.mantissa3 = (mant);					      \
++       if ((u.ieee.mantissa0 | u.ieee.mantissa1				      \
++	    | u.ieee.mantissa2 | u.ieee.mantissa3) != 0)		      \
++	 (flt) = u.d;							      \
+   } while (0)
+ 
+ #include <strtod_l.c>
+diff --git a/sysdeps/ieee754/ldbl-128ibm/ieee754.h b/sysdeps/ieee754/ldbl-128ibm/ieee754.h
+index e5644f5..9e94f53 100644
+--- a/sysdeps/ieee754/ldbl-128ibm/ieee754.h
++++ b/sysdeps/ieee754/ldbl-128ibm/ieee754.h
+@@ -199,6 +199,25 @@ union ibm_extended_long_double
+ 	unsigned int mantissa2:20;
+ 	unsigned int mantissa3:32;
+       } ieee;
++
++    /* This format makes it easier to see if a NaN is a signalling NaN.  */
++    struct
++      { /* Big endian.  There is no other.  */
++
++	unsigned int negative:1;
++	unsigned int exponent:11;
++	unsigned int quiet_nan:1;
++	/* Together Mantissa0-3 comprise the mantissa.  */
++	unsigned int mantissa0:19;
++	unsigned int mantissa1:32;
++
++	unsigned int negative2:1;
++	unsigned int exponent2:11;
++	/* There is an implied 1 here?  */
++	/* Together these comprise the mantissa.  */
++	unsigned int mantissa2:20;
++	unsigned int mantissa3:32;
++      } ieee_nan;
+    };
+ 
+ #define IBM_EXTENDED_LONG_DOUBLE_BIAS 0x3ff /* Added to exponent.  */
+diff --git a/sysdeps/ieee754/ldbl-128ibm/strtold_l.c b/sysdeps/ieee754/ldbl-128ibm/strtold_l.c
+index 93415f0..04e3288 100644
+--- a/sysdeps/ieee754/ldbl-128ibm/strtold_l.c
++++ b/sysdeps/ieee754/ldbl-128ibm/strtold_l.c
+@@ -44,11 +44,10 @@ libc_hidden_proto (STRTOF)
+ # define SET_MANTISSA(flt, mant) \
+   do { union ibm_extended_long_double u;				      \
+        u.d = (flt);							      \
+-       if ((mant & 0xfffffffffffffULL) == 0)				      \
+-	 mant = 0x8000000000000ULL;					      \
+-       u.ieee.mantissa0 = ((mant) >> 32) & 0xfffff;			      \
+-       u.ieee.mantissa1 = (mant) & 0xffffffff;				      \
+-       (flt) = u.d;							      \
++       u.ieee_nan.mantissa0 = (mant) >> 32;				      \
++       u.ieee_nan.mantissa1 = (mant);					      \
++       if ((u.ieee.mantissa0 | u.ieee.mantissa1) != 0)			      \
++	 (flt) = u.d;							      \
+   } while (0)
+ 
+ #include <strtod_l.c>
+diff --git a/sysdeps/ieee754/ldbl-64-128/strtold_l.c b/sysdeps/ieee754/ldbl-64-128/strtold_l.c
+index 8182b2b..e9b33f2 100644
+--- a/sysdeps/ieee754/ldbl-64-128/strtold_l.c
++++ b/sysdeps/ieee754/ldbl-64-128/strtold_l.c
+@@ -44,11 +44,13 @@ libc_hidden_proto (STRTOF)
+ #define SET_MANTISSA(flt, mant) \
+   do { union ieee854_long_double u;					      \
+        u.d = (flt);							      \
+-       u.ieee.mantissa0 = 0x8000;					      \
+-       u.ieee.mantissa1 = 0;						      \
+-       u.ieee.mantissa2 = ((mant) >> 32);	      			      \
+-       u.ieee.mantissa3 = (mant) & 0xffffffff;				      \
+-       (flt) = u.d;							      \
++       u.ieee_nan.mantissa0 = 0;					      \
++       u.ieee_nan.mantissa1 = 0;					      \
++       u.ieee_nan.mantissa2 = (mant) >> 32;				      \
++       u.ieee_nan.mantissa3 = (mant);					      \
++       if ((u.ieee.mantissa0 | u.ieee.mantissa1				      \
++	    | u.ieee.mantissa2 | u.ieee.mantissa3) != 0)		      \
++	 (flt) = u.d;							      \
+   } while (0)
+ 
+ #include <strtod_l.c>
+diff --git a/sysdeps/ieee754/ldbl-96/strtold_l.c b/sysdeps/ieee754/ldbl-96/strtold_l.c
+index ded84f3..dccf98c 100644
+--- a/sysdeps/ieee754/ldbl-96/strtold_l.c
++++ b/sysdeps/ieee754/ldbl-96/strtold_l.c
+@@ -34,11 +34,10 @@
+ #define SET_MANTISSA(flt, mant) \
+   do { union ieee854_long_double u;					      \
+        u.d = (flt);							      \
+-       if ((mant & 0x7fffffffffffffffULL) == 0)				      \
+-	 mant = 0x4000000000000000ULL;					      \
+-       u.ieee.mantissa0 = (((mant) >> 32) & 0x7fffffff) | 0x80000000;	      \
+-       u.ieee.mantissa1 = (mant) & 0xffffffff;				      \
+-       (flt) = u.d;							      \
++       u.ieee_nan.mantissa0 = (mant) >> 32;				      \
++       u.ieee_nan.mantissa1 = (mant);					      \
++       if ((u.ieee.mantissa0 | u.ieee.mantissa1) != 0)			      \
++	 (flt) = u.d;							      \
+   } while (0)
+ 
+ #include <stdlib/strtod_l.c>
+-- 
+1.8.4
+

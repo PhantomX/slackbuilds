@@ -103,6 +103,9 @@ ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 ApplyPatch 0001-Fix-cbrtl-for-ldbl-96.patch
 ApplyPatch glibc-2.18-readdir_r-CVE-2013-4237.patch
 ApplyPatch 0001-BZ-15897-dlfcn-do-not-mark-dlopen-dlclose-as-leaf-fu.patch
+ApplyPatch 0001-BZ-15522-strtod-nan-N-returning-a-sNaN-in-some-cases.patch
+ApplyPatch 0001-Fix-spurious-jnf-underflows-bug-14155.patch
+ApplyPatch 0001-Fix-lgammaf-spurious-underflow-bug-15427.patch
 
 ## From Arch
 ApplyPatch glibc-2.18-strstr-hackfix.patch

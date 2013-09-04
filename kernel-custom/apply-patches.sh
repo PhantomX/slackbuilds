@@ -109,7 +109,6 @@ ApplyPatch remount-no-shrink-dcache.patch
 
 # ACPI
 ApplyPatch defaults-acpi-video.patch
-ApplyPatch acpi-video-dos.patch
 ApplyPatch acpi-sony-nonvs-blacklist.patch
 
 # cpufreq
@@ -134,7 +133,6 @@ done
     ApplyPatch ${file}
   done
 )
-ApplyPatch 0001-block-Switch-from-BFQ-v6r2-for-3.10.0-to-BFQ-v6r2-fo.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -192,11 +190,6 @@ ApplyOptionalPatch drivers-media-update.patch
 ApplyPatch fs-proc-devtree-remove_proc_entry.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
-# Runtime PM
-
-# rhbz#605888
-ApplyPatch dmar-disable-when-ricoh-multifunction.patch
-
 ApplyPatch efi-dont-map-boot-services-on-32bit.patch
 
 ApplyPatch lis3-improve-handling-of-null-rate.patch
@@ -218,27 +211,15 @@ ApplyPatch criu-no-expert.patch
 #rhbz 927469
 ApplyPatch fix-child-thread-introspection.patch
 
-#rhbz 948262
-ApplyPatch intel_iommu-Downgrade-the-warning-if-enabling-irq-remapping-fails.patch
-
 #CVE-2013-2147 rhbz 971242 971249
 ApplyPatch cve-2013-2147-ciss-info-leak.patch
 
-#rhbz 969644
-ApplyPatch KVM-x86-handle-idiv-overflow-at-kvm_write_tsc.patch
-
-#rhbz 903741
-ApplyPatch HID-input-return-ENODATA-if-reading-battery-attrs-fails.patch
-
-#rhbz 880035
-ApplyPatch bridge-only-expire-the-mdb-entry-when-query-is-received.patch
-ApplyPatch bridge-send-query-as-soon-as-leave-is-received.patch
-#rhbz 980254
-ApplyPatch bridge-timer-fix.patch
-ApplyPatch bridge-do-not-call-setup_timer-multiple-times.patch
-
-#CVE-2013-0343 rhbz 914664 999380
-ApplyPatch ipv6-remove-max_addresses-check-from-ipv6_create_tempaddr.patch
+#CVE-2013-2888 rhbz 1000451 1002543 CVE-2013-2889 rhbz 999890 1002548
+#CVE-2013-2891 rhbz 999960 1002555  CVE-2013-2892 rhbz 1000429 1002570
+#CVE-2013-2893 rhbz 1000414 1002575 CVE-2013-2894 rhbz 1000137 1002579
+#CVE-2013-2895 rhbz 1000360 1002581 CVE-2013-2896 rhbz 1000494 1002594
+#CVE-2013-2897 rhbz 1000536 1002600 CVE-2013-2899 rhbz 1000373 1002604
+ApplyPatch HID-CVE-fixes.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

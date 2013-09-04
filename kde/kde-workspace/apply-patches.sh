@@ -59,10 +59,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-kcm_fonts_dont_change_
 # support BUILD_KCM_RANDR (default ON) option
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.2-BUILD_KCM_RANDR.patch
 
-# plasma-4.10.80+ startup delay 4-7 seconds
-# http://bugs.kde.org/321695
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.0-plasma_startup_delay.patch
-
 if [ "${SB_SYSTEMD}" = "YES" ] ;then
   # add support for automatic multi-seat provided by systemd using existing reserve seats in KDM
   # needs having ServerCmd=/usr/lib/systemd/systemd-multi-seat-x set in /etc/kde/kdm/kdmrc
@@ -73,10 +69,9 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
 fi
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r97f94f8805d47c092424017c7dc860ea1f5d0239.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re7b8ac8397721f7870ccb2158275afe4a463878f.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re74a264325e8af834d800ee650c4bf208e1b2fb1.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r4f4290491b517ce0288aa9ea07c5885c985f6093.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rfdc4aa9c298004ccd397fd2b451065d52cbf1ee0.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r9dba719eb2c8d563eb512bb05451f8939d5d0b4b.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re1a590badee13b862c5393f45ea59ecad98a7267.diff
 
 ## plasma active patches
 

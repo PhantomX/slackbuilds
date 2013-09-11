@@ -1,0 +1,91 @@
+commit 744b7fa0e92584667fd5bc77e74b3ba62db3ddab
+Author: Valentin Rusu <kde@rusu.info>
+Date:   Mon Sep 9 15:03:19 2013 +0200
+
+    Add retry timer to the screen saver connection logic
+    
+    BUG: 254273
+    FIXED-IN: 4.11.2
+    
+    It seems that on some systems the kwalletd comes before the screen saver
+    service, and so it fails to connect to it. As a result, it fails to receive
+    ActiveChanged signal, and wallets are never closed, even if the KCM option
+    for this is ticked. That is before the connection is attempted only
+    during startup. This commit adds a retry timer to reattempt connection.
+    
+    The connection is reattempted every 10s, as long as kwalletd runs and the
+    screen saver service is not available.
+
+diff --git a/kwalletd/kwalletd.cpp b/kwalletd/kwalletd.cpp
+index 35bbeda..cdaa208 100644
+--- a/kwalletd/kwalletd.cpp
++++ b/kwalletd/kwalletd.cpp
+@@ -115,7 +115,7 @@ KWalletD::KWalletD()
+ 	QDBusConnection::sessionBus().registerObject(QLatin1String("/modules/kwalletd"), this);
+ 
+ #ifdef Q_WS_X11
+-	screensaver = new QDBusInterface("org.freedesktop.ScreenSaver", "/ScreenSaver", "org.freedesktop.ScreenSaver");
++    screensaver = 0;
+ #endif
+ 
+ 	reconfigure();
+@@ -140,6 +140,20 @@ KWalletD::~KWalletD() {
+ 	qDeleteAll(_transactions);
+ }
+ 
++#ifdef Q_WS_X11
++void KWalletD::connectToScreenSaver()
++{
++    screensaver = new QDBusInterface("org.freedesktop.ScreenSaver", "/ScreenSaver", "org.freedesktop.ScreenSaver");
++    if (!screensaver->isValid()) {
++        kDebug() << "Service org.freedesktop.ScreenSaver not found. Retrying in 10 seconds...";
++        // keep attempting every 10 seconds
++        QTimer::singleShot(10000, this, SLOT(connectToScreenSaver()));
++    } else {
++        connect(screensaver, SIGNAL(ActiveChanged(bool)), SLOT(screenSaverChanged(bool)));
++        kDebug() << "connected to screen saver service.";
++    }
++}
++#endif
+ 
+ int KWalletD::generateHandle() {
+ 	int rc;
+@@ -1358,13 +1372,17 @@ void KWalletD::reconfigure() {
+ 	// in minutes!
+ 	_idleTime = walletGroup.readEntry("Idle Timeout", 10) * 60 * 1000;
+ #ifdef Q_WS_X11
+-	if ( screensaver->isValid() ) {
+-		if (walletGroup.readEntry("Close on Screensaver", false)) {
+-			connect(screensaver, SIGNAL(ActiveChanged(bool)), SLOT(screenSaverChanged(bool)));
+-		} else {
+-			screensaver->disconnect(SIGNAL(ActiveChanged(bool)), this, SLOT(screenSaverChanged(bool)));
+-		}
+-	}
++    if (walletGroup.readEntry("Close on Screensaver", false)) {
++        // BUG 254273 : if kwalletd starts before the screen saver, then the connection fails and kwalletd never receives it's notifications
++        // To fix this, we use a timer and perform periodic connection attempts until connection succeeds
++        QTimer::singleShot(0, this, SLOT(connectToScreenSaver()));
++    } else {
++        if (screensaver && screensaver->isValid()) {
++            screensaver->disconnect(SIGNAL(ActiveChanged(bool)), this, SLOT(screenSaverChanged(bool)));
++            delete screensaver;
++            screensaver = 0;
++        }
++    }
+ #endif
+ 	// Handle idle changes
+ 	if (_closeIdle) {
+diff --git a/kwalletd/kwalletd.h b/kwalletd/kwalletd.h
+index e8e74c3..259892a 100644
+--- a/kwalletd/kwalletd.h
++++ b/kwalletd/kwalletd.h
+@@ -183,6 +183,9 @@ class KWalletD : public QObject, protected QDBusContext {
+ 		void notifyFailures();
+ 		void processTransactions();
+ 		void activatePasswordDialog();
++#ifdef Q_WS_X11
++        void connectToScreenSaver();
++#endif
+ 
+ 	private:
+ 		// Internal - open a wallet

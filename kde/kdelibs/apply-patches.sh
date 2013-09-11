@@ -71,6 +71,9 @@ patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-not-break.-copy-paste-e
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/coding-style-fixes.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-application-icons-properly.patch
 
+# https://bugs.kde.org/254198
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/Fix-the-synchronous-mode-wallet-open-logic.patch
+
 # Trunk patches
 
 set +e +o pipefail

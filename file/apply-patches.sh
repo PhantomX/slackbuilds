@@ -20,6 +20,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-perl.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-elfspace.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-bad-fsmagic-space.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-no-magic.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-journald.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-magic_load.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose

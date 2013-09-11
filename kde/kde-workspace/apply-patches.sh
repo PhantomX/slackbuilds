@@ -72,6 +72,12 @@ fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rfdc4aa9c298004ccd397fd2b451065d52cbf1ee0.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r9dba719eb2c8d563eb512bb05451f8939d5d0b4b.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re1a590badee13b862c5393f45ea59ecad98a7267.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rf71b702eb1fdcce7c934bdf96a71557977cb0128.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r8dcf62cdeb5ae73e5d60688295a868756a6416f4.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rfcd1ba1f551146233de23d3d1aa514f931c2010e.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re53b5ef25a6e38279f142502bf4653ee735b1934.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rb8de8c95b098205a55ee7eecbf2e64304b2664bb.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.2-usable-icons.patch
 
 ## plasma active patches
 

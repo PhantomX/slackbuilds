@@ -7,4 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pykde4-4.9.90-respect_sip_flags.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix_kpythonpluginfactory_build.diff
 
+### Arch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pykde4.patch
+
 set +e +o pipefail

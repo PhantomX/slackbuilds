@@ -108,6 +108,8 @@ ApplyPatch 0001-Fix-spurious-jnf-underflows-bug-14155.patch
 ApplyPatch 0001-Fix-lgammaf-spurious-underflow-bug-15427.patch
 
 ## From Arch
+# upstream commits 1159a193, 55e17aad and b73ed247
+ApplyPatch glibc-2.18-malloc-corrupt-CVE-2013-4332.patch
 ApplyPatch glibc-2.18-strstr-hackfix.patch
 
 set +e +o pipefail

@@ -221,6 +221,18 @@ ApplyPatch cve-2013-2147-ciss-info-leak.patch
 #CVE-2013-2897 rhbz 1000536 1002600 CVE-2013-2899 rhbz 1000373 1002604
 ApplyPatch HID-CVE-fixes.patch
 
+#rhbz 963991
+ApplyPatch acpi-pcie-hotplug-conflict.patch
+
+#rhbz1002351
+ApplyPatch crypto-fix-race-in-larval-lookup.patch
+
+#CVE-2013-4343 rhbz 1007733 1007741
+ApplyPatch tuntap-correctly-handle-error-in-tun_set_iff.patch
+
+#CVE-2013-4350 rhbz 1007872 1007903
+ApplyPatch net-sctp-fix-ipv6-ipsec-encryption-bug-in-sctp_v6_xmit.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch
 

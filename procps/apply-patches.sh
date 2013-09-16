@@ -13,5 +13,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-top-enable-screen-content
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-top-refine-some-miscellaneous-signals-interrupt-stuf.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-library-for-atexit-support-fix-fileutils-for-EPIPE.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-top-cursor-repositioning-includes-line-oriented-inpu.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/procps-ng-3.3.8-RH-man-page-check.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/procps-ng-3.3.8-free-shmem.patch
 
 set +e +o pipefail

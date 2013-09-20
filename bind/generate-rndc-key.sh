@@ -2,7 +2,7 @@
 
 # This script generates /etc/rndc.key if doesn't exist
 
-if [ ! -s /etc/rndc.key ]; then
+if [ ! -s /etc/rndc.key -a ! -s /etc/rndc.conf ]; then
   echo -n "Generating /etc/rndc.key:"
   if /usr/sbin/rndc-confgen -a > /dev/null 2>&1; then
     chmod 640 /etc/rndc.key

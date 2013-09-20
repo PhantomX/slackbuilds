@@ -14,3 +14,4 @@ pref("toolkit.networkmanager.disable", false);
 pref("toolkit.storage.synchronous", 0);
 pref("offline.autoDetect", true);
 pref("media.use_cubeb", false);
+pref("media.gstreamer.enabled", true);

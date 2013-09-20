@@ -13,5 +13,6 @@ pref("general.useragent.vendorSub", "SM_SLK_VR");
 pref("intl.locale.matchOS", true);
 pref("extensions.shownSelectionUI", true);
 pref("extensions.autoDisableScope", 0);
+pref("media.gstreamer.enabled", true);
 pref("media.use_cubeb", false);
 pref("shell.checkDefaultApps", 0);

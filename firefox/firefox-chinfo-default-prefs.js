@@ -21,6 +21,7 @@ pref("general.useragent.vendorSub", "FIREFOX_SLK_VR");
 pref("intl.locale.matchOS", true);
 pref("extensions.shownSelectionUI", true);
 pref("media.use_cubeb", false);
+pref("media.gstreamer.enabled", true);
 pref("gfx.color_management.enablev4", true);
 pref("dom.ipc.plugins.enabled.nswrapper*",  false);
 pref("startup.homepage_override_url", "");

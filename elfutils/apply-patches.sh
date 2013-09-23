@@ -15,9 +15,7 @@ if [ "${SB_COMPAT}" = "YES" ] ;then
   #autoconf -f || exit 1
 fi
 #sed -i.scanf-m -e 's/%m/%a/' src/addr2line.c tests/line2addr.c || exit 1
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.155-binutils-pr-ld-13621.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.155-mem-align.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.155-sizeof-pointer-memaccess.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.156-et_dyn-kernels.patch
 
 
 set +e +o pipefail

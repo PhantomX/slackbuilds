@@ -24,4 +24,7 @@ fi
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup -z .multilib --verbose -i ${SB_PATCHDIR}/freetype-multilib.patch
 
+# https://bugzilla.gnome.org/show_bug.cgi?id=686709
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Fix-vertical-size-of-emboldened-glyphs.patch
+
 set +e +o pipefail

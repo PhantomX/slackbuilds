@@ -84,6 +84,8 @@ ApplyPatch glibc-rh819430.patch
 ApplyPatch glibc-strcoll-cve.patch
 # Initialize res_hconf in nscd
 ApplyPatch glibc-rh1000924.patch
+# Upstream BZ 15754
+ApplyPatch glibc-rh985625-CVE-2013-4788.patch
 
 ## Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
@@ -106,6 +108,8 @@ ApplyPatch 0001-BZ-15897-dlfcn-do-not-mark-dlopen-dlclose-as-leaf-fu.patch
 ApplyPatch 0001-BZ-15522-strtod-nan-N-returning-a-sNaN-in-some-cases.patch
 ApplyPatch 0001-Fix-spurious-jnf-underflows-bug-14155.patch
 ApplyPatch 0001-Fix-lgammaf-spurious-underflow-bug-15427.patch
+ApplyPatch 0001-Add-O_TMPFILE-to-fcntl.h.patch
+ApplyPatch 0001-Fix-buffer-overrun-in-strtod_l.patch
 
 ## From Arch
 # upstream commits 1159a193, 55e17aad and b73ed247

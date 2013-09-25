@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://jpfleury.indefero.net/jpfleury/clearlooks-phenix.git"
+snaproot="git://gitorious.org/projets-divers/clearlooks-phenix.git"
 
 tmp=$(mktemp -d)
 

@@ -10,23 +10,18 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file.short.diff
 
 # Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-localmagic.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.10-strength.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.10-sticky-bit.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.15-strength.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-volume_key.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-man-return-code.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-generic-msdos.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-x86boot.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-perl.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-elfspace.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-bad-fsmagic-space.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-no-magic.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-journald.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-magic_load.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/file-4.21-oracle.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.12-berkeleydb.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.15-berkeleydb.patch
 zcat ${SB_PATCHDIR}/file-4.20-xen.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/file-4.21-svn.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/file-4.20-images.patch.gz | patch -p0 -E --backup --verbose

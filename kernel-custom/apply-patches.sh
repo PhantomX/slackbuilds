@@ -214,24 +214,27 @@ ApplyPatch fix-child-thread-introspection.patch
 #CVE-2013-2147 rhbz 971242 971249
 ApplyPatch cve-2013-2147-ciss-info-leak.patch
 
-#CVE-2013-2888 rhbz 1000451 1002543 CVE-2013-2889 rhbz 999890 1002548
-#CVE-2013-2891 rhbz 999960 1002555  CVE-2013-2892 rhbz 1000429 1002570
-#CVE-2013-2893 rhbz 1000414 1002575 CVE-2013-2894 rhbz 1000137 1002579
-#CVE-2013-2895 rhbz 1000360 1002581 CVE-2013-2896 rhbz 1000494 1002594
-#CVE-2013-2897 rhbz 1000536 1002600 CVE-2013-2899 rhbz 1000373 1002604
-ApplyPatch HID-CVE-fixes.patch
-
-#rhbz 963991
-ApplyPatch acpi-pcie-hotplug-conflict.patch
-
-#rhbz1002351
-ApplyPatch crypto-fix-race-in-larval-lookup.patch
-
 #CVE-2013-4343 rhbz 1007733 1007741
 ApplyPatch tuntap-correctly-handle-error-in-tun_set_iff.patch
 
 #CVE-2013-4350 rhbz 1007872 1007903
 ApplyPatch net-sctp-fix-ipv6-ipsec-encryption-bug-in-sctp_v6_xmit.patch
+
+#CVE-2013-4345 rhbz 1007690 1009136
+ApplyPatch ansi_cprng-Fix-off-by-one-error-in-non-block-size-request.patch
+
+#rhbz 985522
+ApplyPatch ntp-Make-periodic-RTC-update-more-reliable.patch
+
+#rhbz 997705
+ApplyPatch rpc-clean-up-decoding-of-gssproxy-linux-creds.patch
+ApplyPatch rpc-comment-on-linux_cred-encoding-treat-all-as-unsigned.patch
+ApplyPatch rpc-fix-huge-kmallocs-in-gss-proxy.patch
+ApplyPatch rpc-let-xdr-layer-allocate-gssproxy-receieve-pages.patch
+
+#rhbz 1008323
+ApplyPatch 0001-skge-fix-broken-driver.patch
+ApplyPatch skge-fix-invalid-value-passed-to-pci_unmap_sigle.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

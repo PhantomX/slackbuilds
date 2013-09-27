@@ -8,6 +8,7 @@ pref("browser.link.open_external",          3);
 pref("browser.newtabpage.enabled", false);
 pref("browser.search.suggest.enabled", false);
 pref("browser.shell.checkDefaultBrowser",   false);
+pref("browser.tabs.onTop", false);
 pref("browser.urlbar.clickSelectsAll", false);
 pref("browser.urlbar.doubleClickSelectsAll", true);
 pref("browser.urlbar.trimURLs", false);

@@ -1,0 +1,116 @@
+From 22f5f6281fc25f43a85938e9dad2480b2595c471 Mon Sep 17 00:00:00 2001
+From: Dave Reisner <dreisner@archlinux.org>
+Date: Tue, 17 Sep 2013 15:47:08 -0400
+Subject: [PATCH 2/2] Use udev_encode_string in fstab_node_to_udev_node
+
+Resolves a longstanding bug which caused this function to wrongly
+handle (escape) valid utf8 characters.
+---
+ src/shared/util.c    | 20 +++++++++-----------
+ src/test/test-util.c | 36 ++++++++++++++++++++++++++++++++++++
+ 2 files changed, 45 insertions(+), 11 deletions(-)
+
+diff --git a/src/shared/util.c b/src/shared/util.c
+index f6f3b18..2b76a5c 100644
+--- a/src/shared/util.c
++++ b/src/shared/util.c
+@@ -73,6 +73,7 @@
+ #include "hashmap.h"
+ #include "env-util.h"
+ #include "fileio.h"
++#include "utf8.h"
+ 
+ int saved_argc = 0;
+ char **saved_argv = NULL;
+@@ -3495,26 +3496,23 @@ int signal_from_string_try_harder(const char *s) {
+ }
+ 
+ static char *tag_to_udev_node(const char *tagvalue, const char *by) {
+-        char *dn, *t, *u;
+-        int r;
+-
+-        /* FIXME: to follow udev's logic 100% we need to leave valid
+-         * UTF8 chars unescaped */
++        _cleanup_free_ char *t = NULL, *u = NULL;
++        char *dn;
++        size_t enc_len;
+ 
+         u = unquote(tagvalue, "\"\'");
+         if (u == NULL)
+                 return NULL;
+ 
+-        t = xescape(u, "/ ");
+-        free(u);
+-
++        enc_len = strlen(u) * 4;
++        t = new(char, enc_len);
+         if (t == NULL)
+                 return NULL;
+ 
+-        r = asprintf(&dn, "/dev/disk/by-%s/%s", by, t);
+-        free(t);
++        if (udev_encode_string(u, t, enc_len) < 0)
++                return NULL;
+ 
+-        if (r < 0)
++        if (asprintf(&dn, "/dev/disk/by-%s/%s", by, t) < 0)
+                 return NULL;
+ 
+         return dn;
+diff --git a/src/test/test-util.c b/src/test/test-util.c
+index dd7768d..ad13d53 100644
+--- a/src/test/test-util.c
++++ b/src/test/test-util.c
+@@ -547,6 +547,41 @@ static void test_split_pair(void) {
+         assert_se(streq(b, "="));
+ }
+ 
++static void test_fstab_node_to_udev_node(void) {
++        char *n;
++
++        n = fstab_node_to_udev_node("LABEL=applé/jack");
++        puts(n);
++        assert_se(streq(n, "/dev/disk/by-label/applé\\x2fjack"));
++        free(n);
++
++        n = fstab_node_to_udev_node("PARTLABEL=pinkié pie");
++        puts(n);
++        assert_se(streq(n, "/dev/disk/by-partlabel/pinkié\\x20pie"));
++        free(n);
++
++        n = fstab_node_to_udev_node("UUID=037b9d94-148e-4ee4-8d38-67bfe15bb535");
++        puts(n);
++        assert_se(streq(n, "/dev/disk/by-uuid/037b9d94-148e-4ee4-8d38-67bfe15bb535"));
++        free(n);
++
++        n = fstab_node_to_udev_node("PARTUUID=037b9d94-148e-4ee4-8d38-67bfe15bb535");
++        puts(n);
++        assert_se(streq(n, "/dev/disk/by-partuuid/037b9d94-148e-4ee4-8d38-67bfe15bb535"));
++        free(n);
++
++
++        n = fstab_node_to_udev_node("PONIES=awesome");
++        puts(n);
++        assert_se(streq(n, "PONIES=awesome"));
++        free(n);
++
++        n = fstab_node_to_udev_node("/dev/xda1");
++        puts(n);
++        assert_se(streq(n, "/dev/xda1"));
++        free(n);
++}
++
+ int main(int argc, char *argv[]) {
+         test_streq_ptr();
+         test_first_word();
+@@ -582,6 +617,7 @@ int main(int argc, char *argv[]) {
+         test_strrep();
+         test_parse_user_at_host();
+         test_split_pair();
++        test_fstab_node_to_udev_node();
+ 
+         return 0;
+ }
+-- 
+1.8.4
+

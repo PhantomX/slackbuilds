@@ -55,13 +55,16 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable pam support
+SB_PAM=${SB_PAM:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -132,6 +135,14 @@ sed -i.delay -e 's|60 \* 15|20|' driver/test-grab.c
 autoconf || exit 1
 autoheader || exit 1
 
+unset SB_PAMOPTS
+if [ "${SB_PAM}" = "YES" ] ;then
+  SB_PAMOPTS='--with-pam  --without-shadow --without-setuid-hacks --enable-pam-check-account-type'
+  mkdir -p ${PKG}/etc/pam.d
+else
+  SB_PAMOPTS='--with-shadow --without-pam'
+fi
+
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 xml_config=/usr/bin/xml-config xml2_config=/usr/bin/xml2-config \
@@ -144,9 +155,12 @@ xml_config=/usr/bin/xml-config xml2_config=/usr/bin/xml2-config \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --with-x-app-defaults=/etc/X11/app-defaults \
-  --with-shadow \
+  ${SB_PAMOPTS} \
   --with-jpeg \
   --with-gl \
+  --with-browser=xdg-open \
+  --without-kerberos \
+  --disable-root-passwd \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -i -j${NJOBS} || make -i || exit 1
@@ -158,6 +172,10 @@ mkdir -p ${PKG}/etc
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+if [ "${SB_PAM}" = "YES" ] ;then
+  mv ${PKG}/etc/pam.d/${NAME} ${PKG}/etc/pam.d/${NAME}.new || exit 1
+fi
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -192,6 +210,29 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -213,8 +254,8 @@ set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
-  /bin/chown root.shadow ./usr/bin/xscreensaver ;
-  /bin/chmod 2751 ./usr/bin/xscreensaver ;"
+  [ \"${SB_PAM}\" = \"YES\" ] || /bin/chown root.shadow ./usr/bin/xscreensaver ;
+  [ \"${SB_PAM}\" = \"YES\" ] || /bin/chmod 2751 ./usr/bin/xscreensaver ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

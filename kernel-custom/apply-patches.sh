@@ -226,14 +226,7 @@ ApplyPatch ansi_cprng-Fix-off-by-one-error-in-non-block-size-request.patch
 #rhbz 985522
 ApplyPatch ntp-Make-periodic-RTC-update-more-reliable.patch
 
-#rhbz 997705
-ApplyPatch rpc-clean-up-decoding-of-gssproxy-linux-creds.patch
-ApplyPatch rpc-comment-on-linux_cred-encoding-treat-all-as-unsigned.patch
-ApplyPatch rpc-fix-huge-kmallocs-in-gss-proxy.patch
-ApplyPatch rpc-let-xdr-layer-allocate-gssproxy-receieve-pages.patch
-
 #rhbz 1008323
-ApplyPatch 0001-skge-fix-broken-driver.patch
 ApplyPatch skge-fix-invalid-value-passed-to-pci_unmap_sigle.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>

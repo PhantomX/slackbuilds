@@ -46,10 +46,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-SOLID_UPNP.patch
 # return valid locale (RFC 1766)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
 
-# patch FindSamba.cmake to find samba4 libs (using pkg-config hints)
-# https://git.reviewboard.kde.org/r/106861/
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/FindSamba.cmake-help-find-samba4-more-reliably.patch
-
 # make filter working
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-kcm_ssl.patch
 
@@ -62,6 +58,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r3aa7abd1983813b916e281a0e5940b5dd6768a9e.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc0af4b9506e4bacd4e70342d5668ccb9c8a7203c.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578
@@ -70,9 +68,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-not-break.-copy-paste-error.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/coding-style-fixes.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-application-icons-properly.patch
-
-# https://bugs.kde.org/254198
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/Fix-the-synchronous-mode-wallet-open-logic.patch
 
 # Trunk patches
 

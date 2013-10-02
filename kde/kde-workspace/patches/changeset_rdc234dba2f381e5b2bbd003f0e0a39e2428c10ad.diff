@@ -1,0 +1,111 @@
+commit dc234dba2f381e5b2bbd003f0e0a39e2428c10ad
+Author: Eike Hein <hein@kde.org>
+Date:   Fri Sep 27 11:27:49 2013 +0200
+
+    Fix calculation for "group only when full".
+    
+    * Fixes potentially miscalculating the threshold with "Force
+      Rows" enabled.
+    * Fixes potentially being left with a stale threshold in the
+      group manager due to a race condition between reacting to
+      an applet geometry change and recalculating the threshold.
+    * The calculated threshold was generally off by one thanks to
+      misinterpreting the libtaskmanager API naming.
+    
+    BUG:325163
+
+diff --git a/plasma/desktop/applets/tasks/package/contents/code/layout.js b/plasma/desktop/applets/tasks/package/contents/code/layout.js
+index 7e1cd91..ca89a62 100644
+--- a/plasma/desktop/applets/tasks/package/contents/code/layout.js
++++ b/plasma/desktop/applets/tasks/package/contents/code/layout.js
+@@ -67,8 +67,8 @@ function full() {
+     return (maxStripes() == calculateStripes());
+ }
+ 
+-function optimumCapacity() {
+-    var length = tasks.vertical ? taskList.height : taskList.width;
++function optimumCapacity(width, height) {
++    var length = tasks.vertical ? height : width;
+     var maximum = tasks.vertical ? preferredMaxHeight() : preferredMaxWidth();
+ 
+     return Math.ceil(length / maximum) * maxStripes();
+diff --git a/plasma/desktop/applets/tasks/package/contents/ui/main.qml b/plasma/desktop/applets/tasks/package/contents/ui/main.qml
+index 97f6fbd..cbaecb2 100644
+--- a/plasma/desktop/applets/tasks/package/contents/ui/main.qml
++++ b/plasma/desktop/applets/tasks/package/contents/ui/main.qml
+@@ -45,7 +45,7 @@ Item {
+ 
+     property int activeWindowId: 0
+ 
+-    property int optimumCapacity: Layout.optimumCapacity()
++    property int optimumCapacity: Layout.optimumCapacity(width, height)
+ 
+     property int preferredWidth: taskList.width
+     property int preferredHeight: taskList.height
+diff --git a/plasma/desktop/applets/tasks/tasks.cpp b/plasma/desktop/applets/tasks/tasks.cpp
+index 63771cd..85090f2 100644
+--- a/plasma/desktop/applets/tasks/tasks.cpp
++++ b/plasma/desktop/applets/tasks/tasks.cpp
+@@ -124,6 +124,9 @@ void Tasks::init()
+     QDeclarativeProperty preferredHeight(m_declarativeWidget->rootObject(), "preferredHeight");
+     preferredHeight.connectNotifySignal(this, SLOT(changeSizeHint()));
+ 
++    QDeclarativeProperty optimumCapacity(m_declarativeWidget->rootObject(), "optimumCapacity");
++    optimumCapacity.connectNotifySignal(this, SLOT(optimumCapacityChanged()));
++
+     connect(m_declarativeWidget->rootObject(), SIGNAL(activateItem(int,bool)), this, SLOT(activateItem(int,bool)));
+     connect(m_declarativeWidget->rootObject(), SIGNAL(itemContextMenu(int)), this, SLOT(itemContextMenu(int)));
+     connect(m_declarativeWidget->rootObject(), SIGNAL(itemMove(int,int)), this, SLOT(itemMove(int,int)));
+@@ -139,7 +142,6 @@ void Tasks::init()
+ void Tasks::changeSizeHint()
+ {
+     emit sizeHintChanged(Qt::PreferredSize);
+-    adjustGroupingStrategy();
+ }
+ 
+ QSizeF Tasks::sizeHint(Qt::SizeHint which, const QSizeF &constraint) const
+@@ -170,16 +172,12 @@ void Tasks::constraintsEvent(Plasma::Constraints constraints)
+         m_declarativeWidget->rootObject()->setProperty("location", location());
+     }
+ 
+-    if (constraints & Plasma::SizeConstraint) {
+-        adjustGroupingStrategy();
+-    }
+-
+     setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding));
+ }
+ 
+-void Tasks::adjustGroupingStrategy()
++void Tasks::optimumCapacityChanged()
+ {
+-    m_groupManager->setFullLimit(m_declarativeWidget->rootObject()->property("optimumCapacity").toInt());
++    m_groupManager->setFullLimit(m_declarativeWidget->rootObject()->property("optimumCapacity").toInt() + 1);
+ }
+ 
+ void Tasks::activateItem(int id, bool toggle)
+@@ -415,7 +413,6 @@ void Tasks::configChanged()
+ 
+     const bool onlyGroupWhenFull = cg.readEntry("groupWhenFull", true);
+     if (onlyGroupWhenFull != m_groupManager->onlyGroupWhenFull()) {
+-        adjustGroupingStrategy();
+         m_groupManager->setOnlyGroupWhenFull(onlyGroupWhenFull);
+         changed = true;
+     }
+diff --git a/plasma/desktop/applets/tasks/tasks.h b/plasma/desktop/applets/tasks/tasks.h
+index 1d2e7a0..6746bd2 100644
+--- a/plasma/desktop/applets/tasks/tasks.h
++++ b/plasma/desktop/applets/tasks/tasks.h
+@@ -69,12 +69,11 @@ class Tasks : public Plasma::Applet
+         void handleActiveWindowChanged(WId activeWindow);
+ 
+         void changeSizeHint();
++        void optimumCapacityChanged();
+         void configAccepted();
+         void dialogGroupingChanged(int index);
+ 
+     private:
+-        void adjustGroupingStrategy();
+-
+         GroupManager *m_groupManager;
+         TaskManager::TasksModel *m_tasksModel;
+ 

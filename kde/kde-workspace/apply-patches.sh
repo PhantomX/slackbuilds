@@ -22,12 +22,13 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.90-battery-plasmo
 # default Leave submenu
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-classicmenu-logout.patch
 # kubuntu kudos! bulletproof-X bits ripped out
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.1-kdm_plymouth081.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-xsession_errors_O_APPEND.patch
 # support the widgetStyle4 hack in the Qt KDE platform plugin
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.3.98-platformplugin-widgetstyle4.patch
 # HALsectomy
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-no_HAL.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.5.90-no_HAL2.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.90-no_HAL2.patch
 
 # plasmaclock displayEvents=false default, one more item to avoid
 # starting akonadi by default
@@ -62,22 +63,17 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.2-BUILD_KCM_RANDR
 if [ "${SB_SYSTEMD}" = "YES" ] ;then
   # add support for automatic multi-seat provided by systemd using existing reserve seats in KDM
   # needs having ServerCmd=/usr/lib/systemd/systemd-multi-seat-x set in /etc/kde/kdm/kdmrc
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.90-kdm-logind-multiseat.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.1-kdm-logind-multiseat.patch
   # pam/systemd bogosity: kdm restart/shutdown does not work 
   # http://bugzilla.redhat.com/796969
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
 fi
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rfdc4aa9c298004ccd397fd2b451065d52cbf1ee0.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r9dba719eb2c8d563eb512bb05451f8939d5d0b4b.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re1a590badee13b862c5393f45ea59ecad98a7267.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rf71b702eb1fdcce7c934bdf96a71557977cb0128.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r8dcf62cdeb5ae73e5d60688295a868756a6416f4.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rfcd1ba1f551146233de23d3d1aa514f931c2010e.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re53b5ef25a6e38279f142502bf4653ee735b1934.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rb8de8c95b098205a55ee7eecbf2e64304b2664bb.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.2-usable-icons.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rdc234dba2f381e5b2bbd003f0e0a39e2428c10ad.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r99fa37f25cbb58dafc052185f56ffe9173254842.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r78055361d20ca94e6c59e032e3a6ade420affb91.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r4eb7f6ab362f4fff79f0c0e5b2147f2c5eb22687.diff
 
 ## plasma active patches
 

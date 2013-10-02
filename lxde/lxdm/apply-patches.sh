@@ -36,5 +36,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/lxdm-0.4.1-restart-xserver-on-
 
 # Distro artwork, start on vt1
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/lxdm-0.4.1-config.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/lxdm-0.4.1-pam.patch
 
 set +e +o pipefail

@@ -55,7 +55,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-4}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -70,10 +70,12 @@ SB_LIMITSMAX=${SB_LIMITSMAX:-400}
 SB_SHA512=${SB_SHA512:-YES}
 # Set to YES to enable redhat system user patch (useradd -r)
 SB_RH=${SB_RH:-NO}
-# Set to YES to use with util-linux-ng and coreutils with pam support.
-SB_PAM=${SB_PAM:-NO}
+# Set to YES to enable pam support
+SB_PAM=${SB_PAM:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+SB_PAMD_DIR=${CWD}/pamd
 
 SRCDIR=${NAME}-${VERSION}
 SRCARCHIVE=${SRCDIR}.tar.bz2
@@ -127,7 +129,7 @@ sed -i -e '/^GROUP=/s|=.*$|=100|g' etc/useradd || exit 1
 
 sed -i -e '/<stdio.h>/a#include <stdarg.h>' libmisc/copydir.c || exit 1
 
-if [ "${SB_LIMITS}" = "YES" ] ; then
+if [ "${SB_LIMITS}" = "YES" ] && [ "${SB_PAM}" != "YES" ] ; then
   echo >> etc/limits || exit 1
   echo '# Limit user process number to prevent shellbomb' >> etc/limits || exit 1
   echo "* U ${SB_LIMITSMAX}" >> etc/limits || exit 1
@@ -136,8 +138,15 @@ fi
 rm -f etc/login.defs
 cp -f ${CWD}/login.defs etc/login.defs || exit 1
 
-if [ "${SB_SHA512}" = "YES" ] ;then
+if [ "${SB_SHA512}" = "YES" ] || [ "${SB_PAM}" = "YES" ] ;then
   sed -i -e '/^ENCRYPT_METHOD /s|^.*$|ENCRYPT_METHOD SHA512|g' etc/login.defs || exit 1
+fi
+
+unset SB_PAMOPTS
+if [ "${SB_PAM}" = "YES" ] ;then
+  SB_PAMOPTS='--with-libcrack --with-libpam'
+else
+  SB_PAMOPTS='--without-libcrack --without-libpam'
 fi
 
 rm -f po/*.gmo
@@ -155,8 +164,8 @@ LDFLAGS="-pie -Wl,-z,relro -Wl,-z,now ${LDFLAGS}" \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-shared \
-  --without-libcrack \
-  --without-libpam \
+  --without-audit \
+  ${SB_PAMOPTS} \
   --with-group-name-max-length=32 \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
@@ -181,9 +190,14 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 chmod 0750 ${PKG}/usr/sbin/{user,group}*
 
 ( cd ${PKG}/etc || exit 1
-  for file in limits login.access login.defs default/useradd ; do
+  for file in login.defs default/useradd ; do
     mv ${file} ${file}.new || exit 1
   done
+  if [ "${SB_PAM}" != "YES" ] ;then
+    for file in limits login.access ; do
+      mv ${file} ${file}.new || exit 1
+    done
+  fi
 ) || exit 1
 
 chmod 0600 ${PKG}/etc/default/useradd*
@@ -198,21 +212,40 @@ for subdir in ${PKG}/usr/man/{??,??_??,??_??.*}/man* ; do
 done
 
 if [ "${SB_PAM}" = "YES" ] ; then
-  for bin in chfn chsh expiry groups login passwd su ;
-  do
-    rm -f ${PKG}/{usr/,}bin/${bin}
+  for pamd in login passwd remote su su-l; do
+     cp -f ${SB_PAMD_DIR}/${pamd}.pamd \
+      ${PKG}/etc/pam.d/${pamd} || exit 1
   done
-
-  for conf in login.access limits ;
-  do
-    rm -f ${PKG}/etc/${conf}*
+  for pamd in chfn chsh ; do
+    cp -f ${SB_PAMD_DIR}/chsh-chfn.pamd \
+      ${PKG}/etc/pam.d/${pamd} || exit 1
   done
-
-  for sbin in logoutd nologin chgpasswd ;
+  for opt in \
+    CHFN_AUTH \
+    CRACKLIB_DICTPATH \
+    ENV_HZ \
+    ENVIRON_FILE \
+    FAILLOG_ENAB \
+    FTMP_FILE \
+    LASTLOG_ENAB \
+    MAIL_CHECK_ENAB \
+    MOTD_FILE \
+    NOLOGINS_FILE \
+    OBSCURE_CHECKS_ENAB \
+    PASS_ALWAYS_WARN \
+    PASS_CHANGE_TRIES \
+    PASS_MIN_LEN \
+    PORTTIME_CHECKS_ENAB \
+    QUOTAS_ENAB \
+    SU_WHEEL_ONLY
   do
-    rm -f ${PKG}/{usr/,}sbin/${sbin}
+    sed -i -r -e "/^#?${opt}/s|^|#|g" ${PKG}/etc/login.defs.new || exit 1
   done
 fi
+
+for file in ${PKG}/etc/pam.d/* ;do
+  mv ${file} ${file}.new || exit 1
+done
 
 ( cd man || exit 1
   for file in shadowconfig.8 man8/sulogin.8 ; do
@@ -259,23 +292,6 @@ if [ -d ${PKG}/usr/man ]; then
   )
 fi
 
-if [ "${SB_PAM}" = "YES" ] ; then
-  for man1 in chfn chsh expiry groups login passwd su ;
-  do
-    rm -f ${PKG}/usr/man/{*/,}man1/${man1}.*
-  done
-
-  for man5 in limits login.access passwd porttime suauth ;
-  do
-    rm -f ${PKG}/usr/man/{*/,}man5/${man5}.*
-  done
-
-  for man8 in logoutd nologin chgpasswd getspnam ;
-  do
-    rm -f ${PKG}/usr/man/{*/,}man8/${man8}.*
-  done
-fi
-
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
@@ -307,7 +323,7 @@ config() {
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   find var/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
@@ -331,12 +347,14 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/patches
+  mkdir -p ${SBDIR}/{pamd,patches}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/apply-patches.sh ${CWD}/adduser ${CWD}/login.defs ${CWD}/shadowconfig.sh.gz \
     ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/pamd/*.pamd \
+                 ${SBDIR}/pamd/
   install -m0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
   rmdir ${SBDIR}/patches

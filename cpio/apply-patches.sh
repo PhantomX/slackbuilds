@@ -24,5 +24,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.11-stdio.in.patch
 # fix bad file name splitting while creating ustar archive (#866467)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.10-longnames-split.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio.32bit.crc.diff
+# Allow treat read() errors by changing type of input_size to signed integer.
+# ~> downstream
+# ~> http://lists.gnu.org/archive/html/bug-cpio/2013-09/msg00005.html
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.11-treat-read-errors.patch
 
 set +e +o pipefail

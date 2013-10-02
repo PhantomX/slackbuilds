@@ -1,0 +1,277 @@
+diff -up libsoup-2.42.2/libsoup/soup-client-input-stream.c.close-block libsoup-2.42.2/libsoup/soup-client-input-stream.c
+--- libsoup-2.42.2/libsoup/soup-client-input-stream.c.close-block	2013-09-29 10:50:32.321082627 -0400
++++ libsoup-2.42.2/libsoup/soup-client-input-stream.c	2013-09-29 10:50:38.224082947 -0400
+@@ -188,11 +188,13 @@ soup_client_input_stream_close_async (GI
+ 	task = g_task_new (stream, cancellable, callback, user_data);
+ 	g_task_set_priority (task, priority);
+ 
+-	source = soup_message_io_get_source (cistream->priv->msg,
+-					     cancellable, NULL, NULL);
+-					     
+-	g_task_attach_source (task, source, (GSourceFunc) close_async_ready);
+-	g_source_unref (source);
++	if (close_async_ready (cistream->priv->msg, task) == G_SOURCE_CONTINUE) {
++		source = soup_message_io_get_source (cistream->priv->msg,
++						     cancellable, NULL, NULL);
++
++		g_task_attach_source (task, source, (GSourceFunc) close_async_ready);
++		g_source_unref (source);
++	}
+ }
+ 
+ static gboolean
+diff -up libsoup-2.42.2/libsoup/soup-message-io.c.close-block libsoup-2.42.2/libsoup/soup-message-io.c
+--- libsoup-2.42.2/libsoup/soup-message-io.c.close-block	2013-09-29 10:50:32.323082627 -0400
++++ libsoup-2.42.2/libsoup/soup-message-io.c	2013-09-29 10:51:53.876087048 -0400
+@@ -971,8 +971,18 @@ soup_message_io_run_until_finish (SoupMe
+ 				  GCancellable  *cancellable,
+ 				  GError       **error)
+ {
++	SoupMessagePrivate *priv = SOUP_MESSAGE_GET_PRIVATE (msg);
++	SoupMessageIOData *io = priv->io_data;
++
+ 	g_object_ref (msg);
+ 
++	if (io) {
++		g_return_if_fail (io->mode == SOUP_MESSAGE_IO_CLIENT);
++
++		if (io->read_state < SOUP_MESSAGE_IO_STATE_BODY_DONE)
++			io->read_state = SOUP_MESSAGE_IO_STATE_BODY_DONE;
++	}
++
+ 	if (!io_run_until (msg,
+ 			   SOUP_MESSAGE_IO_STATE_DONE,
+ 			   SOUP_MESSAGE_IO_STATE_DONE,
+diff -up libsoup-2.42.2/tests/redirect-test.c.close-block libsoup-2.42.2/tests/redirect-test.c
+--- libsoup-2.42.2/tests/redirect-test.c.close-block	2013-09-29 10:50:32.326082627 -0400
++++ libsoup-2.42.2/tests/redirect-test.c	2013-09-29 10:50:38.225082947 -0400
+@@ -285,6 +285,14 @@ do_request_api_test (SoupSession *sessio
+ 		return;
+ 	}
+ 
++	soup_test_request_read_all (SOUP_REQUEST (reqh), stream, NULL, &error);
++	if (error) {
++		debug_printf (1, "    could not read from stream: %s\n",
++			      error->message);
++		g_error_free (error);
++		errors++;
++	}
++
+ 	soup_test_request_close_stream (SOUP_REQUEST (reqh), stream, NULL, &error);
+ 	if (error) {
+ 		debug_printf (1, "    could not close stream: %s\n",
+diff -up libsoup-2.42.2/tests/requester-test.c.close-block libsoup-2.42.2/tests/requester-test.c
+--- libsoup-2.42.2/tests/requester-test.c.close-block	2013-09-29 10:50:32.328082627 -0400
++++ libsoup-2.42.2/tests/requester-test.c	2013-09-29 10:50:38.225082947 -0400
+@@ -37,6 +37,23 @@ get_index (void)
+ 					 strlen (AUTH_HTML_BODY));
+ }
+ 
++static gboolean
++slow_finish_message (gpointer msg)
++{
++	SoupServer *server = g_object_get_data (G_OBJECT (msg), "server");
++
++	soup_server_unpause_message (server, msg);
++	return FALSE;
++}
++
++static void
++slow_pause_message (SoupMessage *msg, gpointer server)
++{
++	soup_server_pause_message (server, msg);
++	soup_add_timeout (soup_server_get_async_context (server),
++			  1000, slow_finish_message, msg);
++}
++
+ static void
+ server_callback (SoupServer *server, SoupMessage *msg,
+ 		 const char *path, GHashTable *query,
+@@ -70,6 +87,10 @@ server_callback (SoupServer *server, Sou
+ 	} else if (strcmp (path, "/non-persistent") == 0) {
+ 		soup_message_headers_append (msg->response_headers,
+ 					     "Connection", "close");
++	} else if (!strcmp (path, "/slow")) {
++		g_object_set_data (G_OBJECT (msg), "server", server);
++		g_signal_connect (msg, "wrote-headers",
++				  G_CALLBACK (slow_pause_message), server);
+ 	}
+ 
+ 	soup_message_set_status (msg, SOUP_STATUS_OK);
+@@ -670,6 +691,7 @@ do_null_char_request (SoupSession *sessi
+ 
+ 	if (error) {
+ 		debug_printf (1, "  could not send request: %s\n", error->message);
++		errors++;
+ 		g_error_free (error);
+ 		g_object_unref (request);
+ 		soup_uri_free (uri);
+@@ -720,8 +742,8 @@ do_null_char_test (gboolean plain_sessio
+ 	};
+ 	static int num_test_cases = G_N_ELEMENTS(test_cases);
+ 
+-	debug_printf (1, "Streaming data URLs containing null chars with %s\n",
+-		      plain_session ? "SoupSession" : "SoupSessionSync");
++	debug_printf (1, "\nStreaming data URLs containing null chars with %s\n",
++		      plain_session ? "SoupSession" : "SoupSessionAsync");
+ 
+ 	session = soup_test_session_new (plain_session ? SOUP_TYPE_SESSION : SOUP_TYPE_SESSION_ASYNC,
+ 					 SOUP_SESSION_USE_THREAD_CONTEXT, TRUE,
+@@ -734,6 +756,72 @@ do_null_char_test (gboolean plain_sessio
+ 	soup_test_session_abort_unref (session);
+ }
+ 
++static void
++do_close_test_for_session (SoupSession *session,
++			   SoupURI     *uri)
++{
++	GError *error = NULL;
++	GInputStream *stream;
++	SoupRequest *request;
++	guint64 start, end;
++
++	request = soup_session_request_uri (session, uri, NULL);
++	stream = soup_test_request_send (request, NULL, 0, &error);
++
++	if (error) {
++		debug_printf (1, "  could not send request: %s\n", error->message);
++		errors++;
++		g_error_free (error);
++		g_object_unref (request);
++		return;
++	}
++
++	start = g_get_monotonic_time ();
++	soup_test_request_close_stream (request, stream, NULL, &error);
++	if (error) {
++		debug_printf (1, "    could not close stream: %s\n", error->message);
++		errors++;
++		g_clear_error (&error);
++	}
++	end = g_get_monotonic_time ();
++
++	if (end - start > 500000) {
++		debug_printf (1, "    close() waited for response to complete!\n");
++		errors++;
++	}
++
++	g_object_unref (stream);
++	g_object_unref (request);
++}
++
++static void
++do_close_tests (const char *uri)
++{
++	SoupSession *session;
++	SoupURI *slow_uri;
++
++	debug_printf (1, "\nClosing stream before end should cancel\n");
++
++	slow_uri = soup_uri_new (uri);
++	soup_uri_set_path (slow_uri, "/slow");
++
++	debug_printf (1, "  async\n");
++	session = soup_test_session_new (SOUP_TYPE_SESSION_ASYNC,
++					 SOUP_SESSION_USE_THREAD_CONTEXT, TRUE,
++					 NULL);
++	do_close_test_for_session (session, slow_uri);
++	soup_test_session_abort_unref (session);
++
++	debug_printf (1, "  sync\n");
++	session = soup_test_session_new (SOUP_TYPE_SESSION_SYNC,
++					 SOUP_SESSION_USE_THREAD_CONTEXT, TRUE,
++					 NULL);
++	do_close_test_for_session (session, slow_uri);
++	soup_test_session_abort_unref (session);
++
++	soup_uri_free (slow_uri);
++}
++
+ int
+ main (int argc, char **argv)
+ {
+@@ -759,6 +847,8 @@ main (int argc, char **argv)
+ 	do_sync_test (uri, TRUE);
+ 	do_null_char_test (TRUE);
+ 
++	do_close_tests (uri);
++
+ 	g_free (uri);
+ 	soup_buffer_free (response);
+ 	soup_buffer_free (auth_response);
+diff -up libsoup-2.42.2/tests/test-utils.c.close-block libsoup-2.42.2/tests/test-utils.c
+--- libsoup-2.42.2/tests/test-utils.c.close-block	2013-09-29 10:50:32.331082627 -0400
++++ libsoup-2.42.2/tests/test-utils.c	2013-09-29 10:50:38.225082947 -0400
+@@ -489,6 +489,39 @@ soup_test_request_send (SoupRequest   *r
+ }
+ 
+ gboolean
++soup_test_request_read_all (SoupRequest   *req,
++			    GInputStream  *stream,
++			    GCancellable  *cancellable,
++			    GError       **error)
++{
++	char buf[8192];
++	AsyncAsSyncData data;
++	gsize nread;
++
++	if (!SOUP_IS_SESSION_SYNC (soup_request_get_session (req)))
++		data.loop = g_main_loop_new (g_main_context_get_thread_default (), FALSE);
++
++	do {
++		if (SOUP_IS_SESSION_SYNC (soup_request_get_session (req))) {
++			nread = g_input_stream_read (stream, buf, sizeof (buf),
++						     cancellable, error);
++		} else {
++			g_input_stream_read_async (stream, buf, sizeof (buf),
++						   G_PRIORITY_DEFAULT, cancellable,
++						   async_as_sync_callback, &data);
++			g_main_loop_run (data.loop);
++			nread = g_input_stream_read_finish (stream, data.result, error);
++			g_object_unref (data.result);
++		}
++	} while (nread > 0);
++
++	if (!SOUP_IS_SESSION_SYNC (soup_request_get_session (req)))
++		g_main_loop_unref (data.loop);
++
++	return nread == 0;
++}
++
++gboolean
+ soup_test_request_close_stream (SoupRequest   *req,
+ 				GInputStream  *stream,
+ 				GCancellable  *cancellable,
+diff -up libsoup-2.42.2/tests/test-utils.h.close-block libsoup-2.42.2/tests/test-utils.h
+--- libsoup-2.42.2/tests/test-utils.h.close-block	2013-09-29 10:50:32.333082627 -0400
++++ libsoup-2.42.2/tests/test-utils.h	2013-09-29 10:50:38.225082947 -0400
+@@ -43,6 +43,10 @@ GInputStream *soup_test_request_send
+ 					      GCancellable *cancellable,
+ 					      guint         flags,
+ 					      GError       **error);
++gboolean      soup_test_request_read_all     (SoupRequest   *req,
++					      GInputStream  *stream,
++					      GCancellable  *cancellable,
++					      GError       **error);
+ gboolean      soup_test_request_close_stream (SoupRequest   *req,
+ 					      GInputStream  *stream,
+ 					      GCancellable  *cancellable,
+diff -up libsoup-2.42.2/tests/timeout-test.c.close-block libsoup-2.42.2/tests/timeout-test.c
+--- libsoup-2.42.2/tests/timeout-test.c.close-block	2013-09-29 10:50:32.335082628 -0400
++++ libsoup-2.42.2/tests/timeout-test.c	2013-09-29 10:50:38.225082947 -0400
+@@ -145,6 +145,15 @@ do_request_to_session (SoupSession *sess
+ 	g_clear_error (&error);
+ 
+ 	if (stream) {
++		soup_test_request_read_all (req, stream, NULL, &error);
++		if (error) {
++			debug_printf (1, "      ERROR reading stream: %s\n",
++				      error->message);
++			errors++;
++		}
++	}
++
++	if (stream) {
+ 		soup_test_request_close_stream (req, stream, NULL, &error);
+ 
+ 		if (error) {

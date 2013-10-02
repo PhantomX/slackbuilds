@@ -20,6 +20,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-swap-create-.wants-symlin
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-udev-rules-avoid-erroring-on-trailing-whitespace.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-polkit-Avoid-race-condition-in-scraping-proc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Fix-buffer-overrun-when-enumerating-files.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-local-fix-memory-leak-when-putting-together-locale-s.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=NO

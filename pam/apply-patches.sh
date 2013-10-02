@@ -15,13 +15,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.3-nouserenv.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.3-console-abstract.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.3-faillock-screensaver.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.5-limits-user.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.6-audit-data.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.6-full-relro.patch
-# Upstreamed
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.6-install-empty.patch
-#
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.5-unix-build.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.6-autoupdate.patch
+# Upstreamed partially
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.7-unix-build.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.6-pwhistory-helper.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.6-use-links.patch
 
 
 set +e +o pipefail

@@ -1,0 +1,179 @@
+diff -up pam_ssh_agent_auth-0.9.3/iterate_ssh_agent_keys.c.psaa-build pam_ssh_agent_auth-0.9.3/iterate_ssh_agent_keys.c
+--- pam_ssh_agent_auth-0.9.3/iterate_ssh_agent_keys.c.psaa-build	2010-01-13 03:17:01.000000000 +0100
++++ pam_ssh_agent_auth-0.9.3/iterate_ssh_agent_keys.c	2012-06-21 20:14:56.432527764 +0200
+@@ -37,7 +37,16 @@
+ #include "buffer.h"
+ #include "key.h"
+ #include "authfd.h"
++#include "ssh.h"
+ #include <stdio.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <unistd.h>
++#include <stdlib.h>
++#include <errno.h>
++#include <fcntl.h>
+ #include <openssl/evp.h>
+ 
+ #include "userauth_pubkey_from_id.h"
+@@ -69,6 +78,96 @@ session_id2_gen()
+     return cookie;
+ }
+ 
++/* 
++ * Added by Jamie Beverly, ensure socket fd points to a socket owned by the user 
++ * A cursory check is done, but to avoid race conditions, it is necessary 
++ * to drop effective UID when connecting to the socket. 
++ *
++ * If the cause of error is EACCES, because we verified we would not have that 
++ * problem initially, we can safely assume that somebody is attempting to find a 
++ * race condition; so a more "direct" log message is generated.
++ */
++
++int
++ssh_get_authentication_socket_for_uid(uid_t uid)
++{
++	const char *authsocket;
++	int sock;
++	struct sockaddr_un sunaddr;
++	struct stat sock_st;
++
++	authsocket = getenv(SSH_AUTHSOCKET_ENV_NAME);
++	if (!authsocket)
++		return -1;
++
++	/* Advisory only; seteuid ensures no race condition; but will only log if we see EACCES */
++	if( stat(authsocket,&sock_st) == 0) {
++		if(uid != 0 && sock_st.st_uid != uid) {
++			fatal("uid %lu attempted to open an agent socket owned by uid %lu", (unsigned long) uid, (unsigned long) sock_st.st_uid);
++			return -1;
++		}
++	}
++
++	/* 
++	 * Ensures that the EACCES tested for below can _only_ happen if somebody 
++	 * is attempting to race the stat above to bypass authentication.
++	 */
++	if( (sock_st.st_mode & S_IWUSR) != S_IWUSR || (sock_st.st_mode & S_IRUSR) != S_IRUSR) {
++		error("ssh-agent socket has incorrect permissions for owner");
++		return -1;
++	}
++
++	sunaddr.sun_family = AF_UNIX;
++	strlcpy(sunaddr.sun_path, authsocket, sizeof(sunaddr.sun_path));
++
++	sock = socket(AF_UNIX, SOCK_STREAM, 0);
++	if (sock < 0)
++		return -1;
++
++	/* close on exec */
++	if (fcntl(sock, F_SETFD, 1) == -1) {
++		close(sock);
++		return -1;
++	}
++
++	errno = 0; 
++	seteuid(uid); /* To ensure a race condition is not used to circumvent the stat
++	             above, we will temporarily drop UID to the caller */
++	if (connect(sock, (struct sockaddr *)&sunaddr, sizeof sunaddr) < 0) {
++		close(sock);
++        if(errno == EACCES)
++		fatal("MAJOR SECURITY WARNING: uid %lu made a deliberate and malicious attempt to open an agent socket owned by another user", (unsigned long) uid);
++		return -1;
++	}
++
++	seteuid(0); /* we now continue the regularly scheduled programming */
++
++	return sock;
++}
++
++AuthenticationConnection *
++ssh_get_authentication_connection_for_uid(uid_t uid)
++{
++	AuthenticationConnection *auth;
++	int sock;
++
++	sock = ssh_get_authentication_socket_for_uid(uid);
++
++	/*
++	 * Fail if we couldn't obtain a connection.  This happens if we
++	 * exited due to a timeout.
++	 */
++	if (sock < 0)
++		return NULL;
++
++	auth = xmalloc(sizeof(*auth));
++	auth->fd = sock;
++	buffer_init(&auth->identities);
++	auth->howmany = 0;
++
++	return auth;
++}
++
+ int
+ find_authorized_keys(uid_t uid)
+ {
+@@ -81,7 +180,7 @@ find_authorized_keys(uid_t uid)
+     OpenSSL_add_all_digests();
+     session_id2 = session_id2_gen();
+ 
+-    if ((ac = ssh_get_authentication_connection(uid))) {
++    if ((ac = ssh_get_authentication_connection_for_uid(uid))) {
+         verbose("Contacted ssh-agent of user %s (%u)", getpwuid(uid)->pw_name, uid);
+         for (key = ssh_get_first_identity(ac, &comment, 2); key != NULL; key = ssh_get_next_identity(ac, &comment, 2)) 
+         {
+@@ -109,3 +208,4 @@ find_authorized_keys(uid_t uid)
+     EVP_cleanup();
+     return retval;
+ }
++
+diff -up pam_ssh_agent_auth-0.9.3/Makefile.in.psaa-build pam_ssh_agent_auth-0.9.3/Makefile.in
+--- pam_ssh_agent_auth-0.9.3/Makefile.in.psaa-build	2009-10-27 21:19:41.000000000 +0100
++++ pam_ssh_agent_auth-0.9.3/Makefile.in	2012-06-21 20:14:56.432527764 +0200
+@@ -28,7 +28,7 @@ PATHS=
+ CC=@CC@
+ LD=@LD@
+ CFLAGS=@CFLAGS@
+-CPPFLAGS=-I. -I$(srcdir) @CPPFLAGS@ $(PATHS) @DEFS@
++CPPFLAGS=-I.. -I$(srcdir) -I/usr/include/nss3 -I/usr/include/nspr4 @CPPFLAGS@ $(PATHS) @DEFS@
+ LIBS=@LIBS@
+ AR=@AR@
+ AWK=@AWK@
+@@ -37,7 +37,7 @@ INSTALL=@INSTALL@
+ PERL=@PERL@
+ SED=@SED@
+ ENT=@ENT@
+-LDFLAGS=-L. -Lopenbsd-compat/ @LDFLAGS@
++LDFLAGS=-L.. -L../openbsd-compat/ @LDFLAGS@
+ LDFLAGS_SHARED = @LDFLAGS_SHARED@
+ EXEEXT=@EXEEXT@
+ 
+@@ -48,7 +48,7 @@ PAM_MODULES=pam_ssh_agent_auth.so
+ 
+ SSHOBJS=xmalloc.o atomicio.o authfd.o bufaux.o bufbn.o buffer.o cleanup.o entropy.o fatal.o key.o log.o misc.o secure_filename.o ssh-dss.o ssh-rsa.o uuencode.o compat.o
+ 
+-PAM_SSH_AGENT_AUTH_OBJS=pam_user_key_allowed2.o iterate_ssh_agent_keys.o userauth_pubkey_from_id.o pam_user_authorized_keys.o
++PAM_SSH_AGENT_AUTH_OBJS=pam_user_key_allowed2.o iterate_ssh_agent_keys.o userauth_pubkey_from_id.o pam_user_authorized_keys.o secure_filename.o
+ 
+ 
+ MANPAGES_IN	= pam_ssh_agent_auth.pod
+@@ -67,13 +67,13 @@ $(PAM_MODULES): Makefile.in config.h
+ .c.o:
+ 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $<
+ 
+-LIBCOMPAT=openbsd-compat/libopenbsd-compat.a
++LIBCOMPAT=../openbsd-compat/libopenbsd-compat.a
+ $(LIBCOMPAT): always
+ 	(cd openbsd-compat && $(MAKE))
+ always:
+ 
+-pam_ssh_agent_auth.so: $(LIBCOMPAT) $(SSHOBJS) $(PAM_SSH_AGENT_AUTH_OBJS)  pam_ssh_agent_auth.o
+-	$(LD) $(LDFLAGS_SHARED) -o $@ $(SSHOBJS) $(PAM_SSH_AGENT_AUTH_OBJS) $(LDFLAGS) -lopenbsd-compat $(LIBS) -lpam pam_ssh_agent_auth.o
++pam_ssh_agent_auth.so: $(PAM_SSH_AGENT_AUTH_OBJS)  pam_ssh_agent_auth.o
++	$(LD) $(LDFLAGS_SHARED) -o $@ $(PAM_SSH_AGENT_AUTH_OBJS) $(LDFLAGS) -lssh -lopenbsd-compat $(LIBS) -lpam -lnss3 pam_ssh_agent_auth.o
+ 
+ $(MANPAGES): $(MANPAGES_IN)
+ 	pod2man --section=8 --release=v0.8 --name=pam_ssh_agent_auth --official --center "PAM" pam_ssh_agent_auth.pod > pam_ssh_agent_auth.8
+diff -up pam_ssh_agent_auth-0.9.3/pam_user_authorized_keys.c.psaa-build pam_ssh_agent_auth-0.9.3/pam_user_authorized_keys.c

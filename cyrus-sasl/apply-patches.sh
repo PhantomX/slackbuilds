@@ -19,6 +19,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.26-release-serv
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.26-obsolete-macro.patch
 # missing size_t declaration in sasl.h
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.26-size_t.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.26-md5global.patch
 
 ### Gentoo
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cyrus-sasl-2.1.25-sasldb_al.patch

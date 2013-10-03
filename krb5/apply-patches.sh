@@ -17,7 +17,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.10-kpasswd_tcp.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-pam.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-selinux-label.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-dirsrv-accountlock.patch
-#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-pkinit-debug.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.9-debuginfo.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-kvno-230379.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-alpha1-init.patch
@@ -31,6 +30,17 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-test_gss_no_udp.pa
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-test_no_pmap.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-init_referral.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11.3-skew3.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-gss-methods1.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-gss-methods2.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-kpasswdtest.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-check_transited.patch
+
+# Patches for otp plugin backport
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11.2-keycheck.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11.2-otp.patch
+
+# Patches for kernel-persistent-keyring support (backport)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/persistent_keyring.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

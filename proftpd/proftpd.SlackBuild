@@ -41,9 +41,11 @@ if [ ! -d ${TMP} ]; then
 fi
 
 NAME=proftpd
+VRNAME=mod_vroot
 PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-1.3.4d}
+VRVER=${VRVER:-0.9.3}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -55,7 +57,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -63,21 +65,28 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to enable pam support
+SB_PAM=${SB_PAM:-YES}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
+VRSRCDIR=${VRNAME}
 SRCARCHIVE=${SRCDIR}.tar.gz
 SSRCARCHIVE=${SRCARCHIVE}.asc
+VRSRCARCHIVE=${VRSRCDIR}-${VRVER}.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="ftp://ftp.proftpd.org/distrib/source"
+VRDL_URL="https://github.com/Castaglia/proftpd-mod_vroot/archive/${VRSRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
 for file in ${SRCARCHIVE} ${SSRCARCHIVE} ;do
   test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
 done
+test -r ${CWD}/${VRSRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${VRDL_URL} || exit 1
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -109,43 +118,111 @@ cd ${TMP}
 rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
+( mkdir ${VRSRCDIR}
+  cd ${VRSRCDIR} || exit 1
+  tar -xvf ${CWD}/${VRSRCARCHIVE} --strip-components=1 || exit 1
+) || exit $?
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
+install -pm0644 ${CWD}/proftpd.conf .
 
-sed -i -e 's|@INSTALL_STRIP@||g' Make.rules.in
+# Copy mod_vroot source, documentation and tests into place
+cp -p mod_vroot/mod_vroot.c contrib/
+cp -p mod_vroot/mod_vroot.html doc/contrib/
+cp -p mod_vroot/t/lib/ProFTPD/Tests/Modules/mod_vroot.pm \
+  tests/t/lib/ProFTPD/Tests/Modules/
+cp -p mod_vroot/t/modules/mod_vroot.t tests/t/modules/
+
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh || exit 1
+fi
+
+sed -i -e 's|sysconfig|default|g' contrib/dist/rpm/${NAME}.service || exit 1
+
+unset SB_PAMOPTS SB_PAMMOD
+if [ "${SB_PAM}" = "YES" ] ;then
+  SB_PAMOPTS='--enable-auth-pam'
+  SB_PAMMOD=':mod_auth_pam'
+  SB_PAMMODS=':mod_sftp_pam'
+else
+  SB_PAMOPTS='--disable-auth-pam'
+fi
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --libexecdir=/usr/lib${LIBDIRSUFFIX}/${NAME} \
   --sysconfdir=/etc \
   --localstatedir=/var/lib \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
-  --enable-autoshadow \
+  --disable-strip \
+  --enable-dso \
+  --enable-shadow \
   --enable-ctrls \
+  --enable-facl \
   --enable-ipv6 \
-  --localstatedir=/var/run \
-  --with-modules=mod_readme:mod_ratio:mod_tls:mod_wrap:mod_ctrls_admin \
+  --enable-nls \
+  --enable-openssl \
+  --localstatedir=/var/run/${NAME} \
+  --with-modules=mod_readme:mod_ratio:mod_tls:mod_wrap:mod_ctrls_admin${SB_PAMMOD} \
+  --with-shared=mod_vroot:mod_sftp${SB_PAMMODS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
 
 make -j${NJOBS} || make || exit $?
 make install DESTDIR=${PKG} INSTALL_USER=$(id -un) INSTALL_GROUP=$(id -gn) || exit $?
 
+rm -f ${PKG}/usr/lib*/${NAME}/*.{la,a}
+
 rm -rf ${PKG}/usr/include
 rm -f ${PKG}/etc/*
 rmdir -p ${PKG}/usr/libexec 2> /dev/null
 
-install -pm0644 ${CWD}/proftpd.conf ${PKG}/etc/proftpd.conf.new || exit 1
+install -pm0644 ./proftpd.conf ${PKG}/etc/proftpd.conf.new || exit 1
 install -pm0644 ${CWD}/ftpusers ${PKG}/etc/ftpusers.new || exit 1
 mkdir -p ${PKG}/home/ftp
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+mkdir -p ${PKG}/var/run/${NAME}
+
+mkdir -p ${PKG}/etc/logrotate.d
+sed -e '/killall/s/test.*/systemctl reload proftpd.service/' \
+  contrib/dist/rpm/${NAME}.logrotate > ${PKG}/etc/logrotate.d/${NAME}.new || exit 1
+
+mkdir -p ${PKG}/lib/systemd/system
+install -pm0644 contrib/dist/rpm/${NAME}.service \
+  ${PKG}/lib/systemd/system/${NAME}.service || exit 1
+
+mkdir -p ${PKG}/usr/lib/tmpfiles.d
+install -pm0644 contrib/dist/rpm/${NAME}-tmpfs.conf \
+  ${PKG}/usr/lib/tmpfiles.d/${NAME}.conf || exit 1
+
+mkdir -p ${PKG}/etc/default
+cat >  ${PKG}/etc/default/${NAME}.new <<'EOF'
+# Set PROFTPD_OPTIONS to add command-line options for proftpd.
+# See proftpd(8) for a comprehensive list of what can be used.
+#
+# The following "Defines" can be used with the default configuration file:
+# -DANONYMOUS_FTP	: Enable anonymous FTP
+# -DDYNAMIC_BAN_LISTS	: Enable dynamic ban lists (mod_ban)
+# -DQOS			: Enable QoS bits on server traffic (mod_qos)
+# -DTLS			: Enable TLS (mod_tls)
+#
+# For example, for anonymous FTP and dynamic ban list support:
+# PROFTPD_OPTIONS="-DANONYMOUS_FTP -DDYNAMIC_BAN_LISTS"
+PROFTPD_OPTIONS=""
+EOF
+
+if [ "${SB_PAM}" = "YES" ] ;then
+  mkdir -p ${PKG}/etc/pam.d
+  install -pm0644 contrib/dist/rpm/${NAME}.pam ${PKG}/etc/pam.d/${NAME}.new || exit 1
+fi
 
 find doc -name "*.sgml" -exec rm -f {} ';'
 find doc -name "*.pdf" -exec rm -f {} ';'
@@ -186,7 +263,6 @@ cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
 # Figure out our root directory
 ROOTDIR=\$(pwd)
 unset CHROOT
@@ -213,20 +289,29 @@ config() {
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
+fi
+EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/proftpd.conf ${CWD}/etc/ftpusers ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/proftpd.conf ${CWD}/etc/ftpusers ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
@@ -236,7 +321,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

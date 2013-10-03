@@ -27,6 +27,7 @@ ApplyPatch() {
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ApplyPatch cups-no-gzip-man.patch
+[ "${SB_PAM}" = "YES" ] && ApplyPatch cups-system-auth.patch
 ApplyPatch cups-multilib.patch
 ApplyPatch cups-dbus-utf8.patch
 ApplyPatch cups-banners-slk.patch
@@ -41,7 +42,6 @@ ApplyPatch cups-driverd-timeout.patch
 ApplyPatch cups-strict-ppd-line-length.patch
 ApplyPatch cups-logrotate.patch
 ApplyPatch cups-usb-paperout.patch
-#ApplyPatch cups-build.patch
 ApplyPatch cups-res_init.patch
 ApplyPatch cups-filter-debug.patch
 ApplyPatch cups-uri-compat.patch
@@ -50,10 +50,21 @@ ApplyPatch cups-0755.patch
 ApplyPatch cups-hp-deviceid-oid.patch
 ApplyPatch cups-dnssd-deviceid.patch
 ApplyPatch cups-ricoh-deviceid-oid.patch
-
 ApplyPatch cups-systemd-socket.patch
-
 ApplyPatch cups-lpd-manpage.patch
+ApplyPatch cups-avahi-address.patch
+ApplyPatch cups-usblp-quirks.patch
+ApplyPatch cups-enum-all.patch
+ApplyPatch cups-stringpool-setprinterattr.patch
+ApplyPatch cups-dymo-deviceid.patch
+ApplyPatch cups-use-ipp1.1.patch
+ApplyPatch cups-no-gcry.patch
+ApplyPatch cups-avahi-no-threaded.patch
+ApplyPatch cups-gz-crc.patch
+ApplyPatch cups-ipp-multifile.patch
+ApplyPatch cups-full-relro.patch
+ApplyPatch cups-web-devices-timeout.patch
+ApplyPatch cups-final-content-type.patch
 
 ## SECURITY PATCHES:
 

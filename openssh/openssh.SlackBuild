@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ openssh.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008-2012 Phantom X, Goiania, Brazil.
+# Copyright 2008-2013 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -41,9 +41,11 @@ if [ ! -d ${TMP} ]; then
 fi
 
 NAME=openssh
+ANAME=pam_ssh_agent_auth
 PKG=${PKG:-${TMP}/package-${NAME}}
 
 VERSION=${VERSION:-6.2p2}
+AVER=${AVER:-0.9.3}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -56,7 +58,7 @@ else
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
 SLKDIST=${SLKDIST:-Slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -64,23 +66,35 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to enable pam support
+SB_PAM=${SB_PAM:-YES}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
+
+SB_PAMD_DIR=${CWD}/pamd
 
 grep --quiet '^ssh_keys:' /etc/group && SB_HGROUP=1
 
 SRCDIR=${NAME}-${VERSION}
+ASRCDIR=${ANAME}-${AVER}
 SRCARCHIVE=${SRCDIR}.tar.gz
 SSRCARCHIVE=${SRCARCHIVE}.asc
+ASRCARCHIVE=${ASRCDIR}.tar.bz2
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="ftp://ftp.openbsd.org/pub/OpenBSD/OpenSSH/portable"
+SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
+ADL_URL="${SF_MIRROR}/pamsshagentauth/${ASRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
 for file in ${SRCARCHIVE} ${SSRCARCHIVE} ;do
   test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
 done
+if [ "${SB_PAM}" = "YES" ] ;then
+  test -r ${CWD}/${ASRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${ADL_URL} || exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -112,6 +126,9 @@ cd ${TMP}
 rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
+if [ "${SB_PAM}" = "YES" ] ;then
+  tar -xvf ${CWD}/${ASRCARCHIVE} || exit 1
+fi
 
 chmod -R u+w,go+r-w,a-s .
 
@@ -122,20 +139,46 @@ fi
 sed -i -e "s|${withval}/lib\"|${withval}/lib${LIBDIRSUFFIX}\"|g" configure.ac || exit 1
 
 autoreconf -ivf || exit 1
+if [ "${SB_PAM}" = "YES" ] ;then
+  ( cd ${ASRCDIR} && autoreconf -ivf ) || exit 1
+fi
 
-CFLAGS="${SLKCFLAGS} -fpic" \
-CXXFLAGS="${SLKCFLAGS} -fpic" \
-LDFLAGS="${LDFLAGS} -pie -z relro -z now" \
+unset SB_PAMOPTS
+if [ "${SB_PAM}" = "YES" ] ;then
+  SB_PAMOPTS='--with-pam'
+else
+  SB_PAMOPTS='--without-pam'
+fi
+
+case "${ARCH}" in
+  s390)
+    PICFLAG="-fpic"
+    ;;
+  *)
+    PICFLAG="-fpic"
+    ;;
+esac
+export CFLAGS="${SLKCFLAGS} ${PICFLAG} -fvisibility=hidden"
+SAVE_LDFLAGS="${LDFLAGS}"
+export LDFLAGS="${SAVE_LDFLAGS} -pie -z relro -z now"
+
+
+SB_CONFIGURE() {
 ./configure \
-  --prefix=/usr \
-  --libdir=/usr/lib${LIBDIRSUFFIX} \
+    --prefix=/usr \
+    --libdir=/usr/lib${LIBDIRSUFFIX} \
+    --localstatedir=/var \
+    --infodir=/usr/info \
+    --mandir=/usr/man \
+    --docdir=/usr/doc/${NAME}-${VERSION} \
+    --disable-silent-rules \
+    --build=${SLKTARGET}-${SLKDTARGET}-linux "$@"
+}
+
+SB_CONFIGURE \
   --sysconfdir=/etc/ssh \
-  --localstatedir=/var \
-  --infodir=/usr/info \
-  --mandir=/usr/man \
-  --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-strip \
-  --without-pam \
+  ${SB_PAMOPTS} \
   --without-kerberos5 \
   --with-md5-passwords \
   --with-tcp-wrappers \
@@ -144,12 +187,32 @@ LDFLAGS="${LDFLAGS} -pie -z relro -z now" \
   --with-privsep-path=/var/empty \
   --with-privsep-user=sshd \
   --with-ldap=/usr \
+  --with-sandbox=rlimit \
   --with-authorized-keys-command \
   --enable-vendor-patchlevel="${SLKDIST}-${VERSION}-${BUILD}" \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
+  || exit $?
+
+if [ "${SB_PAM}" = "YES" ] ;then
+( cd ${ASRCDIR}
+  export LDFLAGS="${SAVE_LDFLAGS}"
+
+  SB_CONFIGURE \
+    --sysconfdir=/etc \
+    --libexecdir=/lib${LIBDIRSUFFIX}/security \
+    --with-mantype=man
+) || exit $?
+fi
 
 make -j${NJOBS} || make || exit $?
 make install DESTDIR=${PKG} || exit $?
+
+if [ "${SB_PAM}" = "YES" ] ;then
+( cd ${ASRCDIR}
+  unset LDFLAGS
+  make -j${NJOBS} || make || exit $?
+  make install DESTDIR=${PKG}
+) || exit $?
+fi
 
 rm -f ${PKG}/etc/ssh/ldap.conf
 
@@ -201,6 +264,13 @@ SSH_USE_STRONG_RNG=0
 # Daemon options
 # OPTIONS=
 EOF
+
+if [ "${SB_PAM}" = "YES" ] ;then
+  mkdir -p ${PKG}/etc/pam.d
+  for file in ssh-keycat sshd ;do
+    install -pm0644 ${SB_PAMD_DIR}/${file}.pam ${PKG}/etc/pam.d/${file}.new || exit 1
+  done
+fi
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -287,7 +357,7 @@ fi
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
@@ -324,11 +394,13 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/{patches,systemd}
+  mkdir -p ${SBDIR}/{pamd,patches,systemd}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/apply-patches.sh ${CWD}/rc.sshd ${CWD}/sshd-keygen ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
+  install -m0644 ${SB_PAMD_DIR}/*.pam \
+    ${SBDIR}/pamd/
   install -m0644 ${CWD}/systemd/*.* \
     ${SBDIR}/systemd/
   install -m0644 ${CWD}/patches/*.* \

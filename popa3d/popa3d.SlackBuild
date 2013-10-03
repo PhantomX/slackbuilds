@@ -55,13 +55,16 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-3}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+
+# Set to YES to enable pam support
+SB_PAM=${SB_PAM:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -112,8 +115,17 @@ chmod -R u+w,go+r-w,a-s .
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
-exit 20
+
 sed -i -e 's|CFLAGS =|CFLAGS ?=|g;s|LDFLAGS = -s|LDFLAGS ?=|g' Makefile || exit 1
+
+if [ "${SB_PAM}" = "YES" ] ;then
+  sed -i -e '/-lpam/s|^#LIBS|LIBS|g' Makefile || exit 1
+
+  sed -i \
+    -e "s:^\(#define AUTH_SHADOW\)[[:blank:]].*$:\1 0:" \
+    -e "s:^\(#define AUTH_PAM\)[[:blank:]].*$:\1 1:" \
+    params.h || exit 1
+fi
 
 export CFLAGS="${SLKCFLAGS}"
 
@@ -128,6 +140,11 @@ install -pm0644 popa3d.8 ${PKG}/usr/man/man8/ || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+if [ "${SB_PAM}" = "YES" ] ;then
+  mkdir -p ${PKG}/etc/pam.d
+  install -pm0644 ${CWD}/popa3d.pam ${PKG}/etc/pam.d/popa3d.new || exit 1
+fi
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -173,6 +190,28 @@ if ! grep -q "^pop:" etc/group ; then
 fi
 EOF
 
+cat >> ${PKG}/install/doinst.sh <<EOF
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
@@ -180,11 +219,11 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/*.pam ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
   rmdir ${SBDIR}/patches
 fi
 

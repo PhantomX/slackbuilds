@@ -190,8 +190,6 @@ ApplyOptionalPatch drivers-media-update.patch
 ApplyPatch fs-proc-devtree-remove_proc_entry.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
-ApplyPatch efi-dont-map-boot-services-on-32bit.patch
-
 ApplyPatch lis3-improve-handling-of-null-rate.patch
 
 # Disable watchdog on virtual machines.
@@ -228,6 +226,13 @@ ApplyPatch ntp-Make-periodic-RTC-update-more-reliable.patch
 
 #rhbz 1008323
 ApplyPatch skge-fix-invalid-value-passed-to-pci_unmap_sigle.patch
+
+#rhbz 902012
+ApplyPatch elevator-Fix-a-race-in-elevator-switching-and-md.patch
+ApplyPatch elevator-acquire-q-sysfs_lock-in-elevator_change.patch
+
+#rhbz 1005567
+ApplyPatch bonding-driver-promisc.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

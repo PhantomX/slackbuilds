@@ -37,7 +37,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.2-gpxe-cid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-dhclient-decline-onetry.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.3-P2-log_perror.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-getifaddrs.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-send_release.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-omapi-leak.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-rfc5970-dhcpv6-options-for-network-boot.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-failOverPeer.patch 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P1-interval.patch 
@@ -45,6 +45,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P2-conflex-do-forwa
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.4-P2-dupl-key.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-range6.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-4.2.5-next-server.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-bindtodevice-inet6.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-no-subnet-error2info.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

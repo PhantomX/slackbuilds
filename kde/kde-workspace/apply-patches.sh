@@ -69,6 +69,11 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
 fi
 
+### ROSA
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.4-fontconfig.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-config.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-locale.patch
+
 ## upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rdc234dba2f381e5b2bbd003f0e0a39e2428c10ad.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r99fa37f25cbb58dafc052185f56ffe9173254842.diff

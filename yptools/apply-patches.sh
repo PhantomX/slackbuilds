@@ -4,6 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+### Slackware
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/yp-tools-2.14-glibc217-crypt.diff
 
 ( cd ${YPBSRCDIR}
   zcat ${SB_PATCHDIR}/ypbind-1.11-gettextdomain.patch.gz | patch -p1 -E --backup --verbose

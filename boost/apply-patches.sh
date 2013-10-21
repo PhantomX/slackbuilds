@@ -89,6 +89,18 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-python-unused_typ
 # https://svn.boost.org/trac/boost/ticket/8941
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-lexical_cast-int128.patch
 
+# https://svn.boost.org/trac/boost/ticket/9038
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-pool-test_linking.patch
+
+# https://svn.boost.org/trac/boost/ticket/9037
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-thread-cond_variable_shadow.patch
+
+# This was already fixed upstream, so no tracking bug.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-pool-max_chunks_shadow.patch
+
+# https://svn.boost.org/trac/boost/ticket/9041
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-thread-link_atomic.patch
+
 # Gentoo
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.51.0-respect_python-buildid.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.51.0-support_dots_in_python-buildid.patch

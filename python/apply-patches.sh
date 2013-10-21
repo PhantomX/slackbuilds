@@ -8,10 +8,13 @@ zcat ${SB_PATCHDIR}/${NAME}.readline.set_pre_input_hook.diff.gz | patch -p1 --ve
 
 # From Gentoo
 for patches in \
-  05_all_Non_zero_exit_status_on_extension_build_failure.patch \
-  07_all_C___compilation_for_distutils.patch \
+  04_all_non-zero_exit_status_on_failure.patch \
+  05_all_loadable_sqlite_extensions.patch \
+  06_all_regenerate_platform-specific_modules.patch \
+  21_all_distutils_c++.patch \
+  62_all_xml.use_pyxml.patch \
   ;do
-  patch -p1 --backup --verbose -i ${PVER}/${patches}
+  patch -p0 --backup --verbose -i ${PVER}/${patches}
 done
 
 if [ "${ARCH}" = "x86_64" ]; then
@@ -63,6 +66,12 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00156-gdb-autoload-safepath.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00166-fix-fake-repr-in-gdb-hooks.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00169-avoid-implicit-usage-of-md5-in-multiprocessing.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00184-ctypes-should-build-with-libffi-multilib-wrapper.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00185-urllib2-honors-noproxy-for-ftp.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00186-memory-leak-marshalc.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00187-add-RPATH-to-pyexpat.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00188-CVE-2013-4238-hostname-check-bypass-in-SSL-module.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00189-gdb-py-bt-dont-raise-exception-from-eval.patch
 
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
 

@@ -10,7 +10,7 @@ patch -p1 -E --backup -z .libform --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.10-lib
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.7-FindBLAS.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.7-FindLAPACK.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.8-FindPkgConfig.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.10.2-qt5.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.12-qt5.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.8.0-kde3-include.patch.gz | patch -p0 -E --backup --verbose
 # Patch to find DCMTK in Fedora (bug #720140)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dcmtk.patch
@@ -22,17 +22,16 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-findruby.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=828467
 # http://public.kitware.com/Bug/view.php?id=13378
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindPostgreSQL.patch
-# Patch FindImageMagick.cmake for newer ImageMagick versions
-# http://public.kitware.com/Bug/view.php?id=14012
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-2.8.11-rc1-IM_pkgconfig_hints.patch
+# Fix issue with finding consistent python versions
+# http://public.kitware.com/Bug/view.php?id=13794
+# https://bugzilla.redhat.com/show_bug.cgi?id=876118
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindPythonLibs.patch
 # Add FindLua52.cmake
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-2.8.11-rc4-lua-5.2.patch
+# Add -fno-strict-aliasing when compiling cm_sha2.c
+# http://www.cmake.org/Bug/view.php?id=14314
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-strict_aliasing.patch
 
-
-# Patch to fix ccmake DEL issue
-# https://bugzilla.redhat.com/show_bug.cgi?id=869769
-# http://public.kitware.com/Bug/view.php?id=13604
-#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-ccmake-del-in-first-column.patch
-#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindImageMagick.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-dont-add-invalid-content-to-static-lib.patch
 
 set +e +o pipefail

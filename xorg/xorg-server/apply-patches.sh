@@ -28,7 +28,7 @@ ApplyPatch() {
 # patch -p0 --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ApplyPatch x11.startwithblackscreen.diff
 
-# Patches from Fedora
+### Fedora
 
 # This really could be done prettier.
 ApplyPatch xserver-1.4.99-ssh-isnt-local.patch
@@ -66,6 +66,20 @@ ApplyPatch 0001-ephyr-Add-resizeable-option.patch
 ApplyPatch 0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
 
 ApplyPatch xserver-force-hal-disable.patch
+
+### Arch
+# Use nouveau/nv/nvidia drivers for nvidia devices
+ApplyPatch autoconfig-nvidia.patch
+
+# Add GLX support for Xephyr - https://bugs.freedesktop.org/show_bug.cgi?id=62346
+ApplyPatch xephyr-glx.patch
+
+# http://cgit.freedesktop.org/xorg/xserver/commit/fb/wfbrename.h?id=5047810a4c20fab444b8c6eb146c55dcdb0d4219
+ApplyPatch fb-rename-wfbDestroyGlyphCache.patch
+
+# CVE-2013-4396: Use after free in Xserver handling of ImageText requests
+# (to be included in xorg-server 1.15.0 and 1.14.4)
+ApplyPatch 0001-Avoid-use-after-free-in-dix-dixfonts.c-doImageText-C.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

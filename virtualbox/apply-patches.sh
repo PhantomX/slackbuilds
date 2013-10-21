@@ -5,8 +5,9 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # VBOX_WITH_UPDATE to enable/disable update dialog
-patch -p1 -E --backup -z .noup --verbose -i ${SB_PATCHDIR}/${NAME}-4.2.0-noupdate.patch
+patch -p1 -E --backup -z .noup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.0-noupdate.patch
 patch -p1 -E --backup -z .nodkms --verbose -i ${SB_PATCHDIR}/${NAME}-4.2.0-nodkms.patch
+patch -p1 -E --backup -z .dso --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.0-dso.patch
 
 ## from Gentoo
 # unset useless/problematic mesa checks in configure
@@ -31,10 +32,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.0-user-courier-ins
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.0-dont-check-for-mkisofs-or-makeself.patch
 # Set linux 2.6 as default on new machines selector
 patch -p1 -E --backup -z .defsys --verbose -i ${SB_PATCHDIR}/${NAME}-default-to-linux26.patch
+# (tmb) fix build with gsoap >= 2.8.13
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-fix-build-with-gsoap-2.8.13-and-up.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-strings.patch
-patch -p1 -E --backup -z .libcxx --verbose -i ${SB_PATCHDIR}/${PNAME}-4.2.0-libcxx.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-3.2.10-noansi.patch
+patch -p1 -E --backup -z .libcxx --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-libcxx.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-noansi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.1.2-testmangle.patch
 
 set +e +o pipefail

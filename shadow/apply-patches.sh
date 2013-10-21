@@ -4,8 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-## Slackare
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.crypt.glibc217.v2.diff
+## Slackware
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.glibc217-crypt.diff
 ## Fedora
 zcat ${SB_PATCHDIR}/${NAME}-shadowconfig-man.patch.gz | patch -p1 --verbose --backup
 if [ "${SB_RH}" = "YES" ]; then

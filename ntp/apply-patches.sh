@@ -42,6 +42,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p3-broadcastdelay.pat
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-delaycalib.patch
 # ntpbz #2019
 [ "${SB_AUTOGEN}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-pwcipher.patch
+# ntpbz #2320
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-noservres.patch
 
 ( cd ntpstat-${NSVER}
   # handle unknown clock types

@@ -209,30 +209,33 @@ ApplyPatch criu-no-expert.patch
 #rhbz 927469
 ApplyPatch fix-child-thread-introspection.patch
 
-#CVE-2013-2147 rhbz 971242 971249
-ApplyPatch cve-2013-2147-ciss-info-leak.patch
-
-#CVE-2013-4343 rhbz 1007733 1007741
-ApplyPatch tuntap-correctly-handle-error-in-tun_set_iff.patch
-
-#CVE-2013-4350 rhbz 1007872 1007903
-ApplyPatch net-sctp-fix-ipv6-ipsec-encryption-bug-in-sctp_v6_xmit.patch
-
 #CVE-2013-4345 rhbz 1007690 1009136
 ApplyPatch ansi_cprng-Fix-off-by-one-error-in-non-block-size-request.patch
 
 #rhbz 985522
 ApplyPatch ntp-Make-periodic-RTC-update-more-reliable.patch
 
-#rhbz 1008323
-ApplyPatch skge-fix-invalid-value-passed-to-pci_unmap_sigle.patch
-
 #rhbz 902012
 ApplyPatch elevator-Fix-a-race-in-elevator-switching-and-md.patch
 ApplyPatch elevator-acquire-q-sysfs_lock-in-elevator_change.patch
 
-#rhbz 1005567
-ApplyPatch bonding-driver-promisc.patch
+#rhbz 1015989
+ApplyPatch netfilter-nf_conntrack-use-RCU-safe-kfree-for-conntr.patch
+
+#rhbz 982153
+ApplyPatch iommu-Remove-stack-trace-from-broken-irq-remapping-warning.patch
+
+#rhbz 998732
+ApplyPatch vfio-iommu-Fixed-interaction-of-VFIO_IOMMU_MAP_DMA.patch
+
+#rhbz 993744
+ApplyPatch dm-cache-policy-mq_fix-large-scale-table-allocation-bug.patch
+
+#rhbz 1011714
+ApplyPatch btrfs-relocate-csums-properly-with-prealloc-ext.patch
+
+#rhbz 1015558
+ApplyPatch fix-buslogic.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

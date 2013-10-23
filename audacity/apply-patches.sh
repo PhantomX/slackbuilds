@@ -22,6 +22,4 @@ do
     ${i}
 done
 
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.0.4-equalization-segfault.patch
-
 set +e +o pipefail

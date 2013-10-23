@@ -49,6 +49,13 @@ ApplyPatch qt-everywhere-opensource-src-4.8.0-tp-multilib-optflags.patch -z .mul
 rm -fv mkspecs/linux-g++*/qmake.conf.multilib-optflags
 # get rid of timestamp which causes multilib problem
 ApplyPatch qt-everywhere-opensource-src-4.8.5-uic_multilib.patch
+
+# reduce debuginfo in qtwebkit (webcore)
+ApplyPatch qt-everywhere-opensource-src-4.8.5-webcore_debuginfo.patch
+
+# cups16 printer discovery
+ApplyPatch qt-cupsEnumDests.patch
+
 # enable ft lcdfilter
 ApplyPatch qt-x11-opensource-src-4.5.1-enable_ft_lcdfilter.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch 
@@ -122,14 +129,14 @@ ApplyPatch qt-4.8-poll.patch
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # http://codereview.qt-project.org/#change,22006
 ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
-# REVERT fix for https://bugreports.qt-project.org/browse/QTBUG-30076
-# (hopefully just a short-term fix/hack until there's something better)
-# regresses/changes postgresql driver behavior
-ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-30076.patch -R
 # backported from Qt5 (essentially)
 # http://bugzilla.redhat.com/702493
 # https://bugreports.qt-project.org/browse/QTBUG-5545
 ApplyPatch qt-everywhere-opensource-src-4.8.5-qgtkstyle_disable_gtk_theme_check.patch
+# revert fix for QTBUG-15319, fixes regression QTBUG-32908
+# http://bugzilla.redhat.com/968367
+# https://bugreports.qt-project.org/browse/QTBUG-32908
+ApplyPatch QTBUG-15319-fix-shortcuts-with-secondary-Xkb-layout.patch -R
 # workaround for MOC issues with Boost headers (#756395,QTBUG-22829)
 ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-22829.patch
 

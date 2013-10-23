@@ -1,0 +1,141 @@
+From f723e2e7d36b597c5262bf63dde380d89ec6bfcb Mon Sep 17 00:00:00 2001
+From: David Faure <faure@kde.org>
+Date: Fri, 18 Oct 2013 09:44:17 +0200
+Subject: [PATCH 12/12] Fix association-with-derived-mimetype again.
+
+871cccc8a88a made it impossible to re-order file type associations.
+7f42bf253009 fixed that, but changed the value of KService::mimeTypes(), which
+broke okular. This new fix works the same way, but only inside kbuildsycoca
+when it processes the mimetypes. The value of KService::mimeTypes() is now
+restored to be exactly what's in the desktop file.
+
+CCBUG: 321706
+FIXED-IN: 4.11.3
+---
+ kdecore/services/kservice.cpp  | 45 +++++++++---------------------------------
+ kdecore/tests/kservicetest.cpp |  7 ++++---
+ kded/kbuildservicefactory.cpp  | 11 ++++++++++-
+ 3 files changed, 23 insertions(+), 40 deletions(-)
+
+diff --git a/kdecore/services/kservice.cpp b/kdecore/services/kservice.cpp
+index d7945bf..8e81929 100644
+--- a/kdecore/services/kservice.cpp
++++ b/kdecore/services/kservice.cpp
+@@ -227,44 +227,17 @@ void KServicePrivate::init( const KDesktopFile *config, KService* q )
+                            << "has an empty mimetype!";
+             continue;
+         }
+-
+-        // The following searches through the list for duplicate, inherited mimetypes
+-        // For example, if application/rtf and text/plain are both listed application/rtf is removed
+-        // since it is inherited from text/plain
+-        // This is a reworked fix for revision 871cccc8a88a600c8f850a020d44bfc5f5858caa
+-        bool shouldAdd = true;
+-        KMimeType::Ptr mimeType1 = KMimeTypeRepository::self()->findMimeTypeByName(st);
+-        if (mimeType1) {
+-            foreach(const QString mime2, lstServiceTypes) {
+-                // Don't compare the mimetype with itself
+-                if (st == mime2) {
+-                    continue;
+-                }
+-
+-                // is checks for inheritance and aliases, so this should suffice
+-                if (mimeType1->is(mime2)) {
+-                    shouldAdd = false;
+-                    break;
+-                }
++        int initialPreference = m_initialPreference;
++        if ( st_it.hasNext() ) {
++            // TODO better syntax - separate group with mimetype=number entries?
++            bool isNumber;
++            const int val = st_it.peekNext().toInt(&isNumber);
++            if (isNumber) {
++                initialPreference = val;
++                st_it.next();
+             }
+         }
+-
+-        // Only add unique mimetypes
+-        if (shouldAdd) {
+-            int initialPreference = m_initialPreference;
+-            if (st_it.hasNext()) {
+-                // TODO better syntax - separate group with mimetype=number entries?
+-                bool isNumber;
+-                const int val = st_it.peekNext().toInt(&isNumber);
+-                if (isNumber) {
+-                    initialPreference = val;
+-                    st_it.next();
+-                }
+-            }
+-            m_serviceTypes.push_back(KService::ServiceTypeAndPreference(initialPreference, st));
+-        } else {
+-            //kDebug(servicesDebugArea())<<"Not adding"<<st<<"from"<<entryPath;
+-        }
++        m_serviceTypes.push_back(KService::ServiceTypeAndPreference(initialPreference, st));
+     }
+ 
+     if (entryMap.contains(QLatin1String("Actions"))) {
+diff --git a/kdecore/tests/kservicetest.cpp b/kdecore/tests/kservicetest.cpp
+index 0dba8d9..7371475 100644
+--- a/kdecore/tests/kservicetest.cpp
++++ b/kdecore/tests/kservicetest.cpp
+@@ -91,7 +91,7 @@ void KServiceTest::initTestCase()
+ 	group.writeEntry("X-KDE-Library", "fakepart");
+ 	group.writeEntry("X-KDE-Protocols", "http,ftp");
+ 	group.writeEntry("X-KDE-ServiceTypes", "KParts/ReadOnlyPart,Browser/View,KParts/ReadWritePart");
+-	group.writeEntry("MimeType", "text/plain;");
++	group.writeEntry("MimeType", "text/plain;text/html;");
+     }
+ 
+     // faketextplugin: a ktexteditor plugin
+@@ -168,6 +168,7 @@ void KServiceTest::testProperty()
+     KService::Ptr fakePart = KService::serviceByDesktopPath("fakepart.desktop");
+     QVERIFY(fakePart); // see initTestCase; it should be found.
+     QVERIFY(fakePart->propertyNames().contains("X-KDE-Protocols"));
++    QCOMPARE(fakePart->mimeTypes(), QStringList() << "text/plain" << "text/html"); // okular relies on subclasses being kept here
+     const QStringList protocols = fakePart->property("X-KDE-Protocols").toStringList();
+     QCOMPARE(protocols, QStringList() << "http" << "ftp");
+ }
+@@ -356,7 +357,7 @@ void KServiceTest::testHasServiceType1() // with services constructed with a ful
+     KService fakepart( fakepartPath );
+     QVERIFY( fakepart.hasServiceType( "KParts/ReadOnlyPart" ) );
+     QVERIFY( fakepart.hasServiceType( "KParts/ReadWritePart" ) );
+-    QCOMPARE(fakepart.mimeTypes(), QStringList() << "text/plain");
++    QCOMPARE(fakepart.mimeTypes(), QStringList() << "text/plain" << "text/html");
+ 
+     QString faketextPluginPath = KStandardDirs::locate( "services", "faketextplugin.desktop" );
+     QVERIFY( !faketextPluginPath.isEmpty() );
+@@ -371,7 +372,7 @@ void KServiceTest::testHasServiceType2() // with services coming from ksycoca
+     QVERIFY( !fakepart.isNull() );
+     QVERIFY( fakepart->hasServiceType( "KParts/ReadOnlyPart" ) );
+     QVERIFY( fakepart->hasServiceType( "KParts/ReadWritePart" ) );
+-    QCOMPARE(fakepart->mimeTypes(), QStringList() << "text/plain");
++    QCOMPARE(fakepart->mimeTypes(), QStringList() << "text/plain" << "text/html");
+ 
+     KService::Ptr faketextPlugin = KService::serviceByDesktopPath( "faketextplugin.desktop" );
+     QVERIFY( !faketextPlugin.isNull() );
+diff --git a/kded/kbuildservicefactory.cpp b/kded/kbuildservicefactory.cpp
+index 5fb091b..b4564bd 100644
+--- a/kded/kbuildservicefactory.cpp
++++ b/kded/kbuildservicefactory.cpp
+@@ -267,7 +267,16 @@ void KBuildServiceFactory::populateServiceTypes()
+                         continue;
+                     }
+                 } else {
+-                    m_offerHash.addServiceOffer(mime->name(), offer); // mime->name so that we resolve aliases
++                    bool shouldAdd = true;
++                    foreach (const QString &otherType, service->serviceTypes()) {
++                        if (stName != otherType && mime->is(otherType)) {
++                            shouldAdd = false;
++                        }
++                    }
++                    if (shouldAdd) {
++                        //kDebug(7021) << "Adding service" << service->entryPath() << "to" << mime->name();
++                        m_offerHash.addServiceOffer(mime->name(), offer); // mime->name so that we resolve aliases
++                    }
+                 }
+             }
+         }
+-- 
+1.8.3.1
+

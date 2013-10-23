@@ -79,6 +79,14 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rdc234dba2f381e5b2bb
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r99fa37f25cbb58dafc052185f56ffe9173254842.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r78055361d20ca94e6c59e032e3a6ade420affb91.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r4eb7f6ab362f4fff79f0c0e5b2147f2c5eb22687.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_raed179611d5d51264c79159311385cf5bfedd1c4.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_re3d38ef819421ea5b69fd52072da61be30043838.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r4bbe80a68768b0714be7e6decdfa5880b8347723.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rfd4269c99f9d6f3a52bac0013fe8dbf0ac3f9df7.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rdcc70fbb55919ac56ae188ceb3d5bf7b94c2dbcd.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_ra1507b23374c798053ce97cb9e6e5b454f590e6e.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r7ef5391fc148ae25443d7115cec4327d0f084f8d.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r9f581d0cdf3423135be3283137fd1370f1d9303f.diff
 
 ## plasma active patches
 
@@ -89,5 +97,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/terminate-server.patch
 
 # Set Chinforinfula defaults
 patch -p0 -E --backup -z .classicmenudefs --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.0-classicmenu-defaults.patch
+
+# Add /usr/share/gtk-2.0/gtkrc to GTK2_RC_FILES environment variable
+patch -p0 -E --backup -z .gtkrc --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.2-add-gtkrc-path.patch
 
 set +e +o pipefail

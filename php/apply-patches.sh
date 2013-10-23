@@ -15,7 +15,6 @@ zcat ${SB_PATCHDIR}/php-5.2.0-includedir.patch.gz | patch -p1 -E --backup --verb
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.2.4-embed.patch
 zcat ${SB_PATCHDIR}/php-5.3.0-recode.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.7-libdb.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/all_strict_aliasing.patch
 
 # Fixes for extension modules
 # https://bugs.php.net/63171 no odbc call during timeout

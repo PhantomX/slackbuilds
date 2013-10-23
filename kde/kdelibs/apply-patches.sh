@@ -60,6 +60,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # Branch upstream
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r3aa7abd1983813b916e281a0e5940b5dd6768a9e.diff
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc0af4b9506e4bacd4e70342d5668ccb9c8a7203c.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0010-Enable-translation-functions-for-js-QScriptEngine-sc.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0012-Fix-association-with-derived-mimetype-again.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0015-Improve-fix-for-association-with-derived-mimetypes-f.patch
 
 # revert these commits for
 #https://bugs.kde.org/315578

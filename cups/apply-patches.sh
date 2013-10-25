@@ -50,8 +50,8 @@ ApplyPatch cups-0755.patch
 ApplyPatch cups-hp-deviceid-oid.patch
 ApplyPatch cups-dnssd-deviceid.patch
 ApplyPatch cups-ricoh-deviceid-oid.patch
-ApplyPatch cups-systemd-socket.patch
-ApplyPatch cups-lpd-manpage.patch
+[ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-systemd-socket.patch
+[ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-lpd-manpage.patch
 ApplyPatch cups-avahi-address.patch
 ApplyPatch cups-usblp-quirks.patch
 ApplyPatch cups-enum-all.patch
@@ -65,6 +65,8 @@ ApplyPatch cups-ipp-multifile.patch
 ApplyPatch cups-full-relro.patch
 ApplyPatch cups-web-devices-timeout.patch
 ApplyPatch cups-final-content-type.patch
+ApplyPatch cups-jobhistory.patch
+[ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-journal.patch
 
 ## SECURITY PATCHES:
 

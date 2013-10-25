@@ -1,10 +1,11 @@
 #!/bin/sh
-#-- unixODBC for Slackware --
+#-- unixodbc-gui-qt for Slackware --
 # Build script by Phantom X <megaphantomx at bol.com.br>
-# Suggested usage: $ unixODBC.SlackBuild 2>&1 | tee build.log
+# Suggested usage: $ unixodbc-gui-qt.SlackBuild 2>&1 | tee build.log
 #--
 # Copyright 2008-2013 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
+# All rights reserved.
 #
 # Redistribution and use of this script, with or without modification, is
 # permitted provided that the following conditions are met:
@@ -23,7 +24,7 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# http://www.unixODBC.org/
+# http://sourceforge.net/projects/unixodbc-gui-qt/
 
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
@@ -40,11 +41,16 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
-PNAME=unixODBC
-NAME=unixodbc
+NAME=unixodbc-gui-qt
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.3.2}
+SNAPBUILD=${SNAPBUILD:-YES}
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+  SNAPBRANCH=${SNAPBRANCH:-master}
+else
+  VERSION=${VERSION:-0}
+fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -61,21 +67,29 @@ NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
-PKGFORMAT=${PKGFORMAT:-txz}
+PKGFORMAT=${PKGFORMAT:-tgz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${PNAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+SRCDIR=${NAME}-${VERSION}
+SRCARCHIVE=${SRCDIR}.tar.xz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://www.unixODBC.org/${SRCARCHIVE}"
+SF_MIRROR=${SF_MIRROR:-http://prdownloads.sourceforge.net}
+DL_URL="${SF_MIRROR}/${NAME}/${SRCARCHIVE}"
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
+export snapbranch=${SNAPBRANCH}
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+else
+  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -103,6 +117,10 @@ if [ -d ${PKG} ]; then
 fi
 mkdir -p ${PKG}
 
+unset QTDIR QTINC QTLIB
+export QTDIR=$(qmake-qt4 -query QT_INSTALL_PREFIX)
+PATH="$(qmake-qt4 -query QT_INSTALL_BINS):${PATH}" ; export PATH
+
 cd ${TMP}
 rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
@@ -114,11 +132,11 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
-sed -i -e '/LIB_PREFIX/s|-L%s ||g' exe/odbc-config.c || exit 1
+if [ ! -r configure ]; then
+  make -f Makefile.svn || exit $?
+fi
 
-autoreconf -ivf || exit 1
-
-CFLAGS="${SLKCFLAGS} -fno-strict-aliasing" \
+CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
@@ -128,67 +146,84 @@ CXXFLAGS="${SLKCFLAGS}" \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
+  --disable-silent-rules \
+  --disable-static \
   --enable-ltdllib \
-  --with-gnu-ld=yes \
-  --enable-threads=yes \
-  --enable-static=no \
-  --enable-drivers \
-  --enable-driverc=yes \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+  --with-gnu-ld \
+  --with-qt-dir-bin="$(qmake-qt4 -query QT_INSTALL_BINS)" \
+  --with-qt-dir-lib="$(qmake-qt4 -query QT_INSTALL_LIBS)" \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
 
-make all || exit 1
+make -j${NJOBS} || make || exit $?
+make install DESTDIR=${PKG} || exit $?
 
-make install DESTDIR=${PKG} || exit 1
-
-rm -f ${PKG}/etc/odbcinst.ini
-install -pm0644 ${CWD}/odbcinst.ini \
-  ${PKG}/etc/odbcinst.ini || exit 1
-
-for file in ${PKG}/etc/*.ini ;do
-  mv ${file} ${file}.new || exit 1
-done
-
-# multilib header hacks
-case "${ARCH}" in
-  i[3-6]86)  ODBCARCH=i386
-             ;;
-  s390)      ODBCARCH=s390
-             ;;
-  x86_64)    ODBCARCH=x86_64
-             ;;
-esac
-
-if [ -n "${ODBCARCH}" ] ;then
-  mv ${PKG}/usr/include/unixodbc_conf.h \
-     ${PKG}/usr/include/unixodbc_conf_${ODBCARCH}.h || exit 1
-  rm -f unixodbc_conf.h
-  zcat ${CWD}/conffile.h.gz | sed s/CONFFILE/unixodbc_conf/ > unixodbc_conf.h || exit 1
-  install -m 644 unixodbc_conf.h ${PKG}/usr/include/ || exit 1
-fi
-
-# remove obsolete Postgres drivers from the package (but not the setup code)
-rm -f ${PKG}/usr/lib*/libodbcpsql.so*
-
-# copy text driver documentation into main doc directory
-mkdir -p doc/Drivers/txt
-cp -pr Drivers/txt/doc/* doc/Drivers/txt/
-
-# don't want to install doc Makefiles as docs
-find doc -name 'Makefile*' | xargs rm -f
-
-# remove unpackaged files from the buildroot
-rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/*.la
-rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/*.a
-rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/libltdl.*
-rm -rf ${PKG}/usr/share/libtool
+rm -f ${PKG}/usr/lib*/*.la
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
+mkdir -p ${PKG}/usr/share/applications
+
+cat > ${PKG}/usr/share/applications/ODBCManageDataSourcesQ4.desktop <<EOF
+[Desktop Entry]
+Name=ODBC Data Source Administrator
+Comment=ODBC Data Source Administration Tool
+Exec=ODBCManageDataSourcesQ4
+Icon=ODBCManageDataSourcesQ4
+Type=Application
+Terminal=false
+Categories=Qt;Settings;
+EOF
+
+cat > ${PKG}/usr/share/applications/ODBCCreateDataSourceQ4.desktop <<EOF
+[Desktop Entry]
+Name=ODBC Data Source Wizard
+Comment=ODBC Data Source Wizard Tool
+Exec=ODBCCreateDataSourceQ4
+Icon=ODBCCreateDataSourceQ4
+Type=Application
+Terminal=false
+Categories=Qt;Settings;
+EOF
+
+cat > ${PKG}/usr/share/applications/ODBCTestQ4.desktop <<EOF
+[Desktop Entry]
+Name=ODBC Test
+Comment=ODBC Test Tool
+Exec=ODBCTestQ4
+Icon=ODBCTestQ4
+Type=Application
+Terminal=false
+Categories=Qt;Settings;
+EOF
+
+mkdir -p ${PKG}/usr/share/icons/hicolor/{48x48,64x64}/apps
+convert ODBCDataManagerQ4/ODBC64.xpm -depth 8 \
+  ${PKG}/usr/share/icons/hicolor/64x64/apps/ODBCCreateDataSourceQ4.png || exit 1
+convert odbcinstQ4/ODBCManageDataSources64.xpm -depth 8 \
+  ${PKG}/usr/share/icons/hicolor/64x64/apps/ODBCManageDataSourcesQ4.png || exit 1
+convert ODBCTestQ4/ODBCTestQ4-48.xpm -depth 8 \
+  ${PKG}/usr/share/icons/hicolor/48x48/apps/ODBCTestQ4.png || exit 1
+
+for file in ODBCCreateDataSourceQ4 ODBCManageDataSourcesQ4 ODBCTestQ4 ;do
+  for res in 16 20 22 24 32 36 48 ;do
+    dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
+    mkdir -p ${dir}
+    if [ -f ${PKG}/usr/share/icons/hicolor/64x64/apps/${file}.png ] ;then
+      rsize=64x64
+    else
+      rsize=48x48
+    fi
+    [ "${rsize}" = "${res}x${res}" ] && break
+    convert ${PKG}/usr/share/icons/hicolor/${rsize}/apps/${file}.png -depth 8 \
+      -filter Lanczos -resize ${res}x${res} ${dir}/${file}.png || exit 1
+  done
+done
+
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  README COPYING AUTHORS NEWS doc ${CWD}/ChangeLog.SB \
+ AUTHORS COPYING NEWS doc GPL.txt LGPL.txt ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 [ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
@@ -222,37 +257,33 @@ cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF
 #!/bin/sh
-config() {
-  NEW="\$1"
-  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
-  # If there's no config file by that name, mv it over:
-  if [ ! -r \$OLD ]; then
-    mv \$NEW \$OLD
-  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
-    # toss the redundant copy
-    rm \$NEW
-  fi
-  # Otherwise, we leave the .new copy for the admin to consider...
-}
-## List of conf files to check.  The conf files in your package should end in .new
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/update-desktop-database ]; then
+  \${CHROOT} /usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1
+fi
+if [ -x usr/bin/gtk-update-icon-cache ]; then
+  \${CHROOT} /usr/bin/touch --no-create /usr/share/icons/hicolor >/dev/null 2>&1
+  \${CHROOT} /usr/bin/gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1
+fi
 EOF
 
-( cd ${PKG}
-  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
-  echo >> ${PKG}/install/doinst.sh
-)
-
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
-       ${PKG}/install/slack-desc
+  ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
-  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${CWD}/*.ini ${CWD}/conffile.h.gz ${SBDIR}/
-  install -m0755 ${CWD}/${NAME}.SlackBuild \
+  install -pm0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+    ${CWD}/apply-patches.sh ${CWD}/${SNAPUPDATE} ${SBDIR}/
+  install -pm0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
-  install -m0644 ${CWD}/patches/*.* \
+  install -pm0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
   rmdir ${SBDIR}/patches
 fi

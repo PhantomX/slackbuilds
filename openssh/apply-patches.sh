@@ -28,9 +28,9 @@ ApplyPatch() {
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Internal debug
 #ApplyPatch openssh-5.9p1-wIm.patch
-ApplyPatch openssh-6.2p1-coverity.patch
+ApplyPatch openssh-6.3p1-coverity.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1872
-ApplyPatch openssh-6.2p1-fingerprint.patch
+ApplyPatch openssh-6.3p1-fingerprint.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1894
 ApplyPatch openssh-5.8p1-getaddrinfo.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1889
@@ -48,10 +48,7 @@ if [ "${SB_PAM}" = "YES" ] ;then
 )
 fi
 
-# https://bugzilla.mindrot.org/show_bug.cgi?id=1641 (WONTFIX)
-ApplyPatch openssh-6.2p1-role-mls.patch
-sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.2p1-ldap.patch | patch -p1 -E --backup --verbose
-[ "${SB_PAM}" = "YES" ] && sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.2p1-keycat.patch | patch -p1 -E --backup --verbose
+sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.3p1-ldap.patch | patch -p1 -E --backup --verbose
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1644
 ApplyPatch openssh-5.2p1-allow-ip-opts.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1701
@@ -73,29 +70,22 @@ ApplyPatch openssh-4.3p2-askpass-grab-info.patch
 ApplyPatch openssh-5.1p1-scp-manpage.patch
 ApplyPatch openssh-5.9p1-edns.patch
 ApplyPatch openssh-5.8p1-localdomain.patch
- ApplyPatch openssh-5.9p1-chinfo.patch
+ApplyPatch openssh-6.3p1-chinfo.patch -z .chinfo
 [ "${SB_PAM}" = "YES" ] || sed -i -e '/^UsePAM yes/d' sshd_config
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1890 (WONTFIX) need integration to prng helper which is discontinued :)
-ApplyPatch openssh-6.2p1-entropy.patch
+sed 's| port-linux_part_2\.o||g' ${SB_PATCHDIR}/openssh-6.2p1-entropy.patch | patch -p1 -E --backup --verbose
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1640
 ApplyPatch openssh-6.2p1-vendor.patch
 # warn users for unsupported UsePAM=no (#757545)
 [ "${SB_PAM}" = "YES" ] && ApplyPatch openssh-6.1p1-log-usepam-no-slk.patch
 # make aes-ctr ciphers use EVP engines such as AES-NI from OpenSSL
-ApplyPatch openssh-5.9p1-ctr-evp-fast.patch
+ApplyPatch openssh-6.3p1-ctr-evp-fast.patch
 # add cavs test binary for the aes-ctr
-if [ "${SB_PAM}" = "YES" ] ;then
-  sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.2p1-ctr-cavstest.patch | patch -p1 -E --backup --verbose
-else
-  ApplyPatch openssh-6.2p1-ctr-cavstest-slk.patch
-fi
+ApplyPatch openssh-6.3p1-ctr-cavstest-slk.patch
 # obsolete RequiredAuthentications options
 ApplyPatch openssh-6.2p1-required-authentications.patch
-ApplyPatch openssh-6.2p1-modpipe-cflags.patch
-# make sftp's libedit interface marginally multibyte aware (#841771)
-ApplyPatch openssh-6.2p2-sftp-multibyte.patch
-# don't show Success for EAI_SYSTEM (#985964)
-ApplyPatch openssh-6.2p2-ssh_gai_strerror.patch
+# increase the size of the Diffie-Hellman groups (#1010607)
+ApplyPatch openssh-6.3p1-increase-size-of-DF-groups.patch
 
 set +e +o pipefail
 

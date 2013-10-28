@@ -20,6 +20,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-default-paths.p
 # Functionality changes
 zcat ${SB_PATCHDIR}/openssl-0.9.6-x509.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/openssl-0.9.8j-version-add-engines.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0e-doc-noeof.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-beta2-ssl-op-all.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-ipv6-apps.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-0.9.8j-env-nozlib.patch
@@ -31,6 +32,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0e-chil-fixes.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-dh-1024.patch
 # Backported fixes including security fixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-beta2-padlock64.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-backports.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-manfix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-bad-mac.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-trusted-first.patch
 
 # Use .so.${SSLSOVER}, not .so.${VERSION}:
 sed -e "s|_SB_SOVER_|${SSLSOVER}|g" ${SB_PATCHDIR}/openssl.soname.diff \

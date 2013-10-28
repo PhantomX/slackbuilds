@@ -110,10 +110,13 @@ ApplyPatch 0001-Fix-spurious-jnf-underflows-bug-14155.patch
 ApplyPatch 0001-Fix-lgammaf-spurious-underflow-bug-15427.patch
 ApplyPatch 0001-Add-O_TMPFILE-to-fcntl.h.patch
 ApplyPatch 0001-Fix-buffer-overrun-in-strtod_l.patch
+ApplyPatch 0001-BZ-15859-Fix-memory-leak-in-_dl_map_object_deps.patch
 
 ## From Arch
 # upstream commits 1159a193, 55e17aad and b73ed247
 ApplyPatch glibc-2.18-malloc-corrupt-CVE-2013-4332.patch
 ApplyPatch glibc-2.18-strstr-hackfix.patch
+# upstream commit 7cbcdb36
+ApplyPatch glibc-2.18-getaddrinfo-CVE-2013-4458.patch
 
 set +e +o pipefail

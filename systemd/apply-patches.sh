@@ -20,6 +20,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0005-modules-load-fix-error-ha
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-mkdir-pass-a-proper-function-pointer-to-mkdir_safe_i.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-tmpfiles.d-include-setgid-perms-for-run-log-journal.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-systemd-order-remote-mounts-from-mountinfo-before-re.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-mount-check-for-NULL-before-reading-pm-what.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-shared-util-fix-off-by-one-error-in-tag_to_udev_node.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-journald-fix-minor-memory-leak.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=NO

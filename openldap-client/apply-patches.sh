@@ -7,7 +7,6 @@ SB_PATCHDIR=${CWD}/patches
 # patches for 2.4
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-slapd-conf.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-manpages.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-security-pie.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-sql-linking.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-reentrant-gethostby.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-smbk5pwd-overlay.patch

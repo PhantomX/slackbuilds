@@ -4,9 +4,6 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-# https://www.linuxquestions.org/questions/linux-from-scratch-13/blfs-xulrunner-firefox-21-0-and-search-4175462532/
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-search-box.patch
-
 # Build patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-install-dir.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-5.0-asciidel.patch

@@ -77,10 +77,6 @@ ApplyPatch xephyr-glx.patch
 # http://cgit.freedesktop.org/xorg/xserver/commit/fb/wfbrename.h?id=5047810a4c20fab444b8c6eb146c55dcdb0d4219
 ApplyPatch fb-rename-wfbDestroyGlyphCache.patch
 
-# CVE-2013-4396: Use after free in Xserver handling of ImageText requests
-# (to be included in xorg-server 1.15.0 and 1.14.4)
-ApplyPatch 0001-Avoid-use-after-free-in-dix-dixfonts.c-doImageText-C.patch
-
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES
 

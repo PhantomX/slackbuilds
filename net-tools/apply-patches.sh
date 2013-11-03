@@ -9,12 +9,11 @@ SB_PATCHDIR=${CWD}/patches
 #  patch -p1 -i "debian/patches/${patch}" || exit 1
 #done
 
+### Fedora
 # adds <delay> option that allows netstat to cycle printing through statistics every delay seconds.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-cycle.patch
 # Fixed incorrect address display for ipx (#46434)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ipx.patch
-# hostname lookup problems with route --inet6 (#84108)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-inet6-lookup.patch
 # various man page fixes merged into one patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-man.patch
 # netstat: interface option now works as described in the man page (#61113, #115987)
@@ -31,5 +30,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-sctp-statistics.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ifconfig-long-iface-crasher.patch
 # fixed tcp timers info in netstat (#466845)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-netstat-probe.patch
+# use all interfaces instead of default (#1003875)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ether-wake-interfaces.patch
 
 set +e +o pipefail

@@ -31,6 +31,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-2.8.11-rc4-lua-5.2.patch
 # Add -fno-strict-aliasing when compiling cm_sha2.c
 # http://www.cmake.org/Bug/view.php?id=14314
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-strict_aliasing.patch
+# Remove automatic Qt module dep adding
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-qtdeps.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-dont-add-invalid-content-to-static-lib.patch
 

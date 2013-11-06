@@ -86,6 +86,7 @@ ApplyPatch glibc-strcoll-cve.patch
 ApplyPatch glibc-rh1000924.patch
 # Upstream BZ 15754
 ApplyPatch glibc-rh985625-CVE-2013-4788.patch
+ApplyPatch glibc-rh1007590.patch
 
 ## Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
@@ -111,6 +112,8 @@ ApplyPatch 0001-Fix-lgammaf-spurious-underflow-bug-15427.patch
 ApplyPatch 0001-Add-O_TMPFILE-to-fcntl.h.patch
 ApplyPatch 0001-Fix-buffer-overrun-in-strtod_l.patch
 ApplyPatch 0001-BZ-15859-Fix-memory-leak-in-_dl_map_object_deps.patch
+ApplyPatch 0001-Restrict-shm_open-and-shm_unlink-to-SHMDIR.-Fixes-bu.patch
+ApplyPatch 0001-Fix-malloc_info-statistic.-Fixes-bug-16112.patch
 
 ## From Arch
 # upstream commits 1159a193, 55e17aad and b73ed247

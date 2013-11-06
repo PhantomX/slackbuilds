@@ -198,16 +198,10 @@ ApplyPatch nowatchdog-on-virt.patch
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
-ApplyPatch weird-root-dentry-name-debug.patch
-
-#rhbz 859485
-ApplyPatch vt-Drop-K_OFF-for-VC_MUTE.patch
+#ApplyPatch weird-root-dentry-name-debug.patch
 
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
-
-#rhbz 927469
-ApplyPatch fix-child-thread-introspection.patch
 
 #CVE-2013-4345 rhbz 1007690 1009136
 ApplyPatch ansi_cprng-Fix-off-by-one-error-in-non-block-size-request.patch
@@ -218,9 +212,6 @@ ApplyPatch ntp-Make-periodic-RTC-update-more-reliable.patch
 #rhbz 902012
 ApplyPatch elevator-Fix-a-race-in-elevator-switching-and-md.patch
 ApplyPatch elevator-acquire-q-sysfs_lock-in-elevator_change.patch
-
-#rhbz 1015989
-ApplyPatch netfilter-nf_conntrack-use-RCU-safe-kfree-for-conntr.patch
 
 #rhbz 982153
 ApplyPatch iommu-Remove-stack-trace-from-broken-irq-remapping-warning.patch
@@ -234,8 +225,8 @@ ApplyPatch dm-cache-policy-mq_fix-large-scale-table-allocation-bug.patch
 #rhbz 1011714
 ApplyPatch btrfs-relocate-csums-properly-with-prealloc-ext.patch
 
-#rhbz 1015558
-ApplyPatch fix-buslogic.patch
+#CVE-2013-4348 rhbz 1007939 1025647
+ApplyPatch net-flow_dissector-fail-on-evil-iph-ihl.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

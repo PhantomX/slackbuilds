@@ -8,9 +8,7 @@ zcat ${SB_PATCHDIR}/nl.euro.diff.gz | patch -p1 --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15-keycodes-man.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15-unicode_start.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15.3-dumpkeys-man.patch
-# Patch4: fixes loadkeys regression (already upstream)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15.5-loadkeys-regression.patch
-# Patch5: fixes decimal separator in Swiss German keyboard layout, bz 882529
+# Patch4: fixes decimal separator in Swiss German keyboard layout, rhbz 882529
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15.5-sg-decimal-separator.patch
 
 # Set to YES if autogen is needed

@@ -7,6 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 ### Fedora
 filterdiff -p1 -x ChangeLog -z ${SB_PATCHDIR}/0042-util-grub-mkconfig_lib.in-grub_tab-New-variable.patch | patch -p1 -E --backup --verbose
 filterdiff -p1 -x ChangeLog -z ${SB_PATCHDIR}/0183-grub-core-script-execute.c-gettext_append-Remove-nes.patch | patch -p1 -E --backup --verbose
+filterdiff -p1 -x ChangeLog -z ${SB_PATCHDIR}/0237-grub-core-kern-efi-mm.c-grub_efi_finish_boot_service.patch | patch -p1 -E --backup --verbose
 filterdiff -p1 -x ChangeLog -z ${SB_PATCHDIR}/0450-Pass-x-hex-hex-straight-through-unmolested.patch | patch -p1 -E --backup --verbose
 filterdiff -p1 -x ChangeLog -z ${SB_PATCHDIR}/0455-Add-X-option-to-printf-functions.patch | patch -p1 -E --backup --verbose
 filterdiff -p1 -x ChangeLog -z ${SB_PATCHDIR}/0459-add-GRUB_DISABLE_SUBMENU-option.patch | patch -p1 -E --backup --verbose

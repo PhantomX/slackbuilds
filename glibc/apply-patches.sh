@@ -112,6 +112,13 @@ ApplyPatch 0001-Fix-lgammaf-spurious-underflow-bug-15427.patch
 ApplyPatch 0001-Add-O_TMPFILE-to-fcntl.h.patch
 ApplyPatch 0001-Fix-buffer-overrun-in-strtod_l.patch
 ApplyPatch 0001-BZ-15859-Fix-memory-leak-in-_dl_map_object_deps.patch
+ApplyPatch 0001-Clear-initfini-list-after-freeing.-Fixes-bug-15308.patch
+ApplyPatch 0001-Fix-inet_network-1-bar-.-Fixes-bug-15277.patch
+ApplyPatch 0002-Remove-assert-in-malloc-statistic.-Fixes-bug-12486.patch
+ApplyPatch 0001-Replace-alloca-in-__tzfile_read-by-malloc.-Fixes-bug.patch
+ApplyPatch 0002-When-glob-pattern-contains-a-trailing-slash-match-on.patch
+ApplyPatch 0001-Make-strptime-Z-consistent-between-doc-and-code.-Fix.patch
+ApplyPatch 0001-Use-atomic-operations-to-track-memory.-Fixes-bug-110.patch
 ApplyPatch 0001-Restrict-shm_open-and-shm_unlink-to-SHMDIR.-Fixes-bu.patch
 ApplyPatch 0001-Fix-malloc_info-statistic.-Fixes-bug-16112.patch
 

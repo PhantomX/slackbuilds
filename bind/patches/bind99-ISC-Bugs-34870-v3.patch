@@ -1,0 +1,213 @@
+diff -up bind-9.9.4/bin/dig/dighost.c.send_buffers bind-9.9.4/bin/dig/dighost.c
+--- bind-9.9.4/bin/dig/dighost.c.send_buffers	2013-10-31 14:22:20.296811613 +0100
++++ bind-9.9.4/bin/dig/dighost.c	2013-10-31 14:57:00.336400190 +0100
+@@ -194,6 +194,7 @@ isc_boolean_t validated = ISC_TRUE;
+ isc_entropy_t *entp = NULL;
+ isc_mempool_t *commctx = NULL;
+ isc_boolean_t debugging = ISC_FALSE;
++isc_boolean_t debugtiming = ISC_FALSE;
+ isc_boolean_t memdebugging = ISC_FALSE;
+ char *progname = NULL;
+ isc_mutex_t lookup_lock;
+@@ -553,6 +554,12 @@ debug(const char *format, ...) {
+ 
+ 	if (debugging) {
+ 		fflush(stdout);
++		if (debugtiming) {
++			struct timeval tv;
++			(void)gettimeofday(&tv, NULL);
++			fprintf(stderr, "%ld.%06ld: ", (long)tv.tv_sec,
++				(long)tv.tv_usec);
++		}
+ 		va_start(args, format);
+ 		vfprintf(stderr, format, args);
+ 		va_end(args);
+@@ -2416,8 +2423,10 @@ send_done(isc_task_t *_task, isc_event_t
+ 
+ 	for  (b = ISC_LIST_HEAD(sevent->bufferlist);
+ 	      b != NULL;
+-	      b = ISC_LIST_HEAD(sevent->bufferlist))
++	      b = ISC_LIST_HEAD(sevent->bufferlist)) {
+ 		ISC_LIST_DEQUEUE(sevent->bufferlist, b, link);
++		isc_mem_free(mctx, b);
++	}
+ 
+ 	query = event->ev_arg;
+ 	query->waiting_senddone = ISC_FALSE;
+@@ -2609,6 +2618,17 @@ send_tcp_connect(dig_query_t *query) {
+ 	}
+ }
+ 
++static isc_buffer_t *
++clone_buffer(isc_buffer_t *source) {
++	isc_buffer_t *buffer;
++	buffer = isc_mem_allocate(mctx, sizeof(*buffer));
++	if (buffer == NULL)
++		fatal("memory allocation failure in %s:%d",
++		      __FILE__, __LINE__);
++	*buffer = *source;
++	return (buffer);
++}
++
+ /*%
+  * Send a UDP packet to the remote nameserver, possible starting the
+  * recv action as well.  Also make sure that the timer is running and
+@@ -2618,6 +2638,7 @@ static void
+ send_udp(dig_query_t *query) {
+ 	dig_lookup_t *l = NULL;
+ 	isc_result_t result;
++	isc_buffer_t *sendbuf;
+ 
+ 	debug("send_udp(%p)", query);
+ 
+@@ -2664,14 +2685,16 @@ send_udp(dig_query_t *query) {
+ 		debug("recvcount=%d", recvcount);
+ 	}
+ 	ISC_LIST_INIT(query->sendlist);
+-	ISC_LIST_ENQUEUE(query->sendlist, &query->sendbuf, link);
++	sendbuf = clone_buffer(&query->sendbuf);
++	ISC_LIST_ENQUEUE(query->sendlist, sendbuf, link);
+ 	debug("sending a request");
+ 	TIME_NOW(&query->time_sent);
+ 	INSIST(query->sock != NULL);
+ 	query->waiting_senddone = ISC_TRUE;
+-	result = isc_socket_sendtov(query->sock, &query->sendlist,
+-				    global_task, send_done, query,
+-				    &query->sockaddr, NULL);
++	result = isc_socket_sendtov2(query->sock, &query->sendlist,
++				     global_task, send_done, query,
++				     &query->sockaddr, NULL,
++				     ISC_SOCKFLAG_NORETRY);
+ 	check_result(result, "isc_socket_sendtov");
+ 	sendcount++;
+ }
+@@ -2838,6 +2861,7 @@ static void
+ launch_next_query(dig_query_t *query, isc_boolean_t include_question) {
+ 	isc_result_t result;
+ 	dig_lookup_t *l;
++	isc_buffer_t *buffer;
+ 
+ 	INSIST(!free_now);
+ 
+@@ -2861,9 +2885,15 @@ launch_next_query(dig_query_t *query, is
+ 	isc_buffer_putuint16(&query->slbuf, (isc_uint16_t) query->sendbuf.used);
+ 	ISC_LIST_INIT(query->sendlist);
+ 	ISC_LINK_INIT(&query->slbuf, link);
+-	ISC_LIST_ENQUEUE(query->sendlist, &query->slbuf, link);
+-	if (include_question)
+-		ISC_LIST_ENQUEUE(query->sendlist, &query->sendbuf, link);
++	if (!query->first_soa_rcvd) {
++		buffer = clone_buffer(&query->slbuf);
++		ISC_LIST_ENQUEUE(query->sendlist, buffer, link);
++		if (include_question) {
++			buffer = clone_buffer(&query->sendbuf);
++			ISC_LIST_ENQUEUE(query->sendlist, buffer, link);
++		}
++	}
++
+ 	ISC_LINK_INIT(&query->lengthbuf, link);
+ 	ISC_LIST_ENQUEUE(query->lengthlist, &query->lengthbuf, link);
+ 
+diff -up bind-9.9.4/bin/dig/host.c.send_buffers bind-9.9.4/bin/dig/host.c
+--- bind-9.9.4/bin/dig/host.c.send_buffers	2013-10-31 14:22:20.270811568 +0100
++++ bind-9.9.4/bin/dig/host.c	2013-10-31 14:22:20.328811669 +0100
+@@ -638,6 +638,8 @@ pre_parse_args(int argc, char **argv) {
+ 		case 'w': break;
+ 		case 'C': break;
+ 		case 'D':
++			if (debugging)
++				debugtiming = ISC_TRUE;
+ 			debugging = ISC_TRUE;
+ 			break;
+ 		case 'N': break;
+diff -up bind-9.9.4/bin/dig/include/dig/dig.h.send_buffers bind-9.9.4/bin/dig/include/dig/dig.h
+--- bind-9.9.4/bin/dig/include/dig/dig.h.send_buffers	2013-10-31 14:22:20.270811568 +0100
++++ bind-9.9.4/bin/dig/include/dig/dig.h	2013-10-31 14:22:20.328811669 +0100
+@@ -275,7 +275,7 @@ extern isc_boolean_t validated;
+ extern isc_taskmgr_t *taskmgr;
+ extern isc_task_t *global_task;
+ extern isc_boolean_t free_now;
+-extern isc_boolean_t debugging, memdebugging;
++extern isc_boolean_t debugging, debugtiming, memdebugging;
+ 
+ extern char *progname;
+ extern int tries;
+diff -up bind-9.9.4/lib/isc/include/isc/namespace.h.send_buffers bind-9.9.4/lib/isc/include/isc/namespace.h
+--- bind-9.9.4/lib/isc/include/isc/namespace.h.send_buffers	2013-09-05 07:09:08.000000000 +0200
++++ bind-9.9.4/lib/isc/include/isc/namespace.h	2013-10-31 14:22:20.328811669 +0100
+@@ -106,6 +106,7 @@
+ #define isc_socket_sendv isc__socket_sendv
+ #define isc_socket_sendtov isc__socket_sendtov
+ #define isc_socket_sendto2 isc__socket_sendto2
++#define isc_socket_sendtov2 isc__socket_sendtov2
+ #define isc_socket_cleanunix isc__socket_cleanunix
+ #define isc_socket_permunix isc__socket_permunix
+ #define isc_socket_bind isc__socket_bind
+diff -up bind-9.9.4/lib/isc/include/isc/socket.h.send_buffers bind-9.9.4/lib/isc/include/isc/socket.h
+--- bind-9.9.4/lib/isc/include/isc/socket.h.send_buffers	2013-09-05 07:09:08.000000000 +0200
++++ bind-9.9.4/lib/isc/include/isc/socket.h	2013-10-31 14:22:20.328811669 +0100
+@@ -866,6 +866,11 @@ isc_socket_sendtov(isc_socket_t *sock, i
+ 		   isc_task_t *task, isc_taskaction_t action, const void *arg,
+ 		   isc_sockaddr_t *address, struct in6_pktinfo *pktinfo);
+ isc_result_t
++isc_socket_sendtov2(isc_socket_t *sock, isc_bufferlist_t *buflist,
++		    isc_task_t *task, isc_taskaction_t action, const void *arg,
++		    isc_sockaddr_t *address, struct in6_pktinfo *pktinfo,
++		    unsigned int flags);
++isc_result_t
+ isc_socket_sendto2(isc_socket_t *sock, isc_region_t *region,
+ 		   isc_task_t *task,
+ 		   isc_sockaddr_t *address, struct in6_pktinfo *pktinfo,
+diff -up bind-9.9.4/lib/isc/unix/socket.c.send_buffers bind-9.9.4/lib/isc/unix/socket.c
+--- bind-9.9.4/lib/isc/unix/socket.c.send_buffers	2013-10-31 14:22:20.293811608 +0100
++++ bind-9.9.4/lib/isc/unix/socket.c	2013-10-31 14:22:20.330811673 +0100
+@@ -510,6 +510,11 @@ isc__socket_sendtov(isc_socket_t *sock,
+ 		    isc_task_t *task, isc_taskaction_t action, const void *arg,
+ 		    isc_sockaddr_t *address, struct in6_pktinfo *pktinfo);
+ ISC_SOCKETFUNC_SCOPE isc_result_t
++isc__socket_sendtov2(isc_socket_t *sock, isc_bufferlist_t *buflist,
++		     isc_task_t *task, isc_taskaction_t action, const void *arg,
++		     isc_sockaddr_t *address, struct in6_pktinfo *pktinfo,
++		     unsigned int flags);
++ISC_SOCKETFUNC_SCOPE isc_result_t
+ isc__socket_sendto2(isc_socket_t *sock, isc_region_t *region,
+ 		    isc_task_t *task,
+ 		    isc_sockaddr_t *address, struct in6_pktinfo *pktinfo,
+@@ -4796,15 +4801,25 @@ ISC_SOCKETFUNC_SCOPE isc_result_t
+ isc__socket_sendv(isc_socket_t *sock, isc_bufferlist_t *buflist,
+ 		  isc_task_t *task, isc_taskaction_t action, const void *arg)
+ {
+-	return (isc__socket_sendtov(sock, buflist, task, action, arg, NULL,
+-				    NULL));
++	return (isc__socket_sendtov2(sock, buflist, task, action, arg, NULL,
++				     NULL, 0));
+ }
+ 
+ ISC_SOCKETFUNC_SCOPE isc_result_t
+-isc__socket_sendtov(isc_socket_t *sock0, isc_bufferlist_t *buflist,
++isc__socket_sendtov(isc_socket_t *sock, isc_bufferlist_t *buflist,
+ 		    isc_task_t *task, isc_taskaction_t action, const void *arg,
+ 		    isc_sockaddr_t *address, struct in6_pktinfo *pktinfo)
+ {
++	return (isc__socket_sendtov2(sock, buflist, task, action, arg, address,
++				     pktinfo, 0));
++}
++
++ISC_SOCKETFUNC_SCOPE isc_result_t
++isc__socket_sendtov2(isc_socket_t *sock0, isc_bufferlist_t *buflist,
++		     isc_task_t *task, isc_taskaction_t action, const void *arg,
++		     isc_sockaddr_t *address, struct in6_pktinfo *pktinfo,
++		     unsigned int flags)
++{
+ 	isc__socket_t *sock = (isc__socket_t *)sock0;
+ 	isc_socketevent_t *dev;
+ 	isc__socketmgr_t *manager;
+@@ -4837,7 +4852,7 @@ isc__socket_sendtov(isc_socket_t *sock0,
+ 		buffer = ISC_LIST_HEAD(*buflist);
+ 	}
+ 
+-	return (socket_send(sock, dev, task, address, pktinfo, 0));
++	return (socket_send(sock, dev, task, address, pktinfo, flags));
+ }
+ 
+ ISC_SOCKETFUNC_SCOPE isc_result_t

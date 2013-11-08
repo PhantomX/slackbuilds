@@ -68,8 +68,8 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr -- -\~ . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
-# Set to YES to build efi instead (untested)
-SB_EFI=${SB_EFI:-NO}
+# Set to YES to build efi too
+SB_EFI=${SB_EFI:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -119,6 +119,21 @@ else
                  ;;
   esac
 fi
+case "${ARCH}" in
+  i[3-6]86)
+    grubefiarch=i386-efi
+    grubefiname=grubia32.efi
+    grubeficdname=gcdia32.efi
+    ;;
+  x86_64)
+    grubefiarch="x86_64-efi"
+    grubefiname=grubx64.efi
+    grubeficdname=gcdx64.efi
+    ;;
+  *)
+    SB_EFI=NO
+    ;;
+esac
 if [ "${ARCH}" = "x86_64" ] ;then
   LIBDIRSUFFIX="64"
   SLKCFLAGS="${SLKCFLAGS} -fPIC"
@@ -158,15 +173,9 @@ if [ "${SB_AUTOGEN}" = "YES" ] ;then
   sh ./autogen.sh || exit $?
 fi
 
-unset SB_EFIOPTS SB_PLATOPTS
-if [ "${SB_EFI}" = "YES" ] ;then
-  SB_PLATOPTS=efi
-else
-  SB_EFIOPTS='--disable-efiemu'
-fi
-
+SB_CONFIGURE(){
 TARGET_LDFLAGS=-static \
-./configure \
+../configure \
   --prefix=/usr \
   --sbindir=/sbin \
   --bindir=/bin \
@@ -178,30 +187,59 @@ TARGET_LDFLAGS=-static \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-werror \
   --enable-grub-mkfont \
-  --with-platform=${SB_PLATOPTS:-pc} \
-  ${SB_EFIOPTS} \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+  --build=${SLKTARGET}-${SLKDTARGET}-linux "$@"
+}
+
+if [ "${SB_EFI}" = "YES" ] ;then
+  mkdir -p grub-efi-build
+( cd grub-efi-build || exit 1
+
+  mkdir grub-core
+  cp -a ../grub-core/* grub-core/ || exit 1
+
+  SB_CONFIGURE \
+    --with-platform=efi || exit $?
 
   make -j${NJOBS} || make || return $?
   make install DESTDIR=${PKG} || exit $?
 
-if [ "${SB_EFI}" = "YES" ] ;then
-  case "${ARCH}" in
-    i[3-6]86)
-      grubefiarch=i386-efi
-      ;;
-    *)
-      grubefiarch="${ARCH}-efi"
-      ;;
-  esac
+  find ${PKG}  -iname '*.module' -exec chmod a-x {} ';'
 
-  ./grub-mkimage -O ${grubefiarch} -o grub.efi -d grub-core part_gpt hfsplus fat \
-    ext2 btrfs normal chain boot configfile linux appleldr minicmd \
-    loadbios reboot halt search font gfxterm || exit $?
+GRUB_MODULES="all_video boot btrfs cat chain configfile echo efifwsetup \
+  efinet ext2 fat font gfxmenu gfxterm gzio halt hfsplus iso9660 \
+  jpeg linuxefi lvm minicmd normal part_apple part_msdos \
+  part_gpt password_pbkdf2 png reboot search search_fs_uuid \
+  search_fs_file search_label sleep test video xfs \
+  mdraid09 mdraid1x multiboot2 multiboot"
 
-    mkdir -p ${PKG}/boot/efi/EFI/slackware
-    install -m 755 grub.efi ${PKG}/boot/efi/EFI/slackware/grub.efi || exit 1
+  ./grub-mkimage -O ${grubefiarch} -o ${grubeficdname} -p /EFI/BOOT \
+    -d grub-core ${GRUB_MODULES} || exit $?
+
+  ./grub-mkimage -O ${grubefiarch} -o ${grubefiname} -p /EFI/slackware \
+    -d grub-core ${GRUB_MODULES} || exit $?
+
+    mkdir -p ${PKG}/boot/efi/EFI/slackware/fonts/
+    install -pm0755 ${grubefiname} ${PKG}/boot/efi/EFI/slackware/${grubefiname} || exit 1
+    install -pm0755 ${grubeficdname} ${PKG}/boot/efi/EFI/slackware/${grubeficdname} || exit 1
+    
+    install -pm0644 unicode.pf2 ${PKG}/boot/efi/EFI/slackware/fonts/unicode.pf2 || exit 1
+) || exit $?
+
+  touch ${PKG}/boot/efi/EFI/slackware/grub.cfg.new
+  ln -s ../boot/efi/EFI/slackware/grub.cfg ${PKG}/etc/grub-efi.cfg || exit 1
+
 fi
+
+mkdir -p grub-pc-build
+( cd grub-pc-build || exit 1
+
+  SB_CONFIGURE \
+    --with-platform=pc \
+    --disable-efiemu || exit $?
+
+  make -j${NJOBS} || make || return $?
+  make install DESTDIR=${PKG} || exit $?
+) || exit $?
 
 mkdir -p ${PKG}/boot/grub
 touch ${PKG}/boot/grub/grub.cfg.new

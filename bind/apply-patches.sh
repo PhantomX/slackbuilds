@@ -39,6 +39,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-rrl.patch
 # Install dns/update.h header for bind-dyndb-ldap plugin
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.9.3-include-update-h.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-ISC-Bugs-34738.patch
+# upstream patch [ISC-Bugs #34870]
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-ISC-Bugs-34870-v3.patch
 
 # IDN paches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.5-libidn.patch

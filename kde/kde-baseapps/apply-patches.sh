@@ -18,6 +18,9 @@ zcat ${SB_PATCHDIR}/kdebase-4.4.0-konqueror-kde\#228593.patch.gz | patch -p2 -E 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.2-konqueror-mimetyp.patch
 
 ## upstream patches
+# some post v4.11.3 commits, one for regression
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Fix-Bug-287983-Dolphin-truncates-tooltip-information.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-Revert-Files-passed-as-arguments-Ignore-unsupported-.patch
 
 #trunk patches
 

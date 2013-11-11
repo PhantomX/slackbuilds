@@ -20,8 +20,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-libstdc++-docs.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-no-copy-dt-needed-entries.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr56564.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr56493.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-dup3-typo.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr58800.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-Handle-FP_EX_DENORM.patch
 
 # From Gentoo
 patch -p1 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_default-fortify-source.patch
@@ -31,6 +30,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/50_all_libiberty-asprintf.patc
 
 ### Arch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc-4.8-filename-output.patch
+# http://gcc.gnu.org/bugzilla//show_bug.cgi?id=56710 - commit 3d1f8279
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc-4.8-lambda-ICE.patch
 
 # Test CLSOVER
 CLSORVER="$(grep -F 'libcloog-isl.so.' ${SB_PATCHDIR}/gcc48-cloog-dl.patch |awk -F\" '{print $2}' | cut -d. -f3)"

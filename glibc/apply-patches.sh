@@ -128,5 +128,7 @@ ApplyPatch glibc-2.18-malloc-corrupt-CVE-2013-4332.patch
 ApplyPatch glibc-2.18-strstr-hackfix.patch
 # upstream commit 7cbcdb36
 ApplyPatch glibc-2.18-getaddrinfo-CVE-2013-4458.patch
+# upstream commit a4966c61
+ApplyPatch glibc-2.18-scanf-parse-0e-0.patch
 
 set +e +o pipefail

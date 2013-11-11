@@ -9,7 +9,7 @@ patch -p2 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/xulrunner-24.0-gcc4
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-8.0-enable-addons.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-idl-parser-cachepath.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.14-installdir.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.19-elfhack.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.22-elfhack.patch
 
 # Gentoo
 

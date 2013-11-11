@@ -45,10 +45,13 @@ if [ "${SB_PAM}" = "YES" ] ;then
   ApplyPatch pam_ssh_agent_auth-0.9.2-seteuid.patch
   # explicitly make pam callbacks visible
   ApplyPatch pam_ssh_agent_auth-0.9.2-visibility.patch
+  # don't use xfree (#1024965)
+  ApplyPatch pam_ssh_agent_auth-0.9.3-no-xfree.patch
 )
 fi
 
-sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.3p1-ldap.patch | patch -p1 -E --backup --verbose
+echo "Applying openssh-6.3p1-ldap.patch"
+sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.3p1-ldap.patch | ${PATCHCOM}
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1644
 ApplyPatch openssh-5.2p1-allow-ip-opts.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1701
@@ -73,7 +76,8 @@ ApplyPatch openssh-5.8p1-localdomain.patch
 ApplyPatch openssh-6.3p1-chinfo.patch -z .chinfo
 [ "${SB_PAM}" = "YES" ] || sed -i -e '/^UsePAM yes/d' sshd_config
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1890 (WONTFIX) need integration to prng helper which is discontinued :)
-sed 's| port-linux_part_2\.o||g' ${SB_PATCHDIR}/openssh-6.2p1-entropy.patch | patch -p1 -E --backup --verbose
+echo "Applying openssh-6.2p1-entropy.patch"
+sed 's| port-linux_part_2\.o||g' ${SB_PATCHDIR}/openssh-6.2p1-entropy.patch | ${PATCHCOM}
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1640
 ApplyPatch openssh-6.2p1-vendor.patch
 # warn users for unsupported UsePAM=no (#757545)

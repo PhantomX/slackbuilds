@@ -4,6 +4,7 @@ pref("app.update.autoInstallEnabled", false);
 pref("browser.backspace_action",            2);
 pref("browser.display.use_system_colors",   true);
 pref("browser.download.folderList",         1);
+pref("browser.fixup.alternate.enabled", false);
 pref("browser.link.open_external",          3);
 pref("browser.newtabpage.enabled", false);
 pref("browser.search.suggest.enabled", false);

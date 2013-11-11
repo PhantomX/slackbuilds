@@ -3,6 +3,7 @@ pref("app.update.enabled", false)
 pref("browser.backspace_action",            2);
 pref("browser.display.use_system_colors",   true);
 pref("browser.download.folderList",         1);
+pref("browser.fixup.alternate.enabled", false);
 pref("browser.link.open_external",          3);
 pref("general.smoothScroll", false);
 pref("browser.zoom.full", false);

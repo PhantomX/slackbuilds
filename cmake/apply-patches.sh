@@ -34,6 +34,4 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-strict_aliasing.patch
 # Remove automatic Qt module dep adding
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-qtdeps.patch
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-dont-add-invalid-content-to-static-lib.patch
-
 set +e +o pipefail

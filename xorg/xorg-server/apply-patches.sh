@@ -40,9 +40,6 @@ ApplyPatch xserver-1.6.0-less-acpi-brokenness.patch
 ApplyPatch xserver-1.6.99-right-of.patch
 #zcat ${SB_PATCHDIR}/xserver-1.6.99-hush-prerelease-warning.patch.gz | patch -p1 --verbose
 
-# upstream submitted
-ApplyPatch 0001-randr-upstream-set-changed-fixes.patch
-
 # backport pci slot claiming fix for kms drivers
 # needed when building without xorg (aka s390x)
 ApplyPatch xserver-1.12.2-xorg-touch-test.patch

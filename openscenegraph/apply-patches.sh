@@ -4,7 +4,11 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-3.0.1.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/osg-xine-1.2.patch
+### Fedora
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Cmake-fixes.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-Fix-invalid-char.patch
+# Upstream deactivated building osgviewerWX for obscure reasons
+# Reactivate for now.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-Activate-osgviewerWX.patch
 
 set +e +o pipefail

@@ -1,0 +1,2562 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 78f33fe..4384274 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -7,6 +7,8 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
+ set(CMAKE_AUTOMOC ON)
+ 
+ add_definitions(-Wall -march=native -std=c++11)
++include(FeatureSummary)
++
+ 
+ if(NOT CMAKE_BUILD_TYPE)
+         set(CMAKE_BUILD_TYPE Release)
+@@ -27,7 +29,7 @@ find_package(PkgConfig)
+ 
+ # PAM
+ if(NOT NO_PAM)
+-  find_package(PAM)
++  find_package(PAM REQUIRED)
+ 
+   if(PAM_FOUND)
+     add_definitions(-DUSE_PAM)
+@@ -42,6 +44,9 @@ find_package(XKB REQUIRED)
+ 
+ if(USE_QT5)
+   find_package(Qt5Core REQUIRED)
++  find_package(Qt5Quick REQUIRED)
++  find_package(Qt5Gui REQUIRED)
++  find_package(Qt5Network REQUIRED)
+   find_package(Qt5DBus REQUIRED)
+   find_package(Qt5LinguistTools REQUIRED)
+ 
+@@ -97,6 +102,8 @@ set(CONFIG_FILE                 "${SYS_CONFIG_DIR}/sddm.conf"               CACH
+ set(LOG_FILE                    "/var/log/sddm.log"                         CACHE PATH      "Path of the sddm log file")
+ set(COMPONENTS_TRANSLATION_DIR  "${DATA_INSTALL_DIR}/translations"          CACHE PATH      "Components translations directory")
+ 
++feature_summary(WHAT ALL   FATAL_ON_MISSING_REQUIRED_PACKAGES)
++
+ add_subdirectory(components)
+ add_subdirectory(data)
+ add_subdirectory(services)
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index a82ae45..a66e5d1 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -7,6 +7,7 @@ configure_file(common/Constants.h.in common/Constants.h IMMEDIATE @ONLY)
+ 
+ set(DAEMON_SOURCES
+     common/Configuration.cpp
++    common/SafeDataStream.cpp
+     common/SocketWriter.cpp
+     daemon/Authenticator.cpp
+     daemon/DaemonApp.cpp
+@@ -17,7 +18,6 @@ set(DAEMON_SOURCES
+     daemon/PowerManager.cpp
+     daemon/Seat.cpp
+     daemon/SeatManager.cpp
+-    daemon/Session.cpp
+     daemon/SignalHandler.cpp
+     daemon/SocketServer.cpp
+ )
+@@ -28,13 +28,7 @@ if(USE_QT5)
+     qt5_add_dbus_adaptor(DAEMON_SOURCES ${CMAKE_SOURCE_DIR}/data/interfaces/org.freedesktop.DisplayManager.Session.xml  daemon/DisplayManager.h SDDM::DisplayManagerSession)
+ 
+     add_executable(sddm ${DAEMON_SOURCES})
+-    target_link_libraries(sddm ${LIBXCB_LIBRARIES})
+-    if(PAM_FOUND)
+-      target_link_libraries(sddm ${PAM_LIBRARIES})
+-    else()
+-      target_link_libraries(sddm crypt)
+-    endif()
+-    qt5_use_modules(sddm DBus Network)
++    target_link_libraries(sddm ${LIBXCB_LIBRARIES} Qt5::Core Qt5::DBus Qt5::Network)
+ else()
+     set(QT_USE_QTNETWORK TRUE)
+     set(QT_USE_QTDBUS TRUE)
+@@ -55,6 +49,41 @@ endif()
+ 
+ install(TARGETS sddm DESTINATION ${BIN_INSTALL_DIR})
+ 
++## AUTHENTICATOR ##
++
++set(AUTHENTICATOR_SOURCES
++    auth/AuthenticatorApp.cpp
++    auth/Method.cpp
++    auth/PAM.cpp
++    auth/Session.cpp
++    common/Configuration.cpp
++    common/SafeDataStream.cpp
++)
++
++if(USE_QT5)
++    add_executable(sddm-auth ${AUTHENTICATOR_SOURCES})
++    target_link_libraries(sddm-auth Qt5::Core)
++    if(PAM_FOUND)
++      target_link_libraries(sddm-auth ${PAM_LIBRARIES})
++      set_target_properties(sddm-auth PROPERTIES COMPILE_DEFINITIONS "USE_PAM=1")
++
++    else()
++      target_link_libraries(sddm-auth crypt)
++    endif()
++else()
++    include(${QT_USE_FILE})
++
++    add_executable(sddm-auth ${AUTHENTICATOR_SOURCES})
++    target_link_libraries(sddm-auth ${LIBXCB_LIBRARIES} ${QT_LIBRARIES})
++    if(PAM_FOUND)
++      target_link_libraries(sddm-auth ${PAM_LIBRARIES})
++    else()
++      target_link_libraries(sddm-auth crypt)
++    endif()
++endif()
++
++install(TARGETS sddm-auth DESTINATION ${BIN_INSTALL_DIR})
++
+ ## GREETER ##
+ 
+ set(GREETER_SOURCES
+@@ -72,8 +101,7 @@ set(GREETER_SOURCES
+ 
+ if(USE_QT5)
+     add_executable(sddm-greeter ${GREETER_SOURCES})
+-    target_link_libraries(sddm-greeter ${LIBXCB_LIBRARIES} ${LIBXKB_LIBRARIES})
+-    qt5_use_modules(sddm-greeter Quick)
++    target_link_libraries(sddm-greeter ${LIBXCB_LIBRARIES} ${LIBXKB_LIBRARIES} Qt5::Core Qt5::Quick Qt5::Gui)
+ else()
+     set(QT_USE_QTDECLARATIVE TRUE)
+     include(${QT_USE_FILE})
+diff --git a/src/auth/AuthenticatorApp.cpp b/src/auth/AuthenticatorApp.cpp
+new file mode 100644
+index 0000000..be72de2
+--- /dev/null
++++ b/src/auth/AuthenticatorApp.cpp
+@@ -0,0 +1,206 @@
++/*
++ * <one line to give the program's name and a brief idea of what it does.>
++ * Copyright (C) 2013  Martin Bříza <email>
++ * 
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ * 
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ * 
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ * 
++ */
++
++#include "AuthenticatorApp.h"
++#include "Configuration.h"
++#include "Constants.h"
++#include "Method.h"
++#include "PAM.h"
++#include "Session.h"
++
++#include <QtCore/QDebug>
++#include <QtCore/QFile>
++#include <QtCore/qtextstream.h>
++#include <QtCore/QSocketNotifier>
++
++#include <cstdio>
++#include <iostream>
++
++namespace SDDM {
++    AuthenticatorApp *AuthenticatorApp::self = nullptr;
++
++    AuthenticatorApp::AuthenticatorApp(int argc, char **argv)
++    : QCoreApplication(argc, argv)
++    , m_method(new Method(this))
++    , m_notifier(new QSocketNotifier(fileno(stdin), QSocketNotifier::Read, this)) {
++        if (!self)
++            self = this;
++        new Configuration(CONFIG_FILE, this);
++        connect(this, SIGNAL(started(QString,QString,QString,bool)), m_method, SLOT(start(QString,QString,QString,bool)));
++        connect(this, SIGNAL(stopped()), m_method, SLOT(stop()));
++        connect(m_method, SIGNAL(loginFailed()), this, SLOT(slotLoginFailed()));
++        connect(m_method, SIGNAL(loginSucceeded(QString)), this, SLOT(slotLoginSucceeded(QString)));
++        connect(m_method, SIGNAL(sessionTerminated()), this, SLOT(quit()));
++        connect(m_notifier, SIGNAL(activated(int)), this, SLOT(readFromParent(int)));
++        m_notifier->setEnabled(true);
++
++        m_input.open(fileno(stdin), QIODevice::ReadOnly | QIODevice::Unbuffered);
++        m_output.open(fileno(stdout), QIODevice::WriteOnly | QIODevice::Unbuffered);
++
++        qCritical() << " AUTH: Started";
++    }
++
++    AuthenticatorApp* AuthenticatorApp::instance() {
++        return self;
++    }
++
++    void AuthenticatorApp::readFromParent(int fd) {
++        qDebug() << " AUTH: Message received" << m_input.bytesAvailable();
++        SafeDataStream inStream(&m_input);
++        quint32 command = quint32(AuthMessages::AuthNone);
++        inStream.receive();
++        inStream >> command;
++        qDebug() << "Command" << command;
++        handleMessage(AuthMessages(command), inStream);
++    }
++
++    void AuthenticatorApp::handleMessage(AuthMessages command, SafeDataStream& inStream) {
++        switch (command) {
++            case AuthMessages::Start: {
++                QString user, session, password;
++                bool passwordless;
++                inStream >> user >> session >> password >> passwordless;
++                emit started(user, session, password, passwordless);
++                break;
++            }
++            case AuthMessages::End:
++                emit stopped();
++                break;
++            default:
++                break;
++        }
++    }
++
++    QProcessEnvironment AuthenticatorApp::requestEnvironment(const QString &user) {
++        qDebug() << " AUTH: requestEnvironment start";
++        SafeDataStream inStream(&m_input);
++        SafeDataStream outStream(&m_output);
++        quint32 command = quint32(AuthMessages::AuthNone);
++        int count;
++        QStringList envList;
++        QProcessEnvironment env;
++
++        qDebug() << "Requesting environment for user" << user;
++        outStream << quint32(AuthMessages::RequestEnv) << user;
++        outStream.send();
++
++        inStream.receive();
++        inStream >> command >> envList;
++        if (command != quint32(AuthMessages::Env)) {
++            qDebug() << " AUTH: Received out of order message" << command << "when waiting for Env";
++            handleMessage(AuthMessages(command), inStream);
++            return env;
++        }
++        qDebug() << " AUTH: Received environment:" << envList;
++
++        foreach (const QString &s, envList)
++            env.insert(s.left(s.indexOf("=")), s.mid(s.indexOf("=") + 1));
++
++        return env;
++    }
++
++    int AuthenticatorApp::requestSessionId() {
++        qDebug() << " AUTH: requestSessionId start";
++        SafeDataStream inStream(&m_input);
++        SafeDataStream outStream(&m_output);
++        quint32 command = quint32(AuthMessages::AuthNone);
++        int id;
++
++        outStream << quint32(AuthMessages::RequestSessionID);
++        outStream.send();
++
++        inStream.receive();
++        inStream >> command;
++        if (command != quint32(AuthMessages::SessionID)) {
++            qDebug() << " AUTH: Received out of order message" << command << "when waiting for SessionID";
++            handleMessage(AuthMessages(command), inStream);
++            return -1;
++        }
++        inStream >> id;
++
++        qDebug() << " AUTH: requestSessionId end";
++        return id;
++    }
++
++    bool AuthenticatorApp::requestCookieTo(const QString& path, const QString &user) {
++        qDebug() << " AUTH: requestCookieTo start";
++        SafeDataStream inStream(&m_input);
++        SafeDataStream outStream(&m_output);
++        quint32 command = quint32(AuthMessages::AuthNone);
++        qDebug() << " AUTH: Requesting Cookie to path" << path << "for user" << user;
++
++        outStream << quint32(AuthMessages::RequestCookieLink) << path << user;
++        outStream.send();
++
++        inStream.receive();
++        inStream >> command;
++        if (command != quint32(AuthMessages::CookieLink)) {
++            qDebug() << " AUTH: Received out of order message" << command << "when waiting for CookieLink";
++            handleMessage(AuthMessages(command), inStream);
++            return false;
++        }
++
++        qDebug() << " AUTH: requestCookieTo end";
++        return true;
++    }
++
++    QString AuthenticatorApp::requestDisplay() {
++        qDebug() << " AUTH: requestDisplay start";
++        SafeDataStream inStream(&m_input);
++        SafeDataStream outStream(&m_output);
++        quint32 command = quint32(AuthMessages::AuthNone);
++        qDebug() << " AUTH: Requesting Display";
++        QString display;
++
++        outStream << quint32(AuthMessages::RequestDisplay);
++        outStream.send();
++
++        inStream.receive();
++        inStream >> command;
++        if (command != quint32(AuthMessages::Display)) {
++            qDebug() << " AUTH: Received out of order message" << command << "when waiting for Display";
++            handleMessage(AuthMessages(command), inStream);
++            return display;
++        }
++        inStream >> display;
++
++        qDebug() << " AUTH: requestDisplay end";
++        return display;
++    }
++
++    void AuthenticatorApp::slotLoginFailed() {
++        SafeDataStream outStream(&m_output);
++        outStream << quint32(AuthMessages::LoginFailed);
++        outStream.send();
++    }
++
++    void AuthenticatorApp::slotLoginSucceeded(QString user) {
++        SafeDataStream outStream(&m_output);
++        outStream << quint32(AuthMessages::LoginSucceeded) << m_method->name() << user;
++        outStream.send();
++    }
++}
++
++int main(int argc, char **argv) {
++    SDDM::AuthenticatorApp app(argc, argv);
++    return app.exec();
++}
++
++#include "AuthenticatorApp.moc"
+diff --git a/src/auth/AuthenticatorApp.h b/src/auth/AuthenticatorApp.h
+new file mode 100644
+index 0000000..6c54d02
+--- /dev/null
++++ b/src/auth/AuthenticatorApp.h
+@@ -0,0 +1,70 @@
++/*
++ * <one line to give the program's name and a brief idea of what it does.>
++ * Copyright (C) 2013  Martin Bříza <email>
++ * 
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ * 
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ * 
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ * 
++ */
++
++#ifndef AUTHENTICATORAPP_H
++#define AUTHENTICATORAPP_H
++
++#include "Messages.h"
++#include "SafeDataStream.h"
++
++#include <QtCore/QObject>
++#include <QtCore/QCoreApplication>
++#include <QtCore/QProcess>
++#include <QtCore/QSocketNotifier>
++#include <QtCore/QFile>
++
++namespace SDDM {
++
++    class Method;
++    class AuthenticatorApp : public QCoreApplication
++    {
++        Q_OBJECT
++    public:
++        explicit AuthenticatorApp(int argc, char **argv);
++        static AuthenticatorApp *instance();
++
++        QProcessEnvironment requestEnvironment(const QString &user);
++        int requestSessionId();
++        bool requestCookieTo(const QString &path, const QString &user);
++        QString requestDisplay();
++
++    signals:
++        void started(const QString &user, const QString &session, const QString &password, bool passwordless);
++        void stopped();
++
++    public slots:
++        void slotLoginSucceeded(QString user);
++        void slotLoginFailed();
++
++    private slots:
++        void readFromParent(int fd);
++        void handleMessage(AuthMessages command, SafeDataStream &inStream);
++
++    private:
++        static AuthenticatorApp *self;
++
++        Method *m_method { nullptr };
++        QSocketNotifier *m_notifier { nullptr };
++        QFile m_input { };
++        QFile m_output { };
++    };
++}
++
++#endif // AUTHENTICATORAPP_H
+diff --git a/src/auth/Method.cpp b/src/auth/Method.cpp
+new file mode 100644
+index 0000000..aef1661
+--- /dev/null
++++ b/src/auth/Method.cpp
+@@ -0,0 +1,330 @@
++/*
++ * <one line to give the program's name and a brief idea of what it does.>
++ * Copyright (C) 2013  Martin Bříza <email>
++ * 
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ * 
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ * 
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ * 
++ */
++
++#include "Method.h"
++#include "Configuration.h"
++#include "Session.h"
++#include "AuthenticatorApp.h"
++
++#include <QtCore/QDebug>
++#include <QtCore/QProcess>
++#include <QtCore/QDir>
++
++#ifndef USE_PAM
++#include <crypt.h>
++#include <shadow.h>
++#else
++#include "PAM.h"
++#endif
++
++#include <grp.h>
++#include <pwd.h>
++#include <unistd.h>
++
++namespace SDDM {
++    Method::Method(QObject* parent)
++    : QObject(parent) {
++
++    }
++
++    QString Method::name() const {
++        if (m_started)
++            return m_process->name();
++        else
++            return QString();
++    }
++
++    void Method::start(const QString& user, const QString& session, const QString& password, bool passwordless) {
++        if (doStart(user, session, password, passwordless))
++            emit loginSucceeded(user);
++        else
++            emit loginFailed();
++    }
++
++    void Method::buildSessionName(const QString& session) {
++        if (session.endsWith(".desktop")) {
++            // session directory
++            QDir dir(Configuration::instance()->sessionsDir());
++
++            // session file
++            QFile file(dir.absoluteFilePath(session));
++
++            // open file
++            if (file.open(QIODevice::ReadOnly)) {
++
++                // read line-by-line
++                QTextStream in(&file);
++                while (!in.atEnd()) {
++                    QString line = in.readLine();
++
++                    // line starting with Exec
++                    if (line.startsWith("Exec="))
++                        m_sessionCommand = line.mid(5);
++                }
++
++                // close file
++                file.close();
++            }
++
++            // remove extension
++            m_sessionName = QString(session.left(session.lastIndexOf(".")));
++        } else {
++            m_sessionCommand = QString(session);
++            m_sessionName = QString(session);
++        }
++    }
++
++    bool Method::authenticate() {
++#ifdef USE_PAM
++        if (m_pam)
++            m_pam->deleteLater();
++
++        m_pam = new PamService(m_user, m_password, m_passwordless);
++
++        if (!m_pam)
++            return false;
++
++        QString display = AuthenticatorApp::instance()->requestDisplay();
++
++        // set tty
++        if (!m_pam->setItem(PAM_TTY, qPrintable(display)))
++            return false;
++
++        // set display name
++        if (!m_pam->setItem(PAM_XDISPLAY, qPrintable(display)))
++            return false;
++
++        // set username
++        if (!m_pam->setItem(PAM_USER, qPrintable(m_user)))
++            return false;
++
++        // authenticate the applicant
++        if (!m_pam->authenticate())
++            return false;
++
++        // get mapped user name; PAM may have changed it
++        const char *mapped = (const char *) m_pam->getItem(PAM_USER);
++        if (mapped == NULL)
++            return false;
++        // TODO: Find out if PAM changing the name is a good or a bad thing
++        //m_user = QString(mapped);
++
++        if (!m_pam->acctMgmt())
++            return false;
++#else
++        if (!m_passwordless) {
++            // user name
++            struct passwd *pw;
++            if ((pw = getpwnam(qPrintable(m_user))) == nullptr) {
++                // log error
++                qCritical() << " AUTH: Failed to get user entry.";
++
++                // return fail
++                return false;
++            }
++
++            struct spwd *sp;
++            if ((sp = getspnam(pw->pw_name)) == nullptr) {
++                // log error
++                qCritical() << " AUTH: Failed to get shadow entry.";
++
++                // return fail
++                return false;
++            }
++
++            // check if password is not empty
++            if (sp->sp_pwdp && sp->sp_pwdp[0]) {
++
++                // encrypt password
++                char *encrypted = crypt(qPrintable(m_password), sp->sp_pwdp);
++
++                if (strcmp(encrypted, sp->sp_pwdp))
++                    return false;
++            }
++        }
++
++        char *mapped = strdup(qPrintable(m_user));
++        m_user = QString(mapped);
++        free(mapped);
++#endif
++        return true;
++    }
++
++    bool Method::setupUser() {
++        // user name
++        struct passwd *pw;
++        if ((pw = getpwnam(qPrintable(m_user))) == nullptr) {
++            // log error
++            qCritical() << " AUTH: Failed to get user name.";
++
++            // return fail
++            return false;
++        }
++
++        if (pw->pw_shell[0] == '\0') {
++            setusershell();
++            strcpy(pw->pw_shell, getusershell());
++            endusershell();
++        }
++
++        // set session m_process params
++        m_process->setUser(pw->pw_name);
++        m_process->setDir(pw->pw_dir);
++        m_process->setUid(pw->pw_uid);
++        m_process->setGid(pw->pw_gid);
++        // redirect error output to ~/.xession-errors
++        m_process->setStandardErrorFile(QString("%1/.xsession-errors").arg(pw->pw_dir));
++        if (!AuthenticatorApp::instance()->requestCookieTo(QString("%1/.Xauthority").arg(pw->pw_dir), m_user))
++            return false;
++        return true;
++    }
++
++    QProcessEnvironment Method::setupEnvironment() {        // set m_process environment
++        QProcessEnvironment env = AuthenticatorApp::instance()->requestEnvironment(m_user);
++#ifdef USE_PAM
++        env.insert(m_pam->getEnv());
++        m_pam->putEnv(env);
++#endif
++        env.insert("DESKTOP_SESSION", m_sessionName);
++        env.insert("GDMSESSION", m_sessionName);
++        return env;
++    }
++
++    bool Method::startSession() {
++#ifdef USE_PAM
++        // set credentials
++        if (!m_pam->setCred(PAM_ESTABLISH_CRED))
++            return false;
++
++        // open session
++        if (!m_pam->openSession())
++            return false;
++
++        // set credentials
++        if (!m_pam->setCred(PAM_REINITIALIZE_CRED))
++            return false;
++#endif
++        // start session
++        m_process->start(Configuration::instance()->sessionCommand(), { m_sessionCommand });
++        return true;
++    }
++
++
++    bool Method::doStart(const QString &user, const QString &session, const QString &password, bool passwordless) {
++        m_user = user;
++        m_password = password;
++        m_passwordless = passwordless;
++        // check flag
++        if (m_started)
++            return false;
++
++        buildSessionName(session);
++
++        if (m_sessionCommand.isEmpty()) {
++            // log error
++            qCritical() << " AUTH: Failed to find command for session:" << session;
++
++            // return fail
++            return false;
++        }
++
++        if (!authenticate())
++            return false;
++
++        qDebug() << " AUTH: Authenticated for user" << m_user;
++
++        // create user session m_process
++        m_process = new Session(QString("Session%1").arg(AuthenticatorApp::instance()->requestSessionId()), this);
++        connect(m_process, SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(finished()));
++
++        if (!setupUser())
++            return false;
++
++        m_process->setProcessEnvironment(setupEnvironment());
++
++        if (!startSession())
++            return false;
++
++        qDebug() << " AUTH: User session" << m_sessionName << "set up.";
++
++        // wait for started
++        if (!m_process->waitForStarted()) {
++            // log error
++            qDebug() << " AUTH: Failed to start user session.";
++
++            // return fail
++            return false;
++        }
++
++        // log message
++        qDebug() << " AUTH: User session started.";
++
++        // register to the display manager FIXME
++        // daemonApp->displayManager()->AddSession(m_process->name(), seat->name(), pw->pw_name);
++
++        // set flag
++        m_started = true;
++
++        // return success
++        return true;
++    }
++
++    void Method::stop() {
++        // check flag
++        if (!m_started)
++            return;
++
++        // log message
++        qDebug() << " AUTH: User session stopping...";
++
++        // terminate m_process
++        m_process->terminate();
++
++        // wait for finished
++        if (!m_process->waitForFinished(5000))
++            m_process->kill();
++    }
++
++    void Method::finished() {
++        // check flag
++        if (!m_started)
++            return;
++
++        // reset flag
++        m_started = false;
++
++        // log message
++        qDebug() << " AUTH: User session ended.";
++
++        // delete session process
++        m_process->deleteLater();
++        m_process = nullptr;
++
++#ifdef USE_PAM
++        delete m_pam;
++        m_pam = nullptr;
++#endif
++
++        emit sessionTerminated();
++    }
++
++};
++
++#include "Method.moc"
+diff --git a/src/auth/Method.h b/src/auth/Method.h
+new file mode 100644
+index 0000000..e13133a
+--- /dev/null
++++ b/src/auth/Method.h
+@@ -0,0 +1,73 @@
++/*
++ * <one line to give the program's name and a brief idea of what it does.>
++ * Copyright (C) 2013  Martin Bříza <email>
++ * 
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ * 
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ * 
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ * 
++ */
++
++#ifndef METHOD_H
++#define METHOD_H
++
++#include <QtCore/QObject>
++#include <QtCore/QProcess>
++
++namespace SDDM {
++#ifdef USE_PAM
++    class PamService;
++#endif
++    class Session;
++    class Method : public QObject
++    {
++        Q_OBJECT
++    public:
++        explicit Method(QObject *parent = nullptr);
++        QString name() const;
++
++    protected:
++        virtual bool authenticate();
++        virtual bool setupUser();
++        virtual QProcessEnvironment setupEnvironment();
++        virtual bool startSession();
++
++    signals:
++        void loginSucceeded(QString);
++        void loginFailed();
++        void sessionTerminated();
++
++    public slots:
++        void start(const QString &user, const QString &session, const QString &password, bool passwordless);
++        void stop();
++        void finished();
++
++    private:
++        bool doStart(const QString &user, const QString &session, const QString &password, bool passwordless);
++        void buildSessionName(const QString& session);
++
++        bool m_passwordless { false };
++        QString m_user { };
++        QString m_password { };
++        QString m_sessionName { };
++        QString m_sessionCommand { };
++
++        Session *m_process { nullptr };
++        bool m_started { false };
++#ifdef USE_PAM
++        PamService *m_pam { nullptr };
++#endif
++    };
++}
++
++#endif // METHOD_H
+diff --git a/src/auth/PAM.cpp b/src/auth/PAM.cpp
+new file mode 100644
+index 0000000..5229891
+--- /dev/null
++++ b/src/auth/PAM.cpp
+@@ -0,0 +1,266 @@
++/*
++ * PAM Authenticator backend
++ *
++ * Based on the work of:
++ *  SDDM Authenticator implementation: Abdurrahman AVCI <abdurrahmanavci@gmail.com>
++ *  SLiM PAM implementation: Martin Parm
++ *
++ * Copyright (C) 2013  Martin Bříza <mbriza@redhat.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ */
++
++#ifdef USE_PAM
++#include "PAM.h"
++
++#include <QtCore/QDebug>
++
++namespace SDDM {
++
++    bool PamService::putEnv(const QProcessEnvironment& env) {
++        foreach (const QString& s, env.toStringList()) {
++            result = pam_putenv(handle, s.toLatin1());
++            if (result != PAM_SUCCESS) {
++                qWarning() << " AUTH: PAM: putEnv:" << pam_strerror(handle, result);
++                return false;
++            }
++        }
++        return true;
++    }
++
++    QProcessEnvironment PamService::getEnv() {
++        QProcessEnvironment env;
++        // get pam environment
++        char **envlist = pam_getenvlist(handle);
++        if (envlist == NULL) {
++            qWarning() << " AUTH: PAM: getEnv: Returned NULL";
++            return env;
++        }
++
++        // copy it to the env map
++        for (int i = 0; envlist[i] != nullptr; ++i) {
++            QString s(envlist[i]);
++
++            // find equal sign
++            int index = s.indexOf('=');
++
++            // add to the hash
++            if (index != -1)
++                env.insert(s.left(index), s.mid(index + 1));
++
++            free(envlist[i]);
++        }
++        free(envlist);
++        return env;
++    }
++
++    bool PamService::chAuthTok(int flags) {
++        result = pam_chauthtok(handle, flags | m_silent);
++        if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: chAuthTok:" << pam_strerror(handle, result);
++        }
++        return result == PAM_SUCCESS;
++    }
++
++    bool PamService::acctMgmt(int flags) {
++        result = pam_acct_mgmt(handle, flags | m_silent);
++        if (result == PAM_NEW_AUTHTOK_REQD) {
++            // TODO see if this should really return the value or just true regardless of the outcome
++            return chAuthTok(PAM_CHANGE_EXPIRED_AUTHTOK);
++        }
++        else if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: acctMgmt:" << pam_strerror(handle, result);
++            return false;
++        }
++        return true;
++    }
++
++    bool PamService::authenticate(int flags) {
++        result = pam_authenticate(handle, flags | m_silent);
++        if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: authenticate:" << pam_strerror(handle, result);
++        }
++        return result == PAM_SUCCESS;
++    }
++
++    bool PamService::setCred(int flags) {
++        result = pam_setcred(handle, flags | m_silent);
++        if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: setCred:" << pam_strerror(handle, result);
++        }
++        return result == PAM_SUCCESS;
++    }
++
++    bool PamService::openSession() {
++        result = pam_open_session(handle, m_silent);
++        if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: openSession:" << pam_strerror(handle, result);
++        }
++        return result == PAM_SUCCESS;
++    }
++
++    bool PamService::closeSession() {
++        result = pam_close_session(handle, m_silent);
++        if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: closeSession:" << pam_strerror(handle, result);
++        }
++        return result == PAM_SUCCESS;
++    }
++
++    bool PamService::setItem(int item_type, const void* item) {
++        result = pam_set_item(handle, item_type, item);
++        if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: setItem:" << pam_strerror(handle, result);
++        }
++        return result == PAM_SUCCESS;
++    }
++
++    const void* PamService::getItem(int item_type) {
++        const void *item;
++        result = pam_get_item(handle, item_type, &item);
++        if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: getItem:" << pam_strerror(handle, result);
++        }
++        return item;
++    }
++
++    int PamService::converse(int n, const struct pam_message **msg, struct pam_response **resp, void *data) {
++        PamService *c = static_cast<PamService *>(data);
++        return c->doConverse(n, msg, resp);
++    }
++
++    int PamService::doConverse(int n, const struct pam_message **msg, struct pam_response **resp) {
++        struct pam_response *aresp;
++
++        // check size of the message buffer
++        if ((n <= 0) || (n > PAM_MAX_NUM_MSG))
++            return PAM_CONV_ERR;
++
++        // create response buffer
++        if ((aresp = (struct pam_response *) calloc(n, sizeof(struct pam_response))) == nullptr)
++            return PAM_BUF_ERR;
++
++        bool failed = false;
++
++        // if we don't require password, bail on any request from PAM
++        if (passwordless) {
++            for (int i = 0; i < n; ++i) {
++                switch(msg[i]->msg_style) {
++                    case PAM_ERROR_MSG:
++                    case PAM_TEXT_INFO:
++                        qDebug() << " AUTH: PAM: Message" << msg[i]->msg;
++                        break;
++                    case PAM_PROMPT_ECHO_OFF:
++                    case PAM_PROMPT_ECHO_ON:
++                    default:
++                        failed = true;
++                        break;
++                }
++            }
++        }
++        // else, respond to the messages
++        else {
++            for (int i = 0; i < n; ++i) {
++                aresp[i].resp_retcode = 0;
++                aresp[i].resp = nullptr;
++                switch (msg[i]->msg_style) {
++                    case PAM_PROMPT_ECHO_OFF:
++                        // set password - WARNING this is just assumption it's a password, beware!
++                        aresp[i].resp = strdup(qPrintable(password));
++                        if (aresp[i].resp == nullptr)
++                            failed = true;
++                        // clear password
++                        password = "";
++                        break;
++                    case PAM_PROMPT_ECHO_ON:
++                        // set user - WARNING again, just an assumption, in more complicated environments this won't suffice!
++                        aresp[i].resp = strdup(qPrintable(user));
++                        if (aresp[i].resp == nullptr)
++                            failed = true;
++                        // clear user
++                        user = "";
++                        break;
++                    case PAM_ERROR_MSG:
++                    case PAM_TEXT_INFO:
++                        qDebug() << " AUTH: PAM: Message:" << msg[i]->msg;
++                        break;
++                    default:
++                        failed = true;
++                }
++            }
++        }
++
++        if (failed) {
++            for (int i = 0; i < n; ++i) {
++                if (aresp[i].resp != nullptr) {
++                    memset(aresp[i].resp, 0, strlen(aresp[i].resp));
++                    free(aresp[i].resp);
++                }
++            }
++            memset(aresp, 0, n * sizeof(struct pam_response));
++            free(aresp);
++            *resp = nullptr;
++            return PAM_CONV_ERR;
++        }
++
++        *resp = aresp;
++        return PAM_SUCCESS;
++    }
++
++    bool PamService::start(const char *service_name, const char *user, const struct pam_conv *pam_conversation) {
++        result = pam_start(service_name, user, pam_conversation, &handle);
++        if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: start" << pam_strerror(handle, result);
++            return false;
++        }
++        else {
++            qDebug() << " AUTH: PAM: Starting...";
++        }
++        return true;
++    }
++
++    bool PamService::end(int flags) {
++        result = pam_end(handle, result | flags);
++        if (result != PAM_SUCCESS) {
++            qWarning() << " AUTH: PAM: end:" << pam_strerror(handle, result);
++            return false;
++        }
++        else {
++            qDebug() << " AUTH: PAM: Ended.";
++        }
++        return true;
++    }
++
++    PamService::PamService(const QString &user, const QString &password, bool passwordless, QObject *parent)
++    : QObject(parent), user(user), password(password), passwordless(passwordless) {
++        // create context
++        m_converse = { &PamService::converse, this };
++        // start service
++        if (passwordless)
++            start("sddm-passwordless", nullptr, &m_converse);
++        else
++            start("sddm", nullptr, &m_converse);
++    }
++
++    PamService::~PamService() {
++        // stop service
++        end();
++    }
++};
++
++#include "PAM.moc"
++
++#endif // USE_PAM
+diff --git a/src/auth/PAM.h b/src/auth/PAM.h
+new file mode 100644
+index 0000000..51134ab
+--- /dev/null
++++ b/src/auth/PAM.h
+@@ -0,0 +1,217 @@
++/*
++ * PAM Authenticator backend
++ * Copyright (C) 2013  Martin Bříza <mbriza@redhat.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ */
++
++#ifndef PAM_H
++#define PAM_H
++#ifdef USE_PAM
++
++#include <QtCore/QObject>
++#include <QtCore/QProcess>
++
++#include <security/pam_appl.h>
++
++namespace SDDM {
++    /**
++     * Class wrapping the standard Linux-PAM library calls
++     *
++     * Almost everything is left the same except the following things:
++     *
++     * Mainly, state returns - if you call pam_start, pam_open_session and then
++     * pam_start again, the session will get closed and the conversation closed
++     *
++     * You don't need to pass PAM_SILENT to every call if you want PAM to be quiet.
++     * You can set the flag globally by using the \ref setSilence method.
++     *
++     * \ref acctMgmt doesn't require you to handle the PAM_NEW_AUTHTOK_REQD condition,
++     * it calls chAuthTok on its own.
++     *
++     * Error messages are automatically reported to qDebug
++     */
++    class PamService : public QObject {
++        Q_OBJECT
++
++    public:
++        /**
++         * ctor
++         *
++         * \param service PAM service name, e.g. "sddm"
++         * \param user username
++         * \param password user's password
++         * \param passwordless true if no password is required
++         * \param parent parent QObject
++         */
++        PamService(const QString &user, const QString &password, bool passwordless, QObject *parent = 0);
++
++        ~PamService();
++
++        /**
++         * Conversation function for the pam_conv structure
++         *
++         * Calls ((PamService*)pam_conv.appdata_ptr)->doConverse() with its parameters
++         */
++        static int converse(int n, const struct pam_message **msg, struct pam_response **resp, void *data);
++
++        /**
++         * The main conversation method
++         *
++         * This method relates to this particular session / login attempt only, it's called on the object
++         * that it belongs to.
++         *
++         * So far its architecture is quite silly and relies both on previously entered username and password.
++         * In the future, I'm intending to use it to request information from the greeter by calling its methods to
++         * supply the required information. (And this won't be just passwords, we'd like to have the possibility to
++         * log in using just a USB key, fingerprint reader, whatever you want.)
++         *
++         * I hope this task will be easier to implement by moving the whole thing into a class.
++         */
++        int doConverse(int n, const struct pam_message **msg, struct pam_response **resp);
++
++        /**
++         * pam_set_item - set and update PAM informations
++         *
++         * \param item_type PAM item type
++         * \param item item pointer
++         *
++         * \return true on success
++         */
++        bool setItem(int item_type, const void *item);
++
++        /**
++         * pam_get_item - getting PAM informations
++         *
++         * \param item_type
++         *
++         * \return item pointer or NULL on failure
++         */
++        const void *getItem(int item_type);
++
++        /**
++         * pam_open_session - start PAM session management
++         *
++         * \return true on success
++         */
++        bool openSession();
++
++        /**
++         * pam_close_session - terminate PAM session management
++         *
++         * \return true on success
++         */
++        bool closeSession();
++
++        /**
++         * pam_setcred - establish / delete user credentials
++         *
++         * \param flags PAM flag(s)
++         *
++         * \return true on success
++         */
++        bool setCred(int flags = 0);
++
++        /**
++         * pam_authenticate - account authentication
++         *
++         * \param flags PAM flag(s)
++         *
++         * \return true on success
++         */
++        bool authenticate(int flags = 0);
++
++        /**
++         * pam_acct_mgmt - PAM account validation management
++         *
++         * @note Automatically calls setCred if the password is expired
++         *
++         * \param flags PAM flag(s)
++         *
++         * \return true on success
++         */
++        bool acctMgmt(int flags = 0);
++
++        /**
++         * pam_chauthtok - updating authentication tokens
++         *
++         * \param flags PAM flag(s)
++         *
++         * \return true on success
++         */
++        bool chAuthTok(int flags = 0);
++
++        /**
++         * pam_getenv - get PAM environment
++         *
++         * \return Complete process environment
++         */
++        QProcessEnvironment getEnv();
++
++        /**
++         * pam_putenv - set or change PAM environment
++         *
++         * \param env environment to be merged into the PAM one
++         *
++         * \return true on success
++         */
++        bool putEnv(const QProcessEnvironment& env);
++
++        /**
++         * pam_end - termination of PAM transaction
++         *
++         * \param flags to be OR'd with the status (PAM_DATA_SILENT)
++         * \return true on success
++         */
++        bool end(int flags = 0);
++
++        /**
++         * pam_start - initialization of PAM transaction
++         *
++         * \param service PAM service name, e.g. "sddm"
++         * \param user username
++         * \param pam_conversation pointer to the PAM conversation structure to be used
++         *
++         * \return true on success
++         */
++        bool start(const char *service_name, const char *user, const struct pam_conv *pam_conversation);
++
++        /**
++         * Set PAM_SILENT upon the contained calls
++         * \param silent true if silent
++         */
++        inline void setSilence(bool silent){
++            if (silent)
++                m_silent |= PAM_SILENT;
++            else
++                m_silent &= (~PAM_SILENT);
++        }
++
++    private:
++        int m_silent { 0 }; ///< flag mask for silence of the contained calls
++
++        struct pam_conv m_converse; ///< the current conversation
++        pam_handle_t *handle { nullptr }; ///< PAM handle
++        int result { PAM_SUCCESS }; ///< PAM result
++
++        QString user { "" }; ///< user
++        QString password { "" }; ///< password
++        bool passwordless { false }; ///< true if doesn't require password
++    };
++};
++
++#endif // USE_PAM
++#endif // PAM_H
+diff --git a/src/auth/Session.cpp b/src/auth/Session.cpp
+new file mode 100644
+index 0000000..006a70e
+--- /dev/null
++++ b/src/auth/Session.cpp
+@@ -0,0 +1,103 @@
++/***************************************************************************
++* Copyright (c) 2013 Abdurrahman AVCI <abdurrahmanavci@gmail.com>
++*
++* This program is free software; you can redistribute it and/or modify
++* it under the terms of the GNU General Public License as published by
++* the Free Software Foundation; either version 2 of the License, or
++* (at your option) any later version.
++*
++* This program is distributed in the hope that it will be useful,
++* but WITHOUT ANY WARRANTY; without even the implied warranty of
++* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++* GNU General Public License for more details.
++*
++* You should have received a copy of the GNU General Public License
++* along with this program; if not, write to the
++* Free Software Foundation, Inc.,
++* 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++***************************************************************************/
++
++#include "Session.h"
++
++#include "Configuration.h"
++
++#include <QDebug>
++
++#include <grp.h>
++#include <pwd.h>
++#include <unistd.h>
++
++namespace SDDM {
++    Session::Session(const QString &name, QObject *parent) : QProcess(parent), m_name(name) {
++    }
++
++    const QString &Session::name() const {
++        return m_name;
++    }
++
++    void Session::setUser(const QString &user) {
++        m_user = user;
++    }
++
++    void Session::setDir(const QString &dir) {
++        m_dir = dir;
++    }
++
++    void Session::setUid(int uid) {
++        m_uid = uid;
++    }
++
++    void Session::setGid(int gid) {
++        m_gid = gid;
++    }
++
++    void Session::setupChildProcess() {
++        if (initgroups(qPrintable(m_user), m_gid)) {
++            qCritical() << " AUTH: Failed to initialize user groups.";
++
++            // emit signal
++            emit finished(EXIT_FAILURE, QProcess::NormalExit);
++
++            // exit
++            exit(EXIT_FAILURE);
++        }
++
++        if (setsid() < 0) {
++            qCritical() << " AUTH: Can't create a new session.";
++            emit finished(EXIT_FAILURE, QProcess::NormalExit);
++            exit(EXIT_FAILURE);
++        }
++
++        if (setgid(m_gid)) {
++            qCritical() << " AUTH: Failed to set group id.";
++
++            // emit signal
++            emit finished(EXIT_FAILURE, QProcess::NormalExit);
++
++            // exit
++            exit(EXIT_FAILURE);
++        }
++
++        if (setuid(m_uid)) {
++            qCritical() << " AUTH: Failed to set user id.";
++
++            // emit signal
++            emit finished(EXIT_FAILURE, QProcess::NormalExit);
++
++            // exit
++            exit(EXIT_FAILURE);
++
++        }
++
++        // change to user home dir
++        if (chdir(qPrintable(m_dir))) {
++            qCritical() << " AUTH: Failed to change dir to user home.";
++
++            // emit signal
++            emit finished(EXIT_FAILURE, QProcess::NormalExit);
++
++            // exit
++            exit(EXIT_FAILURE);
++        }
++    }
++}
+diff --git a/src/auth/Session.h b/src/auth/Session.h
+new file mode 100644
+index 0000000..ebf4979
+--- /dev/null
++++ b/src/auth/Session.h
+@@ -0,0 +1,54 @@
++/***************************************************************************
++* Copyright (c) 2013 Abdurrahman AVCI <abdurrahmanavci@gmail.com>
++*
++* This program is free software; you can redistribute it and/or modify
++* it under the terms of the GNU General Public License as published by
++* the Free Software Foundation; either version 2 of the License, or
++* (at your option) any later version.
++*
++* This program is distributed in the hope that it will be useful,
++* but WITHOUT ANY WARRANTY; without even the implied warranty of
++* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++* GNU General Public License for more details.
++*
++* You should have received a copy of the GNU General Public License
++* along with this program; if not, write to the
++* Free Software Foundation, Inc.,
++* 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++***************************************************************************/
++
++#ifndef SDDM_SESSION_H
++#define SDDM_SESSION_H
++
++#include <QProcess>
++
++namespace SDDM {
++
++    class Session : public QProcess {
++        Q_OBJECT
++        Q_DISABLE_COPY(Session)
++    public:
++        explicit Session(const QString &name, QObject *parent);
++
++        const QString &name() const;
++
++        void setUser(const QString &user);
++        void setDir(const QString &dir);
++        void setUid(int uid);
++        void setGid(int gid);
++
++    protected:
++        void setupChildProcess();
++
++    private:
++
++        QString m_name { "" };
++        QString m_user { "" };
++        QString m_dir { "" };
++
++        int m_uid { 0 };
++        int m_gid { 0 };
++    };
++}
++
++#endif // SDDM_SESSION_H
+diff --git a/src/common/.AuthenticatorWrapper.cpp.kate-swp b/src/common/.AuthenticatorWrapper.cpp.kate-swp
+new file mode 100644
+index 0000000..3253e12
+Binary files /dev/null and b/src/common/.AuthenticatorWrapper.cpp.kate-swp differ
+diff --git a/src/common/Messages.h b/src/common/Messages.h
+index c779791..40470cb 100644
+--- a/src/common/Messages.h
++++ b/src/common/Messages.h
+@@ -40,6 +40,22 @@ namespace SDDM {
+         LoginFailed
+     };
+ 
++    enum class AuthMessages {
++        AuthNone = 0,
++        Start,
++        End,
++        RequestEnv,
++        Env,
++        LoginFailed,
++        LoginSucceeded,
++        RequestSessionID,
++        SessionID,
++        RequestCookieLink,
++        CookieLink,
++        RequestDisplay,
++        Display
++    };
++
+     enum Capability {
+         None = 0x0000,
+         PowerOff = 0x0001,
+diff --git a/src/common/SafeDataStream.cpp b/src/common/SafeDataStream.cpp
+new file mode 100644
+index 0000000..eb41563
+--- /dev/null
++++ b/src/common/SafeDataStream.cpp
+@@ -0,0 +1,64 @@
++/*
++ * <one line to give the program's name and a brief idea of what it does.>
++ * Copyright (C) 2013  Martin Bříza <email>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ */
++
++#include "SafeDataStream.h"
++
++#include <QtCore/QBuffer>
++
++namespace SDDM {
++
++    SafeDataStream::SafeDataStream(QIODevice* stream) : QDataStream(new QByteArray(), QIODevice::ReadWrite),
++        m_stream(stream) {
++    }
++
++    void SafeDataStream::clear() {
++        QBuffer *buf = qobject_cast<QBuffer*>(device());
++        if (buf) {
++            buf->reset();
++            buf->buffer().clear();
++        }
++    }
++
++    void SafeDataStream::receive() {
++        QByteArray header;
++        header = m_stream->read(sizeof(uint));
++        if (header.size() < sizeof(uint)) {
++            m_stream->waitForReadyRead(-1);
++            header.append(m_stream->read(sizeof(uint) - header.size()));
++        }
++        uint len = *(uint *) header.constData();
++        while (len > 0) {
++            QByteArray chunk = m_stream->read(len);
++            len -= chunk.size();
++            this->writeRawData(chunk.constData(), chunk.size());
++        }
++        device()->reset();
++    }
++
++    void SafeDataStream::send() {
++        device()->reset();
++        QByteArray data = device()->readAll();
++        uint len = data.size();
++        m_stream->write((char *) &len, sizeof(uint));
++        qint64 status = m_stream->write(data.constData(), data.size());
++        m_stream->waitForBytesWritten(-1);
++    }
++
++}
+diff --git a/src/common/SafeDataStream.h b/src/common/SafeDataStream.h
+new file mode 100644
+index 0000000..80c333f
+--- /dev/null
++++ b/src/common/SafeDataStream.h
+@@ -0,0 +1,42 @@
++/*
++ * This class wraps QDataStream in a blocking way waiting for the entire message to be received
++ * Copyright (C) 2013  Martin Bříza <mbriza@redhat.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with this program; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ */
++
++#ifndef SAFEDATASTREAM_H
++#define SAFEDATASTREAM_H
++
++#include <QObject>
++#include <qdatastream.h>
++
++namespace SDDM {
++
++    class SafeDataStream : public QDataStream
++    {
++    public:
++        SafeDataStream(QIODevice *stream);
++        void clear();
++        void send();
++        void receive();
++    private:
++        QIODevice *m_stream;
++    };
++
++}
++
++#endif // SAFEDATASTREAM_H
+diff --git a/src/daemon/Authenticator.cpp b/src/daemon/Authenticator.cpp
+index 47b77f4..7503d65 100644
+--- a/src/daemon/Authenticator.cpp
++++ b/src/daemon/Authenticator.cpp
+@@ -18,414 +18,130 @@
+ ***************************************************************************/
+ 
+ #include "Authenticator.h"
+-
+-#include "Configuration.h"
+ #include "DaemonApp.h"
+ #include "Display.h"
+ #include "DisplayManager.h"
++#include "SeatManager.h"
+ #include "Seat.h"
+-#include "Session.h"
+-
+-#include <QDebug>
+-#include <QDir>
+-#include <QFile>
+-#include <QTextStream>
++#include "Constants.h"
+ 
+-#ifdef USE_PAM
+-#include <security/pam_appl.h>
+-#else
+-#include <crypt.h>
+-#include <shadow.h>
+-#endif
++#include <QtCore/QDebug>
++#include <QtCore/QFile>
+ 
+-#include <grp.h>
+ #include <pwd.h>
+ #include <unistd.h>
+ 
+ namespace SDDM {
+-#ifdef USE_PAM
+-    class PamService {
+-    public:
+-        PamService(const char *service, const QString &user, const QString &password, bool passwordless);
+-        ~PamService();
+-
+-        struct pam_conv m_converse;
+-        pam_handle_t *handle { nullptr };
+-        int result { PAM_SUCCESS };
+-
+-        QString user { "" };
+-        QString password { "" };
+-        bool passwordless { false };
+-    };
+-
+-    int converse(int n, const struct pam_message **msg, struct pam_response **resp, void *data) {
+-        struct pam_response *aresp;
+-
+-        // check size of the message buffer
+-        if ((n <= 0) || (n > PAM_MAX_NUM_MSG))
+-            return PAM_CONV_ERR;
+-
+-        // create response buffer
+-        if ((aresp = (struct pam_response *) calloc(n, sizeof(struct pam_response))) == nullptr)
+-            return PAM_BUF_ERR;
+-
+-        // respond to the messages
+-        bool failed = false;
+-        for (int i = 0; i < n; ++i) {
+-            aresp[i].resp_retcode = 0;
+-            aresp[i].resp = nullptr;
+-            switch (msg[i]->msg_style) {
+-                case PAM_PROMPT_ECHO_OFF: {
+-                    PamService *c = static_cast<PamService *>(data);
+-                    // set password
+-                    aresp[i].resp = strdup(qPrintable(c->password));
+-                    if (aresp[i].resp == nullptr)
+-                        failed = true;
+-                    // clear password
+-                    c->password = "";
+-                }
+-                    break;
+-                case PAM_PROMPT_ECHO_ON: {
+-                    PamService *c = static_cast<PamService *>(data);
+-                    // set user
+-                    aresp[i].resp = strdup(qPrintable(c->user));
+-                    if (aresp[i].resp == nullptr)
+-                        failed = true;
+-                    // clear user
+-                    c->user = "";
+-                }
+-                    break;
+-                case PAM_ERROR_MSG:
+-                case PAM_TEXT_INFO:
+-                    break;
+-                default:
+-                    failed = true;
+-            }
+-        }
+-
+-        if (failed) {
+-            for (int i = 0; i < n; ++i) {
+-                if (aresp[i].resp != nullptr) {
+-                    memset(aresp[i].resp, 0, strlen(aresp[i].resp));
+-                    free(aresp[i].resp);
+-                }
+-            }
+-            memset(aresp, 0, n * sizeof(struct pam_response));
+-            free(aresp);
+-            *resp = nullptr;
+-            return PAM_CONV_ERR;
++    Authenticator::Authenticator(Display *parent)
++    : QProcess(parent)
++    , m_display(parent) {
++        connect(this, SIGNAL(finished(int)), this, SIGNAL(stopped()));
++        setReadChannel(QProcess::StandardOutput);
++        connect(this, SIGNAL(readyRead()), this, SLOT(readFromChild()));
++        connect(this, SIGNAL(readyReadStandardError()), SLOT(forwardErrorOutput()));
++
++        QProcess::start(QString("%1/sddm-auth").arg(BIN_INSTALL_DIR));
++        if (!waitForStarted()) {
++            qCritical() << " DAEMON: Failed to start authenticator process:" << errorString();
++            return;
+         }
+ 
+-        *resp = aresp;
+-        return PAM_SUCCESS;
+-    }
+-
+-    PamService::PamService(const char *service, const QString &user, const QString &password, bool passwordless) : user(user), password(password), passwordless(passwordless) {
+-        // create context
+-        m_converse = { &converse, this };
+-
+-        // start service
+-        pam_start(service, nullptr, &m_converse, &handle);
+-    }
+-
+-    PamService::~PamService() {
+-        // stop service
+-        pam_end(handle, result);
+-    }
+-#endif
+-
+-    Authenticator::Authenticator(Display *parent) : QObject(parent), m_display(parent) {
+-    }
+-
+-    Authenticator::~Authenticator() {
+-        stop();
+-    }
+-
+-    Display *Authenticator::display() const {
+-        return m_display;
++        m_started = true;
++        qDebug() << " DAEMON: Started the authenticator process.";
+     }
+ 
+-    bool Authenticator::start(const QString &user, const QString &session) {
+-        return doStart(user, QString(), session, true);
++    void Authenticator::forwardErrorOutput() {
++        QFile err;
++        err.open(fileno(stderr), QIODevice::WriteOnly | QIODevice::Unbuffered);
++        err.write(this->readAllStandardError());
+     }
+ 
+-    bool Authenticator::start(const QString &user, const QString &password, const QString &session) {
+-        return doStart(user, password, session, false);
++    void Authenticator::readFromChild() {
++        SafeDataStream stream(this);
++        quint32 command;
++        stream.receive();
++        stream >> command;
++        qDebug() << " DAEMON: Received message" << command << "from the authenticator";
++        handleMessage(AuthMessages(command), stream);
+     }
+ 
+-    bool Authenticator::doStart(const QString &user, const QString &password, const QString &session, bool passwordless) {
+-        // check flag
+-        if (m_started)
+-            return false;
+-
+-        // convert session to command
+-        QString sessionName = "";
+-        QString command = "";
+-
+-        if (session.endsWith(".desktop")) {
+-            // session directory
+-            QDir dir(daemonApp->configuration()->sessionsDir());
+-
+-            // session file
+-            QFile file(dir.absoluteFilePath(session));
+-
+-            // open file
+-            if (file.open(QIODevice::ReadOnly)) {
+-
+-                // read line-by-line
+-                QTextStream in(&file);
+-                while (!in.atEnd()) {
+-                    QString line = in.readLine();
+-
+-                    // line starting with Exec
+-                    if (line.startsWith("Exec="))
+-                        command = line.mid(5);
+-                }
+-
+-                // close file
+-                file.close();
++    void Authenticator::handleMessage(AuthMessages command, SafeDataStream &stream) {
++        switch (command) {
++            case AuthMessages::RequestEnv: {
++                QString user;
++                stream >> user;
++                QStringList env = m_display->sessionEnv(user).toStringList();
++                qDebug() << "Environment for user" << user << "will be" << env;
++                stream.clear();
++                stream << quint32(AuthMessages::Env) << env;
++                stream.send();
++                break;
+             }
+-
+-            // remove extension
+-            sessionName = session.left(session.lastIndexOf("."));
+-        } else {
+-            command = session;
+-            sessionName = session;
+-        }
+-
+-        if (command.isEmpty()) {
+-            // log error
+-            qCritical() << " DAEMON: Failed to find command for session:" << session;
+-
+-            // return fail
+-            return false;
+-        }
+-
+-        // get display and display
+-        Seat *seat = m_display->seat();
+-
+-#ifdef USE_PAM
+-        if (m_pam)
+-            delete m_pam;
+-
+-        m_pam = new PamService("sddm", user, password, passwordless);
+-
+-        if (!m_pam)
+-            return false;
+-
+-        if (!passwordless) {
+-            // authenticate the applicant
+-            if ((m_pam->result = pam_authenticate(m_pam->handle, 0)) != PAM_SUCCESS)
+-                return false;
+-
+-            if ((m_pam->result = pam_acct_mgmt(m_pam->handle, 0)) == PAM_NEW_AUTHTOK_REQD)
+-                m_pam->result = pam_chauthtok(m_pam->handle, PAM_CHANGE_EXPIRED_AUTHTOK);
+-
+-            if (m_pam->result != PAM_SUCCESS)
+-                return false;
+-        }
+-
+-        // set username
+-        if ((m_pam->result = pam_set_item(m_pam->handle, PAM_USER, qPrintable(user))) != PAM_SUCCESS)
+-            return false;
+-
+-        // set credentials
+-        if ((m_pam->result = pam_setcred(m_pam->handle, PAM_ESTABLISH_CRED)) != PAM_SUCCESS)
+-            return false;
+-
+-        // set tty
+-        if ((m_pam->result = pam_set_item(m_pam->handle, PAM_TTY, qPrintable(m_display->name()))) != PAM_SUCCESS)
+-            return false;
+-
+-        // set display name
+-        if ((m_pam->result = pam_set_item(m_pam->handle, PAM_XDISPLAY, qPrintable(m_display->name()))) != PAM_SUCCESS)
+-            return false;
+-
+-        // open session
+-        if ((m_pam->result = pam_open_session(m_pam->handle, 0)) != PAM_SUCCESS)
+-            return false;
+-
+-        // get mapped user name; PAM may have changed it
+-        char *mapped;
+-        if ((m_pam->result = pam_get_item(m_pam->handle, PAM_USER, (const void **)&mapped)) != PAM_SUCCESS)
+-            return false;
+-#else
+-        if (!passwordless) {
+-            // user name
+-            struct passwd *pw;
+-            if ((pw = getpwnam(qPrintable(user))) == nullptr) {
+-                // log error
+-                qCritical() << " DAEMON: Failed to get user entry.";
+-
+-                // return fail
+-                return false;
++            case AuthMessages::LoginFailed:
++                emit loginFailed(m_parentSocket);
++                break;
++            case AuthMessages::LoginSucceeded: {
++                QString user;
++                stream >> m_name >> user;
++                daemonApp->displayManager()->AddSession(m_name, qobject_cast<Seat*>(m_display->parent())->name(), user);
++                emit loginSucceeded(m_parentSocket);
++                break;
+             }
+-
+-            struct spwd *sp;
+-            if ((sp = getspnam(pw->pw_name)) == nullptr) {
+-                // log error
+-                qCritical() << " DAEMON: Failed to get shadow entry.";
+-
+-                // return fail
+-                return false;
+-            }
+-
+-            // check if password is not empty
+-            if (sp->sp_pwdp && sp->sp_pwdp[0]) {
+-
+-                // encrypt password
+-                char *encrypted = crypt(qPrintable(password), sp->sp_pwdp);
+-
+-                if (strcmp(encrypted, sp->sp_pwdp))
+-                    return false;
++            case AuthMessages::RequestSessionID:
++                stream.clear();
++                stream << quint32(AuthMessages::SessionID) << int(DaemonApp::instance()->newSessionId());
++                stream.send();
++                break;
++            case AuthMessages::RequestCookieLink: {
++                QString path, user;
++                struct passwd *pw;
++                stream >> path >> user;
++                qDebug() << "The path is" << path << "and the user" << user;
++                m_display->addCookie(path);
++                pw = getpwnam(qPrintable(user));
++                if(pw)
++                    chown(qPrintable(path), pw->pw_uid, pw->pw_gid);
++                stream.clear();
++                stream << quint32(AuthMessages::CookieLink);
++                stream.send();
++                break;
+             }
++            case AuthMessages::RequestDisplay:
++                stream.clear();
++                stream << quint32(AuthMessages::Display) << m_display->name();
++                stream.send();
++                break;
++            default:
++                qWarning() << " DAEMON: Child sent message type" << quint32(command) << "which cannot be handled.";
++                break;
+         }
+-
+-        char *mapped = strdup(qPrintable(user));
+-#endif
+-
+-        // user name
+-        struct passwd *pw;
+-        if ((pw = getpwnam(mapped)) == nullptr) {
+-            // log error
+-            qCritical() << " DAEMON: Failed to get user name.";
+-
+-            // return fail
+-            return false;
+-        }
+-
+-        if (pw->pw_shell[0] == '\0') {
+-            setusershell();
+-            strcpy(pw->pw_shell, getusershell());
+-            endusershell();
+-        }
+-
+-        // create user session process
+-        process = new Session(QString("Session%1").arg(daemonApp->newSessionId()), this);
+-
+-        // set session process params
+-        process->setUser(pw->pw_name);
+-        process->setDir(pw->pw_dir);
+-        process->setUid(pw->pw_uid);
+-        process->setGid(pw->pw_gid);
+-
+-        // set process environment
+-        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+-#ifdef USE_PAM
+-        // get pam environment
+-        char **envlist = pam_getenvlist(m_pam->handle);
+-
+-        // copy it to the env map
+-        for (int i = 0; envlist[i] != nullptr; ++i) {
+-            QString s(envlist[i]);
+-
+-            // find equal sign
+-            int index = s.indexOf('=');
+-
+-            // add to the hash
+-            if (index != -1)
+-                env.insert(s.left(index), s.mid(index + 1));
+-
+-            free(envlist[i]);
+-        }
+-        free(envlist);
+-#else
+-        // we strdup'd the string before in this branch
+-        free(mapped);
+-#endif
+-        env.insert("HOME", pw->pw_dir);
+-        env.insert("PWD", pw->pw_dir);
+-        env.insert("SHELL", pw->pw_shell);
+-        env.insert("USER", pw->pw_name);
+-        env.insert("LOGNAME", pw->pw_name);
+-        env.insert("PATH", daemonApp->configuration()->defaultPath());
+-        env.insert("DISPLAY", m_display->name());
+-        env.insert("XAUTHORITY", QString("%1/.Xauthority").arg(pw->pw_dir));
+-        env.insert("XDG_SEAT", seat->name());
+-        env.insert("XDG_SEAT_PATH", daemonApp->displayManager()->seatPath(seat->name()));
+-        env.insert("XDG_SESSION_PATH", daemonApp->displayManager()->sessionPath(process->name()));
+-        env.insert("XDG_VTNR", QString::number(m_display->terminalId()));
+-        env.insert("DESKTOP_SESSION", sessionName);
+-        env.insert("GDMSESSION", sessionName);
+-        process->setProcessEnvironment(env);
+-
+-        // redirect error output to ~/.xession-errors
+-        process->setStandardErrorFile(QString("%1/.xsession-errors").arg(pw->pw_dir));
+-
+-        // start session
+-        process->start(daemonApp->configuration()->sessionCommand(), { command });
+-
+-        // connect signal
+-        connect(process, SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(finished()));
+-
+-        // wait for started
+-        if (!process->waitForStarted()) {
+-            // log error
+-            qDebug() << " DAEMON: Failed to start user session.";
+-
+-            // return fail
+-            return false;
+-        }
+-
+-        // log message
+-        qDebug() << " DAEMON: User session started.";
+-
+-        // register to the display manager
+-        daemonApp->displayManager()->AddSession(process->name(), seat->name(), pw->pw_name);
+-
+-        // set flag
+-        m_started = true;
+-
+-        // return success
+-        return true;
+     }
+ 
+-    void Authenticator::stop() {
+-        // check flag
++    void Authenticator::start(QLocalSocket *socket, const QString& user, const QString& session, const QString& password, bool passwordless) {
+         if (!m_started)
+             return;
+ 
+-        // log message
+-        qDebug() << " DAEMON: User session stopping...";
++        m_parentSocket = socket;
+ 
+-        // terminate process
+-        process->terminate();
++        SafeDataStream stream(this);
++        stream << quint32(AuthMessages::Start) << user << session << password << passwordless;
++        stream.send();
+ 
+-        // wait for finished
+-        if (!process->waitForFinished(5000))
+-            process->kill();
++        qDebug() << " DAEMON: Starting authentication for user" << user;
+     }
+ 
+-    void Authenticator::finished() {
+-        // check flag
++    void Authenticator::stop() {
+         if (!m_started)
+             return;
+ 
+-        // reset flag
+-        m_started = false;
+-
+-        // log message
+-        qDebug() << " DAEMON: User session ended.";
+-
+         // unregister from the display manager
+-        daemonApp->displayManager()->RemoveSession(process->name());
++        daemonApp->displayManager()->RemoveSession(m_name);
+ 
+-        // delete session process
+-        process->deleteLater();
+-        process = nullptr;
++        SafeDataStream stream(this);
++        stream << quint32(AuthMessages::End);
++        stream.send();
+ 
+-#ifdef USE_PAM
+-        if (m_pam) {
+-            m_pam->result = pam_close_session(m_pam->handle, 0);
+-            m_pam->result = pam_setcred(m_pam->handle, PAM_DELETE_CRED);
+-            // for some reason this has to be called here too
+-            pam_end(m_pam->handle, m_pam->result);
+-            delete m_pam;
+-            m_pam = nullptr;
+-        }
+-#endif
+-
+-        // emit signal
+-        emit stopped();
++        m_started = false;
++        qDebug() << " DAEMON: Stopped the authenticator process";
+     }
+ }
+diff --git a/src/daemon/Authenticator.h b/src/daemon/Authenticator.h
+index b6c8261..ff9a26b 100644
+--- a/src/daemon/Authenticator.h
++++ b/src/daemon/Authenticator.h
+@@ -20,45 +20,41 @@
+ #ifndef SDDM_AUTHENTICATOR_H
+ #define SDDM_AUTHENTICATOR_H
+ 
++#include "Messages.h"
++#include "SafeDataStream.h"
++
+ #include <QObject>
++#include <QtCore/QProcess>
+ 
++class QLocalSocket;
+ namespace SDDM {
+-#ifdef USE_PAM
+-    class PamService;
+-#endif
+-    class Display;
+-    class Session;
+ 
+-    class Authenticator : public QObject {
++    class Display;
++    class Authenticator : public QProcess {
+         Q_OBJECT
+         Q_DISABLE_COPY(Authenticator)
+     public:
+-        Authenticator(Display *parent);
+-        ~Authenticator();
++        explicit Authenticator(Display *parent = nullptr);
+ 
+-        Display *display() const;
++    private slots:
++        void readFromChild();
++        void handleMessage(AuthMessages command, SafeDataStream &stream);
++        void forwardErrorOutput();
+ 
+     public slots:
+-        bool start(const QString &user, const QString &session);
+-        bool start(const QString &user, const QString &password, const QString &session);
+-
++        void start(QLocalSocket *socket, const QString& user, const QString& session, const QString& password, bool passwordless);
+         void stop();
+-        void finished();
+ 
+     signals:
++        void loginFailed(QLocalSocket*);
++        void loginSucceeded(QLocalSocket*);
+         void stopped();
+ 
+     private:
+-        bool doStart(const QString &user, const QString &password, const QString &session, bool passwordless);
+-
+-        bool m_started { false };
++        QString m_name;
+         Display *m_display { nullptr };
+-
+-#ifdef USE_PAM
+-        PamService *m_pam { nullptr };
+-#endif
+-
+-        Session *process { nullptr };
++        QLocalSocket *m_parentSocket { nullptr }; // to be got rid of soon
++        bool m_started { false };
+     };
+ }
+ 
+diff --git a/src/daemon/Display.cpp b/src/daemon/Display.cpp
+index f1a54b4..d18d839 100644
+--- a/src/daemon/Display.cpp
++++ b/src/daemon/Display.cpp
+@@ -23,9 +23,11 @@
+ #include "Configuration.h"
+ #include "DaemonApp.h"
+ #include "DisplayServer.h"
++#include "DisplayManager.h"
+ #include "Seat.h"
+ #include "SocketServer.h"
+ #include "Greeter.h"
++#include <pwd.h>
+ 
+ #include <QDebug>
+ #include <QDir>
+@@ -117,12 +119,38 @@ namespace SDDM {
+         return m_seat;
+     }
+ 
++    QProcessEnvironment Display::sessionEnv(const QString& user) const {
++        struct passwd *pw;
++        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
++        Seat *seat = qobject_cast<Seat *>(parent());
++
++        if ((pw = getpwnam(qPrintable(user))) == nullptr) {
++            // log error
++            qCritical() << " DAEMON: Failed to get user name.";
++
++            // return fail
++            return QProcessEnvironment();
++        }
++        env.insert("HOME", pw->pw_dir);
++        env.insert("PWD", pw->pw_dir);
++        env.insert("SHELL", pw->pw_shell);
++        env.insert("USER", pw->pw_name);
++        env.insert("LOGNAME", pw->pw_name);
++        env.insert("PATH", daemonApp->configuration()->defaultPath());
++        env.insert("DISPLAY", name());
++        env.insert("XAUTHORITY", QString("%1/.Xauthority").arg(pw->pw_dir));
++        env.insert("XDG_SEAT", seat->name());
++        env.insert("XDG_SEAT_PATH", daemonApp->displayManager()->seatPath(seat->name()));
++        env.insert("XDG_VTNR", QString::number(terminalId()));
++        return env;
++    }
++
+     void Display::addCookie(const QString &file) {
+         // log message
+         qDebug() << " DAEMON: Adding cookie to" << file;
+ 
+-        // remove file
+-        QFile::remove(file);
++        // remove the file
++        QFile::remove(m_authPath);
+ 
+         QString cmd = QString("%1 -f %2 -q").arg(daemonApp->configuration()->xauthPath()).arg(file);
+ 
+@@ -176,7 +204,7 @@ namespace SDDM {
+             m_started = true;
+ 
+             // start session
+-            m_authenticator->start(daemonApp->configuration()->autoUser(), daemonApp->configuration()->lastSession());
++            m_authenticator->start(nullptr, daemonApp->configuration()->autoUser(), daemonApp->configuration()->lastSession(), QString(), true);
+ 
+             // return
+             return;
+@@ -237,20 +265,18 @@ namespace SDDM {
+ 
+     void Display::login(QLocalSocket *socket, const QString &user, const QString &password, const QString &session) {
+         // start session
+-        if (!m_authenticator->start(user, password, session)) {
+-            // emit signal
+-            emit loginFailed(socket);
++        connect(m_authenticator, SIGNAL(loginFailed(QLocalSocket*)), this, SIGNAL(loginFailed(QLocalSocket*)));
++        connect(m_authenticator, SIGNAL(loginSucceeded(QLocalSocket*)), this, SIGNAL(loginSucceeded(QLocalSocket*)));
++        m_authenticator->start(socket, user, session, password, false);
+ 
+-            // return
+-            return;
+-        }
++        m_user = user;
++        m_session = session;
++    }
+ 
+-        // save last user and last session
+-        daemonApp->configuration()->setLastUser(user);
+-        daemonApp->configuration()->setLastSession(session);
++    void Display::slotLoginSucceeded(QLocalSocket* sock) {
++        daemonApp->configuration()->setLastUser(m_user);
++        daemonApp->configuration()->setLastSession(m_session);
+         daemonApp->configuration()->save();
+-
+-        // emit signal
+-        emit loginSucceeded(socket);
+     }
++
+ }
+diff --git a/src/daemon/Display.h b/src/daemon/Display.h
+index 46d320b..c163853 100644
+--- a/src/daemon/Display.h
++++ b/src/daemon/Display.h
+@@ -21,6 +21,7 @@
+ #define SDDM_DISPLAY_H
+ 
+ #include <QObject>
++#include <QtCore/QProcess>
+ 
+ class QLocalSocket;
+ 
+@@ -40,6 +41,7 @@ namespace SDDM {
+ 
+         const int displayId() const;
+         const int terminalId() const;
++        QProcessEnvironment sessionEnv(const QString& user) const;
+ 
+         const QString &name() const;
+ 
+@@ -54,11 +56,13 @@ namespace SDDM {
+ 
+         void login(QLocalSocket *socket, const QString &user, const QString &password, const QString &session);
+ 
++        void slotLoginSucceeded(QLocalSocket *sock);
++
+     signals:
+         void stopped();
+ 
+-        void loginFailed(QLocalSocket *socket);
+-        void loginSucceeded(QLocalSocket *socket);
++        void loginFailed(QLocalSocket*);
++        void loginSucceeded(QLocalSocket*);
+ 
+     private:
+         bool m_relogin { true };
+@@ -71,6 +75,8 @@ namespace SDDM {
+         QString m_cookie { "" };
+         QString m_socket { "" };
+         QString m_authPath { "" };
++        QString m_user { "" };
++        QString m_session { "" };
+ 
+         Authenticator *m_authenticator { nullptr };
+         DisplayServer *m_displayServer { nullptr };
+diff --git a/src/daemon/Session.cpp b/src/daemon/Session.cpp
+deleted file mode 100644
+index ec61498..0000000
+--- a/src/daemon/Session.cpp
++++ /dev/null
+@@ -1,106 +0,0 @@
+-/***************************************************************************
+-* Copyright (c) 2013 Abdurrahman AVCI <abdurrahmanavci@gmail.com>
+-*
+-* This program is free software; you can redistribute it and/or modify
+-* it under the terms of the GNU General Public License as published by
+-* the Free Software Foundation; either version 2 of the License, or
+-* (at your option) any later version.
+-*
+-* This program is distributed in the hope that it will be useful,
+-* but WITHOUT ANY WARRANTY; without even the implied warranty of
+-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+-* GNU General Public License for more details.
+-*
+-* You should have received a copy of the GNU General Public License
+-* along with this program; if not, write to the
+-* Free Software Foundation, Inc.,
+-* 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+-***************************************************************************/
+-
+-#include "Session.h"
+-
+-#include "Authenticator.h"
+-#include "Configuration.h"
+-#include "DaemonApp.h"
+-#include "Display.h"
+-
+-#include <QDebug>
+-
+-#include <grp.h>
+-#include <pwd.h>
+-#include <unistd.h>
+-
+-namespace SDDM {
+-    Session::Session(const QString &name, Authenticator *parent) : QProcess(parent), m_authenticator(parent), m_name(name) {
+-    }
+-
+-    const QString &Session::name() const {
+-        return m_name;
+-    }
+-
+-    void Session::setUser(const QString &user) {
+-        m_user = user;
+-    }
+-
+-    void Session::setDir(const QString &dir) {
+-        m_dir = dir;
+-    }
+-
+-    void Session::setUid(int uid) {
+-        m_uid = uid;
+-    }
+-
+-    void Session::setGid(int gid) {
+-        m_gid = gid;
+-    }
+-
+-    void Session::setupChildProcess() {
+-        if (daemonApp->configuration()->testing)
+-            return;
+-
+-        if (initgroups(qPrintable(m_user), m_gid)) {
+-            qCritical() << " DAEMON: Failed to initialize user groups.";
+-
+-            // emit signal
+-            emit finished(EXIT_FAILURE, QProcess::NormalExit);
+-
+-            // exit
+-            exit(EXIT_FAILURE);
+-        }
+-
+-        if (setgid(m_gid)) {
+-            qCritical() << " DAEMON: Failed to set group id.";
+-
+-            // emit signal
+-            emit finished(EXIT_FAILURE, QProcess::NormalExit);
+-
+-            // exit
+-            exit(EXIT_FAILURE);
+-        }
+-
+-        if (setuid(m_uid)) {
+-            qCritical() << " DAEMON: Failed to set user id.";
+-
+-            // emit signal
+-            emit finished(EXIT_FAILURE, QProcess::NormalExit);
+-
+-            // exit
+-            exit(EXIT_FAILURE);
+-
+-        }
+-
+-        // add cookie
+-        m_authenticator->display()->addCookie(QString("%1/.Xauthority").arg(m_dir));
+-
+-        // change to user home dir
+-        if (chdir(qPrintable(m_dir))) {
+-            qCritical() << " DAEMON: Failed to change dir to user home.";
+-
+-            // emit signal
+-            emit finished(EXIT_FAILURE, QProcess::NormalExit);
+-
+-            // exit
+-            exit(EXIT_FAILURE);
+-        }
+-    }
+-}
+diff --git a/src/daemon/Session.h b/src/daemon/Session.h
+deleted file mode 100644
+index eb27402..0000000
+--- a/src/daemon/Session.h
++++ /dev/null
+@@ -1,56 +0,0 @@
+-/***************************************************************************
+-* Copyright (c) 2013 Abdurrahman AVCI <abdurrahmanavci@gmail.com>
+-*
+-* This program is free software; you can redistribute it and/or modify
+-* it under the terms of the GNU General Public License as published by
+-* the Free Software Foundation; either version 2 of the License, or
+-* (at your option) any later version.
+-*
+-* This program is distributed in the hope that it will be useful,
+-* but WITHOUT ANY WARRANTY; without even the implied warranty of
+-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+-* GNU General Public License for more details.
+-*
+-* You should have received a copy of the GNU General Public License
+-* along with this program; if not, write to the
+-* Free Software Foundation, Inc.,
+-* 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+-***************************************************************************/
+-
+-#ifndef SDDM_SESSION_H
+-#define SDDM_SESSION_H
+-
+-#include <QProcess>
+-
+-namespace SDDM {
+-    class Authenticator;
+-
+-    class Session : public QProcess {
+-        Q_OBJECT
+-        Q_DISABLE_COPY(Session)
+-    public:
+-        explicit Session(const QString &name, Authenticator *parent);
+-
+-        const QString &name() const;
+-
+-        void setUser(const QString &user);
+-        void setDir(const QString &dir);
+-        void setUid(int uid);
+-        void setGid(int gid);
+-
+-    protected:
+-        void setupChildProcess();
+-
+-    private:
+-        Authenticator *m_authenticator;
+-
+-        QString m_name { "" };
+-        QString m_user { "" };
+-        QString m_dir { "" };
+-
+-        int m_uid { 0 };
+-        int m_gid { 0 };
+-    };
+-}
+-
+-#endif // SDDM_SESSION_H
+diff --git a/src/greeter/ScreenModel.cpp b/src/greeter/ScreenModel.cpp
+index fc2b586..abadb0a 100644
+--- a/src/greeter/ScreenModel.cpp
++++ b/src/greeter/ScreenModel.cpp
+@@ -28,6 +28,7 @@
+ #include <QApplication>
+ #include <QDesktopWidget>
+ #endif
++#include <QDebug>
+ 
+ namespace SDDM {
+     class Screen {
+@@ -168,11 +169,14 @@ namespace SDDM {
+ 
+         for (int i = 0; i < screenCount; ++i) {
+             QRect geometry = QApplication::desktop()->screenGeometry(i);
++            qDebug() << "Screen" << geometry << QApplication::desktop()->screen(i)->pos();
+             // add to the screens list
+             d->screens << ScreenPtr { new Screen { QString("Screen %1").arg(i + 1), geometry } };
+             // extend available geometry
+             d->geometry = d->geometry.united(geometry);
+         }
++        QApplication::desktop()->screen()->setGeometry(d->geometry);
++        QApplication::desktop()->screen()->showMaximized();
+ #endif
+         endResetModel();
+ 

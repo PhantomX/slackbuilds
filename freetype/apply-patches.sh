@@ -6,7 +6,7 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # This breaks far too many things.  Freetype2 developers will have to get their
 # punishment on someone else's distribution.
-zcat ${SB_PATCHDIR}/freetype.illadvisederror.diff.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/freetype.illadvisederror.diff
 
 # Bytecode interpreter
 # Upstream default is enabled
@@ -23,8 +23,5 @@ fi
 # CVS bug fixes, mostly for embolding
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup -z .multilib --verbose -i ${SB_PATCHDIR}/freetype-multilib.patch
-
-# https://bugzilla.gnome.org/show_bug.cgi?id=686709
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Fix-vertical-size-of-emboldened-glyphs.patch
 
 set +e +o pipefail

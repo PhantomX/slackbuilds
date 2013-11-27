@@ -13,8 +13,7 @@ zcat ${SB_PATCHDIR}/${NAME}-1.9.15-lib-bloat.patch.gz | patch -p1 -E --backup --
 zcat ${SB_PATCHDIR}/${NAME}-1.9.15-multilib-config.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}.mitshm.render.diff.gz | patch -p1 --verbose
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/imlib-1.9.15-libpng15.patch
-# http://www.freebsd.org/cgi/query-pr.cgi?pr=ports/169163
-# http://svnweb.freebsd.org/ports/head/graphics/imlib/files
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/imlib-PrintGifError.patch
+### Arch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/imlib-giflib5.patch
 
 set +e +o pipefail

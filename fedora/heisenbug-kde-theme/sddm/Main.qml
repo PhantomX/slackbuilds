@@ -27,16 +27,19 @@ import QtQuick 1.1
 import SddmComponents 1.1
 
 Rectangle {
+
+    TextConstants { id: textConstants }
+
     Connections {
         target: sddm
 
         onLoginSucceeded: {
             errorMessage.color = "green"
-            errorMessage.text = qsTr("Login succeeded.")
+            errorMessage.text = textConstants.loginSucceeded
         }
         onLoginFailed: {
             errorMessage.color = "red"
-            errorMessage.text = qsTr("Login failed.")
+            errorMessage.text = textConstants.loginFailed
         }
     }
 
@@ -48,12 +51,6 @@ Rectangle {
                 source: config.background
                 fillMode: Image.Stretch
             }
-            Image {
-                id: plymouthLogo
-                x: geometry.width / 2 - width / 2
-                y: geometry.height / 2 - height / 2
-                source: "/usr/share/pixmaps/system-logo-white.png"
-            }
         }
     }
 
@@ -64,6 +61,23 @@ Rectangle {
         width: geometry.width
         height: geometry.height
         color: "transparent"
+
+        Image {
+            id: fedoraLogo
+            x: parent.width / 2 - width / 2
+            y: parent.height / 2 - height / 2
+            source: "/usr/share/pixmaps/system-logo-white.png"
+        }
+
+        Rectangle {
+            x: geometry.x
+            y: geometry.y
+            width: parent.width
+            height: 34
+
+            opacity: 0.4
+            color: "black"
+        }
 
         Row {
             x: parent.x + 4
@@ -101,8 +115,9 @@ Rectangle {
 
                 Button {
                     id: rebootButton
-                    text: qsTr("Reboot")
-                    height: 24
+                    text: textConstants.reboot
+                    height: 25
+                    width: 100
 
                     onClicked: sddm.reboot()
 
@@ -111,8 +126,9 @@ Rectangle {
 
                 Button {
                     id: shutdownButton
-                    text: qsTr("Shutdown")
-                    height: 24
+                    text: textConstants.shutdown
+                    height: 25
+                    width: 100
 
                     onClicked: sddm.powerOff()
 
@@ -131,6 +147,19 @@ Rectangle {
                 width: 260
                 anchors.centerIn: parent
                 spacing: 18
+
+                Row {
+                    width: parent.width
+                    Text {
+                        width: parent.width
+                        color: "white"
+                        text: textConstants.welcomeText.arg(sddm.hostName)
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: 12
+                        elide: Text.ElideRight
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
 
                 Row {
                     width: parent.width
@@ -183,13 +212,12 @@ Rectangle {
                     }
                 }
 
-
                 Column {
                     width: parent.width
                     Text {
                         id: errorMessage
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: qsTr("Enter your user name and password.")
+                        text: textConstants.prompt
                         font.pixelSize: 10
                         color: "white"
                     }

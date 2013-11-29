@@ -18,7 +18,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bitlbee-3.2-libotr4.patch
 # aka http://bugs.bitlbee.org/bitlbee/ticket/1008
 # Open socket on IPv6 as well
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bitlbee-IPv6.patch
-# http://bugs.bitlbee.org/bitlbee/ticket/1038
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nss-crash-rhbz922447.patch
 
 set +e +o pipefail

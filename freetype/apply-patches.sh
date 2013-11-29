@@ -24,4 +24,6 @@ fi
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup -z .multilib --verbose -i ${SB_PATCHDIR}/freetype-multilib.patch
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-autofit-Fix-use-of-dumping-functions-in-ftgrid-demo-.patch
+
 set +e +o pipefail

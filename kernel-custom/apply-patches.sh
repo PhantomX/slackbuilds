@@ -206,9 +206,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#CVE-2013-4345 rhbz 1007690 1009136
-ApplyPatch ansi_cprng-Fix-off-by-one-error-in-non-block-size-request.patch
-
 #rhbz 985522
 ApplyPatch ntp-Make-periodic-RTC-update-more-reliable.patch
 
@@ -224,9 +221,6 @@ ApplyPatch vfio-iommu-Fixed-interaction-of-VFIO_IOMMU_MAP_DMA.patch
 
 #rhbz 993744
 ApplyPatch dm-cache-policy-mq_fix-large-scale-table-allocation-bug.patch
-
-#rhbz 1011714
-ApplyPatch btrfs-relocate-csums-properly-with-prealloc-ext.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

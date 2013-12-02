@@ -13,5 +13,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-acl-2.2.52-docdir.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-acl-2.2.52-tests.patch
 # Install the libraries to the appropriate directory
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0004-acl-2.2.52-libdir.patch
+# fix SIGSEGV of getfacl -e on overly long group name
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0005-acl-2.2.52-getfacl-segv.patch
 
 set +e +o pipefail

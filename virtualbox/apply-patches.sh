@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # VBOX_WITH_UPDATE to enable/disable update dialog
-patch -p1 -E --backup -z .noup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.0-noupdate.patch
+patch -p1 -E --backup -z .noup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.4-noupdate.patch
 patch -p1 -E --backup -z .nodkms --verbose -i ${SB_PATCHDIR}/${NAME}-4.2.0-nodkms.patch
 patch -p1 -E --backup -z .dso --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.0-dso.patch
 

@@ -16,6 +16,7 @@ fi
 
 # From upstream
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.21-install-strip.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-cp-nopreserve-invalidargs.patch
 
 # Fedora patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch

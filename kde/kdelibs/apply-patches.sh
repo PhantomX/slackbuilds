@@ -58,13 +58,7 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r218cce8e53e378ab5f269636d768ac1c7aa1f70b.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc892034c064da3460f0730bcd0fccbcdbace08dd.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_re1923b25f26b4ee3a7508ae44e49d00a2ffeeb10.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rdfeabf4900060248fea4fa39348ba95896f5d87e.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rde96d6b4bf7746a02a5663667691d73688f3cb20.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_ra01e4ee686f369e4e7d1e7e3a99d68a9b191fe67.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r3a6edd8d183140da3ea042f91933b6d4756d5f7e.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r64a7238c3c082b174e47c3896d6eb0f5c52ab461.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578

@@ -74,8 +74,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.4-fontconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-locale.patch
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/1913-update-adjust-to-UPower-0.99.0.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r887318616cb662e8b283e1dcea0f00bee1589420.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rf10131de05ae979cdc7333f5ccfecbeb27265785.diff
 
 ## plasma active patches
 

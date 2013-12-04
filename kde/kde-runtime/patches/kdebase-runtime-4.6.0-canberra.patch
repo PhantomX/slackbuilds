@@ -1,0 +1,593 @@
+Index: runtime/knotify/notifybysound.h
+===================================================================
+--- runtime/knotify/notifybysound.h	(revision 1204313)
++++ runtime/knotify/notifybysound.h	(working copy)
+@@ -43,12 +43,17 @@
+ 		
+ 	public:
+ 		void setVolume( int v );
++		void canberraDone( int id );
+ 
++/*
+ 	protected:
+ 		void timerEvent(QTimerEvent *);
++*/
+ 
+ 	private Q_SLOTS:
++/*
+ 		void slotSoundFinished(int id);
++*/
+ 		void closeNow();
+ };
+ 
+Index: runtime/knotify/CMakeLists.txt
+===================================================================
+--- runtime/knotify/CMakeLists.txt	(revision 1204313)
++++ runtime/knotify/CMakeLists.txt	(working copy)
+@@ -1,3 +1,6 @@
++pkg_check_modules(CANBERRA libcanberra)
++macro_log_feature(CANBERRA_FOUND "libcanberra" "libcanberra audio library" "http://0pointer.de/lennart/projects/libcanberra/" FALSE "" "libcanberra is needed for knotify event sounds")
++
+ add_subdirectory( sounds  )
+ ########### next target ###############
+ 
+@@ -41,8 +44,10 @@
+     set_target_properties(knotify PROPERTIES MACOSX_BUNDLE_BUNDLE_NAME "KDE Notify")
+ endif (Q_WS_MAC)
+ 
+-target_link_libraries( knotify ${KDE4_KDEUI_LIBS} ${KDE4_PHONON_LIBS} ${KDE4_SOLID_LIBS} knotifyplugin)
++include_directories(${CANBERRA_INCLUDE_DIRS})
+ 
++target_link_libraries( knotify ${KDE4_KDEUI_LIBS} ${KDE4_PHONON_LIBS} ${KDE4_SOLID_LIBS} ${CANBERRA_LIBRARIES} knotifyplugin)
++
+ target_link_libraries( knotifyplugin ${KDE4_KDECORE_LIBS} ${KDE4_KDEUI_LIBS})
+ 
+ 
+Index: runtime/knotify/notifybysound.cpp
+===================================================================
+--- runtime/knotify/notifybysound.cpp	(revision 1204313)
++++ runtime/knotify/notifybysound.cpp	(working copy)
+@@ -51,6 +51,10 @@
+ #include <phonon/path.h>
+ #include <phonon/audiooutput.h>
+ 
++// Canberra headers
++#include <canberra.h>
++
++/*
+ struct Player
+ {
+ 	Player()
+@@ -128,11 +132,13 @@
+ 		p->setVolume(v);
+ 	}
+ }
++*/
+ 
+ class NotifyBySound::Private
+ {
+ 	public:
+-		enum { NoSound, UsePhonon, ExternalPlayer } playerMode;
++		enum { NoSound, UseCanberra /*, UsePhonon, ExternalPlayer*/ } playerMode;
++/*
+ 		QString externalPlayer;
+ 
+ 		QHash<int, KProcess *> processes;
+@@ -140,23 +146,46 @@
+ 		QSignalMapper *signalmapper;
+ 		PlayerPool playerPool;
+ 		QBasicTimer poolTimer;
++*/
+ 		QQueue<int> closeQueue;
+ 
+ 		int volume;
++		ca_context* canberra;
+ 
+ };
+ 
++static void canberra_callback(ca_context *, uint32_t id, int, void *userdata)
++{
++	Q_ASSERT(userdata);
++	NotifyBySound* notify = reinterpret_cast<NotifyBySound*>(userdata);
++	notify->canberraDone(id);
++}
++
+ NotifyBySound::NotifyBySound(QObject *parent) : KNotifyPlugin(parent),d(new Private)
+ {
++/*
+ 	d->signalmapper = new QSignalMapper(this);
+ 	connect(d->signalmapper, SIGNAL(mapped(int)), this, SLOT(slotSoundFinished(int)));
++*/
+ 
+ 	loadConfig();
++	d->canberra = NULL;
++	if (Private::UseCanberra == d->playerMode)
++	{
++		int rv;
++		if ((rv = ca_context_create(&d->canberra)) < 0)
++		{
++			kDebug() << "Unable to initialise Canberra" << ca_strerror(rv);
++			d->playerMode = Private::NoSound;
++		}
++	}
+ }
+ 
+ 
+ NotifyBySound::~NotifyBySound()
+ {
++	if (d->canberra)
++		ca_context_destroy(d->canberra);
+ 	delete d;
+ }
+ 
+@@ -167,6 +196,8 @@
+ 	KSharedConfig::Ptr kc = KGlobal::config();
+ 	KConfigGroup cg(kc, "Sounds");
+ 
++	d->playerMode = Private::UseCanberra;
++/*
+ 	d->playerMode = Private::UsePhonon;
+ 	if(cg.readEntry( "Use external player", false ))
+ 	{
+@@ -183,7 +214,7 @@
+ 			}
+ 		}
+ 	}
+-	else if(cg.readEntry( "No sound" , false ))
++	else*/ if(cg.readEntry( "No sound" , false ))
+ 	{
+ 		d->playerMode = Private::NoSound;
+ 	}
+@@ -202,16 +233,28 @@
+ 		return;
+ 	}
+ 
++/*
+ 	if(d->playerObjects.contains(eventId)  || d->processes.contains(eventId) )
+ 	{
+ 		//a sound is already playing for this notification,  we don't support playing two sounds.
+ 		finish( eventId );
+ 		return;
+ 	}
++*/
+ 
+ 	KUrl soundFileURL = config->readEntry( "Sound" , true );
+ 	QString soundFile = soundFileURL.toLocalFile();
+ 
++	// Check for FDO Sound Theme Spec Format
++	QString soundThemeName = "";
++	if (soundFileURL.protocol()  == "sound-theme" && soundFileURL.host().size() > 0)
++	{
++		soundThemeName = soundFileURL.host();
++		kDebug() << "Using sound theme id" << soundThemeName;
++	}
++	else
++	{
++
+ 	if (soundFile.isEmpty())
+ 	{
+ 		finish( eventId );
+@@ -234,7 +277,35 @@
+ 		return;
+ 	}
+ 
++	}
++
+ 	kDebug() << " going to play " << soundFile;
++	if (Private::UseCanberra == d->playerMode)
++	{
++		kDebug() << "Using Canberra for" << eventId;
++		Q_ASSERT(d->canberra);
++		ca_proplist* proplist;
++		ca_proplist_create(&proplist);
++		Q_ASSERT(proplist);
++
++		ca_proplist_sets(proplist, CA_PROP_MEDIA_ROLE, "event");
++		ca_proplist_sets(proplist, CA_PROP_CANBERRA_CACHE_CONTROL, "permanent");
++
++		if (!soundThemeName.isEmpty())
++			ca_proplist_sets(proplist, CA_PROP_EVENT_ID, soundThemeName.toUtf8().constData());
++		else
++			ca_proplist_sets(proplist, CA_PROP_MEDIA_FILENAME, soundFile.toUtf8().constData());
++
++		// TODO Set volume: CA_PROP_CANBERRA_VOLUME is in dB, so not directly related to 0-100%
++	    int rv;
++		if ((rv = ca_context_play_full(d->canberra, eventId, proplist, canberra_callback, this)) < 0) {
++			kDebug() << "Unable to trigger Canberra Play :( " << ca_strerror(rv);
++			finish(eventId);
++		}
++
++		ca_proplist_destroy(proplist);
++	}
++/*
+ 	d->poolTimer.stop();
+ 
+ 	if(d->playerMode == Private::UsePhonon)
+@@ -256,6 +327,7 @@
+ 		(*proc) << d->externalPlayer << soundFile;
+ 		proc->start();
+ 	}
++*/
+ }
+ 
+ 
+@@ -264,10 +336,19 @@
+ 	if ( volume<0 ) volume=0;
+ 	if ( volume>=100 ) volume=100;
+ 	d->volume = volume;
++/*
+ 	d->playerPool.setVolume(d->volume / 100.0);
++*/
+ }
+ 
++void NotifyBySound::canberraDone( int id )
++{
++	Q_ASSERT(Private::UseCanberra == d->playerMode);
++	kDebug() << "Canberra is done with" << id;
++	finish(id);
++}
+ 
++/*
+ void NotifyBySound::timerEvent(QTimerEvent *e)
+ {
+ 	if (e->timerId() == d->poolTimer.timerId()) {
+@@ -295,6 +376,7 @@
+ 	}
+ 	finish(id);
+ }
++*/
+ 
+ void NotifyBySound::close(int id)
+ {
+@@ -307,6 +389,12 @@
+ void NotifyBySound::closeNow()
+ {
+ 	const int id = d->closeQueue.dequeue();
++	if (Private::UseCanberra == d->playerMode)
++	{
++		Q_ASSERT(d->canberra);
++		ca_context_cancel(d->canberra, id);
++	}
++/*
+ 	if(d->playerObjects.contains(id))
+ 	{
+ 		Player *p = d->playerObjects.take(id);
+@@ -320,6 +408,7 @@
+ 		d->processes[id]->deleteLater();
+ 		d->processes.remove(id);
+ 	}
++*/
+ }
+ 
+ #include "notifybysound.moc"
+Index: runtime/kcontrol/knotify/knotify.cpp
+===================================================================
+--- runtime/kcontrol/knotify/knotify.cpp	(revision 1204438)
++++ runtime/kcontrol/knotify/knotify.cpp	(working copy)
+@@ -221,28 +221,17 @@
+ 
+     load();
+ 
+-    connect( m_ui->cbExternal, SIGNAL( toggled( bool ) ), this, SLOT( externalToggled( bool ) ) );
+     connect( m_ui->cbArts, SIGNAL(clicked(bool)), this, SLOT(slotChanged()));
+-    connect( m_ui->cbExternal, SIGNAL(clicked(bool)), this, SLOT(slotChanged()));
+     connect( m_ui->cbNone, SIGNAL(clicked(bool)), this, SLOT(slotChanged()));
+-    connect( m_ui->volumeSlider, SIGNAL( valueChanged ( int ) ), this, SLOT( slotChanged() ) );
+-    connect( m_ui->reqExternal, SIGNAL( textChanged( const QString& ) ), this, SLOT( slotChanged() ) );
+-    m_ui->reqExternal->setMode(KFile::File|KFile::ExistingOnly|KFile::LocalOnly);
+ }
+ 
+ void PlayerSettingsDialog::load()
+ {
+     KConfig _config( "knotifyrc", KConfig::NoGlobals  );
+     KConfigGroup config(&_config, "Sounds" );
+-    bool useExternal = config.readEntry( "Use external player", false );
+-    m_ui->cbExternal->setChecked( useExternal );
+-    m_ui->reqExternal->setUrl( config.readPathEntry( "External player", QString() ) );
+-    m_ui->volumeSlider->setValue( config.readEntry( "Volume", 100 ) );
+ 
+-    if ( !m_ui->cbExternal->isChecked() )
+-    {
+-        m_ui->cbNone->setChecked( config.readEntry( "No sound", false ) );
+-    }
++    m_ui->cbNone->setChecked( config.readEntry( "No sound", false ) );
++
+     emit changed( false );
+     m_change=false;
+ }
+@@ -256,9 +245,6 @@
+     KConfig _config("knotifyrc", KConfig::NoGlobals);
+     KConfigGroup config(&_config, "Sounds" );
+ 
+-    config.writePathEntry( "External player", m_ui->reqExternal->url().path() );
+-    config.writeEntry( "Use external player", m_ui->cbExternal->isChecked() );
+-    config.writeEntry( "Volume", m_ui->volumeSlider->value() );
+     config.writeEntry( "No sound",  m_ui->cbNone->isChecked() );
+ 
+     config.sync();
+@@ -282,14 +268,6 @@
+     emit changed(true);
+ }
+ 
+-void PlayerSettingsDialog::externalToggled( bool on )
+-{
+-    if ( on )
+-        m_ui->reqExternal->setFocus();
+-    else
+-        m_ui->reqExternal->clearFocus();
+-}
+-
+ PlayerSettingsDialog::~ PlayerSettingsDialog( )
+ {
+ 	delete m_ui;
+Index: runtime/kcontrol/knotify/knotify.h
+===================================================================
+--- runtime/kcontrol/knotify/knotify.h	(revision 1204438)
++++ runtime/kcontrol/knotify/knotify.h	(working copy)
+@@ -74,7 +74,6 @@
+     void defaults();
+ 
+ protected Q_SLOTS:
+-    void externalToggled( bool on );
+     void slotChanged();
+ 
+     signals:
+Index: runtime/kcontrol/knotify/playersettings.ui
+===================================================================
+--- runtime/kcontrol/knotify/playersettings.ui	(revision 1204438)
++++ runtime/kcontrol/knotify/playersettings.ui	(working copy)
+@@ -22,141 +22,6 @@
+     </widget>
+    </item>
+    <item>
+-    <layout class="QGridLayout">
+-     <property name="margin">
+-      <number>0</number>
+-     </property>
+-     <item row="1" column="4">
+-      <widget class="QLabel" name="textLabel3">
+-       <property name="text">
+-        <string>100%</string>
+-       </property>
+-      </widget>
+-     </item>
+-     <item row="1" column="3">
+-      <spacer>
+-       <property name="orientation">
+-        <enum>Qt::Horizontal</enum>
+-       </property>
+-       <property name="sizeType">
+-        <enum>QSizePolicy::Expanding</enum>
+-       </property>
+-       <property name="sizeHint" stdset="0">
+-        <size>
+-         <width>261</width>
+-         <height>16</height>
+-        </size>
+-       </property>
+-      </spacer>
+-     </item>
+-     <item row="1" column="2">
+-      <widget class="QLabel" name="textLabel2">
+-       <property name="text">
+-        <string>0%</string>
+-       </property>
+-      </widget>
+-     </item>
+-     <item row="0" column="1">
+-      <widget class="QLabel" name="textLabel4">
+-       <property name="text">
+-        <string>&amp;Volume:</string>
+-       </property>
+-       <property name="buddy">
+-        <cstring>volumeSlider</cstring>
+-       </property>
+-      </widget>
+-     </item>
+-     <item row="0" column="2" colspan="3">
+-      <widget class="QSlider" name="volumeSlider">
+-       <property name="maximum">
+-        <number>100</number>
+-       </property>
+-       <property name="singleStep">
+-        <number>10</number>
+-       </property>
+-       <property name="value">
+-        <number>100</number>
+-       </property>
+-       <property name="orientation">
+-        <enum>Qt::Horizontal</enum>
+-       </property>
+-      </widget>
+-     </item>
+-     <item row="0" column="0" rowspan="2">
+-      <spacer>
+-       <property name="orientation">
+-        <enum>Qt::Horizontal</enum>
+-       </property>
+-       <property name="sizeType">
+-        <enum>QSizePolicy::Fixed</enum>
+-       </property>
+-       <property name="sizeHint" stdset="0">
+-        <size>
+-         <width>20</width>
+-         <height>41</height>
+-        </size>
+-       </property>
+-      </spacer>
+-     </item>
+-    </layout>
+-   </item>
+-   <item>
+-    <widget class="QRadioButton" name="cbExternal">
+-     <property name="text">
+-      <string>&amp;Use an external player</string>
+-     </property>
+-    </widget>
+-   </item>
+-   <item>
+-    <layout class="QHBoxLayout">
+-     <property name="margin">
+-      <number>0</number>
+-     </property>
+-     <item>
+-      <spacer>
+-       <property name="orientation">
+-        <enum>Qt::Horizontal</enum>
+-       </property>
+-       <property name="sizeType">
+-        <enum>QSizePolicy::Fixed</enum>
+-       </property>
+-       <property name="sizeHint" stdset="0">
+-        <size>
+-         <width>20</width>
+-         <height>20</height>
+-        </size>
+-       </property>
+-      </spacer>
+-     </item>
+-     <item>
+-      <widget class="QLabel" name="textLabel5">
+-       <property name="enabled">
+-        <bool>false</bool>
+-       </property>
+-       <property name="text">
+-        <string>&amp;Player:</string>
+-       </property>
+-       <property name="buddy">
+-        <cstring>reqExternal</cstring>
+-       </property>
+-      </widget>
+-     </item>
+-     <item>
+-      <widget class="KUrlRequester" name="reqExternal" native="true">
+-       <property name="enabled">
+-        <bool>false</bool>
+-       </property>
+-       <property name="sizePolicy">
+-        <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+-         <horstretch>10</horstretch>
+-         <verstretch>0</verstretch>
+-        </sizepolicy>
+-       </property>
+-      </widget>
+-     </item>
+-    </layout>
+-   </item>
+-   <item>
+     <widget class="QRadioButton" name="cbNone">
+      <property name="text">
+       <string>&amp;No audio output</string>
+@@ -178,111 +43,6 @@
+    </item>
+   </layout>
+  </widget>
+- <customwidgets>
+-  <customwidget>
+-   <class>KUrlRequester</class>
+-   <extends>QWidget</extends>
+-   <header>kurlrequester.h</header>
+-   <container>1</container>
+-  </customwidget>
+- </customwidgets>
+  <resources/>
+- <connections>
+-  <connection>
+-   <sender>cbArts</sender>
+-   <signal>toggled(bool)</signal>
+-   <receiver>volumeSlider</receiver>
+-   <slot>setEnabled(bool)</slot>
+-   <hints>
+-    <hint type="sourcelabel">
+-     <x>84</x>
+-     <y>31</y>
+-    </hint>
+-    <hint type="destinationlabel">
+-     <x>126</x>
+-     <y>60</y>
+-    </hint>
+-   </hints>
+-  </connection>
+-  <connection>
+-   <sender>cbArts</sender>
+-   <signal>toggled(bool)</signal>
+-   <receiver>textLabel3</receiver>
+-   <slot>setEnabled(bool)</slot>
+-   <hints>
+-    <hint type="sourcelabel">
+-     <x>234</x>
+-     <y>34</y>
+-    </hint>
+-    <hint type="destinationlabel">
+-     <x>308</x>
+-     <y>83</y>
+-    </hint>
+-   </hints>
+-  </connection>
+-  <connection>
+-   <sender>cbArts</sender>
+-   <signal>toggled(bool)</signal>
+-   <receiver>textLabel4</receiver>
+-   <slot>setEnabled(bool)</slot>
+-   <hints>
+-    <hint type="sourcelabel">
+-     <x>49</x>
+-     <y>32</y>
+-    </hint>
+-    <hint type="destinationlabel">
+-     <x>62</x>
+-     <y>61</y>
+-    </hint>
+-   </hints>
+-  </connection>
+-  <connection>
+-   <sender>cbArts</sender>
+-   <signal>toggled(bool)</signal>
+-   <receiver>textLabel2</receiver>
+-   <slot>setEnabled(bool)</slot>
+-   <hints>
+-    <hint type="sourcelabel">
+-     <x>161</x>
+-     <y>27</y>
+-    </hint>
+-    <hint type="destinationlabel">
+-     <x>108</x>
+-     <y>85</y>
+-    </hint>
+-   </hints>
+-  </connection>
+-  <connection>
+-   <sender>cbExternal</sender>
+-   <signal>toggled(bool)</signal>
+-   <receiver>textLabel5</receiver>
+-   <slot>setEnabled(bool)</slot>
+-   <hints>
+-    <hint type="sourcelabel">
+-     <x>87</x>
+-     <y>114</y>
+-    </hint>
+-    <hint type="destinationlabel">
+-     <x>86</x>
+-     <y>143</y>
+-    </hint>
+-   </hints>
+-  </connection>
+-  <connection>
+-   <sender>cbExternal</sender>
+-   <signal>toggled(bool)</signal>
+-   <receiver>reqExternal</receiver>
+-   <slot>setEnabled(bool)</slot>
+-   <hints>
+-    <hint type="sourcelabel">
+-     <x>236</x>
+-     <y>112</y>
+-    </hint>
+-    <hint type="destinationlabel">
+-     <x>240</x>
+-     <y>137</y>
+-    </hint>
+-   </hints>
+-  </connection>
+- </connections>
++ <connections/>
+ </ui>

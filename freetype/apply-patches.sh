@@ -24,6 +24,12 @@ fi
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup -z .multilib --verbose -i ${SB_PATCHDIR}/freetype-multilib.patch
 
+### Upstream
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-autofit-Fix-use-of-dumping-functions-in-ftgrid-demo-.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-truetype-Fix-change-from-2013-11-20.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-Formatting.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0004-truetype-Fix-phantom-point-handling.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0005-truetype-Remove-dead-code.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0006-sfnt-Fix-handling-of-embedded-bitmap-strikes.patch
 
 set +e +o pipefail

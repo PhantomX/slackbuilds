@@ -140,6 +140,13 @@ ApplyPatch QTBUG-15319-fix-shortcuts-with-secondary-Xkb-layout.patch -R
 # workaround for MOC issues with Boost headers (#756395,QTBUG-22829)
 ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-22829.patch
 
+## upstream git
+# related prereq patch to 0162 below
+ApplyPatch 0147-Disallow-deep-or-widely-nested-entity-references.patch
+# CVE-2013-4549
+# http://lists.qt-project.org/pipermail/announce/2013-December/000036.html
+# https://codereview.qt-project.org/#change,71010
+ApplyPatch 0162-Fully-expand-entities-to-ensure-deep-or-widely-neste.patch
 
 # security patches
 

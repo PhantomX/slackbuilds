@@ -1,0 +1,78 @@
+From 8635ffc16aeff6a07d675f861fe0dea03ea81d7e Mon Sep 17 00:00:00 2001
+From: Colin Walters <walters@verbum.org>
+Date: Thu, 21 Nov 2013 17:39:37 -0500
+Subject: [PATCH] pkexec: Work around systemd injecting broken XDG_RUNTIME_DIR
+
+This workaround isn't too much code, and it's often better to fix bugs
+in two places anyways.
+
+For more information:
+
+See https://bugzilla.redhat.com/show_bug.cgi?id=753882
+See http://lists.freedesktop.org/archives/systemd-devel/2013-November/014370.html
+---
+ src/programs/pkexec.c | 33 ++++++++++++++++++++++++++++++---
+ 1 file changed, 30 insertions(+), 3 deletions(-)
+
+diff --git a/src/programs/pkexec.c b/src/programs/pkexec.c
+index 005e1fe..a7ca8e0 100644
+--- a/src/programs/pkexec.c
++++ b/src/programs/pkexec.c
+@@ -143,8 +143,22 @@ pam_conversation_function (int n,
+   return PAM_CONV_ERR;
+ }
+ 
++/* A work around for:
++ * https://bugzilla.redhat.com/show_bug.cgi?id=753882
++ */
++static gboolean
++xdg_runtime_dir_is_owned_by (const char *path,
++			     uid_t       target_uid)
++{
++  struct stat stbuf;
++
++  return stat (path, &stbuf) == 0 &&
++    stbuf.st_uid == target_uid;
++}
++
+ static gboolean
+-open_session (const gchar *user_to_auth)
++open_session (const gchar *user_to_auth,
++	      uid_t        target_uid)
+ {
+   gboolean ret;
+   gint rc;
+@@ -186,7 +200,19 @@ open_session (const gchar *user_to_auth)
+     {
+       guint n;
+       for (n = 0; envlist[n]; n++)
+-        putenv (envlist[n]);
++	{
++	  const char *envitem = envlist[n];
++	  
++	  if (g_str_has_prefix (envitem, "XDG_RUNTIME_DIR="))
++	    {
++	      const char *eq = strchr (envitem, '=');
++	      g_assert (eq);
++	      if (!xdg_runtime_dir_is_owned_by (eq + 1, target_uid))
++		continue;
++	    }
++
++	  putenv (envlist[n]);
++	}
+       free (envlist);
+     }
+ 
+@@ -913,7 +939,8 @@ main (int argc, char *argv[])
+    * As evident above, neither su(1) (and, for that matter, nor sudo(8)) does this.
+    */
+ #ifdef POLKIT_AUTHFW_PAM
+-  if (!open_session (pw->pw_name))
++  if (!open_session (pw->pw_name,
++		     pw->pw_uid))
+     {
+       goto out;
+     }
+-- 
+1.8.3.1
+

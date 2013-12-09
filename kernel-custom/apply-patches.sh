@@ -206,19 +206,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 985522
-ApplyPatch ntp-Make-periodic-RTC-update-more-reliable.patch
-
-#rhbz 902012
-ApplyPatch elevator-Fix-a-race-in-elevator-switching-and-md.patch
-ApplyPatch elevator-acquire-q-sysfs_lock-in-elevator_change.patch
-
-#rhbz 982153
-ApplyPatch iommu-Remove-stack-trace-from-broken-irq-remapping-warning.patch
-
-#rhbz 998732
-ApplyPatch vfio-iommu-Fixed-interaction-of-VFIO_IOMMU_MAP_DMA.patch
-
 #rhbz 993744
 ApplyPatch dm-cache-policy-mq_fix-large-scale-table-allocation-bug.patch
 

@@ -72,6 +72,8 @@ zcat ${SB_PATCHDIR}/qt-x11-free-3.3.4-fullscreen.patch.gz | patch -p1 -E --backu
 zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8b-gcc43.patch.gz | patch -p1 -E --backup --verbose
 
 # security patches
+# fix for CVE-2013-4549 backported from Qt 4
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-CVE-2013-4549.patch
 
 zcat ${SB_PATCHDIR}/qt-ulibc.patch.gz | patch -p1 -E --backup --verbose
 

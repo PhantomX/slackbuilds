@@ -20,6 +20,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/parted-3.1-libparted-add-suppo
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/parted-3.1-libparted-don-t-canonicalize-dev-md-paths.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/parted-3.1-libparted-mklabel-eav.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/parted-3.1-avoid-dasd-as-default-file-image-type.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0068-libparted-Recognize-btrfs-filesystem.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0070-libparted-Flush-parent-device-on-open-962611.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

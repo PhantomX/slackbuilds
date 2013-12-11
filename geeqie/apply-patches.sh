@@ -25,5 +25,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/geeqie-1.1-filedata-avoid-hist
 # reported upstream
 # https://sourceforge.net/tracker/?func=detail&aid=3605406&group_id=222125&atid=1054682
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/geeqie-1.1-large-files.patch
+# LCMS2 patch from Geeqie-devel mailing-list
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/geeqie-1.1-lcms2.patch
 
 set +e +o pipefail

@@ -16,8 +16,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-cmsgalign.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-linkfastmath.patch
 # ntpbz #759
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-retcode.patch
-# ntpbz #992
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p4-rtnetlink.patch
+# ntpbz #2085
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-rootdisp.patch
 # ntpbz #2309
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-hexpw.patch
 # ntpbz #898
@@ -32,8 +32,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.4p7-getprecision.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p1-logdefault.patch
 # add option -m to lock memory
 [ "${SB_AUTOGEN}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-mlock.patch
-# allow -u and -p options to be used twice (#639101)
-[ "${SB_AUTOGEN}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-multiopts.patch
+# ntpbz #2506
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-refreshroute.patch
 # ntpbz #2040
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-identlen.patch
 # ntpbz #1670

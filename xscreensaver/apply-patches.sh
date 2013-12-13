@@ -13,9 +13,7 @@ zcat ${SB_PATCHDIR}/${NAME}.electricsheep.diff.gz | patch -p1 --verbose --backup
 
 # Patches from Fedora
 # Change webcollage not to access to net
-patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.16-webcollage-default-nonet.patch
-# Remove "AC_PROG_CC' was expanded before it was required" warning
-patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.11-conf264.patch
+patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.26-webcollage-default-nonet.patch
 ## Patches which must be discussed with upstream
 # driver/test-passwd tty segfaults
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.12-test-passwd-segv-tty.patch

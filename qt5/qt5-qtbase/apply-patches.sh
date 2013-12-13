@@ -43,7 +43,14 @@ ApplyPatch qtbase-opensource-src-5.0.2-lowmem.patch
 ApplyPatch qtbase-multilib_optflags.patch -z .multilib-optflags
 rm -fv mkspecs/linux-g++*/qmake.conf.multilib-optflags
 
+# qatomic on ppc/ppc64, http://bugzilla.redhat.com/1005482
+ApplyPatch qtbase-qatomic-ppc.patch
+
 # upstreamable patches
+# fix big endian builds
+ApplyPatch qtbase-opensource-src-5.1.1-bigendian.patch
+# fix build with -system-harfbuzz
+ApplyPatch qtbase-opensource-src-5.2.0-alpha-harfbuzz.patch
 
 ##upstream patches
 

@@ -96,8 +96,8 @@ which we used earlier, is some improvement.
 --- krb5/src/config/pre.in
 +++ krb5/src/config/pre.in
 @@ -180,6 +180,7 @@ LD_UNRESOLVED_PREFIX = @LD_UNRESOLVED_PREFIX@
- LD_SHLIBDIR_PREFIX = @LD_SHLIBDIR_PREFIX@
- LDARGS = @LDARGS@
+ KRB_INCLUDES = -I$(BUILDTOP)/include -I$(top_srcdir)/include
+ LDFLAGS = @LDFLAGS@
  LIBS = @LIBS@
 +SELINUX_LIBS=@SELINUX_LIBS@
  
@@ -131,8 +131,8 @@ which we used earlier, is some improvement.
  
 +#include "k5-label.h"
  
- #define DEFAULT_PWD_STRING1 "Enter password"
- #define DEFAULT_PWD_STRING2 "Re-enter password for verification"
+ #define KRB5_KDB_MAX_LIFE       (60*60*24) /* one day */
+ #define KRB5_KDB_MAX_RLIFE      (60*60*24*7) /* one week */
 --- krb5/src/include/k5-label.h
 +++ krb5/src/include/k5-label.h
 @@ -0,0 +1,32 @@
@@ -216,8 +216,8 @@ which we used earlier, is some improvement.
      if (*fd == -1) {
          com_err(progname, errno, _("while creating 'ok' file, '%s'"), file_ok);
          exit_status++;
---- krb5/src/krb5-config.in
-+++ krb5/src/krb5-config.in
+--- krb5/src/build-tools/krb5-config.in
++++ krb5/src/build-tools/krb5-config.in
 @@ -38,6 +38,7 @@ RPATH_FLAG='@RPATH_FLAG@'
  DEFCCNAME='@DEFCCNAME@'
  DEFKTNAME='@DEFKTNAME@'
@@ -268,7 +268,7 @@ which we used earlier, is some improvement.
      if (!KTFILEP(id)) {
 @@ -1058,7 +1058,7 @@ krb5_ktfileint_open(krb5_context context
              /* try making it first time around */
-             krb5_create_secure_file(context, KTFILENAME(id));
+             k5_create_secure_file(context, KTFILENAME(id));
              errno = 0;
 -            KTFILEP(id) = fopen(KTFILENAME(id), fopen_mode_rbplus);
 +            KTFILEP(id) = WRITABLEFOPEN(KTFILENAME(id), fopen_mode_rbplus);
@@ -324,18 +324,6 @@ which we used earlier, is some improvement.
  			RETURN_ERROR(errno, error0);
  		(void)fcntl(hashp->fp, F_SETFD, 1);
  	}
---- krb5/src/plugins/kdb/db2/libdb2/test/Makefile.in
-+++ krb5/src/plugins/kdb/db2/libdb2/test/Makefile.in
-@@ -12,7 +12,8 @@ PROG_RPATH=$(KRB5_LIBDIR)
- 
- KRB5_RUN_ENV= @KRB5_RUN_ENV@
- 
--DB_LIB		= -ldb
-+DB_LIB		= -ldb $(SUPPORT_DEPLIB)
-+
- DB_DEPLIB	= ../libdb$(DEPLIBEXT)
- 
- all::
 --- krb5/src/plugins/kdb/ldap/ldap_util/kdb5_ldap_services.c
 +++ krb5/src/plugins/kdb/ldap/ldap_util/kdb5_ldap_services.c
 @@ -179,7 +179,7 @@ done:
@@ -434,14 +422,14 @@ which we used earlier, is some improvement.
  # Add -lm if dumping thread stats, for sqrt.
 -SHLIB_EXPLIBS= $(LIBS) $(DL_LIB)
 +SHLIB_EXPLIBS= $(LIBS) $(SELINUX_LIBS) $(DL_LIB)
- SHLIB_DIRS=
- SHLIB_RDIRS=$(KRB5_LIBDIR)
+ 
+ DEPLIBS=
  
 --- krb5/src/util/support/selinux.c
 +++ krb5/src/util/support/selinux.c
-@@ -0,0 +1,405 @@
+@@ -0,0 +1,381 @@
 +/*
-+ * Copyright 2007,2008,2009,2011,2012 Red Hat, Inc.  All Rights Reserved.
++ * Copyright 2007,2008,2009,2011,2012,2013 Red Hat, Inc.  All Rights Reserved.
 + *
 + * Redistribution and use in source and binary forms, with or without
 + * modification, are permitted provided that the following conditions are met:
@@ -697,15 +685,12 @@ which we used earlier, is some improvement.
 +	struct stat st;
 +	void *retval;
 +	k5_once(&labeled_once, label_mutex_init);
-+	if (k5_mutex_lock(&labeled_mutex) == 0) {
-+		if (stat(pathname, &st) != 0) {
-+			st.st_mode = S_IRUSR | S_IWUSR;
-+		}
-+		retval = push_fscreatecon(pathname, st.st_mode);
-+		return retval ? retval : (void *) -1;
-+	} else {
-+		return NULL;
++	k5_mutex_lock(&labeled_mutex);
++	if (stat(pathname, &st) != 0) {
++		st.st_mode = S_IRUSR | S_IWUSR;
 +	}
++	retval = push_fscreatecon(pathname, st.st_mode);
++	return retval ? retval : (void *) -1;
 +}
 +
 +void
@@ -730,17 +715,13 @@ which we used earlier, is some improvement.
 +	}
 +
 +	k5_once(&labeled_once, label_mutex_init);
-+	if (k5_mutex_lock(&labeled_mutex) == 0) {
-+		ctx = push_fscreatecon(path, 0);
-+		fp = fopen(path, mode);
-+		errno_save = errno;
-+		pop_fscreatecon(ctx);
-+		k5_mutex_unlock(&labeled_mutex);
-+		errno = errno_save;
-+	} else {
-+		fp = fopen(path, mode);
-+	}
-+
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, 0);
++	fp = fopen(path, mode);
++	errno_save = errno;
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++	errno = errno_save;
 +	return fp;
 +}
 +
@@ -752,16 +733,13 @@ which we used earlier, is some improvement.
 +	security_context_t ctx;
 +
 +	k5_once(&labeled_once, label_mutex_init);
-+	if (k5_mutex_lock(&labeled_mutex) == 0) {
-+		ctx = push_fscreatecon(path, 0);
-+		fd = creat(path, mode);
-+		errno_save = errno;
-+		pop_fscreatecon(ctx);
-+		k5_mutex_unlock(&labeled_mutex);
-+		errno = errno_save;
-+	} else {
-+		fd = creat(path, mode);
-+	}
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, 0);
++	fd = creat(path, mode);
++	errno_save = errno;
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++	errno = errno_save;
 +	return fd;
 +}
 +
@@ -773,16 +751,13 @@ which we used earlier, is some improvement.
 +	security_context_t ctx;
 +
 +	k5_once(&labeled_once, label_mutex_init);
-+	if (k5_mutex_lock(&labeled_mutex) == 0) {
-+		ctx = push_fscreatecon(path, mode);
-+		ret = mknod(path, mode, dev);
-+		errno_save = errno;
-+		pop_fscreatecon(ctx);
-+		k5_mutex_unlock(&labeled_mutex);
-+		errno = errno_save;
-+	} else {
-+		ret = mknod(path, mode, dev);
-+	}
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, mode);
++	ret = mknod(path, mode, dev);
++	errno_save = errno;
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++	errno = errno_save;
 +	return ret;
 +}
 +
@@ -794,16 +769,13 @@ which we used earlier, is some improvement.
 +	security_context_t ctx;
 +
 +	k5_once(&labeled_once, label_mutex_init);
-+	if (k5_mutex_lock(&labeled_mutex) == 0) {
-+		ctx = push_fscreatecon(path, S_IFDIR);
-+		ret = mkdir(path, mode);
-+		errno_save = errno;
-+		pop_fscreatecon(ctx);
-+		k5_mutex_unlock(&labeled_mutex);
-+		errno = errno_save;
-+	} else {
-+		ret = mkdir(path, mode);
-+	}
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, S_IFDIR);
++	ret = mkdir(path, mode);
++	errno_save = errno;
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++	errno = errno_save;
 +	return ret;
 +}
 +
@@ -821,26 +793,18 @@ which we used earlier, is some improvement.
 +	}
 +
 +	k5_once(&labeled_once, label_mutex_init);
-+	if (k5_mutex_lock(&labeled_mutex) == 0) {
-+		ctx = push_fscreatecon(path, 0);
++	k5_mutex_lock(&labeled_mutex);
++	ctx = push_fscreatecon(path, 0);
 +
-+		va_start(ap, flags);
-+		mode = va_arg(ap, mode_t);
-+		fd = open(path, flags, mode);
-+		va_end(ap);
++	va_start(ap, flags);
++	mode = va_arg(ap, mode_t);
++	fd = open(path, flags, mode);
++	va_end(ap);
 +
-+		errno_save = errno;
-+		pop_fscreatecon(ctx);
-+		k5_mutex_unlock(&labeled_mutex);
-+		errno = errno_save;
-+	} else {
-+		va_start(ap, flags);
-+		mode = va_arg(ap, mode_t);
-+		fd = open(path, flags, mode);
-+		errno_save = errno;
-+		va_end(ap);
-+		errno = errno_save;
-+	}
++	errno_save = errno;
++	pop_fscreatecon(ctx);
++	k5_mutex_unlock(&labeled_mutex);
++	errno = errno_save;
 +	return fd;
 +}
 +
@@ -981,14 +945,14 @@ which we used earlier, is some improvement.
 --- krb5/src/lib/kdb/kdb_log.c
 +++ krb5/src/lib/kdb/kdb_log.c
 @@ -566,7 +566,7 @@ ulog_map(krb5_context context, const cha
-             return (errno);
-         }
+         if (caller == FKPROPLOG)
+             return errno;
  
 -        ulogfd = open(logname, O_RDWR | O_CREAT, 0600);
 +        ulogfd = THREEPARAMOPEN(logname, O_RDWR | O_CREAT, 0600);
-         if (ulogfd == -1) {
-             return (errno);
-         }
+         if (ulogfd == -1)
+             return errno;
+ 
 --- krb5/src/util/gss-kernel-lib/Makefile.in
 +++ krb5/src/util/gss-kernel-lib/Makefile.in
 @@ -60,6 +60,7 @@ HEADERS= \

@@ -65,8 +65,6 @@ ApplyOptionalPatch hotfixes.patch
 ApplyPatch oom-warning.patch
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 
-ApplyPatch vmbugon-warnon.patch
-
 #ApplyPatch debug-bad-pte-dmi.patch
 ApplyPatch debug-bad-pte-modules.patch
 
@@ -78,6 +76,8 @@ ApplyPatch debug-bad-pte-modules.patch
 ApplyPatch add-cpu-optimizations.patch
 
 ApplyPatch x86_64-hpet-64bit-timer.patch
+
+ApplyPatch x86-allow-1024-cpus.patch
 
 #
 # Intel IOMMU
@@ -169,9 +169,6 @@ ApplyPatch silence-fbcon-logo.patch.gz
 # /dev/crash driver.
 ApplyPatch crash-driver.patch
 
-#rhbz 917708
-ApplyPatch Revert-userns-Allow-unprivileged-users-to-create-use.patch
-
 # crypto/
 
 # DRM core
@@ -208,6 +205,26 @@ ApplyPatch criu-no-expert.patch
 
 #rhbz 993744
 ApplyPatch dm-cache-policy-mq_fix-large-scale-table-allocation-bug.patch
+
+# Fix 15sec NFS mount delay
+ApplyPatch sunrpc-create-a-new-dummy-pipe-for-gssd-to-hold-open.patch
+ApplyPatch sunrpc-replace-gssd_running-with-more-reliable-check.patch
+ApplyPatch nfs-check-gssd-running-before-krb5i-auth.patch
+
+#CVE-2013-6382 rhbz 1033603 1034670
+ApplyPatch xfs-underflow-bug-in-xfs_attrlist_by_handle.patch
+
+#CVE-2013-6367 rhbz 1032207 1042081
+ApplyPatch KVM-x86-Fix-potential-divide-by-0-in-lapic.patch
+
+#CVE-2013-6368 rhbz 1032210 1042090
+ApplyPatch KVM-x86-Convert-vapic-synchronization-to-_cached-functions.patch
+
+#CVE-2013-6376 rhbz 1033106 1042099
+ApplyPatch KVM-x86-fix-guest-initiated-crash-with-x2apic.patch
+
+#CVE-2013-4587 rhbz 1030986 1042071
+ApplyPatch KVM-Improve-create-VCPU-parameter.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

@@ -9,6 +9,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 --verbose --backup -z .htmldir -i ${SB_PATCHDIR}/kdelibs-4.9.0-htmldir.patch
 # make -devel packages parallel-installable
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-parallel_devel.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-autostart-debug.patch
 # fix kde#149705
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-kde149705.patch
 # install all .css files and Doxyfile.global in kdelibs-common to build
@@ -22,7 +23,7 @@ sed -e "s|_KDELIBS_SLK_DIST|${KDELIBS_SLK_DIST}|g" \
 # patch KStandardDirs to use /usr/libexec/kde4 instead of /usr/lib${LIBDIRSUFFIX}/kde4/libexec
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-libexecdir.patch
 # kstandarddirs changes: search /etc/kde, find /usr/libexec/kde4
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-kstandarddirs.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.97-kstandarddirs.patch
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-cmake.patch
 
 # die rpath die, since we're using standard paths, we can avoid
@@ -52,13 +53,15 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-kcm_ssl.patch
 # disable dot to reduce apidoc size
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-dot.patch
 
+# set QT_NO_GLIB in klauncher_main.cpp as a possible fix/workaround for #983110
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-klauncher-no-glib.patch
+
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
 
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r64a7238c3c082b174e47c3896d6eb0f5c52ab461.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578

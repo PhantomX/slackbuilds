@@ -18,7 +18,6 @@ zcat ${SB_PATCHDIR}/kdebase-4.4.0-konqueror-kde\#228593.patch.gz | patch -p2 -E 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.2-konqueror-mimetyp.patch
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r385e5fef2c00cc978352f50b46a67bd138743d6a.diff
 
 #trunk patches
 

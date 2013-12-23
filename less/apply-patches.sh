@@ -11,4 +11,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/less-418-fsync.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/less-436-manpage-add-old-bot-option.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/less-436-help.patch
 
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
+
 set +e +o pipefail

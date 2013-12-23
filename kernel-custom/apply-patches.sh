@@ -210,21 +210,16 @@ ApplyPatch dm-cache-policy-mq_fix-large-scale-table-allocation-bug.patch
 ApplyPatch sunrpc-create-a-new-dummy-pipe-for-gssd-to-hold-open.patch
 ApplyPatch sunrpc-replace-gssd_running-with-more-reliable-check.patch
 ApplyPatch nfs-check-gssd-running-before-krb5i-auth.patch
+#rhbz 1037793
+ApplyPatch rpc_pipe-remove-the-clntXX-dir-if-creating-the-pipe-fails.patch
+ApplyPatch sunrpc-add-an-info-file-for-the-dummy-gssd-pipe.patch
+ApplyPatch rpc_pipe-fix-cleanup-of-dummy-gssd-directory-when-notification-fails.patch
 
-#CVE-2013-6382 rhbz 1033603 1034670
-ApplyPatch xfs-underflow-bug-in-xfs_attrlist_by_handle.patch
+#rhbz 1025770
+ApplyPatch br-fix-use-of-rx_handler_data-in-code-executed-on-no.patch
 
-#CVE-2013-6367 rhbz 1032207 1042081
-ApplyPatch KVM-x86-Fix-potential-divide-by-0-in-lapic.patch
-
-#CVE-2013-6368 rhbz 1032210 1042090
-ApplyPatch KVM-x86-Convert-vapic-synchronization-to-_cached-functions.patch
-
-#CVE-2013-6376 rhbz 1033106 1042099
-ApplyPatch KVM-x86-fix-guest-initiated-crash-with-x2apic.patch
-
-#CVE-2013-4587 rhbz 1030986 1042071
-ApplyPatch KVM-Improve-create-VCPU-parameter.patch
+#rhbz 1024002
+ApplyPatch libata-implement-ATA_HORKAGE_NO_NCQ_TRIM-and-apply-it-to-Micro-M500-SSDs.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

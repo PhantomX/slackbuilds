@@ -26,20 +26,40 @@
 # This is a preprocessor for 'less'.  It is used when this environment
 # variable is set:   LESSOPEN="|lesspipe.sh %s"
 
+if [ ! -e "$1" ] ; then
+  exit 1
+fi
+
+if [ -d "$1" ] ; then
+  ls -alF -- "$1"
+  exit $?
+fi
+
+exec 2>/dev/null
+
+# Allow for user defined filters
+if [ -x ~/.lessfilter ]; then
+  ~/.lessfilter "$1"
+  if [ $? -eq 0 ]; then
+    exit 0
+  fi
+fi
+
 lesspipe() {
   case "$1" in
   *.tar) tar tvvf "$1" 2>/dev/null ;; # View contents of .tar and .tgz files
-  *.tar.gz|*.tgz) tar tzvvf "$1" 2>/dev/null ;;
-  *.tar.z|*.tar.Z) tar tzvvf "$1" 2>/dev/null ;;
-  *.tar.bz2|*.tbz|*.tbz2) tar tjvvf "$1" 2>/dev/null ;;
-  *.tar.lz) tar -tvvf "$1" 2>/dev/null ;;
-  *.tar.lzma|*.tlz) tar -tJvvf "$1" 2>/dev/null ;;
-  *.tar.lzo|*.tlzo) tar -tvvf "$1" 2>/dev/null ;;
-  *.tar.xz|*.txz) tar -tJvvf "$1" 2>/dev/null ;;
-  *.z|*.Z) gzip -dc "$1" 2>/dev/null ;; # View compressed files correctly
-  *.zip|*.ZIP|*.cbz|*.CBZ|*.jar|*.JAR|*.xpi|*.XPI) unzip -l "$1" 2>/dev/null ;;
-  *.deb) dpkg -c "$1" 2>/dev/null ;;
-  *.rpm) rpm -qpvl "$1" 2>/dev/null ;;
+  *.tar.gz|*.tgz) tar tzvvf "$1" ;;
+  *.tar.z|*.tar.Z) tar tzvvf "$1" ;;
+  *.tar.bz2|*.tbz|*.tbz2) tar tjvvf "$1" ;;
+  *.tar.lz) tar -tvvf "$1" ;;
+  *.tar.lzma|*.tlz) tar -tJvvf "$1" ;;
+  *.tar.lzo|*.tlzo) tar -tvvf "$1" ;;
+  *.tar.xz|*.txz) tar -tJvvf "$1" ;;
+  *.z|*.Z) gzip -dc "$1" ;; # View compressed files correctly
+  *.zip|*.ZIP|*.cbz|*.CBZ|*.jar|*.JAR|*.xpi|*.XPI) unzip -l "$1" ;;
+  *.cpi|*.cpio) cpio -itv < "$1";;
+  *.deb) dpkg -c "$1" ;;
+  *.rpm) rpm -qpvl "$1" ;;
   *.7z|*.7Z) # check if p7zip is installed first
     if which 7z 1> /dev/null ; then
       $(which 7z) t "$1" 
@@ -82,12 +102,39 @@ lesspipe() {
     if xz -dc "$1" | file - | grep roff 1> /dev/null ; then
       xz -dc "$1" | nroff -S -mandoc -
     fi ;;
-  *.gz) gzip -dc "$1"  2>/dev/null ;;
-  *.bz2) bzip2 -dc "$1" 2>/dev/null ;;
-  *.lz) lzip -dc "$1" 2>/dev/null ;;
-  *.lzma) lzma -dc "$1" 2>/dev/null ;;
-  *.lzo) lzop -dc "$1" 2>/dev/null | cat ;;
-  *.xz) xz -dc "$1" 2>/dev/null ;;
+  *.gz) gzip -dc "$1"  ;;
+  *.bz2) bzip2 -dc "$1" ;;
+  *.lz) lzip -dc "$1" ;;
+  *.lzma) lzma -dc "$1" ;;
+  *.lzo) lzop -dc "$1" | cat ;;
+  *.xz) xz -dc "$1" ;;
+  *.gpg) gpg -d "$1" ;;
+  *.bmp|*.BMP|*.gif|*.GIF|*.jpg|*.jpeg|*.mng|*.pcd|*.png|*.tga|*.tiff|*.tif)
+    if [ -x /usr/bin/mediainfo ]; then
+      mediainfo "$1"
+    else
+      echo "No mediainfo available"
+      echo "Install mediainfo to display multimedia files info "
+      exit 1
+    fi ;;
+    *.ac3|*.flac|*.m4a|*.mp2|*.mp3|*.mpc|*.ogg|*.opus|*.wav|*.wma|*.wv)
+    if [ -x /usr/bin/mediainfo ]; then
+      mediainfo "$1"
+    else
+      echo "No mediainfo available"
+      echo "Install mediainfo to display multimedia files info "
+      exit 1
+    fi ;;
+    *.mid|*.midi|*.nsf|*.spc)
+      file -L -b "$1" ;;
+    *.asf|*.avi|*.flv|*.m4v|*.mkv|*.mov|*.mpg|*.mpeg|*.mp4|*.ogv|*.rmvb|*.vob|*.VOB|*.webm|*.wmv)
+    if [ -x /usr/bin/mediainfo ]; then
+      mediainfo "$1"
+    else
+      echo "No mediainfo available"
+      echo "Install mediainfo to display multimedia files info "
+      exit 1
+    fi ;;
 #  *) FILE=`file -L "$1"` ; # Check to see if binary, if so -- view with 'strings'
 #    FILE1=`echo $FILE | cut -d ' ' -f 2`
 #    FILE2=`echo $FILE | cut -d ' ' -f 3`
@@ -99,3 +146,4 @@ lesspipe() {
 }
 
 lesspipe "$1"
+

@@ -15,8 +15,6 @@ else
 fi
 
 # From upstream
-# Revert this, breaking cut output
-patch -p1 -R -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-revert-cut.patch
 
 # Fedora patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch

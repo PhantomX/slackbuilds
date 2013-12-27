@@ -10,7 +10,7 @@ zcat ${SB_PATCHDIR}/${NAME}-1.9.10-cppflags.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/${NAME}-1.9.15-gmodulehack.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-1.9.13-underquoted.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-1.9.15-lib-bloat.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-1.9.15-multilib-config.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.9.15-multilib-config.patch
 zcat ${SB_PATCHDIR}/${NAME}.mitshm.render.diff.gz | patch -p1 --verbose
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/imlib-1.9.15-libpng15.patch
 ### Arch

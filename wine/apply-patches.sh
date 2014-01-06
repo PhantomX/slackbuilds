@@ -13,6 +13,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-cjk.patch
 # winepulse backend
 # http://repo.or.cz/w/wine/multimedia.git
 filterdiff -p1 -x configure -z ${SB_PATCHDIR}/wine-pulse-1.7.8.patch | patch -p1 -E --backup --verbose
+sed -i -e '/@MAKE_DLL_RULES@/d' dlls/winepulse.drv/Makefile.in
 
 # bugfixes
 # http://bugs.winehq.org/show_bug.cgi?id=7698

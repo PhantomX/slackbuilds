@@ -18,9 +18,10 @@ if [ "${PVER}" != "0" ] ;then
 fi
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/squid-3.1.0.9-config.patch
-zcat ${SB_PATCHDIR}/squid-3.1.0.9-location.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/squid-3.1.0.9-location.patch
 zcat ${SB_PATCHDIR}/squid-3.0.STABLE1-perlpath.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 --backup -z .fpic --verbose -i ${SB_PATCHDIR}/squid-3.2.0.12-fpic.patch
 patch -p1 --backup -z .ltdl --verbose -i ${SB_PATCHDIR}/squid-3.1.9-ltdl.patch
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/active-ftp.patch
 
 set +e +o pipefail

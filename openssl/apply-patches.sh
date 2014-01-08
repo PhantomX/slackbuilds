@@ -33,11 +33,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-dh-1024.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-weak-ciphers.patch
 # Backported fixes including security fixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-beta2-padlock64.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-backports.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-manfix.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-bad-mac.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-trusted-first.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-cve-2013-6449.patch
 
 # Use .so.${SSLSOVER}, not .so.${VERSION}:
 sed -e "s|_SB_SOVER_|${SSLSOVER}|g" ${SB_PATCHDIR}/openssl.soname.diff \

@@ -29,7 +29,6 @@ ApplyPatch() {
 ApplyPatch cups-no-gzip-man.patch
 [ "${SB_PAM}" = "YES" ] && ApplyPatch cups-system-auth.patch
 ApplyPatch cups-multilib.patch
-ApplyPatch cups-dbus-utf8.patch
 ApplyPatch cups-banners-slk.patch
 ApplyPatch cups-serverbin-compat.patch
 ApplyPatch cups-no-export-ssllibs.patch
@@ -55,18 +54,16 @@ ApplyPatch cups-ricoh-deviceid-oid.patch
 ApplyPatch cups-avahi-address.patch
 ApplyPatch cups-usblp-quirks.patch
 ApplyPatch cups-enum-all.patch
-ApplyPatch cups-stringpool-setprinterattr.patch
 ApplyPatch cups-dymo-deviceid.patch
 ApplyPatch cups-use-ipp1.1.patch
 ApplyPatch cups-no-gcry.patch
 ApplyPatch cups-avahi-no-threaded.patch
-ApplyPatch cups-gz-crc.patch
 ApplyPatch cups-ipp-multifile.patch
 ApplyPatch cups-full-relro.patch
 ApplyPatch cups-web-devices-timeout.patch
 ApplyPatch cups-final-content-type.patch
-ApplyPatch cups-jobhistory.patch
 [ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-journal.patch
+ApplyPatch cups-synconclose.patch
 
 ## SECURITY PATCHES:
 

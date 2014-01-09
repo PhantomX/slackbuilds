@@ -1,7 +1,7 @@
 #!/bin/sh
-#-- python-slip for Slackware --
+#-- firewalld for Slackware --
 # Build script by Phantom X <megaphantomx at bol.com.br>
-# Suggested usage: $ python-slip.SlackBuild 2>&1 | tee build.log
+# Suggested usage: $ firewalld.SlackBuild 2>&1 | tee build.log
 #--
 # Copyright 2008-2014 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
@@ -24,7 +24,7 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# http://fedorahosted.org/python-slip
+# http://fedorahosted.org/firewalld
 
 PACKAGER_ID=${PACKAGER_ID:-$USER}
 PACKAGER=${PACKAGER:-$USER@$HOSTNAME}
@@ -41,10 +41,10 @@ if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
 
-NAME=python-slip
+NAME=firewalld
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.6.0}
+VERSION=${VERSION:-0.3.8}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -59,15 +59,10 @@ SLKDTARGET=${SLKDTARGET:-slackware}
 BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
-SBDIR=${PKG}/usr/src/slackbuilds/python-modules/${NAME}
+SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
-
-PYSITEARCH=$(python -c 'from distutils import sysconfig; print sysconfig.get_python_lib(1)')
-PYSITELIB=$(python -c 'from distutils import sysconfig; print sysconfig.get_python_lib()')
-PYABI=$(python -c 'import sys; print (sys.version[:3])')
-PYVER=$(python -c 'import sys; print sys.version.split(" ")[0]')
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -77,8 +72,7 @@ SRCARCHIVE=${SRCDIR}.tar.bz2
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-MIRROR_SF=${MIRROR_SF:-http://prdownloads.sourceforge.net}
-DL_URL="http://fedorahosted.org/released/${NAME}/${SRCARCHIVE}"
+DL_URL="https://fedorahosted.org/released/${NAME}/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
@@ -106,13 +100,55 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+sed -i \
+  -e '/^Conflicts=/s|$| firewall.service|g' \
+  -e 's|/sysconfig/|/default/|g' \
+  config/${NAME}.service.in || exit 1
+
+./configure \
+  --prefix=/usr \
+  --libdir=/usr/lib${LIBDIRSUFFIX} \
+  --sysconfdir=/etc \
+  --localstatedir=/var/lib \
+  --infodir=/usr/info \
+  --mandir=/usr/man \
+  --docdir=/usr/doc/${NAME}-${VERSION} \
+  --disable-silent-rules \
+  --enable-sysconfig \
+  --disable-schemas-compile \
+  --with-systemd-unitdir=/lib/systemd/system \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
+
 make -j${NJOBS} || make || exit $?
 make install DESTDIR=${PKG} || exit $?
+
+mv ${PKG}/etc/sysconfig ${PKG}/etc/default
+mv ${PKG}/etc/default/${NAME} ${PKG}/etc/default/${NAME}.new || exit 1
+
+for file in firewalld.conf lockdown-whitelist.xml ;do
+  mv ${PKG}/etc/${NAME}/${file} ${PKG}/etc/${NAME}/${file}.new || exit 1
+  chmod 0640 ${PKG}/etc/${NAME}/${file}.new || exit 1
+done
+
+chmod 0750 ${PKG}/usr/lib/${NAME} ${PKG}/etc/${NAME} || exit 1
+for dir in icmptypes services zones ;do
+  chmod 0750 ${PKG}/usr/lib/${NAME}/${dir} || exit 1
+  chmod 0750 ${PKG}/etc/${NAME}/${dir} || exit 1
+done
+chmod 0640 ${PKG}/usr/lib/${NAME}/*/*.xml || exit 1
+
+mkdir -p ${PKG}/etc/rc.d
+install -pm0755 ${CWD}/rc.${NAME} \
+  ${PKG}/etc/rc.d/rc.${NAME}.new || exit 1
+
+mkdir -p ${PKG}/var/log/setup
+install -pm0755 ${CWD}/setup.onlyonce.rc${NAME} \
+  ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  COPYING doc/dbus ${CWD}/ChangeLog.SB \
+  COPYING README ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 [ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
@@ -144,23 +180,76 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
+cat > ${PKG}/install/doinst.sh <<EOF
+#!/bin/sh
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x usr/bin/glib-compile-schemas ] ;then
+  \${CHROOT} /usr/bin/glib-compile-schemas /usr/share/glib-2.0/schemas &> /dev/null
+fi
+if [ -x usr/bin/update-desktop-database ]; then
+  \${CHROOT} /usr/bin/update-desktop-database 1> /dev/null 2> /dev/null
+fi
+if [ -x usr/bin/gtk-update-icon-cache ]; then
+  \${CHROOT} /usr/bin/touch --no-create /usr/share/icons/hicolor > /dev/null 2>&1
+  \${CHROOT} /usr/bin/gtk-update-icon-cache -q /usr/share/icons/hicolor > /dev/null 2>&1
+fi
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+# Keep same perms on rc.${NAME}.new:
+if [ -r etc/rc.d/rc.${NAME} -a -r etc/rc.d/rc.${NAME}.new ]; then
+  chmod --reference=etc/rc.d/rc.${NAME} etc/rc.d/rc.${NAME}.new
+fi
+
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
+fi
+EOF
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
-       ${PKG}/install/slack-desc
+  ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
-  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${SBDIR}/
-  install -m0755 ${CWD}/${NAME}.SlackBuild \
+  install -pm0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+    ${CWD}/apply-patches.sh ${CWD}/rc.${NAME} ${CWD}/setup.*.rc${NAME} ${SBDIR}/
+  install -pm0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
-  install -m0644 ${CWD}/patches/*.* \
+  install -pm0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
   rmdir ${SBDIR}/patches
 fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"

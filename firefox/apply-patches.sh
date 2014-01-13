@@ -13,6 +13,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-duckduckgo.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/toolkit-download-folder.patch
 
 # Upstream patches
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-938730.patch
 
 # OpenSuse kde integration support
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-browser-css.patch

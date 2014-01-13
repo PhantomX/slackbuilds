@@ -218,8 +218,11 @@ ApplyPatch rpc_pipe-fix-cleanup-of-dummy-gssd-directory-when-notification-fails.
 #rhbz 1025770
 ApplyPatch br-fix-use-of-rx_handler_data-in-code-executed-on-no.patch
 
-#rhbz 1024002
-ApplyPatch libata-implement-ATA_HORKAGE_NO_NCQ_TRIM-and-apply-it-to-Micro-M500-SSDs.patch
+#rhbz 924916
+ApplyPatch KVM-MMU-handle-invalid-root_hpa-at-__direct_map.patch
+
+#rhbz 1047892
+ApplyPatch KVM-VMX-fix-use-after-free-of-vmx-loaded_vmcs.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 ApplyPatch ps3-control-ep.patch

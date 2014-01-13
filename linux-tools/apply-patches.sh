@@ -51,7 +51,5 @@ ApplyOptionalPatch() {
 }
 
 ApplyPatch perf_timechart_fix_zero_timestamps.patch
-# rhbz 1000439
-ApplyPatch cpupower-Fix-segfault-due-to-incorrect-getopt_long-a.patch
 
 set +e +o pipefail

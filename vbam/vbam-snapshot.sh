@@ -3,8 +3,8 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="https://vbam.svn.sourceforge.net/svnroot/${module}/trunk"
-snaproot2="https://vbam.svn.sourceforge.net/svnroot/${module}/dependencies"
+snaproot="svn://svn.code.sf.net/p/${module}/code/trunk"
+snaproot2="svn://svn.code.sf.net/p/${module}/code/dependencies"
 
 tmp=$(mktemp -d)
 

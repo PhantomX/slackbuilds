@@ -7,5 +7,6 @@ SB_PATCHDIR=${CWD}/patches
 patch -p0 -E --backup -z .orig --verbose -i ${SB_PATCHDIR}/m64py-0.1.6-path.patch
 patch -p0 -E --backup -z .orig --verbose -i ${SB_PATCHDIR}/m64py-0.1.6-libdir.patch
 patch -p0 -E --backup -z .orig --verbose -i ${SB_PATCHDIR}/m64py-0.1.6-numpy.patch
+patch -p0 -E --backup -z .orig --verbose -i ${SB_PATCHDIR}/m64py-0.1.8-fix-tr.patch
 
 set +e +o pipefail

@@ -33,31 +33,11 @@ ApplyPatch x11.startwithblackscreen.diff
 # This really could be done prettier.
 ApplyPatch xserver-1.4.99-ssh-isnt-local.patch
 
-# don't build the (broken) acpi code
-ApplyPatch xserver-1.6.0-less-acpi-brokenness.patch
-
 # ajax needs to upstream this
 ApplyPatch xserver-1.6.99-right-of.patch
 #zcat ${SB_PATCHDIR}/xserver-1.6.99-hush-prerelease-warning.patch.gz | patch -p1 --verbose
 
-# backport pci slot claiming fix for kms drivers
-# needed when building without xorg (aka s390x)
-ApplyPatch xserver-1.12.2-xorg-touch-test.patch
-
 ApplyPatch 0001-Always-install-vbe-and-int10-sdk-headers.patch
-
-ApplyPatch 0001-xf86-return-NULL-for-compat-output-if-no-outputs.patch
-
-# mustard: make the default queue length bigger to calm abrt down
-ApplyPatch 0001-mieq-Bump-default-queue-size-to-512.patch
-
-# scale events from abs devices in relative mode to something useful
-ApplyPatch 0004-dix-pre-scale-x-by-the-screen-device-resolution-rati.patch
-ApplyPatch 0005-dix-scale-y-back-instead-of-x-up-when-pre-scaling-co.patch
-
-# Bug rh#962572 - X-sandboxes are not resizeable
-# enabled by default until sandbox -X uses the option
-ApplyPatch 0001-ephyr-Add-resizeable-option.patch
 
 # misc
 ApplyPatch 0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
@@ -67,12 +47,6 @@ ApplyPatch xserver-force-hal-disable.patch
 ### Arch
 # Use nouveau/nv/nvidia drivers for nvidia devices
 ApplyPatch autoconfig-nvidia.patch
-
-# Add GLX support for Xephyr - https://bugs.freedesktop.org/show_bug.cgi?id=62346
-ApplyPatch xephyr-glx.patch
-
-# http://cgit.freedesktop.org/xorg/xserver/commit/fb/wfbrename.h?id=5047810a4c20fab444b8c6eb146c55dcdb0d4219
-ApplyPatch fb-rename-wfbDestroyGlyphCache.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

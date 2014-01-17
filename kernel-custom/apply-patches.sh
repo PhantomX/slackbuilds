@@ -215,9 +215,6 @@ ApplyPatch rpc_pipe-remove-the-clntXX-dir-if-creating-the-pipe-fails.patch
 ApplyPatch sunrpc-add-an-info-file-for-the-dummy-gssd-pipe.patch
 ApplyPatch rpc_pipe-fix-cleanup-of-dummy-gssd-directory-when-notification-fails.patch
 
-#rhbz 1025770
-ApplyPatch br-fix-use-of-rx_handler_data-in-code-executed-on-no.patch
-
 #rhbz 924916
 ApplyPatch KVM-MMU-handle-invalid-root_hpa-at-__direct_map.patch
 

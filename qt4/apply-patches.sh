@@ -53,9 +53,6 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-uic_multilib.patch
 # reduce debuginfo in qtwebkit (webcore)
 ApplyPatch qt-everywhere-opensource-src-4.8.5-webcore_debuginfo.patch
 
-# cups16 printer discovery
-ApplyPatch qt-cupsEnumDests.patch
-
 # enable ft lcdfilter
 ApplyPatch qt-x11-opensource-src-4.5.1-enable_ft_lcdfilter.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch 
@@ -147,6 +144,10 @@ ApplyPatch 0147-Disallow-deep-or-widely-nested-entity-references.patch
 # http://lists.qt-project.org/pipermail/announce/2013-December/000036.html
 # https://codereview.qt-project.org/#change,71010
 ApplyPatch 0162-Fully-expand-entities-to-ensure-deep-or-widely-neste.patch
+# fix QTBUG-35459 (too low entityCharacterLimit=1024 for CVE-2013-4549)
+ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-35459.patch
+# fix QTBUG-35460 (error message for CVE-2013-4549 is misspelled)
+ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-35460.patch
 
 # security patches
 

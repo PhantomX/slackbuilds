@@ -44,6 +44,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-qlocale-ali
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-qimage-parentheses.patch
 # fix the include path for zlib.h in qcstring.cpp to pick up the system version
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-system-zlib-header.patch
+# work around -Werror=format-security false positives (#1037297)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-\#1037297.patch
 
 # immodule patches
 bzcat ${SB_PATCHDIR}/qt-x11-immodule-unified-qt3.3.8-20071116.diff.bz2 | patch -p1 -E --backup --verbose

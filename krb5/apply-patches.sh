@@ -20,14 +20,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-dirsrv-accountlock.p
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.9-debuginfo.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-kvno-230379.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-kpasswdtest.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-no-malloc0.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-ignore-empty-unnecessary-final-token.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-gss_oid_leak.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-keytab_close.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.12-copy_context.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-spnego_error_messages.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.12-enable-NX.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.12-pic-aes-ni.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-master-keyring-kdcsync.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

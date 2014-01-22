@@ -62,11 +62,7 @@ ApplyOptionalPatch upstream-reverts.patch -R
 ApplyOptionalPatch hotfixes.patch
 
 # vm patches
-ApplyPatch oom-warning.patch
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
-
-#ApplyPatch debug-bad-pte-dmi.patch
-ApplyPatch debug-bad-pte-modules.patch
 
 # mm patches
 
@@ -77,7 +73,7 @@ ApplyPatch add-cpu-optimizations.patch
 
 ApplyPatch x86_64-hpet-64bit-timer.patch
 
-ApplyPatch x86-allow-1024-cpus.patch
+ApplyPatch 0001-lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
 
 #
 # Intel IOMMU
@@ -86,8 +82,6 @@ ApplyPatch x86-allow-1024-cpus.patch
 #
 # bugfixes to drivers and filesystems
 #
-
-ApplyPatch remount-no-shrink-dcache.patch
 
 # reisefs
 
@@ -109,7 +103,6 @@ ApplyPatch remount-no-shrink-dcache.patch
 
 # ACPI
 ApplyPatch defaults-acpi-video.patch
-ApplyPatch acpi-sony-nonvs-blacklist.patch
 
 # cpufreq
 #ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
@@ -158,7 +151,12 @@ ApplyPatch serial-460800.patch
 ApplyPatch silence-noise.patch
 
 # Make fbcon not show the penguins with 'quiet'
-ApplyPatch silence-fbcon-logo.patch.gz
+ApplyPatch silence-fbcon-logo.patch
+
+# Changes to upstream defaults.
+
+#rhbz 917708
+ApplyPatch Revert-userns-Allow-unprivileged-users-to-create-use.patch
 
 # libata
 
@@ -178,10 +176,7 @@ ApplyPatch crash-driver.patch
 
 # Intel DRM
 ApplyOptionalPatch drm-intel-next.patch
-ApplyPatch drm-i915-dp-stfu.patch
-
-# silence the ACPI blacklist code
-ApplyPatch silence-acpi-blacklist.patch
+ApplyPatch drm-i915-hush-check-crtc-state.patch
 
 # Media (V4L/DVB/IR) updates/fixes/experimental drivers
 ApplyOptionalPatch drivers-media-update.patch
@@ -222,7 +217,7 @@ ApplyPatch KVM-MMU-handle-invalid-root_hpa-at-__direct_map.patch
 ApplyPatch KVM-VMX-fix-use-after-free-of-vmx-loaded_vmcs.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
-ApplyPatch ps3-control-ep.patch
+#ApplyPatch ps3-control-ep.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

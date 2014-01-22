@@ -54,7 +54,23 @@ fi
   ApplyPatch 00_all_0005-reload-etc-resolv.conf-when-it-has-changed.patch
   ApplyPatch 00_all_0009-gentoo-support-running-tests-under-sandbox.patch
   ApplyPatch 00_all_0010-gentoo-disable-building-in-timezone-subdir.patch
-  
+  ApplyPatch 00_all_0015-Accept-make-versions-4.0-and-greater.patch
+  ApplyPatch 00_all_0016-Don-t-use-broken-DL_AUTO_FUNCTION_ADDRESS.patch
+  ApplyPatch 00_all_0017-ptrace.h-add-__-prefix-to-ptrace_peeksiginfo_args.patch
+  ApplyPatch 00_all_0018-ia64-add-__-prefix-to-pt_all_user_regs-ia64_fpreg-BZ.patch
+  ApplyPatch 00_all_0019-ARM-Fix-clone-code-when-built-for-Thumb.patch
+  ApplyPatch 00_all_0020-Fix-PI-mutex-check-in-pthread_cond_broadcast-and-pth.patch
+  ApplyPatch 00_all_0021-CVE-2013-4237-BZ-14699-Buffer-overflow-in-readdir_r.patch
+  ApplyPatch 00_all_0022-elf-setup-vdso.h-setup_vdso-Fix-missing-string-termi.patch
+  ApplyPatch 00_all_0023-PowerPC-fix-POWER7-memrchr-for-some-large-inputs.patch
+  ApplyPatch 00_all_0024-Fix-memory-leaks-in-libio-on-allocation-failure.patch
+  ApplyPatch 00_all_0025-Fix-memory-leak-in-stdlib-isomac.c.patch
+  ApplyPatch 00_all_0026-Fix-stack-overflow-due-to-large-AF_INET6-requests.patch
+  ApplyPatch 00_all_0028-malloc-Check-for-integer-overflow-in-pvalloc.patch
+  ApplyPatch 00_all_0029-malloc-Check-for-integer-overflow-in-valloc.patch
+  ApplyPatch 00_all_0030-malloc-Check-for-integer-overflow-in-memalign.patch
+  ApplyPatch 00_all_0032-Fix-build-on-pre-v9-32-bit-Sparc.patch
+  ApplyPatch 00_all_0033-Fix-sparc-64-bit-GMP-ifunc-resolution-in-static-buil.patch
 )
 
 ## Fedora
@@ -86,7 +102,6 @@ ApplyPatch glibc-strcoll-cve.patch
 ApplyPatch glibc-rh1000924.patch
 # Upstream BZ 15754
 ApplyPatch glibc-rh985625-CVE-2013-4788.patch
-ApplyPatch glibc-rh1007590.patch
 
 ## Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
@@ -104,7 +119,6 @@ ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 ## master
 ApplyPatch 0001-Fix-cbrtl-for-ldbl-96.patch
-ApplyPatch glibc-2.18-readdir_r-CVE-2013-4237.patch
 ApplyPatch 0001-BZ-15897-dlfcn-do-not-mark-dlopen-dlclose-as-leaf-fu.patch
 ApplyPatch 0001-BZ-15522-strtod-nan-N-returning-a-sNaN-in-some-cases.patch
 ApplyPatch 0001-Fix-spurious-jnf-underflows-bug-14155.patch
@@ -121,13 +135,16 @@ ApplyPatch 0001-Make-strptime-Z-consistent-between-doc-and-code.-Fix.patch
 ApplyPatch 0001-Use-atomic-operations-to-track-memory.-Fixes-bug-110.patch
 ApplyPatch 0001-Restrict-shm_open-and-shm_unlink-to-SHMDIR.-Fixes-bu.patch
 ApplyPatch 0001-Fix-malloc_info-statistic.-Fixes-bug-16112.patch
+ApplyPatch 0001-Make-getent-services-compliant-with-RFC-6335-section.patch
+ApplyPatch 0001-Fix-strtod-rounding-of-half-the-least-subnormal-bug-.patch
+ApplyPatch 0001-Do-not-let-scanf-4p-accept-nil-.-Fixes-bug-16055.patch
+ApplyPatch 0001-Get-canonical-name-in-getaddrinfo-from-hosts-file-fo.patch
+ApplyPatch 0001-Return-fixed-version-of-breaking-of-RPATH-when-ORIGI.patch
+ApplyPatch 0001-Properly-handle-shm_open-validation.-Fixes-bug-16274.patch
+ApplyPatch 0001-BZ-15941-Fix-INSTALL-file-regeneration-failure-with-.patch
 
 ## From Arch
-# upstream commits 1159a193, 55e17aad and b73ed247
-ApplyPatch glibc-2.18-malloc-corrupt-CVE-2013-4332.patch
 ApplyPatch glibc-2.18-strstr-hackfix.patch
-# upstream commit 7cbcdb36
-ApplyPatch glibc-2.18-getaddrinfo-CVE-2013-4458.patch
 # upstream commit a4966c61
 ApplyPatch glibc-2.18-scanf-parse-0e-0.patch
 

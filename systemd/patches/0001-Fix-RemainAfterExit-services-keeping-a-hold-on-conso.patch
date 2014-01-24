@@ -1,0 +1,58 @@
+From 9cd861842ccb07372fbd665f2e6c054daaedacb4 Mon Sep 17 00:00:00 2001
+From: Olivier Brunel <jjk@jjacky.com>
+Date: Thu, 14 Nov 2013 15:52:54 +0100
+Subject: [PATCH] Fix RemainAfterExit services keeping a hold on console
+
+When a service exits succesfully and has RemainAfterExit set, its hold
+on the console (in m->n_on_console) wasn't released since the unit state
+didn't change.
+---
+ TODO               |  2 --
+ src/core/service.c | 16 ++++++++++++++++
+ src/core/unit.c    |  3 +++
+ 3 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/src/core/service.c b/src/core/service.c
+index 3da32a1..c0ee114 100644
+--- a/src/core/service.c
++++ b/src/core/service.c
+@@ -1519,6 +1519,22 @@ static void service_set_state(Service *s, ServiceState state) {
+         if (state == SERVICE_EXITED && UNIT(s)->manager->n_reloading <= 0)
+                 unit_destroy_cgroup(UNIT(s));
+ 
++        /* For remain_after_exit services, let's see if we can "release" the
++         * hold on the console, since unit_notify() only does that in case of
++         * change of state */
++        if (state == SERVICE_EXITED && s->remain_after_exit &&
++            UNIT(s)->manager->n_on_console > 0) {
++                ExecContext *ec = unit_get_exec_context(UNIT(s));
++                if (ec && exec_context_may_touch_console(ec)) {
++                        Manager *m = UNIT(s)->manager;
++
++                        m->n_on_console --;
++                        if (m->n_on_console == 0)
++                                /* unset no_console_output flag, since the console is free */
++                                m->no_console_output = false;
++                }
++        }
++
+         if (old_state != state)
+                 log_debug_unit(UNIT(s)->id,
+                                "%s changed %s -> %s", UNIT(s)->id,
+diff --git a/src/core/unit.c b/src/core/unit.c
+index 84c43f7..7f463f3 100644
+--- a/src/core/unit.c
++++ b/src/core/unit.c
+@@ -1490,6 +1490,9 @@ void unit_notify(Unit *u, UnitActiveState os, UnitActiveState ns, bool reload_su
+         if (UNIT_IS_INACTIVE_OR_FAILED(ns))
+                 unit_destroy_cgroup(u);
+ 
++        /* Note that this doesn't apply to RemainAfterExit services exiting
++         * sucessfully, since there's no change of state in that case. Which is
++         * why it is handled in service_set_state() */
+         if (UNIT_IS_INACTIVE_OR_FAILED(os) != UNIT_IS_INACTIVE_OR_FAILED(ns)) {
+                 ExecContext *ec = unit_get_exec_context(u);
+                 if (ec && exec_context_may_touch_console(ec)) {
+-- 
+1.8.5.3
+

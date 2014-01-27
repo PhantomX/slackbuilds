@@ -33,5 +33,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-2.8.11-rc4-lua-5.2.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-strict_aliasing.patch
 # Remove automatic Qt module dep adding
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-qtdeps.patch
+# Fix FindFreetype for 2.5.1+
+# http://public.kitware.com/Bug/view.php?id=14601
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindFreetype.patch
 
 set +e +o pipefail

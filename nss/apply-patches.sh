@@ -17,7 +17,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-539183.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-646045.patch
 # TODO: Remove this patch when the ocsp test are fixed
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-3.14.0.0-disble-ocsp-test.patch
-patch -p3 -E --backup --verbose -i ${SB_PATCHDIR}/0039-Sync-up-with-nss-3.15.4-changes-in-freebl-and-softok.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/iquote.patch
 
 # Uncomment this if builds stops with -lz error

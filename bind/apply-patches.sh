@@ -16,7 +16,7 @@ zcat ${SB_PATCHDIR}/bind-nonexec.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/bind-9.5-PIE.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.5-dlz-64bit.patch
 # needs inpection
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-96-dyndb.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-99-dyndb.patch
 zcat ${SB_PATCHDIR}/bind-9.5-parallel-build.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/bind-96-libtool2.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/bind-95-rh452060.patch.gz | patch -p1 -E --backup --verbose
@@ -27,7 +27,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh570851.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-exportlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh645544.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh693982.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh714049.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind98-rh735103.patch
 patch -p0 -E --backup --verbose -d bin/dig -i ${SB_PATCHDIR}/nslookup-norec.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-buildfix.patch
@@ -38,9 +37,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh669163.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-rrl.patch
 # Install dns/update.h header for bind-dyndb-ldap plugin
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.9.3-include-update-h.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-ISC-Bugs-34738.patch
-# upstream patch [ISC-Bugs #34870]
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-ISC-Bugs-34870-v3.patch
 
 # IDN paches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.5-libidn.patch

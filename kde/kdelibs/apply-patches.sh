@@ -9,7 +9,6 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 --verbose --backup -z .htmldir -i ${SB_PATCHDIR}/kdelibs-4.9.0-htmldir.patch
 # make -devel packages parallel-installable
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.5.80-parallel_devel.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-autostart-debug.patch
 # fix kde#149705
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-kde149705.patch
 # install all .css files and Doxyfile.global in kdelibs-common to build
@@ -62,8 +61,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r58294acf535a2378e5037974e8420cb873be0cb6.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r9437d7700cff0331ccdcfff2875faa4a8b98cd82.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578

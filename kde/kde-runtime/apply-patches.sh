@@ -6,6 +6,8 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ## Most patches are from Fedora
 zcat ${SB_PATCHDIR}/kdebase-runtime-4.1.x-searchproviders-shortcuts.patch.gz | patch -p1 -E --backup --verbose
+# support kdesud -Wl,-z,relro,-z,now linker flags
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-kdesud_relro.patch
 zcat ${SB_PATCHDIR}/kdebase-runtime-4.3.1-manpath.patch.gz | patch -p1 -E --backup --verbose
 # add OnlyShowIn=KDE  to Desktop/Home.desktop (like trash.desktop)
 zcat ${SB_PATCHDIR}/kdebase-runtime-4.3.3-home_onlyshowin_kde.patch.gz | patch -p1 -E --backup --verbose
@@ -30,7 +32,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.6.0-canberra
 ## upstreamable patches
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_raa8e114497e28bcd189f55dfe4e6f46816e4d534.diff
 
 # backport support for libssh 0.6 and ECDSA keys (kde#327024) from master/4.13
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.12.0-libssh-0.6-0001-kio_sftp-Fix-error-values.patch

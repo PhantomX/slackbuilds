@@ -7,7 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -d gfx/cairo/cairo -i ${SB_PATCHDIR}/01_fix_slowness.patch
 # build patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-install-dir.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-build.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-build.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.0-chromium-types.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-24.0-gcc47.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-885002.patch

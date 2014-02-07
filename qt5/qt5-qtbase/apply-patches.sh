@@ -47,10 +47,15 @@ rm -fv mkspecs/linux-g++*/qmake.conf.multilib-optflags
 ApplyPatch qtbase-qatomic-ppc.patch
 
 # upstreamable patches
-# fix big endian builds
-ApplyPatch qtbase-opensource-src-5.1.1-bigendian.patch
-# fix build with -system-harfbuzz
-ApplyPatch qtbase-opensource-src-5.2.0-alpha-harfbuzz.patch
+# fix QTBUG-35459 (too low entityCharacterLimit=1024 for CVE-2013-4549)
+ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-35459.patch
+
+# add a QT_XCB_FORCE_SOFTWARE_OPENGL environment variable to allow forcing
+# LIBGL_ALWAYS_SOFTWARE (llvmpipe) for Qt 5 apps only
+ApplyPatch qtbase-opensource-src-5.2.0-allow-forcing-llvmpipe.patch
+
+# unconditionally enable freetype lcdfilter support
+ApplyPatch qtbase-opensource-src-5.2.0-enable_ft_lcdfilter.patch
 
 ##upstream patches
 

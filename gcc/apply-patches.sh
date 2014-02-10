@@ -20,7 +20,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-libstdc++-docs.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-no-copy-dt-needed-entries.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr56564.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr56493.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-Handle-FP_EX_DENORM.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr28865.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc48-pr58710.patch
 
 # From Gentoo
 patch -p1 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_default-fortify-source.patch

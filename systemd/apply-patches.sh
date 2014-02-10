@@ -7,7 +7,7 @@ unset PATCH_VERBOSE_OPT
 [ "${PATCH_VERBOSE}" = "YES" ] && PATCH_VERBOSE_OPT="--verbose"
 [ "${PATCH_SVERBOSE}" = "YES" ] && set -o xtrace
 
-PATCHCOM="patch -p1 -s --backup ${PATCH_VERBOSE_OPT}"
+PATCHCOM="patch -p1 -s -F1 --backup ${PATCH_VERBOSE_OPT}"
 
 ApplyPatch() {
   local patch=$1
@@ -51,12 +51,16 @@ ApplyPatch 0001-acpi-fpdt-break-on-zero-or-negative-length-read.patch
 ApplyPatch 0001-systemd-fix-memory-leak-in-cgroup-code.patch
 ApplyPatch 0001-activate-mention-E-in-the-help-text.patch
 ApplyPatch 0002-activate-fix-crash-when-s-is-passed.patch
+ApplyPatch 0001-core-some-more-_cleanup_free_.patch
 ApplyPatch 0001-Resolve-dev-console-to-the-active-tty-instead-of-jus.patch
 ApplyPatch 0002-Only-disable-output-on-console-during-boot-if-needed.patch
 ApplyPatch 0003-Fix-possible-lack-of-status-messages-on-shutdown-reb.patch
 ApplyPatch 0001-Fix-RemainAfterExit-services-keeping-a-hold-on-conso.patch
+ApplyPatch 0001-core-include-following-set-data-in-dump.patch
 ApplyPatch 0001-systemd-treat-reload-failure-as-failure.patch
 ApplyPatch 0001-Fix-memory-leak-in-stdout-journal-streams.patch
+ApplyPatch 0001-tmpfiles-fix-memory-leak-of-exclude_prefixes.patch
+ApplyPatch 0001-core-fix-crashes-if-locale.conf-contains-invalid-utf.patch
 
 ### Arch
 # Fix lingering user managers
@@ -72,6 +76,8 @@ ApplyPatch 0005-mount-service-drop-FsckPassNo-support.patch
 ApplyPatch 0006-efi-boot-generator-hookup-to-fsck.patch
 ApplyPatch 0007-fsck-root-only-run-when-requested-in-fstab.patch
 ApplyPatch 0001-fstab-generator-Do-not-try-to-fsck-non-devices.patch
+ApplyPatch 0001-cryptsetup-generator-auto-add-deps-for-device-as-pas.patch
+ApplyPatch 0001-do-not-accept-garbage-from-acpi-firmware-performance.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

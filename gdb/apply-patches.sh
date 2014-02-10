@@ -44,8 +44,6 @@ ApplyPatch gdb-archer.patch
 # Backported fixups post the source tarball.
 #Xdrop: Just backports.
 ApplyPatch gdb-upstream.patch
-ApplyPatch gdb-upstream-man-gcore-1of2.patch
-ApplyPatch gdb-upstream-man-gcore-2of2.patch
 
 # Work around out-of-date dejagnu that does not have KFAIL
 ApplyPatch gdb-6.3-rh-dummykfail-20041202.patch.gz
@@ -72,7 +70,7 @@ ApplyPatch gdb-6.3-gstack-20050411.patch
 ApplyPatch gdb-6.3-test-pie-20050107.patch
 
 # Get selftest working with sep-debug-info
-ApplyPatch gdb-6.3-test-self-20050110.patch.gz
+ApplyPatch gdb-6.3-test-self-20050110.patch
 
 # Test support of multiple destructors just like multiple constructors
 ApplyPatch gdb-6.3-test-dtorfix-20050121.patch
@@ -201,9 +199,6 @@ ApplyPatch gdb-6.7-charsign-test.patch
 # Test PPC hiding of call-volatile parameter register.
 ApplyPatch gdb-6.7-ppc-clobbered-registers-O2-test.patch
 
-# Testsuite fixes for more stable/comparable results.
-ApplyPatch gdb-6.7-testsuite-stable-results.patch
-
 # Test ia64 memory leaks of the code using libunwind.
 ApplyPatch gdb-6.5-ia64-libunwind-leak-test.patch
 
@@ -221,7 +216,7 @@ ApplyPatch gdb-6.5-gcore-buffer-limit-test.patch
 ApplyPatch gdb-6.6-threads-static-test.patch
 
 # Test GCORE for shmid 0 shared memory mappings.
-ApplyPatch gdb-6.3-mapping-zero-inode-test.patch.gz
+ApplyPatch gdb-6.3-mapping-zero-inode-test.patch
 
 # Test a crash on `focus cmd', `focus prev' commands.
 ApplyPatch gdb-6.3-focus-cmd-prev-test.patch.gz
@@ -323,18 +318,6 @@ ApplyPatch gdb-test-expr-cumulative-archer.patch
 
 ApplyPatch gdb-7.2.50-sparc-add-workaround-to-broken-debug-files.patch
 
-# Fix dlopen of libpthread.so, patched glibc required (Gary Benson, BZ 669432).
-# Fix crash regression from the dlopen of libpthread.so fix (BZ 911712).
-# Fix performance regression when inferior opens many libraries (Gary Benson).
-#=push
-ApplyPatch gdb-dlopen-stap-probe-1of7.patch
-ApplyPatch gdb-dlopen-stap-probe-2of7.patch
-ApplyPatch gdb-dlopen-stap-probe-3of7.patch
-ApplyPatch gdb-dlopen-stap-probe-4of7.patch
-ApplyPatch gdb-dlopen-stap-probe-5of7.patch
-ApplyPatch gdb-dlopen-stap-probe-6of7.patch
-ApplyPatch gdb-dlopen-stap-probe-7of7.patch
-
 # Work around PR libc/13097 "linux-vdso.so.1" warning message.
 #=push
 ApplyPatch gdb-glibc-vdso-workaround.patch
@@ -346,7 +329,6 @@ ApplyPatch gdb-runtest-pie-override.patch
 # Print reasons for failed attach/spawn incl. SELinux deny_ptrace (BZ 786878).
 #=push
 ApplyPatch gdb-attach-fail-reasons-5of5.patch
-ApplyPatch gdb-attach-fail-reasons-5of5configure.patch
 
 # Workaround crashes from stale frame_info pointer (BZ 804256).
 ApplyPatch gdb-stale-frame_info.patch
@@ -380,14 +362,14 @@ ApplyPatch gdb-rhbz795424-bitpos-lazyvalue.patch
 #=fedoratest
 ApplyPatch gdb-rhbz947564-findvar-assertion-frame-failed-testcase.patch
 
-# Fix gcore for vDSO (on ppc64).
-ApplyPatch gdb-vdso-gcore.patch
-
-# Fix needless expansion of non-gdbindex symtabs (Doug Evans).
-ApplyPatch gdb-psymtab-expand.patch
-
 # Fix crash on 'enable count' (Simon Marchi, BZ 993118).
 ApplyPatch gdb-enable-count-crash.patch
+
+# Fix testsuite "ERROR: no fileid for".
+ApplyPatch gdb-testsuite-nohostid.patch
+
+# Fix Python stack corruption.
+ApplyPatch gdb-python-stacksmash.patch
 ### END Fedora
 
 set +e +o pipefail

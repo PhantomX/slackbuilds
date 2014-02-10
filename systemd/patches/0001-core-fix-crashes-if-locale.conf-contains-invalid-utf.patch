@@ -1,0 +1,141 @@
+From f27f0e2177ac0a4b96585aed7db3a080e27a2f00 Mon Sep 17 00:00:00 2001
+From: Goffredo Baroncelli <kreijack@libero.it>
+Date: Thu, 6 Feb 2014 19:09:59 +0100
+Subject: [PATCH] core: fix crashes if locale.conf contains invalid utf-8
+ string
+
+In the parse_env_file_push() and load_env_file_push() functions, there
+are two assert() call to check if the key or value parameters are utf8 valid.
+
+If the strings aren't utf8 valid, assert does abort.
+
+These function are used early by systemd to parse some files. For
+example '/etc/locale.conf'. In my case this file contained a not utf8
+sequence, which is bad, but systemd crashed during the boot, which
+is even worse!
+
+The enclosed patch removes the assert and return -EINVAL if the
+sequence is invalid. This is possible because the caller of these
+function [1] checks the errors.
+So the check of an invalid utf8 sequence is still performed, but
+systemd doesn't crash anymore and logs the error.
+
+[1] parse_env_file_internal(), invoked by load_env_file() and
+parse_env_file()
+---
+ src/shared/fileio.c | 77 ++++++++++++++++++++++++++++++-----------------------
+ 1 file changed, 43 insertions(+), 34 deletions(-)
+
+diff --git a/src/shared/fileio.c b/src/shared/fileio.c
+index ede8819..838d128 100644
+--- a/src/shared/fileio.c
++++ b/src/shared/fileio.c
+@@ -534,35 +534,39 @@ fail:
+ 
+ static int parse_env_file_push(const char *filename, unsigned line,
+                                const char *key, char *value, void *userdata) {
+-        assert(utf8_is_valid(key));
+ 
+-        if (value && !utf8_is_valid(value))
++        const char *k;
++        va_list aq, *ap = userdata;
++
++        if (!utf8_is_valid(key)) {
++                log_error("%s:%u: invalid UTF-8 for key '%s', ignoring.",
++                          filename, line, key);
++                return -EINVAL;
++        }
++
++        if (value && !utf8_is_valid(value)) {
+                 /* FIXME: filter UTF-8 */
+-                log_error("%s:%u: invalid UTF-8 for key %s: '%s', ignoring.",
++                log_error("%s:%u: invalid UTF-8 value for key %s: '%s', ignoring.",
+                           filename, line, key, value);
+-        else {
+-                const char *k;
+-                va_list* ap = (va_list*) userdata;
+-                va_list aq;
++                return -EINVAL;
++        }
+ 
+-                va_copy(aq, *ap);
++        va_copy(aq, *ap);
+ 
+-                while ((k = va_arg(aq, const char *))) {
+-                        char **v;
++        while ((k = va_arg(aq, const char *))) {
++                char **v;
+ 
+-                        v = va_arg(aq, char **);
++                v = va_arg(aq, char **);
+ 
+-                        if (streq(key, k)) {
+-                                va_end(aq);
+-                                free(*v);
+-                                *v = value;
+-                                return 1;
+-                        }
++                if (streq(key, k)) {
++                        va_end(aq);
++                        free(*v);
++                        *v = value;
++                        return 1;
+                 }
+-
+-                va_end(aq);
+         }
+ 
++        va_end(aq);
+         free(value);
+         return 0;
+ }
+@@ -586,26 +590,31 @@ int parse_env_file(
+ 
+ static int load_env_file_push(const char *filename, unsigned line,
+                               const char *key, char *value, void *userdata) {
+-        assert(utf8_is_valid(key));
++        char ***m = userdata;
++        char *p;
++        int r;
+ 
+-        if (value && !utf8_is_valid(value))
++        if (!utf8_is_valid(key)) {
++                log_error("%s:%u: invalid UTF-8 for key '%s', ignoring.",
++                          filename, line, key);
++                return -EINVAL;
++        }
++
++        if (value && !utf8_is_valid(value)) {
+                 /* FIXME: filter UTF-8 */
+-                log_error("%s:%u: invalid UTF-8 for key %s: '%s', ignoring.",
++                log_error("%s:%u: invalid UTF-8 value for key %s: '%s', ignoring.",
+                           filename, line, key, value);
+-        else {
+-                char ***m = userdata;
+-                char *p;
+-                int r;
++                return -EINVAL;
++        }
+ 
+-                p = strjoin(key, "=", strempty(value), NULL);
+-                if (!p)
+-                        return -ENOMEM;
++        p = strjoin(key, "=", strempty(value), NULL);
++        if (!p)
++                return -ENOMEM;
+ 
+-                r = strv_push(m, p);
+-                if (r < 0) {
+-                        free(p);
+-                        return r;
+-                }
++        r = strv_push(m, p);
++        if (r < 0) {
++                free(p);
++                return r;
+         }
+ 
+         free(value);
+-- 
+1.8.5.4
+

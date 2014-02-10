@@ -1,0 +1,190 @@
+2014-01-16  Nick Clifton  <nickc@redhat.com>
+
+	PR middle-end/28865
+	* varasm.c (output_constant): Return the number of bytes actually
+	emitted.
+	(output_constructor_array_range): Update the field size with the
+	number of bytes emitted by output_constant.
+	(output_constructor_regular_field): Likewise.  Also do not
+	complain if the total number of bytes emitted is now greater
+	than the expected fieldpos.
+	* output.h (output_constant): Update prototype and descriptive
+	comment.
+
+	* gcc.c-torture/compile/pr28865.c: New.
+	* gcc.c-torture/execute/pr28865.c: New.
+
+--- gcc/varasm.c	(revision 206660)
++++ gcc/varasm.c	(revision 206661)
+@@ -4474,8 +4474,10 @@ static unsigned HOST_WIDE_INT
+    This includes the pseudo-op such as ".int" or ".byte", and a newline.
+    Assumes output_addressed_constants has been done on EXP already.
+ 
+-   Generate exactly SIZE bytes of assembler data, padding at the end
+-   with zeros if necessary.  SIZE must always be specified.
++   Generate at least SIZE bytes of assembler data, padding at the end
++   with zeros if necessary.  SIZE must always be specified.  The returned
++   value is the actual number of bytes of assembler data generated, which
++   may be bigger than SIZE if the object contains a variable length field.
+ 
+    SIZE is important for structure constructors,
+    since trailing members may have been omitted from the constructor.
+@@ -4490,14 +4492,14 @@ static unsigned HOST_WIDE_INT
+ 
+    ALIGN is the alignment of the data in bits.  */
+ 
+-void
++unsigned HOST_WIDE_INT
+ output_constant (tree exp, unsigned HOST_WIDE_INT size, unsigned int align)
+ {
+   enum tree_code code;
+   unsigned HOST_WIDE_INT thissize;
+ 
+   if (size == 0 || flag_syntax_only)
+-    return;
++    return size;
+ 
+   /* See if we're trying to initialize a pointer in a non-default mode
+      to the address of some declaration somewhere.  If the target says
+@@ -4562,7 +4564,7 @@ output_constant (tree exp, unsigned HOST
+       && vec_safe_is_empty (CONSTRUCTOR_ELTS (exp)))
+     {
+       assemble_zeros (size);
+-      return;
++      return size;
+     }
+ 
+   if (TREE_CODE (exp) == FDESC_EXPR)
+@@ -4574,7 +4576,7 @@ output_constant (tree exp, unsigned HOST
+ #else
+       gcc_unreachable ();
+ #endif
+-      return;
++      return size;
+     }
+ 
+   /* Now output the underlying data.  If we've handling the padding, return.
+@@ -4612,8 +4614,7 @@ output_constant (tree exp, unsigned HOST
+       switch (TREE_CODE (exp))
+ 	{
+ 	case CONSTRUCTOR:
+-	    output_constructor (exp, size, align, NULL);
+-	  return;
++	  return output_constructor (exp, size, align, NULL);
+ 	case STRING_CST:
+ 	  thissize = MIN ((unsigned HOST_WIDE_INT)TREE_STRING_LENGTH (exp),
+ 			  size);
+@@ -4648,11 +4649,10 @@ output_constant (tree exp, unsigned HOST
+     case RECORD_TYPE:
+     case UNION_TYPE:
+       gcc_assert (TREE_CODE (exp) == CONSTRUCTOR);
+-      output_constructor (exp, size, align, NULL);
+-      return;
++      return output_constructor (exp, size, align, NULL);
+ 
+     case ERROR_MARK:
+-      return;
++      return 0;
+ 
+     default:
+       gcc_unreachable ();
+@@ -4660,6 +4660,8 @@ output_constant (tree exp, unsigned HOST
+ 
+   if (size > thissize)
+     assemble_zeros (size - thissize);
++
++  return size;
+ }
+ 
+ 
+@@ -4759,7 +4761,7 @@ output_constructor_array_range (oc_local
+       if (local->val == NULL_TREE)
+ 	assemble_zeros (fieldsize);
+       else
+-	output_constant (local->val, fieldsize, align2);
++	fieldsize = output_constant (local->val, fieldsize, align2);
+ 
+       /* Count its size.  */
+       local->total_bytes += fieldsize;
+@@ -4808,9 +4810,8 @@ output_constructor_regular_field (oc_loc
+      Note no alignment needed in an array, since that is guaranteed
+      if each element has the proper size.  */
+   if ((local->field != NULL_TREE || local->index != NULL_TREE)
+-      && fieldpos != local->total_bytes)
++      && fieldpos > local->total_bytes)
+     {
+-      gcc_assert (fieldpos >= local->total_bytes);
+       assemble_zeros (fieldpos - local->total_bytes);
+       local->total_bytes = fieldpos;
+     }
+@@ -4847,7 +4848,7 @@ output_constructor_regular_field (oc_loc
+   if (local->val == NULL_TREE)
+     assemble_zeros (fieldsize);
+   else
+-    output_constant (local->val, fieldsize, align2);
++    fieldsize = output_constant (local->val, fieldsize, align2);
+ 
+   /* Count its size.  */
+   local->total_bytes += fieldsize;
+--- gcc/output.h	(revision 206660)
++++ gcc/output.h	(revision 206661)
+@@ -294,11 +294,13 @@ extern void output_quoted_string (FILE *
+    This includes the pseudo-op such as ".int" or ".byte", and a newline.
+    Assumes output_addressed_constants has been done on EXP already.
+ 
+-   Generate exactly SIZE bytes of assembler data, padding at the end
+-   with zeros if necessary.  SIZE must always be specified.
++   Generate at least SIZE bytes of assembler data, padding at the end
++   with zeros if necessary.  SIZE must always be specified.  The returned
++   value is the actual number of bytes of assembler data generated, which
++   may be bigger than SIZE if the object contains a variable length field.
+ 
+    ALIGN is the alignment in bits that may be assumed for the data.  */
+-extern void output_constant (tree, unsigned HOST_WIDE_INT, unsigned int);
++extern unsigned HOST_WIDE_INT output_constant (tree, unsigned HOST_WIDE_INT, unsigned int);
+ 
+ /* When outputting delayed branch sequences, this rtx holds the
+    sequence being output.  It is null when no delayed branch
+--- gcc/testsuite/gcc.c-torture/execute/pr28865.c	(revision 0)
++++ gcc/testsuite/gcc.c-torture/execute/pr28865.c	(revision 206661)
+@@ -0,0 +1,21 @@
++struct A { int a; char b[]; };
++union B { struct A a; char b[sizeof (struct A) + 31]; };
++union B b = { { 1, "123456789012345678901234567890" } };
++union B c = { { 2, "123456789012345678901234567890" } };
++
++__attribute__((noinline, noclone)) void
++foo (int *x[2])
++{
++  x[0] = &b.a.a;
++  x[1] = &c.a.a;
++}
++
++int
++main ()
++{
++  int *x[2];
++  foo (x);
++  if (*x[0] != 1 || *x[1] != 2)
++    __builtin_abort ();
++  return 0;
++}
+--- gcc/testsuite/gcc.c-torture/compile/pr28865.c	(revision 0)
++++ gcc/testsuite/gcc.c-torture/compile/pr28865.c	(revision 206661)
+@@ -0,0 +1,16 @@
++struct var_len
++{
++  int field1;
++  const char field2[];
++};
++
++/* Note - strictly speaking this array declaration is illegal
++   since each element has a variable length.  GCC allows it
++   (for the moment) because it is used in existing code, such
++   as glibc.  */
++static const struct var_len var_array[] = 
++{
++  { 1, "Long exposure noise reduction" },
++  { 2, "Shutter/AE lock buttons" },
++  { 3, "Mirror lockup" }
++};

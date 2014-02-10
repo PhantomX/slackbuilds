@@ -3,103 +3,22 @@ Subject: [patch] Fix GNU/Linux core open: Can't read pathname for load map:  Inp
 
 [ New patch variant.  ]
 
-Index: gdb-7.5.50.20130118/gdb/solib-svr4.c
+commit 7d760051ffb8a23cdc51342d4e6243fbc462f73f
+Author: Ulrich Weigand <uweigand@de.ibm.com>
+Date:   Wed Sep 25 11:52:50 2013 +0000
+
+Index: gdb-7.6.50.20130731-cvs/gdb/testsuite/gdb.base/solib-symbol.exp
 ===================================================================
---- gdb-7.5.50.20130118.orig/gdb/solib-svr4.c	2013-01-18 23:05:19.414210015 +0100
-+++ gdb-7.5.50.20130118/gdb/solib-svr4.c	2013-01-18 23:05:34.813231664 +0100
-@@ -1221,8 +1221,17 @@ svr4_read_so_list (CORE_ADDR lm, struct
- 			  SO_NAME_MAX_PATH_SIZE - 1, &errcode);
-       if (errcode != 0)
- 	{
--	  warning (_("Can't read pathname for load map: %s."),
--		   safe_strerror (errcode));
-+	  /* During the first ever DSO list reading some strings may be
-+	     unreadable as residing in the ld.so readonly memory not being
-+	     present in a dumped core file.  Delay the error check after
-+	     the first pass of DSO list scanning when ld.so should be
-+	     already mapped in and all the DSO list l_name memory gets
-+	     readable.  */
-+
-+	  if (master_so_list () != NULL)
-+	    warning (_("Can't read pathname for load map: %s."),
-+		     safe_strerror (errcode));
-+
- 	  do_cleanups (old_chain);
- 	  continue;
- 	}
-Index: gdb-7.5.50.20130118/gdb/solib.c
-===================================================================
---- gdb-7.5.50.20130118.orig/gdb/solib.c	2013-01-18 23:05:19.415210017 +0100
-+++ gdb-7.5.50.20130118/gdb/solib.c	2013-01-18 23:05:57.421263173 +0100
-@@ -666,7 +666,7 @@ solib_used (const struct so_list *const
-    processes we've just attached to, so that's okay.  */
- 
- static void
--update_solib_list (int from_tty, struct target_ops *target)
-+update_solib_list_1 (int from_tty, struct target_ops *target)
- {
-   struct target_so_ops *ops = solib_ops (target_gdbarch ());
-   struct so_list *inferior = ops->current_sos();
-@@ -837,6 +837,21 @@ Do you need \"set solib-search-path\" or
-     }
- }
- 
-+/* Wrapper for Fedora: gdb-core-open-vdso-warning.patch  */
-+
-+static void
-+update_solib_list (int from_tty, struct target_ops *target)
-+{
-+  struct so_list *saved_so_list_head = so_list_head;
-+
-+  update_solib_list_1 (from_tty, target);
-+
-+  /* If this was the very first DSO list scan and we possibly read in ld.so
-+     recheck all the formerly unreadable DSO names strings.  */
-+
-+  if (saved_so_list_head == NULL && so_list_head != NULL)
-+    update_solib_list_1 (from_tty, target);
-+}
- 
- /* Return non-zero if NAME is the libpthread shared library.
- 
-Index: gdb-7.5.50.20130118/gdb/testsuite/gdb.base/corefile.exp
-===================================================================
---- gdb-7.5.50.20130118.orig/gdb/testsuite/gdb.base/corefile.exp	2013-01-18 23:05:19.416210020 +0100
-+++ gdb-7.5.50.20130118/gdb/testsuite/gdb.base/corefile.exp	2013-01-18 23:05:34.814231667 +0100
-@@ -286,3 +286,19 @@ if {$buildid == ""} {
-     gdb_test "info files" "Local exec file:\r\n\[ \t\]*`[string_to_regexp $debugdir/$buildid]', file type .*"
-     pass $wholetest
- }
-+
-+
-+# Test Linux specific vDSO warning:
-+# warning: Can't read pathname for load map: Input/output error.
-+
-+clean_restart ${testfile}
-+
-+set test "core-file vdso warning"
-+gdb_test_multiple "core-file $corefile" $test {
-+    -re "warning: Can't read pathname for load map: Input/output error\\.\r\n.*\r\n$gdb_prompt $" {
-+	fail $test
-+    }
-+    -re "\r\n$gdb_prompt $" {
-+	pass $test
-+    }
-+}
-Index: gdb-7.5.50.20130118/gdb/testsuite/gdb.base/solib-symbol.exp
-===================================================================
---- gdb-7.5.50.20130118.orig/gdb/testsuite/gdb.base/solib-symbol.exp	2013-01-18 23:05:19.416210020 +0100
-+++ gdb-7.5.50.20130118/gdb/testsuite/gdb.base/solib-symbol.exp	2013-01-18 23:05:34.814231667 +0100
-@@ -27,7 +27,8 @@ set lib_flags [list debug ldflags=-Wl,-B
- # Binary file.
- set testfile "solib-symbol-main"
+--- gdb-7.6.50.20130731-cvs.orig/gdb/testsuite/gdb.base/solib-symbol.exp	2013-08-02 16:27:28.833259471 +0200
++++ gdb-7.6.50.20130731-cvs/gdb/testsuite/gdb.base/solib-symbol.exp	2013-08-02 16:28:22.549330973 +0200
+@@ -29,6 +29,7 @@ set testfile "solib-symbol-main"
  set srcfile ${srcdir}/${subdir}/${testfile}.c
--set binfile ${objdir}/${subdir}/${testfile}
-+set executable ${testfile}
-+set binfile ${objdir}/${subdir}/${executable}
+ set binfile [standard_output_file ${testfile}]
  set bin_flags [list debug shlib=${binfile_lib}]
++set executable ${testfile}
  
  if [get_compiler_info] {
+     return -1
 @@ -72,8 +73,26 @@ gdb_test "br foo2" \
  	 "Breakpoint.*: foo2. .2 locations..*" \
  	 "foo2 in mdlib"

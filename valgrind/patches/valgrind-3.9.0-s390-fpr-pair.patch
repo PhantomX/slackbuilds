@@ -1,0 +1,201 @@
+commit 9b28d5ecf72accc80d267a3fcfd0bd4212ff34d8
+Author: florian <florian@8f6e269a-dfd6-0310-a8e1-e2731360e62c>
+Date:   Tue Dec 10 16:51:15 2013 +0000
+
+    The result of rounding a 128-bit BFP/DFP value to 32/64 bit needs to
+    be stored in a register pair. This constraint was not observed previously
+    and the result was stored in any FPR that happened to be chosen. If the
+    selected FPR was not identifying a proper FPR pair, a SIGILL was delivered.
+    Fixes BZ #328455.
+    
+    
+    git-svn-id: svn://svn.valgrind.org/vex/trunk@2801 8f6e269a-dfd6-0310-a8e1-e2731360e62c
+
+diff --git a/priv/host_s390_defs.c b/priv/host_s390_defs.c
+index 0b61a5d..ce76285 100644
+--- a/VEX/priv/host_s390_defs.c
++++ b/VEX/priv/host_s390_defs.c
+@@ -5861,7 +5861,6 @@ s390_insn_bfp128_convert(UChar size, s390_bfp_conv_t tag, HReg dst_hi,
+    } else {
+       /* From 16 bytes to smaller size */
+       vassert(is_valid_fp128_regpair(op_hi, op_lo));
+-      vassert(hregIsInvalid(dst_lo));
+    }
+ 
+    insn->tag  = S390_INSN_BFP_CONVERT;
+@@ -5891,11 +5890,11 @@ s390_insn_bfp128_convert_to(UChar size, s390_bfp_conv_t tag, HReg dst_hi,
+ 
+ 
+ s390_insn *
+-s390_insn_bfp128_convert_from(UChar size, s390_bfp_conv_t tag, HReg dst,
+-                              HReg op_hi, HReg op_lo,
++s390_insn_bfp128_convert_from(UChar size, s390_bfp_conv_t tag, HReg dst_hi,
++                              HReg dst_lo, HReg op_hi, HReg op_lo,
+                               s390_bfp_round_t rounding_mode)
+ {
+-   return s390_insn_bfp128_convert(size, tag, dst, INVALID_HREG, op_hi, op_lo,
++   return s390_insn_bfp128_convert(size, tag, dst_hi, dst_lo, op_hi, op_lo,
+                                    rounding_mode);
+ }
+ 
+@@ -6192,7 +6191,6 @@ s390_insn_dfp128_convert(UChar size, s390_dfp_conv_t tag, HReg dst_hi,
+    } else {
+       /* From 16 bytes to smaller size */
+       vassert(is_valid_fp128_regpair(op_hi, op_lo));
+-      vassert(hregIsInvalid(dst_lo));
+    }
+ 
+    insn->tag  = S390_INSN_DFP_CONVERT;
+@@ -6222,11 +6220,11 @@ s390_insn_dfp128_convert_to(UChar size, s390_dfp_conv_t tag, HReg dst_hi,
+ 
+ 
+ s390_insn *
+-s390_insn_dfp128_convert_from(UChar size, s390_dfp_conv_t tag, HReg dst,
+-                              HReg op_hi, HReg op_lo,
++s390_insn_dfp128_convert_from(UChar size, s390_dfp_conv_t tag, HReg dst_hi,
++                              HReg dst_lo, HReg op_hi, HReg op_lo,
+                               s390_dfp_round_t rounding_mode)
+ {
+-   return s390_insn_dfp128_convert(size, tag, dst, INVALID_HREG, op_hi, op_lo,
++   return s390_insn_dfp128_convert(size, tag, dst_hi, dst_lo, op_hi, op_lo,
+                                    rounding_mode);
+ }
+ 
+diff --git a/priv/host_s390_defs.h b/priv/host_s390_defs.h
+index dafc8ae..5b6fc1f 100644
+--- a/VEX/priv/host_s390_defs.h
++++ b/VEX/priv/host_s390_defs.h
+@@ -665,8 +665,8 @@ s390_insn *s390_insn_bfp128_compare(UChar size, HReg dst, HReg op1_hi,
+ s390_insn *s390_insn_bfp128_convert_to(UChar size, s390_bfp_conv_t,
+                                        HReg dst_hi, HReg dst_lo, HReg op);
+ s390_insn *s390_insn_bfp128_convert_from(UChar size, s390_bfp_conv_t,
+-                                         HReg dst, HReg op_hi, HReg op_lo,
+-                                         s390_bfp_round_t);
++                                         HReg dst_hi, HReg dst_lo, HReg op_hi,
++                                         HReg op_lo, s390_bfp_round_t);
+ s390_insn *s390_insn_dfp_binop(UChar size, s390_dfp_binop_t, HReg dst,
+                                HReg op2, HReg op3,
+                                s390_dfp_round_t rounding_mode);
+@@ -699,8 +699,8 @@ s390_insn *s390_insn_dfp128_compare(UChar size, s390_dfp_cmp_t, HReg dst,
+ s390_insn *s390_insn_dfp128_convert_to(UChar size, s390_dfp_conv_t,
+                                        HReg dst_hi, HReg dst_lo, HReg op);
+ s390_insn *s390_insn_dfp128_convert_from(UChar size, s390_dfp_conv_t,
+-                                         HReg dst, HReg op_hi, HReg op_lo,
+-                                         s390_dfp_round_t);
++                                         HReg dst_hi, HReg dst_lo, HReg op_hi,
++                                         HReg op_lo, s390_dfp_round_t);
+ s390_insn *s390_insn_dfp128_reround(UChar size, HReg dst_hi, HReg dst_lo,
+                                     HReg op2, HReg op3_hi, HReg op3_lo,
+                                     s390_dfp_round_t);
+diff --git a/priv/host_s390_isel.c b/priv/host_s390_isel.c
+index aaccff6..3662ffd 100644
+--- a/VEX/priv/host_s390_isel.c
++++ b/VEX/priv/host_s390_isel.c
+@@ -1257,7 +1257,8 @@ s390_isel_int_expr_wrk(ISelEnv *env, IRExpr *expr)
+          addInstr(env, s390_insn_move(8, f15, op_lo));
+ 
+          rounding_mode = get_bfp_rounding_mode(env, arg1);
+-         addInstr(env, s390_insn_bfp128_convert_from(size, conv, res, f13, f15,
++         addInstr(env, s390_insn_bfp128_convert_from(size, conv, res,
++                                                     INVALID_HREG, f13, f15,
+                                                      rounding_mode));
+          return res;
+       }
+@@ -1290,7 +1291,8 @@ s390_isel_int_expr_wrk(ISelEnv *env, IRExpr *expr)
+             addInstr(env, s390_insn_move(8, f15, op_lo));
+ 
+             rounding_mode = get_dfp_rounding_mode(env, arg1);
+-            addInstr(env, s390_insn_dfp128_convert_from(size, dconv, res, f13,
++            addInstr(env, s390_insn_dfp128_convert_from(size, dconv, res,
++                                                        INVALID_HREG, f13,
+                                                         f15, rounding_mode));
+             return res;
+          }
+@@ -2455,7 +2457,7 @@ s390_isel_float_expr_wrk(ISelEnv *env, IRExpr *expr)
+ 
+       case Iop_F128toF64:
+       case Iop_F128toF32: {
+-         HReg op_hi, op_lo, f13, f15;
++         HReg op_hi, op_lo, f12, f13, f14, f15;
+          s390_bfp_round_t rounding_mode;
+ 
+          conv = op == Iop_F128toF32 ? S390_BFP_F128_TO_F32
+@@ -2463,15 +2465,18 @@ s390_isel_float_expr_wrk(ISelEnv *env, IRExpr *expr)
+ 
+          s390_isel_float128_expr(&op_hi, &op_lo, env, left);
+ 
+-         /* We use non-virtual registers as pairs (f13, f15) */
++         /* We use non-virtual registers as pairs (f13, f15) and (f12, f14)) */
++         f12 = make_fpr(12);
+          f13 = make_fpr(13);
++         f14 = make_fpr(14);
+          f15 = make_fpr(15);
+ 
+          /* operand --> (f13, f15) */
+          addInstr(env, s390_insn_move(8, f13, op_hi));
+          addInstr(env, s390_insn_move(8, f15, op_lo));
+ 
+-         dst = newVRegF(env);
++         /* result --> (f12, f14) */
++
+          /* load-rounded has a rounding mode field when the floating point
+             extension facility is installed. */
+          if (s390_host_has_fpext) {
+@@ -2480,8 +2485,12 @@ s390_isel_float_expr_wrk(ISelEnv *env, IRExpr *expr)
+             set_bfp_rounding_mode_in_fpc(env, irrm);
+             rounding_mode = S390_BFP_ROUND_PER_FPC;
+          }
+-         addInstr(env, s390_insn_bfp128_convert_from(size, conv, dst, f13, f15,
+-                                                     rounding_mode));
++
++         addInstr(env, s390_insn_bfp128_convert_from(size, conv, f12, f14,
++                                                     f13, f15, rounding_mode));
++         dst = newVRegF(env);
++         addInstr(env, s390_insn_move(8, dst, f12));
++
+          return dst;
+       }
+       }
+@@ -3044,22 +3053,25 @@ s390_isel_dfp_expr_wrk(ISelEnv *env, IRExpr *expr)
+       }
+ 
+       case Iop_D128toD64: {
+-         HReg op_hi, op_lo, f13, f15;
++         HReg op_hi, op_lo, f12, f13, f14, f15;
+          s390_dfp_round_t rounding_mode;
+ 
+          conv = S390_DFP_D128_TO_D64;
+ 
+          s390_isel_dfp128_expr(&op_hi, &op_lo, env, left);
+ 
+-         /* We use non-virtual registers as pairs (f13, f15) */
++         /* We use non-virtual registers as pairs (f13, f15) and (f12, f14) */
++         f12 = make_fpr(12);
+          f13 = make_fpr(13);
++         f14 = make_fpr(14);
+          f15 = make_fpr(15);
+ 
+          /* operand --> (f13, f15) */
+          addInstr(env, s390_insn_move(8, f13, op_hi));
+          addInstr(env, s390_insn_move(8, f15, op_lo));
+ 
+-         dst = newVRegF(env);
++         /* result --> (f12, f14) */
++ 
+          /* load-rounded has a rounding mode field when the floating point
+             extension facility is installed. */
+          if (s390_host_has_fpext) {
+@@ -3068,8 +3080,11 @@ s390_isel_dfp_expr_wrk(ISelEnv *env, IRExpr *expr)
+             set_dfp_rounding_mode_in_fpc(env, irrm);
+             rounding_mode = S390_DFP_ROUND_PER_FPC_0;
+          }
+-         addInstr(env, s390_insn_dfp128_convert_from(size, conv, dst, f13, f15,
+-                                                     rounding_mode));
++         addInstr(env, s390_insn_dfp128_convert_from(size, conv, f12, f14,
++                                                     f13, f15, rounding_mode));
++         dst = newVRegF(env);
++         addInstr(env, s390_insn_move(8, dst, f12));
++
+          return dst;
+       }
+ 

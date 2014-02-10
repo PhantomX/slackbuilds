@@ -1,0 +1,239 @@
+From e48614c4b268d9e7ecbd478d1d2410f9e92095e0 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Zbigniew=20J=C4=99drzejewski-Szmek?= <zbyszek@in.waw.pl>
+Date: Mon, 21 Oct 2013 19:54:10 -0400
+Subject: [PATCH] core: some more _cleanup_free_
+
+---
+ src/core/load-fragment.c | 53 ++++++++++++++++--------------------------------
+ src/core/unit.c          | 38 +++++++++++++++++++---------------
+ 2 files changed, 40 insertions(+), 51 deletions(-)
+
+diff --git a/src/core/load-fragment.c b/src/core/load-fragment.c
+index b7e848c..72c4637 100644
+--- a/src/core/load-fragment.c
++++ b/src/core/load-fragment.c
+@@ -2403,9 +2403,10 @@ static int merge_by_names(Unit **u, Set *names, const char *id) {
+ 
+ static int load_from_path(Unit *u, const char *path) {
+         int r;
+-        Set *symlink_names;
+-        FILE *f = NULL;
+-        char *filename = NULL, *id = NULL;
++        _cleanup_set_free_free_ Set *symlink_names = NULL;
++        _cleanup_fclose_ FILE *f = NULL;
++        _cleanup_free_ char *filename = NULL;
++        char *id = NULL;
+         Unit *merged;
+         struct stat st;
+ 
+@@ -2419,10 +2420,8 @@ static int load_from_path(Unit *u, const char *path) {
+         if (path_is_absolute(path)) {
+ 
+                 filename = strdup(path);
+-                if (!filename) {
+-                        r = -ENOMEM;
+-                        goto finish;
+-                }
++                if (!filename)
++                        return -ENOMEM;
+ 
+                 r = open_follow(&filename, &f, symlink_names, &id);
+                 if (r < 0) {
+@@ -2430,7 +2429,7 @@ static int load_from_path(Unit *u, const char *path) {
+                         filename = NULL;
+ 
+                         if (r != -ENOENT)
+-                                goto finish;
++                                return r;
+                 }
+ 
+         } else  {
+@@ -2442,10 +2441,8 @@ static int load_from_path(Unit *u, const char *path) {
+                          * follow all symlinks and add their name to our unit
+                          * name set while doing so */
+                         filename = path_make_absolute(path, *p);
+-                        if (!filename) {
+-                                r = -ENOMEM;
+-                                goto finish;
+-                        }
++                        if (!filename)
++                                return -ENOMEM;
+ 
+                         if (u->manager->unit_path_cache &&
+                             !set_get(u->manager->unit_path_cache, filename))
+@@ -2458,7 +2455,7 @@ static int load_from_path(Unit *u, const char *path) {
+                                 filename = NULL;
+ 
+                                 if (r != -ENOENT)
+-                                        goto finish;
++                                        return r;
+ 
+                                 /* Empty the symlink names for the next run */
+                                 set_clear_free(symlink_names);
+@@ -2469,27 +2466,22 @@ static int load_from_path(Unit *u, const char *path) {
+                 }
+         }
+ 
+-        if (!filename) {
++        if (!filename)
+                 /* Hmm, no suitable file found? */
+-                r = 0;
+-                goto finish;
+-        }
++                return 0;
+ 
+         merged = u;
+         r = merge_by_names(&merged, symlink_names, id);
+         if (r < 0)
+-                goto finish;
++                return r;
+ 
+         if (merged != u) {
+                 u->load_state = UNIT_MERGED;
+-                r = 0;
+-                goto finish;
++                return 0;
+         }
+ 
+-        if (fstat(fileno(f), &st) < 0) {
+-                r = -errno;
+-                goto finish;
+-        }
++        if (fstat(fileno(f), &st) < 0)
++                return -errno;
+ 
+         if (null_or_empty(&st))
+                 u->load_state = UNIT_MASKED;
+@@ -2501,7 +2493,7 @@ static int load_from_path(Unit *u, const char *path) {
+                                  config_item_perf_lookup,
+                                  (void*) load_fragment_gperf_lookup, false, true, u);
+                 if (r < 0)
+-                        goto finish;
++                        return r;
+         }
+ 
+         free(u->fragment_path);
+@@ -2517,16 +2509,7 @@ static int load_from_path(Unit *u, const char *path) {
+                         u->source_mtime = 0;
+         }
+ 
+-        r = 0;
+-
+-finish:
+-        set_free_free(symlink_names);
+-        free(filename);
+-
+-        if (f)
+-                fclose(f);
+-
+-        return r;
++        return 0;
+ }
+ 
+ int unit_load_fragment(Unit *u) {
+diff --git a/src/core/unit.c b/src/core/unit.c
+index 15e0a82..84c43f7 100644
+--- a/src/core/unit.c
++++ b/src/core/unit.c
+@@ -127,7 +127,8 @@ int unit_add_name(Unit *u, const char *text) {
+                 goto fail;
+         }
+ 
+-        if ((r = unit_name_to_instance(s, &i)) < 0)
++        r = unit_name_to_instance(s, &i);
++        if (r < 0)
+                 goto fail;
+ 
+         if (i && unit_vtable[t]->no_instances) {
+@@ -154,13 +155,15 @@ int unit_add_name(Unit *u, const char *text) {
+                 goto fail;
+         }
+ 
+-        if ((r = set_put(u->names, s)) < 0) {
++        r = set_put(u->names, s);
++        if (r < 0) {
+                 if (r == -EEXIST)
+                         r = 0;
+                 goto fail;
+         }
+ 
+-        if ((r = hashmap_put(u->manager->units, s, u)) < 0) {
++        r = hashmap_put(u->manager->units, s, u);
++        if (r < 0) {
+                 set_remove(u->names, s);
+                 goto fail;
+         }
+@@ -201,7 +204,8 @@ int unit_choose_id(Unit *u, const char *name) {
+                 if (!u->instance)
+                         return -EINVAL;
+ 
+-                if (!(t = unit_name_replace_instance(name, u->instance)))
++                t = unit_name_replace_instance(name, u->instance);
++                if (!t)
+                         return -ENOMEM;
+ 
+                 name = t;
+@@ -213,7 +217,8 @@ int unit_choose_id(Unit *u, const char *name) {
+         if (!s)
+                 return -ENOENT;
+ 
+-        if ((r = unit_name_to_instance(s, &i)) < 0)
++        r = unit_name_to_instance(s, &i);
++        if (r < 0)
+                 return r;
+ 
+         u->id = s;
+@@ -546,14 +551,13 @@ static void merge_dependencies(Unit *u, Unit *other, UnitDependency d) {
+         SET_FOREACH(back, other->dependencies[d], i) {
+                 UnitDependency k;
+ 
+-                for (k = 0; k < _UNIT_DEPENDENCY_MAX; k++)
+-                        if ((r = set_remove_and_put(back->dependencies[k], other, u)) < 0) {
+-
+-                                if (r == -EEXIST)
+-                                        set_remove(back->dependencies[k], other);
+-                                else
+-                                        assert(r == -ENOENT);
+-                        }
++                for (k = 0; k < _UNIT_DEPENDENCY_MAX; k++) {
++                        r = set_remove_and_put(back->dependencies[k], other, u);
++                        if (r == -EEXIST)
++                                set_remove(back->dependencies[k], other);
++                        else
++                                assert(r >= 0 || r == -ENOENT);
++                }
+         }
+ 
+         complete_move(&u->dependencies[d], &other->dependencies[d]);
+@@ -632,7 +636,8 @@ int unit_merge_by_name(Unit *u, const char *name) {
+                 if (!u->instance)
+                         return -EINVAL;
+ 
+-                if (!(s = unit_name_replace_instance(name, u->instance)))
++                s = unit_name_replace_instance(name, u->instance);
++                if (!s)
+                         return -ENOMEM;
+ 
+                 name = s;
+@@ -843,7 +848,7 @@ int unit_load_fragment_and_dropin(Unit *u) {
+ 
+         assert(u);
+ 
+-        /* Load a .service file */
++        /* Load a .{service,socket,...} file */
+         r = unit_load_fragment(u);
+         if (r < 0)
+                 return r;
+@@ -1280,7 +1285,8 @@ int unit_reload(Unit *u) {
+         if (state != UNIT_ACTIVE)
+                 return -ENOEXEC;
+ 
+-        if ((following = unit_following(u))) {
++        following = unit_following(u);
++        if (following) {
+                 log_debug_unit(u->id, "Redirecting reload request from %s to %s.",
+                                u->id, following->id);
+                 return unit_reload(following);
+-- 
+1.8.5.4
+

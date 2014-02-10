@@ -14,7 +14,7 @@ for patches in \
   21_all_distutils_c++.patch \
   62_all_xml.use_pyxml.patch \
   ;do
-  patch -p0 --backup --verbose -i ${PVER}/${patches}
+  patch -p0 --backup --verbose -i patches/${patches}
 done
 
 if [ "${ARCH}" = "x86_64" ]; then
@@ -68,10 +68,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00166-fix-fake-repr-in-gdb-hoo
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00169-avoid-implicit-usage-of-md5-in-multiprocessing.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00184-ctypes-should-build-with-libffi-multilib-wrapper.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00185-urllib2-honors-noproxy-for-ftp.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00186-memory-leak-marshalc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00187-add-RPATH-to-pyexpat.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00188-CVE-2013-4238-hostname-check-bypass-in-SSL-module.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00189-gdb-py-bt-dont-raise-exception-from-eval.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00190-get_python_version.patch
 
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
 

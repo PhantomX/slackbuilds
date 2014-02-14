@@ -7,6 +7,5 @@ SB_PATCHDIR=${CWD}/patches
 ### Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-data-install-preserve-timestamps.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-linker-flags-speedup-memory.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-fix-clear-cache-declaration.patch
 
 set +e +o pipefail

@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ mailx.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008, 2009, 2010, 2011 Phantom X, Goiania, Brazil.
+# Copyright 2008-2014 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -43,7 +43,24 @@ fi
 NAME=mailx
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-12.4}
+VSRCARCHIVE=${NAME}-version
+
+SNAPBUILD=${SNAPBUILD:-YES}
+# For version, see http://nail.cvs.sourceforge.net/viewvc/nail/nail/version.c?view=markup
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  if [ -x /usr/bin/wget ] ;then
+    if ! [ -r ${CWD}/${VSRCARCHIVE} ] ;then
+      echo "Retrieving version"
+      wget --no-check-certificate -O - \
+        http://nail.cvs.sourceforge.net/viewvc/nail/nail/version.c | \
+        sed -rn 's/#define\s+V\s+\"([0-9.]+)\"/\1/p' > ${CWD}/${VSRCARCHIVE}
+    fi
+    VERSION=${VERSION:-"$(cat ${CWD}/${VSRCARCHIVE})"}
+  fi
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+else
+  VERSION=${VERSION:-12.5}
+fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -63,19 +80,33 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to build with krb5 gssapi support (enables nss support)
+SB_KRB5=${SB_KRB5:-NO}
+# Set to YES to build with nss instead openssl
+SB_NSS=${SB_NSS:-NO}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.bz2
+SRCARCHIVE=${SRCDIR}.tar.xz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 MIRROR_SF=${MIRROR_SF:-http://prdownloads.sourceforge.net}
 DL_URL="${MIRROR_SF}/heirloom/${SRCARCHIVE}"
+FEDORADIST=fedora-dist.sh
+FEDORABRANCH=${FEDORABRANCH:-devel}
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+else
+  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} \
+    || sh ${CWD}/${FEDORADIST} ${NAME} ${FEDORABRANCH} ${SRCARCHIVE} || exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -110,17 +141,31 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh || exit 1
 fi
 
+mailrc=/etc/mail.rc
+
+sed -i "s,/etc/nail\.rc,${mailrc},g" mailx.1
+
+if [ "${SB_KRB5}" = "YES" ] ;then
+  SB_NSS=YES
+else
+  sed -i -e 's|-lgssapi_krb5|-lgssapi_krb5_disabled|g' makeconfig || exit 1
+fi
+if [ "${SB_NSS}" = "YES" ] ;then
+  INCLUDES="${INCLUDES} $(pkg-config --cflags-only-I nss)"
+  export INCLUDES
+fi
+
 SB_MAKE(){
   make \
-    CFLAGS="${SLKCFLAGS} -D_GNU_SOURCE" \
+    CFLAGS="${SLKCFLAGS} -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64" \
     PREFIX=/usr \
     BINDIR=/bin \
     MANDIR=/usr/man \
+    MAILRC=${mailrc} \
     MAILSPOOL=/var/spool/mail \
     UCBINSTALL=/usr/bin/install \
     SENDMAIL=/usr/sbin/sendmail \
@@ -145,7 +190,11 @@ ln -sf ../../bin/mailx ${PKG}/usr/bin/Mail
 ln -sf ../../bin/mailx ${PKG}/usr/bin/mail
 ln -sf ../../bin/mailx ${PKG}/usr/bin/nail
 
-mv ${PKG}/etc/nail.rc ${PKG}/etc/nail.rc.new
+mv ${PKG}/${mailrc} ${PKG}/${mailrc}.new || exit 1
+if [ "${mailrc}" != "/etc/nail.rc" ] ;then
+  relfile=$(perl -e 'use File::Spec; print File::Spec->abs2rel($ARGV[0], $ARGV[1])' ${mailrc} /etc)
+  ln -sf ${relfile} ${PKG}/etc/nail.rc
+fi
 
 # Manpage links:
 ln -sf mailx.1 ${PKG}/usr/man/man1/mail.1
@@ -155,10 +204,12 @@ ln -sf mailx.1 ${PKG}/usr/man/man1/Mail.1
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  AUTHORS COPYING* ChangeLog README NEWS THANKS TODO ${CWD}/ChangeLog.SB \
+  AUTHORS COPYING* README NEWS TODO ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -198,11 +249,22 @@ config() {
   fi
   # Otherwise, we leave the .new copy for the admin to consider...
 }
+EOF
+
+if [ "${mailrc}" != "/etc/nail.rc" ] ;then
+cat >> ${PKG}/install/doinst.sh <<EOF
+if [ ! -L etc/nail.rc ] && [ ! -e ${mailrc#\/} ] ;then
+  mv etc/nail.rc ${mailrc#\/}
+fi
+EOF
+fi
+
+cat >> ${PKG}/install/doinst.sh <<EOF
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
@@ -213,11 +275,12 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${CWD}/apply-patches.sh ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/${FEDORADIST} ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+    ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
-                 ${SBDIR}/patches/
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:

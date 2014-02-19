@@ -6,7 +6,7 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}.patch
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/grep-2.11-gnulib-tests-rm-f.patch
 
-for ignore in 03 85 90 91 92;do
+for ignore in 03;do
   sed -i -e "/^${ignore}-.*$/d" debian/patches/series
 done
 for i in $(<debian/patches/series); do

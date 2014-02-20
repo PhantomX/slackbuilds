@@ -17,4 +17,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/networkmanager-0.9.7.995-pre-s
 ### Arch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/disable_set_hostname.patch
 
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/networkmanager-0.9.8.8-systemd209.patch
+
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
+
 set +e +o pipefail

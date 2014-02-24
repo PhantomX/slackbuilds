@@ -219,9 +219,6 @@ ApplyPatch KVM-VMX-fix-use-after-free-of-vmx-loaded_vmcs.patch
 #rhbz 950630
 ApplyPatch xhci-fix-resume-issues-on-renesas-chips-in-samsung-laptops.patch
 
-#rhbz 1031296
-ApplyPatch tick-Clear-broadcast-pending-bit-when-switching-to-oneshot.patch
-
 #rhbz 1045755
 ApplyPatch cgroup-fixes.patch
 
@@ -235,6 +232,9 @@ ApplyPatch cifs-sanity-check-length-of-data-to-send-before-sending.patch
 
 #rhbz 1054408
 ApplyPatch cpufreq-powernow-k8-Initialize-per-cpu-data-structures-properly.patch
+
+#rhbz 994438
+ApplyPatch e100-Fix-disabling-already-disabled-device-warning.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

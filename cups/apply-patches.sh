@@ -64,6 +64,7 @@ ApplyPatch cups-web-devices-timeout.patch
 ApplyPatch cups-final-content-type.patch
 [ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-journal.patch
 ApplyPatch cups-synconclose.patch
+ApplyPatch cups-avahi-browse.patch
 
 ## SECURITY PATCHES:
 

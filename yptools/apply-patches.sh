@@ -9,6 +9,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/yp-tools-2.14-glibc217-crypt.d
 
 ( cd ${YPBSRCDIR}
   zcat ${SB_PATCHDIR}/ypbind-1.11-gettextdomain.patch.gz | patch -p1 -E --backup --verbose
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ypbind-mt-1.37.1-systemd209.patch
 )
 
 ( cd ${YPSSRCDIR}
@@ -18,6 +19,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/yp-tools-2.14-glibc217-crypt.d
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ypserv-2.19-slp-warning.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ypserv-2.24-manfix.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ypserv-2.24-aliases.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ypserv-2.31-systemd209.patch
 )
+
+
+
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
 
 set +e +o pipefail

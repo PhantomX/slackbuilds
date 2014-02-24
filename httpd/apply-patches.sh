@@ -10,7 +10,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4.1-confd.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-apctl.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.3-apxs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-deplibs.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-apr14.patch
+[ "${SB_SYSTEMD}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.3-apctl-systemd.patch
 # Features/functional changes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-export.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-corelimit.patch

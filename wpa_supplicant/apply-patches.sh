@@ -17,5 +17,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-quiet-scan-results-mes
 #patch -p1 -E --backup --verbose -z .disconnect-spam -i ${SB_PATCHDIR}/${NAME}-squelch-driver-disconnect-spam.patch
 # allow more private key encryption algorithms
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-openssl-more-algs.patch
+# Less aggressive roaming; signal strength is wildly variable
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rh837402-less-aggressive-roaming.patch
 
 set +e +o pipefail

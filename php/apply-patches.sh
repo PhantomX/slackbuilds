@@ -4,6 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.5.9-systemd209.patch
 
 # Patch ini files:
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php.ini-development.diff
@@ -31,6 +32,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.8-ldap_r.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.9-fixheader.patch
 # drop "Configure command" from phpinfo output
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.9-phpinfo.patch
+
+# Upstream fixes
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-bug66731.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

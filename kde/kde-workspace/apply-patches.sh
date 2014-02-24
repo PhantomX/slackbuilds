@@ -75,6 +75,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-loca
 
 ## upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r7590ed2ef14699fae2bb8560402ce0eef5f9b3fc.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r5ec7c15faec9d3d9d26c43acfcd144d9b3234896.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rbf0b0b1d33fe82d66e8312d8c2f2b9995f889f66.diff
 
 ## plasma active patches
 

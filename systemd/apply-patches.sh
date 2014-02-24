@@ -31,6 +31,9 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 # Upstream
 ApplyPatch 0001-core-unit-fix-unit_add_target_dependencies-for-units.patch
 ApplyPatch 0002-readd-journald.so-install-hooks-under-libsystemd.so.patch
+ApplyPatch 0001-sd-dhcp-client-prevent-timer-related-memory-leaks.patch
+ApplyPatch 0001-sd-event-Fix-systemd-crash-when-using-timer-units.patch
+ApplyPatch 0001-logind-session-Fix-invalid-free-in-the-error-case.patch
 
 ### Arch
 

@@ -1,0 +1,451 @@
+commit adde2bff0757e89175ede493f03b86953d0d9352
+Author: Doug Evans <xdje42@gmail.com>
+Date:   Thu Feb 20 09:13:53 2014 -0800
+
+    Fix PR symtab/16581
+    
+    	* dwarf2read.c (struct die_info): New member in_process.
+    	(reset_die_in_process): New function.
+    	(process_die): Set it at the start, reset when returning.
+    	(inherit_abstract_dies): Only call process_die if origin_child_die
+    	not already being processed.
+    
+    	testsuite/
+    	* gdb.dwarf2/dw2-icycle.S: New file.
+    	* gdb.dwarf2/dw2-icycle.c: New file.
+    	* gdb.dwarf2/dw2-icycle.exp: New file.
+
+### a/gdb/ChangeLog
+### b/gdb/ChangeLog
+## -1,3 +1,14 @@
++2014-02-20  lin zuojian  <manjian2006@gmail.com>
++	    Joel Brobecker  <brobecker@adacore.com>
++	    Doug Evans  <xdje42@gmail.com>
++
++	PR symtab/16581
++	* dwarf2read.c (struct die_info): New member in_process.
++	(reset_die_in_process): New function.
++	(process_die): Set it at the start, reset when returning.
++	(inherit_abstract_dies): Only call process_die if origin_child_die
++	not already being processed.
++
+ 2014-02-20  Joel Brobecker  <brobecker@adacore.com>
+ 
+ 	* windows-nat.c (handle_unload_dll): Add function documentation.
+--- a/gdb/dwarf2read.c
++++ b/gdb/dwarf2read.c
+@@ -1225,6 +1225,9 @@ struct die_info
+        type derived from this DIE.  */
+     unsigned char building_fullname : 1;
+ 
++    /* True if this die is in process.  PR 16581.  */
++    unsigned char in_process : 1;
++
+     /* Abbrev number */
+     unsigned int abbrev;
+ 
+@@ -8008,11 +8011,28 @@ process_imported_unit_die (struct die_info *die, struct dwarf2_cu *cu)
+     }
+ }
+ 
++/* Reset the in_process bit of a die.  */
++
++static void
++reset_die_in_process (void *arg)
++{
++  struct die_info *die = arg;
++  die->in_process = 0;
++}
++
+ /* Process a die and its children.  */
+ 
+ static void
+ process_die (struct die_info *die, struct dwarf2_cu *cu)
+ {
++  struct cleanup *in_process;
++
++  /* We should only be processing those not already in process.  */
++  gdb_assert (!die->in_process);
++
++  die->in_process = 1;
++  in_process = make_cleanup (reset_die_in_process,die);
++
+   switch (die->tag)
+     {
+     case DW_TAG_padding:
+@@ -7762,6 +7782,8 @@ process_die (struct die_info *die, struc
+       new_symbol (die, NULL, cu);
+       break;
+     }
++
++  do_cleanups (in_process);
+ }
+ 
+ /* DWARF name computation.  */
+@@ -10967,8 +10989,12 @@ inherit_abstract_dies (struct die_info *die, struct dwarf2_cu *cu)
+       if (offsetp >= offsets_end
+ 	  || offsetp->sect_off > origin_child_die->offset.sect_off)
+ 	{
+-	  /* Found that ORIGIN_CHILD_DIE is really not referenced.  */
+-	  process_die (origin_child_die, origin_cu);
++	  /* Found that ORIGIN_CHILD_DIE is really not referenced.
++	     Check whether we're already processing ORIGIN_CHILD_DIE.
++	     This can happen with mutually referenced abstract_origins.
++	     PR 16581.  */
++	  if (!origin_child_die->in_process)
++	    process_die (origin_child_die, origin_cu);
+ 	}
+       origin_child_die = sibling_die (origin_child_die);
+     }
+### a/gdb/testsuite/ChangeLog
+### b/gdb/testsuite/ChangeLog
+## -1,3 +1,12 @@
++2014-02-20  lin zuojian  <manjian2006@gmail.com>
++	    Joel Brobecker  <brobecker@adacore.com>
++	    Doug Evans  <xdje42@gmail.com>
++
++	PR symtab/16581
++	* gdb.dwarf2/dw2-icycle.S: New file.
++	* gdb.dwarf2/dw2-icycle.c: New file.
++	* gdb.dwarf2/dw2-icycle.exp: New file.
++
+ 2014-02-19  Siva Chandra Reddy  <sivachandra@google.com>
+ 
+ 	* gdb.python/py-value-cc.cc: Improve test case to enable testing
+--- /dev/null
++++ b/gdb/testsuite/gdb.dwarf2/dw2-icycle.S
+@@ -0,0 +1,258 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2014 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++	.text
++
++.Ltext0:
++	.type	p__top__middle__inside.3062, @function
++p__top__middle__inside.3062:
++.LFB4:
++	.file 1 "p.adb"
++        .4byte 0
++.LBE6:
++
++	.globl	p__top
++	.type	p__top, @function
++p__top:
++.LFB2:
++        .4byte 0
++.LFE2:
++.Letext0:
++
++	.section	.debug_info,"",@progbits
++.Ldebug_info0:
++	.4byte	.Ledebug_info0 - .Lsdebug_info0  /* Length of CU Info */
++.Lsdebug_info0:
++	.2byte	0x4	/* DWARF version number */
++	.4byte	.Ldebug_abbrev0	/* Offset Into Abbrev. Section */
++	.byte	0x4	/* Pointer Size (in bytes) */
++	.uleb128 0x1	/* (DIE (0xb) DW_TAG_compile_unit) */
++	.ascii	"GNU Ada 4.9.0 20140126\0" /* DW_AT_producer */
++	.byte	0xd	/* DW_AT_language */
++	.ascii	"p.adb\0" /* DW_AT_name */
++	.ascii	"/tmp\0"  /* DW_AT_comp_dir */
++	.4byte	.Ltext0	/* DW_AT_low_pc */
++	.4byte	.Letext0-.Ltext0	/* DW_AT_high_pc */
++.S0x142:
++	.uleb128 0x8	/* (DIE (0x142) DW_TAG_base_type) */
++	.byte	0x4	/* DW_AT_byte_size */
++	.byte	0x5	/* DW_AT_encoding */
++	.ascii	"integer\0" /* DW_AT_name */
++
++	.uleb128 0x13	/* (DIE (0x1b4) DW_TAG_subprogram) */
++			/* DW_AT_external */
++	.ascii	"p__top\0" /* DW_AT_name */
++	.byte	0x1	/* DW_AT_decl_file (p.adb) */
++	.byte	0x3	/* DW_AT_decl_line */
++	.4byte	.LFB2	/* DW_AT_low_pc */
++	.4byte	.LFE2-.LFB2	/* DW_AT_high_pc */
++	.uleb128 0x1	/* DW_AT_frame_base */
++	.byte	0x9c	/* DW_OP_call_frame_cfa */
++			/* DW_AT_GNU_all_call_sites */
++	.4byte	.S0x4fc - .Ldebug_info0	/* DW_AT_sibling */
++.S0x1e0:
++	.uleb128 0x15	/* (DIE (0x1e0) DW_TAG_subprogram) */
++	.ascii	"p__top__middle\0" /* DW_AT_name */
++	.byte	0x1	/* DW_AT_decl_file (p.adb) */
++	.byte	0x4	/* DW_AT_decl_line */
++	.byte	0x1	/* DW_AT_inline */
++	.4byte	.S0x374 - .Ldebug_info0	/* DW_AT_sibling */
++.S0x202:
++	.uleb128 0x15	/* (DIE (0x202) DW_TAG_subprogram) */
++	.ascii	"p__top__middle__inside\0" /* DW_AT_name */
++	.byte	0x1	/* DW_AT_decl_file (p.adb) */
++	.byte	0x5	/* DW_AT_decl_line */
++	.byte	0x1	/* DW_AT_inline */
++	.4byte	.S0x225	- .Ldebug_info0 /* DW_AT_sibling */
++	.byte	0	/* end of children of DIE 0x202 */
++.S0x225:
++	.uleb128 0x18	/* (DIE (0x225) DW_TAG_subprogram) */
++	.4byte	.S0x202 - .Ldebug_info0	/* DW_AT_abstract_origin */
++	.4byte	.LFB4	/* DW_AT_low_pc */
++	.4byte	.LBE6-.LFB4	/* DW_AT_high_pc */
++	.uleb128 0x1	/* DW_AT_frame_base */
++	.byte	0x9c	/* DW_OP_call_frame_cfa */
++	.uleb128 0x1	/* DW_AT_static_link */
++	.byte	0x56	/* DW_OP_reg6 */
++			/* DW_AT_GNU_all_call_sites */
++	.uleb128 0x1a	/* (DIE (0x247) DW_TAG_inlined_subroutine) */
++	.4byte	.S0x1e0 - .Ldebug_info0	/* DW_AT_abstract_origin */
++	.4byte	.LFB4	/* DW_AT_low_pc */
++	.4byte	.LBE6-.LFB4	/* DW_AT_high_pc */
++	.byte	0x1	/* DW_AT_call_file (p.adb) */
++	.byte	0x14	/* DW_AT_call_line */
++	.4byte	.S0x374	- .Ldebug_info0 /* DW_AT_sibling */
++	.byte	0	/* end of children of DIE 0x247 */
++	.byte	0	/* end of children of DIE 0x225 */
++	.byte	0	/* end of children of DIE 0x1e0 */
++.S0x374:
++	.uleb128 0x23	/* (DIE (0x382) DW_TAG_inlined_subroutine) */
++	.4byte	.S0x1e0 - .Ldebug_info0 /* DW_AT_abstract_origin */
++	.4byte	.LFB4	/* DW_AT_low_pc */
++	.4byte	.LBE6-.LFB4	/* DW_AT_high_pc */
++	.byte	0x1	/* DW_AT_call_file (p.adb) */
++	.byte	0x1d	/* DW_AT_call_line */
++	.byte	0	/* end of children of DIE 0x382 */
++	.byte	0	/* end of children of DIE 0x1b4 */
++.S0x4fc:
++	.uleb128 0x28	/* (DIE (0x52e) DW_TAG_subprogram) */
++			/* DW_AT_external */
++	.ascii	"__gnat_rcheck_PE_Explicit_Raise\0" /* DW_AT_name */
++			/* DW_AT_artificial */
++			/* DW_AT_declaration */
++	.byte	0	/* end of children of DIE 0x52e */
++	.byte	0	/* end of children of DIE 0xb */
++.Ledebug_info0:
++
++	.section	.debug_abbrev,"",@progbits
++.Ldebug_abbrev0:
++	.uleb128 0x1	/* (abbrev code) */
++	.uleb128 0x11	/* (TAG: DW_TAG_compile_unit) */
++	.byte	0x1	/* DW_children_yes */
++	.uleb128 0x25	/* (DW_AT_producer) */
++	.uleb128 0x8	/* (DW_FORM_string) */
++	.uleb128 0x13	/* (DW_AT_language) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x3	/* (DW_AT_name) */
++	.uleb128 0x8	/* (DW_FORM_string) */
++	.uleb128 0x1b	/* (DW_AT_comp_dir) */
++	.uleb128 0x8	/* (DW_FORM_string) */
++	.uleb128 0x11	/* (DW_AT_low_pc) */
++	.uleb128 0x1	/* (DW_FORM_addr) */
++	.uleb128 0x12	/* (DW_AT_high_pc) */
++	.uleb128 0x6	/* (DW_FORM_data4) */
++	.byte	0
++	.byte	0
++	.uleb128 0x8	/* (abbrev code) */
++	.uleb128 0x24	/* (TAG: DW_TAG_base_type) */
++	.byte	0	/* DW_children_no */
++	.uleb128 0xb	/* (DW_AT_byte_size) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x3e	/* (DW_AT_encoding) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x3	/* (DW_AT_name) */
++	.uleb128 0x8	/* (DW_FORM_string) */
++	.byte	0
++	.byte	0
++	.uleb128 0x13	/* (abbrev code) */
++	.uleb128 0x2e	/* (TAG: DW_TAG_subprogram) */
++	.byte	0x1	/* DW_children_yes */
++	.uleb128 0x3f	/* (DW_AT_external) */
++	.uleb128 0x19	/* (DW_FORM_flag_present) */
++	.uleb128 0x3	/* (DW_AT_name) */
++	.uleb128 0x8	/* (DW_FORM_string) */
++	.uleb128 0x3a	/* (DW_AT_decl_file) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x3b	/* (DW_AT_decl_line) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x11	/* (DW_AT_low_pc) */
++	.uleb128 0x1	/* (DW_FORM_addr) */
++	.uleb128 0x12	/* (DW_AT_high_pc) */
++	.uleb128 0x6	/* (DW_FORM_data4) */
++	.uleb128 0x40	/* (DW_AT_frame_base) */
++	.uleb128 0x18	/* (DW_FORM_exprloc) */
++	.uleb128 0x2117	/* (DW_AT_GNU_all_call_sites) */
++	.uleb128 0x19	/* (DW_FORM_flag_present) */
++	.uleb128 0x1	/* (DW_AT_sibling) */
++	.uleb128 0x13	/* (DW_FORM_ref4) */
++	.byte	0
++	.byte	0
++	.uleb128 0x15	/* (abbrev code) */
++	.uleb128 0x2e	/* (TAG: DW_TAG_subprogram) */
++	.byte	0x1	/* DW_children_yes */
++	.uleb128 0x3	/* (DW_AT_name) */
++	.uleb128 0x8	/* (DW_FORM_string) */
++	.uleb128 0x3a	/* (DW_AT_decl_file) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x3b	/* (DW_AT_decl_line) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x20	/* (DW_AT_inline) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x1	/* (DW_AT_sibling) */
++	.uleb128 0x13	/* (DW_FORM_ref4) */
++	.byte	0
++	.byte	0
++	.uleb128 0x18	/* (abbrev code) */
++	.uleb128 0x2e	/* (TAG: DW_TAG_subprogram) */
++	.byte	0x1	/* DW_children_yes */
++	.uleb128 0x31	/* (DW_AT_abstract_origin) */
++	.uleb128 0x13	/* (DW_FORM_ref4) */
++	.uleb128 0x11	/* (DW_AT_low_pc) */
++	.uleb128 0x1	/* (DW_FORM_addr) */
++	.uleb128 0x12	/* (DW_AT_high_pc) */
++	.uleb128 0x6	/* (DW_FORM_data4) */
++	.uleb128 0x40	/* (DW_AT_frame_base) */
++	.uleb128 0x18	/* (DW_FORM_exprloc) */
++	.uleb128 0x48	/* (DW_AT_static_link) */
++	.uleb128 0x18	/* (DW_FORM_exprloc) */
++	.uleb128 0x2117	/* (DW_AT_GNU_all_call_sites) */
++	.uleb128 0x19	/* (DW_FORM_flag_present) */
++	.byte	0
++	.byte	0
++	.uleb128 0x1a	/* (abbrev code) */
++	.uleb128 0x1d	/* (TAG: DW_TAG_inlined_subroutine) */
++	.byte	0x1	/* DW_children_yes */
++	.uleb128 0x31	/* (DW_AT_abstract_origin) */
++	.uleb128 0x13	/* (DW_FORM_ref4) */
++	.uleb128 0x11	/* (DW_AT_low_pc) */
++	.uleb128 0x1	/* (DW_FORM_addr) */
++	.uleb128 0x12	/* (DW_AT_high_pc) */
++	.uleb128 0x6	/* (DW_FORM_data4) */
++	.uleb128 0x58	/* (DW_AT_call_file) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x59	/* (DW_AT_call_line) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x1	/* (DW_AT_sibling) */
++	.uleb128 0x13	/* (DW_FORM_ref4) */
++	.byte	0
++	.byte	0
++	.uleb128 0x23	/* (abbrev code) */
++	.uleb128 0x1d	/* (TAG: DW_TAG_inlined_subroutine) */
++	.byte	0x1	/* DW_children_yes */
++	.uleb128 0x31	/* (DW_AT_abstract_origin) */
++	.uleb128 0x13	/* (DW_FORM_ref4) */
++	.uleb128 0x11	/* (DW_AT_low_pc) */
++	.uleb128 0x1	/* (DW_FORM_addr) */
++	.uleb128 0x12	/* (DW_AT_high_pc) */
++	.uleb128 0x6	/* (DW_FORM_data4) */
++	.uleb128 0x58	/* (DW_AT_call_file) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.uleb128 0x59	/* (DW_AT_call_line) */
++	.uleb128 0xb	/* (DW_FORM_data1) */
++	.byte	0
++	.byte	0
++	.uleb128 0x28	/* (abbrev code) */
++	.uleb128 0x2e	/* (TAG: DW_TAG_subprogram) */
++	.byte	0x1	/* DW_children_yes */
++	.uleb128 0x3f	/* (DW_AT_external) */
++	.uleb128 0x19	/* (DW_FORM_flag_present) */
++	.uleb128 0x3	/* (DW_AT_name) */
++	.uleb128 0x8	/* (DW_FORM_string) */
++	.uleb128 0x34	/* (DW_AT_artificial) */
++	.uleb128 0x19	/* (DW_FORM_flag_present) */
++	.uleb128 0x3c	/* (DW_AT_declaration) */
++	.uleb128 0x19	/* (DW_FORM_flag_present) */
++	.byte	0
++	.byte	0
++	.byte	0
++	.byte	0
++	.byte	0
++
++        .section .debug_line
++.Lline1_begin:
++        .byte   0
++
+--- /dev/null
++++ b/gdb/testsuite/gdb.dwarf2/dw2-icycle.c
+@@ -0,0 +1,24 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2004-2014 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++/* Dummy main function.  */
++
++int
++main()
++{
++  return 0;
++}
+--- /dev/null
++++ b/gdb/testsuite/gdb.dwarf2/dw2-icycle.exp
+@@ -0,0 +1,46 @@
++# Copyright 2014 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++# This test exercises PR 16581.
++
++load_lib dwarf.exp
++
++# This test can only be run on targets which support DWARF-2 and use gas.
++if {![dwarf2_support]} {
++    return 0
++}
++
++standard_testfile .S .c
++
++if { [prepare_for_testing ${testfile}.exp ${testfile} \
++	  [list $srcfile $srcfile2] {nodebug}] } {
++    return -1
++}
++
++# We are trying to verify that the partial symtab to symtab expansion
++# for the debugging info hand-coded in our assembly file does not cause
++# the debugger to crash (infinite recursion).  To facilitate the test,
++# start the debugger with -readnow.  This force expansion as soon as
++# the objfile is loaded.
++
++set saved_gdbflags $GDBFLAGS
++set GDBFLAGS "$GDBFLAGS -readnow"
++clean_restart ${testfile}
++set GDBFLAGS $saved_gdbflags
++
++# And just to be sure that the debugger did not crash after having
++# expanded our symbols, do a life-check.
++
++gdb_test "echo life check\\n" "life check"

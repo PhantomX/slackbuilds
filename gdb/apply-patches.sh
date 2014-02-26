@@ -370,6 +370,15 @@ ApplyPatch gdb-testsuite-nohostid.patch
 
 # Fix Python stack corruption.
 ApplyPatch gdb-python-stacksmash.patch
+
+# Fix gdb-7.7 auto-load from /usr/share/gdb/auto-load/ regression.
+ApplyPatch gdb-auto-load-lost-path-7.7.patch
+
+# Fix crash of -readnow /usr/lib/debug/usr/bin/gnatbind.debug (BZ 1069211).
+ApplyPatch gdb-gnat-dwarf-crash-1of3.patch
+ApplyPatch gdb-gnat-dwarf-crash-2of3.patch
+ApplyPatch gdb-gnat-dwarf-crash-3of3.patch
+
 ### END Fedora
 
 set +e +o pipefail

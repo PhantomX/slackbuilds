@@ -29,15 +29,14 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/udev-microsoft-3000-keymap.pat
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 
 # Upstream
-ApplyPatch 0001-core-unit-fix-unit_add_target_dependencies-for-units.patch
-ApplyPatch 0002-readd-journald.so-install-hooks-under-libsystemd.so.patch
-ApplyPatch 0001-sd-dhcp-client-prevent-timer-related-memory-leaks.patch
-ApplyPatch 0001-sd-event-Fix-systemd-crash-when-using-timer-units.patch
-ApplyPatch 0001-logind-session-Fix-invalid-free-in-the-error-case.patch
+ApplyPatch 0001-core-add-global-settings-for-enabling-CPUAccounting-.patch
+ApplyPatch 0002-core-expose-architecture-as-a-bus-property-so-that-w.patch
+ApplyPatch 0003-hostnamectl-read-virtualization-architecture-from-re.patch
+ApplyPatch 0004-Remove-dead-lines-in-various-places.patch
 
 ### Arch
 
 # Set to YES if autogen is needed
-SB_AUTOGEN=YES
+SB_AUTOGEN=NO
 
 set +e +o pipefail

@@ -7,7 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-errno.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-strmov.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-install-test.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-expired-certs.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-expired-certs.patchh
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-s390-tsc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-logrotate.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-cipherspec.patch

@@ -13,18 +13,18 @@ fi
 
 # Other patches
 zcat ${SB_PATCHDIR}/${NAME}-2.02-security.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.03-paths.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup -z .paths --verbose -i ${SB_PATCHDIR}/bash-2.03-paths.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.03-profile.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.05a-interpreter.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-debuginfo.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-manso.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-pgrp_sync.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.05b-readline-oom.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup -z .readline_oom --verbose -i ${SB_PATCHDIR}/bash-2.05b-readline-oom.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-xcc.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-3.2-audit.patch
 zcat ${SB_PATCHDIR}/${NAME}-3.2-ssh_source_bash.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-infotags.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-requires.patch
+patch -p1 -E --backup -z .requires --verbose -i ${SB_PATCHDIR}/bash-requires.patch
 zcat ${SB_PATCHDIR}/${NAME}-setlocale.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-tty-tests.patch
 
@@ -39,12 +39,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-broken_pipe.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-rc2-logout.patch
 # Static analyzis shows some issues in bash-2.05a-interpreter.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-coverity.patch
-# Don't call malloc in signal handler
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-defer-sigchld-trap.patch
 # rh#799958, updated info about trap
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-manpage_trap.patch
-# rh#695656, block the signal and unblock it after the new handler is installed
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-signal.patch
 # https://www.securecoding.cert.org/confluence/display/seccode/INT32-C.+Ensure+that+operations+on+signed+integers+do+not+result+in+overflow
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-size_type.patch
 

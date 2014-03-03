@@ -52,8 +52,12 @@ fi
   ApplyPatch 00_all_0003-make-fortify-logic-checks-less-angry.patch
   ApplyPatch 00_all_0004-Fix-localedef-segfault-when-run-under-exec-shield-Pa.patch
   ApplyPatch 00_all_0005-reload-etc-resolv.conf-when-it-has-changed.patch
+  ApplyPatch 00_all_0006-nptl-support-thread-stacks-that-grow-up.patch
+  ApplyPatch 00_all_0007-rtld-do-not-ignore-arch-specific-CFLAGS.patch
+  ApplyPatch 00_all_0008-nptl-handle-EAGAIN-with-some-futex-operations.patch
   ApplyPatch 00_all_0009-gentoo-support-running-tests-under-sandbox.patch
   ApplyPatch 00_all_0010-gentoo-disable-building-in-timezone-subdir.patch
+  ApplyPatch 00_all_0011-arm-fix-PIC-vs-SHARED-typos.patch
 )
 
 ## Fedora
@@ -107,5 +111,8 @@ ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 ## master
 ApplyPatch 0001-Avoid-comma-operator-warnings.patch
+ApplyPatch 0001-Fix-tst-sscanf-and-tst-swscanf-on-64-bit.patch
+ApplyPatch 0001-BZ-16447-Fix-ldbl-128-expl-implementation.patch
+ApplyPatch 0001-Fix-sign-of-input-to-bsloww1-BZ-16623.patch
 
 set +e +o pipefail

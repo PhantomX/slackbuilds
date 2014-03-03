@@ -39,9 +39,14 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-broken_pipe.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-rc2-logout.patch
 # Static analyzis shows some issues in bash-2.05a-interpreter.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-coverity.patch
+# Don't call malloc in signal handler
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-defer-sigchld-trap.patch
 # rh#799958, updated info about trap
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-manpage_trap.patch
 # https://www.securecoding.cert.org/confluence/display/seccode/INT32-C.+Ensure+that+operations+on+signed+integers+do+not+result+in+overflow
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-size_type.patch
+
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-debug-trap.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-test-nameref.patch 
 
 set +e +o pipefail

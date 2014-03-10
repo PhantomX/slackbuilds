@@ -53,6 +53,9 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-uic_multilib.patch
 # reduce debuginfo in qtwebkit (webcore)
 ApplyPatch qt-everywhere-opensource-src-4.8.5-webcore_debuginfo.patch
 
+# cups16 printer discovery
+ApplyPatch qt-cupsEnumDests.patch
+
 # enable ft lcdfilter
 ApplyPatch qt-x11-opensource-src-4.5.1-enable_ft_lcdfilter.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch 
@@ -79,7 +82,7 @@ ApplyPatch qt-everywhere-opensource-src-4.8.4-qmake_pkgconfig_requires_private.p
 ApplyPatch qt-x11-opensource-src-4.5.0-fix-qatomic-inline-asm.patch.gz
 # fix invalid assumptions about mysql_config --libs
 # http://bugzilla.redhat.com/440673
-ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-mysql_config.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.5-mysql_config.patch
 # http://bugs.kde.org/show_bug.cgi?id=180051#c22
 ApplyPatch qt-everywhere-opensource-src-4.6.2-cups.patch.gz
 
@@ -119,6 +122,9 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-4862.patch
 
 # poll support
 ApplyPatch qt-4.8-poll.patch
+
+# systemtrayicon plugin support (for appindicators)
+ApplyPatch kubuntu_14_systemtrayicon.diff
 
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore

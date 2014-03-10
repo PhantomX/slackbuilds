@@ -227,14 +227,42 @@ ApplyPatch ipv6-introduce-IFA_F_NOPREFIXROUTE-and-IFA_F_MANAGETEMPADDR-flags.pat
 ApplyPatch ipv6-addrconf-revert-if_inet6ifa_flag-format.patch
 
 #CVE-2014-0069 rhbz 1064253 1062584
-ApplyPatch cifs-ensure-that-uncached-writes-handle-unmapped-areas-correctly.patch
 ApplyPatch cifs-sanity-check-length-of-data-to-send-before-sending.patch
 
-#rhbz 1054408
-ApplyPatch cpufreq-powernow-k8-Initialize-per-cpu-data-structures-properly.patch
+#rhbz 1068862
+ApplyPatch cifs-mask-off-top-byte-in-get_rfc1002_length.patch
 
 #rhbz 994438
 ApplyPatch e100-Fix-disabling-already-disabled-device-warning.patch
+
+
+#rhbz 1065087
+ApplyPatch tty-Fix-low_latency-BUG.patch
+
+#rhbz 1066064
+ApplyPatch audit-don-t-generate-loginuid-log-when-audit-disable.patch
+
+#CVE-2014-0101 rhbz 1072029 1070705
+ApplyPatch net-net-sctp-fix-sctp_sf_do_5_1D_ce-to-verify-if-we-peer-is-AUTH-capable.patch
+
+#CVE-2014-0100 rhbz 1072026 1070618
+ApplyPatch net-fix-for-a-race-condition-in-the-inet-frag-code.patch
+
+#rhbz 1027465
+ApplyPatch HID-Bluetooth-hidp-make-sure-input-buffers-are-big-e.patch
+
+#rhbz 1071998
+ApplyPatch bug-1071998.patch
+
+#rhbz 1051748
+ApplyPatch Bluetooth-allocate-static-minor-for-vhci.patch
+
+#rhbz 1003602
+ApplyPatch ACPI-EC-Clear-stale-EC-events-on-Samsung-systems.patch
+
+#rhbz 1073180
+ApplyPatch Revert-USBNET-ax88179_178a-enable-tso-if-usb-host-supports-sg-dma.patch
+ApplyPatch Revert-xhci-1.0-Limit-arbitrarily-aligned-scatter-gather.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

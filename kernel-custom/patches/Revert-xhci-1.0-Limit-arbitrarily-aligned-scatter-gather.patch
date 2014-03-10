@@ -1,0 +1,86 @@
+From 7efb6dbd0d825899955fd4035504823bb5c1124c Mon Sep 17 00:00:00 2001
+From: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Date: Tue, 04 Mar 2014 22:28:16 +0000
+Subject: Revert "xhci 1.0: Limit arbitrarily-aligned scatter gather."
+
+This reverts commit 247bf557273dd775505fb9240d2d152f4f20d304, since it
+causes USB 3.0 mass storage devices to fail on xHCI 1.0 hosts.
+
+The block layer may submit scatter-gather lists with entries that
+are multiples of 512-byte blocks.  That's fine for USB 2.0 devices,
+where the bulk endpoint max packet size is 512 bytes.  But USB 3.0
+devices have bulk endpoints with a 1024 byte max packet size.
+
+That means when the block layer submits a scatter-gather list with one
+entry that includes, say, three 512-byte blocks, this code will reject
+the URB if it's submitted to a USB 3.0 bulk endpoint:
+
+int usb_submit_urb(struct urb *urb, gfp_t mem_flags)
+{
+...
+        max = usb_endpoint_maxp(&ep->desc);
+...
+        } else if (urb->num_sgs && !urb->dev->bus->no_sg_constraint &&
+                        dev->speed != USB_SPEED_WIRELESS) {
+                struct scatterlist *sg;
+                int i;
+
+                for_each_sg(urb->sg, sg, urb->num_sgs - 1, i)
+                        if (sg->length % max)
+                                return -EINVAL;
+        }
+
+This results in failures with USB 3.0 drives.  For me, a failure to
+auto-mount the device.  For others, a read or write SCSI command
+failure.
+
+This commit was put in place so that we could get scatter-gather support
+for the ASIX USB ethernet adapter on non-1.0 hosts.  It was a quick fix
+until we implemented TD fragments properly in the driver.  Since it
+breaks USB 3.0 mass storage, we need to revert it, and revert
+scatter-gather support for the ASIX devices.
+
+Signed-off-by: Sarah Sharp <sarah.a.sharp@linux.intel.com>
+Cc: stable@vger.kernel.org # 3.12
+---
+diff --git a/drivers/usb/host/xhci.c b/drivers/usb/host/xhci.c
+index 652be21..8fe4e12 100644
+--- a/drivers/usb/host/xhci.c
++++ b/drivers/usb/host/xhci.c
+@@ -4762,6 +4762,9 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
+ 	/* Accept arbitrarily long scatter-gather lists */
+ 	hcd->self.sg_tablesize = ~0;
+ 
++	/* support to build packet from discontinuous buffers */
++	hcd->self.no_sg_constraint = 1;
++
+ 	/* XHCI controllers don't stop the ep queue on short packets :| */
+ 	hcd->self.no_stop_on_short = 1;
+ 
+@@ -4786,14 +4789,6 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
+ 		/* xHCI private pointer was set in xhci_pci_probe for the second
+ 		 * registered roothub.
+ 		 */
+-		xhci = hcd_to_xhci(hcd);
+-		/*
+-		 * Support arbitrarily aligned sg-list entries on hosts without
+-		 * TD fragment rules (which are currently unsupported).
+-		 */
+-		if (xhci->hci_version < 0x100)
+-			hcd->self.no_sg_constraint = 1;
+-
+ 		return 0;
+ 	}
+ 
+@@ -4822,9 +4817,6 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
+ 	if (xhci->hci_version > 0x96)
+ 		xhci->quirks |= XHCI_SPURIOUS_SUCCESS;
+ 
+-	if (xhci->hci_version < 0x100)
+-		hcd->self.no_sg_constraint = 1;
+-
+ 	/* Make sure the HC is halted. */
+ 	retval = xhci_halt(xhci);
+ 	if (retval)
+--
+cgit v0.9.2

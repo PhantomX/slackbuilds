@@ -48,5 +48,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-size_type.patch
 
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-debug-trap.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-test-nameref.patch 
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-jobs-exit.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-parse-ansi-expand.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-pcomplete-dequote.patch
+
 
 set +e +o pipefail

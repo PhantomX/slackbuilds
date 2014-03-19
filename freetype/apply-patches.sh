@@ -25,5 +25,6 @@ zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup
 patch -p1 -E --backup -z .multilib --verbose -i ${SB_PATCHDIR}/freetype-multilib.patch
 
 ### Upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix_segfault_with_harfbuzz.diff
 
 set +e +o pipefail

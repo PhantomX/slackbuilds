@@ -7,4 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 # Patch to use UTF-8 documentation, BZ #512598
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.99.5-utf8doc.patch
 
+### Arch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-readline.patch
+
 set +e +o pipefail

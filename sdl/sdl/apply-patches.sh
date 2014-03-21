@@ -15,6 +15,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/SDL-1.2.15-x11-Bypass-SetGamma
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/SDL-1.2.15-const_XData32.patch
 # Upstream fix for sdl1486, rh990677
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/SDL-1.2.15-ignore_insane_joystick_axis.patch
+# Do not use backing store by default, sdl2383, rh1073057, rejected by
+# upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/SDL-1.2.15-no-default-backing-store.patch
 
 ### Debian
 # http://bugzilla.libsdl.org/show_bug.cgi?id=1460

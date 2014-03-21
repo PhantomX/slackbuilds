@@ -51,6 +51,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-test-nameref.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-jobs-exit.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-parse-ansi-expand.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-pcomplete-dequote.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-extglob-skipname.patch
 
 
 set +e +o pipefail

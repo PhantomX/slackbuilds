@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="https://code.google.com/p/${module}"
+snaproot="git://github.com/dolphin-emu/dolphin.git"
 
 tmp=$(mktemp -d)
 
@@ -43,7 +43,7 @@ pushd "${tmp}"
       fi
     fi
     pushd Externals
-      rm -rf Cg* GLew gettext libiconv-* libjpeg libpng libusbx LZO miniupnpc msvcrt OpenAL portaudio SDL* SFML SOIL soundtouch wxWidgets3 zlib
+      rm -rf Cg* GLew gettext libiconv-* libjpeg libpng libusbx LZO miniupnpc msvcrt OpenAL polarssl portaudio SDL* SFML SOIL soundtouch wxWidgets3 zlib
     popd >/dev/null
     echo "$(git rev-parse HEAD 2> /dev/null)" > wcrev
     echo "$(git describe --always --long 2> /dev/null)" > wcdesc

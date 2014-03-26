@@ -198,9 +198,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 993744
-ApplyPatch dm-cache-policy-mq_fix-large-scale-table-allocation-bug.patch
-
 # Fix 15sec NFS mount delay
 ApplyPatch sunrpc-create-a-new-dummy-pipe-for-gssd-to-hold-open.patch
 ApplyPatch sunrpc-replace-gssd_running-with-more-reliable-check.patch
@@ -235,15 +232,8 @@ ApplyPatch cifs-mask-off-top-byte-in-get_rfc1002_length.patch
 #rhbz 994438
 ApplyPatch e100-Fix-disabling-already-disabled-device-warning.patch
 
-
 #rhbz 1065087
 ApplyPatch tty-Fix-low_latency-BUG.patch
-
-#rhbz 1066064
-ApplyPatch audit-don-t-generate-loginuid-log-when-audit-disable.patch
-
-#CVE-2014-0101 rhbz 1072029 1070705
-ApplyPatch net-net-sctp-fix-sctp_sf_do_5_1D_ce-to-verify-if-we-peer-is-AUTH-capable.patch
 
 #CVE-2014-0100 rhbz 1072026 1070618
 ApplyPatch net-fix-for-a-race-condition-in-the-inet-frag-code.patch
@@ -251,18 +241,14 @@ ApplyPatch net-fix-for-a-race-condition-in-the-inet-frag-code.patch
 #rhbz 1027465
 ApplyPatch HID-Bluetooth-hidp-make-sure-input-buffers-are-big-e.patch
 
-#rhbz 1071998
-ApplyPatch bug-1071998.patch
-
 #rhbz 1051748
 ApplyPatch Bluetooth-allocate-static-minor-for-vhci.patch
 
-#rhbz 1003602
-ApplyPatch ACPI-EC-Clear-stale-EC-events-on-Samsung-systems.patch
+#CVE-2014-2309 rhbz 1074471 1075064
+ApplyPatch ipv6-dont-set-DST_NOCOUNT-for-remotely-added-routes.patch
 
-#rhbz 1073180
-ApplyPatch Revert-USBNET-ax88179_178a-enable-tso-if-usb-host-supports-sg-dma.patch
-ApplyPatch Revert-xhci-1.0-Limit-arbitrarily-aligned-scatter-gather.patch
+#CVE-2014-2523 rhbz 1077343 1077350
+ApplyPatch netfilter-nf_conntrack_dccp-fix-skb_header_pointer-A.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

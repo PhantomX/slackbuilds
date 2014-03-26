@@ -6,7 +6,6 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Upstream dropped toolbar/icons size settings...
 # So revert some, until I figure out a better way to emulate the old behavior.
-#patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk+3-3.10.0-sizedefs.patch
 patch -p1 -R --backup --verbose -i ${SB_PATCHDIR}/gtk+3-3.10.0-gtk-recent-files-limit.patch
 patch -p1 -R --backup --verbose -i ${SB_PATCHDIR}/gtk+3-3.10.0-gtk-toolbar-icon-size.patch
 patch -p1 -R --backup --verbose -i ${SB_PATCHDIR}/gtk+3-3.10.0-gtk-toolbar-style.patch

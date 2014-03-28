@@ -26,7 +26,7 @@ patch -p1 -E --backup -z .gdevcups-debug-uninit --verbose -i ${SB_PATCHDIR}/ghos
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-wrf-snprintf.patch
 # Use upstream patch to fix gs segfault (bug #1036428).
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-gs694154.patch
-# Use upstream patch to fix gs segfault (bug #1039718).
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-gs694809.patch
+# # Fix build when using system zlib.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-sys-zlib.patch
 
 set +e +o pipefail

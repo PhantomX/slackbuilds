@@ -8,7 +8,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.4.1-confd.patch
 
 # build/scripts patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-apctl.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.3-apxs.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.9-apxs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.1-deplibs.patch
 [ "${SB_SYSTEMD}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.3-apctl-systemd.patch
 # Features/functional changes
@@ -23,10 +23,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-sslmultiproxy.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.7-r1537535.patch
 
 # Bug fixes
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.7-sslsninotreq.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-malformed-host.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-mod_unique_id.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.6-r1534321.patch
 
 # Security fixes
 

@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ geoclue.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008-2012 Phantom X, Goiania, Brazil.
+# Copyright 2008-2014 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -49,7 +49,8 @@ if [ "${SNAPBUILD}" = "YES" ] ;then
   VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
   SNAPBRANCH=${SNAPBRANCH:-master}
 else
-  VERSION=${VERSION:-0.12.99}
+  VERSION=${VERSION:-2.1.7}
+  SVER=$(echo ${VERSION} | cut -d . -f1-2)
 fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -70,22 +71,23 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-txz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+grep --quiet '^geoclue:' /etc/group && SB_HGROUP=1
+grep --quiet '^geoclue:' /etc/passwd && SB_HUSER=1
+
+# Set to YES for ModemManager support
+SB_MM=${SB_MM:-YES}
 # Set to YES for NetworkManager support
 SB_NM=${SB_NM:-YES}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-if [ "${SNAPBUILD}" = "YES" ] ;then
-  SRCARCHIVE=${SRCDIR}.tar.xz
-else
-  SRCARCHIVE=${SRCDIR}.tar.gz
-fi
+SRCARCHIVE=${SRCDIR}.tar.xz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://freedesktop.org/~hadess/${SRCARCHIVE}"
+DL_URL="http://www.freedesktop.org/software/geoclue/releases/${SVER}/${SRCARCHIVE}"
 SNAPUPDATE=${NAME}-snapshot.sh
 export snap=${VERSION}
 
@@ -133,16 +135,14 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh
 fi
 
-sed -i -e '/include/s|gio/gsettings.h|gio/gio.h|g' src/main.c
-
-sed -i -e '/\/configure/d' autogen.sh
-
 if [ ! -r configure ]; then
+  sed -i -e '/\/configure/d' autogen.sh
   sh ./autogen.sh || exit $?
 fi
 
-unset SB_NMOPTS
-[ "${SB_NM}" = "YES" ] || SB_NMOPTS='--enable-networkmanager=no'
+unset SB_MMOPTS SB_NMOPTS
+[ "${SB_MM}" = "YES" ] || SB_NMOPTS='--disable-3g-source --disable-modem-gps-source'
+[ "${SB_NM}" = "YES" ] || SB_NMOPTS='--disable-wifi-source'
 
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
@@ -150,25 +150,34 @@ CXXFLAGS="${SLKCFLAGS}" \
   --prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
   --sysconfdir=/etc \
-  --localstatedir=/var/lib \
+  --localstatedir=/var \
   --infodir=/usr/info \
   --mandir=/usr/man \
   --docdir=/usr/doc/${NAME}-${VERSION} \
   --disable-silent-rules \
   --disable-static \
-  ${SB_NMOPTS} \
+  --with-dbus-service-user=geoclue \
+  ${SB_MMOPTS} ${SB_NMOPTS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
 
 make -j${NJOBS} || make || exit 1
 make install DESTDIR=${PKG} || exit 1
 
 rm -f ${PKG}/usr/lib*/lib*.la
-# Install the test gui as it seems the test isn't installed any more
-mkdir ${PKG}/usr/bin
-install -m0755 test/.libs/geoclue-test-gui ${PKG}/usr/bin/ || exit 1
+
+# Remove demo files
+rm -f ${PKG}/usr/share/applications/geoclue-demo-agent.desktop
+rm -f ${PKG}/usr/share/applications/geoclue-where-am-i.desktop
+rm -f ${PKG}/usr/libexec/geoclue-*/demos/where-am-i
+rmdir -p ${PKG}/usr/share/applications ${PKG}/usr/libexec/geoclue-*/demos
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+mv ${PKG}/etc/${NAME}/${NAME}.conf ${PKG}/etc/${NAME}/${NAME}.conf.new || exit 1
+
+# Home directory for the 'geoclue' user
+mkdir -p ${PKG}/var/lib/geoclue
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -203,17 +212,102 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
+cat > ${PKG}/install/doinst.sh <<'EOF'
+function free_user_id {
+  # Find a free user-ID >= 100 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
 # Figure out our root directory
-ROOTDIR=\$(pwd)
+ROOTDIR=$(pwd)
 unset CHROOT
-if test "\${ROOTDIR}" != "/"; then
-  CHROOT="chroot \${ROOTDIR} "
-  ROOTDIR="\${ROOTDIR}/"
+if test "${ROOTDIR}" != "/"; then
+ CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
-if [ -x usr/bin/glib-compile-schemas ] ;then
-  \${CHROOT} /usr/bin/glib-compile-schemas /usr/share/glib-2.0/schemas &> /dev/null
+
+# Set up groups.
+if ! grep --quiet '^geoclue:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    geoclue 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^geoclue:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/lib/geoclue:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "geoclue"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/var/lib/geoclue' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g geoclue \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'User for geoclue' \
+    -u $(free_user_id) \
+    -g geoclue \
+    -s /bin/false \
+    -d '/var/lib/geoclue' \
+    geoclue 2> /dev/null
+fi
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+# Fix permissions
+${CHROOT} /bin/chown -R geoclue.geoclue /var/lib/geoclue 2> /dev/null
+
+if [ -x bin/systemctl ] ; then
+  ${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
 fi
 EOF
 
@@ -234,12 +328,14 @@ fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
-  /bin/chown --recursive root:root .  ;"
+  /bin/chown --recursive root:root .  ;
+  [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown -R geoclue.geoclue ./var/lib/geoclue ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

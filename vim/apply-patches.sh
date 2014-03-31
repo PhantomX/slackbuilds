@@ -30,6 +30,8 @@ if [ "${PATCHLEVEL}" -gt 0 ] ;then
 mkdir -p patches
 cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
 
+cp -f ${SB_PATCHDIR}/7.4.208 patches/
+
 ( SB_PATCHDIR=patches
   for i in $( seq -w ${PATCHLEVEL} ) $( seq 1000 ${OVERPATCHLEVEL} ) ; do
     patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${SVER}.${i}

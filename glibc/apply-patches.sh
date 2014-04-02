@@ -93,7 +93,7 @@ ApplyPatch glibc-rh841787.patch
 ApplyPatch glibc-rh819430.patch
 # Fix nscd to use permission names not constants.
 ApplyPatch glibc-rh1025126.patch
-
+ApplyPatch glibc-rh1070416.patch
 
 ## Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
@@ -109,10 +109,23 @@ ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
 ApplyPatch glibc-2.16-multiarch.patch
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
+### Arch
+ApplyPatch glibc-2.18-xattr-compat-hack.patch
+ApplyPatch glibc-2.19-fix-sign-in-bsloww1-input.patch
+
 ## master
 ApplyPatch 0001-Avoid-comma-operator-warnings.patch
 ApplyPatch 0001-Fix-tst-sscanf-and-tst-swscanf-on-64-bit.patch
 ApplyPatch 0001-BZ-16447-Fix-ldbl-128-expl-implementation.patch
 ApplyPatch 0001-Fix-sign-of-input-to-bsloww1-BZ-16623.patch
+ApplyPatch 0001-Mark-nscd-service-as-forking-in-systemd-service-file.patch
+ApplyPatch 0001-nscd-Improved-support-for-tracking-startup-failure-i.patch
+ApplyPatch 0001-Provide-correct-buffer-length-to-netgroup-queries-in.patch
+ApplyPatch 0001-Account-for-alloca-use-when-collecting-interface-add.patch
+ApplyPatch 0001-Fix-use-of-half-initialized-result-in-getaddrinfo-wh.patch
+ApplyPatch 0001-Make-x86_64-fegetenv-preserve-exception-mask-bug-161.patch
+ApplyPatch 0001-Fix-nscd-lookup-for-innetgr-when-netgroup-has-wildca.patch
+ApplyPatch 0001-Fix-clog10-0-0i-bug-16362.patch
+ApplyPatch 0001-Correct-robust-mutex-PI-futex-kernel-assumptions-bug.patch
 
 set +e +o pipefail

@@ -28,11 +28,8 @@ ApplyPatch() {
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
 # qemu-kvm migration compat (posted upstream)
-ApplyPatch 0001-configure-Add-enable-migration-from-qemu-kvm.patch
 ApplyPatch 0002-acpi_piix4-Drop-minimum_version_id-to-handle-qemu-kv.patch
 ApplyPatch 0003-i8254-Fix-migration-from-qemu-kvm-1.1.patch
 ApplyPatch 0004-pc_piix-Add-compat-handling-for-qemu-kvm-VGA-mem-siz.patch
-# Fix migration w/ qxl from qemu-kvm 1.2 (solution pending upstream)
-ApplyPatch 0005-qxl-Add-rom_size-compat-property-fix-migration-from-.patch
 
 set +e +o pipefail

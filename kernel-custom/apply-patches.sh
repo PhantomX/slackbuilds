@@ -182,7 +182,6 @@ ApplyPatch drm-i915-hush-check-crtc-state.patch
 ApplyOptionalPatch drivers-media-update.patch
 
 # Patches headed upstream
-ApplyPatch fs-proc-devtree-remove_proc_entry.patch
 ApplyPatch disable-i8042-check-on-apple-mac.patch
 
 ApplyPatch lis3-improve-handling-of-null-rate.patch
@@ -198,57 +197,11 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-# Fix 15sec NFS mount delay
-ApplyPatch sunrpc-create-a-new-dummy-pipe-for-gssd-to-hold-open.patch
-ApplyPatch sunrpc-replace-gssd_running-with-more-reliable-check.patch
-ApplyPatch nfs-check-gssd-running-before-krb5i-auth.patch
-#rhbz 1037793
-ApplyPatch rpc_pipe-remove-the-clntXX-dir-if-creating-the-pipe-fails.patch
-ApplyPatch sunrpc-add-an-info-file-for-the-dummy-gssd-pipe.patch
-ApplyPatch rpc_pipe-fix-cleanup-of-dummy-gssd-directory-when-notification-fails.patch
-
-#rhbz 924916
-ApplyPatch KVM-MMU-handle-invalid-root_hpa-at-__direct_map.patch
-
-#rhbz 1047892
-ApplyPatch KVM-VMX-fix-use-after-free-of-vmx-loaded_vmcs.patch
-
-#rhbz 950630
-ApplyPatch xhci-fix-resume-issues-on-renesas-chips-in-samsung-laptops.patch
-
-#rhbz 1045755
-ApplyPatch cgroup-fixes.patch
-
-#rhbz 1064430 1056711
-ApplyPatch ipv6-introduce-IFA_F_NOPREFIXROUTE-and-IFA_F_MANAGETEMPADDR-flags.patch
-ApplyPatch ipv6-addrconf-revert-if_inet6ifa_flag-format.patch
-
-#CVE-2014-0069 rhbz 1064253 1062584
-ApplyPatch cifs-sanity-check-length-of-data-to-send-before-sending.patch
-
-#rhbz 1068862
-ApplyPatch cifs-mask-off-top-byte-in-get_rfc1002_length.patch
-
-#rhbz 994438
-ApplyPatch e100-Fix-disabling-already-disabled-device-warning.patch
-
-#rhbz 1065087
-ApplyPatch tty-Fix-low_latency-BUG.patch
-
-#CVE-2014-0100 rhbz 1072026 1070618
-ApplyPatch net-fix-for-a-race-condition-in-the-inet-frag-code.patch
-
-#rhbz 1027465
-ApplyPatch HID-Bluetooth-hidp-make-sure-input-buffers-are-big-e.patch
-
 #rhbz 1051748
 ApplyPatch Bluetooth-allocate-static-minor-for-vhci.patch
 
-#CVE-2014-2309 rhbz 1074471 1075064
-ApplyPatch ipv6-dont-set-DST_NOCOUNT-for-remotely-added-routes.patch
-
-#CVE-2014-2523 rhbz 1077343 1077350
-ApplyPatch netfilter-nf_conntrack_dccp-fix-skb_header_pointer-A.patch
+#CVE-2014-2580 rhbz 1080084 1080086
+ApplyPatch net-xen-netback-disable-rogue-vif-in-kthread-context.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

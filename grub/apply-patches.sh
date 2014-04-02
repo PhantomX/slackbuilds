@@ -7,7 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 
 tar xvf ${CWD}/${PSRCARCHIVE}
 
-cp -f ${SB_PATCHDIR}/linuxefi.patch debian/patches/
+#cp -f ${SB_PATCHDIR}/linuxefi.patch debian/patches/
 
 ### Debian
 for patch in \
@@ -15,12 +15,12 @@ for patch in \
   disable_floppies.patch \
   grub.cfg_400.patch \
   gfxpayload_keep_default.patch \
-  mkconfig_skip_dmcrypt.patch \
   mkrescue_efi_modules.patch \
   mkconfig_loopback.patch \
   restore_mkdevicemap.patch \
   gettext_quiet.patch \
   mkconfig_mid_upgrade.patch \
+  install_efi_fallback.patch \
   mkconfig_nonexistent_loopback.patch \
   no_insmod_on_sb.patch \
   default_grub_d.patch \
@@ -32,7 +32,9 @@ for patch in \
   linuxefi_require_shim.patch \
   linuxefi_non_sb_fallback.patch \
   mkconfig_signed_kernel.patch \
+  install_signed.patch \
   sleep_shift.patch \
+  probe-delimiter.patch \
   ; do
   patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done

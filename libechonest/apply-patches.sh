@@ -4,6 +4,6 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-### Fedora
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pcre-8.21-multilib.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/libechonest-2.2.0-always_use_QJSON_LIBRARIES.patch
+
 set +e +o pipefail

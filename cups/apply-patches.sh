@@ -65,6 +65,9 @@ ApplyPatch cups-final-content-type.patch
 [ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-journal.patch
 ApplyPatch cups-synconclose.patch
 ApplyPatch cups-avahi-browse.patch
+ApplyPatch cups-str4380.patch
+ApplyPatch cups-str4366.patch
+ApplyPatch cups-str4332.patch
 
 ## SECURITY PATCHES:
 

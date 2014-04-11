@@ -56,4 +56,6 @@ do
   gzip -n ${ppd_file#*/}
 done
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-scan-tmp.patch
+
 set +e +o pipefail

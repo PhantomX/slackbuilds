@@ -16,4 +16,7 @@ if [ "${SB_COMPAT}" = "YES" ] ;then
 fi
 #sed -i.scanf-m -e 's/%m/%a/' src/addr2line.c tests/line2addr.c || exit 1
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elfutils-0.158-mod-e_type.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elfutils-0.158-CVE-2014-0172.patch
+
 set +e +o pipefail

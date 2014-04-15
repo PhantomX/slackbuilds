@@ -200,9 +200,6 @@ ApplyPatch criu-no-expert.patch
 #rhbz 1051748
 ApplyPatch Bluetooth-allocate-static-minor-for-vhci.patch
 
-#CVE-2014-2580 rhbz 1080084 1080086
-ApplyPatch net-xen-netback-disable-rogue-vif-in-kthread-context.patch
-
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

@@ -59,15 +59,10 @@ ApplyPatch cups-use-ipp1.1.patch
 ApplyPatch cups-no-gcry.patch
 ApplyPatch cups-avahi-no-threaded.patch
 ApplyPatch cups-ipp-multifile.patch
-ApplyPatch cups-full-relro.patch
 ApplyPatch cups-web-devices-timeout.patch
 ApplyPatch cups-final-content-type.patch
 [ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-journal.patch
 ApplyPatch cups-synconclose.patch
-ApplyPatch cups-avahi-browse.patch
-ApplyPatch cups-str4380.patch
-ApplyPatch cups-str4366.patch
-ApplyPatch cups-str4332.patch
 
 ## SECURITY PATCHES:
 

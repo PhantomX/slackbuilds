@@ -16,6 +16,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-aliasing.patch
 
 # Bug fixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-default-paths.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1g_CVE-2010-5298.diff
 
 # Functionality changes
 zcat ${SB_PATCHDIR}/openssl-0.9.6-x509.patch.gz | patch -p1 -E --backup --verbose

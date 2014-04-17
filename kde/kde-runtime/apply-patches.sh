@@ -33,9 +33,4 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.6.0-canberra
 
 ## upstream patches
 
-# backport support for libssh 0.6 and ECDSA keys (kde#327024) from master/4.13
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.12.0-libssh-0.6-0001-kio_sftp-Fix-error-values.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.12.0-libssh-0.6-0002-kio_sftp-Fix-printing-dest-in-the-log.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.12.0-libssh-0.6-0003-kio_sftp-Support-ECDSA-keys.patch
-
 set +e +o pipefail

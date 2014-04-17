@@ -50,7 +50,7 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-kcm_ssl.patch
 
 # disable dot to reduce apidoc size
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-dot.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.12.90-dot.patch
 
 # set QT_NO_GLIB in klauncher_main.cpp as a possible fix/workaround for #983110
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-klauncher-no-glib.patch
@@ -61,6 +61,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r0ab740a30bb9adea0a9e4c2df8a56ab72b7f8bcb.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc6f4e24eba420f0b956e4bcbb7def35481fb60f9.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rfe8a0f456da5d3827e41c7754362844ebd11af84.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578

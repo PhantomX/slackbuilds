@@ -5,7 +5,6 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ## Most patches are from Fedora
-patch -p1 -E --backup -z .startkde-slk --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.2-redhat_startkde.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.90-plasma_konsole.patch
 # Force kdm and kdm_greet to be hardened
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.4-kdm-harden.patch
@@ -69,14 +68,32 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
 fi
 
+# use backlight actual_brightness interface
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.0-backlight_actual_brightness.patch
+
+# https://bugs.kde.org/show_bug.cgi?id=330773#c5
+# bbcukmet: update to BBC's new json-based search and modified xml
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.7-weather-fix-bbcukmet.patch
+# https://bugs.kde.org/show_bug.cgi?id=330773#c6
+# bbcukmet: handle cases where min. or max. temperatures are not reported
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.7-weather-fix-bbcukmet-temp.patch
+# https://bugs.kde.org/show_bug.cgi?id=330773#c16
+# bbcukmet: fix typo in the condition->icon matching ("clar sky" -> "clear sky")
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.7-weather-fix-bbcukmet-clear-sky.patch
+# https://bugs.kde.org/show_bug.cgi?id=332392
+# bbcukmet: fix a crash (#1079296/kde#332392) and improve error handling
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.7-weather-fix-bbcukmet-crash-kde#332392.patch
+
 ### ROSA
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.4-fontconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-locale.patch
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r67014bc3961f78aeb3a16362c5a1b778fdb00c8e.diff
-
-## plasma active patches
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-fix-resumption-from-console-mode-when-monotonic-cloc.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-kstartupinfo-timestamp-from-data-is-obsolete-since-2.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0004-Also-export-the-org.freedesktop.ScreenSaver-interfac.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0008-Add-DesktopNames-key-to-kdm-sessions-files.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0009-kdm-read-DesktopNames-from-session-file-and-export-X.patch
 
 ## trunk patches
 

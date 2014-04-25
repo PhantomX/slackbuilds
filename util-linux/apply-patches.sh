@@ -14,9 +14,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/2.23-login-lastlog-create.patc
 
 ### Upstream Patches
 ###
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/move_is_mountinfo.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-libmount-FS-id-and-parent-ID-could-be-zero.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-switch_root-verify-initramfs-by-f_type-not-devno.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=NO

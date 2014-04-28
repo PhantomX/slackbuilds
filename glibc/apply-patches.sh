@@ -127,5 +127,6 @@ ApplyPatch 0001-Make-x86_64-fegetenv-preserve-exception-mask-bug-161.patch
 ApplyPatch 0001-Fix-nscd-lookup-for-innetgr-when-netgroup-has-wildca.patch
 ApplyPatch 0001-Fix-clog10-0-0i-bug-16362.patch
 ApplyPatch 0001-Correct-robust-mutex-PI-futex-kernel-assumptions-bug.patch
+ApplyPatch 0001-BZ-16824-Fix-failing-y1-due-to-too-large-ulps-in-dow.patch
 
 set +e +o pipefail

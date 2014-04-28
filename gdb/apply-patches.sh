@@ -379,6 +379,9 @@ ApplyPatch gdb-gnat-dwarf-crash-1of3.patch
 ApplyPatch gdb-gnat-dwarf-crash-2of3.patch
 ApplyPatch gdb-gnat-dwarf-crash-3of3.patch
 
+# Fix build failures for GCC 4.9 (Nick Clifton).
+ApplyPatch gcc-4.9-compat.patch
+
 ### END Fedora
 
 set +e +o pipefail

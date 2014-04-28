@@ -110,8 +110,6 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-21900.patch
 ApplyPatch qt-everywhere-opensource-src-4.8.5-tds_no_strict_aliasing.patch
 # don't spam if libicu is not present at runtime
 ApplyPatch qt-everywhere-opensource-src-4.8.3-icu_no_debug.patch
-# gcc doesn't support flag -fuse-ld=gold
-ApplyPatch qt-everywhere-opensource-src-4.8.0-ld-gold.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=810500
 ApplyPatch qt-everywhere-opensource-src-4.8.2--assistant-crash.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=694385
@@ -124,37 +122,25 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-4862.patch
 ApplyPatch qt-4.8-poll.patch
 
 # systemtrayicon plugin support (for appindicators)
-ApplyPatch kubuntu_14_systemtrayicon.diff
+ApplyPatch qt-everywhere-opensource-src-4.8.6-systemtrayicon.patch
 
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore
 # UPSTREAM ME
 ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
-# http://codereview.qt-project.org/#change,22006
-ApplyPatch qt-everywhere-opensource-src-4.8.1-qtgahandle.patch
 # backported from Qt5 (essentially)
 # http://bugzilla.redhat.com/702493
 # https://bugreports.qt-project.org/browse/QTBUG-5545
 ApplyPatch qt-everywhere-opensource-src-4.8.5-qgtkstyle_disable_gtk_theme_check.patch
-# revert fix for QTBUG-15319, fixes regression QTBUG-32908
-# http://bugzilla.redhat.com/968367
-# https://bugreports.qt-project.org/browse/QTBUG-32908
-ApplyPatch QTBUG-15319-fix-shortcuts-with-secondary-Xkb-layout.patch -R
 # workaround for MOC issues with Boost headers (#756395,QTBUG-22829)
 ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-22829.patch
 
 ## upstream git
-# related prereq patch to 0162 below
-ApplyPatch 0147-Disallow-deep-or-widely-nested-entity-references.patch
-# CVE-2013-4549
-# http://lists.qt-project.org/pipermail/announce/2013-December/000036.html
-# https://codereview.qt-project.org/#change,71010
-ApplyPatch 0162-Fully-expand-entities-to-ensure-deep-or-widely-neste.patch
 # fix QTBUG-35459 (too low entityCharacterLimit=1024 for CVE-2013-4549)
 ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-35459.patch
-# fix QTBUG-35460 (error message for CVE-2013-4549 is misspelled)
-ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-35460.patch
 
 # security patches
+# https://bugreports.qt-project.org/browse/QTBUG-38367
+ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-38367.patch
 
 set +e +o pipefail

@@ -13,5 +13,9 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.1-relro-on-
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.1-export-demangle.h.patch
 # Disable checks that config.h has been included before system headers.  BZ #845084
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.4-no-config-h-check.patch
+# Fix decoding of abstract instance names using DW_FORM_ref_addr.
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-DW_FORM_ref_addr.patch
+# Fix compiling using gcc 4.9
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-set-section-macros.patch
 
 set +e +o pipefail

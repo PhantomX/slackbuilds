@@ -4,18 +4,12 @@
 #
 # runvdr [VDROPTION]...
 
-shopt -s extglob nocasematch nullglob
+shopt -s nocasematch nullglob
 
 VDR=/usr/sbin/vdr
 PLUGINDIR=/usr/lib/vdr
 PLUGINVER=VDR_PLUGIN_VERSION
 PLUGINSUF=${PLUGINVER:+.$PLUGINVER}
-
-log()
-{
-    type -P logger &>/dev/null && \
-        logger -s -p daemon.info -t ${0##*/} "$1" 2>&1 || echo "INFO: $1"
-}
 
 plugconf()
 {
@@ -52,74 +46,12 @@ build_cmdline()
     done
 }
 
-reload_dvb()
-{
-    local modules=$( /sbin/lsmod | \
-        awk '/^dvb_core/ { gsub(","," ",$4) ; print $4 }' )
-    if [[ $modules ]] ; then
-        log "Reloading DVB modules"
-        /sbin/modprobe -r $modules dvb_core
-        for module in $modules ; do
-            /sbin/modprobe $module
-        done
-    fi
-}
+VDR_OPTIONS=()
+[[ -f /etc/default/vdr ]] && . /etc/default/vdr
+[[ $DAEMON_COREFILE_LIMIT ]] && \
+    ulimit -S -c $DAEMON_COREFILE_LIMIT &>/dev/null && \
+    VDR_OPTIONS+=( --userdump ) && cd ${TMPDIR:-/tmp}
 
-set_rtcwake()
-{
-    # Check timestamp set by shutdown script.
-    local nexttimer=$( cat /var/run/vdr/next-timer 2>/dev/null )
-    rm -f /var/run/vdr/next-timer
+build_cmdline
 
-    if [[ $nexttimer != +([0-9]) ]] ; then
-        # Next timer timestamp not set by shutdown script or bogus,
-        # try to get it via SVDRP.
-        nexttimer=$( svdrpsend NEXT abs 2>/dev/null | \
-            sed -rne 's/^250[[:space:]]+[0-9]+[[:space:]]+([0-9]+).*/\1/p' )
-    fi
-
-    if [[ $nexttimer && $nexttimer -gt $( date +%s ) ]] ; then
-        [[ -f /etc/default/vdr ]] && . /etc/default/vdr
-        local when=$(( $nexttimer - ${WAKEUP_BEFORE_RECORDING:-10} * 60 ))
-        local hrwhen=$( date -d "1970-01-01 $when sec UTC" )
-        log "Setting wakeup time for next recording: $hrwhen"
-        /usr/sbin/rtcwake -m no -t $when >/dev/null
-    fi
-}
-
-if [[ $1 == --set-wakeup ]] ; then
-    # Just set RTC wakeup for next timer event.
-    set_rtcwake
-    exit $?
-fi
-
-rc=
-while true ; do
-
-    VDR_OPTIONS=()
-    if [[ $VDR_INIT ]] ; then
-        [[ -f /etc/default/vdr ]] && . /etc/default/vdr
-        [[ $DAEMON_COREFILE_LIMIT ]] && \
-            ulimit -S -c $DAEMON_COREFILE_LIMIT &>/dev/null && \
-            VDR_OPTIONS+=( --userdump ) && cd ${TMPDIR:-/tmp}
-        build_cmdline
-    fi
-
-    $VDR "$@" "${VDR_OPTIONS[@]}"
-    rc=$?
-
-    # 137: "kill -KILL" eg in killproc(), others: "man vdr"
-    case $rc in
-        0|2|137)
-            log "VDR exited with status $rc, exiting"
-            break
-            ;;
-        *)
-            log "VDR exited with status $rc, attempting restart"
-            case $RELOAD_DVB in yes|true|1) reload_dvb ;; esac
-            ;;
-    esac
-
-done
-
-exit $rc
+exec $VDR "$@" "${VDR_OPTIONS[@]}"

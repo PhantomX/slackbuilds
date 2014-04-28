@@ -43,7 +43,7 @@ pushd "${tmp}"
       fi
     fi
     GITREV="$(git describe --always 2> /dev/null)"
-    sed -i -e "/debian\/changelog/s|$|-git-${GITREV}|g" support/version
+    sed -i -e "/VER=.*debian\/changelog/s|$|-git-${GITREV}|g" support/version
     find . -type d -name .git -print0 | xargs -0r rm -rf
     rm -f .gitignore config.git-hash
   popd

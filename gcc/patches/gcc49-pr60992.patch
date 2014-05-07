@@ -1,0 +1,124 @@
+From 2cf836c725e30494ac6846111d70fb93df5f5a91 Mon Sep 17 00:00:00 2001
+From: jason <jason@138bc75d-0d04-0410-961f-82ee72b054a4>
+Date: Fri, 2 May 2014 19:47:56 +0000
+Subject: [PATCH] 	PR c++/60992
+ 	* lambda.c (lambda_capture_field_type): Wrap anything dependent
+ 	other than 'this' or a VLA.
+ 	(is_this): New.
+ 	* pt.c (tsubst_copy) [VAR_DECL]: Also build a new VAR_DECL if
+ 	the operand was static or constant.
+
+git-svn-id: svn+ssh://gcc.gnu.org/svn/gcc/branches/gcc-4_9-branch@210018 138bc75d-0d04-0410-961f-82ee72b054a4
+---
+ gcc/cp/lambda.c                                   |   12 +++++-
+ gcc/cp/pt.c                                       |   18 ++++++----
+ gcc/testsuite/g++.dg/cpp0x/lambda/lambda-const3.C |   38 +++++++++++++++++++++
+ 4 files changed, 68 insertions(+), 9 deletions(-)
+ create mode 100644 gcc/testsuite/g++.dg/cpp0x/lambda/lambda-const3.C
+
+diff --git a/gcc/cp/lambda.c b/gcc/cp/lambda.c
+index 0b8b46a..3280644 100644
+--- a/gcc/cp/lambda.c
++++ b/gcc/cp/lambda.c
+@@ -201,6 +201,13 @@ lambda_function (tree lambda)
+   return lambda;
+ }
+ 
++static inline bool
++is_this (tree t)
++{
++  return (TREE_CODE (t) == PARM_DECL
++	  && DECL_NAME (t) == this_identifier);
++}
++
+ /* Returns the type to use for the FIELD_DECL corresponding to the
+    capture of EXPR.
+    The caller should add REFERENCE_TYPE for capture by reference.  */
+@@ -216,8 +223,9 @@ lambda_capture_field_type (tree expr, bool explicit_init_p)
+     }
+   else
+     type = non_reference (unlowered_expr_type (expr));
+-  if (!type || WILDCARD_TYPE_P (type) || type_uses_auto (type)
+-      || DECL_PACK_P (expr))
++  if (type_dependent_expression_p (expr)
++      && !is_this (tree_strip_nop_conversions (expr))
++      && !array_of_runtime_bound_p (type))
+     {
+       type = cxx_make_type (DECLTYPE_TYPE);
+       DECLTYPE_TYPE_EXPR (type) = expr;
+diff --git a/gcc/cp/pt.c b/gcc/cp/pt.c
+index 318c325..18389e0 100644
+--- a/gcc/cp/pt.c
++++ b/gcc/cp/pt.c
+@@ -12638,13 +12638,17 @@ tsubst_copy (tree t, tree args, tsubst_flags_t complain, tree in_decl)
+ 		}
+ 	      else
+ 		{
+-		  /* This can happen for a variable used in a late-specified
+-		     return type of a local lambda.  Just make a dummy decl
+-		     since it's only used for its type.  */
+-		  if (cp_unevaluated_operand)
+-		    return tsubst_decl (t, args, complain);
+-		  gcc_assert (errorcount || sorrycount);
+-		  return error_mark_node;
++		  /* This can happen for a variable used in a
++		     late-specified return type of a local lambda, or for a
++		     local static or constant.  Building a new VAR_DECL
++		     should be OK in all those cases.  */
++		  r = tsubst_decl (t, args, complain);
++		  if (decl_constant_var_p (r))
++		    /* A use of a local constant must decay to its value.  */
++		    return integral_constant_value (r);
++		  gcc_assert (cp_unevaluated_operand || TREE_STATIC (r)
++			      || errorcount || sorrycount);
++		  return r;
+ 		}
+ 	    }
+ 	}
+diff --git a/gcc/testsuite/g++.dg/cpp0x/lambda/lambda-const3.C b/gcc/testsuite/g++.dg/cpp0x/lambda/lambda-const3.C
+new file mode 100644
+index 0000000..a1ffadd
+--- /dev/null
++++ b/gcc/testsuite/g++.dg/cpp0x/lambda/lambda-const3.C
+@@ -0,0 +1,38 @@
++// PR c++/60992
++// { dg-do compile { target c++11 } }
++
++struct ScopeGuardGenerator { };
++
++struct FF
++{
++  template < class F, class ... Ts >
++  void
++  operator () (F & ...)
++  {
++    const int n = sizeof ... (Ts) + 1;
++    void *mutexes[n];
++    auto _on_scope_exit_var_0 =
++      ScopeGuardGenerator () + [&mutexes] { };
++  }
++};
++
++template < class F >
++int operator+ (ScopeGuardGenerator, F) { return 1; }
++
++struct D
++{
++  template < class T0, class T1, class T2, class ... T >
++  void
++  operator () (T0, T1, const T2 & t2, T & ... t)
++  {
++    base (t2, t ...);
++  }
++  FF base;
++};
++
++D run_with_locks;
++
++void Fn ()
++{
++  run_with_locks ([] { }, 0, 0);
++}
+-- 
+1.7.1
+

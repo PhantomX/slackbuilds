@@ -25,6 +25,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.1-kdm_plymouth081
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.4.92-xsession_errors_O_APPEND.patch
 # support the widgetStyle4 hack in the Qt KDE platform plugin
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-workspace-4.3.98-platformplugin-widgetstyle4.patch
+# revert patch adding broken browser launcher
+# https://projects.kde.org/projects/kde/kde-workspace/repository/revisions/2bbbbdd8fe5a38ae27bab44c9515b2ba78f75277
+# https://bugzilla.redhat.com/show_bug.cgi?id=747982
+# https://bugs.kde.org/show_bug.cgi?id=284628
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-bz\#747982-launchers.patch 
 # HALsectomy
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.7.80-no_HAL.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.90-no_HAL2.patch
@@ -89,11 +94,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.4-fontconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-locale.patch
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-fix-resumption-from-console-mode-when-monotonic-cloc.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-kstartupinfo-timestamp-from-data-is-obsolete-since-2.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0004-Also-export-the-org.freedesktop.ScreenSaver-interfac.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0008-Add-DesktopNames-key-to-kdm-sessions-files.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0009-kdm-read-DesktopNames-from-session-file-and-export-X.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Trigger-the-Present-Windows-effect-when-control-clic.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-Fix-crash-after-dismissing-the-context-menu-of-a-jus.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0004-connect-to-the-right-signal.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0009-Do-not-popup-during-initialization.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0010-Fix-crash-when-DesktopNames-isn-t-set.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r246badf2c8edd93f6352797b9ddde1a626f4167a.diff
 
 ## trunk patches
 

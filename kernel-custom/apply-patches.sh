@@ -226,6 +226,15 @@ ApplyPatch ACPICA-Tables-Fix-bad-pointer-issue-in-acpi_tb_parse_root_table.patch
 #rhbz 696821
 ApplyPatch fanotify-fix-EOVERFLOW-on-64-bit.patch
 
+#rhbz 1093931
+ApplyPatch net-Start-with-correct-mac_len-in-skb_network_protoc.patch
+
+#rhbz 1082586
+ApplyPatch locks-allow-__break_lease-to-sleep-even-when-break_t.patch
+
+#CVE-2014-0196 rhbz 1094232 1094240
+ApplyPatch n_tty-Fix-n_tty_write-crash-when-echoing-in-raw-mode.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

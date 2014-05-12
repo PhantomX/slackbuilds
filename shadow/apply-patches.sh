@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ## Slackware
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.glibc217-crypt.diff
+
 ## Fedora
 zcat ${SB_PATCHDIR}/${NAME}-shadowconfig-man.patch.gz | patch -p1 --verbose --backup
 if [ "${SB_RH}" = "YES" ]; then
@@ -16,7 +16,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.5.1-goodname.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.5.1-info-parent-dir.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.5-2ndskip.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.5.1-backup-mode.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.5.1-merge-group.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.5.1-logmsg.patch
 
 set +e +o pipefail

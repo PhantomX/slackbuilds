@@ -126,6 +126,7 @@ done
     ApplyPatch ${file}
   done
 )
+ApplyPatch 0001-block-Switch-from-BFQ-v7r3-to-BFQ-v7r4.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -200,16 +201,10 @@ ApplyPatch criu-no-expert.patch
 #rhbz 1051748
 ApplyPatch Bluetooth-allocate-static-minor-for-vhci.patch
 
-#CVE-2014-0155 rhbz 1081589 1085016
-ApplyPatch KVM-ioapic-fix-assignment-of-ioapic-rtc_status-pending_eoi.patch
-
 #rhbz 1048314
 ApplyPatch 0001-HID-rmi-introduce-RMI-driver-for-Synaptics-touchpads.patch
 #rhbz 1089583
 ApplyPatch 0001-HID-rmi-do-not-handle-touchscreens-through-hid-rmi.patch
-
-#rhbz 1074235
-ApplyPatch lib-percpu_counter.c-fix-bad-percpu-counter-state-du.patch
 
 #CVE-2014-2851 rhbz 1086730 1087420
 ApplyPatch net-ipv4-current-group_info-should-be-put-after-using.patch
@@ -229,11 +224,19 @@ ApplyPatch fanotify-fix-EOVERFLOW-on-64-bit.patch
 #rhbz 1093931
 ApplyPatch net-Start-with-correct-mac_len-in-skb_network_protoc.patch
 
-#rhbz 1082586
-ApplyPatch locks-allow-__break_lease-to-sleep-even-when-break_t.patch
+#CVE-2014-0181 rhbz 1094270 1094265
+ApplyPatch net-Fix-ns_capable-check-in-sock_diag_put_filterinfo.patch
+ApplyPatch 1-5-netlink-Rename-netlink_capable-netlink_allowed.patch
+ApplyPatch 2-5-net-Move-the-permission-check-in-sock_diag_put_filterinfo-to-packet_diag_dump.patch
+ApplyPatch 3-5-net-Add-variants-of-capable-for-use-on-on-sockets.patch
+ApplyPatch 4-5-net-Add-variants-of-capable-for-use-on-netlink-messages.patch
+ApplyPatch 5-5-net-Use-netlink_ns_capable-to-verify-the-permisions-of-netlink-messages.patch
 
-#CVE-2014-0196 rhbz 1094232 1094240
-ApplyPatch n_tty-Fix-n_tty_write-crash-when-echoing-in-raw-mode.patch
+#rhbz 1082266
+ApplyPatch jme-fix-dma-unmap-error.patch
+
+# CVE-2014-3144 CVE-2014-3145 rhbz 1096775, 1096784
+ApplyPatch filter-prevent-nla-extensions-to-peek-beyond-the-end.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

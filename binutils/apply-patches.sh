@@ -17,5 +17,11 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.4-no-config
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-DW_FORM_ref_addr.patch
 # Fix compiling using gcc 4.9
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-set-section-macros.patch
+# Fix detections of uncompressed .debug_str sections that look like they have been compressed.
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-fake-zlib-sections.patch
+# Fix detections little endian PPC shared libraries
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-ldforcele.patch
+# fix autoconf hang with -static -fPIE -pie - commits d1ec1e40 and 818d220a
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-static-pie-hang.patch
 
 set +e +o pipefail

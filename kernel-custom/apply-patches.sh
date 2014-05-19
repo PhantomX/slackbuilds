@@ -126,7 +126,6 @@ done
     ApplyPatch ${file}
   done
 )
-ApplyPatch 0001-block-Switch-from-BFQ-v7r3-to-BFQ-v7r4.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA

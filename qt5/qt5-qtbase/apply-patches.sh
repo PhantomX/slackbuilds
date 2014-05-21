@@ -36,23 +36,13 @@ ApplyPatch() {
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
-# help build on some lowmem archs, e.g. drop hard-coded -O3 optimization on some files
-ApplyPatch qtbase-opensource-src-5.0.2-lowmem.patch
-
 # support multilib optflags
 ApplyPatch qtbase-multilib_optflags.patch -z .multilib-optflags
 rm -fv mkspecs/linux-g++*/qmake.conf.multilib-optflags
 
-# qatomic on ppc/ppc64, http://bugzilla.redhat.com/1005482
-ApplyPatch qtbase-qatomic-ppc.patch
-
 # upstreamable patches
 # fix QTBUG-35459 (too low entityCharacterLimit=1024 for CVE-2013-4549)
 ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-35459.patch
-
-# add a QT_XCB_FORCE_SOFTWARE_OPENGL environment variable to allow forcing
-# LIBGL_ALWAYS_SOFTWARE (llvmpipe) for Qt 5 apps only
-ApplyPatch qtbase-opensource-src-5.2.0-allow-forcing-llvmpipe.patch
 
 # unconditionally enable freetype lcdfilter support
 ApplyPatch qtbase-opensource-src-5.2.0-enable_ft_lcdfilter.patch

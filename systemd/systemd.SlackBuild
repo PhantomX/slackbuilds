@@ -44,7 +44,7 @@ fi
 NAME=systemd
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-212}
+VERSION=${VERSION:-213}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 SLKDIST=${SLKDIST:-Slackware}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -169,7 +169,7 @@ unset SB_PAMOPTS SB_QROPTS
 [ "${SB_PAM}" = "YES" ] || SB_PAMOPTS='--disable-pam'
 [ "${SB_QR}" = "YES" ] || SB_QROPTS='--disable-qrencode'
 
-CFLAGS="${SLKCFLAGS}" \
+CFLAGS="${SLKCFLAGS} -fno-lto" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
@@ -187,7 +187,6 @@ CXXFLAGS="${SLKCFLAGS}" \
   --enable-split-usr \
   ${SB_PAMOPTS} \
   --disable-audit \
-  --disable-tcpwrap \
   --disable-selinux \
   --disable-kdbus \
   --with-sysvinit-path="" \
@@ -341,7 +340,7 @@ ln -sf ../systemd-networkd.service ${PKG}/lib/systemd/system/multi-user.target.w
 
 echo 'd /run/console 755 root root' > ${PKG}/usr/lib/tmpfiles.d/console.conf || exit 1
 
-for file in bootchart journald logind system user ;do
+for file in bootchart journald logind resolved system timesyncd user ;do
   mv ${PKG}/etc/systemd/${file}.conf ${PKG}/etc/systemd/${file}.conf.new || exit 1
 done
 
@@ -487,6 +486,12 @@ if ! grep --quiet '^systemd-journal-gateway:' etc/group ;then
     systemd-journal-gateway 2> /dev/null
 fi
 
+if ! grep --quiet '^systemd-timesync:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    systemd-timesync 2> /dev/null
+fi
+
 # Set up user: add it if it doesn't exist, update it if it already does.
 if OLD_ENTRY=$(grep --max-count=1 '^systemd-journal-gateway:' etc/passwd) \
   || OLD_ENTRY=$(grep --max-count=1 \
@@ -517,6 +522,37 @@ else
     -s /bin/false \
     -d '/var/log/journal' \
     systemd-journal-gateway 2> /dev/null
+fi
+
+if OLD_ENTRY=$(grep --max-count=1 '^systemd-timesync:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/lib/systemd:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "systemd-timesync"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/var/lib/systemd' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g systemd-timesync \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'Systemd Timesync' \
+    -u $(free_user_id) \
+    -g systemd-timesync \
+    -s /bin/false \
+    -d '/var/lib/systemd' \
+    systemd-timesync 2> /dev/null
 fi
 
 setcaps () {
@@ -573,6 +609,7 @@ ${CHROOT} /bin/systemctl --system daemon-reload  >/dev/null 2>&1 || :
 ${CHROOT} /bin/systemctl start systemd-udev.service >/dev/null 2>&1 || :
 ${CHROOT} /sbin/udevadm hwdb --update >/dev/null 2>&1 || :
 ${CHROOT} /bin/journalctl --update-catalog >/dev/null 2>&1 || :
+${CHROOT} /bin/systemd-tmpfiles --create >/dev/null 2>&1 || :
 
 if [ -f etc/nsswitch.conf ] ; then
   ${CHROOT} sed -i.bak -e '

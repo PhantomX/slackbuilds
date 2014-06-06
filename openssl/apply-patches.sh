@@ -16,14 +16,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-aliasing.patch
 
 # Bug fixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-default-paths.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1g_CVE-2010-5298.diff
 
 # Functionality changes
 zcat ${SB_PATCHDIR}/openssl-0.9.6-x509.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/openssl-0.9.8j-version-add-engines.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0e-doc-noeof.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-beta2-ssl-op-all.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-ipv6-apps.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1h-ipv6-apps.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-0.9.8j-env-nozlib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-beta2-dtls1-abi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-version.patch
@@ -34,7 +32,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-dh-1024.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-weak-ciphers.patch
 # Backported fixes including security fixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-beta2-padlock64.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-manfix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1h-manfix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-trusted-first.patch
 
 # Use .so.${SSLSOVER}, not .so.${VERSION}:

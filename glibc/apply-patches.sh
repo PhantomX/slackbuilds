@@ -110,7 +110,7 @@ ApplyPatch glibc-2.16-multiarch.patch
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 ### Arch
-ApplyPatch glibc-2.18-xattr-compat-hack.patch
+ApplyPatch glibc-2.19-xattr_header.patch
 ApplyPatch glibc-2.19-fix-sign-in-bsloww1-input.patch
 
 ## master
@@ -128,5 +128,6 @@ ApplyPatch 0001-Fix-nscd-lookup-for-innetgr-when-netgroup-has-wildca.patch
 ApplyPatch 0001-Fix-clog10-0-0i-bug-16362.patch
 ApplyPatch 0001-Correct-robust-mutex-PI-futex-kernel-assumptions-bug.patch
 ApplyPatch 0001-BZ-16824-Fix-failing-y1-due-to-too-large-ulps-in-dow.patch
+ApplyPatch 0001-Fix-invalid-file-descriptor-reuse-while-sending-DNS-.patch
 
 set +e +o pipefail

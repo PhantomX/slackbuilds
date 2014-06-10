@@ -197,32 +197,12 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 1051748
-ApplyPatch Bluetooth-allocate-static-minor-for-vhci.patch
-
 #rhbz 1048314
 ApplyPatch 0001-HID-rmi-introduce-RMI-driver-for-Synaptics-touchpads.patch
 #rhbz 1089583
 ApplyPatch 0001-HID-rmi-do-not-handle-touchscreens-through-hid-rmi.patch
-
-#rhbz 1074710
-ApplyPatch mm-page_alloc.c-change-mm-debug-routines-back-to-EXP.patch
-
-#rhbz 1090746
-ApplyPatch ACPICA-Tables-Fix-bad-pointer-issue-in-acpi_tb_parse_root_table.patch
-
-#rhbz 696821
-ApplyPatch fanotify-fix-EOVERFLOW-on-64-bit.patch
-
-#CVE-2014-0181 rhbz 1094270 1094265
-ApplyPatch 1-5-netlink-Rename-netlink_capable-netlink_allowed.patch
-ApplyPatch 2-5-net-Move-the-permission-check-in-sock_diag_put_filterinfo-to-packet_diag_dump.patch
-ApplyPatch 3-5-net-Add-variants-of-capable-for-use-on-on-sockets.patch
-ApplyPatch 4-5-net-Add-variants-of-capable-for-use-on-netlink-messages.patch
-ApplyPatch 5-5-net-Use-netlink_ns_capable-to-verify-the-permisions-of-netlink-messages.patch
-
-#rhbz 1082266
-ApplyPatch jme-fix-dma-unmap-error.patch
+#rhbz 1090161
+ApplyPatch HID-rmi-do-not-fetch-more-than-16-bytes-in-a-query.patch
 
 # CVE-2014-3917 rhbz 1102571 1102715
 ApplyPatch auditsc-audit_krule-mask-accesses-need-bounds-checking.patch

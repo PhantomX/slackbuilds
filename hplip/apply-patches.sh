@@ -57,5 +57,7 @@ do
 done
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-scan-tmp.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-codec.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-log-stderr.patch
 
 set +e +o pipefail

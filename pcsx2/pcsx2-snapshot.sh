@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="http://pcsx2.googlecode.com/svn/trunk"
+snaproot="git://github.com/PCSX2/${module}.git"
 
 tmp=$(mktemp -d)
 
@@ -14,36 +14,43 @@ cleanup() {
 }
 
 unset CDPATH
-unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
+snapbranch=${snapbranch:-master}
+gittree=${gittree:-${snapbranch}}
 
-[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
+[ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
+[ "${snapbranch}" = "master" ] || snapbranch="origin/${snapbranch}"
 
 pushd "${tmp}"
-  svn co --depth=files --force ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
+  git clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    svn export ${SNAP_COOPTS} ${snaproot}/bin
-    svn export ${SNAP_COOPTS} ${snaproot}/cmake
-    svn export ${SNAP_COOPTS} ${snaproot}/common
-    svn export ${SNAP_COOPTS} ${snaproot}/fps2bios
-    svn export ${SNAP_COOPTS} ${snaproot}/linux_various
-    svn export ${SNAP_COOPTS} ${snaproot}/locales
-    svn export ${SNAP_COOPTS} ${snaproot}/nsis
-    svn export ${SNAP_COOPTS} ${snaproot}/pcsx2
-    svn export ${SNAP_COOPTS} ${snaproot}/plugins
-    svn export ${SNAP_COOPTS} ${snaproot}/tools
-    svn co --depth=files --force ${SNAP_COOPTS} ${snaproot}/3rdparty
-    pushd "3rdparty"
-      svn export ${SNAP_COOPTS} ${snaproot}/3rdparty/tinyxml
+    if [ "${snap}" != "$(date +%Y%m%d)" ] && [ -z "${snaptag}" ] ; then
+      gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
+      git checkout $(git rev-list -n 1 --before="${gitdate}" ${snapbranch})
+      gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
+    fi
+    if [ "${snapbranch}" != "master" ] && [ -z "${snaptag}" ];then
+      git checkout -q ${gittree}
+    fi
+    if [ -n "${snaptag}" ] ;then
+      if git tag | grep -q ${snaptag} ;then
+        git checkout ${snaptag}
+      else
+        echo "Tag not found! Printing available."
+        git tag
+        exit 1
+      fi
+    fi
+    pushd 3rdparty
+      rm -rf GL SoundTouch bzip2 google libjpeg portaudio soundtouch_linux_include w32pthreads winpcap wxWidgets zlib
     popd >/dev/null
-    SVNREV="$(LC_ALL=C svn info 2> /dev/null | grep Revision | cut -d' ' -f2)"
+    GITREV="$(LC_ALL=C git show  -s --format=%ci HEAD)"
     sed -i \
-      -e "/SVN_REV/s|\${tmpvar_WC_REVISION}|${SVNREV}|g" \
-      -e "/SVN_REV/s|SVN_REV 0|SVN_REV ${SVNREV}|g" \
+      -e "/COMMAND/s|git -C \${CMAKE_SOURCE_DIR} show  -s --format=%ci HEAD|echo \"${GITREV}\"|g" \
       cmake/Pcsx2Utils.cmake
-    # Force revision number
-    find . -type d -name .svn -print0 | xargs -0r rm -rf
+    find . -type d -name .git -print0 | xargs -0r rm -rf
+    rm -rf .gitignore
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

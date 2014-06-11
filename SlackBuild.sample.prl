@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #-- _PACK_NAME for Slackware --
 # Build script by Phantom X <megaphantomx at bol.com.brg>
 # Suggested usage: $ _PACK_NAME.SlackBuild 2>&1 | tee build.log

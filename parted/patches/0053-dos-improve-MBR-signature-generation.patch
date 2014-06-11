@@ -1,0 +1,158 @@
+From 70aa35b2b4d2e723fe82ac3184e5921a52be73ab Mon Sep 17 00:00:00 2001
+From: Jonathan Liu <net147@gmail.com>
+Date: Fri, 4 Oct 2013 07:32:12 -0700
+Subject: [PATCH 53/89] dos: improve MBR signature generation
+
+Using tv_usec in struct timeval from gettimeofday() doesn't provide
+enough precision to fill an unsigned 32-bit integer and isn't really
+random. It it always less than one million when using the GNU C library
+while an unsigned 32-bit integer ranges between 0 and 4294967295.
+
+In FAT filesystem creation, parted already uses a better random
+generator, so move that code into a common function and use it
+for MS-DOS MBR signature generation.
+
+* libparted/fs/r/fat/fat.c (_gen_new_serial_number): Remove.
+(fat_create): Use generate_random_uint32 instead of
+_gen_new_serial_number.
+* libparted/labels/dos.c (generate_random_id): Remove.
+(msdos_write): Use generate_random_uint32 instead of
+generate_random_id.
+* libparted/labels/misc.h (generate_random_uint32): New function.
+Created from _gen_new_serial_number in libparted/fs/r/fat/fat.c with
+additional check to avoid returning zero, which may be interpreted
+as no FAT serial number or no MBR signature.
+---
+ NEWS                     |  4 ++++
+ libparted/fs/r/fat/fat.c | 19 ++-----------------
+ libparted/labels/dos.c   | 12 +-----------
+ libparted/labels/misc.h  | 21 +++++++++++++++++++++
+ 4 files changed, 28 insertions(+), 28 deletions(-)
+
+diff --git a/NEWS b/NEWS
+index 98f7c6e..50faf4d 100644
+--- a/NEWS
++++ b/NEWS
+@@ -23,6 +23,10 @@ GNU parted NEWS                                    -*- outline -*-
+   partprobe now tells the kernel to forget about any partitions
+   on a device that has no recognizable partition table.
+ 
++  dos: the range of random MBR signature values was artificially limited
++  to 0..999999, which mistakenly included 0.  Now, we use the full 32-bit
++  range, but exclude 0.
++
+ ** Changes in behavior
+ 
+   parted -l no longer lists device-mapper devices other than
+diff --git a/libparted/fs/r/fat/fat.c b/libparted/fs/r/fat/fat.c
+index 2ab9279..c8e4552 100644
+--- a/libparted/fs/r/fat/fat.c
++++ b/libparted/fs/r/fat/fat.c
+@@ -18,10 +18,10 @@
+ 
+ #include <config.h>
+ #include <string.h>
+-#include <uuid/uuid.h>
+ 
+ #include "fat.h"
+ #include "calc.h"
++#include "../../../labels/misc.h"
+ 
+ PedFileSystem*
+ fat_alloc (const PedGeometry* geom)
+@@ -202,21 +202,6 @@ fat_root_dir_clear (PedFileSystem* fs)
+ 				   fs_info->root_dir_sector_count);
+ }
+ 
+-/* hack: use the ext2 uuid library to generate a reasonably random (hopefully
+- * with /dev/random) number.  Unfortunately, we can only use 4 bytes of it
+- */
+-static uint32_t
+-_gen_new_serial_number (void)
+-{
+-	union {
+-		uuid_t uuid;
+-		uint32_t i;
+-	} uu32;
+-
+-	uuid_generate (uu32.uuid);
+-	return uu32.i;
+-}
+-
+ PedFileSystem*
+ fat_create (PedGeometry* geom, FatType fat_type, PedTimer* timer)
+ {
+@@ -316,7 +301,7 @@ fat_create (PedGeometry* geom, FatType fat_type, PedTimer* timer)
+ 			return 0;
+ 	}
+ 
+-	fs_info->serial_number = _gen_new_serial_number ();
++	fs_info->serial_number = generate_random_uint32 ();
+ 
+ 	if (!fat_boot_sector_set_boot_code (&fs_info->boot_sector))
+ 		goto error_free_buffers;
+diff --git a/libparted/labels/dos.c b/libparted/labels/dos.c
+index b8c161f..6bddd79 100644
+--- a/libparted/labels/dos.c
++++ b/libparted/labels/dos.c
+@@ -1236,16 +1236,6 @@ write_extended_partitions (const PedDisk* disk)
+ 		return write_empty_table (disk, ext_part->geom.start);
+ }
+ 
+-static inline uint32_t generate_random_id (void)
+-{
+-	struct timeval tv;
+-	int rc;
+-	rc = gettimeofday(&tv, NULL);
+-	if (rc == -1)
+-		return 0;
+-	return (uint32_t)(tv.tv_usec & 0xFFFFFFFFUL);
+-}
+-
+ static int
+ msdos_write (const PedDisk* disk)
+ {
+@@ -1267,7 +1257,7 @@ msdos_write (const PedDisk* disk)
+ 
+ 	/* If there is no unique identifier, generate a random one */
+ 	if (!table->mbr_signature)
+-		table->mbr_signature = generate_random_id();
++		table->mbr_signature = generate_random_uint32 ();
+ 
+ 	memset (table->partitions, 0, sizeof (table->partitions));
+ 	table->magic = PED_CPU_TO_LE16 (MSDOS_MAGIC);
+diff --git a/libparted/labels/misc.h b/libparted/labels/misc.h
+index c2ccea1..c039c5f 100644
+--- a/libparted/labels/misc.h
++++ b/libparted/labels/misc.h
+@@ -16,6 +16,27 @@
+     You should have received a copy of the GNU General Public License
+     along with this program.  If not, see <http://www.gnu.org/licenses/>. */
+ 
++#include <inttypes.h>
++#include <uuid/uuid.h>
++
++/* hack: use the ext2 uuid library to generate a reasonably random (hopefully
++ * with /dev/random) number.  Unfortunately, we can only use 4 bytes of it.
++ * We make sure to avoid returning zero which may be interpreted as no FAT
++ * serial number or no MBR signature.
++ */
++static inline uint32_t
++generate_random_uint32 (void)
++{
++       union {
++               uuid_t uuid;
++               uint32_t i;
++       } uu32;
++
++       uuid_generate (uu32.uuid);
++
++       return uu32.i > 0 ? uu32.i : 0xffffffff;
++}
++
+ /* Return nonzero if FS_TYPE_NAME starts with "linux-swap".
+    This must match the NUL-terminated "linux-swap" as well
+    as "linux-swap(v0)" and "linux-swap(v1)".  */
+-- 
+1.8.5.3
+

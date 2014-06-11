@@ -1,0 +1,232 @@
+From cf16ea884fc72aa99b49f721fc186429cec9fa87 Mon Sep 17 00:00:00 2001
+From: Phillip Susi <psusi@ubuntu.com>
+Date: Sun, 22 Dec 2013 22:13:12 -0500
+Subject: [PATCH 66/89] bug#15591: [PATCH] libparted: handle i18n gpt partition
+ names correctly
+
+gpt.c was simply truncating the UTF-16 characters stored
+in the partition name field to 8 bits.  This corrupted non
+ascii characters which later resulted in parted crashing in
+strlist.c trying to convert the now invalid multi byte
+characters to wchar.
+
+gpt.c will now properly convert the UTF-16 to the current
+locale encoding.
+---
+ NEWS                       |  1 +
+ libparted/labels/gpt.c     | 63 ++++++++++++++++++++++++++++++++++++++++------
+ tests/Makefile.am          |  1 +
+ tests/t0251-gpt-unicode.sh | 38 ++++++++++++++++++++++++++++
+ 4 files changed, 96 insertions(+), 7 deletions(-)
+ create mode 100755 tests/t0251-gpt-unicode.sh
+
+diff --git a/NEWS b/NEWS
+index 9d0d931..935fa33 100644
+--- a/NEWS
++++ b/NEWS
+@@ -12,6 +12,7 @@ GNU parted NEWS                                    -*- outline -*-
+   boot partition type.
+ 
+ ** Bug Fixes
++  Fix gpt to correctly handle non ASCII charcters in partition names
+ 
+   If a drive was 100 times an even multiple of two, sizes specified as
+   a percentage would trigger the exact placement rule and refuse to round
+diff --git a/libparted/labels/gpt.c b/libparted/labels/gpt.c
+index 66c96e6..dce89b1 100644
+--- a/libparted/labels/gpt.c
++++ b/libparted/labels/gpt.c
+@@ -39,6 +39,8 @@
+ #include <uuid/uuid.h>
+ #include <stdbool.h>
+ #include <errno.h>
++#include <iconv.h>
++#include <langinfo.h>
+ #include "xalloc.h"
+ #include "verify.h"
+ 
+@@ -196,7 +198,7 @@ struct __attribute__ ((packed)) _GuidPartitionEntry_t
+   uint64_t StartingLBA;
+   uint64_t EndingLBA;
+   GuidPartitionEntryAttributes_t Attributes;
+-  efi_char16_t PartitionName[72 / sizeof (efi_char16_t)];
++  efi_char16_t PartitionName[36];
+ };
+ 
+ #define GPT_PMBR_LBA 0
+@@ -281,7 +283,8 @@ typedef struct _GPTPartitionData
+ {
+   efi_guid_t type;
+   efi_guid_t uuid;
+-  char name[37];
++  efi_char16_t name[37];
++  char *translated_name;
+   int lvm;
+   int raid;
+   int boot;
+@@ -797,10 +800,11 @@ _parse_part_entry (PedDisk *disk, GuidPartitionEntry_t *pte)
+   gpt_part_data = part->disk_specific;
+   gpt_part_data->type = pte->PartitionTypeGuid;
+   gpt_part_data->uuid = pte->UniquePartitionGuid;
+-  for (i = 0; i < 72 / sizeof (efi_char16_t); i++)
++  for (i = 0; i < 36; i++)
+     gpt_part_data->name[i] =
+       (efi_char16_t) PED_LE16_TO_CPU ((uint16_t) pte->PartitionName[i]);
+   gpt_part_data->name[i] = 0;
++  gpt_part_data->translated_name = 0;
+ 
+   gpt_part_data->lvm = gpt_part_data->raid
+     = gpt_part_data->boot = gpt_part_data->hp_service
+@@ -1210,7 +1214,7 @@ _partition_generate_part_entry (PedPartition *part, GuidPartitionEntry_t *pte)
+   if (gpt_part_data->legacy_boot)
+     pte->Attributes.LegacyBIOSBootable = 1;
+ 
+-  for (i = 0; i < 72 / sizeof (efi_char16_t); i++)
++  for (i = 0; i < 36; i++)
+     pte->PartitionName[i]
+       = (efi_char16_t) PED_CPU_TO_LE16 ((uint16_t) gpt_part_data->name[i]);
+ }
+@@ -1353,6 +1357,7 @@ gpt_partition_new (const PedDisk *disk,
+   gpt_part_data->atvrecv = 0;
+   gpt_part_data->legacy_boot = 0;
+   gpt_part_data->prep = 0;
++  gpt_part_data->translated_name = 0;
+   uuid_generate ((unsigned char *) &gpt_part_data->uuid);
+   swap_uuid_and_efi_guid ((unsigned char *) (&gpt_part_data->uuid));
+   memset (gpt_part_data->name, 0, sizeof gpt_part_data->name);
+@@ -1386,6 +1391,9 @@ gpt_partition_duplicate (const PedPartition *part)
+     goto error_free_part;
+ 
+   *result_data = *part_data;
++  if (part_data->translated_name)
++    result_data->translated_name = xstrdup (part_data->translated_name);
++  else part_data->translated_name = 0;
+   return result;
+ 
+ error_free_part:
+@@ -1400,6 +1408,8 @@ gpt_partition_destroy (PedPartition *part)
+   if (part->type == 0)
+     {
+       PED_ASSERT (part->disk_specific != NULL);
++      GPTPartitionData *gpt_part_data = part->disk_specific;
++      free (gpt_part_data->translated_name);
+       free (part->disk_specific);
+     }
+ 
+@@ -1820,15 +1830,54 @@ gpt_partition_set_name (PedPartition *part, const char *name)
+ {
+   GPTPartitionData *gpt_part_data = part->disk_specific;
+ 
+-  strncpy (gpt_part_data->name, name, 36);
+-  gpt_part_data->name[36] = 0;
++  free(gpt_part_data->translated_name);
++  gpt_part_data->translated_name = xstrdup(name);
++  iconv_t conv = iconv_open ("UTF-16", nl_langinfo (CODESET));
++  if (conv == (iconv_t)-1)
++    goto err;
++  char *inbuff = gpt_part_data->translated_name;
++  char *outbuff = (char *)&gpt_part_data->name;
++  size_t inbuffsize = strlen (inbuff) + 1;
++  size_t outbuffsize = 72;
++  if (iconv (conv, &inbuff, &inbuffsize, &outbuff, &outbuffsize) == -1)
++    goto err;
++  iconv_close (conv);
++  return;
++ err:
++  ped_exception_throw (PED_EXCEPTION_WARNING,
++		       PED_EXCEPTION_IGNORE,
++		       _("Can not translate partition name"));
++  iconv_close (conv);
+ }
+ 
+ static const char *
+ gpt_partition_get_name (const PedPartition *part)
+ {
+   GPTPartitionData *gpt_part_data = part->disk_specific;
+-  return gpt_part_data->name;
++  if (gpt_part_data->translated_name == NULL)
++    {
++      char buffer[200];
++      iconv_t conv = iconv_open (nl_langinfo (CODESET), "UTF-16");
++      if (conv == (iconv_t)-1)
++	goto err;
++      char *inbuff = (char *)&gpt_part_data->name;
++      char *outbuff = buffer;
++      size_t inbuffsize = 72;
++      size_t outbuffsize = sizeof(buffer);
++      if (iconv (conv, &inbuff, &inbuffsize, &outbuff, &outbuffsize) == -1)
++	goto err;
++      iconv_close (conv);
++      *outbuff = 0;
++      gpt_part_data->translated_name = xstrdup (buffer);
++      return gpt_part_data->translated_name;
++    err:
++      ped_exception_throw (PED_EXCEPTION_WARNING,
++			   PED_EXCEPTION_IGNORE,
++			   _("Can not translate partition name"));
++      iconv_close (conv);
++      return "";
++    }
++  return gpt_part_data->translated_name;
+ }
+ 
+ static int
+diff --git a/tests/Makefile.am b/tests/Makefile.am
+index 16ec5d2..7a6fe8f 100644
+--- a/tests/Makefile.am
++++ b/tests/Makefile.am
+@@ -27,6 +27,7 @@ TESTS = \
+   t0212-gpt-many-partitions.sh \
+   t0220-gpt-msftres.sh \
+   t0250-gpt.sh \
++  t0251-gpt-unicode.sh \
+   t0280-gpt-corrupt.sh \
+   t0281-gpt-grow.sh \
+   t0282-gpt-move-backup.sh \
+diff --git a/tests/t0251-gpt-unicode.sh b/tests/t0251-gpt-unicode.sh
+new file mode 100755
+index 0000000..36a4c26
+--- /dev/null
++++ b/tests/t0251-gpt-unicode.sh
+@@ -0,0 +1,38 @@
++#!/bin/sh
++# Test unicode partition names
++# Copyright (C) 2013 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++. "${srcdir=.}/init.sh"; path_prepend_ ../parted
++
++dev=loop-file
++
++# create zeroed device
++truncate -s 10m $dev || fail=1
++
++export LC_ALL=en_US.UTF-8
++# create gpt label with named partition
++part_name=$(printf 'foo\341\264\244')
++parted -s $dev mklabel gpt mkpart primary ext2 1MiB 2MiB name 1 $part_name > empty 2>&1 || fail=1
++
++# ensure there was no output
++compare /dev/null empty || fail=1
++
++# check for expected output
++dd if=$dev bs=1 skip=$(($sector_size_+$sector_size_+58)) count=10 2>/dev/null | od -An -tx1 > out || fail=1
++echo ' 66 00 6f 00 6f 00 24 1d 00 00' >> exp
++compare exp out || fail=1
++
++Exit $fail
+-- 
+1.8.5.3
+

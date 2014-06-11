@@ -1,0 +1,107 @@
+From 9f4d2b7c87f99f1dec592111a6a6d267949a2c33 Mon Sep 17 00:00:00 2001
+From: Phillip Susi <psusi@ubuntu.com>
+Date: Fri, 2 May 2014 21:50:43 -0400
+Subject: [PATCH 200/208] libparted: don't detect fat and ntfs boot sectors as
+ dos MBR
+
+fat and ntfs boot sectors are very similar to an MBR so if you had one of
+these filesystems on an unpartitioned disk, parted detected them as a dos
+partition table.  Have the dos label code call the fat and ntfs filesystem
+probes and if they recognize the sector ( their tests are more stringent )
+then don't claim it as a dos label.
+---
+ NEWS                     |  3 +++
+ libparted/fs/ntfs/ntfs.c |  2 +-
+ libparted/labels/dos.c   | 29 +++++++++++++++++++++++++++++
+ 3 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/NEWS b/NEWS
+index ae65106..0c3bad5 100644
+--- a/NEWS
++++ b/NEWS
+@@ -25,6 +25,9 @@ GNU parted NEWS                                    -*- outline -*-
+ 
+   Fix filesystem detection on non 512 byte sector sizes
+ 
++  libparted: fat and ntfs boot sectors were misdetected as dos
++  partition tables instead of being treated as a loop label.
++
+   Fix linux partition sync code to flush partitions > 16
+ 
+   Do not reject a FAT boot sector as invalid because it has no
+diff --git a/libparted/fs/ntfs/ntfs.c b/libparted/fs/ntfs/ntfs.c
+index 3ba2683..4c154fd 100644
+--- a/libparted/fs/ntfs/ntfs.c
++++ b/libparted/fs/ntfs/ntfs.c
+@@ -32,7 +32,7 @@
+ 
+ #define NTFS_SIGNATURE	"NTFS"
+ 
+-static PedGeometry*
++PedGeometry*
+ ntfs_probe (PedGeometry* geom)
+ {
+ 	char	*buf = alloca (geom->dev->sector_size);
+diff --git a/libparted/labels/dos.c b/libparted/labels/dos.c
+index eff1c03..295fcf3 100644
+--- a/libparted/labels/dos.c
++++ b/libparted/labels/dos.c
+@@ -235,12 +235,23 @@ maybe_FAT (unsigned char const *s)
+   return true;
+ }
+ 
++PedGeometry*
++fat_probe_fat16 (PedGeometry* geom);
++
++PedGeometry*
++fat_probe_fat32 (PedGeometry* geom);
++
++PedGeometry*
++ntfs_probe (PedGeometry* geom);
++
+ static int
+ msdos_probe (const PedDevice *dev)
+ {
+ 	PedDiskType*	disk_type;
+ 	DosRawTable*	part_table;
+ 	int		i;
++	PedGeometry *geom = NULL;
++	PedGeometry *fsgeom = NULL;
+ 
+ 	PED_ASSERT (dev != NULL);
+ 
+@@ -257,6 +268,20 @@ msdos_probe (const PedDevice *dev)
+ 	if (PED_LE16_TO_CPU (part_table->magic) != MSDOS_MAGIC)
+ 		goto probe_fail;
+ 
++	geom = ped_geometry_new (dev, 0, dev->length);
++	PED_ASSERT (geom);
++	fsgeom = fat_probe_fat16 (geom);
++	if (fsgeom)
++		goto probe_fail; /* fat fs looks like dos mbr */
++	fsgeom = fat_probe_fat32 (geom);
++	if (fsgeom)
++		goto probe_fail; /* fat fs looks like dos mbr */
++	fsgeom = ntfs_probe (geom);
++	if (fsgeom)
++		goto probe_fail; /* ntfs fs looks like dos mbr */
++	ped_geometry_destroy (geom);
++	geom = NULL;
++
+ 	/* If this is a FAT fs, fail here.  Checking for the FAT signature
+ 	 * has some false positives; instead, do what the Linux kernel does
+ 	 * and ensure that each partition has a boot indicator that is
+@@ -303,6 +328,10 @@ msdos_probe (const PedDevice *dev)
+ 	return 1;
+ 
+  probe_fail:
++	if (geom)
++		ped_geometry_destroy (geom);
++	if (fsgeom)
++		ped_geometry_destroy (fsgeom);
+ 	free (label);
+ 	return 0;
+ }
+-- 
+1.9.0
+

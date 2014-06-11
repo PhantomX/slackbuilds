@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #-- _PACK_NAME for Slackware --
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ _PACK_NAME.SlackBuild 2>&1 | tee build.log
@@ -123,6 +123,9 @@ mkdir -p build
 ( cd build || exit $?
 
   cmake .. \
+    -DCMAKE_C_FLAGS_RELEASE:STRING="-DNDEBUG" \
+    -DCMAKE_CXX_FLAGS_RELEASE:STRING="-DNDEBUG" \
+    -DCMAKE_Fortran_FLAGS_RELEASE:STRING="-DNDEBUG" \
     -DCMAKE_INSTALL_PREFIX:PATH=/usr \
     -DSYSCONF_INSTALL_DIR:PATH=/etc \
     -DINCLUDE_INSTALL_DIR:PATH=/usr/include \

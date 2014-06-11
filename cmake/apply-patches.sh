@@ -7,8 +7,8 @@ SB_PATCHDIR=${CWD}/patches
 # Link against the shared Python library rather than the static one
 patch -p1 -E --backup -z .pylibs --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.10-FindPythonLibs.patch
 patch -p1 -E --backup -z .libform --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.10-libform.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.7-FindBLAS.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.7-FindLAPACK.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-FindBLAS.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-FindLAPACK.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.8-FindPkgConfig.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.12-qt5.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.8.0-kde3-include.patch.gz | patch -p0 -E --backup --verbose
@@ -33,8 +33,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-2.8.11-rc4-lua-5.2.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-strict_aliasing.patch
 # Remove automatic Qt module dep adding
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-qtdeps.patch
-# Fix FindFreetype for 2.5.1+
-# http://public.kitware.com/Bug/view.php?id=14601
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindFreetype.patch
+# Additiona python fixes from upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindPythonLibs2.patch
+# Fix FindwxWidgets when cross-compiling for Windows
+# https://bugzilla.redhat.com/show_bug.cgi?id=1081207
+# http://public.kitware.com/Bug/view.php?id=11296
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-FindwxWidgets.patch
 
 set +e +o pipefail

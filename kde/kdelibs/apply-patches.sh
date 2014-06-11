@@ -40,6 +40,10 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-solid_qt_no_debug_output.
 # https://git.reviewboard.kde.org/r/102439/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.0-knewstuff2_gpg2.patch
 
+# glibc-2.20 has deprecated _BSD_SOURCE in favor of _DEFAULT_SOURCE
+# http://sourceware.org/glibc/wiki/Release/2.20#Packaging_Changes
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.13.2-glibc_DEFAULT_SOURCE.patch
+
 # Toggle solid upnp support at runtime via env var SOLID_UPNP=1 (disabled by default)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-SOLID_UPNP.patch
 
@@ -61,9 +65,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r7b32da89c11e309545d801abdcb2fb6fa8ff1a5f.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r7514387650e69232b63cffaac378c735fb67a07e.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rf563cf1608ab820d7357fbdbae7ea4886352bf70.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578

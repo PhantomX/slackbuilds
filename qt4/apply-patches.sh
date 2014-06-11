@@ -43,7 +43,7 @@ IgnorePatch() {
   fi
 }
 
-# patch -p0 -E --backup --verbose ${SB_PATCHDIR}/${NAME}.patch
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # don't use -b on mkspec files, else they get installed too.
 ApplyPatch qt-everywhere-opensource-src-4.8.0-tp-multilib-optflags.patch -z .multilib-optflags
 rm -fv mkspecs/linux-g++*/qmake.conf.multilib-optflags
@@ -121,8 +121,16 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-4862.patch
 # poll support
 ApplyPatch qt-4.8-poll.patch
 
+# fix QTBUG-35459 (too low entityCharacterLimit=1024 for CVE-2013-4549)
+ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-35459.patch
+
 # systemtrayicon plugin support (for appindicators)
 ApplyPatch qt-everywhere-opensource-src-4.8.6-systemtrayicon.patch
+
+# fixes for LibreOffice from the upstream Qt bug tracker (#1105422):
+ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-37380.patch
+patch ${DRYRUN_OPT} -p0 -F1 ${VERBOSE_OPT} -i ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.8.6-QTBUG-34614.patch
+patch ${DRYRUN_OPT} -p0 -F1 ${VERBOSE_OPT} -i ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.8.6-QTBUG-38585.patch
 
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore
@@ -136,8 +144,9 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-qgtkstyle_disable_gtk_theme_check.
 ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-22829.patch
 
 ## upstream git
-# fix QTBUG-35459 (too low entityCharacterLimit=1024 for CVE-2013-4549)
-ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-35459.patch
+ApplyPatch 0010-QDbus-Fix-a-b-comparison.patch
+ApplyPatch 0025-Fix-visual-index-lookup-in-QTreeViewPrivate-adjustVi.patch
+ApplyPatch 0034-Fix-raster-graphics-on-X11-RGB30.patch
 
 # security patches
 # https://bugreports.qt-project.org/browse/QTBUG-38367

@@ -87,19 +87,13 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.7-weather-fix-bbc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.7-weather-fix-bbcukmet-clear-sky.patch
 # https://bugs.kde.org/show_bug.cgi?id=332392
 # bbcukmet: fix a crash (#1079296/kde#332392) and improve error handling
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.7-weather-fix-bbcukmet-crash-kde#332392.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.7-weather-fix-bbcukmet-crash-kde\#332392.patch
 
 ### ROSA
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.4-fontconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-locale.patch
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Trigger-the-Present-Windows-effect-when-control-clic.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-Fix-crash-after-dismissing-the-context-menu-of-a-jus.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0004-connect-to-the-right-signal.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0009-Do-not-popup-during-initialization.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0010-Fix-crash-when-DesktopNames-isn-t-set.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r246badf2c8edd93f6352797b9ddde1a626f4167a.diff
 
 ## trunk patches
 

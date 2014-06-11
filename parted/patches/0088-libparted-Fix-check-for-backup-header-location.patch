@@ -1,0 +1,87 @@
+From 503e98c49fa06512fd1b0318aba6ee5de6cbd7b4 Mon Sep 17 00:00:00 2001
+From: "Brian C. Lane" <bcl@redhat.com>
+Date: Tue, 8 Apr 2014 10:54:27 -0700
+Subject: [PATCH 88/91] libparted: Fix check for backup header location
+
+Add a couple of helper functions for calculating the partition table
+entry size (in sectors) and for guessing the end of the disk based on
+the LastUsableLBA and the Partition Table Entry size.
+
+The backup header should be either at the end of the disk, or at what
+the primary header thinks is the end of the disk. Prompt to fix the
+backup header if it is located any other place.
+
+* libparted/labels/gpt.c (_ptes_sectors): New function
+  (_hdr_disk_end): New function
+  (gpt_read): Use new function to test for pri's idea of end of disk
+---
+ libparted/labels/gpt.c | 38 +++++++++++++++++++++++++++++++-------
+ 1 file changed, 31 insertions(+), 7 deletions(-)
+
+diff --git a/libparted/labels/gpt.c b/libparted/labels/gpt.c
+index 42b0360..c5dea2f 100644
+--- a/libparted/labels/gpt.c
++++ b/libparted/labels/gpt.c
+@@ -693,6 +693,29 @@ _header_is_valid (PedDisk const *disk, GuidPartitionTableHeader_t *gpt,
+   return crc == PED_LE32_TO_CPU (origcrc);
+ }
+ 
++/* Return the number of sectors that should be used by the
++ * partition entry table.
++ */
++static PedSector
++_ptes_sectors(PedDisk const *disk, GuidPartitionTableHeader_t const *gpt)
++{
++  size_t ptes_bytes = PED_LE32_TO_CPU (gpt->SizeOfPartitionEntry) *
++                      PED_LE32_TO_CPU (gpt->NumberOfPartitionEntries);
++  /* Minimum amount of space reserved is 128 128 byte entries */
++  if (ptes_bytes < 128*128)
++    ptes_bytes = 128*128;
++  return ped_div_round_up (ptes_bytes, disk->dev->sector_size);
++}
++
++/* Return the header's idea of the last sector of the disk
++ * based on LastUsableLBA and the Partition Entry table.
++ */
++static PedSector
++_hdr_disk_end(PedDisk const *disk, GuidPartitionTableHeader_t const *gpt)
++{
++  return PED_LE64_TO_CPU (gpt->LastUsableLBA) + 1 + _ptes_sectors(disk, gpt);
++}
++
+ static int
+ _parse_header (PedDisk *disk, const GuidPartitionTableHeader_t *gpt,
+                int *update_needed)
+@@ -985,13 +1008,14 @@ gpt_read (PedDisk *disk)
+     {
+       /* Both are valid.  */
+ #ifndef DISCOVER_ONLY
+-      PedSector gpt_disk_end = PED_LE64_TO_CPU (primary_gpt->LastUsableLBA) + 1;
+-      gpt_disk_end += ((PedSector) (PED_LE32_TO_CPU (primary_gpt->NumberOfPartitionEntries)) *
+-                       (PedSector) (PED_LE32_TO_CPU (primary_gpt->SizeOfPartitionEntry)) /
+-                       disk->dev->sector_size);
+-
++      /* The backup header must be at the end of the disk, or at what the primary
++       * header thinks is the end of the disk.
++       */
+       gpt_disk_data->AlternateLBA = PED_LE64_TO_CPU (primary_gpt->AlternateLBA);
+-      if (PED_LE64_TO_CPU (primary_gpt->AlternateLBA) != gpt_disk_end)
++      PedSector pri_disk_end = _hdr_disk_end(disk, primary_gpt);
++
++      if (gpt_disk_data->AlternateLBA != disk->dev->length -1 &&
++          gpt_disk_data->AlternateLBA != pri_disk_end)
+         {
+           if (ped_exception_throw
+                   (PED_EXCEPTION_ERROR,
+@@ -1002,7 +1026,7 @@ gpt_read (PedDisk *disk)
+             {
+               ptt_clear_sectors (disk->dev,
+                                  PED_LE64_TO_CPU (primary_gpt->AlternateLBA), 1);
+-              gpt_disk_data->AlternateLBA = gpt_disk_end;
++              gpt_disk_data->AlternateLBA = disk->dev->length -1;
+               write_back = 1;
+             }
+         }
+-- 
+1.9.0
+

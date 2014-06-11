@@ -1,0 +1,151 @@
+From 36f74e81b1da1ecadc071b3bd2f3a13db0161897 Mon Sep 17 00:00:00 2001
+From: Phillip Susi <psusi@ubuntu.com>
+Date: Fri, 2 May 2014 21:50:44 -0400
+Subject: [PATCH 201/208] libparted: remove old partitions *first* before
+ adding new ones
+
+"libparted: avoid disturbing partitions" put the remove of the old
+partition in second pass.  If you simultaneously removed partitions 1
+and 2, and created a new partition #1 that overlapped the previous second
+partition, the sync would fail because it would try to create the new,
+larger partition #1 before removing the old partition #2.
+---
+ libparted/arch/linux.c                  | 43 ++++++++++++++--------------
+ tests/Makefile.am                       |  1 +
+ tests/t1104-remove-and-add-partition.sh | 50 +++++++++++++++++++++++++++++++++
+ 3 files changed, 72 insertions(+), 22 deletions(-)
+ create mode 100644 tests/t1104-remove-and-add-partition.sh
+
+diff --git a/libparted/arch/linux.c b/libparted/arch/linux.c
+index 71f5034..ced06a3 100644
+--- a/libparted/arch/linux.c
++++ b/libparted/arch/linux.c
+@@ -2855,23 +2855,8 @@ _disk_sync_part_table (PedDisk* disk)
+                             && start == part->geom.start
+                             && length == part->geom.length)
+                         {
+-                                ok[i - 1] = 1;
+-                                continue;
+-                        }
+-                }
+-	}
+-        for (i = 1; i <= lpn; i++) {
+-                PedPartition *part = ped_disk_get_partition (disk, i);
+-                if (part) {
+-                        unsigned long long length;
+-                        unsigned long long start;
+-                        /* get start and length of existing partition */
+-                        if (get_partition_start_and_length(part,
+-                                                            &start, &length)
+-                            && start == part->geom.start
+-                            && length == part->geom.length) {
+-                                ok[i - 1] = 1;
+                                 /* partition is unchanged, so nothing to do */
++                                ok[i - 1] = 1;
+                                 continue;
+                         }
+                 }
+@@ -2890,12 +2875,26 @@ _disk_sync_part_table (PedDisk* disk)
+                 } while (n_sleep--);
+                 if (!ok[i - 1] && errnums[i - 1] == ENXIO)
+                         ok[i - 1] = 1; /* it already doesn't exist */
+-                if (part && ok[i - 1]) {
+-                        /* add the (possibly modified or new) partition */
+-                        if (!add_partition (disk, part)) {
+-                                ok[i - 1] = 0;
+-                                errnums[i - 1] = errno;
+-                        }
++	}
++        for (i = 1; i <= lpn; i++) {
++                PedPartition *part = ped_disk_get_partition (disk, i);
++                if (!part)
++                        continue;
++                unsigned long long length;
++                unsigned long long start;
++                /* get start and length of existing partition */
++                if (get_partition_start_and_length(part,
++                                                   &start, &length)
++                    && start == part->geom.start
++                    && length == part->geom.length) {
++                        ok[i - 1] = 1;
++                        /* partition is unchanged, so nothing to do */
++                        continue;
++                }
++                /* add the (possibly modified or new) partition */
++                if (!add_partition (disk, part)) {
++                        ok[i - 1] = 0;
++                        errnums[i - 1] = errno;
+                 }
+         }
+ 
+diff --git a/tests/Makefile.am b/tests/Makefile.am
+index 9100a81..e064b8f 100644
+--- a/tests/Makefile.am
++++ b/tests/Makefile.am
+@@ -40,6 +40,7 @@ TESTS = \
+   t0501-duplicate.sh \
+   t1100-busy-label.sh \
+   t1101-busy-partition.sh \
++  t1104-remove-and-add-partition.sh \
+   t1700-probe-fs.sh \
+   t2200-dos-label-recog.sh \
+   t2201-pc98-label-recog.sh \
+diff --git a/tests/t1104-remove-and-add-partition.sh b/tests/t1104-remove-and-add-partition.sh
+new file mode 100644
+index 0000000..61cc392
+--- /dev/null
++++ b/tests/t1104-remove-and-add-partition.sh
+@@ -0,0 +1,50 @@
++#!/bin/sh
++# make sure that removing a higher numbered partition and adding a lower
++# one using that space at the same time works
++
++# Copyright (C) 2014 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++. "${srcdir=.}/init.sh"; path_prepend_ ../parted
++path_prepend_ ../partprobe
++require_root_
++ss=$sector_size_
++
++d1= f1=
++cleanup_fn_()
++{
++  test -n "$d1" && losetup -d "$d1"
++  rm -f "$f1"
++}
++
++f1=$(pwd)/1; d1=$(loop_setup_ "$f1") \
++  || skip_ "is this partition mounted with 'nodev'?"
++
++require_partitionable_loop_device_ $d1
++
++# create one big partition
++parted -s $d1 mklabel msdos mkpart primary ext2 1m 10m || fail=1
++
++# save this table
++dd if=$d1 of=saved count=1 || fail=1
++
++# create two small partitions
++parted -s $d1 mklabel msdos mkpart primary ext2 1m 5m mkpart primary ext2 5m 10m || fail=1
++
++# restore first table and make sure partprobe works
++dd if=saved of=$d1 || fail=1
++partprobe $d1 || fail=1
++
++Exit $fail
+-- 
+1.9.0
+

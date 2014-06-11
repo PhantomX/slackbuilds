@@ -1,0 +1,458 @@
+From 9e9588c71e358244bd41f0ca15c10676784ed41d Mon Sep 17 00:00:00 2001
+From: Phillip Susi <psusi@ubuntu.com>
+Date: Tue, 1 Jan 2013 12:53:35 -0500
+Subject: [PATCH 59/89] libparted: fix gpt end of disk handling
+
+There are two checks for problems with the end of disk.  The first checks
+to make sure that the backup gpt is actually at the end of the disk as it
+should be.  The second checks to see that the gpt's idea of where the disk
+ends is correct.  The handling of the backup gpt location was wrong because
+if you chose not to fix the error, then as soon as you made any changes the
+backup would be written to the end of the disk anyhow, only the previous
+backup would not be zeroed.
+
+This patch fixes the write path to put the backup gpt where the gpt says
+it goes, not where we think the disk ends.  This allows you to choose
+not to fix the problems, and the backup gpt will be written to the same
+place it was before, not the new end of disk.
+---
+ NEWS                           |  6 +++
+ libparted/labels/gpt.c         | 52 ++++++++++++----------
+ tests/Makefile.am              |  2 +
+ tests/gpt-header-move.py       | 40 +++++++++++++++++
+ tests/t0281-gpt-grow.sh        | 99 ++++++++++++++++++++++++++++++++++++++++++
+ tests/t0282-gpt-move-backup.sh | 99 ++++++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 275 insertions(+), 23 deletions(-)
+ create mode 100644 tests/gpt-header-move.py
+ create mode 100644 tests/t0281-gpt-grow.sh
+ create mode 100644 tests/t0282-gpt-move-backup.sh
+
+diff --git a/NEWS b/NEWS
+index 716e477..3f73434 100644
+--- a/NEWS
++++ b/NEWS
+@@ -4,6 +4,12 @@ GNU parted NEWS                                    -*- outline -*-
+ 
+ ** Bug Fixes
+ 
++  libparted: fix gpt end of disk handling.  Previously if the backup
++  copy of the gpt was not at the end of the disk and you chose to
++  ignore this error, parted would move it to the end of the disk
++  anyhow.  It will now leave the backup in the same location if
++  you chose to ignore this error.
++
+   libparted: handle logical partitions starting immediately after
+   the EBR.  Creating a logical partition one sector after the EBR
+   used to cause parted to complain that it could not inform the
+diff --git a/libparted/labels/gpt.c b/libparted/labels/gpt.c
+index eaf14b5..bcf7812 100644
+--- a/libparted/labels/gpt.c
++++ b/libparted/labels/gpt.c
+@@ -269,6 +269,7 @@ struct __attribute__ ((packed)) _GPTDiskData
+   int entry_count;
+   efi_guid_t uuid;
+   int pmbr_boot;
++  PedSector AlternateLBA;
+ };
+ 
+ /* uses libparted's disk_specific field in PedPartition, to store our info */
+@@ -523,6 +524,7 @@ gpt_alloc (const PedDevice *dev)
+   if (!disk->disk_specific)
+     goto error_free_disk;
+ 
++  gpt_disk_data->AlternateLBA = dev->length - 1;
+   ped_geometry_init (&gpt_disk_data->data_area, dev, data_start,
+                      data_end - data_start + 1);
+   gpt_disk_data->entry_count = GPT_DEFAULT_PARTITION_ENTRIES;
+@@ -748,6 +750,11 @@ _parse_header (PedDisk *disk, const GuidPartitionTableHeader_t *gpt,
+       if (q == PED_EXCEPTION_FIX)
+         {
+           last_usable = last_usable_if_grown;
++          /* clear the old backup gpt header */
++          ptt_clear_sectors (disk->dev,
++                             gpt_disk_data->AlternateLBA, 1);
++          gpt_disk_data->AlternateLBA = disk->dev->length - 1;
++          last_usable = last_usable_if_grown;
+           *update_needed = 1;
+         }
+       else if (q != PED_EXCEPTION_UNHANDLED)
+@@ -869,13 +876,13 @@ gpt_read_headers (PedDisk const *disk,
+   else
+     pth_free (pri);
+ 
+-  PedSector backup_sector_num =
++  gpt_disk_data->AlternateLBA =
+     (valid_primary
+      ? PED_LE64_TO_CPU (pri->AlternateLBA)
+      : dev->length - 1);
+ 
+   void *s_bak;
+-  if (!ptt_read_sector (dev, backup_sector_num, &s_bak))
++  if (!ptt_read_sector (dev, gpt_disk_data->AlternateLBA ,&s_bak))
+     return 1;
+   t = pth_new_from_raw (dev, s_bak);
+   free (s_bak);
+@@ -883,10 +890,10 @@ gpt_read_headers (PedDisk const *disk,
+     return 1;
+ 
+   GuidPartitionTableHeader_t *bak = t;
+-  if (_header_is_valid (disk, bak, backup_sector_num))
++  if (_header_is_valid (disk, bak, gpt_disk_data->AlternateLBA))
+     {
+       *backup_gpt = bak;
+-      *backup_sector_num_p = backup_sector_num;
++      *backup_sector_num_p = gpt_disk_data->AlternateLBA;
+     }
+   else
+     pth_free (bak);
+@@ -957,31 +964,30 @@ gpt_read (PedDisk *disk)
+     {
+       /* Both are valid.  */
+ #ifndef DISCOVER_ONLY
+-      if (PED_LE64_TO_CPU (primary_gpt->AlternateLBA) < disk->dev->length - 1)
++      PedSector gpt_disk_end = PED_LE64_TO_CPU (primary_gpt->LastUsableLBA) + 1;
++      gpt_disk_end += ((PedSector) (PED_LE32_TO_CPU (primary_gpt->NumberOfPartitionEntries)) *
++                       (PedSector) (PED_LE32_TO_CPU (primary_gpt->SizeOfPartitionEntry)) /
++                       disk->dev->sector_size);
++
++      gpt_disk_data->AlternateLBA = PED_LE64_TO_CPU (primary_gpt->AlternateLBA);
++      if (PED_LE64_TO_CPU (primary_gpt->AlternateLBA) != gpt_disk_end)
+         {
+-          switch (ped_exception_throw
++          if (ped_exception_throw
+                   (PED_EXCEPTION_ERROR,
+-                   (PED_EXCEPTION_FIX | PED_EXCEPTION_CANCEL
+-                    | PED_EXCEPTION_IGNORE),
++                   (PED_EXCEPTION_FIX | PED_EXCEPTION_IGNORE),
+                    _("The backup GPT table is not at the end of the disk, as it "
+-                     "should be.  This might mean that another operating system "
+-                     "believes the disk is smaller.  Fix, by moving the backup "
+-                     "to the end (and removing the old backup)?")))
++                     "should be.  Fix, by moving the backup to the end "
++                     "(and removing the old backup)?")) == PED_EXCEPTION_FIX)
+             {
+-            case PED_EXCEPTION_CANCEL:
+-              goto error_free_gpt;
+-            case PED_EXCEPTION_FIX:
+               ptt_clear_sectors (disk->dev,
+                                  PED_LE64_TO_CPU (primary_gpt->AlternateLBA), 1);
++              gpt_disk_data->AlternateLBA = gpt_disk_end;
+               write_back = 1;
+-              break;
+-            default:
+-              break;
+             }
+         }
+ #endif /* !DISCOVER_ONLY */
+-      gpt = primary_gpt;
+       pth_free (backup_gpt);
++      gpt = primary_gpt;
+     }
+   else if (!primary_gpt && !backup_gpt)
+     {
+@@ -1149,15 +1155,15 @@ _generate_header (const PedDisk *disk, int alternate, uint32_t ptes_crc,
+ 			      * sizeof (GuidPartitionEntry_t));
+       PedSector ptes_sectors = (ptes_bytes + ss - 1) / ss;
+ 
+-      gpt->MyLBA = PED_CPU_TO_LE64 (disk->dev->length - 1);
++      gpt->MyLBA = PED_CPU_TO_LE64 (gpt_disk_data->AlternateLBA);
+       gpt->AlternateLBA = PED_CPU_TO_LE64 (1);
+       gpt->PartitionEntryLBA
+-        = PED_CPU_TO_LE64 (disk->dev->length - 1 - ptes_sectors);
++        = PED_CPU_TO_LE64 (gpt_disk_data->AlternateLBA - ptes_sectors);
+     }
+   else
+     {
+       gpt->MyLBA = PED_CPU_TO_LE64 (1);
+-      gpt->AlternateLBA = PED_CPU_TO_LE64 (disk->dev->length - 1);
++      gpt->AlternateLBA = PED_CPU_TO_LE64 (gpt_disk_data->AlternateLBA);
+       gpt->PartitionEntryLBA = PED_CPU_TO_LE64 (2);
+     }
+ 
+@@ -1262,12 +1268,12 @@ gpt_write (const PedDisk *disk)
+   pth_free (gpt);
+   if (pth_raw == NULL)
+     goto error_free_ptes;
+-  write_ok = ped_device_write (disk->dev, pth_raw, disk->dev->length - 1, 1);
++  write_ok = ped_device_write (disk->dev, pth_raw, gpt_disk_data->AlternateLBA, 1);
+   free (pth_raw);
+   if (!write_ok)
+     goto error_free_ptes;
+   if (!ped_device_write (disk->dev, ptes,
+-                         disk->dev->length - 1 - ptes_sectors, ptes_sectors))
++                         gpt_disk_data->AlternateLBA - ptes_sectors, ptes_sectors))
+     goto error_free_ptes;
+ 
+   free (ptes);
+diff --git a/tests/Makefile.am b/tests/Makefile.am
+index 4ec08da..eaf44a5 100644
+--- a/tests/Makefile.am
++++ b/tests/Makefile.am
+@@ -28,6 +28,8 @@ TESTS = \
+   t0220-gpt-msftres.sh \
+   t0250-gpt.sh \
+   t0280-gpt-corrupt.sh \
++  t0281-gpt-grow.sh \
++  t0282-gpt-move-backup.sh \
+   t0300-dos-on-gpt.sh \
+   t0301-overwrite-gpt-pmbr.sh \
+   t0350-mac-PT-increases-sector-size.sh \
+diff --git a/tests/gpt-header-move.py b/tests/gpt-header-move.py
+new file mode 100644
+index 0000000..69d1479
+--- /dev/null
++++ b/tests/gpt-header-move.py
+@@ -0,0 +1,40 @@
++# open img file, subtract 33 from altlba address, and move the last 33 sectors
++# back by 33 sectors
++
++from struct import *
++from zipfile import crc32
++import array
++import sys
++file = open(sys.argv[1],'rb+')
++file.seek(512)
++gptheader = file.read(512)
++altlba = unpack_from('q', gptheader,offset=32)[0]
++gptheader = array.array('c',gptheader)
++pack_into('Q', gptheader, 32, altlba-33)
++#zero header crc
++pack_into('L', gptheader, 16, 0)
++#compute new crc
++newcrc = ((crc32(buffer(gptheader,0,92))) & 0xFFFFFFFF)
++pack_into('L', gptheader, 16, newcrc)
++file.seek(512)
++file.write(gptheader)
++file.seek(512*altlba)
++gptheader = file.read(512)
++file.seek(512*(altlba-32))
++backup = file.read(512*32)
++altlba -= 33
++gptheader = array.array('c',gptheader)
++#update mylba
++pack_into('Q', gptheader, 24, altlba)
++#update table lba
++pack_into('Q', gptheader, 72, altlba-32)
++#zero header crc
++pack_into('L', gptheader, 16, 0)
++#compute new crc
++newcrc = ((crc32(buffer(gptheader,0,92))) & 0xFFFFFFFF)
++pack_into('L', gptheader, 16, newcrc)
++file.seek(512*(altlba-32))
++file.write(backup)
++file.write(gptheader)
++file.write("\0" * (512 * 33))
++
+diff --git a/tests/t0281-gpt-grow.sh b/tests/t0281-gpt-grow.sh
+new file mode 100644
+index 0000000..e373578
+--- /dev/null
++++ b/tests/t0281-gpt-grow.sh
+@@ -0,0 +1,99 @@
++#!/bin/sh
++# grow a gpt disk, ensure that parted offers to update the gpt size
++
++# Copyright (C) 2009-2012 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++. "${srcdir=.}/init.sh"; path_prepend_ ../parted
++require_512_byte_sector_size_
++dev=loop-file
++
++ss=$sector_size_
++n_sectors=5000
++
++dd if=/dev/null of=$dev bs=$ss seek=$n_sectors || fail=1
++
++# create gpt label
++parted -s $dev mklabel gpt > empty 2>&1 || fail=1
++compare /dev/null empty || fail=1
++
++# print the empty table
++parted -m -s $dev unit s print > t 2>&1 || fail=1
++sed "s,.*/$dev:,$dev:," t > out || fail=1
++
++# check for expected output
++printf "BYT;\n$dev:${n_sectors}s:file:$sector_size_:$sector_size_:gpt::;\n" \
++  > exp || fail=1
++compare exp out || fail=1
++
++# grow disk
++n_sectors=5500
++dd if=/dev/null of=$dev bs=$ss seek=$n_sectors || fail=1
++
++# printing must warn, but not fix in script mode
++parted -s $dev print > out 2>&1 || fail=1
++
++# Transform the actual output, to avoid spurious differences when
++# $PWD contains a symlink-to-dir.  Also, remove the ^M      ...^M bogosity.
++# normalize the actual output
++mv out o2 && sed -e "s,/.*/$dev,DEVICE,;s,   *,,g;s, $,," \
++                      -e "s,^.*/lt-parted: ,parted: ," o2 > out
++
++# check for expected diagnostic
++cat <<EOF > exp || fail=1
++Warning: Not all of the space available to DEVICE appears to be used, you can fix the GPT to use all of the space (an extra 500 blocks) or continue with the current setting?
++Model:  (file)
++Disk DEVICE: 2816kB
++Sector size (logical/physical): 512B/512B
++Partition Table: gpt
++Disk Flags:
++
++Number  Start  End  Size  File system  Name  Flags
++
++EOF
++compare exp out || fail=1
++
++# now we fix
++printf 'f\n' | parted ---pretend-input-tty $dev print > out 2>&1 || fail=1
++
++# Transform the actual output, to avoid spurious differences when
++# $PWD contains a symlink-to-dir.  Also, remove the ^M      ...^M bogosity.
++# normalize the actual output
++mv out o2 && sed -e "s,/.*/$dev,DEVICE,;s,   *,,g;s, $,," \
++                      -e "s,^.*/lt-parted: ,parted: ," o2 > out
++
++# check for expected diagnostic
++cat <<EOF > exp || fail=1
++Warning: Not all of the space available to DEVICE appears to be used, you can fix the GPT to use all of the space (an extra 500 blocks) or continue with the current setting?
++Fix/Ignore? f
++Model:  (file)
++Disk DEVICE: 2816kB
++Sector size (logical/physical): 512B/512B
++Partition Table: gpt
++Disk Flags:
++
++Number  Start  End  Size  File system  Name  Flags
++
++EOF
++compare exp out || fail=1
++
++
++# Now should not warn
++
++parted -s $dev print > err 2>&1 || fail=1
++grep Warning: err > k ; mv k err
++compare err /dev/null || fail=1
++
++Exit $fail
+diff --git a/tests/t0282-gpt-move-backup.sh b/tests/t0282-gpt-move-backup.sh
+new file mode 100644
+index 0000000..9750ed7
+--- /dev/null
++++ b/tests/t0282-gpt-move-backup.sh
+@@ -0,0 +1,99 @@
++#!/bin/sh
++# put backup copy gpt in the wrong place, ensure that
++# parted offers to fix
++
++# Copyright (C) 2009-2012 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++. "${srcdir=.}/init.sh"; path_prepend_ ../parted
++require_512_byte_sector_size_
++dev=loop-file
++
++ss=$sector_size_
++n_sectors=5000
++
++dd if=/dev/null of=$dev bs=$ss seek=$n_sectors || fail=1
++
++# create gpt label
++parted -s $dev mklabel gpt > empty 2>&1 || fail=1
++compare /dev/null empty || fail=1
++
++# print the empty table
++parted -m -s $dev unit s print > t 2>&1 || fail=1
++sed "s,.*/$dev:,$dev:," t > out || fail=1
++
++# check for expected output
++printf "BYT;\n$dev:${n_sectors}s:file:$sector_size_:$sector_size_:gpt::;\n" \
++  > exp || fail=1
++compare exp out || fail=1
++
++# move the backup
++python ../gpt-header-move.py $dev || fail=1
++
++# printing must warn, but not fix in script mode
++parted -s $dev print > out 2>&1 || fail=1
++
++# Transform the actual output, to avoid spurious differences when
++# $PWD contains a symlink-to-dir.  Also, remove the ^M      ...^M bogosity.
++# normalize the actual output
++mv out o2 && sed -e "s,/.*/$dev,DEVICE,;s,   *,,g;s, $,," \
++                      -e "s,^.*/lt-parted: ,parted: ," o2 > out
++
++# check for expected diagnostic
++cat <<EOF > exp || fail=1
++Error: The backup GPT table is not at the end of the disk, as it should be.  Fix, by moving the backup to the end (and removing the old backup)?
++Model:  (file)
++Disk DEVICE: 2560kB
++Sector size (logical/physical): 512B/512B
++Partition Table: gpt
++Disk Flags:
++
++Number  Start  End  Size  File system  Name  Flags
++
++EOF
++compare exp out || fail=1
++
++# now we fix
++printf 'f\n' | parted ---pretend-input-tty $dev print > out 2>&1 || fail=1
++
++# Transform the actual output, to avoid spurious differences when
++# $PWD contains a symlink-to-dir.  Also, remove the ^M      ...^M bogosity.
++# normalize the actual output
++mv out o2 && sed -e "s,/.*/$dev,DEVICE,;s,   *,,g;s, $,," \
++                      -e "s,^.*/lt-parted: ,parted: ," o2 > out
++
++# check for expected diagnostic
++cat <<EOF > exp || fail=1
++Error: The backup GPT table is not at the end of the disk, as it should be.  Fix, by moving the backup to the end (and removing the old backup)?
++Fix/Ignore? f
++Model:  (file)
++Disk DEVICE: 2560kB
++Sector size (logical/physical): 512B/512B
++Partition Table: gpt
++Disk Flags:
++
++Number  Start  End  Size  File system  Name  Flags
++
++EOF
++compare exp out || fail=1
++
++
++# Now should not warn
++
++parted -s $dev print > err 2>&1 || fail=1
++grep Error: err > k ; mv k err
++compare err /dev/null || fail=1
++
++Exit $fail
+-- 
+1.8.5.3
+

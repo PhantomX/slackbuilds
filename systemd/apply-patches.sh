@@ -29,8 +29,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/udev-microsoft-3000-keymap.pat
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 
 # Upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-units-use-KillMode-mixed-for-systemd-nspawn-.service.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-util-ignore_file-should-not-allow-files-ending-with.patch
 
 ### Arch
 

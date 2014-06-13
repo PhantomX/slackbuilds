@@ -1,0 +1,268 @@
+From ed32fd7c1412eeb99cf894ffbc16afb840d064a2 Mon Sep 17 00:00:00 2001
+From: amodra <amodra@138bc75d-0d04-0410-961f-82ee72b054a4>
+Date: Wed, 11 Jun 2014 23:49:49 +0000
+Subject: [PATCH] 	PR target/61300
+ 	* doc/tm.texi.in (INCOMING_REG_PARM_STACK_SPACE): Document.
+ 	* doc/tm.texi: Regenerate.
+ 	* function.c (INCOMING_REG_PARM_STACK_SPACE): Provide default.
+ 	Use throughout in place of REG_PARM_STACK_SPACE.
+ 	* config/rs6000/rs6000.c (rs6000_reg_parm_stack_space): Add
+ 	"incoming" param.  Pass to rs6000_function_parms_need_stack.
+ 	(rs6000_function_parms_need_stack): Add "incoming" param, ignore
+ 	prototype_p when incoming.  Use function decl when incoming
+ 	to handle K&R style functions.
+ 	* config/rs6000/rs6000.h (REG_PARM_STACK_SPACE): Adjust.
+ 	(INCOMING_REG_PARM_STACK_SPACE): Define.
+
+git-svn-id: svn+ssh://gcc.gnu.org/svn/gcc/branches/gcc-4_9-branch@211482 138bc75d-0d04-0410-961f-82ee72b054a4
+---
+ gcc/ChangeLog                     |   15 +++++++++
+ gcc/config/rs6000/rs6000-protos.h |    2 +-
+ gcc/config/rs6000/rs6000.c        |   58 ++++++++++++++++++++++++++++---------
+ gcc/config/rs6000/rs6000.h        |    9 +++++-
+ gcc/doc/tm.texi                   |    7 ++++
+ gcc/doc/tm.texi.in                |    7 ++++
+ gcc/function.c                    |   15 ++++++---
+ 7 files changed, 92 insertions(+), 21 deletions(-)
+
+diff --git a/gcc/ChangeLog b/gcc/ChangeLog
+index b8feb27..1e35bbe 100644
+--- a/gcc/ChangeLog
++++ b/gcc/ChangeLog
+@@ -1,3 +1,18 @@
++2014-06-12  Alan Modra  <amodra@gmail.com>
++
++	PR target/61300
++	* doc/tm.texi.in (INCOMING_REG_PARM_STACK_SPACE): Document.
++	* doc/tm.texi: Regenerate.
++	* function.c (INCOMING_REG_PARM_STACK_SPACE): Provide default.
++	Use throughout in place of REG_PARM_STACK_SPACE.
++	* config/rs6000/rs6000.c (rs6000_reg_parm_stack_space): Add
++	"incoming" param.  Pass to rs6000_function_parms_need_stack.
++	(rs6000_function_parms_need_stack): Add "incoming" param, ignore
++	prototype_p when incoming.  Use function decl when incoming
++	to handle K&R style functions.
++	* config/rs6000/rs6000.h (REG_PARM_STACK_SPACE): Adjust.
++	(INCOMING_REG_PARM_STACK_SPACE): Define.
++
+ 2014-06-11  Richard Biener  <rguenther@suse.de>
+ 
+ 	PR tree-optimization/61452
+diff --git a/gcc/config/rs6000/rs6000-protos.h b/gcc/config/rs6000/rs6000-protos.h
+index 69bb263..785f6ce 100644
+--- a/gcc/config/rs6000/rs6000-protos.h
++++ b/gcc/config/rs6000/rs6000-protos.h
+@@ -163,7 +163,7 @@ extern tree altivec_resolve_overloaded_builtin (location_t, tree, void *);
+ extern rtx rs6000_libcall_value (enum machine_mode);
+ extern rtx rs6000_va_arg (tree, tree);
+ extern int function_ok_for_sibcall (tree);
+-extern int rs6000_reg_parm_stack_space (tree);
++extern int rs6000_reg_parm_stack_space (tree, bool);
+ extern void rs6000_elf_declare_function_name (FILE *, const char *, tree);
+ extern bool rs6000_elf_in_small_data_p (const_tree);
+ #ifdef ARGS_SIZE_RTX
+diff --git a/gcc/config/rs6000/rs6000.c b/gcc/config/rs6000/rs6000.c
+index fcb884f..da01ea9 100644
+--- a/gcc/config/rs6000/rs6000.c
++++ b/gcc/config/rs6000/rs6000.c
+@@ -10478,35 +10478,65 @@ rs6000_parm_needs_stack (cumulative_args_t args_so_far, tree type)
+    list, or passes any parameter in memory.  */
+ 
+ static bool
+-rs6000_function_parms_need_stack (tree fun)
++rs6000_function_parms_need_stack (tree fun, bool incoming)
+ {
+-  function_args_iterator args_iter;
+-  tree arg_type;
++  tree fntype, result;
+   CUMULATIVE_ARGS args_so_far_v;
+   cumulative_args_t args_so_far;
+ 
+   if (!fun)
+     /* Must be a libcall, all of which only use reg parms.  */
+     return false;
++
++  fntype = fun;
+   if (!TYPE_P (fun))
+-    fun = TREE_TYPE (fun);
++    fntype = TREE_TYPE (fun);
+ 
+   /* Varargs functions need the parameter save area.  */
+-  if (!prototype_p (fun) || stdarg_p (fun))
++  if ((!incoming && !prototype_p (fntype)) || stdarg_p (fntype))
+     return true;
+ 
+-  INIT_CUMULATIVE_INCOMING_ARGS (args_so_far_v, fun, NULL_RTX);
++  INIT_CUMULATIVE_INCOMING_ARGS (args_so_far_v, fntype, NULL_RTX);
+   args_so_far = pack_cumulative_args (&args_so_far_v);
+ 
+-  if (aggregate_value_p (TREE_TYPE (fun), fun))
++  /* When incoming, we will have been passed the function decl.
++     It is necessary to use the decl to handle K&R style functions,
++     where TYPE_ARG_TYPES may not be available.  */
++  if (incoming)
+     {
+-      tree type = build_pointer_type (TREE_TYPE (fun));
+-      rs6000_parm_needs_stack (args_so_far, type);
++      gcc_assert (DECL_P (fun));
++      result = DECL_RESULT (fun);
+     }
++  else
++    result = TREE_TYPE (fntype);
+ 
+-  FOREACH_FUNCTION_ARGS (fun, arg_type, args_iter)
+-    if (rs6000_parm_needs_stack (args_so_far, arg_type))
+-      return true;
++  if (result && aggregate_value_p (result, fntype))
++    {
++      if (!TYPE_P (result))
++	result = TREE_TYPE (result);
++      result = build_pointer_type (result);
++      rs6000_parm_needs_stack (args_so_far, result);
++    }
++
++  if (incoming)
++    {
++      tree parm;
++
++      for (parm = DECL_ARGUMENTS (fun);
++	   parm && parm != void_list_node;
++	   parm = TREE_CHAIN (parm))
++	if (rs6000_parm_needs_stack (args_so_far, TREE_TYPE (parm)))
++	  return true;
++    }
++  else
++    {
++      function_args_iterator args_iter;
++      tree arg_type;
++
++      FOREACH_FUNCTION_ARGS (fntype, arg_type, args_iter)
++	if (rs6000_parm_needs_stack (args_so_far, arg_type))
++	  return true;
++    }
+ 
+   return false;
+ }
+@@ -10518,7 +10548,7 @@ rs6000_function_parms_need_stack (tree fun)
+    all parameters in registers.  */
+ 
+ int
+-rs6000_reg_parm_stack_space (tree fun)
++rs6000_reg_parm_stack_space (tree fun, bool incoming)
+ {
+   int reg_parm_stack_space;
+ 
+@@ -10536,7 +10566,7 @@ rs6000_reg_parm_stack_space (tree fun)
+     case ABI_ELFv2:
+       /* ??? Recomputing this every time is a bit expensive.  Is there
+ 	 a place to cache this information?  */
+-      if (rs6000_function_parms_need_stack (fun))
++      if (rs6000_function_parms_need_stack (fun, incoming))
+ 	reg_parm_stack_space = TARGET_64BIT ? 64 : 32;
+       else
+ 	reg_parm_stack_space = 0;
+diff --git a/gcc/config/rs6000/rs6000.h b/gcc/config/rs6000/rs6000.h
+index 21330dc..10b2070 100644
+--- a/gcc/config/rs6000/rs6000.h
++++ b/gcc/config/rs6000/rs6000.h
+@@ -1602,7 +1602,14 @@ extern enum reg_class rs6000_constraints[RS6000_CONSTRAINT_MAX];
+ /* Define this if stack space is still allocated for a parameter passed
+    in a register.  The value is the number of bytes allocated to this
+    area.  */
+-#define REG_PARM_STACK_SPACE(FNDECL) rs6000_reg_parm_stack_space((FNDECL))
++#define REG_PARM_STACK_SPACE(FNDECL) \
++  rs6000_reg_parm_stack_space ((FNDECL), false)
++
++/* Define this macro if space guaranteed when compiling a function body
++   is different to space required when making a call, a situation that
++   can arise with K&R style function definitions.  */
++#define INCOMING_REG_PARM_STACK_SPACE(FNDECL) \
++  rs6000_reg_parm_stack_space ((FNDECL), true)
+ 
+ /* Define this if the above stack space is to be considered part of the
+    space allocated by the caller.  */
+diff --git a/gcc/doc/tm.texi b/gcc/doc/tm.texi
+index f7024a7..0221870 100644
+--- a/gcc/doc/tm.texi
++++ b/gcc/doc/tm.texi
+@@ -3947,6 +3947,13 @@ which.
+ @c above is overfull.  not sure what to do.  --mew 5feb93  did
+ @c something, not sure if it looks good.  --mew 10feb93
+ 
++@defmac INCOMING_REG_PARM_STACK_SPACE (@var{fndecl})
++Like @code{REG_PARM_STACK_SPACE}, but for incoming register arguments.
++Define this macro if space guaranteed when compiling a function body
++is different to space required when making a call, a situation that
++can arise with K&R style function definitions.
++@end defmac
++
+ @defmac OUTGOING_REG_PARM_STACK_SPACE (@var{fntype})
+ Define this to a nonzero value if it is the responsibility of the
+ caller to allocate the area reserved for arguments passed in registers
+diff --git a/gcc/doc/tm.texi.in b/gcc/doc/tm.texi.in
+index 6dcbde4..0c7c9aa 100644
+--- a/gcc/doc/tm.texi.in
++++ b/gcc/doc/tm.texi.in
+@@ -3498,6 +3498,13 @@ which.
+ @c above is overfull.  not sure what to do.  --mew 5feb93  did
+ @c something, not sure if it looks good.  --mew 10feb93
+ 
++@defmac INCOMING_REG_PARM_STACK_SPACE (@var{fndecl})
++Like @code{REG_PARM_STACK_SPACE}, but for incoming register arguments.
++Define this macro if space guaranteed when compiling a function body
++is different to space required when making a call, a situation that
++can arise with K&R style function definitions.
++@end defmac
++
+ @defmac OUTGOING_REG_PARM_STACK_SPACE (@var{fntype})
+ Define this to a nonzero value if it is the responsibility of the
+ caller to allocate the area reserved for arguments passed in registers
+diff --git a/gcc/function.c b/gcc/function.c
+index a61e475..8cdf0be 100644
+--- a/gcc/function.c
++++ b/gcc/function.c
+@@ -1347,9 +1347,13 @@ static int cfa_offset;
+ #define STACK_POINTER_OFFSET	0
+ #endif
+ 
++#if defined (REG_PARM_STACK_SPACE) && !defined (INCOMING_REG_PARM_STACK_SPACE)
++#define INCOMING_REG_PARM_STACK_SPACE REG_PARM_STACK_SPACE
++#endif
++
+ /* If not defined, pick an appropriate default for the offset of dynamically
+    allocated memory depending on the value of ACCUMULATE_OUTGOING_ARGS,
+-   REG_PARM_STACK_SPACE, and OUTGOING_REG_PARM_STACK_SPACE.  */
++   INCOMING_REG_PARM_STACK_SPACE, and OUTGOING_REG_PARM_STACK_SPACE.  */
+ 
+ #ifndef STACK_DYNAMIC_OFFSET
+ 
+@@ -1361,12 +1365,12 @@ static int cfa_offset;
+    `crtl->outgoing_args_size'.  Nevertheless, we must allow
+    for it when allocating stack dynamic objects.  */
+ 
+-#if defined(REG_PARM_STACK_SPACE)
++#ifdef INCOMING_REG_PARM_STACK_SPACE
+ #define STACK_DYNAMIC_OFFSET(FNDECL)	\
+ ((ACCUMULATE_OUTGOING_ARGS						      \
+   ? (crtl->outgoing_args_size				      \
+      + (OUTGOING_REG_PARM_STACK_SPACE ((!(FNDECL) ? NULL_TREE : TREE_TYPE (FNDECL))) ? 0 \
+-					       : REG_PARM_STACK_SPACE (FNDECL))) \
++					       : INCOMING_REG_PARM_STACK_SPACE (FNDECL))) \
+   : 0) + (STACK_POINTER_OFFSET))
+ #else
+ #define STACK_DYNAMIC_OFFSET(FNDECL)	\
+@@ -2221,8 +2225,9 @@ assign_parms_initialize_all (struct assign_parm_data_all *all)
+ #endif
+   all->args_so_far = pack_cumulative_args (&all->args_so_far_v);
+ 
+-#ifdef REG_PARM_STACK_SPACE
+-  all->reg_parm_stack_space = REG_PARM_STACK_SPACE (current_function_decl);
++#ifdef INCOMING_REG_PARM_STACK_SPACE
++  all->reg_parm_stack_space
++    = INCOMING_REG_PARM_STACK_SPACE (current_function_decl);
+ #endif
+ }
+ 
+-- 
+1.7.1
+

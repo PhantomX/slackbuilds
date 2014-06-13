@@ -22,11 +22,10 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-no-copy-dt-needed-entrie
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr56493.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-color-auto.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-libgo-p224.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr61012.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc.git-fc805eeb5f3e53c296e4dcbe6d3c3963cdeecd74.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr60969.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr61215.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr61143.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr61300.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr61443.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-r210418.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc.git-d8398ac5578c9a436ef700069492dac900321ab4.patch
 
 # From Gentoo
 patch -p1 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_default-fortify-source.patch

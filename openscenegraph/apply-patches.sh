@@ -11,4 +11,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-Fix-invalid-char.patch
 # Reactivate for now.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-Activate-osgviewerWX.patch
 
+### Arch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/giflib.patch
+
 set +e +o pipefail

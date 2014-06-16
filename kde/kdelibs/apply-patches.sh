@@ -62,6 +62,8 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-klauncher-no-glib.
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
 
+patch -p0 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-giflib51.patch
+
 # official backports
 
 # Branch upstream

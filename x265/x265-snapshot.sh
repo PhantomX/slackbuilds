@@ -47,12 +47,12 @@ pushd "${tmp}"
     fi
 
     sed -i \
-      -e "/set(X265_VERSION \"unknown\"/aset(X265_LATEST_TAG ${X265_LATEST_TAG})" \
-      -e "/X265_VERSION/s|\"unknown\"|${HG_REVISION}|g" \
+      -e "/^set\(X265_VERSION/s|\"unknown\"|\"${HG_REVISION}\"|g" \
+      -e "/^set\(X265_LATEST_TAG/s|\"0\.0\"|\"${X265_LATEST_TAG}\"|g" \
       source/cmake/version.cmake
 
     find . -type d -name .hg -print0 | xargs -0r rm -rf
-    rm -f .hgignore .hgsigs .hgtags
+    rm -f .hgignore .hgsigs .hgtags .hg_archival.txt
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

@@ -21,7 +21,5 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-set-section-macr
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-fake-zlib-sections.patch
 # Fix detections little endian PPC shared libraries
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-ldforcele.patch
-# fix autoconf hang with -static -fPIE -pie - commits d1ec1e40 and 818d220a
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-static-pie-hang.patch
 
 set +e +o pipefail

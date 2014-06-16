@@ -81,6 +81,7 @@ ApplyPatch glslang_bison3.patch
 # support aarch64
 ApplyPatch qtwebkit-aarch64.patch 
 
-ApplyPatch qtwebkit-2.3.3
+# truly madly deeply no rpath please, kthxbye
+ApplyPatch webkit-qtwebkit-23-no_rpath.patch
 
 set +e +o pipefail

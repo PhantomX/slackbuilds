@@ -14,6 +14,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.8.10-boost-1.50.patc
 
 ### Arch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nodebug.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.8.10-giflib-5.0.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.8.10-giflib-5.1.patch
 
 set +e +o pipefail

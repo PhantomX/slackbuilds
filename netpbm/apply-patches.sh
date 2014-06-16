@@ -7,8 +7,8 @@ SB_PATCHDIR=${CWD}/patches
 zcat ${SB_PATCHDIR}/${NAME}-time.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-message.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-security-scripts.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-security-code.patch
-zcat ${SB_PATCHDIR}/${NAME}-nodoc.patch.gz | patch -p1 -E --backup --verbose
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-security-code.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nodoc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-gcc4.patch
 zcat ${SB_PATCHDIR}/${NAME}-bmptopnm.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-CAN-2005-2471.patch
@@ -25,5 +25,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pamtojpeg2k.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-manfix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-ppmtopict.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pnmtopclxl.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-werror.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-disable-pbmtog3.patch
 
 set +e +o pipefail

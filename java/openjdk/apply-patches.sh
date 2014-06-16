@@ -8,6 +8,7 @@ SB_PATCHDIR=${CWD}/patches
 cp ${SB_PATCHDIR}/*.{diff,patch} ${SB_SROOT}/patches/
 export DISTRIBUTION_PATCHES="patches/fontconfig-paths.diff \
   patches/openjdk7_nonreparenting-wm.diff \
-  patches/java-1.7.0-openjdk-freetype-check-fix.patch"
+  patches/java-1.7.0-openjdk-freetype-check-fix.patch\
+  patches/giflib_5.1.diff"
 
 set +e +o pipefail

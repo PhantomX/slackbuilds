@@ -14,6 +14,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.9.15-multilib-config
 zcat ${SB_PATCHDIR}/${NAME}.mitshm.render.diff.gz | patch -p1 --verbose
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/imlib-1.9.15-libpng15.patch
 ### Arch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/imlib-giflib5.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/imlib-giflib51.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/imlib-gtk.patch
 
 set +e +o pipefail

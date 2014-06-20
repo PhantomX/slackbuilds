@@ -24,6 +24,7 @@ pushd "${tmp}"
   bzr checkout --lightweight ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}/
     find . -type d -name .bzr -print0 | xargs -0r rm -rf
+    find . -type d -name .bzr-builddeb -print0 | xargs -0r rm -rf
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

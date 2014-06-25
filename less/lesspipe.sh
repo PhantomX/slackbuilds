@@ -62,17 +62,19 @@ lesspipe() {
   *.rpm) rpm -qpvl "$1" ;;
   *.7z|*.7Z) # check if p7zip is installed first
     if which 7z 1> /dev/null ; then
-      $(which 7z) t "$1" 
+      $(which 7z) t "$1"
     fi ;;
   *.cab|*.CAB) # check if cabextract is installed first
     if which cabextract 1> /dev/null ; then
-      $(which cabextract) -l "$1" 
+      $(which cabextract) -l "$1"
     fi ;;
   *.rar|*.RAR|*.cbr|*.CBR) # check if rar is installed first
-    if which rar 1> /dev/null ; then
-      $(which rar) t "$1" 
-    elif which unrar 1> /dev/null ; then
-      $(which unrar) t "$1" 
+    if which unrar 1> /dev/null ; then
+      $(which unrar) va "$1"
+    elif which rar 1> /dev/null ; then
+      $(which rar) va "$1"
+    elif which lsar 1> /dev/null ; then
+      $(which unrar) -l "$1" 
     fi ;;
   *.1|*.2|*.3|*.4|*.5|*.6|*.7|*.8|*.9|*.n|*.man) # *roff src?
     if file -L "$1" | grep roff 1> /dev/null ; then
@@ -110,29 +112,29 @@ lesspipe() {
   *.xz) xz -dc "$1" ;;
   *.gpg) gpg -d "$1" ;;
   *.bmp|*.BMP|*.gif|*.GIF|*.jpg|*.jpeg|*.mng|*.pcd|*.png|*.tga|*.tiff|*.tif)
-    if [ -x /usr/bin/mediainfo ]; then
-      mediainfo "$1"
+    if which mediainfo 1> /dev/null ; then
+      $(which mediainfo) "$1"
     else
       echo "No mediainfo available"
-      echo "Install mediainfo to display multimedia files info "
+      echo "Install mediainfo to display multimedia files info"
       exit 1
     fi ;;
     *.ac3|*.flac|*.m4a|*.mp2|*.mp3|*.mpc|*.ogg|*.opus|*.wav|*.wma|*.wv)
-    if [ -x /usr/bin/mediainfo ]; then
-      mediainfo "$1"
+    if which mediainfo 1> /dev/null ; then
+      $(which mediainfo) "$1"
     else
       echo "No mediainfo available"
-      echo "Install mediainfo to display multimedia files info "
+      echo "Install mediainfo to display multimedia files info"
       exit 1
     fi ;;
     *.mid|*.midi|*.nsf|*.spc)
       file -L -b "$1" ;;
     *.asf|*.avi|*.flv|*.m4v|*.mkv|*.mov|*.mpg|*.mpeg|*.mp4|*.ogv|*.rmvb|*.vob|*.VOB|*.webm|*.wmv)
-    if [ -x /usr/bin/mediainfo ]; then
-      mediainfo "$1"
+    if which mediainfo 1> /dev/null ; then
+      $(which mediainfo) "$1"
     else
       echo "No mediainfo available"
-      echo "Install mediainfo to display multimedia files info "
+      echo "Install mediainfo to display multimedia files info"
       exit 1
     fi ;;
 #  *) FILE=`file -L "$1"` ; # Check to see if binary, if so -- view with 'strings'

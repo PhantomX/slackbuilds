@@ -34,7 +34,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.9-fixheader.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.9-phpinfo.patch
 
 # Upstream fixes
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-bug66731.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

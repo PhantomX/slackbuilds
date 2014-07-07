@@ -22,4 +22,9 @@ do
     ${i}
 done
 
+### Debian
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/path-max.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/remove-strict-prototype-warnings.patch
+[ "${SB_FFMPEG}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ffmpeg.patch
+
 set +e +o pipefail

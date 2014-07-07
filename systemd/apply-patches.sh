@@ -29,6 +29,9 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/udev-microsoft-3000-keymap.pat
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 
 # Upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-sd-path-add-missing-header.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-networkd-link-improve-link-tracking-logging.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-networkd-properly-track-addresses-when-first-added.patch
 
 ### Arch
 

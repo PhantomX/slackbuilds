@@ -204,6 +204,9 @@ ApplyPatch 0001-HID-rmi-do-not-handle-touchscreens-through-hid-rmi.patch
 #rhbz 1090161
 ApplyPatch HID-rmi-do-not-fetch-more-than-16-bytes-in-a-query.patch
 
+#rhbz 1064516
+ApplyPatch e1000e-Failure-to-write-SHRA-turns-on-PROMISC-mode.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

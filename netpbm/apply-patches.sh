@@ -25,7 +25,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pamtojpeg2k.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-manfix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-ppmtopict.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pnmtopclxl.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-werror.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-disable-pbmtog3.patch
 
 set +e +o pipefail

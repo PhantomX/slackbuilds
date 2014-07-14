@@ -5,7 +5,7 @@
 # Script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ fedora-dist package dist
 #
-# Copyright 2008, 2010, 2011 Phantom X, Goiania, Brazil.
+# Copyright 2008-2014 Phantom X, Goiania, Brazil.
 #
 # Redistribution and use of this script, with or without modification, is
 # permitted provided that the following conditions are met:
@@ -88,7 +88,9 @@ unset CDPATH
 pwd=$(pwd)
 
 pushd "${tmp}"
-  git clone --depth 1 ${fedoraroot}/${module}
+  unset nsb
+  [ "${dist}" = "master" ] || nsb='--no-single-branch'
+  git clone --depth 1 ${nsb} ${fedoraroot}/${module}
   cd ${module}
   [ "${dist}" = "master" ] || git checkout -q origin/${dist}
   if [ -n "${sarchive}" ] ; then

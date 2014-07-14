@@ -5,7 +5,6 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 zcat ${SB_PATCHDIR}/${NAME}.readline.set_pre_input_hook.diff.gz | patch -p1 --verbose
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7.6-readline63.patch
 
 # From Gentoo
 for patches in \
@@ -72,7 +71,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00185-urllib2-honors-noproxy-f
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00187-add-RPATH-to-pyexpat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00189-gdb-py-bt-dont-raise-exception-from-eval.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00190-get_python_version.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00192-buffer-overflow.patch
 
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
 

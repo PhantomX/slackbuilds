@@ -96,6 +96,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-loca
 ## upstream patches
 
 ## trunk patches
+# fix choppy fullscreen with OpenGL compositing on latest intel drv (kde#336589)
+# upstream patch by Martin Gräßlin from kwin master
+# http://commits.kde.org/kwin/e8241313fc979aefafc8c2a0207570d6394f1580
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.10-kwin-intel-kde\#336589.patch
 
 # Arch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/terminate-server.patch

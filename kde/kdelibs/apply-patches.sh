@@ -59,16 +59,15 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.12.90-dot.patch
 # set QT_NO_GLIB in klauncher_main.cpp as a possible fix/workaround for #983110
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-klauncher-no-glib.patch
 
+# opening a terminal in Konqueror / Dolphin does not inherit environment variables
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.13.2-invokeTerminal.patch
+
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
 
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0006-Do-not-set-global-loading-of-DTD-and-entities-no-mor.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0008-Don-t-require-a-job-to-handle-messageboxes.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r0ded2a069f270507a6c8020688582a47babbcc83.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r40e073c60f6cc8df1320460fbf94adae9e7b5254.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578

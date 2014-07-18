@@ -207,6 +207,9 @@ ApplyPatch HID-rmi-do-not-fetch-more-than-16-bytes-in-a-query.patch
 #rhbz 1064516
 ApplyPatch e1000e-Failure-to-write-SHRA-turns-on-PROMISC-mode.patch
 
+#CVE-2014-4943 rhbz 1119458 1120542
+ApplyPatch net-l2tp-don-t-fall-back-on-UDP-get-set-sockopt.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

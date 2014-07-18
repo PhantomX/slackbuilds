@@ -10,8 +10,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15-unicode_start.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15.3-dumpkeys-man.patch
 # Patch4: fixes decimal separator in Swiss German keyboard layout, rhbz 882529
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15.5-sg-decimal-separator.patch
-# implement PAM account and password management, backported from upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15.5-vlock-more-pam.patch
 # adds xkb and legacy keymaps subdirs to loadkyes search path, rhbz 1028207 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kbd-1.15.5-loadkeys-search-path.patch
 

@@ -58,6 +58,9 @@ fi
   ApplyPatch 00_all_0009-gentoo-support-running-tests-under-sandbox.patch
   ApplyPatch 00_all_0010-gentoo-disable-building-in-timezone-subdir.patch
   ApplyPatch 00_all_0011-arm-fix-PIC-vs-SHARED-typos.patch
+  ApplyPatch 00_all_0012-posix_spawn_file_actions_addopen-needs-to-copy-the-p.patch
+  ApplyPatch 00_all_0013-posix_spawn_faction_addopen-Add-missing-string.h-inc.patch
+  ApplyPatch 00_all_0014-Fix-sign-of-input-to-bsloww1-BZ-16623.patch
 )
 
 ## Fedora
@@ -117,7 +120,6 @@ ApplyPatch glibc-2.19-fix-sign-in-bsloww1-input.patch
 ApplyPatch 0001-Avoid-comma-operator-warnings.patch
 ApplyPatch 0001-Fix-tst-sscanf-and-tst-swscanf-on-64-bit.patch
 ApplyPatch 0001-BZ-16447-Fix-ldbl-128-expl-implementation.patch
-ApplyPatch 0001-Fix-sign-of-input-to-bsloww1-BZ-16623.patch
 ApplyPatch 0001-Mark-nscd-service-as-forking-in-systemd-service-file.patch
 ApplyPatch 0001-nscd-Improved-support-for-tracking-startup-failure-i.patch
 ApplyPatch 0001-Provide-correct-buffer-length-to-netgroup-queries-in.patch
@@ -129,5 +131,8 @@ ApplyPatch 0001-Fix-clog10-0-0i-bug-16362.patch
 ApplyPatch 0001-Correct-robust-mutex-PI-futex-kernel-assumptions-bug.patch
 ApplyPatch 0001-BZ-16824-Fix-failing-y1-due-to-too-large-ulps-in-dow.patch
 ApplyPatch 0001-Fix-invalid-file-descriptor-reuse-while-sending-DNS-.patch
+ApplyPatch 0001-Fix-__ieee754_logl-LDBL_MAX-in-FE_DOWNWARD-mode-bug-.patch
+ApplyPatch 0001-Don-t-ignore-too-long-lines-in-nss_files-BZ-17079.patch
+ApplyPatch 0001-Fix-fallback-fesetenv-and-feupdateenv-on-FE_NOMASK_E.patch
 
 set +e +o pipefail

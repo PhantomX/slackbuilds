@@ -20,7 +20,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.2-icons.patch
 [ "${SB_SYSTEMD}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.3-mod_systemd.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-cachehardmax.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-sslmultiproxy.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.7-r1537535.patch
+[ "${SB_SYSTEMD}" = "YES" ] && patch -p1 -E -F1 --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.9-socket-activation.patch
 
 # Bug fixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/httpd-2.4.4-malformed-host.patch

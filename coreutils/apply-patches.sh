@@ -15,7 +15,6 @@ else
 fi
 
 # From upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.22-datetzcrash.patch
 
 # Fedora patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-6.10-configuration.patch
@@ -36,23 +35,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.5.3-langinfo.patch
 # (sb) lin18nux/lsb compliance
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-i18n.patch
 
-if [ "${SB_PAM}" = "YES" ] ; then
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.5-pam.patch
-  # Call setsid() in su under some circumstances
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-setsid.patch
-  # make runuser binary based on su.c
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.7-runuser.patch
-  # compile su with pie flag and RELRO protection
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.4-su-pie.patch
-fi
-
 # getgrouplist() patch from Ulrich Drepper.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-getgrouplist.patch
 # Prevent buffer overflow in who(1).
 zcat ${SB_PATCHDIR}/${NAME}-overflow.patch.gz | patch -p1 -E --backup --verbose
-
-### Arch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-8.22-shuf-segfault.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-cp-don-t-reserve-a-device-number.patch
 
 set +e +o pipefail

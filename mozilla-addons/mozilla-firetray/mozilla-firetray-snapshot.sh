@@ -44,6 +44,7 @@ pushd "${tmp}"
       fi
     fi
     echo "$(git describe --tags --dirty --always 2> /dev/null)" > version
+    sed -i -e "/^SCM-REVISION =/s|=.*$|= $(git rev-parse --short HEAD)|g" src/Makefile
     find . -type d -name .git -print0 | xargs -0r rm -rf
     rm -f .gitignore config.git-hash
   popd

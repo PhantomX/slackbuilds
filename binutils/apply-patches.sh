@@ -20,6 +20,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-set-section-macr
 # Fix detections of uncompressed .debug_str sections that look like they have been compressed.
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-fake-zlib-sections.patch
 # Fix detections little endian PPC shared libraries
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-ldforcele.patch
+#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-ldforcele.patch
 
 set +e +o pipefail

@@ -1,0 +1,1010 @@
+From 9008f3d5646f1f32cfe5f06e5e03f56f867a5b04 Mon Sep 17 00:00:00 2001
+From: David Woodhouse <David.Woodhouse@intel.com>
+Date: Fri, 11 Jul 2014 10:27:18 +0100
+Subject: [PATCH 1/8] ntlm_wb: Fix hard-coded limit on NTLM auth packet size
+
+Bumping it to 1KiB in commit aaaf9e50ec is all very well, but having hit
+a hard limit once let's just make it cope by reallocating as necessary.
+---
+ lib/curl_ntlm_wb.c | 39 +++++++++++++++++++++++++--------------
+ 1 file changed, 25 insertions(+), 14 deletions(-)
+
+diff --git a/lib/curl_ntlm_wb.c b/lib/curl_ntlm_wb.c
+index 57f7142..e47b88a 100644
+--- a/lib/curl_ntlm_wb.c
++++ b/lib/curl_ntlm_wb.c
+@@ -227,11 +227,11 @@ done:
+ static CURLcode ntlm_wb_response(struct connectdata *conn,
+                                  const char *input, curlntlm state)
+ {
+-  ssize_t size;
+-  char buf[NTLM_BUFSIZE];
+-  char *tmpbuf = buf;
+-  size_t len_in = strlen(input);
+-  size_t len_out = sizeof(buf);
++  char *buf = malloc(NTLM_BUFSIZE);
++  size_t len_in = strlen(input), len_out = 0;
++
++  if(!buf)
++    return CURLE_OUT_OF_MEMORY;
+ 
+   while(len_in > 0) {
+     ssize_t written = swrite(conn->ntlm_auth_hlpr_socket, input, len_in);
+@@ -246,8 +246,11 @@ static CURLcode ntlm_wb_response(struct connectdata *conn,
+     len_in -= written;
+   }
+   /* Read one line */
+-  while(len_out > 0) {
+-    size = sread(conn->ntlm_auth_hlpr_socket, tmpbuf, len_out);
++  while(1) {
++    ssize_t size;
++    char *newbuf;
++
++    size = sread(conn->ntlm_auth_hlpr_socket, buf + len_out, NTLM_BUFSIZE);
+     if(size == -1) {
+       if(errno == EINTR)
+         continue;
+@@ -255,22 +258,28 @@ static CURLcode ntlm_wb_response(struct connectdata *conn,
+     }
+     else if(size == 0)
+       goto done;
+-    else if(tmpbuf[size - 1] == '\n') {
+-      tmpbuf[size - 1] = '\0';
++
++    len_out += size;
++    if(buf[len_out - 1] == '\n') {
++      buf[len_out - 1] = '\0';
+       goto wrfinish;
+     }
+-    tmpbuf += size;
+-    len_out -= size;
++    newbuf = realloc(buf, len_out + NTLM_BUFSIZE);
++    if(!newbuf) {
++      free(buf);
++      return CURLE_OUT_OF_MEMORY;
++    }
++    buf = newbuf;
+   }
+   goto done;
+ wrfinish:
+   /* Samba/winbind installed but not configured */
+   if(state == NTLMSTATE_TYPE1 &&
+-     size == 3 &&
++     len_out == 3 &&
+      buf[0] == 'P' && buf[1] == 'W')
+     return CURLE_REMOTE_ACCESS_DENIED;
+   /* invalid response */
+-  if(size < 4)
++  if(len_out < 4)
+     goto done;
+   if(state == NTLMSTATE_TYPE1 &&
+      (buf[0]!='Y' || buf[1]!='R' || buf[2]!=' '))
+@@ -280,9 +289,11 @@ wrfinish:
+      (buf[0]!='A' || buf[1]!='F' || buf[2]!=' '))
+     goto done;
+ 
+-  conn->response_header = aprintf("NTLM %.*s", size - 4, buf + 3);
++  conn->response_header = aprintf("NTLM %.*s", len_out - 4, buf + 3);
++  free(buf);
+   return CURLE_OK;
+ done:
++  free(buf);
+   return CURLE_REMOTE_ACCESS_DENIED;
+ }
+ 
+-- 
+1.9.3
+
+
+From 223612afa213cb013f380c9c51b8c503e858bf5c Mon Sep 17 00:00:00 2001
+From: David Woodhouse <David.Woodhouse@intel.com>
+Date: Fri, 11 Jul 2014 11:31:40 +0100
+Subject: [PATCH 2/8] ntlm_wb: Avoid invoking ntlm_auth helper with empty
+ username
+
+---
+ lib/curl_ntlm_wb.c | 31 +++++++++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/lib/curl_ntlm_wb.c b/lib/curl_ntlm_wb.c
+index e47b88a..23ee726 100644
+--- a/lib/curl_ntlm_wb.c
++++ b/lib/curl_ntlm_wb.c
+@@ -39,6 +39,9 @@
+ #ifdef HAVE_SIGNAL_H
+ #include <signal.h>
+ #endif
++#ifdef HAVE_PWD_H
++#include <pwd.h>
++#endif
+ 
+ #include "urldata.h"
+ #include "sendf.h"
+@@ -117,6 +120,10 @@ static CURLcode ntlm_wb_init(struct connectdata *conn, const char *userp)
+   char *slash, *domain = NULL;
+   const char *ntlm_auth = NULL;
+   char *ntlm_auth_alloc = NULL;
++#if defined(HAVE_GETPWUID_R) && defined(HAVE_GETEUID)
++  struct passwd pw, *pw_res;
++  char pwbuf[1024];
++#endif
+   int error;
+ 
+   /* Return if communication with ntlm_auth already set up */
+@@ -125,6 +132,30 @@ static CURLcode ntlm_wb_init(struct connectdata *conn, const char *userp)
+     return CURLE_OK;
+ 
+   username = userp;
++  /* The real ntlm_auth really doesn't like being invoked with an
++     empty username. It won't make inferences for itself, and expects
++     the client to do so (mostly because it's really designed for
++     servers like squid to use for auth, and client support is an
++     afterthought for it). So try hard to provide a suitable username
++     if we don't already have one. But if we can't, provide the
++     empty one anyway. Perhaps they have an implementation of the
++     ntlm_auth helper which *doesn't* need it so we might as well try */
++  if(!username || !username[0]) {
++    username = getenv("NTLMUSER");
++    if(!username || !username[0])
++      username = getenv("LOGNAME");
++    if(!username || !username[0])
++      username = getenv("USER");
++#if defined(HAVE_GETPWUID_R) && defined(HAVE_GETEUID)
++    if((!username || !username[0]) &&
++       !getpwuid_r(geteuid(), &pw, pwbuf, sizeof(pwbuf), &pw_res) &&
++       pw_res) {
++      username = pw.pw_name;
++    }
++#endif
++    if(!username || !username[0])
++      username = userp;
++  }
+   slash = strpbrk(username, "\\/");
+   if(slash) {
+     if((domain = strdup(username)) == NULL)
+-- 
+1.9.3
+
+
+From 9ad282b1ae1135e7d5dd2e466ff8671c1e4ee04b Mon Sep 17 00:00:00 2001
+From: David Woodhouse <David.Woodhouse@intel.com>
+Date: Fri, 11 Jul 2014 09:37:18 +0100
+Subject: [PATCH 3/8] Remove all traces of FBOpenSSL SPNEGO support
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This is just fundamentally broken. SPNEGO (RFC4178) is a protocol which
+allows client and server to negotiate the underlying mechanism which will
+actually be used to authenticate. This is *often* Kerberos, and can also
+be NTLM and other things. And to complicate matters, there are various
+different OIDs which can be used to specify the Kerberos mechanism too.
+
+A SPNEGO exchange will identify *which* GSSAPI mechanism is being used,
+and will exchange GSSAPI tokens which are appropriate for that mechanism.
+
+But this SPNEGO implementation just strips the incoming SPNEGO packet
+and extracts the token, if any. And completely discards the information
+about *which* mechanism is being used. Then we *assume* it was Kerberos,
+and feed the token into gss_init_sec_context() with the default
+mechanism (GSS_S_NO_OID for the mech_type argument).
+
+Furthermore... broken as this code is, it was never even *used* for input
+tokens anyway, because higher layers of curl would just bail out if the
+server actually said anything *back* to us in the negotiation. We assume
+that we send a single token to the server, and it accepts it. If the server
+wants to continue the exchange (as is required for NTLM and for SPNEGO
+to do anything useful), then curl was broken anyway.
+
+So the only bit which actually did anything was the bit in
+Curl_output_negotiate(), which always generates an *initial* SPNEGO
+token saying "Hey, I support only the Kerberos mechanism and this is its
+token".
+
+You could have done that by manually just prefixing the Kerberos token
+with the appropriate bytes, if you weren't going to do any proper SPNEGO
+handling. There's no need for the FBOpenSSL library at all.
+
+The sane way to do SPNEGO is just to *ask* the GSSAPI library to do
+SPNEGO. That's what the 'mech_type' argument to gss_init_sec_context()
+is for. And then it should all Just Work™.
+
+That 'sane way' will be added in a subsequent patch, as will bug fixes
+for our failure to handle any exchange other than a single outbound
+token to the server which results in immediate success.
+---
+ docs/LICENSE-MIXING            |   6 ---
+ docs/examples/Makefile.m32     |   6 ---
+ docs/examples/Makefile.netware |   7 ---
+ install-sh                     |  14 +++---
+ lib/Makefile.Watcom            |   4 +-
+ lib/Makefile.m32               |   3 --
+ lib/Makefile.netware           |   7 ---
+ lib/config-dos.h               |   1 -
+ lib/config-symbian.h           |   3 --
+ lib/config-tpf.h               |   3 --
+ lib/config-vxworks.h           |   3 --
+ lib/curl_config.h.cmake        |   3 --
+ lib/http_negotiate.c           | 106 -----------------------------------------
+ lib/version.c                  |   3 --
+ mkinstalldirs                  |   4 +-
+ src/Makefile.m32               |   6 ---
+ src/Makefile.netware           |   8 ----
+ src/tool_help.c                |   1 -
+ 18 files changed, 11 insertions(+), 177 deletions(-)
+
+diff --git a/docs/LICENSE-MIXING b/docs/LICENSE-MIXING
+index f596546..8323725 100644
+--- a/docs/LICENSE-MIXING
++++ b/docs/LICENSE-MIXING
+@@ -94,12 +94,6 @@ GNU GSS http://www.gnu.org/software/gss/
+         may not distribute binary curl packages that uses this if you build
+         curl to also link and use any Original BSD licensed libraries!
+ 
+-fbopenssl
+-
+-        (Used for SPNEGO support) Unclear license. Based on its name, I assume
+-        that it uses the OpenSSL license and thus shares the same issues as
+-        described for OpenSSL above.
+-
+ libidn  http://josefsson.org/libidn/
+ 
+         (Used for IDNA support) Uses the GNU Lesser General Public
+diff --git a/docs/examples/Makefile.m32 b/docs/examples/Makefile.m32
+index 6bfb9fa..8f99461 100644
+--- a/docs/examples/Makefile.m32
++++ b/docs/examples/Makefile.m32
+@@ -148,9 +148,6 @@ endif
+ ifeq ($(findstring -sspi,$(CFG)),-sspi)
+ SSPI = 1
+ endif
+-ifeq ($(findstring -spnego,$(CFG)),-spnego)
+-SPNEGO = 1
+-endif
+ ifeq ($(findstring -ldaps,$(CFG)),-ldaps)
+ LDAPS = 1
+ endif
+@@ -230,9 +227,6 @@ ifdef SSPI
+     CFLAGS += -DUSE_SCHANNEL
+   endif
+ endif
+-ifdef SPNEGO
+-  CFLAGS += -DHAVE_SPNEGO
+-endif
+ ifdef IPV6
+   CFLAGS += -DENABLE_IPV6 -D_WIN32_WINNT=0x0501
+ endif
+diff --git a/docs/examples/Makefile.netware b/docs/examples/Makefile.netware
+index 2816cbd..2f1776c 100644
+--- a/docs/examples/Makefile.netware
++++ b/docs/examples/Makefile.netware
+@@ -211,9 +211,6 @@ endif
+ ifeq ($(findstring -idn,$(CFG)),-idn)
+ WITH_IDN = 1
+ endif
+-ifeq ($(findstring -spnego,$(CFG)),-spnego)
+-WITH_SPNEGO = 1
+-endif
+ ifeq ($(findstring -ipv6,$(CFG)),-ipv6)
+ ENABLE_IPV6 = 1
+ endif
+@@ -247,10 +244,6 @@ ifdef WITH_SSL
+ 	LDLIBS += $(OPENSSL_PATH)/out_nw_$(LIBARCH_L)/ssl.$(LIBEXT)
+ 	LDLIBS += $(OPENSSL_PATH)/out_nw_$(LIBARCH_L)/crypto.$(LIBEXT)
+ 	IMPORTS += GetProcessSwitchCount RunningProcess
+-ifdef WITH_SPNEGO
+-	# INCLUDES += -I$(FBOPENSSL_PATH)/include
+-	LDLIBS += $(FBOPENSSL_PATH)/nw/fbopenssl.$(LIBEXT)
+-endif
+ else
+ ifdef WITH_AXTLS
+ 	INCLUDES += -I$(AXTLS_PATH)/inc
+diff --git a/install-sh b/install-sh
+index a9244eb..377bb86 100755
+--- a/install-sh
++++ b/install-sh
+@@ -1,7 +1,7 @@
+ #!/bin/sh
+ # install - install a program, script, or datafile
+ 
+-scriptversion=2011-01-19.21; # UTC
++scriptversion=2011-11-20.07; # UTC
+ 
+ # This originates from X11R5 (mit/util/scripts/install.sh), which was
+ # later released in X11R6 (xc/config/util/install.sh) with the
+@@ -35,7 +35,7 @@ scriptversion=2011-01-19.21; # UTC
+ # FSF changes to this file are in the public domain.
+ #
+ # Calling this script install-sh is preferred over install.sh, to prevent
+-# `make' implicit rules from creating a file called install from it
++# 'make' implicit rules from creating a file called install from it
+ # when there is no Makefile.
+ #
+ # This script is compatible with the BSD install script, but was written
+@@ -156,7 +156,7 @@ while test $# -ne 0; do
+     -s) stripcmd=$stripprog;;
+ 
+     -t) dst_arg=$2
+-	# Protect names problematic for `test' and other utilities.
++	# Protect names problematic for 'test' and other utilities.
+ 	case $dst_arg in
+ 	  -* | [=\(\)!]) dst_arg=./$dst_arg;;
+ 	esac
+@@ -190,7 +190,7 @@ if test $# -ne 0 && test -z "$dir_arg$dst_arg"; then
+     fi
+     shift # arg
+     dst_arg=$arg
+-    # Protect names problematic for `test' and other utilities.
++    # Protect names problematic for 'test' and other utilities.
+     case $dst_arg in
+       -* | [=\(\)!]) dst_arg=./$dst_arg;;
+     esac
+@@ -202,7 +202,7 @@ if test $# -eq 0; then
+     echo "$0: no input file specified." >&2
+     exit 1
+   fi
+-  # It's OK to call `install-sh -d' without argument.
++  # It's OK to call 'install-sh -d' without argument.
+   # This can happen when creating conditional directories.
+   exit 0
+ fi
+@@ -240,7 +240,7 @@ fi
+ 
+ for src
+ do
+-  # Protect names problematic for `test' and other utilities.
++  # Protect names problematic for 'test' and other utilities.
+   case $src in
+     -* | [=\(\)!]) src=./$src;;
+   esac
+@@ -354,7 +354,7 @@ do
+ 	      if test -z "$dir_arg" || {
+ 		   # Check for POSIX incompatibilities with -m.
+ 		   # HP-UX 11.23 and IRIX 6.5 mkdir -m -p sets group- or
+-		   # other-writeable bit of parent directory when it shouldn't.
++		   # other-writable bit of parent directory when it shouldn't.
+ 		   # FreeBSD 6.1 mkdir -m -p sets mode of existing directory.
+ 		   ls_ld_tmpdir=`ls -ld "$tmpdir"`
+ 		   case $ls_ld_tmpdir in
+diff --git a/lib/Makefile.Watcom b/lib/Makefile.Watcom
+index 832ca01..51de107 100644
+--- a/lib/Makefile.Watcom
++++ b/lib/Makefile.Watcom
+@@ -60,7 +60,7 @@ SYS_INCL = -I"$(%watcom)/h/nt" -I"$(%watcom)/h"
+ 
+ CFLAGS = -3r -mf -hc -zff -zgf -zq -zm -zc -s -fr=con -w2 -fpi -oilrtfm &
+          -wcd=201 -bt=nt -d+ -dWIN32 -dCURL_WANTS_CA_BUNDLE_ENV         &
+-         -dBUILDING_LIBCURL -dHAVE_SPNEGO=1 -I. -I"../include" $(SYS_INCL)
++         -dBUILDING_LIBCURL -I. -I"../include" $(SYS_INCL)
+ 
+ !ifdef %debug
+ DEBUG  = -dDEBUG=1 -dDEBUGBUILD
+@@ -248,4 +248,4 @@ $(RESOURCE): libcurl.rc
+ 
+ .c{$(OBJ_STAT)}.obj:
+ 	$(CC) $(CFLAGS) -DCURL_STATICLIB $[@ -fo=$^@
+-	
+\ No newline at end of file
++	
+diff --git a/lib/Makefile.m32 b/lib/Makefile.m32
+index afe3982..6b4c94a 100644
+--- a/lib/Makefile.m32
++++ b/lib/Makefile.m32
+@@ -137,9 +137,6 @@ endif
+ ifeq ($(findstring -sspi,$(CFG)),-sspi)
+ SSPI = 1
+ endif
+-ifeq ($(findstring -spnego,$(CFG)),-spnego)
+-SPNEGO = 1
+-endif
+ ifeq ($(findstring -ldaps,$(CFG)),-ldaps)
+ LDAPS = 1
+ endif
+diff --git a/lib/Makefile.netware b/lib/Makefile.netware
+index bafd32f..94c298e 100644
+--- a/lib/Makefile.netware
++++ b/lib/Makefile.netware
+@@ -217,9 +217,6 @@ endif
+ ifeq ($(findstring -idn,$(CFG)),-idn)
+ WITH_IDN = 1
+ endif
+-ifeq ($(findstring -spnego,$(CFG)),-spnego)
+-WITH_SPNEGO = 1
+-endif
+ ifeq ($(findstring -ipv6,$(CFG)),-ipv6)
+ ENABLE_IPV6 = 1
+ endif
+@@ -247,10 +244,6 @@ ifdef WITH_SSL
+ 	LDLIBS += $(OPENSSL_PATH)/out_nw_$(LIBARCH_L)/crypto.$(LIBEXT)
+ 	IMPORTS += GetProcessSwitchCount RunningProcess
+ 	INSTDEP += ca-bundle.crt
+-ifdef WITH_SPNEGO
+-	INCLUDES += -I$(FBOPENSSL_PATH)/include
+-	LDLIBS += $(FBOPENSSL_PATH)/nw/fbopenssl.$(LIBEXT)
+-endif
+ else
+ ifdef WITH_AXTLS
+ 	INCLUDES += -I$(AXTLS_PATH)/inc
+diff --git a/lib/config-dos.h b/lib/config-dos.h
+index cce5e81..dd5b06d 100644
+--- a/lib/config-dos.h
++++ b/lib/config-dos.h
+@@ -69,7 +69,6 @@
+ #define HAVE_SETMODE           1
+ #define HAVE_SIGNAL            1
+ #define HAVE_SOCKET            1
+-#define HAVE_SPNEGO            1
+ #define HAVE_STRDUP            1
+ #define HAVE_STRICMP           1
+ #define HAVE_STRTOLL           1
+diff --git a/lib/config-symbian.h b/lib/config-symbian.h
+index 17d92b0..9c71263 100644
+--- a/lib/config-symbian.h
++++ b/lib/config-symbian.h
+@@ -480,9 +480,6 @@
+ /* Define to 1 if you have the `socket' function. */
+ #define HAVE_SOCKET 1
+ 
+-/* Define this if you have the SPNEGO library fbopenssl */
+-/* #undef HAVE_SPNEGO */
+-
+ /* Define to 1 if you have the `SSL_get_shutdown' function. */
+ /*#define HAVE_SSL_GET_SHUTDOWN 1*/
+ 
+diff --git a/lib/config-tpf.h b/lib/config-tpf.h
+index ddb8f77..cfdbcc5 100644
+--- a/lib/config-tpf.h
++++ b/lib/config-tpf.h
+@@ -436,9 +436,6 @@
+ /* Define to 1 if you have the `socket' function. */
+ #define HAVE_SOCKET 1
+ 
+-/* Define this if you have the SPNEGO library fbopenssl */
+-/* #undef HAVE_SPNEGO */
+-
+ /* Define to 1 if you have the <ssl.h> header file. */
+ /* #undef HAVE_SSL_H */
+ #define HAVE_SSL_H 1
+diff --git a/lib/config-vxworks.h b/lib/config-vxworks.h
+index c94534a..05220b5 100644
+--- a/lib/config-vxworks.h
++++ b/lib/config-vxworks.h
+@@ -547,9 +547,6 @@
+ /* Define to 1 if you have the `socket' function. */
+ #define HAVE_SOCKET 1
+ 
+-/* Define this if you have the SPNEGO library fbopenssl */
+-/* #undef HAVE_SPNEGO */
+-
+ /* Define to 1 if you have the `SSL_get_shutdown' function. */
+ #define HAVE_SSL_GET_SHUTDOWN 1
+ 
+diff --git a/lib/curl_config.h.cmake b/lib/curl_config.h.cmake
+index 454c9e6..20979df 100644
+--- a/lib/curl_config.h.cmake
++++ b/lib/curl_config.h.cmake
+@@ -528,9 +528,6 @@
+ /* Define to 1 if you have the `socket' function. */
+ #cmakedefine HAVE_SOCKET ${HAVE_SOCKET}
+ 
+-/* Define this if you have the SPNEGO library fbopenssl */
+-#cmakedefine HAVE_SPNEGO ${HAVE_SPNEGO}
+-
+ /* Define to 1 if you have the `SSL_get_shutdown' function. */
+ #cmakedefine HAVE_SSL_GET_SHUTDOWN ${HAVE_SSL_GET_SHUTDOWN}
+ 
+diff --git a/lib/http_negotiate.c b/lib/http_negotiate.c
+index 53df30e..ccd005b 100644
+--- a/lib/http_negotiate.c
++++ b/lib/http_negotiate.c
+@@ -39,19 +39,6 @@
+ #include "curl_memory.h"
+ #include "url.h"
+ 
+-#ifdef HAVE_SPNEGO
+-#  include <spnegohelp.h>
+-#  ifdef USE_SSLEAY
+-#    ifdef USE_OPENSSL
+-#      include <openssl/objects.h>
+-#    else
+-#      include <objects.h>
+-#    endif
+-#  else
+-#    error "Can't compile SPNEGO support without OpenSSL."
+-#  endif
+-#endif
+-
+ #define _MPRINTF_REPLACE /* use our functions only */
+ #include <curl/mprintf.h>
+ 
+@@ -191,53 +178,6 @@ int Curl_input_negotiate(struct connectdata *conn, bool proxy,
+     input_token.length = rawlen;
+ 
+     DEBUGASSERT(input_token.value != NULL);
+-
+-#ifdef HAVE_SPNEGO /* Handle SPNEGO */
+-    if(checkprefix("Negotiate", header)) {
+-      unsigned char  *spnegoToken       = NULL;
+-      size_t          spnegoTokenLength = 0;
+-      gss_buffer_desc mechToken         = GSS_C_EMPTY_BUFFER;
+-
+-      spnegoToken = malloc(input_token.length);
+-      if(spnegoToken == NULL) {
+-        Curl_safefree(input_token.value);
+-        return CURLE_OUT_OF_MEMORY;
+-      }
+-      memcpy(spnegoToken, input_token.value, input_token.length);
+-      spnegoTokenLength = input_token.length;
+-
+-      if(!parseSpnegoTargetToken(spnegoToken,
+-                                 spnegoTokenLength,
+-                                 NULL,
+-                                 NULL,
+-                                 (unsigned char**)&mechToken.value,
+-                                 &mechToken.length,
+-                                 NULL,
+-                                 NULL)) {
+-        Curl_safefree(spnegoToken);
+-        infof(data, "Parse SPNEGO Target Token failed\n");
+-      }
+-      else if(!mechToken.value || !mechToken.length) {
+-        Curl_safefree(spnegoToken);
+-        if(mechToken.value)
+-          gss_release_buffer(&discard_st, &mechToken);
+-        infof(data, "Parse SPNEGO Target Token succeeded (NULL token)\n");
+-      }
+-      else {
+-        Curl_safefree(spnegoToken);
+-        Curl_safefree(input_token.value);
+-        input_token.value = malloc(mechToken.length);
+-        if(input_token.value == NULL) {
+-          gss_release_buffer(&discard_st, &mechToken);
+-          return CURLE_OUT_OF_MEMORY;
+-        }
+-        memcpy(input_token.value, mechToken.value, mechToken.length);
+-        input_token.length = mechToken.length;
+-        gss_release_buffer(&discard_st, &mechToken);
+-        infof(data, "Parse SPNEGO Target Token succeeded\n");
+-      }
+-    }
+-#endif
+   }
+ 
+   major_status = Curl_gss_init_sec_context(data,
+@@ -279,52 +219,6 @@ CURLcode Curl_output_negotiate(struct connectdata *conn, bool proxy)
+   CURLcode error;
+   OM_uint32 discard_st;
+ 
+-#ifdef HAVE_SPNEGO /* Handle SPNEGO */
+-  if(checkprefix("Negotiate", neg_ctx->protocol)) {
+-    ASN1_OBJECT    *object              = NULL;
+-    unsigned char  *responseToken       = NULL;
+-    size_t          responseTokenLength = 0;
+-    gss_buffer_desc spnegoToken         = GSS_C_EMPTY_BUFFER;
+-
+-    responseToken = malloc(neg_ctx->output_token.length);
+-    if(responseToken == NULL)
+-      return CURLE_OUT_OF_MEMORY;
+-    memcpy(responseToken, neg_ctx->output_token.value,
+-           neg_ctx->output_token.length);
+-    responseTokenLength = neg_ctx->output_token.length;
+-
+-    object = OBJ_txt2obj("1.2.840.113554.1.2.2", 1);
+-    if(!object) {
+-      Curl_safefree(responseToken);
+-      return CURLE_OUT_OF_MEMORY;
+-    }
+-
+-    if(!makeSpnegoInitialToken(object,
+-                               responseToken,
+-                               responseTokenLength,
+-                               (unsigned char**)&spnegoToken.value,
+-                               &spnegoToken.length)) {
+-      Curl_safefree(responseToken);
+-      ASN1_OBJECT_free(object);
+-      infof(conn->data, "Make SPNEGO Initial Token failed\n");
+-    }
+-    else if(!spnegoToken.value || !spnegoToken.length) {
+-      Curl_safefree(responseToken);
+-      ASN1_OBJECT_free(object);
+-      if(spnegoToken.value)
+-        gss_release_buffer(&discard_st, &spnegoToken);
+-      infof(conn->data, "Make SPNEGO Initial Token succeeded (NULL token)\n");
+-    }
+-    else {
+-      Curl_safefree(responseToken);
+-      ASN1_OBJECT_free(object);
+-      gss_release_buffer(&discard_st, &neg_ctx->output_token);
+-      neg_ctx->output_token.value = spnegoToken.value;
+-      neg_ctx->output_token.length = spnegoToken.length;
+-      infof(conn->data, "Make SPNEGO Initial Token succeeded\n");
+-    }
+-  }
+-#endif
+   error = Curl_base64_encode(conn->data,
+                              neg_ctx->output_token.value,
+                              neg_ctx->output_token.length,
+diff --git a/lib/version.c b/lib/version.c
+index 2c0e9b8..c25b55b 100644
+--- a/lib/version.c
++++ b/lib/version.c
+@@ -268,9 +268,6 @@ static curl_version_info_data version_info = {
+ #ifdef CURLRES_ASYNCH
+   | CURL_VERSION_ASYNCHDNS
+ #endif
+-#ifdef HAVE_SPNEGO
+-  | CURL_VERSION_SPNEGO
+-#endif
+ #if (CURL_SIZEOF_CURL_OFF_T > 4) && \
+     ( (SIZEOF_OFF_T > 4) || defined(USE_WIN32_LARGE_FILES) )
+   | CURL_VERSION_LARGEFILE
+diff --git a/mkinstalldirs b/mkinstalldirs
+index 4191a45..55d537f 100755
+--- a/mkinstalldirs
++++ b/mkinstalldirs
+@@ -81,9 +81,9 @@ case $dirmode in
+       echo "mkdir -p -- $*"
+       exec mkdir -p -- "$@"
+     else
+-      # On NextStep and OpenStep, the `mkdir' command does not
++      # On NextStep and OpenStep, the 'mkdir' command does not
+       # recognize any option.  It will interpret all options as
+-      # directories to create, and then abort because `.' already
++      # directories to create, and then abort because '.' already
+       # exists.
+       test -d ./-p && rmdir ./-p
+       test -d ./--version && rmdir ./--version
+diff --git a/src/Makefile.m32 b/src/Makefile.m32
+index 1c22dd0..91b38a1 100644
+--- a/src/Makefile.m32
++++ b/src/Makefile.m32
+@@ -148,9 +148,6 @@ endif
+ ifeq ($(findstring -sspi,$(CFG)),-sspi)
+ SSPI = 1
+ endif
+-ifeq ($(findstring -spnego,$(CFG)),-spnego)
+-SPNEGO = 1
+-endif
+ ifeq ($(findstring -ldaps,$(CFG)),-ldaps)
+ LDAPS = 1
+ endif
+@@ -258,9 +255,6 @@ ifdef SSPI
+     CFLAGS += -DUSE_SCHANNEL
+   endif
+ endif
+-ifdef SPNEGO
+-  CFLAGS += -DHAVE_SPNEGO
+-endif
+ ifdef IPV6
+   CFLAGS += -DENABLE_IPV6 -D_WIN32_WINNT=0x0501
+ endif
+diff --git a/src/Makefile.netware b/src/Makefile.netware
+index 85a1173..63b858e 100644
+--- a/src/Makefile.netware
++++ b/src/Makefile.netware
+@@ -226,10 +226,6 @@ endif
+ ifeq ($(findstring -idn,$(CFG)),-idn)
+ WITH_IDN = 1
+ endif
+-ifeq ($(findstring -spnego,$(CFG)),-spnego)
+-WITH_SPNEGO = 1
+-WITH_SSL = 1
+-endif
+ ifeq ($(findstring -metalink,$(CFG)),-metalink)
+ WITH_METALINK = 1
+ WITH_SSL = 1
+@@ -267,10 +263,6 @@ ifdef WITH_SSL
+ 	LDLIBS += $(OPENSSL_PATH)/out_nw_$(LIBARCH_L)/ssl.$(LIBEXT)
+ 	LDLIBS += $(OPENSSL_PATH)/out_nw_$(LIBARCH_L)/crypto.$(LIBEXT)
+ 	IMPORTS += GetProcessSwitchCount RunningProcess
+-ifdef WITH_SPNEGO
+-	# INCLUDES += -I$(FBOPENSSL_PATH)/include
+-	LDLIBS += $(FBOPENSSL_PATH)/nw/fbopenssl.$(LIBEXT)
+-endif
+ else
+ ifdef WITH_AXTLS
+ 	# INCLUDES += -I$(AXTLS_PATH)/inc
+diff --git a/src/tool_help.c b/src/tool_help.c
+index 1d424cb..7935298 100644
+--- a/src/tool_help.c
++++ b/src/tool_help.c
+@@ -264,7 +264,6 @@ static const struct feat feats[] = {
+   {"Largefile",      CURL_VERSION_LARGEFILE},
+   {"NTLM",           CURL_VERSION_NTLM},
+   {"NTLM_WB",        CURL_VERSION_NTLM_WB},
+-  {"SPNEGO",         CURL_VERSION_SPNEGO},
+   {"SSL",            CURL_VERSION_SSL},
+   {"SSPI",           CURL_VERSION_SSPI},
+   {"krb4",           CURL_VERSION_KERBEROS4},
+-- 
+1.9.3
+
+
+From 59431c242bf1d93980756fa2db2d08744bfa79d3 Mon Sep 17 00:00:00 2001
+From: David Woodhouse <David.Woodhouse@intel.com>
+Date: Fri, 11 Jul 2014 10:55:07 +0100
+Subject: [PATCH 4/8] Use SPNEGO for HTTP Negotiate
+
+This is the correct way to do SPNEGO. Just ask for it
+
+Now I correctly see it trying NTLMSSP authentication when a Kerberos ticket
+isn't available. Of course, we bail out when the server responds with the
+challenge packet, since we don't expect that. But I'll fix that bug next...
+---
+ lib/curl_gssapi.c    | 9 ++++++++-
+ lib/curl_gssapi.h    | 1 +
+ lib/http_negotiate.c | 1 +
+ lib/krb5.c           | 1 +
+ lib/socks_gssapi.c   | 1 +
+ 5 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/lib/curl_gssapi.c b/lib/curl_gssapi.c
+index fabbe35..af1813b 100644
+--- a/lib/curl_gssapi.c
++++ b/lib/curl_gssapi.c
+@@ -27,11 +27,18 @@
+ #include "curl_gssapi.h"
+ #include "sendf.h"
+ 
++static const char spnego_OID[] = "\x2b\x06\x01\x05\x05\x02";
++static const gss_OID_desc gss_mech_spnego = {
++  6,
++  &spnego_OID
++};
++
+ OM_uint32 Curl_gss_init_sec_context(
+     struct SessionHandle *data,
+     OM_uint32 * minor_status,
+     gss_ctx_id_t * context,
+     gss_name_t target_name,
++    bool use_spnego,
+     gss_channel_bindings_t input_chan_bindings,
+     gss_buffer_t input_token,
+     gss_buffer_t output_token,
+@@ -55,7 +62,7 @@ OM_uint32 Curl_gss_init_sec_context(
+                               GSS_C_NO_CREDENTIAL, /* cred_handle */
+                               context,
+                               target_name,
+-                              GSS_C_NO_OID, /* mech_type */
++                              use_spnego ? (gss_OID)&gss_mech_spnego : GSS_C_NO_OID,
+                               req_flags,
+                               0, /* time_req */
+                               input_chan_bindings,
+diff --git a/lib/curl_gssapi.h b/lib/curl_gssapi.h
+index ed33b51..5af7a02 100644
+--- a/lib/curl_gssapi.h
++++ b/lib/curl_gssapi.h
+@@ -47,6 +47,7 @@ OM_uint32 Curl_gss_init_sec_context(
+     OM_uint32 * minor_status,
+     gss_ctx_id_t * context,
+     gss_name_t target_name,
++    bool use_spnego,
+     gss_channel_bindings_t input_chan_bindings,
+     gss_buffer_t input_token,
+     gss_buffer_t output_token,
+diff --git a/lib/http_negotiate.c b/lib/http_negotiate.c
+index ccd005b..9b01e0a 100644
+--- a/lib/http_negotiate.c
++++ b/lib/http_negotiate.c
+@@ -184,6 +184,7 @@ int Curl_input_negotiate(struct connectdata *conn, bool proxy,
+                                            &minor_status,
+                                            &neg_ctx->context,
+                                            neg_ctx->server_name,
++                                           TRUE,
+                                            GSS_C_NO_CHANNEL_BINDINGS,
+                                            &input_token,
+                                            &output_token,
+diff --git a/lib/krb5.c b/lib/krb5.c
+index 1643f11..9a36af1 100644
+--- a/lib/krb5.c
++++ b/lib/krb5.c
+@@ -236,6 +236,7 @@ krb5_auth(void *app_data, struct connectdata *conn)
+                                       &min,
+                                       context,
+                                       gssname,
++                                      FALSE,
+                                       &chan,
+                                       gssresp,
+                                       &output_buffer,
+diff --git a/lib/socks_gssapi.c b/lib/socks_gssapi.c
+index 1f840bd..0a35dfa 100644
+--- a/lib/socks_gssapi.c
++++ b/lib/socks_gssapi.c
+@@ -181,6 +181,7 @@ CURLcode Curl_SOCKS5_gssapi_negotiate(int sockindex,
+                                                  &gss_minor_status,
+                                                  &gss_context,
+                                                  server,
++                                                 FALSE,
+                                                  NULL,
+                                                  gss_token,
+                                                  &gss_send_token,
+-- 
+1.9.3
+
+
+From f78ae415d24b9bd89d6c121c556e411fdb21c6aa Mon Sep 17 00:00:00 2001
+From: David Woodhouse <David.Woodhouse@intel.com>
+Date: Fri, 11 Jul 2014 11:09:34 +0100
+Subject: [PATCH 5/8] Don't clear GSSAPI state between each exchange in the
+ negotiation
+
+GSSAPI doesn't work very well if we forget everything ever time.
+
+XX: Is Curl_http_done() the right place to do the final cleanup?
+---
+ lib/http.c                | 6 ++++++
+ lib/http_negotiate.c      | 1 -
+ lib/http_negotiate_sspi.c | 1 -
+ 3 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/lib/http.c b/lib/http.c
+index 78791ee..9106056 100644
+--- a/lib/http.c
++++ b/lib/http.c
+@@ -1443,6 +1443,12 @@ CURLcode Curl_http_done(struct connectdata *conn,
+ 
+   Curl_unencode_cleanup(conn);
+ 
++#ifdef USE_HTTP_NEGOTIATE
++  if(data->state.proxyneg.state == GSS_AUTHSENT ||
++      data->state.negotiate.state == GSS_AUTHSENT)
++    Curl_cleanup_negotiate(data);
++#endif
++
+   /* set the proper values (possibly modified on POST) */
+   conn->fread_func = data->set.fread_func; /* restore */
+   conn->fread_in = data->set.in; /* restore */
+diff --git a/lib/http_negotiate.c b/lib/http_negotiate.c
+index 9b01e0a..bbad0b4 100644
+--- a/lib/http_negotiate.c
++++ b/lib/http_negotiate.c
+@@ -250,7 +250,6 @@ CURLcode Curl_output_negotiate(struct connectdata *conn, bool proxy)
+   }
+ 
+   Curl_safefree(encoded);
+-  Curl_cleanup_negotiate(conn->data);
+ 
+   return (userp == NULL) ? CURLE_OUT_OF_MEMORY : CURLE_OK;
+ }
+diff --git a/lib/http_negotiate_sspi.c b/lib/http_negotiate_sspi.c
+index 8396a61..236766b 100644
+--- a/lib/http_negotiate_sspi.c
++++ b/lib/http_negotiate_sspi.c
+@@ -268,7 +268,6 @@ CURLcode Curl_output_negotiate(struct connectdata *conn, bool proxy)
+   else
+     conn->allocptr.userpwd = userp;
+   free(encoded);
+-  Curl_cleanup_negotiate (conn->data);
+   return (userp == NULL) ? CURLE_OUT_OF_MEMORY : CURLE_OK;
+ }
+ 
+-- 
+1.9.3
+
+
+From 6bc76194e8c56a7a06dc6bd2ba99e112321d49e3 Mon Sep 17 00:00:00 2001
+From: David Woodhouse <David.Woodhouse@intel.com>
+Date: Fri, 11 Jul 2014 10:59:37 +0100
+Subject: [PATCH 6/8] Don't abort Negotiate auth when the server has a response
+ for us
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+It's wrong to assume that we can send a single SPNEGO packet which will
+complete the authentication. It's a *negotiation* — the clue is in the
+name. So make sure we handle responses from the server.
+
+Curl_input_negotiate() will already handle bailing out if it thinks the
+state is GSS_S_COMPLETE (or SEC_E_OK on Windows) and the server keeps
+talking to us, so we should avoid endless loops that way.
+---
+ lib/http.c | 9 ++-------
+ 1 file changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/lib/http.c b/lib/http.c
+index 9106056..504bcb6 100644
+--- a/lib/http.c
++++ b/lib/http.c
+@@ -775,13 +775,8 @@ CURLcode Curl_http_input_auth(struct connectdata *conn, bool proxy,
+       authp->avail |= CURLAUTH_GSSNEGOTIATE;
+ 
+       if(authp->picked == CURLAUTH_GSSNEGOTIATE) {
+-        if(data->state.negotiate.state == GSS_AUTHSENT) {
+-          /* if we sent GSS authentication in the outgoing request and we get
+-             this back, we're in trouble */
+-          infof(data, "Authentication problem. Ignoring this.\n");
+-          data->state.authproblem = TRUE;
+-        }
+-        else if(data->state.negotiate.state == GSS_AUTHNONE) {
++        if(data->state.negotiate.state == GSS_AUTHSENT ||
++           data->state.negotiate.state == GSS_AUTHNONE) {
+           neg = Curl_input_negotiate(conn, proxy, auth);
+           if(neg == 0) {
+             DEBUGASSERT(!data->req.newurl);
+-- 
+1.9.3
+
+
+From 3de576efda1b9a754bc16c8b183403669a144543 Mon Sep 17 00:00:00 2001
+From: David Woodhouse <David.Woodhouse@intel.com>
+Date: Fri, 11 Jul 2014 12:11:14 +0100
+Subject: [PATCH 7/8] Fix negotiate auth to proxies to track correct state
+
+---
+ lib/http.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/lib/http.c b/lib/http.c
+index 504bcb6..4931dd8 100644
+--- a/lib/http.c
++++ b/lib/http.c
+@@ -737,6 +737,10 @@ CURLcode Curl_http_input_auth(struct connectdata *conn, bool proxy,
+    */
+   struct SessionHandle *data = conn->data;
+ 
++#ifdef USE_HTTP_NEGOTIATE
++  struct negotiatedata *negdata = proxy?
++    &data->state.proxyneg:&data->state.negotiate;
++#endif
+   unsigned long *availp;
+   struct auth *authp;
+ 
+@@ -775,8 +779,7 @@ CURLcode Curl_http_input_auth(struct connectdata *conn, bool proxy,
+       authp->avail |= CURLAUTH_GSSNEGOTIATE;
+ 
+       if(authp->picked == CURLAUTH_GSSNEGOTIATE) {
+-        if(data->state.negotiate.state == GSS_AUTHSENT ||
+-           data->state.negotiate.state == GSS_AUTHNONE) {
++        if(negdata->state == GSS_AUTHSENT || negdata->state == GSS_AUTHNONE) {
+           neg = Curl_input_negotiate(conn, proxy, auth);
+           if(neg == 0) {
+             DEBUGASSERT(!data->req.newurl);
+@@ -785,7 +788,7 @@ CURLcode Curl_http_input_auth(struct connectdata *conn, bool proxy,
+               return CURLE_OUT_OF_MEMORY;
+             data->state.authproblem = FALSE;
+             /* we received GSS auth info and we dealt with it fine */
+-            data->state.negotiate.state = GSS_AUTHRECV;
++            negdata->state = GSS_AUTHRECV;
+           }
+           else
+             data->state.authproblem = TRUE;
+-- 
+1.9.3
+
+
+From d19dfa974ca2ea683d1ad24c134093312b6cbb1e Mon Sep 17 00:00:00 2001
+From: Daniel Stenberg <daniel@haxx.se>
+Date: Wed, 16 Jul 2014 17:17:43 +0200
+Subject: [PATCH 8/8] curl_gssapi.c: make line shorter than 80 columns
+
+---
+ lib/curl_gssapi.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/lib/curl_gssapi.c b/lib/curl_gssapi.c
+index af1813b..a86762a 100644
+--- a/lib/curl_gssapi.c
++++ b/lib/curl_gssapi.c
+@@ -5,7 +5,7 @@
+  *                            | (__| |_| |  _ <| |___
+  *                             \___|\___/|_| \_\_____|
+  *
+- * Copyright (C) 2011, Daniel Stenberg, <daniel@haxx.se>, et al.
++ * Copyright (C) 2011 - 2014, Daniel Stenberg, <daniel@haxx.se>, et al.
+  *
+  * This software is licensed as described in the file COPYING, which
+  * you should have received as part of this distribution. The terms
+@@ -62,7 +62,8 @@ OM_uint32 Curl_gss_init_sec_context(
+                               GSS_C_NO_CREDENTIAL, /* cred_handle */
+                               context,
+                               target_name,
+-                              use_spnego ? (gss_OID)&gss_mech_spnego : GSS_C_NO_OID,
++                              use_spnego ? (gss_OID)&gss_mech_spnego :
++                              GSS_C_NO_OID,
+                               req_flags,
+                               0, /* time_req */
+                               input_chan_bindings,
+-- 
+1.9.3
+

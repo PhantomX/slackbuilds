@@ -24,16 +24,16 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.22-atime-rofs.patch
 # ~> http://lists.gnu.org/archive/html/bug-tar/2012-02/msg00007.html
 # ~> still downstream
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-update-with-change-directory.patch
-# Do not print xattrs/selinux/acls when --no-xattrs/--no-acls/--no-selinux
-# options are used during -tvv output.  (TODO: merge this with xattrs patch
-# once becomes upstream)
-# ~> downstream (yet)
-# ~> proposal: http://lists.gnu.org/archive/html/bug-tar/2013-05/msg00020.html
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-xattrs-printing.patch
-# The --xattrs-include or --xattrs-exclude options should imply --xattrs.
-# ~> still downstream
-#    http://lists.gnu.org/archive/html/bug-tar/2013-05/msg00020.html
-# ~> #965969
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.26-xattrs-include-implies-xattrs.patch
+# Fix for infinite loops during sparse file handling
+# ~> dowstream
+#    http://www.mail-archive.com/bug-tar@gnu.org/msg04432.html
+# ~> #1082608
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.27.1-sparse-inf-loops.patch
+# --posix & big (effective) sparse files can not be listed
+# ~> dowstream
+#    http://www.mail-archive.com/bug-tar%40gnu.org/msg03909.html
+#    http://www.mail-archive.com/bug-tar@gnu.org/msg04489.html
+# ~> #916995
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.27.1-big-sparse-listing.patch
 
 set +e +o pipefail

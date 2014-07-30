@@ -1,0 +1,186 @@
+From 50ee62fb67dbf6736de7d6e5d4222df6274f9ad9 Mon Sep 17 00:00:00 2001
+From: uweigand <uweigand@138bc75d-0d04-0410-961f-82ee72b054a4>
+Date: Thu, 24 Jul 2014 17:25:19 +0000
+Subject: [PATCH] gcc/
+
+	* config/rs6000/rs6000-protos.h (rs6000_special_adjust_field_align_p):
+	Add prototype.
+	* config/rs6000/rs6000.c (rs6000_special_adjust_field_align_p): New
+	function.  Issue -Wpsabi warning if future GCC releases will use
+	different field alignment rules for this type.
+	* config/rs6000/sysv4.h (ADJUST_FIELD_ALIGN): Call it.
+	* config/rs6000/linux64.h (ADJUST_FIELD_ALIGN): Likewise.
+	* config/rs6000/freebsd64.h (ADJUST_FIELD_ALIGN): Likewise.
+
+gcc/testsuite/
+
+	* gcc.target/powerpc/ppc64-abi-warn-3.c: New test.
+
+	* gcc.c-torture/execute/20050316-1.x: Add -Wno-psabi.
+	* gcc.c-torture/execute/20050604-1.x: Add -Wno-psabi.
+	* gcc.c-torture/execute/20050316-3.x: New file.  Add -Wno-psabi.
+	* gcc.c-torture/execute/pr23135.x: Likewise.
+
+
+
+git-svn-id: svn+ssh://gcc.gnu.org/svn/gcc/branches/gcc-4_9-branch@213021 138bc75d-0d04-0410-961f-82ee72b054a4
+---
+ gcc/config/rs6000/freebsd64.h                      |    2 +-
+ gcc/config/rs6000/linux64.h                        |    2 +-
+ gcc/config/rs6000/rs6000-protos.h                  |    1 +
+ gcc/config/rs6000/rs6000.c                         |   28 ++++++++++++++++++++
+ gcc/config/rs6000/sysv4.h                          |    2 +-
+ gcc/testsuite/gcc.c-torture/execute/20050316-1.x   |    1 +
+ gcc/testsuite/gcc.c-torture/execute/20050316-3.x   |    2 +
+ gcc/testsuite/gcc.c-torture/execute/20050604-1.x   |    1 +
+ gcc/testsuite/gcc.c-torture/execute/pr23135.x      |    2 +
+ .../gcc.target/powerpc/ppc64-abi-warn-3.c          |    9 ++++++
+ 12 files changed, 70 insertions(+), 3 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.c-torture/execute/20050316-3.x
+ create mode 100644 gcc/testsuite/gcc.c-torture/execute/pr23135.x
+ create mode 100644 gcc/testsuite/gcc.target/powerpc/ppc64-abi-warn-3.c
+
+diff --git a/gcc/config/rs6000/freebsd64.h b/gcc/config/rs6000/freebsd64.h
+index 4f678f6..1f3ef19 100644
+--- a/gcc/config/rs6000/freebsd64.h
++++ b/gcc/config/rs6000/freebsd64.h
+@@ -367,7 +367,7 @@ extern int dot_symbols;
+ /* PowerPC64 Linux word-aligns FP doubles when -malign-power is given.  */
+ #undef  ADJUST_FIELD_ALIGN
+ #define ADJUST_FIELD_ALIGN(FIELD, COMPUTED) \
+-  ((TARGET_ALTIVEC && TREE_CODE (TREE_TYPE (FIELD)) == VECTOR_TYPE)     \
++  (rs6000_special_adjust_field_align_p ((FIELD), (COMPUTED))		\
+    ? 128                                                                \
+    : (TARGET_64BIT                                                      \
+       && TARGET_ALIGN_NATURAL == 0                                      \
+diff --git a/gcc/config/rs6000/linux64.h b/gcc/config/rs6000/linux64.h
+index dbc9a52..0ca05d2 100644
+--- a/gcc/config/rs6000/linux64.h
++++ b/gcc/config/rs6000/linux64.h
+@@ -246,7 +246,7 @@ extern int dot_symbols;
+ /* PowerPC64 Linux word-aligns FP doubles when -malign-power is given.  */
+ #undef  ADJUST_FIELD_ALIGN
+ #define ADJUST_FIELD_ALIGN(FIELD, COMPUTED) \
+-  ((TARGET_ALTIVEC && TREE_CODE (TREE_TYPE (FIELD)) == VECTOR_TYPE)	\
++  (rs6000_special_adjust_field_align_p ((FIELD), (COMPUTED))		\
+    ? 128								\
+    : (TARGET_64BIT							\
+       && TARGET_ALIGN_NATURAL == 0					\
+diff --git a/gcc/config/rs6000/rs6000-protos.h b/gcc/config/rs6000/rs6000-protos.h
+index 785f6ce..067a74a 100644
+--- a/gcc/config/rs6000/rs6000-protos.h
++++ b/gcc/config/rs6000/rs6000-protos.h
+@@ -155,6 +155,7 @@ extern void rs6000_split_logical (rtx [], enum rtx_code, bool, bool, bool, rtx);
+ 
+ #ifdef TREE_CODE
+ extern unsigned int rs6000_data_alignment (tree, unsigned int, enum data_align);
++extern bool rs6000_special_adjust_field_align_p (tree, unsigned int);
+ extern unsigned int rs6000_special_round_type_align (tree, unsigned int,
+ 						     unsigned int);
+ extern unsigned int darwin_rs6000_special_round_type_align (tree, unsigned int,
+diff --git a/gcc/config/rs6000/rs6000.c b/gcc/config/rs6000/rs6000.c
+index cf0fecf..d7cbc6c 100644
+--- a/gcc/config/rs6000/rs6000.c
++++ b/gcc/config/rs6000/rs6000.c
+@@ -5871,6 +5871,34 @@ rs6000_data_alignment (tree type, unsigned int align, enum data_align how)
+   return align;
+ }
+ 
++/* Previous GCC releases forced all vector types to have 16-byte alignment.  */
++
++bool
++rs6000_special_adjust_field_align_p (tree field, unsigned int computed)
++{
++  if (TARGET_ALTIVEC && TREE_CODE (TREE_TYPE (field)) == VECTOR_TYPE)
++    {
++      if (computed != 128)
++	{
++	  static bool warned;
++	  if (!warned && warn_psabi)
++	    {
++	      warned = true;
++	      inform (input_location,
++		      "the layout of aggregates containing vectors with"
++		      " %d-byte alignment will change in a future GCC release",
++		      computed / BITS_PER_UNIT);
++	    }
++	}
++      /* GCC 4.8/4.9 Note: To avoid any ABI change on a release branch, we
++	 keep the special treatment of vector types, but warn if there will
++	 be differences in future GCC releases.  */
++      return true;
++    }
++
++  return false;
++}
++
+ /* AIX increases natural record alignment to doubleword if the first
+    field is an FP double while the FP fields remain word aligned.  */
+ 
+diff --git a/gcc/config/rs6000/sysv4.h b/gcc/config/rs6000/sysv4.h
+index 8f1b337..d1f7dea 100644
+--- a/gcc/config/rs6000/sysv4.h
++++ b/gcc/config/rs6000/sysv4.h
+@@ -292,7 +292,7 @@ do {									\
+ /* An expression for the alignment of a structure field FIELD if the
+    alignment computed in the usual way is COMPUTED.  */
+ #define ADJUST_FIELD_ALIGN(FIELD, COMPUTED)				      \
+-	((TARGET_ALTIVEC && TREE_CODE (TREE_TYPE (FIELD)) == VECTOR_TYPE)     \
++	(rs6000_special_adjust_field_align_p ((FIELD), (COMPUTED))	      \
+ 	 ? 128 : COMPUTED)
+ 
+ #undef  BIGGEST_FIELD_ALIGNMENT
+diff --git a/gcc/testsuite/gcc.c-torture/execute/20050316-1.x b/gcc/testsuite/gcc.c-torture/execute/20050316-1.x
+index 121fcfe..cb2d28f 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/20050316-1.x
++++ b/gcc/testsuite/gcc.c-torture/execute/20050316-1.x
+@@ -4,4 +4,5 @@ if { [check_effective_target_int16] } {
+ 	return 1
+ }
+ 
++set additional_flags "-Wno-psabi"
+ return 0;
+diff --git a/gcc/testsuite/gcc.c-torture/execute/20050316-3.x b/gcc/testsuite/gcc.c-torture/execute/20050316-3.x
+new file mode 100644
+index 0000000..cb7b119
+--- /dev/null
++++ b/gcc/testsuite/gcc.c-torture/execute/20050316-3.x
+@@ -0,0 +1,2 @@
++set additional_flags "-Wno-psabi"
++return 0
+diff --git a/gcc/testsuite/gcc.c-torture/execute/20050604-1.x b/gcc/testsuite/gcc.c-torture/execute/20050604-1.x
+index f5b4aaa..756242d 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/20050604-1.x
++++ b/gcc/testsuite/gcc.c-torture/execute/20050604-1.x
+@@ -6,4 +6,5 @@ if { [istarget "i?86-*-*"] || [istarget "x86_64-*-*"] } {
+ 	set additional_flags "-mno-mmx"
+ }
+ 
++set additional_flags "-Wno-psabi"
+ return 0
+diff --git a/gcc/testsuite/gcc.c-torture/execute/pr23135.x b/gcc/testsuite/gcc.c-torture/execute/pr23135.x
+new file mode 100644
+index 0000000..cb7b119
+--- /dev/null
++++ b/gcc/testsuite/gcc.c-torture/execute/pr23135.x
+@@ -0,0 +1,2 @@
++set additional_flags "-Wno-psabi"
++return 0
+diff --git a/gcc/testsuite/gcc.target/powerpc/ppc64-abi-warn-3.c b/gcc/testsuite/gcc.target/powerpc/ppc64-abi-warn-3.c
+new file mode 100644
+index 0000000..830de6b
+--- /dev/null
++++ b/gcc/testsuite/gcc.target/powerpc/ppc64-abi-warn-3.c
+@@ -0,0 +1,9 @@
++/* { dg-do compile { target { powerpc*-*-linux* && lp64 } } } */
++/* { dg-require-effective-target powerpc_altivec_ok } */
++/* { dg-options "-maltivec" } */
++
++struct test
++  {
++    int a __attribute__((vector_size (8)));
++  }; /* { dg-message "note: the layout of aggregates containing vectors with 8-byte alignment will change" } */
++
+-- 
+1.7.1
+

@@ -210,6 +210,18 @@ ApplyPatch e1000e-Failure-to-write-SHRA-turns-on-PROMISC-mode.patch
 #CVE-2014-4943 rhbz 1119458 1120542
 ApplyPatch net-l2tp-don-t-fall-back-on-UDP-get-set-sockopt.patch
 
+#rhbz 1117942
+ApplyPatch sched-fix-sched_setparam-policy-1-logic.patch
+
+#CVE-2014-5045 rhbz 1122472 1122482
+ApplyPatch fs-umount-on-symlink-leaks-mnt-count.patch
+
+#rhbz 1060327
+ApplyPatch drm-try-harder-to-avoid-regression-when-merging-mode.patch
+
+#CVE-2014-5077 rhbz 1122982 1123696
+ApplyPatch net-v2-net-sctp-inherit-auth_capable-on-INIT-collisions.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

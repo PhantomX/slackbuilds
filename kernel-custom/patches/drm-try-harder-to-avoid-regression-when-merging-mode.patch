@@ -1,0 +1,214 @@
+Bugzilla: 1060327
+Upstream-status: 3.16
+
+From b87577b7c768683736eea28f70779e8c75b4df62 Mon Sep 17 00:00:00 2001
+From: Dave Airlie <airlied@redhat.com>
+Date: Thu, 1 May 2014 09:26:53 +1000
+Subject: [PATCH] drm: try harder to avoid regression when merging mode bits
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+For QXL hw we really want the bits to be replaced as we change
+the preferred mode on the fly, and the same goes for virgl when
+I get to it, however the original fix for this seems to have caused
+a wierd regression on Intel G33 that in a stunning display of failure
+at opposition to his normal self, Daniel failed to diagnose.
+
+So we are left doing this, ugly ugly ugly ugly, Daniel you fixed
+that G33 yet?, ugly, ugly.
+
+Tested-by: Marc-André Lureau <marcandre.lureau@redhat.com>
+Signed-off-by: Dave Airlie <airlied@redhat.com>
+---
+ drivers/gpu/drm/drm_modes.c         |  9 ++++--
+ drivers/gpu/drm/drm_probe_helper.c  | 64 +++++++++++++++++++++++++------------
+ drivers/gpu/drm/qxl/qxl_display.c   |  2 +-
+ drivers/gpu/drm/vmwgfx/vmwgfx_kms.c |  2 +-
+ include/drm/drm_crtc_helper.h       |  4 +++
+ include/drm/drm_modes.h             |  2 +-
+ 6 files changed, 57 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/gpu/drm/drm_modes.c b/drivers/gpu/drm/drm_modes.c
+index 8b410576fce4..bedf1894e17e 100644
+--- a/drivers/gpu/drm/drm_modes.c
++++ b/drivers/gpu/drm/drm_modes.c
+@@ -1013,6 +1013,7 @@ EXPORT_SYMBOL(drm_mode_sort);
+ /**
+  * drm_mode_connector_list_update - update the mode list for the connector
+  * @connector: the connector to update
++ * @merge_type_bits: whether to merge or overright type bits.
+  *
+  * This moves the modes from the @connector probed_modes list
+  * to the actual mode list. It compares the probed mode against the current
+@@ -1021,7 +1022,8 @@ EXPORT_SYMBOL(drm_mode_sort);
+  * This is just a helper functions doesn't validate any modes itself and also
+  * doesn't prune any invalid modes. Callers need to do that themselves.
+  */
+-void drm_mode_connector_list_update(struct drm_connector *connector)
++void drm_mode_connector_list_update(struct drm_connector *connector,
++				    bool merge_type_bits)
+ {
+ 	struct drm_display_mode *mode;
+ 	struct drm_display_mode *pmode, *pt;
+@@ -1039,7 +1041,10 @@ void drm_mode_connector_list_update(struct drm_connector *connector)
+ 				/* if equal delete the probed mode */
+ 				mode->status = pmode->status;
+ 				/* Merge type bits together */
+-				mode->type |= pmode->type;
++				if (merge_type_bits)
++					mode->type |= pmode->type;
++				else
++					mode->type = pmode->type;
+ 				list_del(&pmode->head);
+ 				drm_mode_destroy(connector->dev, pmode);
+ 				break;
+diff --git a/drivers/gpu/drm/drm_probe_helper.c b/drivers/gpu/drm/drm_probe_helper.c
+index e70f54d4a581..8afdd0998a8c 100644
+--- a/drivers/gpu/drm/drm_probe_helper.c
++++ b/drivers/gpu/drm/drm_probe_helper.c
+@@ -82,26 +82,8 @@ static void drm_mode_validate_flag(struct drm_connector *connector,
+ 	return;
+ }
+ 
+-/**
+- * drm_helper_probe_single_connector_modes - get complete set of display modes
+- * @connector: connector to probe
+- * @maxX: max width for modes
+- * @maxY: max height for modes
+- *
+- * Based on the helper callbacks implemented by @connector try to detect all
+- * valid modes.  Modes will first be added to the connector's probed_modes list,
+- * then culled (based on validity and the @maxX, @maxY parameters) and put into
+- * the normal modes list.
+- *
+- * Intended to be use as a generic implementation of the ->fill_modes()
+- * @connector vfunc for drivers that use the crtc helpers for output mode
+- * filtering and detection.
+- *
+- * Returns:
+- * The number of modes found on @connector.
+- */
+-int drm_helper_probe_single_connector_modes(struct drm_connector *connector,
+-					    uint32_t maxX, uint32_t maxY)
++static int drm_helper_probe_single_connector_modes_merge_bits(struct drm_connector *connector,
++							      uint32_t maxX, uint32_t maxY, bool merge_type_bits)
+ {
+ 	struct drm_device *dev = connector->dev;
+ 	struct drm_display_mode *mode;
+@@ -155,7 +137,7 @@ int drm_helper_probe_single_connector_modes(struct drm_connector *connector,
+ 	if (count == 0)
+ 		goto prune;
+ 
+-	drm_mode_connector_list_update(connector);
++	drm_mode_connector_list_update(connector, merge_type_bits);
+ 
+ 	if (maxX && maxY)
+ 		drm_mode_validate_size(dev, &connector->modes, maxX, maxY);
+@@ -194,9 +176,49 @@ prune:
+ 
+ 	return count;
+ }
++
++/**
++ * drm_helper_probe_single_connector_modes - get complete set of display modes
++ * @connector: connector to probe
++ * @maxX: max width for modes
++ * @maxY: max height for modes
++ *
++ * Based on the helper callbacks implemented by @connector try to detect all
++ * valid modes.  Modes will first be added to the connector's probed_modes list,
++ * then culled (based on validity and the @maxX, @maxY parameters) and put into
++ * the normal modes list.
++ *
++ * Intended to be use as a generic implementation of the ->fill_modes()
++ * @connector vfunc for drivers that use the crtc helpers for output mode
++ * filtering and detection.
++ *
++ * Returns:
++ * The number of modes found on @connector.
++ */
++int drm_helper_probe_single_connector_modes(struct drm_connector *connector,
++					    uint32_t maxX, uint32_t maxY)
++{
++	return drm_helper_probe_single_connector_modes_merge_bits(connector, maxX, maxY, true);
++}
+ EXPORT_SYMBOL(drm_helper_probe_single_connector_modes);
+ 
+ /**
++ * drm_helper_probe_single_connector_modes_nomerge - get complete set of display modes
++ * @connector: connector to probe
++ * @maxX: max width for modes
++ * @maxY: max height for modes
++ *
++ * This operates like drm_hehlper_probe_single_connector_modes except it
++ * replaces the mode bits instead of merging them for preferred modes.
++ */
++int drm_helper_probe_single_connector_modes_nomerge(struct drm_connector *connector,
++					    uint32_t maxX, uint32_t maxY)
++{
++	return drm_helper_probe_single_connector_modes_merge_bits(connector, maxX, maxY, false);
++}
++EXPORT_SYMBOL(drm_helper_probe_single_connector_modes_nomerge);
++
++/**
+  * drm_kms_helper_hotplug_event - fire off KMS hotplug events
+  * @dev: drm_device whose connector state changed
+  *
+diff --git a/drivers/gpu/drm/qxl/qxl_display.c b/drivers/gpu/drm/qxl/qxl_display.c
+index 41bdd174657e..3ab9072d3623 100644
+--- a/drivers/gpu/drm/qxl/qxl_display.c
++++ b/drivers/gpu/drm/qxl/qxl_display.c
+@@ -841,7 +841,7 @@ static const struct drm_connector_funcs qxl_connector_funcs = {
+ 	.save = qxl_conn_save,
+ 	.restore = qxl_conn_restore,
+ 	.detect = qxl_conn_detect,
+-	.fill_modes = drm_helper_probe_single_connector_modes,
++	.fill_modes = drm_helper_probe_single_connector_modes_nomerge,
+ 	.set_property = qxl_conn_set_property,
+ 	.destroy = qxl_conn_destroy,
+ };
+diff --git a/drivers/gpu/drm/vmwgfx/vmwgfx_kms.c b/drivers/gpu/drm/vmwgfx/vmwgfx_kms.c
+index a2dde5ad8138..e7199b454ca0 100644
+--- a/drivers/gpu/drm/vmwgfx/vmwgfx_kms.c
++++ b/drivers/gpu/drm/vmwgfx/vmwgfx_kms.c
+@@ -2001,7 +2001,7 @@ int vmw_du_connector_fill_modes(struct drm_connector *connector,
+ 	if (du->pref_mode)
+ 		list_move(&du->pref_mode->head, &connector->probed_modes);
+ 
+-	drm_mode_connector_list_update(connector);
++	drm_mode_connector_list_update(connector, true);
+ 
+ 	return 1;
+ }
+diff --git a/include/drm/drm_crtc_helper.h b/include/drm/drm_crtc_helper.h
+index 36a5febac2a6..f51c8393e9a8 100644
+--- a/include/drm/drm_crtc_helper.h
++++ b/include/drm/drm_crtc_helper.h
+@@ -165,6 +165,10 @@ extern void drm_helper_resume_force_mode(struct drm_device *dev);
+ extern int drm_helper_probe_single_connector_modes(struct drm_connector
+ 						   *connector, uint32_t maxX,
+ 						   uint32_t maxY);
++extern int drm_helper_probe_single_connector_modes_nomerge(struct drm_connector
++							   *connector,
++							   uint32_t maxX,
++							   uint32_t maxY);
+ extern void drm_kms_helper_poll_init(struct drm_device *dev);
+ extern void drm_kms_helper_poll_fini(struct drm_device *dev);
+ extern bool drm_helper_hpd_irq_event(struct drm_device *dev);
+diff --git a/include/drm/drm_modes.h b/include/drm/drm_modes.h
+index 2dbbf9976669..91d0582f924e 100644
+--- a/include/drm/drm_modes.h
++++ b/include/drm/drm_modes.h
+@@ -223,7 +223,7 @@ void drm_mode_validate_size(struct drm_device *dev,
+ void drm_mode_prune_invalid(struct drm_device *dev,
+ 			    struct list_head *mode_list, bool verbose);
+ void drm_mode_sort(struct list_head *mode_list);
+-void drm_mode_connector_list_update(struct drm_connector *connector);
++void drm_mode_connector_list_update(struct drm_connector *connector, bool merge_type_bits);
+ 
+ /* parsing cmdline modes */
+ bool
+-- 
+1.9.3
+

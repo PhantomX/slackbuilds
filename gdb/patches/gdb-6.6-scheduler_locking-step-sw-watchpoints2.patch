@@ -21,41 +21,20 @@
 
 	Port to GDB-6.8pre.
 
-Index: gdb-7.6.90.20140127/gdb/inferior.h
+Index: gdb-7.7.90.20140613/gdb/infrun.c
 ===================================================================
---- gdb-7.6.90.20140127.orig/gdb/inferior.h	2014-01-27 22:05:28.801895347 +0100
-+++ gdb-7.6.90.20140127/gdb/inferior.h	2014-01-27 22:33:45.230157813 +0100
-@@ -155,7 +155,15 @@ extern void reopen_exec_file (void);
- /* The `resume' routine should only be called in special circumstances.
-    Normally, use `proceed', which handles a lot of bookkeeping.  */
- 
--extern void resume (int, enum gdb_signal);
-+enum resume_step
-+  {
-+    /* currently_stepping () should return non-zero for non-continue.  */
-+    RESUME_STEP_CONTINUE = 0,
-+    RESUME_STEP_USER,		/* Stepping is intentional by the user.  */
-+    RESUME_STEP_NEEDED		/* Stepping only for software watchpoints.  */
-+  };
-+
-+extern void resume (enum resume_step, enum gdb_signal);
- 
- extern ptid_t user_visible_resume_ptid (int step);
- 
-Index: gdb-7.6.90.20140127/gdb/infrun.c
-===================================================================
---- gdb-7.6.90.20140127.orig/gdb/infrun.c	2014-01-27 22:05:28.804895349 +0100
-+++ gdb-7.6.90.20140127/gdb/infrun.c	2014-01-27 22:35:12.781224279 +0100
-@@ -83,7 +83,7 @@ static int follow_fork (void);
+--- gdb-7.7.90.20140613.orig/gdb/infrun.c	2014-06-13 03:59:36.000000000 +0200
++++ gdb-7.7.90.20140613/gdb/infrun.c	2014-06-13 21:36:43.637294782 +0200
+@@ -84,7 +84,7 @@ static int follow_fork (void);
  static void set_schedlock_func (char *args, int from_tty,
  				struct cmd_list_element *c);
  
 -static int currently_stepping (struct thread_info *tp);
 +static enum resume_step currently_stepping (struct thread_info *tp);
  
- static int currently_stepping_or_nexting_callback (struct thread_info *tp,
- 						   void *data);
-@@ -1699,7 +1699,8 @@ user_visible_resume_ptid (int step)
+ static void xdb_handle_command (char *args, int from_tty);
+ 
+@@ -1742,7 +1742,8 @@ user_visible_resume_ptid (int step)
      }
    else if ((scheduler_mode == schedlock_on)
  	   || (scheduler_mode == schedlock_step
@@ -65,16 +44,16 @@ Index: gdb-7.6.90.20140127/gdb/infrun.c
      {
        /* User-settable 'scheduler' mode requires solo thread resume.  */
        resume_ptid = inferior_ptid;
-@@ -1717,7 +1718,7 @@ user_visible_resume_ptid (int step)
+@@ -1760,7 +1761,7 @@ user_visible_resume_ptid (int step)
     STEP nonzero if we should step (zero to continue instead).
     SIG is the signal to give the inferior (zero for none).  */
  void
 -resume (int step, enum gdb_signal sig)
 +resume (enum resume_step step, enum gdb_signal sig)
  {
-   int should_resume = 1;
    struct cleanup *old_cleanups = make_cleanup (resume_cleanups, 0);
-@@ -1750,9 +1751,13 @@ resume (int step, enum gdb_signal sig)
+   struct regcache *regcache = get_current_regcache ();
+@@ -1800,9 +1801,13 @@ resume (int step, enum gdb_signal sig)
  
    if (debug_infrun)
      fprintf_unfiltered (gdb_stdlog,
@@ -90,64 +69,59 @@ Index: gdb-7.6.90.20140127/gdb/infrun.c
  			tp->control.trap_expected,
  			target_pid_to_str (inferior_ptid),
  			paddress (gdbarch, pc));
-@@ -2147,7 +2152,7 @@ proceed (CORE_ADDR addr, enum gdb_signal
+@@ -2188,6 +2193,7 @@ proceed (CORE_ADDR addr, enum gdb_signal
+   struct thread_info *tp;
    CORE_ADDR pc;
    struct address_space *aspace;
-   /* GDB may force the inferior to step due to various reasons.  */
--  int force_step = 0;
 +  enum resume_step resume_step = RESUME_STEP_CONTINUE;
  
    /* If we're stopped at a fork/vfork, follow the branch set by the
       "set follow-fork-mode" command; otherwise, we'll just proceed
-@@ -2187,13 +2192,13 @@ proceed (CORE_ADDR addr, enum gdb_signal
+@@ -2230,13 +2236,19 @@ proceed (CORE_ADDR addr, enum gdb_signal
+ 	   Note, we don't do this in reverse, because we won't
  	   actually be executing the breakpoint insn anyway.
  	   We'll be (un-)executing the previous instruction.  */
- 
--	force_step = 1;
++	{
+ 	tp->stepping_over_breakpoint = 1;
 +	resume_step = RESUME_STEP_USER;
++	}
        else if (gdbarch_single_step_through_delay_p (gdbarch)
  	       && gdbarch_single_step_through_delay (gdbarch,
  						     get_current_frame ()))
  	/* We stepped onto an instruction that needs to be stepped
  	   again before re-inserting the breakpoint, do so.  */
--	force_step = 1;
++	{
+ 	tp->stepping_over_breakpoint = 1;
 +	resume_step = RESUME_STEP_USER;
++	}
      }
    else
      {
-@@ -2225,13 +2230,13 @@ proceed (CORE_ADDR addr, enum gdb_signal
- 	 is required it returns TRUE and sets the current thread to
- 	 the old thread.  */
-       if (prepare_to_proceed (step))
--	force_step = 1;
-+	resume_step = RESUME_STEP_USER;
+@@ -2288,6 +2300,7 @@ proceed (CORE_ADDR addr, enum gdb_signal
+ 	  tp->prev_pc = regcache_read_pc (get_current_regcache ());
+ 	  switch_to_thread (step_over->ptid);
+ 	  tp = step_over;
++	  resume_step = RESUME_STEP_USER;
+ 	}
      }
  
-   /* prepare_to_proceed may change the current thread.  */
-   tp = inferior_thread ();
- 
--  if (force_step)
-+  if (resume_step == RESUME_STEP_USER)
-     {
-       tp->control.trap_expected = 1;
-       /* If displaced stepping is enabled, we can step over the
-@@ -2318,9 +2323,13 @@ proceed (CORE_ADDR addr, enum gdb_signal
+@@ -2375,9 +2388,13 @@ proceed (CORE_ADDR addr, enum gdb_signal
    /* Reset to normal state.  */
    init_infwait_state ();
  
-+  if (step)
++  if (tp->control.trap_expected || step)
 +    resume_step = RESUME_STEP_USER;
 +  if (resume_step == RESUME_STEP_CONTINUE && bpstat_should_step ())
 +    resume_step = RESUME_STEP_NEEDED;
 +
    /* Resume inferior.  */
--  resume (force_step || step || bpstat_should_step (),
+-  resume (tp->control.trap_expected || step || bpstat_should_step (),
 -	  tp->suspend.stop_signal);
 +  resume (resume_step, tp->suspend.stop_signal);
  
    /* Wait for it to stop (if not standalone)
       and in any case decode why it stopped, and act accordingly.  */
-@@ -5332,13 +5341,18 @@ switch_back_to_stepped_thread (struct ex
+@@ -5359,13 +5376,16 @@ switch_back_to_stepped_thread (struct ex
  
  /* Is thread TP in the middle of single-stepping?  */
  
@@ -156,26 +130,23 @@ Index: gdb-7.6.90.20140127/gdb/infrun.c
  currently_stepping (struct thread_info *tp)
  {
 -  return ((tp->control.step_range_end
--	   && tp->control.step_resume_breakpoint == NULL)
++  if     ((tp->control.step_range_end
+ 	   && tp->control.step_resume_breakpoint == NULL)
 -	  || tp->control.trap_expected
 -	  || bpstat_should_step ());
-+  if ((tp->control.step_range_end
-+       && tp->control.step_resume_breakpoint == NULL)
-+      || tp->control.trap_expected)
++	  || tp->control.trap_expected)
 +    return RESUME_STEP_USER;
-+
-+  if (bpstat_should_step ())
++  if        (bpstat_should_step ())
 +    return RESUME_STEP_NEEDED;
-+
 +  return RESUME_STEP_CONTINUE;
  }
  
- /* Returns true if any thread *but* the one passed in "data" is in the
-Index: gdb-7.6.90.20140127/gdb/linux-nat.c
+ /* Inferior has stepped into a subroutine call with source code that
+Index: gdb-7.7.90.20140613/gdb/linux-nat.c
 ===================================================================
---- gdb-7.6.90.20140127.orig/gdb/linux-nat.c	2014-01-27 22:05:28.806895350 +0100
-+++ gdb-7.6.90.20140127/gdb/linux-nat.c	2014-01-27 22:33:45.330157889 +0100
-@@ -2697,7 +2697,11 @@ static int
+--- gdb-7.7.90.20140613.orig/gdb/linux-nat.c	2014-06-13 03:59:37.000000000 +0200
++++ gdb-7.7.90.20140613/gdb/linux-nat.c	2014-06-13 21:31:19.449949814 +0200
+@@ -2709,7 +2709,11 @@ static int
  select_singlestep_lwp_callback (struct lwp_info *lp, void *data)
  {
    if (lp->last_resume_kind == resume_step
@@ -188,11 +159,19 @@ Index: gdb-7.6.90.20140127/gdb/linux-nat.c
      return 1;
    else
      return 0;
-Index: gdb-7.6.90.20140127/gdb/linux-nat.h
+Index: gdb-7.7.90.20140613/gdb/linux-nat.h
 ===================================================================
---- gdb-7.6.90.20140127.orig/gdb/linux-nat.h	2014-01-27 22:05:28.807895351 +0100
-+++ gdb-7.6.90.20140127/gdb/linux-nat.h	2014-01-27 22:33:45.334157892 +0100
-@@ -59,8 +59,8 @@ struct lwp_info
+--- gdb-7.7.90.20140613.orig/gdb/linux-nat.h	2014-06-13 03:59:37.000000000 +0200
++++ gdb-7.7.90.20140613/gdb/linux-nat.h	2014-06-13 21:31:19.449949814 +0200
+@@ -18,6 +18,7 @@
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+ 
+ #include "target.h"
++#include "infrun.h"
+ 
+ #include <signal.h>
+ 
+@@ -59,8 +60,8 @@ struct lwp_info
    /* If non-zero, a pending wait status.  */
    int status;
  
@@ -203,3 +182,36 @@ Index: gdb-7.6.90.20140127/gdb/linux-nat.h
  
    /* STOPPED_BY_WATCHPOINT is non-zero if this LWP stopped with a data
       watchpoint trap.  */
+Index: gdb-7.7.90.20140613/gdb/infrun.h
+===================================================================
+--- gdb-7.7.90.20140613.orig/gdb/infrun.h	2014-06-13 03:59:36.000000000 +0200
++++ gdb-7.7.90.20140613/gdb/infrun.h	2014-06-13 21:31:19.449949814 +0200
+@@ -89,7 +89,14 @@ extern void proceed (CORE_ADDR, enum gdb
+ 
+ /* The `resume' routine should only be called in special circumstances.
+    Normally, use `proceed', which handles a lot of bookkeeping.  */
+-extern void resume (int, enum gdb_signal);
++enum resume_step
++  {
++    /* currently_stepping () should return non-zero for non-continue.  */
++    RESUME_STEP_CONTINUE = 0,
++    RESUME_STEP_USER,          /* Stepping is intentional by the user.  */
++    RESUME_STEP_NEEDED         /* Stepping only for software watchpoints.  */
++  };
++extern void resume (enum resume_step, enum gdb_signal);
+ 
+ extern ptid_t user_visible_resume_ptid (int step);
+ 
+diff --git a/gdb/testsuite/gdb.threads/signal-while-stepping-over-bp-other-thread.exp b/gdb/testsuite/gdb.threads/signal-while-stepping-over-bp-other-thread.exp
+index 2a30604..ee1fd11 100644
+--- a/gdb/testsuite/gdb.threads/signal-while-stepping-over-bp-other-thread.exp
++++ b/gdb/testsuite/gdb.threads/signal-while-stepping-over-bp-other-thread.exp
+@@ -97,7 +97,7 @@ gdb_test "set debug infrun 1"
+ 
+ gdb_test \
+     "step" \
+-    ".*need to step-over.*resume \\(step=1.*signal arrived while stepping over breakpoint.*switching back to stepped thread.*stepped to a different line.*callme.*" \
++    ".*need to step-over.*resume \\(step=RESUME_STEP_USER.*signal arrived while stepping over breakpoint.*switching back to stepped thread.*stepped to a different line.*callme.*" \
+     "step"
+ 
+ set cnt_after [get_value "args\[$my_number\]" "get count after step"]

@@ -43,16 +43,13 @@ ApplyPatch gdb-archer.patch
 
 # Backported fixups post the source tarball.
 #Xdrop: Just backports.
-ApplyPatch gdb-upstream.patch
+#ApplyPatch gdb-upstream.patch
 
 # Work around out-of-date dejagnu that does not have KFAIL
 ApplyPatch gdb-6.3-rh-dummykfail-20041202.patch.gz
 
 # Better parse 64-bit PPC system call prologues.
 ApplyPatch gdb-6.3-ppc64syscall-20040622.patch
-
-# Stop a backtrace when a zero PC is encountered.
-ApplyPatch gdb-6.3-framepczero-20040927.patch.gz
 
 # Include the pc's section when doing a symbol lookup so that the
 # correct symbol is found.
@@ -78,12 +75,6 @@ ApplyPatch gdb-6.3-test-dtorfix-20050121.patch
 # Fix to support executable moving
 ApplyPatch gdb-6.3-test-movedir-20050125.patch
 
-# Fix gcore for threads
-ApplyPatch gdb-6.3-gcore-thread-20050204.patch.gz
-
-# Prevent gdb from being pushed into background
-ApplyPatch gdb-6.3-terminal-fix-20050214.patch.gz
-
 # Test sibling threads to set threaded watchpoints for x86 and x86-64
 ApplyPatch gdb-6.3-threaded-watchpoints2-20050225.patch
 
@@ -92,9 +83,6 @@ ApplyPatch gdb-6.3-ia64-gcore-page0-20050421.patch
 
 # IA64 sigtramp prev register patch
 ApplyPatch gdb-6.3-ia64-sigtramp-frame-20050708.patch.gz
-
-# IA64 gcore speed-up patch
-ApplyPatch gdb-6.3-ia64-gcore-speedup-20050714.patch.gz
 
 # Notify observers that the inferior has been created
 ApplyPatch gdb-6.3-inferior-notification-20050721.patch
@@ -189,10 +177,6 @@ ApplyPatch gdb-6.6-buildid-locate-solib-missing-ids.patch
 #=push
 ApplyPatch gdb-6.6-buildid-locate-rpm.patch
 
-# Add kernel vDSO workaround (`no loadable ...') on RHEL-5 (kernel BZ 765875).
-#=push
-ApplyPatch gdb-6.6-bfd-vdso8k.patch
-
 # Fix displaying of numeric char arrays as strings (BZ 224128).
 ApplyPatch gdb-6.7-charsign-test.patch
 
@@ -229,9 +213,6 @@ ApplyPatch gdb-6.8-sparc64-silence-memcpy-check.patch
 
 # Test a crash on libraries missing the .text section.
 ApplyPatch gdb-6.5-section-num-fixup-test.patch.gz
-
-# Create a single binary `gdb' autodetecting --tui by its argv[0].
-ApplyPatch gdb-6.8-tui-singlebinary.patch.gz
 
 # Fix register assignments with no GDB stack frames (BZ 436037).
 ApplyPatch gdb-6.8-bz436037-reg-no-longer-active.patch.gz
@@ -326,10 +307,6 @@ ApplyPatch gdb-glibc-vdso-workaround.patch
 #=push+work
 ApplyPatch gdb-runtest-pie-override.patch
 
-# Print reasons for failed attach/spawn incl. SELinux deny_ptrace (BZ 786878).
-#=push
-ApplyPatch gdb-attach-fail-reasons-5of5.patch
-
 # Workaround crashes from stale frame_info pointer (BZ 804256).
 ApplyPatch gdb-stale-frame_info.patch
 
@@ -349,13 +326,13 @@ ApplyPatch gdb-rhbz-818343-set-solib-absolute-prefix-testcase.patch
 # Fix "GDB cannot access struct member whose offset is larger than 256MB"
 # (RH BZ 795424).
 #=push+work
-ApplyPatch gdb-rhbz795424-bitpos-20of25.patch
-ApplyPatch gdb-rhbz795424-bitpos-21of25.patch
-ApplyPatch gdb-rhbz795424-bitpos-22of25.patch
-ApplyPatch gdb-rhbz795424-bitpos-23of25.patch
-ApplyPatch gdb-rhbz795424-bitpos-25of25.patch
-ApplyPatch gdb-rhbz795424-bitpos-25of25-test.patch
-ApplyPatch gdb-rhbz795424-bitpos-lazyvalue.patch
+#ApplyPatch gdb-rhbz795424-bitpos-20of25.patch
+#ApplyPatch gdb-rhbz795424-bitpos-21of25.patch
+#ApplyPatch gdb-rhbz795424-bitpos-22of25.patch
+#ApplyPatch gdb-rhbz795424-bitpos-23of25.patch
+#ApplyPatch gdb-rhbz795424-bitpos-25of25.patch
+#ApplyPatch gdb-rhbz795424-bitpos-25of25-test.patch
+#ApplyPatch gdb-rhbz795424-bitpos-lazyvalue.patch
 
 # Import regression test for `gdb/findvar.c:417: internal-error:
 # read_var_value: Assertion `frame' failed.' (RH BZ 947564) from RHEL 6.5.
@@ -365,17 +342,23 @@ ApplyPatch gdb-rhbz947564-findvar-assertion-frame-failed-testcase.patch
 # Fix crash on 'enable count' (Simon Marchi, BZ 993118).
 ApplyPatch gdb-enable-count-crash.patch
 
-# Fix testsuite "ERROR: no fileid for".
-ApplyPatch gdb-testsuite-nohostid.patch
-
 # Fix crash of -readnow /usr/lib/debug/usr/bin/gnatbind.debug (BZ 1069211).
-ApplyPatch gdb-gnat-dwarf-crash-1of3.patch
-ApplyPatch gdb-gnat-dwarf-crash-2of3.patch
 ApplyPatch gdb-gnat-dwarf-crash-3of3.patch
 
-# Fix TLS access for -static -pthread (BZ 1080660).
-ApplyPatch gdb-static-tls-1of2.patch
-ApplyPatch gdb-static-tls-2of2.patch
+# VLA (Fortran dynamic arrays) from Intel + archer-jankratochvil-vla tests.
+ApplyPatch gdb-archer-vla-tests.patch
+ApplyPatch gdb-vla-intel.patch
+ApplyPatch gdb-vla-intel-04of23-fix.patch
+
+# Fix --with-system-readline with readline-6.3 patch 5.
+ApplyPatch gdb-readline-6.3.5.patch
+
+# Continue backtrace even if a frame filter throws an exception (Phil Muldoon).
+ApplyPatch gdb-btrobust.patch
+
+# Python completion w/overriden completer (Sergio Durigan Junior, BZ 1075199).
+ApplyPatch gdb-python-completer-1of2.patch
+ApplyPatch gdb-python-completer-2of2.patch
 
 ### END Fedora
 

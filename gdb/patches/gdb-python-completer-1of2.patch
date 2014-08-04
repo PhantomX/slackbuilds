@@ -1,0 +1,747 @@
+http://sourceware.org/ml/gdb-patches/2014-07/msg00002.html
+Subject: Re: [PATCH] PR python/16699: GDB Python command completion with overriden complete vs. completer class
+https://bugzilla.redhat.com/show_bug.cgi?id=1075199
+
+On Wednesday, May 21 2014, Doug Evans wrote:
+
+> Sergio Durigan Junior <sergiodj@redhat.com> writes:
+>> [...]
+>> Thanks.  WDYT of the following patch?
+>
+> Hi.
+>
+> fwiw it's too bad the ability to plug in different completers isn't more,
+> I dunno, parameterized (couldn't pick a better term, apologies -
+> I thought of "object oriented" but that carries its own baggage).
+> Performing completion obviously involves specifying more than a just
+> single function (witness the comparison of the completer with specific
+> functions).
+
+Thanks for the reply, and sorry for the long delay in answering.
+
+> Plus it's more than specifying brkchars.
+> Witness code like this:
+>
+> 		      /* Many commands which want to complete on
+> 			 file names accept several file names, as
+> 			 in "run foo bar >>baz".  So we don't want
+> 			 to complete the entire text after the
+> 			 command, just the last word.  To this
+> 			 end, we need to find the beginning of the
+> 			 file name by starting at `word' and going
+> 			 backwards.  */
+> 		      for (p = word;
+> 			   p > tmp_command
+> 			     && strchr (gdb_completer_file_name_break_characters, p[-1]) == NULL;
+> 			   p--)
+> 			;
+>
+> IWBN if a "completer" object described how to do all these three things.
+> Then the special case code for filename_completer (and location_completer)
+> in completer.c could disappear.  But maybe that's a patch for another day.
+
+While I agree with you that the completion mechanism could be better (I
+myself had a lot of trouble with it), I unfortunately don't have enough
+time to tackle this problem now.  So yeah, I think it will be a patch
+for another day...
+
+> Regarding the hack of using a static local to pass data from
+> handle_brkchars to handle_completion, I know it's a hacky pragmatic
+> choice.  To get the reference counting right the code assumes that
+> if the handle_brkchars phase is done then the handle_completion
+> phase will be done too, right?
+
+Yeah.  This is true for the current code (well, except maybe for the
+case you describe below...).
+
+> I wonder if a SIGINT could sneak in
+> there between the two passes (either today or tomorrow).
+> Maybe the code in cmdpy_completer_helper for handle_brkchars_p could
+> first check whether resultobj is already non-NULL, and decrement its
+> reference count before setting it to NULL?
+
+Yes, done (I think).  Thanks for raising this issue.
+
+> And cmdpy_completer_helper
+> could be defined to return a borrowed reference to resultobj?
+> Dunno, just thinking out loud.
+
+Done, I guess.
+
+> Something puzzles me though: If it's ok to cache the completion result from the
+> handle_brkchars pass to the handle_completion pass, why have two passes?
+> It feels like there must be a case where this caching of the result
+> in a static local from one pass to the next won't work.
+
+I'm not sure I follow.
+
+It's OK to cache the result because handle_brkchars and
+handle_completion work on the same set of data.  In fact, we wouldn't
+need to have two passes here; my previous patch didn't have two passes,
+and worked fine.  I just implemented it this way because Tom (correctly)
+raised the point that the completion itself might be time-consuming, and
+thus we could reuse its result in the two phases.
+
+> Another question:
+> I noticed complete_command doesn't do this two-phase dance
+> of handle_brkchars followed by handle_completions.  Should it?
+> It just goes straight to handle_completions.
+
+I don't think it should, because for complete_command (and
+complete_filename et al) the handle_brkchars is already defined
+internally by GDB.  See:
+
+    ...
+  /* Choose the default set of word break characters to break
+     completions.  If we later find out that we are doing completions
+     on command strings (as opposed to strings supplied by the
+     individual command completer functions, which can be any string)
+     then we will switch to the special word break set for command
+     strings, which leaves out the '-' character used in some
+     commands.  */
+  rl_completer_word_break_characters =
+    current_language->la_word_break_characters();
+    ...
+
+    /* It is a normal command; what comes after it is
+       completed by the command's completer function.  */
+    if (c->completer == filename_completer)
+      {
+        /* Many commands which want to complete on
+           file names accept several file names, as
+           in "run foo bar >>baz".  So we don't want
+           to complete the entire text after the
+           command, just the last word.  To this
+           end, we need to find the beginning of the
+           file name by starting at `word' and going
+           backwards.  */
+        for (p = word;
+             p > tmp_command
+               && strchr (gdb_completer_file_name_break_characters, p[-1]) == NULL;
+             p--)
+          ;
+        rl_completer_word_break_characters =
+          gdb_completer_file_name_break_characters;
+      }
+    else if (c->completer == location_completer)
+      {
+        /* Commands which complete on locations want to
+           see the entire argument.  */
+        for (p = word;
+             p > tmp_command
+               && p[-1] != ' ' && p[-1] != '\t';
+             p--)
+          ;
+      }
+    if (reason == handle_brkchars
+        && c->completer_handle_brkchars != NULL)
+      (*c->completer_handle_brkchars) (c, p, word);
+    if (reason != handle_brkchars && c->completer != NULL)
+      list = (*c->completer) (c, p, word);
+
+
+The complete_command function will only be called by the last "if"
+clause, when reason != handle_brkchars.  Otherwise,
+complete_line_internal will just deal with handle_brkchars.  And for
+complete_command, the right value for rl_completer_word_break_characters
+is what is attributed at the beginning of the function.
+
+My patch implements this "two-phase" dance for Python because in this
+specific case (i.e., a completion method defined in the Python script)
+there is no way to know the value of handle_brkchars before we actually
+do the completion itself.
+
+In fact, my patch could probably be "simplified" and be made to call
+cmdpy_completer directly (without any cmdpy_completer_handle_brkchars),
+assuming that this function took care of filling handle_brkchars
+correctly.  What I mean is: when dealing with the handle_brkchars case,
+the completer command can do anything it wants.
+
+> [Maybe that explains the difference from using TAB.  Dunno off hand.]
+> It seems like complete_command is trying to hand-code its own
+> handle_brkchars handling:
+>
+> static void
+> complete_command (char *arg, int from_tty)
+> {
+>   int argpoint;
+>   char *point, *arg_prefix;
+>   VEC (char_ptr) *completions;
+>
+>   dont_repeat ();
+>
+>   if (arg == NULL)
+>     arg = "";
+>   argpoint = strlen (arg);
+>
+>   /* complete_line assumes that its first argument is somewhere
+>      within, and except for filenames at the beginning of, the word to
+>      be completed.  The following crude imitation of readline's
+>      word-breaking tries to accomodate this.  */
+>   point = arg + argpoint;
+>   while (point > arg)
+>     {
+>       if (strchr (rl_completer_word_break_characters, point[-1]) != 0)
+>         break;
+>       point--;
+>     }
+>
+>   arg_prefix = alloca (point - arg + 1);
+>   memcpy (arg_prefix, arg, point - arg);
+>   arg_prefix[point - arg] = 0;
+>
+>   completions = complete_line (point, arg, argpoint);
+>
+>   ...
+> }
+
+Yes, it seems so, but I did not check further.
+
+> TAB and the complete command should work identically of course,
+> but for your testcase, maybe you should test both just to verify
+> both work reasonably well (even if not identically).
+> Given that complete_command doesn't do the two phase dance,
+> does it work with your patch?
+> Maybe it does, but IWBN to confirm that.
+
+The 'complete' command does not work as it should with my patch:
+
+  (gdb) complete completefileinit /hom
+  completefileinit /home
+  (gdb) complete completefilemethod /hom
+  completefilemethod /home
+
+But then, it also does not work without my patch either:
+
+  (gdb) complete file /hom
+  file /home
+
+So I am not extending the testcase for now, because this bug needs to be
+fixed first (and it is unrelated to the patch I am proposing).
+
+WDYT of this version?
+
+Thanks,
+
+-- 
+Sergio
+GPG key ID: 65FC5E36
+Please send encrypted e-mail if possible
+http://blog.sergiodj.net/
+
+gdb/
+2014-06-30  Sergio Durigan Junior  <sergiodj@redhat.com>
+
+	PR python/16699
+	* cli/cli-decode.c (set_cmd_completer_handle_brkchars): New
+	function.
+	(add_cmd): Set "completer_handle_brkchars" to NULL.
+	* cli/cli-decode.h (struct cmd_list_element)
+	<completer_handle_brkchars>: New field.
+	* command.h (completer_ftype_void): New typedef.
+	(set_cmd_completer_handle_brkchars): New prototype.
+	* completer.c (set_gdb_completion_word_break_characters): New
+	function.
+	(complete_line_internal): Call "completer_handle_brkchars"
+	callback from command.
+	* completer.h: Include "command.h".
+	(set_gdb_completion_word_break_characters): New prototype.
+	* python/py-cmd.c (cmdpy_completer_helper): New function.
+	(cmdpy_completer_handle_brkchars): New function.
+	(cmdpy_completer): Adjust to use cmdpy_completer_helper.
+	(cmdpy_init): Set completer_handle_brkchars to
+	cmdpy_completer_handle_brkchars.
+
+gdb/testsuite/
+2014-06-30  Sergio Durigan Junior  <sergiodj@redhat.com>
+
+	PR python/16699
+	* gdb.python/py-completion.exp: New file.
+	* gdb.python/py-completion.py: Likewise.
+
+
+Index: gdb-7.7.90.20140627/gdb/cli/cli-decode.c
+===================================================================
+--- gdb-7.7.90.20140627.orig/gdb/cli/cli-decode.c	2014-07-07 20:53:52.635106914 +0200
++++ gdb-7.7.90.20140627/gdb/cli/cli-decode.c	2014-07-07 20:53:55.429110207 +0200
+@@ -164,6 +164,15 @@ set_cmd_completer (struct cmd_list_eleme
+   cmd->completer = completer; /* Ok.  */
+ }
+ 
++/* See definition in commands.h.  */
++
++void
++set_cmd_completer_handle_brkchars (struct cmd_list_element *cmd,
++			       completer_ftype_void *completer_handle_brkchars)
++{
++  cmd->completer_handle_brkchars = completer_handle_brkchars;
++}
++
+ /* Add element named NAME.
+    Space for NAME and DOC must be allocated by the caller.
+    CLASS is the top level category into which commands are broken down
+@@ -239,6 +248,7 @@ add_cmd (const char *name, enum command_
+   c->prefix = NULL;
+   c->abbrev_flag = 0;
+   set_cmd_completer (c, make_symbol_completion_list_fn);
++  c->completer_handle_brkchars = NULL;
+   c->destroyer = NULL;
+   c->type = not_set_cmd;
+   c->var = NULL;
+Index: gdb-7.7.90.20140627/gdb/cli/cli-decode.h
+===================================================================
+--- gdb-7.7.90.20140627.orig/gdb/cli/cli-decode.h	2014-07-07 20:53:52.636106915 +0200
++++ gdb-7.7.90.20140627/gdb/cli/cli-decode.h	2014-07-07 20:53:55.429110207 +0200
+@@ -176,6 +176,15 @@ struct cmd_list_element
+        "baz/foo", return "baz/foobar".  */
+     completer_ftype *completer;
+ 
++    /* Handle the word break characters for this completer.  Usually
++       this function need not be defined, but for some types of
++       completers (e.g., Python completers declared as methods inside
++       a class) the word break chars may need to be redefined
++       depending on the completer type (e.g., for filename
++       completers).  */
++
++    completer_ftype_void *completer_handle_brkchars;
++
+     /* Destruction routine for this command.  If non-NULL, this is
+        called when this command instance is destroyed.  This may be
+        used to finalize the CONTEXT field, if needed.  */
+Index: gdb-7.7.90.20140627/gdb/command.h
+===================================================================
+--- gdb-7.7.90.20140627.orig/gdb/command.h	2014-07-07 20:53:52.636106915 +0200
++++ gdb-7.7.90.20140627/gdb/command.h	2014-07-07 20:53:55.430110208 +0200
+@@ -158,8 +158,16 @@ extern void set_cmd_sfunc (struct cmd_li
+ typedef VEC (char_ptr) *completer_ftype (struct cmd_list_element *,
+ 					 const char *, const char *);
+ 
++typedef void completer_ftype_void (struct cmd_list_element *,
++				   const char *, const char *);
++
+ extern void set_cmd_completer (struct cmd_list_element *, completer_ftype *);
+ 
++/* Set the completer_handle_brkchars callback.  */
++
++extern void set_cmd_completer_handle_brkchars (struct cmd_list_element *,
++					       completer_ftype_void *);
++
+ /* HACK: cagney/2002-02-23: Code, mostly in tracepoints.c, grubs
+    around in cmd objects to test the value of the commands sfunc().  */
+ extern int cmd_cfunc_eq (struct cmd_list_element *cmd,
+Index: gdb-7.7.90.20140627/gdb/completer.c
+===================================================================
+--- gdb-7.7.90.20140627.orig/gdb/completer.c	2014-07-07 20:53:52.637106916 +0200
++++ gdb-7.7.90.20140627/gdb/completer.c	2014-07-07 20:53:55.430110208 +0200
+@@ -450,6 +450,21 @@ expression_completer (struct cmd_list_el
+   return location_completer (ignore, p, word);
+ }
+ 
++/* See definition in completer.h.  */
++
++void
++set_gdb_completion_word_break_characters (completer_ftype *fn)
++{
++  /* So far we are only interested in differentiating filename
++     completers from everything else.  */
++  if (fn == filename_completer)
++    rl_completer_word_break_characters
++      = gdb_completer_file_name_break_characters;
++  else
++    rl_completer_word_break_characters
++      = gdb_completer_command_word_break_characters;
++}
++
+ /* Here are some useful test cases for completion.  FIXME: These
+    should be put in the test suite.  They should be tested with both
+    M-? and TAB.
+@@ -678,6 +693,9 @@ complete_line_internal (const char *text
+ 			   p--)
+ 			;
+ 		    }
++		  if (reason == handle_brkchars
++		      && c->completer_handle_brkchars != NULL)
++		    (*c->completer_handle_brkchars) (c, p, word);
+ 		  if (reason != handle_brkchars && c->completer != NULL)
+ 		    list = (*c->completer) (c, p, word);
+ 		}
+@@ -751,6 +769,9 @@ complete_line_internal (const char *text
+ 		       p--)
+ 		    ;
+ 		}
++	      if (reason == handle_brkchars
++		  && c->completer_handle_brkchars != NULL)
++		(*c->completer_handle_brkchars) (c, p, word);
+ 	      if (reason != handle_brkchars && c->completer != NULL)
+ 		list = (*c->completer) (c, p, word);
+ 	    }
+Index: gdb-7.7.90.20140627/gdb/completer.h
+===================================================================
+--- gdb-7.7.90.20140627.orig/gdb/completer.h	2014-07-07 20:53:52.637106916 +0200
++++ gdb-7.7.90.20140627/gdb/completer.h	2014-07-07 20:54:13.297131831 +0200
+@@ -18,6 +18,7 @@
+ #define COMPLETER_H 1
+ 
+ #include "gdb_vecs.h"
++#include "command.h"
+ 
+ extern VEC (char_ptr) *complete_line (const char *text,
+ 				      char *line_buffer,
+@@ -48,6 +49,13 @@ extern char *get_gdb_completer_quote_cha
+ 
+ extern char *gdb_completion_word_break_characters (void);
+ 
++/* Set the word break characters array to the corresponding set of
++   chars, based on FN.  This function is useful for cases when the
++   completer doesn't know the type of the completion until some
++   calculation is done (e.g., for Python functions).  */
++
++extern void set_gdb_completion_word_break_characters (completer_ftype *fn);
++
+ /* Exported to linespec.c */
+ 
+ extern const char *skip_quoted_chars (const char *, const char *,
+Index: gdb-7.7.90.20140627/gdb/python/py-cmd.c
+===================================================================
+--- gdb-7.7.90.20140627.orig/gdb/python/py-cmd.c	2014-07-07 20:53:52.637106916 +0200
++++ gdb-7.7.90.20140627/gdb/python/py-cmd.c	2014-07-07 20:53:55.431110209 +0200
+@@ -208,45 +208,155 @@ cmdpy_function (struct cmd_list_element
+   do_cleanups (cleanup);
+ }
+ 
++/* Helper function for the Python command completers (both "pure"
++   completer and brkchar handler).  This function takes COMMAND, TEXT
++   and WORD and tries to call the Python method for completion with
++   these arguments.  It also takes HANDLE_BRKCHARS_P, an argument to
++   identify whether it is being called from the brkchar handler or
++   from the "pure" completer.  In the first case, it effectively calls
++   the Python method for completion, and records the PyObject in a
++   static variable (used as a "cache").  In the second case, it just
++   returns that variable, without actually calling the Python method
++   again.  This saves us one Python method call.
++
++   It is important to mention that this function is built on the
++   assumption that the calls to cmdpy_completer_handle_brkchars and
++   cmdpy_completer will be subsequent with nothing intervening.  This
++   is true for our completer mechanism.
++
++   This function returns the PyObject representing the Python method
++   call.  */
++
++static PyObject *
++cmdpy_completer_helper (struct cmd_list_element *command,
++			const char *text, const char *word,
++			int handle_brkchars_p)
++{
++  cmdpy_object *obj = (cmdpy_object *) get_cmd_context (command);
++  PyObject *textobj, *wordobj;
++  /* This static variable will server as a "cache" for us, in order to
++     store the PyObject that results from calling the Python
++     function.  */
++  static PyObject *resultobj = NULL;
++
++  if (handle_brkchars_p)
++    {
++      /* If we were called to handle brkchars, it means this is the
++	 first function call of two that will happen in a row.
++	 Therefore, we need to call the completer ourselves, and cache
++	 the return value in the static variable RESULTOBJ.  Then, in
++	 the second call, we can just use the value of RESULTOBJ to do
++	 our job.  */
++      if (resultobj != NULL)
++	Py_DECREF (resultobj);
++
++      resultobj = NULL;
++      if (!obj)
++	error (_("Invalid invocation of Python command object."));
++      if (!PyObject_HasAttr ((PyObject *) obj, complete_cst))
++	{
++	  /* If there is no complete method, don't error.  */
++	  return NULL;
++	}
++
++      textobj = PyUnicode_Decode (text, strlen (text), host_charset (), NULL);
++      if (!textobj)
++	error (_("Could not convert argument to Python string."));
++      wordobj = PyUnicode_Decode (word, sizeof (word), host_charset (), NULL);
++      if (!wordobj)
++	{
++	  Py_DECREF (textobj);
++	  error (_("Could not convert argument to Python string."));
++	}
++
++      resultobj = PyObject_CallMethodObjArgs ((PyObject *) obj, complete_cst,
++					      textobj, wordobj, NULL);
++      Py_DECREF (textobj);
++      Py_DECREF (wordobj);
++      if (!resultobj)
++	{
++	  /* Just swallow errors here.  */
++	  PyErr_Clear ();
++	}
++
++      Py_XINCREF (resultobj);
++    }
++
++  return resultobj;
++}
++
++/* Python function called to determine the break characters of a
++   certain completer.  We are only interested in knowing if the
++   completer registered by the user will return one of the integer
++   codes (see COMPLETER_* symbols).  */
++
++static void
++cmdpy_completer_handle_brkchars (struct cmd_list_element *command,
++				 const char *text, const char *word)
++{
++  PyObject *resultobj = NULL;
++  struct cleanup *cleanup;
++
++  cleanup = ensure_python_env (get_current_arch (), current_language);
++
++  /* Calling our helper to obtain the PyObject of the Python
++     function.  */
++  resultobj = cmdpy_completer_helper (command, text, word, 1);
++
++  /* Check if there was an error.  */
++  if (resultobj == NULL)
++    goto done;
++
++  if (PyInt_Check (resultobj))
++    {
++      /* User code may also return one of the completion constants,
++	 thus requesting that sort of completion.  We are only
++	 interested in this kind of return.  */
++      long value;
++
++      if (!gdb_py_int_as_long (resultobj, &value))
++	{
++	  /* Ignore.  */
++	  PyErr_Clear ();
++	}
++      else if (value >= 0 && value < (long) N_COMPLETERS)
++	{
++	  /* This is the core of this function.  Depending on which
++	     completer type the Python function returns, we have to
++	     adjust the break characters accordingly.  */
++	  set_gdb_completion_word_break_characters
++	    (completers[value].completer);
++	}
++    }
++
++ done:
++
++  /* We do not call Py_XDECREF here because RESULTOBJ will be used in
++     the subsequent call to cmdpy_completer function.  */
++  do_cleanups (cleanup);
++}
++
+ /* Called by gdb for command completion.  */
+ 
+ static VEC (char_ptr) *
+ cmdpy_completer (struct cmd_list_element *command,
+ 		 const char *text, const char *word)
+ {
+-  cmdpy_object *obj = (cmdpy_object *) get_cmd_context (command);
+-  PyObject *textobj, *wordobj, *resultobj = NULL;
++  PyObject *resultobj = NULL;
+   VEC (char_ptr) *result = NULL;
+   struct cleanup *cleanup;
+ 
+   cleanup = ensure_python_env (get_current_arch (), current_language);
+ 
+-  if (! obj)
+-    error (_("Invalid invocation of Python command object."));
+-  if (! PyObject_HasAttr ((PyObject *) obj, complete_cst))
+-    {
+-      /* If there is no complete method, don't error -- instead, just
+-	 say that there are no completions.  */
+-      goto done;
+-    }
+-
+-  textobj = PyUnicode_Decode (text, strlen (text), host_charset (), NULL);
+-  if (! textobj)
+-    error (_("Could not convert argument to Python string."));
+-  wordobj = PyUnicode_Decode (word, strlen (word), host_charset (), NULL);
+-  if (! wordobj)
+-    error (_("Could not convert argument to Python string."));
+-
+-  resultobj = PyObject_CallMethodObjArgs ((PyObject *) obj, complete_cst,
+-					  textobj, wordobj, NULL);
+-  Py_DECREF (textobj);
+-  Py_DECREF (wordobj);
+-  if (! resultobj)
+-    {
+-      /* Just swallow errors here.  */
+-      PyErr_Clear ();
+-      goto done;
+-    }
++  /* Calling our helper to obtain the PyObject of the Python
++     function.  */
++  resultobj = cmdpy_completer_helper (command, text, word, 0);
++
++  /* If the result object of calling the Python function is NULL, it
++     means that there was an error.  In this case, just give up and
++     return NULL.  */
++  if (resultobj == NULL)
++    goto done;
+ 
+   result = NULL;
+   if (PyInt_Check (resultobj))
+@@ -302,7 +412,6 @@ cmdpy_completer (struct cmd_list_element
+ 
+  done:
+ 
+-  Py_XDECREF (resultobj);
+   do_cleanups (cleanup);
+ 
+   return result;
+@@ -548,6 +657,9 @@ cmdpy_init (PyObject *self, PyObject *ar
+       set_cmd_context (cmd, self);
+       set_cmd_completer (cmd, ((completetype == -1) ? cmdpy_completer
+ 			       : completers[completetype].completer));
++      if (completetype == -1)
++	set_cmd_completer_handle_brkchars (cmd,
++					   cmdpy_completer_handle_brkchars);
+     }
+   if (except.reason < 0)
+     {
+Index: gdb-7.7.90.20140627/gdb/testsuite/gdb.python/py-completion.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.7.90.20140627/gdb/testsuite/gdb.python/py-completion.exp	2014-07-07 20:53:55.431110209 +0200
+@@ -0,0 +1,70 @@
++# Copyright (C) 2014 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++set testfile "py-completion"
++
++load_lib gdb-python.exp
++
++gdb_exit
++gdb_start
++
++# Skip all tests if Python scripting is not enabled.
++if { [skip_python_tests] } { continue }
++
++gdb_test_no_output "source ${srcdir}/${subdir}/${testfile}.py"
++
++# Create a temporary directory
++set testdir "${objdir}/${subdir}/py-completion-testdir/"
++set testdir_regex [string_to_regexp $testdir]
++set testdir_complete "${objdir}/${subdir}/py-completion-test"
++file mkdir $testdir
++
++# This one should always pass.
++send_gdb "completefileinit ${testdir_complete}\t"
++gdb_test_multiple "" "completefileinit completion" {
++    -re "^completefileinit ${testdir_regex}$" {
++        pass "completefileinit completion"
++    }
++}
++
++# Just discarding whatever we typed.
++send_gdb "\n"
++gdb_test "print" ".*"
++
++# This is the problematic one.
++send_gdb "completefilemethod ${testdir_complete}\t"
++gdb_test_multiple "" "completefilemethod completion" {
++    -re "^completefilemethod ${testdir_regex} $" {
++        fail "completefilemethod completion (completed filename as wrong command arg)"
++    }
++    -re "^completefilemethod ${testdir_regex}$" {
++        pass "completefilemethod completion"
++    }
++}
++
++# Discarding again
++send_gdb "\n"
++gdb_test "print" ".*"
++
++# Another problematic
++send_gdb "completefilecommandcond ${objdir}/${subdir}/py-completion-t\t"
++gdb_test_multiple "" "completefilecommandcond completion" {
++    -re "^completefilecommandcond ${testdir}$" {
++	fail "completefilecommandcond completion (completed filename instead of command)"
++    }
++    -re "^completefilecommandcond ${objdir}/${subdir}/py-completion-t$" {
++	pass "completefilecommandcond completion"
++    }
++}
+Index: gdb-7.7.90.20140627/gdb/testsuite/gdb.python/py-completion.py
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.7.90.20140627/gdb/testsuite/gdb.python/py-completion.py	2014-07-07 20:53:55.431110209 +0200
+@@ -0,0 +1,58 @@
++# Copyright (C) 2014 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++# This testcase tests PR python/16699
++
++import gdb
++
++class CompleteFileInit(gdb.Command):
++	def __init__(self):
++		gdb.Command.__init__(self,'completefileinit',gdb.COMMAND_USER,gdb.COMPLETE_FILENAME)
++
++	def invoke(self,argument,from_tty):
++		raise gdb.GdbError('not implemented')
++
++class CompleteFileMethod(gdb.Command):
++	def __init__(self):
++		gdb.Command.__init__(self,'completefilemethod',gdb.COMMAND_USER)
++
++	def invoke(self,argument,from_tty):
++		raise gdb.GdbError('not implemented')
++
++	def complete(self,text,word):
++		return gdb.COMPLETE_FILENAME
++
++class CompleteFileCommandCond(gdb.Command):
++	def __init__(self):
++		gdb.Command.__init__(self,'completefilecommandcond',gdb.COMMAND_USER)
++
++	def invoke(self,argument,from_tty):
++		raise gdb.GdbError('not implemented')
++
++	def complete(self,text,word):
++		# This is a test made to know if the command
++		# completion still works fine.  When the user asks to
++		# complete something like "completefilecommandcond
++		# /path/to/py-completion-t", it should not complete to
++		# "/path/to/py-completion-test/", but instead just
++		# wait for input.
++		if "py-completion-t" in text:
++			return gdb.COMPLETE_COMMAND
++		else:
++			return gdb.COMPLETE_FILENAME
++
++CompleteFileInit()
++CompleteFileMethod()
++CompleteFileCommandCond()

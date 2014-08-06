@@ -197,27 +197,8 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 1048314
-ApplyPatch 0001-HID-rmi-introduce-RMI-driver-for-Synaptics-touchpads.patch
-#rhbz 1089583
-ApplyPatch 0001-HID-rmi-do-not-handle-touchscreens-through-hid-rmi.patch
-#rhbz 1090161
-ApplyPatch HID-rmi-do-not-fetch-more-than-16-bytes-in-a-query.patch
-
-#rhbz 1064516
-ApplyPatch e1000e-Failure-to-write-SHRA-turns-on-PROMISC-mode.patch
-
-#CVE-2014-4943 rhbz 1119458 1120542
-ApplyPatch net-l2tp-don-t-fall-back-on-UDP-get-set-sockopt.patch
-
 #rhbz 1117942
 ApplyPatch sched-fix-sched_setparam-policy-1-logic.patch
-
-#rhbz 1060327
-ApplyPatch drm-try-harder-to-avoid-regression-when-merging-mode.patch
-
-#CVE-2014-5077 rhbz 1122982 1123696
-ApplyPatch net-v2-net-sctp-inherit-auth_capable-on-INIT-collisions.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

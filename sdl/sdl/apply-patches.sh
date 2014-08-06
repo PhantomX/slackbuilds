@@ -18,6 +18,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/SDL-1.2.15-ignore_insane_joyst
 # Do not use backing store by default, sdl2383, rh1073057, rejected by
 # upstream
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/SDL-1.2.15-no-default-backing-store.patch
+# Fix processing keyboard events if SDL_EnableUNICODE() is enabled, sdl2325,
+# rh1126136, in upstream after 1.2.15
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/SDL-1.2.15-SDL_EnableUNICODE_drops_keyboard_events.patch
 
 ### Debian
 # http://bugzilla.libsdl.org/show_bug.cgi?id=1460

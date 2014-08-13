@@ -1,0 +1,263 @@
+diff -up dhcp-4.3.0/common/lpf.c.IPoIB-log-id dhcp-4.3.0/common/lpf.c
+--- dhcp-4.3.0/common/lpf.c.IPoIB-log-id	2014-02-18 15:52:12.292569480 +0100
++++ dhcp-4.3.0/common/lpf.c	2014-02-18 15:52:12.297569411 +0100
+@@ -164,6 +164,8 @@ int if_register_lpf (info)
+ void if_register_send (info)
+ 	struct interface_info *info;
+ {
++	int hlen;
++
+ 	/* If we're using the lpf API for sending and receiving,
+ 	   we don't need to register this interface twice. */
+ #ifndef USE_LPF_RECEIVE
+@@ -171,11 +173,15 @@ void if_register_send (info)
+ #else
+ 	info -> wfdesc = info -> rfdesc;
+ #endif
++	if (info->hw_address.hbuf[0] == HTYPE_INFINIBAND)
++		hlen = 9;
++	else
++		hlen = info -> hw_address.hlen;
+ 	if (!quiet_interface_discovery)
+ 		log_info ("Sending on   LPF/%s/%s%s%s",
+ 		      info -> name,
+ 		      print_hw_addr (info -> hw_address.hbuf [0],
+-				     info -> hw_address.hlen - 1,
++				     hlen - 1,
+ 				     &info -> hw_address.hbuf [1]),
+ 		      (info -> shared_network ? "/" : ""),
+ 		      (info -> shared_network ?
+@@ -185,6 +191,10 @@ void if_register_send (info)
+ void if_deregister_send (info)
+ 	struct interface_info *info;
+ {
++	int hlen = info -> hw_address.hlen;
++	if (info->hw_address.hbuf[0] == HTYPE_INFINIBAND)
++		hlen = 9;
++
+ 	/* don't need to close twice if we are using lpf for sending and
+ 	   receiving */
+ #ifndef USE_LPF_RECEIVE
+@@ -197,7 +207,7 @@ void if_deregister_send (info)
+ 		log_info ("Disabling output on LPF/%s/%s%s%s",
+ 		      info -> name,
+ 		      print_hw_addr (info -> hw_address.hbuf [0],
+-				     info -> hw_address.hlen - 1,
++				     hlen - 1,
+ 				     &info -> hw_address.hbuf [1]),
+ 		      (info -> shared_network ? "/" : ""),
+ 		      (info -> shared_network ?
+@@ -224,7 +234,7 @@ static void lpf_gen_filter_setup (struct
+ void if_register_receive (info)
+ 	struct interface_info *info;
+ {
+-	int val;
++	int val, hlen;
+ 
+ 	/* Open a LPF device and hang it on this interface... */
+ 	info -> rfdesc = if_register_lpf (info);
+@@ -236,7 +246,9 @@ void if_register_receive (info)
+ 			if (errno != ENOPROTOOPT)
+ 				log_fatal ("Failed to set auxiliary packet data: %m");
+ 		}
+-	}
++		hlen = info -> hw_address.hlen;
++	} else
++		hlen = 9;
+ 
+ #if defined (HAVE_TR_SUPPORT)
+ 	if (info -> hw_address.hbuf [0] == HTYPE_IEEE802)
+@@ -249,7 +261,7 @@ void if_register_receive (info)
+ 		log_info ("Listening on LPF/%s/%s%s%s",
+ 			  info -> name,
+ 			  print_hw_addr (info -> hw_address.hbuf [0],
+-					 info -> hw_address.hlen - 1,
++					 hlen - 1,
+ 					 &info -> hw_address.hbuf [1]),
+ 			  (info -> shared_network ? "/" : ""),
+ 			  (info -> shared_network ?
+@@ -259,6 +271,10 @@ void if_register_receive (info)
+ void if_deregister_receive (info)
+ 	struct interface_info *info;
+ {
++	int hlen = info -> hw_address.hlen;
++	if (info->hw_address.hbuf[0] == HTYPE_INFINIBAND)
++		hlen = 9;
++
+ 	/* for LPF this is simple, packet filters are removed when sockets
+ 	   are closed */
+ 	close (info -> rfdesc);
+@@ -267,7 +283,7 @@ void if_deregister_receive (info)
+ 		log_info ("Disabling input on LPF/%s/%s%s%s",
+ 			  info -> name,
+ 			  print_hw_addr (info -> hw_address.hbuf [0],
+-					 info -> hw_address.hlen - 1,
++					 hlen - 1,
+ 					 &info -> hw_address.hbuf [1]),
+ 			  (info -> shared_network ? "/" : ""),
+ 			  (info -> shared_network ?
+diff -up dhcp-4.3.0/server/dhcp.c.IPoIB-log-id dhcp-4.3.0/server/dhcp.c
+--- dhcp-4.3.0/server/dhcp.c.IPoIB-log-id	2014-02-18 15:52:12.204570695 +0100
++++ dhcp-4.3.0/server/dhcp.c	2014-02-18 15:52:12.299569383 +0100
+@@ -74,6 +74,42 @@ const int dhcp_type_name_max = ((sizeof
+ # define send_packet trace_packet_send
+ #endif
+ 
++char *print_client_identifier_from_packet (packet)
++	struct packet *packet;
++{
++	struct option_cache *oc;
++	struct data_string client_identifier;
++	char *ci;
++
++	memset (&client_identifier, 0, sizeof client_identifier);
++
++	oc = lookup_option (&dhcp_universe, packet -> options,
++			DHO_DHCP_CLIENT_IDENTIFIER);
++	if (oc &&
++	    evaluate_option_cache (&client_identifier,
++				    packet, (struct lease *)0,
++				    (struct client_state *)0,
++				    packet -> options,
++				    (struct option_state *)0,
++				    &global_scope, oc, MDL)) {
++		ci = print_hw_addr (HTYPE_INFINIBAND, client_identifier.len, client_identifier.data);
++		data_string_forget (&client_identifier, MDL);
++		return ci;
++	} else
++		return "\"no client id\"";
++}
++
++char *print_hw_addr_or_client_id (packet)
++	struct packet *packet;
++{
++	if (packet -> raw -> htype == HTYPE_INFINIBAND)
++		return print_client_identifier_from_packet (packet);
++	else
++		return print_hw_addr (packet -> raw -> htype,
++				      packet -> raw -> hlen,
++				      packet -> raw -> chaddr);
++}
++
+ void
+ dhcp (struct packet *packet) {
+ 	int ms_nulltp = 0;
+@@ -102,9 +138,7 @@ dhcp (struct packet *packet) {
+ 		
+ 		log_info("%s from %s via %s: %s", s,
+ 			 (packet->raw->htype
+-			  ? print_hw_addr(packet->raw->htype,
+-					  packet->raw->hlen,
+-					  packet->raw->chaddr)
++			  ? print_hw_addr_or_client_id(packet)
+ 			  : "<no identifier>"),
+ 			 packet->raw->giaddr.s_addr
+ 			 ? inet_ntoa(packet->raw->giaddr)
+@@ -286,9 +320,7 @@ void dhcpdiscover (packet, ms_nulltp)
+ 	 */
+ 	snprintf (msgbuf, sizeof msgbuf, "DHCPDISCOVER from %s %s%s%svia %s",
+ 		 (packet -> raw -> htype
+-		  ? print_hw_addr (packet -> raw -> htype,
+-				   packet -> raw -> hlen,
+-				   packet -> raw -> chaddr)
++		  ? print_hw_addr_or_client_id (packet)
+ 		  : (lease
+ 		     ? print_hex_1(lease->uid_len, lease->uid, 60)
+ 		     : "<no identifier>")),
+@@ -478,9 +510,7 @@ void dhcprequest (packet, ms_nulltp, ip_
+ 		 "DHCPREQUEST for %s%s from %s %s%s%svia %s",
+ 		 piaddr (cip), smbuf,
+ 		 (packet -> raw -> htype
+-		  ? print_hw_addr (packet -> raw -> htype,
+-				   packet -> raw -> hlen,
+-				   packet -> raw -> chaddr)
++		  ? print_hw_addr_or_client_id(packet)
+ 		  : (lease
+ 		     ? print_hex_1(lease->uid_len, lease->uid, 60)
+ 		     : "<no identifier>")),
+@@ -719,9 +749,7 @@ void dhcprelease (packet, ms_nulltp)
+ 	if ((oc = lookup_option (&dhcp_universe, packet -> options,
+ 				 DHO_DHCP_REQUESTED_ADDRESS))) {
+ 		log_info ("DHCPRELEASE from %s specified requested-address.",
+-		      print_hw_addr (packet -> raw -> htype,
+-				     packet -> raw -> hlen,
+-				     packet -> raw -> chaddr));
++		      print_hw_addr_or_client_id(packet));
+ 	}
+ 
+ 	oc = lookup_option (&dhcp_universe, packet -> options,
+@@ -795,9 +823,7 @@ void dhcprelease (packet, ms_nulltp)
+ 		 "DHCPRELEASE of %s from %s %s%s%svia %s (%sfound)",
+ 		 cstr,
+ 		 (packet -> raw -> htype
+-		  ? print_hw_addr (packet -> raw -> htype,
+-				   packet -> raw -> hlen,
+-				   packet -> raw -> chaddr)
++		  ? print_hw_addr_or_client_id(packet)
+ 		  : (lease
+ 		     ? print_hex_1(lease->uid_len, lease->uid, 60)
+ 		     : "<no identifier>")),
+@@ -886,9 +912,7 @@ void dhcpdecline (packet, ms_nulltp)
+ 		 "DHCPDECLINE of %s from %s %s%s%svia %s",
+ 		 piaddr (cip),
+ 		 (packet -> raw -> htype
+-		  ? print_hw_addr (packet -> raw -> htype,
+-				   packet -> raw -> hlen,
+-				   packet -> raw -> chaddr)
++		  ? print_hw_addr_or_client_id(packet)
+ 		  : (lease
+ 		     ? print_hex_1(lease->uid_len, lease->uid, 60)
+ 		     : "<no identifier>")),
+@@ -1541,8 +1565,7 @@ void dhcpinform (packet, ms_nulltp)
+ 	/* Report what we're sending. */
+ 	snprintf(msgbuf, sizeof msgbuf, "DHCPACK to %s (%s) via", piaddr(cip),
+ 		 (packet->raw->htype && packet->raw->hlen) ?
+-			print_hw_addr(packet->raw->htype, packet->raw->hlen,
+-				      packet->raw->chaddr) :
++			print_hw_addr_or_client_id(packet) :
+ 			"<no client hardware address>");
+ 	log_info("%s %s", msgbuf, gip.len ? piaddr(gip) :
+ 					    packet->interface->name);
+@@ -1682,9 +1705,7 @@ void nak_lease (packet, cip)
+ 	/* Report what we're sending... */
+ 	log_info ("DHCPNAK on %s to %s via %s",
+ 	      piaddr (*cip),
+-	      print_hw_addr (packet -> raw -> htype,
+-			     packet -> raw -> hlen,
+-			     packet -> raw -> chaddr),
++	      print_hw_addr_or_client_id(packet),
+ 	      packet -> raw -> giaddr.s_addr
+ 	      ? inet_ntoa (packet -> raw -> giaddr)
+ 	      : packet -> interface -> name);
+@@ -3468,7 +3489,7 @@ void dhcp_reply (lease)
+ 		   ? (state -> offer == DHCPACK ? "DHCPACK" : "DHCPOFFER")
+ 		   : "BOOTREPLY"),
+ 		  piaddr (lease -> ip_addr),
+-		  (lease -> hardware_addr.hlen
++		  (lease -> hardware_addr.hlen > 1
+ 		   ? print_hw_addr (lease -> hardware_addr.hbuf [0],
+ 				    lease -> hardware_addr.hlen - 1,
+ 				    &lease -> hardware_addr.hbuf [1])
+@@ -4022,10 +4043,7 @@ int find_lease (struct lease **lp,
+ 			if (uid_lease) {
+ 			    if (uid_lease->binding_state == FTS_ACTIVE) {
+ 				log_error ("client %s has duplicate%s on %s",
+-					   (print_hw_addr
+-					    (packet -> raw -> htype,
+-					     packet -> raw -> hlen,
+-					     packet -> raw -> chaddr)),
++					   (print_hw_addr_or_client_id(packet)),
+ 					   " leases",
+ 					   (ip_lease -> subnet ->
+ 					    shared_network -> name));
+@@ -4192,9 +4210,7 @@ int find_lease (struct lease **lp,
+ 			log_error("uid lease %s for client %s is duplicate "
+ 				  "on %s",
+ 				  piaddr(uid_lease->ip_addr),
+-				  print_hw_addr(packet->raw->htype,
+-						packet->raw->hlen,
+-						packet->raw->chaddr),
++				  print_hw_addr_or_client_id(packet),
+ 				  uid_lease->subnet->shared_network->name);
+ 
+ 			if (!packet -> raw -> ciaddr.s_addr &&

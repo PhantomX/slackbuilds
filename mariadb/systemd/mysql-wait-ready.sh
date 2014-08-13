@@ -1,6 +1,6 @@
 #!/bin/sh
 
-source /usr/libexec/mariadb-scripts-common
+source "`dirname ${BASH_SOURCE[0]}`/mysql-scripts-common"
 
 # This script waits for mysqld to be ready to accept connections
 # (which can be many seconds or even minutes after launch, if there's
@@ -11,7 +11,7 @@ source /usr/libexec/mariadb-scripts-common
 if [ $# -ne 1 ] ; then
 	echo "You need to pass daemon pid as an argument for this script."
 	exit 20
-fi 
+fi
 
 # Service file passes us the daemon's PID (actually, mysqld_safe's PID)
 daemon_pid="$1"
@@ -24,7 +24,7 @@ while /bin/true; do
 	    ret=1
 	    break
 	fi
-	RESPONSE=`/usr/bin/mysqladmin --no-defaults --socket="$socketfile" --user=UNKNOWN_MYSQL_USER ping 2>&1`
+	RESPONSE=`@bindir@/mysqladmin --no-defaults --socket="$socketfile" --user=UNKNOWN_MYSQL_USER ping 2>&1`
 	mret=$?
 	if [ $mret -eq 0 ] ; then
 	    break
@@ -32,6 +32,7 @@ while /bin/true; do
 	# exit codes 1, 11 (EXIT_CANNOT_CONNECT_TO_SERVICE) are expected,
 	# anything else suggests a configuration error
 	if [ $mret -ne 1 -a $mret -ne 11 ]; then
+            echo "Cannot check for @NICE_PROJECT_NAME@ Daemon startup because of mysqladmin failure." >&2
 	    ret=$mret
 	    break
 	fi

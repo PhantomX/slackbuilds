@@ -18,7 +18,7 @@ get_mysql_option(){
 	sections="$1"
 	option_name="$2"
 	default_value="$3"
-	result=`/usr/bin/my_print_defaults $sections | sed -n "s/^--${option_name}=//p" | tail -n 1`
+	result=`@bindir@/my_print_defaults $sections | sed -n "s/^--${option_name}=//p" | tail -n 1`
 	if [ -z "$result" ]; then
 	    # not found, use default
 	    result="${default_value}"
@@ -30,7 +30,7 @@ get_mysql_option(){
 # on the default installation:
 #  1) default values are hardcoded in the code of mysqld daemon or
 #     mysqld_safe script
-#  2) configurable values are defined in /etc/my.cnf
+#  2) configurable values are defined in @sysconfdir@/my.cnf
 #  3) default values for helper scripts are specified bellow
 # So, in case values are defined in my.cnf, we need to get that value.
 # In case they are not defined in my.cnf, we need to get the same value
@@ -38,17 +38,21 @@ get_mysql_option(){
 # must correspond with values defined in mysqld_safe script and source
 # code itself.
 
-get_mysql_option mysqld datadir "/var/lib/mysql"
+server_sections="mysqld_safe mysqld server mysqld-@MAJOR_VERSION@.@MINOR_VERSION@ mariadb mariadb-@MAJOR_VERSION@.@MINOR_VERSION@ client-server"
+
+get_mysql_option "$server_sections" datadir "@MYSQL_DATADIR@"
 datadir="$result"
 
 # if there is log_error in the my.cnf, my_print_defaults still
 # returns log-error
-get_mysql_option mysqld_safe log-error "`hostname`.err"
+# log-error might be defined in mysqld_safe and mysqld sections,
+# the former has bigger priority
+get_mysql_option "$server_sections" log-error "$datadir/`hostname`.err"
 errlogfile="$result"
 
-get_mysql_option mysqld socket "/var/lib/mysql/mysql.sock"
+get_mysql_option "$server_sections" socket "@MYSQL_UNIX_ADDR@"
 socketfile="$result"
 
-get_mysql_option mysqld_safe pid-file "`hostname`.pid"
+get_mysql_option "$server_sections" pid-file "$datadir/`hostname`.pid"
 pidfile="$result"
 

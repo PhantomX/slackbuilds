@@ -1,0 +1,383 @@
+diff -up tigervnc-1.3.0/unix/xserver/hw/vnc/Input.cc.inputreset tigervnc-1.3.0/unix/xserver/hw/vnc/Input.cc
+--- tigervnc-1.3.0/unix/xserver/hw/vnc/Input.cc.inputreset	2013-07-01 13:41:24.000000000 +0100
++++ tigervnc-1.3.0/unix/xserver/hw/vnc/Input.cc	2014-07-14 13:08:01.482660946 +0100
+@@ -68,6 +68,9 @@ rfb::BoolParameter avoidShiftNumLock("Av
+ 
+ #define BUTTONS 7
+ 
++class InputDevice *vncInputDevice;
++InputDevice InputDevice::singleton;
++
+ /* Event queue is shared between all devices. */
+ #if XORG == 15
+ static xEvent *eventq = NULL;
+@@ -116,11 +119,13 @@ static void enqueueEvents(DeviceIntPtr d
+ }
+ #endif /* XORG < 111 */
+ 
+-InputDevice::InputDevice(rfb::VNCServerST *_server)
+-	: server(_server), initialized(false), oldButtonMask(0)
++InputDevice::InputDevice()
++	: oldButtonMask(0)
+ {
+ 	int i;
+ 
++	vncInputDevice = this;
++
+ #if XORG < 111
+ 	initEventq();
+ #endif
+@@ -195,16 +200,12 @@ void InputDevice::PointerMove(const rfb:
+ 	cursorPos = pos;
+ }
+ 
+-void InputDevice::PointerSync(void)
++const rfb::Point &InputDevice::getPointerPos(void)
+ {
+-	if (cursorPos.equals(oldCursorPos))
+-		return;
+-
+-	oldCursorPos = cursorPos;
+-	server->setCursorPos(cursorPos);
++	return cursorPos;
+ }
+ 
+-static int pointerProc(DeviceIntPtr pDevice, int onoff)
++int InputDevice::pointerProc(DeviceIntPtr pDevice, int onoff)
+ {
+ 	BYTE map[BUTTONS + 1];
+ 	DevicePtr pDev = (DevicePtr)pDevice;
+@@ -229,6 +230,8 @@ static int pointerProc(DeviceIntPtr pDev
+ 		btn_labels[2] = XIGetKnownProperty(BTN_LABEL_PROP_BTN_RIGHT);
+ 		btn_labels[3] = XIGetKnownProperty(BTN_LABEL_PROP_BTN_WHEEL_UP);
+ 		btn_labels[4] = XIGetKnownProperty(BTN_LABEL_PROP_BTN_WHEEL_DOWN);
++		btn_labels[5] = XIGetKnownProperty(BTN_LABEL_PROP_BTN_HWHEEL_LEFT);
++		btn_labels[6] = XIGetKnownProperty(BTN_LABEL_PROP_BTN_HWHEEL_RIGHT);
+ 
+ 		axes_labels[0] = XIGetKnownProperty(AXIS_LABEL_PROP_REL_X);
+ 		axes_labels[1] = XIGetKnownProperty(AXIS_LABEL_PROP_REL_Y);
+@@ -253,10 +256,9 @@ static int pointerProc(DeviceIntPtr pDev
+ 	case DEVICE_OFF:
+ 		pDev->on = FALSE;
+ 		break;
+-#if 0
+ 	case DEVICE_CLOSE:
++		singleton.pointerDev = NULL;
+ 		break;
+-#endif
+ 	}
+ 
+ 	return Success;
+@@ -269,9 +271,7 @@ static void keyboardBell(int percent, De
+ 		vncBell();
+ }
+ 
+-extern void GetInitKeyboardMap(KeySymsPtr keysyms, CARD8 *modmap);
+-
+-static int keyboardProc(DeviceIntPtr pDevice, int onoff)
++int InputDevice::keyboardProc(DeviceIntPtr pDevice, int onoff)
+ {
+ #if XORG < 17
+ 	KeySymsRec keySyms;
+@@ -298,6 +298,9 @@ static int keyboardProc(DeviceIntPtr pDe
+ 	case DEVICE_OFF:
+ 		pDev->on = FALSE;
+ 		break;
++	case DEVICE_CLOSE:
++		singleton.keyboardDev = NULL;
++		break;
+ 	}
+ 
+ 	return Success;
+@@ -305,11 +308,9 @@ static int keyboardProc(DeviceIntPtr pDe
+ 
+ void InputDevice::InitInputDevice(void)
+ {
+-	if (initialized)
++	if ((pointerDev != NULL) || (keyboardDev != NULL))
+ 		return;
+ 
+-	initialized = true;
+-
+ #if XORG < 17
+ 	pointerDev = AddInputDevice(
+ #if XORG >= 16
+diff -up tigervnc-1.3.0/unix/xserver/hw/vnc/InputCore.cc.inputreset tigervnc-1.3.0/unix/xserver/hw/vnc/InputCore.cc
+--- tigervnc-1.3.0/unix/xserver/hw/vnc/InputCore.cc.inputreset	2013-07-01 13:41:24.000000000 +0100
++++ tigervnc-1.3.0/unix/xserver/hw/vnc/InputCore.cc	2014-07-14 13:08:01.483660952 +0100
+@@ -174,7 +174,7 @@ KeySym keyboardMap[MAP_LEN * KEYSYMS_PER
+ 	XK_Menu, NoSymbol,
+ };
+ 
+-void GetInitKeyboardMap(KeySymsPtr keysyms, CARD8 *modmap)
++void InputDevice::GetInitKeyboardMap(KeySymsPtr keysyms, CARD8 *modmap)
+ {
+ 	int i;
+ 
+diff -up tigervnc-1.3.0/unix/xserver/hw/vnc/Input.h.inputreset tigervnc-1.3.0/unix/xserver/hw/vnc/Input.h
+--- tigervnc-1.3.0/unix/xserver/hw/vnc/Input.h.inputreset	2013-07-01 13:41:24.000000000 +0100
++++ tigervnc-1.3.0/unix/xserver/hw/vnc/Input.h	2014-07-14 13:08:01.483660952 +0100
+@@ -29,20 +29,27 @@
+ 
+ #include <list>
+ 
+-#include <rfb/VNCServerST.h>
++#include <rdr/types.h>
++#include <rfb/Rect.h>
+ 
+ extern "C" {
+ #include "input.h"
++/* The Xorg headers define macros that wreak havoc with STL */
++#undef max
+ };
+ 
+ #include "xorg-version.h"
+ 
+-/* Represents input device (keyboard + pointer) */
++/*
++ * Represents input device (keyboard + pointer)
++ *
++ * Is a singleton as input devices are global in the X server so
++ * we do not have one per desktop (i.e. per screen).
++ */
++extern class InputDevice *vncInputDevice;
++
+ class InputDevice {
+ public:
+-	/* Create new InputDevice instance */
+-	InputDevice(rfb::VNCServerST *_server);
+-
+ 	/*
+ 	 * Press or release buttons. Relationship between buttonMask and
+ 	 * buttons is specified in RFB protocol.
+@@ -52,27 +59,28 @@ public:
+ 	/* Move pointer to target location (point coords are absolute). */
+ 	void PointerMove(const rfb::Point &point);
+ 
+-	/*
+-	 * Send pointer position to clients. If not called then Move() calls
+-	 * won't be visible to VNC clients.
+-	 */
+-	void PointerSync(void);
++	/* Get current known location of the pointer */
++	const rfb::Point &getPointerPos(void);
+ 
++	/* Press or release one or more keys to get the given symbol */
+ 	void KeyboardPress(rdr::U32 keysym) { keyEvent(keysym, true); }
+ 	void KeyboardRelease(rdr::U32 keysym) { keyEvent(keysym, false); }
+ 
+ 	/*
+-	 * Init input device. This cannot be done in the constructor
+-	 * because constructor is called during X server extensions
+-	 * initialization. Devices must be initialized after core
+-	 * pointer/keyboard initialization which is actually after extesions
+-	 * initialization. Check InitExtensions(), InitCoreDevices() and
+-	 * InitInput() calls in dix/main.c. Instead it is called from
+-	 * XserverDesktop at an appropriate time.
++	 * Init input device.
++	 * This has to be called after core pointer/keyboard
++	 * initialization which unfortunately is after extesions
++	 * initialization (which means we cannot call it in
++	 * vncExtensionInit(). Check InitExtensions(),
++	 * InitCoreDevices() and InitInput() calls in dix/main.c.
++	 * Instead we call it from XserverDesktop at an appropriate
++	 * time.
+ 	 */
+ 	void InitInputDevice(void);
+ 
+ private:
++	InputDevice();
++
+ 	void keyEvent(rdr::U32 keysym, bool down);
+ 
+ 	/* Backend dependent functions below here */
+@@ -96,22 +104,28 @@ private:
+ 	KeyCode addKeysym(KeySym keysym, unsigned state);
+ 
+ private:
++	static int pointerProc(DeviceIntPtr pDevice, int onoff);
++	static int keyboardProc(DeviceIntPtr pDevice, int onoff);
++
+ #if XORG >= 17
+ 	static void vncXkbProcessDeviceEvent(int screenNum,
+ 	                                     InternalEvent *event,
+ 	                                     DeviceIntPtr dev);
++#else
++	static void GetInitKeyboardMap(KeySymsPtr keysyms, CARD8 *modmap);
+ #endif
+ 
+ private:
+-	rfb::VNCServerST *server;
+-	bool initialized;
+ 	DeviceIntPtr keyboardDev;
+ 	DeviceIntPtr pointerDev;
+ 
+ 	int oldButtonMask;
+-	rfb::Point cursorPos, oldCursorPos;
++	rfb::Point cursorPos;
+ 
+ 	KeySym pressedKeys[256];
++
++private:
++	static InputDevice singleton;
+ };
+ 
+ #endif
+diff -up tigervnc-1.3.0/unix/xserver/hw/vnc/InputXKB.cc.inputreset tigervnc-1.3.0/unix/xserver/hw/vnc/InputXKB.cc
+--- tigervnc-1.3.0/unix/xserver/hw/vnc/InputXKB.cc.inputreset	2014-07-14 13:07:53.145619157 +0100
++++ tigervnc-1.3.0/unix/xserver/hw/vnc/InputXKB.cc	2014-07-14 13:08:01.484660958 +0100
+@@ -42,18 +42,6 @@ extern "C" {
+ #undef class
+ }
+ 
+-#if XORG < 19
+-static int vncXkbScreenPrivateKeyIndex;
+-static DevPrivateKey vncXkbScreenPrivateKey = &vncXkbScreenPrivateKeyIndex;
+-#else
+-static DevPrivateKeyRec vncXkbPrivateKeyRec;
+-#define vncXkbScreenPrivateKey (&vncXkbPrivateKeyRec)
+-#endif
+-
+-#define vncXkbScreenPrivate(pScreen) \
+-	(*(InputDevice**) dixLookupPrivate(&(pScreen)->devPrivates, \
+-	                                   vncXkbScreenPrivateKey))
+-
+ #ifndef KEYBOARD_OR_FLOAT
+ #define KEYBOARD_OR_FLOAT MASTER_KEYBOARD
+ #endif
+@@ -209,18 +197,6 @@ static unsigned XkbKeyEffectiveGroup(Xkb
+ 
+ void InputDevice::PrepareInputDevices(void)
+ {
+-#if XORG < 19
+-	if (!dixRequestPrivate(vncXkbScreenPrivateKey, sizeof(InputDevice*)))
+-		FatalError("Failed to register TigerVNC XKB screen key\n");
+-#else
+-	if (!dixRegisterPrivateKey(vncXkbScreenPrivateKey, PRIVATE_SCREEN,
+-	                           sizeof(InputDevice*)))
+-		FatalError("Failed to register TigerVNC XKB screen key\n");
+-#endif
+-
+-	for (int scr = 0; scr < screenInfo.numScreens; scr++)
+-		vncXkbScreenPrivate(screenInfo.screens[scr]) = this;
+-
+ 	/*
+ 	 * Not ideal since these callbacks do not stack, but it's the only
+ 	 * decent way we can reliably catch events for both the slave and
+@@ -633,10 +609,9 @@ void InputDevice::vncXkbProcessDeviceEve
+                                            InternalEvent *event,
+                                            DeviceIntPtr dev)
+ {
+-	InputDevice *self = vncXkbScreenPrivate(screenInfo.screens[screenNum]);
+ 	unsigned int backupctrls;
+ 
+-	if (event->device_event.sourceid == self->keyboardDev->id) {
++	if (event->device_event.sourceid == singleton.keyboardDev->id) {
+ 		XkbControlsPtr ctrls;
+ 
+ 		/*
+@@ -658,7 +633,7 @@ void InputDevice::vncXkbProcessDeviceEve
+ 
+ 	dev->c_public.processInputProc(event, dev);
+ 
+-	if (event->device_event.sourceid == self->keyboardDev->id) {
++	if (event->device_event.sourceid == singleton.keyboardDev->id) {
+ 		XkbControlsPtr ctrls;
+ 
+ 		ctrls = dev->key->xkbInfo->desc->ctrls;
+diff -up tigervnc-1.3.0/unix/xserver/hw/vnc/xf86vncModule.cc.inputreset tigervnc-1.3.0/unix/xserver/hw/vnc/xf86vncModule.cc
+--- tigervnc-1.3.0/unix/xserver/hw/vnc/xf86vncModule.cc.inputreset	2013-07-01 13:41:24.000000000 +0100
++++ tigervnc-1.3.0/unix/xserver/hw/vnc/xf86vncModule.cc	2014-07-14 13:08:01.487660972 +0100
+@@ -112,9 +112,9 @@ static void vncExtensionInitWithParams(I
+           i.param->setParam(val);
+       }
+     }
+-
+-    vncExtensionInit();
+   }
++
++  vncExtensionInit();
+ }
+ }
+ 
+diff -up tigervnc-1.3.0/unix/xserver/hw/vnc/XserverDesktop.cc.inputreset tigervnc-1.3.0/unix/xserver/hw/vnc/XserverDesktop.cc
+--- tigervnc-1.3.0/unix/xserver/hw/vnc/XserverDesktop.cc.inputreset	2014-07-14 13:07:53.140619132 +0100
++++ tigervnc-1.3.0/unix/xserver/hw/vnc/XserverDesktop.cc	2014-07-14 13:08:01.486660967 +0100
+@@ -157,15 +157,12 @@ XserverDesktop::XserverDesktop(ScreenPtr
+ 
+   if (httpListener)
+     httpServer = new FileHTTPServer(this);
+-
+-  inputDevice = new InputDevice(server);
+ }
+ 
+ XserverDesktop::~XserverDesktop()
+ {
+   if (!directFbptr)
+     delete [] data;
+-  delete inputDevice;
+   delete httpServer;
+   delete server;
+ }
+@@ -583,7 +580,7 @@ void XserverDesktop::blockHandler(fd_set
+   // so we abuse the fact that this routine will be called first thing
+   // once the dix is done initialising.
+   // [1] Technically Xvnc has InitInput(), but libvnc.so has nothing.
+-  inputDevice->InitInputDevice();
++  vncInputDevice->InitInputDevice();
+ 
+   try {
+     int nextTimeout;
+@@ -691,7 +688,11 @@ void XserverDesktop::wakeupHandler(fd_se
+         }
+       }
+ 
+-      inputDevice->PointerSync();
++      // We are responsible for propagating mouse movement between clients
++      if (!oldCursorPos.equals(vncInputDevice->getPointerPos())) {
++        oldCursorPos = vncInputDevice->getPointerPos();
++        server->setCursorPos(oldCursorPos);
++      }
+     }
+ 
+     // Then let the timers do some processing. Rescheduling is done in
+@@ -818,8 +819,8 @@ void XserverDesktop::approveConnection(v
+ 
+ void XserverDesktop::pointerEvent(const Point& pos, int buttonMask)
+ {
+-  inputDevice->PointerMove(pos);
+-  inputDevice->PointerButtonAction(buttonMask);
++  vncInputDevice->PointerMove(pos);
++  vncInputDevice->PointerButtonAction(buttonMask);
+ }
+ 
+ void XserverDesktop::clientCutText(const char* str, int len)
+@@ -1136,7 +1137,7 @@ void XserverDesktop::lookup(int index, i
+ void XserverDesktop::keyEvent(rdr::U32 keysym, bool down)
+ {
+ 	if (down)
+-		inputDevice->KeyboardPress(keysym);
++		vncInputDevice->KeyboardPress(keysym);
+ 	else
+-		inputDevice->KeyboardRelease(keysym);
++		vncInputDevice->KeyboardRelease(keysym);
+ }
+diff -up tigervnc-1.3.0/unix/xserver/hw/vnc/XserverDesktop.h.inputreset tigervnc-1.3.0/unix/xserver/hw/vnc/XserverDesktop.h
+--- tigervnc-1.3.0/unix/xserver/hw/vnc/XserverDesktop.h.inputreset	2013-07-01 13:41:24.000000000 +0100
++++ tigervnc-1.3.0/unix/xserver/hw/vnc/XserverDesktop.h	2014-07-14 13:08:01.486660967 +0100
+@@ -133,7 +133,6 @@ private:
+ #endif
+ 
+   ScreenPtr pScreen;
+-  InputDevice *inputDevice;
+   rfb::VNCServerST* server;
+   rfb::HTTPServer* httpServer;
+   network::TcpListener* listener;
+@@ -153,5 +152,7 @@ private:
+   typedef std::map<RROutputPtr, rdr::U32> OutputIdMap;
+   OutputIdMap outputIdMap;
+ #endif
++
++  rfb::Point oldCursorPos;
+ };
+ #endif

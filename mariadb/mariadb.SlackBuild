@@ -44,7 +44,7 @@ fi
 NAME=mariadb
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-10.0.12}
+VERSION=${VERSION:-10.0.13}
 SVER=$(echo ${VERSION} | cut -d . -f1-2)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -128,6 +128,41 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh
 fi
 
+cp ${CWD}/mysql_config_multilib.sh ${CWD}/systemd/*.{in,sh} scripts/ || exit 1
+cp ${CWD}/rc.mysqld scripts/mysql.init.in || exit 1
+
+cat > scripts/mysql.tmpfiles.d.in <<EOF
+d @PID_FILE_DIR@ 0755 mysql mysql -
+d @PID_FILE_DIR_COMPAT@ 0755 mysql mysql -
+EOF
+
+cat > scripts/my.cnf.in <<'EOF'
+[mysqld]
+# Settings user and group are ignored when systemd is used.
+# If you need to run mysqld under different user or group, 
+# customize your systemd unit file for mysqld according to the
+# instructions in http://fedoraproject.org/wiki/Systemd
+datadir=@MYSQL_DATADIR@
+socket=@MYSQL_DATADIR@/mysql.sock
+# Disabling symbolic-links is recommended to prevent assorted security risks
+symbolic-links=0
+
+[mysqld_safe]
+log-error=@LOG_LOCATION_COMPAT@
+pid-file=@PID_FILE_DIR_COMPAT@/@DAEMON_NAME_COMPAT@.pid
+
+#
+# This group is read both both by the client and the server
+# use it for options that affect everything
+#
+[client-server]
+
+#
+# include all files from the config directory
+#
+!includedir @INSTALL_SYSCONF2DIR@
+EOF
+
 sed -i \
   -e 's|share/info|info|g' \
   -e 's|share/man|man|g' \
@@ -151,11 +186,20 @@ export CXXFLAGS="${CFLAGS} -felide-constructors -fno-rtti"
 export FFLAGS="${SLKCFLAGS}"
 
 cmake . \
+  -DNICE_PROJECT_NAME="MariaDB" \
   -DBUILD_CONFIG=mysql_release \
   -DFEATURE_SET="community" \
   -DINSTALL_LAYOUT=RPM \
   -DRPM=fedora21 \
+  -DDAEMON_NAME="${NAME}" \
+  -DDAEMON_NAME_COMPAT="mysqld" \
+  -DLOG_LOCATION="/var/log/${NAME}/${NAME}.log" \
+  -DLOG_LOCATION_COMPAT="/var/log/mysqld.log" \
+  -DPID_FILE_DIR="/var/run/${NAME}" \
+  -DPID_FILE_DIR_COMPAT="/var/run/mysqld" \
   -DCMAKE_INSTALL_PREFIX="/usr" \
+  -DINSTALL_SYSCONFDIR="/etc" \
+  -DINSTALL_SYSCONF2DIR="/etc/my.cnf.d" \
   -DINSTALL_INCLUDEDIR=include/mysql \
   -DINSTALL_INFODIR=info \
   -DINSTALL_LIBDIR="lib${LIBDIRSUFFIX}/mysql" \
@@ -184,14 +228,6 @@ cmake . \
   -DMANUFACTURER:STRING="${SLKDIST}" \
   || exit $?
 
-# this work-around works quite similar to links but using binary
-# we avoid multilib conflicts, because binaries can conflict,
-# while 64bit binary is prefered
-( set +o xtrace
-  gcc ${CFLAGS} ${LDFLAGS} -o scriptstub "-DLIBDIR=\"/usr/lib${LIBDIRSUFFIX}/mysql\"" \
-    ${CWD}/scriptstub.c
-) || exit $?
-
 make -j${NJOBS} -k VERBOSE=1 || make VERBOSE=1 || exit $?
 make install DESTDIR=${PKG} || exit $?
 
@@ -208,21 +244,18 @@ abs2rel(){
   perl -e 'use File::Spec; print File::Spec->abs2rel($ARGV[0], $ARGV[1])' "$1" "$2"
 }
 
-for file in mysqlbug mysql_config ;do
-  mv ${PKG}/usr/bin/${file} ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/${file} || exit 1
-  install -p -m 0755 scriptstub ${PKG}/usr/bin/${file} || exit 1
-done
-
 reldir=$(abs2rel /usr/bin /usr/share/mysql-test/lib/My/SafeProcess)
 
 mv ${PKG}/usr/share/mysql-test/lib/My/SafeProcess/my_safe_process ${PKG}/usr/bin/ || exit 1
 ln -s ${reldir}/my_safe_process ${PKG}/usr/share/mysql-test/lib/My/SafeProcess/my_safe_process
 
-mkdir -p ${PKG}/var/log
-touch ${PKG}/var/log/mysqld.log.new
+mkdir -p ${PKG}/var/log/${NAME}
+touch ${PKG}/var/log/${NAME}/${NAME}.log.new
+chmod 0750 ${PKG}/var/log/${NAME}
+ln -sf ${NAME}/${NAME}.log ${PKG}/var/log/mysqld.log
 
 mkdir -p ${PKG}/usr/lib/tmpfiles.d
-echo 'd /run/mysqld 0755 mysql mysql -' > ${PKG}/usr/lib/tmpfiles.d/${NAME}.conf
+install -pm0644 scripts/mysql.tmpfiles.d ${PKG}/usr/lib/tmpfiles.d/${NAME}.conf
 
 # Fix funny permissions that cmake build scripts apply to config files
 chmod 644 ${PKG}/usr/share/mysql/config.*.ini
@@ -295,6 +328,18 @@ if [ -f ${PKG}/usr/include/mysql/storage/ndb/ndb_types.h ] ;then
   zcat ${CWD}/ndb_types.h.gz \
     > ${PKG}/usr/include/mysql/storage/ndb/ndb_types.h || exit 1
 fi
+
+  case "${MARCH}" in
+    s390x|x86_64)
+     mv ${PKG}/usr/bin/mysql_config ${PKG}/usr/bin/mysql_config-64 || exit 1
+     ;;
+    *)
+     mv ${PKG}/usr/bin/mysql_config ${PKG}/usr/bin/mysql_config-32 || exit 1
+     ;;
+  esac
+
+  install -pm 0755 scripts/mysql_config_multilib ${PKG}/usr/bin/mysql_config || exit 1
+
 fi
 
 # Install support files
@@ -302,32 +347,7 @@ mkdir -p ${PKG}/etc
 cp support-files/my-{huge,large,medium,small}.cnf ${PKG}/etc/
 
 rm -f ${PKG}/etc/my.cnf
-cat > ${PKG}/etc/my.cnf.new <<'EOF'
-[mysqld]
-# Settings user and group are ignored when systemd is used.
-# If you need to run mysqld under different user or group, 
-# customize your systemd unit file for mysqld according to the
-# instructions in http://fedoraproject.org/wiki/Systemd
-datadir=/var/lib/mysql
-socket=/var/lib/mysql/mysql.sock
-# Disabling symbolic-links is recommended to prevent assorted security risks
-symbolic-links=0
-
-[mysqld_safe]
-log-error=/var/log/mysqld.log
-pid-file=/var/run/mysqld/mysqld.pid
-
-#
-# This group is read both both by the client and the server
-# use it for options that affect everything
-#
-[client-server]
-
-#
-# include all files from the config directory
-#
-!includedir /etc/my.cnf.d
-EOF
+install -pm0644 scripts/my.cnf ${PKG}/etc/my.cnf || exit 1
 
 for file in ${PKG}/etc/my.cnf.d/*.cnf ;do
   mv ${file} ${file}.new
@@ -338,6 +358,8 @@ mkdir -p ${PKG}/var/lib/mysql
 chmod 0755 ${PKG}/var/lib/mysql
 
 # This is where the socket is stored
+mkdir -p ${PKG}/var/run/${NAME}
+chmod 0755 ${PKG}/var/run/${NAME}
 mkdir -p ${PKG}/var/run/mysql
 chmod 0755 ${PKG}/var/run/mysql
 
@@ -347,16 +369,20 @@ chmod 0755 ${PKG}/var/run/mysql
 # Add init script:
 mkdir -p ${PKG}/etc/rc.d
 # This is intentionally chmod 644.
-install -pm0644 ${CWD}/rc.mysqld ${PKG}/etc/rc.d/rc.mysqld.new || exit 1
+install -pm0644 scripts/mysql.init ${PKG}/etc/rc.d/rc.mysqld.new || exit 1
 
 mkdir -p ${PKG}/lib/systemd/system
-install -pm0644 ${CWD}/systemd/${NAME}.service ${PKG}/lib/systemd/system/ || exit 1
-install -pm0644 ${CWD}/systemd/mysqld.service ${PKG}/lib/systemd/system/ || exit 1
+install -pm0644 scripts/mysql.service ${PKG}/lib/systemd/system/${NAME}.service || exit 1
+install -pm0644 scripts/mysql-compat.service ${PKG}/lib/systemd/system/mysqld.service || exit 1
 
-install -m 755 ${CWD}/systemd/${NAME}-prepare-db-dir ${PKG}/usr/libexec/ || exit 1
-install -m 755 ${CWD}/systemd/${NAME}-wait-ready ${PKG}/usr/libexec/ || exit 1
-install -m 755 ${CWD}/systemd/${NAME}-check-socket ${PKG}/usr/libexec/ || exit 1
-install -m 644 ${CWD}/systemd/${NAME}-scripts-common ${PKG}/usr/libexec/ || exit 1
+mkdir -p ${PKG}/lib/systemd/system/${NAME}.service.d
+install -p -m 644 scripts/mysql-compat.conf \
+  ${PKG}/lib/systemd/system/${NAME}.service.d/mysql-compat.conf || exit 1
+
+install -m 755 scripts/mysql-prepare-db-dir ${PKG}/usr/libexec/mysql-prepare-db-dir || exit 1
+install -m 755 scripts/mysql-wait-ready ${PKG}/usr/libexec/mysql-wait-ready || exit 1
+install -m 755 scripts/mysql-check-socket ${PKG}/usr/libexec/mysql-check-socket || exit 1
+install -m 644 scripts/mysql-scripts-common ${PKG}/usr/libexec/mysql-scripts-common || exit 1
 
 rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient_r.so*
 echo "INPUT(-lmysqlclient)" > ${PKG}/usr/lib${LIBDIRSUFFIX}/mysql/libmysqlclient_r.so
@@ -457,7 +483,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   mkdir -p ${SBDIR}/{patches,systemd}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/apply-patches.sh ${CWD}/*.h.gz ${CWD}/rc.mysqld ${CWD}/*.1 \
-    ${CWD}/*.c ${SBDIR}/
+    ${CWD}/mysql_config*.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
@@ -473,8 +499,8 @@ set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
-   [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown mysql.mysql ./var/{lib,run}/mysql ;
-   [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown mysql.mysql ./var/log/mysqld.log.new ; "
+   [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown mysql.mysql ./var/{lib,run}/mysql ./var/{run,log}/${NAME} ;
+   [ \"${SB_HGROUP}\" = 1 ] && [ \"${SB_HUSER}\" = 1 ] && /bin/chown mysql.mysql ./var/log/${NAME}/${NAME}.log.new ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

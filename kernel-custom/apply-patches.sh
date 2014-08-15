@@ -200,6 +200,15 @@ ApplyPatch criu-no-expert.patch
 #rhbz 1117942
 ApplyPatch sched-fix-sched_setparam-policy-1-logic.patch
 
+#CVE-2014-{5206,5207} rhbz 1129662 1129669
+ApplyPatch namespaces-remount-fixes.patch
+
+#rhbz 1121288
+ApplyPatch 0001-xhci-Blacklist-using-streams-on-the-Etron-EJ168-cont.patch
+
+#rhbz 1128472
+ApplyPatch 0001-uas-Limit-qdepth-to-32-when-connected-over-usb-2.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

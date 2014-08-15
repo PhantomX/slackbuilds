@@ -9,6 +9,9 @@ if [ "${PVER}" -ne 0 ] ; then
   bzcat ${SB_PATCHDIR}/updates/${PSRCARCHIVE} | patch -p1 --verbose
 fi
 
+# 5.9-20140524
+rm -f Ada95/src/library.gpr
+
 C=$(wc -l ${CWD}/${PSRCARCHIVES} | awk '{print $1}')
 if [ "$C" -gt 0 ]; then
   for file in $(<${CWD}/${PSRCARCHIVES}) ; do

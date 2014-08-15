@@ -22,9 +22,13 @@ if [ "${SB_HUNSPELL}" = "YES" ] ;then
   zcat ${SB_PATCHDIR}/vim-7.0-hunspell.patch.gz | patch -p1 --verbose
 fi
 
-# For patch .780
+# For patch 7.3.780
 mv runtime/doc/eval.txt runtime/doc/eval.txt.orig
 iconv -f iso-8859-1 -t utf-8 runtime/doc/eval.txt.orig -o runtime/doc/eval.txt
+
+# For 7.4.399
+mv src/testdir/test71.ok src/testdir/test71.ok.orig
+iconv -f iso-8859-1 -t utf-8 src/testdir/test71.ok.orig -o src/testdir/test71.ok
 
 if [ "${PATCHLEVEL}" -gt 0 ] ;then
 mkdir -p patches

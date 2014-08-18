@@ -84,4 +84,7 @@ ApplyPatch qtwebkit-aarch64.patch
 # truly madly deeply no rpath please, kthxbye
 ApplyPatch webkit-qtwebkit-23-no_rpath.patch
 
+# patch from openSUSE to support GStreamer 1.x (#1092642)
+ApplyPatch qtwebkit-2.3.3-gstreamer1.patch
+
 set +e +o pipefail

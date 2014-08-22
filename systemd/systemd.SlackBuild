@@ -44,7 +44,7 @@ fi
 NAME=systemd
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-215}
+VERSION=${VERSION:-216}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -169,7 +169,7 @@ unset SB_PAMOPTS SB_QROPTS
 [ "${SB_PAM}" = "YES" ] || SB_PAMOPTS='--disable-pam'
 [ "${SB_QR}" = "YES" ] || SB_QROPTS='--disable-qrencode'
 
-CFLAGS="${SLKCFLAGS}" \
+CFLAGS="${SLKCFLAGS} -I/usr/include/lz4" \
 CXXFLAGS="${SLKCFLAGS}" \
 ./configure \
   --prefix=/usr \
@@ -185,6 +185,7 @@ CXXFLAGS="${SLKCFLAGS}" \
   --disable-silent-rules \
   --enable-dependency-tracking \
   --enable-split-usr \
+  --enable-lz4 \
   ${SB_PAMOPTS} \
   --disable-audit \
   --disable-selinux \
@@ -300,13 +301,10 @@ mkdir -p ${PKG}/{etc,lib}/systemd/network
 mkdir -p ${PKG}/lib/systemd/system-shutdown/
 mkdir -p ${PKG}/lib/systemd/system-sleep/
 
-# Make sure the NTP units dir exists
-mkdir -p ${PKG}/usr/lib/systemd/ntp-units.d/
-
 # Make sure directories in /var exist
 mkdir -p ${PKG}/var/lib/systemd/coredump
 mkdir -p ${PKG}/var/lib/systemd/catalog
-mkdir -p ${PKG}/var/log/journal
+mkdir -p ${PKG}/var/log/journal/{remote,upload}
 touch ${PKG}/var/lib/systemd/catalog/database.new
 touch ${PKG}/etc/udev/hwdb.bin
 
@@ -336,19 +334,15 @@ mkdir -p ${PKG}/lib/systemd/user-generators
 ln -s rescue.service ${PKG}/lib/systemd/system/single.service
 
 for srv in networkd resolved timesyncd ;do
-  rm -f ${PKG}/etc/systemd/system/multi-user.target.wants/systemd-${networkd}.service
-  ln -sf ../systemd-${networkd}.service ${PKG}/lib/systemd/system/multi-user.target.wants/
+  rm -f ${PKG}/etc/systemd/system/multi-user.target.wants/systemd-${srv}.service
+  ln -sf ../systemd-${srv}.service ${PKG}/lib/systemd/system/multi-user.target.wants/
 done
 
-for file in bootchart journald logind resolved system timesyncd user ;do
+for file in bootchart journald journal-remote journal-upload logind resolved system timesyncd user ;do
   mv ${PKG}/etc/systemd/${file}.conf ${PKG}/etc/systemd/${file}.conf.new || exit 1
 done
 
 rm -f ${PKG}/usr/lib/sysctl.d/50-coredump.conf
-
-mkdir -p ${PKG}/etc/rsyslog.d/
-echo '$SystemLogSocketName /run/systemd/journal/syslog' \
- > ${PKG}/etc/rsyslog.d/listen.conf.new || exit 1
 
 ################################ End of systemd ################################
 
@@ -485,6 +479,16 @@ if ! grep --quiet '^systemd-journal-gateway:' etc/group ;then
     -g $(free_group_id) \
     systemd-journal-gateway 2> /dev/null
 fi
+if ! grep --quiet '^systemd-journal-remote:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    systemd-journal-remote 2> /dev/null
+fi
+if ! grep --quiet '^systemd-journal-upload:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    systemd-journal-upload 2> /dev/null
+fi
 
 if ! grep --quiet '^systemd-timesync:' etc/group ;then
   ${CHROOT} /usr/sbin/groupadd \
@@ -515,6 +519,7 @@ if ! grep --quiet '^input:' etc/group ;then
     -g $(free_group_id) \
     input 2> /dev/null
 fi
+
 # Set up user: add it if it doesn't exist, update it if it already does.
 if OLD_ENTRY=$(grep --max-count=1 '^systemd-journal-gateway:' etc/passwd) \
   || OLD_ENTRY=$(grep --max-count=1 \
@@ -545,6 +550,70 @@ else
     -s /bin/false \
     -d '/var/log/journal' \
     systemd-journal-gateway 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^systemd-journal-remote:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/log/journal/remote:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "systemd-journal-remote"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/var/log/journal/remote' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g systemd-journal-remote \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'Journal Remote' \
+    -u $(free_user_id) \
+    -g systemd-journal-remote \
+    -s /bin/false \
+    -d '/var/log/journal/remote' \
+    systemd-journal-remote 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^systemd-journal-upload:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/log/journal/upload:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "systemd-journal-upload"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/var/log/journal/upload' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g systemd-journal-upload \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'Journal Upload' \
+    -u $(free_user_id) \
+    -g systemd-journal-upload \
+    -s /bin/false \
+    -d '/var/log/journal/upload' \
+    systemd-journal-upload 2> /dev/null
 fi
 
 if OLD_ENTRY=$(grep --max-count=1 '^systemd-timesync:' etc/passwd)
@@ -704,9 +773,9 @@ ${CHROOT} /lib/systemd/systemd-random-seed save >/dev/null 2>&1 || :
 ${CHROOT} /bin/systemctl daemon-reexec > /dev/null 2>&1 || :
 sleep 1
 
-${CHROOT} /bin/systemctl stop systemd-udev.service systemd-udev-control.socket systemd-udev-kernel.socket >/dev/null 2>&1 || :
+${CHROOT} /bin/systemctl stop systemd-udevd-control.socket systemd-udevd-kernel.socket systemd-udevd.service >/dev/null 2>&1 || :
 ${CHROOT} /bin/systemctl --system daemon-reload  >/dev/null 2>&1 || :
-${CHROOT} /bin/systemctl start systemd-udev.service >/dev/null 2>&1 || :
+${CHROOT} /bin/systemctl start systemd-udevd.service >/dev/null 2>&1 || :
 ${CHROOT} /sbin/udevadm hwdb --update >/dev/null 2>&1 || :
 ${CHROOT} /bin/journalctl --update-catalog >/dev/null 2>&1 || :
 ${CHROOT} /bin/systemd-tmpfiles --create >/dev/null 2>&1 || :
@@ -728,6 +797,10 @@ ${CHROOT} /bin/chmod g+s /var/log/journal/ >/dev/null 2>&1 || :
 ${CHROOT} /bin/chmod g+s /var/log/journal/$(cat /etc/machine-id) >/dev/null 2>&1 || :
 
 ${CHROOT} /usr/bin/setfacl -Rnm g:wheel:rx,d:g:wheel:rx,g:adm:rx,d:g:adm:rx /var/log/journal/ >/dev/null 2>&1 || :
+
+# Move old stuff around in /var/lib
+${CHROOT} mv /var/lib/random-seed /var/lib/systemd/random-seed >/dev/null 2>&1 || :
+${CHROOT} mv /var/lib/backlight /var/lib/systemd/backlight >/dev/null 2>&1 || :
 
 EOF
 

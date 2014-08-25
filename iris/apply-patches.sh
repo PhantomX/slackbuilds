@@ -11,7 +11,5 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/iris-1.0.0-install.patch
 # Build shared library
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/iris-1.0.0-sharedlib.patch
-# install jdns
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/iris-1.0.0-jdns_install.patch
 
 set +e +o pipefail

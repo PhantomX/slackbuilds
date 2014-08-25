@@ -94,6 +94,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.4-fontconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-locale.patch
 
 ## upstream patches
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rd4fdd1a78821884cf515467cdbbb769096033452.diff
 
 ## trunk patches
 # fix choppy fullscreen with OpenGL compositing on latest intel drv (kde#336589)

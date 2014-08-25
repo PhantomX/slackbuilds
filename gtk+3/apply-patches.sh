@@ -15,4 +15,7 @@ patch -p1 --backup --verbose -i ${SB_PATCHDIR}/016_no_offscreen_widgets_grabbing
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/017_no_offscreen_device_grabbing.patch
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/060_ignore-random-icons.patch
 
+# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=744249#25
+#patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk3_disable_csd_envvar_20140527.diff
+
 set +e +o pipefail

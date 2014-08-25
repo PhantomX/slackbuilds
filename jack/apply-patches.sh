@@ -10,8 +10,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/jack-audio-connection-kit-no_d
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/jack-doxygen-output-dir-fix.patch
 # We don't want the internal API documentation
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/jack-apidoc-only.patch
-# Fix doxygen doc build regression. From upstream trunk 95a1162d6aecc91
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/jack-doxygen-buildfix.patch
 # Adjust default priority. RHBZ#795094
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/jack-realtime-compat.patch
 # Enable renaming and reordering the jack ports RHBZ#887408

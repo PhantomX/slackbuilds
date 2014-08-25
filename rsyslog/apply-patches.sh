@@ -10,6 +10,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-7.2.2-manpage-dbg-mode
 
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-7.6.0-systemd209.patch
 
+### Arch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/build-fix.patch
+
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES
 

@@ -101,6 +101,21 @@ ApplyPatch perl-5.19.2-Fix-using-regexes-with-multiple-code-blocks.patch
 # CPAN RT#85015
 ApplyPatch perl-5.18.1-Document-Math-BigInt-CalcEmu-requires-Math-BigInt.patch
 
+# Fix t/comp/parser.t not to load system modules, bug #1084399, RT#121579,
+# in upstream after 5.19.1
+ApplyPatch perl-5.18.2-Make-t-comp-parser.t-get-the-correct-libraries.patch
+
+# Pass -fwrapv to stricter GCC 4.9, bug #1082957, RT#121505,
+# in upstream after 5.19.10
+ApplyPatch perl-5.18.2-Pass-fwrapv-to-stricter-GCC-4.9.patch
+
+# Use stronger algorithm needed for FIPS in t/op/crypt.t, bug #1128032,
+# RT#121591
+ApplyPatch perl-5.18.2-t-op-crypt.t-Perform-SHA-256-algorithm-if-default-on.patch
+
+# Make *DBM_File desctructors thread-safe, bug #1107543, RT#61912
+ApplyPatch perl-5.18.2-Destroy-GDBM-NDBM-ODBM-SDBM-_File-objects-only-from-.patch
+
 # Link XS modules to libperl.so with EU::CBuilder on Linux, bug #960048
 ApplyPatch perl-5.16.3-Link-XS-modules-to-libperl.so-with-EU-CBuilder-on-Li.patch
 

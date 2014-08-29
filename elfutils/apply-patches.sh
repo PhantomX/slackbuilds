@@ -14,7 +14,4 @@ if [ "${SB_COMPAT}" = "YES" ] ;then
 fi
 #sed -i.scanf-m -e 's/%m/%a/' src/addr2line.c tests/line2addr.c || exit 1
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-aarch64-user_regs_struct.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.159-argp-attach.patch
-
 set +e +o pipefail

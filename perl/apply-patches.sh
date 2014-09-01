@@ -59,55 +59,15 @@ ApplyPatch perl-5.10.0-x86_64-io-test-failure.patch
 # switch off test, which is failing only on koji (fork)
 ApplyPatch perl-5.14.1-offtest.patch
 
-# Fix find2perl to translate ? glob properly, rhbz#825701, RT#113054
-ApplyPatch perl-5.14.2-find2perl-transtate-question-mark-properly.patch
-
-# Update h2ph(1) documentation, rhbz#948538, RT#117647
-ApplyPatch perl-5.19.0-Synchronize-h2ph-POD-text-with-usage-output.patch
-
-# Update pod2html(1) documentation, rhbz#948538, RT#117623
-ApplyPatch perl-5.16.3-Synchronize-pod2html-usage-output-and-its-POD-text.patch
-
-# Fix a test failure in perl5db.t when TERM=vt100, RT#118817,
-# in upstream after 5.19.7
-ApplyPatch perl-5.19.7-avoid-using-2-handles-to-write-to-the-de.patch
-
-# Prevent from loading system Term::ReadLine::Gnu while running tests,
-# RT#118821
-ApplyPatch perl-5.18.0-Suppress-system-Term-ReadLine-Gnu.patch
-
 # Define SONAME for libperl.so
 ApplyPatch perl-5.16.3-create_libperl_soname.patch
 
 # Install libperl.so to -Dshrpdir value
 ApplyPatch perl-5.16.3-Install-libperl.so-to-shrpdir-on-Linux.patch
 
-# Fix crash with \&$glob_copy, rhbz#989486, RT#119051
-# Update the upstream patch to work for Perl 5.18.1
-ApplyPatch perl-5.19.2-Fix-crash-with-glob_copy.patch
-
-# Fix coreamp.t's rand test, rhbz#970567, RT#118237
-ApplyPatch perl-5.19.2-Fix-coreamp.t-s-rand-test.patch
-
-# Reap child in case where exception has been thrown, rhbz#988805, RT#114722
-ApplyPatch perl-5.19.3-Reap-child-in-case-where-exception-has-been-thrown.patch
-
-# Fix using regular expressions containing multiple code blocks,
-# rhbz#982131, RT#117917
-# Update the upstream patch to work for Perl 5.18.1
-ApplyPatch perl-5.19.2-Fix-using-regexes-with-multiple-code-blocks.patch
-
 # Document Math::BigInt::CalcEmu requires Math::BigInt, rhbz#959096,
 # CPAN RT#85015
 ApplyPatch perl-5.18.1-Document-Math-BigInt-CalcEmu-requires-Math-BigInt.patch
-
-# Fix t/comp/parser.t not to load system modules, bug #1084399, RT#121579,
-# in upstream after 5.19.1
-ApplyPatch perl-5.18.2-Make-t-comp-parser.t-get-the-correct-libraries.patch
-
-# Pass -fwrapv to stricter GCC 4.9, bug #1082957, RT#121505,
-# in upstream after 5.19.10
-ApplyPatch perl-5.18.2-Pass-fwrapv-to-stricter-GCC-4.9.patch
 
 # Use stronger algorithm needed for FIPS in t/op/crypt.t, bug #1128032,
 # RT#121591

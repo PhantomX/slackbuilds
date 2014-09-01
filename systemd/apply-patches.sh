@@ -40,6 +40,8 @@ ApplyPatch 0008-journal-upload-make-sure-that-r-is-initialized.patch
 ApplyPatch 0009-resolved-write-resolv.conf-search-switch-arguments.patch
 ApplyPatch 0001-service-don-t-invoke-functions-at-the-same-time-as-d.patch
 ApplyPatch 0001-service-use-the-right-timeout-for-stop-processes-we-.patch
+ApplyPatch 0001-udev-hwdb-do-not-look-at-usb_device-parents.patch
+ApplyPatch 0001-networkctl-do-not-mix-dns-and-ntp-servers.patch
 
 ### Arch
 

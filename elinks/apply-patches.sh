@@ -26,6 +26,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nss-inc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre5-js185.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre5-ddg-search.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre6-autoconf.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre6-ssl-hostname.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre6-list_is_singleton.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre6-lua51.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre6-libidn2.patch
 
 if [ "$(echo ${RUBYVER} | cut -d. -f1)" -ge 1 ] && [ "$(echo ${RUBYVER} | cut -d. -f2)" -ge 9 ] ;then
   sed -i \

@@ -84,6 +84,8 @@ ApplyPatch 0001-lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
 #
 
 # reisefs
+ApplyPatch reiserfs-fix-corruption-introduced-by-balance_leaf-refactor.patch
+ApplyPatch reiserfs-Fix-use-after-free-in-journal-teardown.patch
 
 # ext4
 
@@ -144,9 +146,6 @@ ApplyPatch die-floppy-die.patch
 
 ApplyPatch no-pcspkr-modalias.patch
 
-# Allow to use 480600 baud on 16C950 UARTs
-ApplyPatch serial-460800.patch
-
 # Silence some useless messages that still get printed with 'quiet'
 ApplyPatch silence-noise.patch
 
@@ -154,9 +153,6 @@ ApplyPatch silence-noise.patch
 ApplyPatch silence-fbcon-logo.patch
 
 # Changes to upstream defaults.
-
-#rhbz 917708
-ApplyPatch Revert-userns-Allow-unprivileged-users-to-create-use.patch
 
 # libata
 
@@ -208,6 +204,18 @@ ApplyPatch 0001-xhci-Blacklist-using-streams-on-the-Etron-EJ168-cont.patch
 
 #rhbz 1128472
 ApplyPatch 0001-uas-Limit-qdepth-to-32-when-connected-over-usb-2.patch
+
+#rhbz 1131551
+ApplyPatch nfs3_list_one_acl-check-get_acl-result-with-IS_ERR_O.patch
+
+#rhbz 1132666
+ApplyPatch xhci-Disable-streams-on-Via-XHCI-with-device-id-0x34.patch
+
+#CVE-2014-{5471,5472} rhbz 1134099 1134101
+ApplyPatch isofs-Fix-unbounded-recursion-when-processing-relocated-directories.patch
+
+#rhbz 1132786
+ApplyPatch NFSv3-Fix-another-acl-regression.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

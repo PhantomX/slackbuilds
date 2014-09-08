@@ -193,29 +193,8 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 1117942
-ApplyPatch sched-fix-sched_setparam-policy-1-logic.patch
-
 #CVE-2014-{5206,5207} rhbz 1129662 1129669
 ApplyPatch namespaces-remount-fixes.patch
-
-#rhbz 1121288
-ApplyPatch 0001-xhci-Blacklist-using-streams-on-the-Etron-EJ168-cont.patch
-
-#rhbz 1128472
-ApplyPatch 0001-uas-Limit-qdepth-to-32-when-connected-over-usb-2.patch
-
-#rhbz 1131551
-ApplyPatch nfs3_list_one_acl-check-get_acl-result-with-IS_ERR_O.patch
-
-#rhbz 1132666
-ApplyPatch xhci-Disable-streams-on-Via-XHCI-with-device-id-0x34.patch
-
-#CVE-2014-{5471,5472} rhbz 1134099 1134101
-ApplyPatch isofs-Fix-unbounded-recursion-when-processing-relocated-directories.patch
-
-#rhbz 1132786
-ApplyPatch NFSv3-Fix-another-acl-regression.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

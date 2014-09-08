@@ -1,0 +1,88 @@
+From fbf38d16bcc26630f0f721d266509f5bc292f606 Mon Sep 17 00:00:00 2001
+From: Emmanuele Bassi <ebassi@gnome.org>
+Date: Tue, 26 Aug 2014 12:07:34 +0100
+Subject: [PATCH] threads: Do not release the GDK lock if it hasn't been
+ acquired yet
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Since GLib ≥ 2.41, attempting to release an unlocked mutex will abort(),
+as it happens on most systems already.
+
+Given the lack of proper documentation on how to use GDK with threads,
+there is code in the wild that does:
+
+    gdk_threads_init ();
+    gdk_init ();
+
+    ...
+
+    gtk_main ();
+
+instead of the idiomatically correct:
+
+    gdk_threads_init ();
+    gdk_threads_enter ();
+
+    gtk_init ();
+
+    ...
+
+    gtk_main ();
+
+    ...
+
+    gdk_threads_leave ();
+
+Which means that gtk_main() will try to release the GDK lock, and thus
+trigger an error from GLib.
+
+we cannot really fix all the wrong code everywhere, and since it does
+not cost us anything, we can work around the issue inside GDK itself, by
+trying to acquire the GDK lock inside gdk_threads_leave() with
+trylock().
+
+https://bugzilla.gnome.org/show_bug.cgi?id=735428
+---
+ gdk/gdk.c | 24 +++++++++++++++++++++++-
+ 1 file changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/gdk/gdk.c b/gdk/gdk.c
+index 0106d8a..f722dbf 100644
+--- a/gdk/gdk.c
++++ b/gdk/gdk.c
+@@ -434,7 +434,29 @@ static void
+ gdk_threads_impl_unlock (void)
+ {
+   if (gdk_threads_mutex)
+-    g_mutex_unlock (gdk_threads_mutex);
++    {
++      /* we need a trylock() here because trying to unlock a mutex
++       * that hasn't been locked yet is:
++       *
++       *  a) not portable
++       *  b) fail on GLib ≥ 2.41
++       *
++       * trylock() will either succeed because nothing is holding the
++       * GDK mutex, and will be unlocked right afterwards; or it's
++       * going to fail because the mutex is locked already, in which
++       * case we unlock it as expected.
++       *
++       * this is needed in the case somebody called gdk_threads_init()
++       * without calling gdk_threads_enter() before calling gtk_main().
++       * in theory, we could just say that this is undefined behaviour,
++       * but our documentation has always been *less* than explicit as
++       * to what the behaviour should actually be.
++       *
++       * see bug: https://bugzilla.gnome.org/show_bug.cgi?id=735428
++       */
++      g_mutex_trylock (gdk_threads_mutex);
++      g_mutex_unlock (gdk_threads_mutex);
++    }
+ }
+ 
+ /**
+-- 
+2.1.0
+

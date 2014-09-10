@@ -62,5 +62,6 @@ ApplyPatch ${NAME}-3.9.0-s390-fpr-pair.patch
 
 ### Arch
 ApplyPatch ${NAME}-3.9.0-glibc-2.19.patch
+ApplyPatch ${NAME}-3.9.0-glibc-2.20.patch
 
 set +e +o pipefail

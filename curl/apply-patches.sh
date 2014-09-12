@@ -20,8 +20,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0107-curl-7.21.4-libidn-valgri
 # Fix character encoding of docs, which are of mixed encoding originally so
 # a simple iconv can't fix them
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0108-curl-7.32.0-utf8.patch
-# fix endless loop with GSSAPI proxy auth (patches by David Woodhouse, #1118751)
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-curl-7.37.1-gssapi.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=NO

@@ -47,17 +47,17 @@ fi
 ### Gentoo
 ( SB_PATCHDIR=patches
 
+  ApplyPatch 00_all_0001-disable-ldconfig-during-install.patch
   ApplyPatch 00_all_0002-workaround-crash-when-handling-signals-in-static-PIE.patch
   ApplyPatch 00_all_0003-make-fortify-logic-checks-less-angry.patch
   ApplyPatch 00_all_0004-Fix-localedef-segfault-when-run-under-exec-shield-Pa.patch
   ApplyPatch 00_all_0005-reload-etc-resolv.conf-when-it-has-changed.patch
+  ApplyPatch 00_all_0006-nptl-support-thread-stacks-that-grow-up.patch
   ApplyPatch 00_all_0007-rtld-do-not-ignore-arch-specific-CFLAGS.patch
+  ApplyPatch 00_all_0008-nptl-handle-EAGAIN-with-some-futex-operations.patch
   ApplyPatch 00_all_0009-gentoo-support-running-tests-under-sandbox.patch
   ApplyPatch 00_all_0010-gentoo-disable-building-in-timezone-subdir.patch
 )
-ApplyPatch 00_all_0001-disable-ldconfig-during-install.patch
-ApplyPatch 00_all_0008-nptl-handle-EAGAIN-with-some-futex-operations.patch
-ApplyPatch 00_all_0020-nptl-handle-EAGAIN-with-some-futex-operations.patch
 
 ## Fedora
 # Needs to be sent upstream

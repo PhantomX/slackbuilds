@@ -3,6 +3,9 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
+# Set to test (some patches require others, so, is not 100%)
+PATCH_DRYRUN=${PATCH_DRYRUN:-NO}
+
 unset PATCH_DRYRUN_OPT PATCH_VERBOSE_OPT
 
 [ "${PATCH_DRYRUN}" = "YES" ] && PATCH_DRYRUN_OPT="--dry-run"

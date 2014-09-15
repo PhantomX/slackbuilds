@@ -1,0 +1,148 @@
+From fed52215035b338978cae180555d536e2a232bfa Mon Sep 17 00:00:00 2001
+From: Calum Lind <calumlind+deluge@gmail.com>
+Date: Sat, 12 Jul 2014 21:54:45 +0100
+Subject: [PATCH 03/24] [#1126] [#2322] Emit FinishedEvent after moving storage
+ complete
+
+Also changed the Execute and Extractor plugins to process the updated
+FinishedEvent functionality.
+---
+ deluge/core/torrentmanager.py              | 48 ++++++++++++++++++++++--------
+ deluge/plugins/execute/execute/core.py     |  6 ++--
+ deluge/plugins/extractor/extractor/core.py |  7 +----
+ 3 files changed, 38 insertions(+), 23 deletions(-)
+
+diff --git a/deluge/core/torrentmanager.py b/deluge/core/torrentmanager.py
+index ab702cd..1572f9a 100644
+--- a/deluge/core/torrentmanager.py
++++ b/deluge/core/torrentmanager.py
+@@ -148,6 +148,9 @@ def __init__(self):
+         # self.num_resume_data used to save resume_data in bulk
+         self.num_resume_data = 0
+ 
++        # Keep track of torrents finished but moving storage
++        self.waiting_on_finish_moving = []
++
+         # Keeps track of resume data that needs to be saved to disk
+         self.resume_data = {}
+ 
+@@ -181,6 +184,8 @@ def __init__(self):
+             self.on_alert_tracker_error)
+         self.alerts.register_handler("storage_moved_alert",
+             self.on_alert_storage_moved)
++        self.alerts.register_handler("storage_moved_failed_alert",
++            self.on_alert_storage_moved_failed)
+         self.alerts.register_handler("torrent_resumed_alert",
+             self.on_alert_torrent_resumed)
+         self.alerts.register_handler("state_changed_alert",
+@@ -895,19 +900,16 @@ def on_alert_torrent_finished(self, alert):
+         # that the torrent wasn't downloaded, but just added.
+         total_download = torrent.get_status(["total_payload_download"])["total_payload_download"]
+ 
+-        # Move completed download to completed folder if needed
+-        if not torrent.is_finished and total_download:
+-            move_path = None
+-
+-            if torrent.options["move_completed"]:
+-                move_path = torrent.options["move_completed_path"]
+-                if torrent.options["download_location"] != move_path:
+-                    torrent.move_storage(move_path)
+-
+         torrent.update_state()
+         if not torrent.is_finished and total_download:
+-            torrent.is_finished = True
+-            component.get("EventManager").emit(TorrentFinishedEvent(torrent_id))
++            # Move completed download to completed folder if needed
++            if torrent.options["move_completed"] and \
++                    torrent.options["download_location"] != torrent.options["move_completed_path"]:
++                self.waiting_on_finish_moving.append(torrent_id)
++                torrent.move_storage(torrent.options["move_completed_path"])
++            else:
++                torrent.is_finished = True
++                component.get("EventManager").emit(TorrentFinishedEvent(torrent_id))
+         else:
+             torrent.is_finished = True
+ 
+@@ -1014,12 +1016,32 @@ def on_alert_tracker_error(self, alert):
+     def on_alert_storage_moved(self, alert):
+         log.debug("on_alert_storage_moved")
+         try:
+-            torrent = self.torrents[str(alert.handle.info_hash())]
+-        except:
++            torrent_id = str(alert.handle.info_hash())
++            torrent = self.torrents[torrent_id]
++        except (RuntimeError, KeyError):
+             return
+         torrent.set_save_path(os.path.normpath(alert.handle.save_path()))
+         torrent.set_move_completed(False)
+ 
++        if torrent in self.waiting_on_finish_moving:
++            self.waiting_on_finish_moving.remove(torrent_id)
++            torrent.is_finished = True
++            component.get("EventManager").emit(TorrentFinishedEvent(torrent_id))
++
++    def on_alert_storage_moved_failed(self, alert):
++        """Alert handler for libtorrent storage_moved_failed_alert"""
++        log.debug("on_alert_storage_moved_failed: %s", alert.message())
++        try:
++            torrent_id = str(alert.handle.info_hash())
++            torrent = self.torrents[torrent_id]
++        except (RuntimeError, KeyError):
++            return
++
++        if torrent in self.waiting_on_finish_moving:
++            self.waiting_on_finish_moving.remove(torrent_id)
++            torrent.is_finished = True
++            component.get("EventManager").emit(TorrentFinishedEvent(torrent_id))
++
+     def on_alert_torrent_resumed(self, alert):
+         log.debug("on_alert_torrent_resumed")
+         try:
+diff --git a/deluge/plugins/execute/execute/core.py b/deluge/plugins/execute/execute/core.py
+index fafe203..4340c0f 100644
+--- a/deluge/plugins/execute/execute/core.py
++++ b/deluge/plugins/execute/execute/core.py
+@@ -97,13 +97,11 @@ def event_handler(torrent_id):
+ 
+     def execute_commands(self, torrent_id, event):
+         torrent = component.get("TorrentManager").torrents[torrent_id]
+-        info = torrent.get_status(["name", "save_path", "move_on_completed", "move_on_completed_path"])
++        info = torrent.get_status(["name", "save_path"])
+ 
+         # Grab the torrent name and save path
+         torrent_name = info["name"]
+-        if event == "complete":
+-            save_path = info["move_on_completed_path"] if info ["move_on_completed"] else info["save_path"]
+-        elif event == "added" and not self.torrent_manager.session_started:
++        if event == "added" and not self.torrent_manager.session_started:
+             return
+         else:
+             save_path = info["save_path"]
+diff --git a/deluge/plugins/extractor/extractor/core.py b/deluge/plugins/extractor/extractor/core.py
+index b8d4284..ff654b8 100644
+--- a/deluge/plugins/extractor/extractor/core.py
++++ b/deluge/plugins/extractor/extractor/core.py
+@@ -111,7 +111,6 @@ def enable(self):
+         if not self.config["extract_path"]:
+             self.config["extract_path"] = deluge.configmanager.ConfigManager("core.conf")["download_location"]
+         component.get("EventManager").register_event_handler("TorrentFinishedEvent", self._on_torrent_finished)
+-
+     def disable(self):
+         component.get("EventManager").deregister_event_handler("TorrentFinishedEvent", self._on_torrent_finished)
+ 
+@@ -123,11 +122,7 @@ def _on_torrent_finished(self, torrent_id):
+         This is called when a torrent finishes and checks if any files to extract.
+         """
+         tid = component.get("TorrentManager").torrents[torrent_id]
+-        tid_status = tid.get_status(["save_path", "move_completed", "name"])
+-
+-        if tid_status["move_completed"]:
+-            log.warning("EXTRACTOR: Cannot extract torrents with 'Move Completed' enabled")
+-            return
++        tid_status = tid.get_status(["save_path", "name"])
+ 
+         files = tid.get_files()
+         for f in files:
+-- 
+2.1.0
+

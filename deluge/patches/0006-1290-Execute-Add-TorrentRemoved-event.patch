@@ -1,0 +1,203 @@
+From 56bbc90c5b1a143a560bf5dd40687a0cc4deb1b3 Mon Sep 17 00:00:00 2001
+From: Calum Lind <calumlind+deluge@gmail.com>
+Date: Sat, 19 Jul 2014 23:02:42 +0100
+Subject: [PATCH 06/24] [#1290] [Execute] Add TorrentRemoved event
+
+---
+ deluge/plugins/execute/execute/core.py         | 45 +++++++++++++++++---------
+ deluge/plugins/execute/execute/data/execute.js | 16 +++++----
+ deluge/plugins/execute/execute/gtkui.py        |  5 +--
+ 3 files changed, 41 insertions(+), 25 deletions(-)
+
+diff --git a/deluge/plugins/execute/execute/core.py b/deluge/plugins/execute/execute/core.py
+index 4340c0f..4ba00e7 100644
+--- a/deluge/plugins/execute/execute/core.py
++++ b/deluge/plugins/execute/execute/core.py
+@@ -44,6 +44,8 @@
+ from deluge.configmanager import ConfigManager
+ from deluge.core.rpcserver import export
+ from deluge.event import DelugeEvent
++from deluge.common import utf8_encoded
++
+ 
+ DEFAULT_CONFIG = {
+     "commands": []
+@@ -55,9 +57,11 @@
+ 
+ EVENT_MAP = {
+     "complete": "TorrentFinishedEvent",
+-    "added": "TorrentAddedEvent"
++    "added": "TorrentAddedEvent",
++    "removed": "TorrentRemovedEvent"
+ }
+ 
++
+ class ExecuteCommandAddedEvent(DelugeEvent):
+     """
+     Emitted when a new command is added.
+@@ -65,6 +69,7 @@ class ExecuteCommandAddedEvent(DelugeEvent):
+     def __init__(self, command_id, event, command):
+         self._args = [command_id, event, command]
+ 
++
+ class ExecuteCommandRemovedEvent(DelugeEvent):
+     """
+     Emitted when a command is removed.
+@@ -72,12 +77,14 @@ class ExecuteCommandRemovedEvent(DelugeEvent):
+     def __init__(self, command_id):
+         self._args = [command_id]
+ 
++
+ class Core(CorePluginBase):
+     def enable(self):
+         self.config = ConfigManager("execute.conf", DEFAULT_CONFIG)
+         event_manager = component.get("EventManager")
+         self.torrent_manager = component.get("TorrentManager")
+         self.registered_events = {}
++        self.preremoved_cache = {}
+ 
+         # Go through the commands list and register event handlers
+         for command in self.config["commands"]:
+@@ -91,28 +98,31 @@ def event_handler(torrent_id):
+                 return event_handler
+             event_handler = create_event_handler(event)
+             event_manager.register_event_handler(EVENT_MAP[event], event_handler)
++            if event == "removed":
++                event_manager.register_event_handler("PreTorrentRemovedEvent", self.on_preremoved)
+             self.registered_events[event] = event_handler
+ 
+         log.debug("Execute core plugin enabled!")
+ 
+-    def execute_commands(self, torrent_id, event):
++    def on_preremoved(self, torrent_id):
++        # Get and store the torrent info before it is removed
+         torrent = component.get("TorrentManager").torrents[torrent_id]
+         info = torrent.get_status(["name", "save_path"])
++        self.preremoved_cache[torrent_id] = [utf8_encoded(torrent_id), utf8_encoded(info["name"]),
++                                              utf8_encoded(info["save_path"])]
+ 
+-        # Grab the torrent name and save path
+-        torrent_name = info["name"]
++    def execute_commands(self, torrent_id, event):
+         if event == "added" and not self.torrent_manager.session_started:
+             return
++        elif event == "removed":
++            torrent_id, torrent_name, save_path = self.preremoved_cache.pop(torrent_id)
+         else:
+-            save_path = info["save_path"]
+-
+-        # getProcessOutputAndValue requires args to be str
+-        if isinstance(torrent_id, unicode):
+-            torrent_id = torrent_id.encode("utf-8", "ignore")
+-        if isinstance(torrent_name, unicode):
+-            torrent_name = torrent_name.encode("utf-8", "ignore")
+-        if isinstance(save_path, unicode):
+-            save_path = save_path.encode("utf-8", "ignore")
++            torrent = component.get("TorrentManager").torrents[torrent_id]
++            info = torrent.get_status(["name", "save_path"])
++            # getProcessOutputAndValue requires args to be str
++            torrent_id = utf8_encoded(torrent_id)
++            torrent_name = utf8_encoded(info["name"])
++            save_path = utf8_encoded(info["save_path"])
+ 
+         log.debug("[execute] Running commands for %s", event)
+ 
+@@ -130,9 +140,12 @@ def log_error(result, command):
+             if command[EXECUTE_EVENT] == event:
+                 command = os.path.expandvars(command[EXECUTE_COMMAND])
+                 command = os.path.expanduser(command)
+-                log.debug("[execute] running %s", command)
+-                d = getProcessOutputAndValue(command, (torrent_id, torrent_name, save_path), env=os.environ)
+-                d.addCallback(log_error, command)
++                if os.path.isfile(command) and os.access(command, os.X_OK):
++                    log.debug("[execute] Running %s", command)
++                    d = getProcessOutputAndValue(command, (torrent_id, torrent_name, save_path), env=os.environ)
++                    d.addCallback(log_error, command)
++                else:
++                    log.error("[execute] Execute script not found or not executable")
+ 
+     def disable(self):
+         self.config.save()
+diff --git a/deluge/plugins/execute/execute/data/execute.js b/deluge/plugins/execute/execute/data/execute.js
+index d72d303..33612c2 100644
+--- a/deluge/plugins/execute/execute/data/execute.js
++++ b/deluge/plugins/execute/execute/data/execute.js
+@@ -32,7 +32,7 @@ Copyright:
+ */
+ Ext.ns('Deluge.ux');
+ Deluge.ux.ExecuteWindowBase = Ext.extend(Ext.Window, {
+-	
++
+ 	layout: 'fit',
+ 	width: 400,
+ 	height: 130,
+@@ -54,7 +54,8 @@ Deluge.ux.ExecuteWindowBase = Ext.extend(Ext.Window, {
+ 					fields: ['id', 'text'],
+ 					data: [
+ 						['complete', _('Torrent Complete')],
+-						['added', _('Torrent Added')]
++						['added', _('Torrent Added')],
++						['removed', _('Torrent Removed')]
+ 					]
+ 				}),
+ 				name: 'event',
+@@ -147,12 +148,13 @@ Deluge.ux.preferences.ExecutePage = Ext.extend(Ext.Panel, {
+ 	title: _('Execute'),
+ 	layout: 'fit',
+ 	border: false,
+-	    
++
+ 	initComponent: function() {
+ 	    Deluge.ux.preferences.ExecutePage.superclass.initComponent.call(this);
+ 		var event_map = this.event_map = {
+ 			'complete': _('Torrent Complete'),
+-			'added': _('Torrent Added')
++			'added': _('Torrent Added'),
++			'removed': _('Torrent Removed')
+ 		}
+ 
+ 		this.list = new Ext.list.ListView({
+@@ -207,7 +209,7 @@ Deluge.ux.preferences.ExecutePage = Ext.extend(Ext.Panel, {
+ 				}]
+ 			}
+ 		});
+-		
++
+ 		deluge.preferences.on('show', this.onPreferencesShow, this);
+ 	},
+ 
+@@ -275,11 +277,11 @@ Deluge.ux.preferences.ExecutePage = Ext.extend(Ext.Panel, {
+ Deluge.plugins.ExecutePlugin = Ext.extend(Deluge.Plugin, {
+ 
+ 	name: 'Execute',
+-	
++
+ 	onDisable: function() {
+ 	    deluge.preferences.removePage(this.prefsPage);
+ 	},
+-	
++
+ 	onEnable: function() {
+ 		this.prefsPage = deluge.preferences.addPage(new Deluge.ux.preferences.ExecutePage());
+ 	}
+diff --git a/deluge/plugins/execute/execute/gtkui.py b/deluge/plugins/execute/execute/gtkui.py
+index 7a341ea..99cfc01 100644
+--- a/deluge/plugins/execute/execute/gtkui.py
++++ b/deluge/plugins/execute/execute/gtkui.py
+@@ -49,10 +49,11 @@
+ 
+ EVENT_MAP = {
+     "complete": _("Torrent Complete"),
+-    "added": _("Torrent Added")
++    "added": _("Torrent Added"),
++    "removed": _("Torrent Removed")
+ }
+ 
+-EVENTS = ["complete", "added"]
++EVENTS = ["complete", "added", "removed"]
+ 
+ class ExecutePreferences(object):
+     def __init__(self, plugin):
+-- 
+2.1.0
+

@@ -49,7 +49,7 @@ pushd "${tmp}"
     echo "$(git describe --always --long 2> /dev/null)" > wcdesc
     echo "$(git rev-parse --abbrev-ref HEAD 2> /dev/null)" > wcbranch
     find . -type d -name .git -print0 | xargs -0r rm -rf
-    rm -rf Installer .hgeol .hgignore .gitignore config.git-hash
+    rm -rf Installer/dxredist .hgeol .hgignore .gitignore config.git-hash
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

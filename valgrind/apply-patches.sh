@@ -4,21 +4,15 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # Set to test (some patches require others, so, is not 100%)
-DRYRUN=${DRYRUN:-NO}
+PATCH_DRYRUN=${PATCH_DRYRUN:-NO}
 
-if [ "${DRYRUN}" = "YES" ] ; then
-  DRYRUN_OPT="--dry-run"
-fi
+unset PATCH_DRYRUN_OPT PATCH_VERBOSE_OPT
 
-if [ "${VERBOSE}" = "YES" ] ; then
-  VERBOSE_OPT="--verbose"
-fi
+[ "${PATCH_DRYRUN}" = "YES" ] && PATCH_DRYRUN_OPT="--dry-run"
+[ "${PATCH_VERBOSE}" = "YES" ] && PATCH_VERBOSE_OPT="--verbose"
+[ "${PATCH_SVERBOSE}" = "YES" ] && set -o xtrace
 
-if [ "${SVERBOSE}" = "YES" ] ; then
-  set -o xtrace
-fi
-
-PATCHCOM="patch ${DRYRUN_OPT} -p1 -F1 -s ${VERBOSE_OPT}"
+PATCHCOM="patch ${PATCH_DRYRUN_OPT} -p1 -F1 -s ${PATCH_VERBOSE_OPT}"
 
 ApplyPatch() {
   local patch=$1

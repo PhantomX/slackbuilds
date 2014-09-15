@@ -37,9 +37,6 @@ SB_REP=${SB_REP:-YES}
 
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
-if [ ! -d ${TMP} ]; then
-  mkdir -p ${TMP}
-fi
 
 PNAME=
 NAME=_PACK_NAME
@@ -83,6 +80,8 @@ DL_URL="${MIRROR_SF}/${NAME}/${SRCARCHIVE}"
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
 
+[ "$1" = "--dlsrc" ] && exit 0
+
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
   [ "${SB_ECFLAGS}" ] && SLKCFLAGS="${SLKCFLAGS} ${SB_ECFLAGS}"
@@ -103,6 +102,9 @@ else
   LIBDIRSUFFIX=""
 fi
 
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
 if [ -d ${PKG} ]; then
   # Clean up a previous build
   rm -rf ${PKG}

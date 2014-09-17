@@ -94,13 +94,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.4-fontconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-locale.patch
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_rd4fdd1a78821884cf515467cdbbb769096033452.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r32d7d19aee2aa9ea910903217712325d33f733ea.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r3b8314fc6b8ca60a5166963b37354f3e5b1da1af.diff
 
 ## trunk patches
-# fix choppy fullscreen with OpenGL compositing on latest intel drv (kde#336589)
-# upstream patch by Martin Gräßlin from kwin master
-# http://commits.kde.org/kwin/e8241313fc979aefafc8c2a0207570d6394f1580
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.10-kwin-intel-kde\#336589.patch
 
 # Arch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/terminate-server.patch

@@ -84,8 +84,6 @@ ApplyPatch 0001-lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
 #
 
 # reisefs
-ApplyPatch reiserfs-fix-corruption-introduced-by-balance_leaf-refactor.patch
-ApplyPatch reiserfs-Fix-use-after-free-in-journal-teardown.patch
 
 # ext4
 
@@ -193,8 +191,19 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#CVE-2014-{5206,5207} rhbz 1129662 1129669
-ApplyPatch namespaces-remount-fixes.patch
+#rhbz 1110011
+ApplyPatch i8042-Also-store-the-aux-firmware-id-in-multi-plexed.patch
+ApplyPatch psmouse-Add-psmouse_matches_pnp_id-helper-function.patch
+ApplyPatch psmouse-Add-support-for-detecting-FocalTech-PS-2-tou.patch
+
+#CVE-2014-3181 rhbz 1141179 1141173
+ApplyPatch HID-magicmouse-sanity-check-report-size-in-raw_event.patch
+
+#CVE-2014-3186 rhbz 1141407 1141410
+ApplyPatch HID-picolcd-sanity-check-report-size-in-raw_event-ca.patch
+
+#CVE-2014-6410 rhbz 1141809 1141810
+ApplyPatch udf-Avoid-infinite-loop-when-processing-indirect-ICB.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

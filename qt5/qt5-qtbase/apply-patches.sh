@@ -4,21 +4,15 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # Set to test (some patches require others, so, is not 100%)
-DRYRUN=${DRYRUN:-NO}
+PATCH_DRYRUN=${PATCH_DRYRUN:-NO}
 
-if [ "${DRYRUN}" = "YES" ] ; then
-  DRYRUN_OPT="--dry-run"
-fi
+unset PATCH_DRYRUN_OPT PATCH_VERBOSE_OPT
 
-if [ "${VERBOSE}" = "YES" ] ; then
-  VERBOSE_OPT="--verbose"
-fi
+[ "${PATCH_DRYRUN}" = "YES" ] && PATCH_DRYRUN_OPT="--dry-run"
+[ "${PATCH_VERBOSE}" = "YES" ] && PATCH_VERBOSE_OPT="--verbose"
+[ "${PATCH_SVERBOSE}" = "YES" ] && set -o xtrace
 
-if [ "${SVERBOSE}" = "YES" ] ; then
-  set -o xtrace
-fi
-
-PATCHCOM="patch ${DRYRUN_OPT} -p1 -F1 -s ${VERBOSE_OPT}"
+PATCHCOM="patch ${PATCH_DRYRUN_OPT} -p1 -F1 -s ${PATCH_VERBOSE_OPT}"
 
 ApplyPatch() {
   local patch=$1
@@ -42,7 +36,10 @@ rm -fv mkspecs/linux-g++*/qmake.conf.multilib-optflags
 
 # upstreamable patches
 # fix QTBUG-35459 (too low entityCharacterLimit=1024 for CVE-2013-4549)
-ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-35459.patch
+ApplyPatch qtbase-opensource-src-5.3.2-QTBUG-35459.patch
+
+# Prefer QPA implementation in qsystemtrayicon_x11 if available
+ApplyPatch qtbase-5.3.1-prefer-qpa-implementation.patch
 
 # unconditionally enable freetype lcdfilter support
 ApplyPatch qtbase-opensource-src-5.2.0-enable_ft_lcdfilter.patch

@@ -45,5 +45,13 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.1-defer-sigchld-trap.pa
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-manpage_trap.patch
 # https://www.securecoding.cert.org/confluence/display/seccode/INT32-C.+Ensure+that+operations+on+signed+integers+do+not+result+in+overflow
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-size_type.patch
+# rhbz#1112710 - mention ulimit -c and -f POSIX block size
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-man-ulimit.patch
+# A series of patches emitted by upstream since 4.3-18
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-parse-time-keyword.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-pathexp-globignore-delim.patch
+# rhbz#1102815 - fix double echoes in vi visual mode
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-noecho.patch
+#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-cve-2014-6271.patch
 
 set +e +o pipefail

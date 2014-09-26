@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # nss-util
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/hasht-dont-include-prtypes.patch
+#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/hasht-dont-include-prtypes.patch
 
 # nss-softokn
 

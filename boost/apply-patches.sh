@@ -11,24 +11,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-fix-non-utf8-file
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-add-bjam-man-page.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-pool.patch
 
-# https://svn.boost.org/trac/boost/ticket/8847
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-concept-unused_typedef.patch
-
 # https://svn.boost.org/trac/boost/ticket/5637
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-mpl-print.patch
-
-# https://svn.boost.org/trac/boost/ticket/8859
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-static_warning-unused_typedef.patch
-
-# https://svn.boost.org/trac/boost/ticket/8853
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-tuple-unused_typedef.patch
-
-# https://svn.boost.org/trac/boost/ticket/8854
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-random-unused_typedef.patch
-
-# https://svn.boost.org/trac/boost/ticket/8856
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-date_time-unused_typedef.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-date_time-unused_typedef-2.patch
+#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-mpl-print.patch
 
 # https://svn.boost.org/trac/boost/ticket/8870
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-spirit-unused_typedef.patch
@@ -39,12 +23,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-numeric-unused_ty
 
 # https://svn.boost.org/trac/boost/ticket/8878
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-locale-unused_typedef.patch
-
-# https://svn.boost.org/trac/boost/ticket/8879
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-property_tree-unused_typedef.patch
-
-# https://svn.boost.org/trac/boost/ticket/8881
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-mpi-unused_typedef.patch
 
 # https://svn.boost.org/trac/boost/ticket/8888
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-python-unused_typedef.patch

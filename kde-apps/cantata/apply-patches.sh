@@ -15,6 +15,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.3.4-libsolid_static.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.4.1-icons_crash.patch
 
 # Menubar enabled by default
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.4.1-menubar.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.4.1-menubar.patch
 
 set +e +o pipefail

@@ -4,7 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p0 -E --backup -z .makefile --verbose -i ${SB_PATCHDIR}/timezone-data-2014g-makefile.patch
+patch -p0 -E --backup -z .makefile --verbose -i ${SB_PATCHDIR}/timezone-data-2014h-makefile.patch
 
 if [ "${SB_JAVA}" = "YES" ] ;then
   patch -p0 -E --backup --verbose -d javazic -i ${SB_PATCHDIR}/javazic-fixup.patch

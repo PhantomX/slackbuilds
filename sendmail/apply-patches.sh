@@ -12,7 +12,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sendmail-8.14.8-manpage.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sendmail-8.14.8-dynamic.patch
 zcat ${SB_PATCHDIR}/sendmail-8.13.0-cyrus.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sendmail-8.14.8-aliases_dir.patch
-zcat ${SB_PATCHDIR}/sendmail-8.13.7-vacation-slk.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sendmail-8.14.9-vacation-slk.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sendmail-8.14.9-noversion.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sendmail-8.14.8-localdomain.patch
 cp devtools/M4/UNIX/{,shared}library.m4

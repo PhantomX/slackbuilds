@@ -52,7 +52,5 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-parse-time-keyword.pa
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-pathexp-globignore-delim.patch
 # rhbz#1102815 - fix double echoes in vi visual mode
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-noecho.patch
-# rhbz#1146319 - cve-2014-7169
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-cve-2014-7169-2.patch
 
 set +e +o pipefail

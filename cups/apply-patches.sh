@@ -53,7 +53,6 @@ ApplyPatch cups-hp-deviceid-oid.patch
 ApplyPatch cups-dnssd-deviceid.patch
 ApplyPatch cups-ricoh-deviceid-oid.patch
 [ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-systemd-socket.patch
-[ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-lpd-manpage.patch
 ApplyPatch cups-avahi-address.patch
 ApplyPatch cups-usblp-quirks.patch
 ApplyPatch cups-enum-all.patch

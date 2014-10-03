@@ -1,0 +1,117 @@
+From 2c8d6826ebaf1bf846edd213f8fe8f95c0c300cb Mon Sep 17 00:00:00 2001
+From: "Michael S. Tsirkin" <mst@redhat.com>
+Date: Thu, 11 Sep 2014 18:34:29 +0300
+Subject: [PATCH] virtio-pci: fix migration for pci bus master
+
+Current support for bus master (clearing OK bit)
+together with the need to support guests which do not
+enable PCI bus mastering, leads to extra state in
+VIRTIO_PCI_FLAG_BUS_MASTER_BUG bit, which isn't robust
+in case of cross-version migration for the case when
+guests use the device before setting DRIVER_OK.
+
+Rip out VIRTIO_PCI_FLAG_BUS_MASTER_BUG and implement a simpler
+work-around: treat clearing of PCI_COMMAND as a virtio reset.  Old
+guests never touch this bit so they will work.
+
+As reset clears device status, DRIVER and MASTER bits are
+now in sync, so we can fix up cross-version migration simply
+by synchronising them, without need to detect a buggy guest
+explicitly.
+
+Drop tracking VIRTIO_PCI_FLAG_BUS_MASTER_BUG completely.
+
+As reset makes the device quiescent, in the future we'll be able to drop
+checking OK bit in a bunch of places.
+
+Cc: Jason Wang <jasowang@redhat.com>
+Cc: Greg Kurz <gkurz@linux.vnet.ibm.com>
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+(cherry picked from commit 4d43d3f3c8147ade184df9a1e9e82826edd39e19)
+---
+ hw/virtio/virtio-pci.c | 39 ++++++++++++++++++++-------------------
+ 1 file changed, 20 insertions(+), 19 deletions(-)
+
+diff --git a/hw/virtio/virtio-pci.c b/hw/virtio/virtio-pci.c
+index 58ebbcf..c19c4d6 100644
+--- a/hw/virtio/virtio-pci.c
++++ b/hw/virtio/virtio-pci.c
+@@ -86,9 +86,6 @@
+  * 12 is historical, and due to x86 page size. */
+ #define VIRTIO_PCI_QUEUE_ADDR_SHIFT    12
+ 
+-/* Flags track per-device state like workarounds for quirks in older guests. */
+-#define VIRTIO_PCI_FLAG_BUS_MASTER_BUG  (1 << 0)
+-
+ static void virtio_pci_bus_new(VirtioBusState *bus, size_t bus_size,
+                                VirtIOPCIProxy *dev);
+ 
+@@ -323,14 +320,6 @@ static void virtio_ioport_write(void *opaque, uint32_t addr, uint32_t val)
+                                      proxy->pci_dev.config[PCI_COMMAND] |
+                                      PCI_COMMAND_MASTER, 1);
+         }
+-
+-        /* Linux before 2.6.34 sets the device as OK without enabling
+-           the PCI device bus master bit. In this case we need to disable
+-           some safety checks. */
+-        if ((val & VIRTIO_CONFIG_S_DRIVER_OK) &&
+-            !(proxy->pci_dev.config[PCI_COMMAND] & PCI_COMMAND_MASTER)) {
+-            proxy->flags |= VIRTIO_PCI_FLAG_BUS_MASTER_BUG;
+-        }
+         break;
+     case VIRTIO_MSI_CONFIG_VECTOR:
+         msix_vector_unuse(&proxy->pci_dev, vdev->config_vector);
+@@ -480,13 +469,18 @@ static void virtio_write_config(PCIDevice *pci_dev, uint32_t address,
+     VirtIOPCIProxy *proxy = DO_UPCAST(VirtIOPCIProxy, pci_dev, pci_dev);
+     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+ 
++    uint8_t cmd = proxy->pci_dev.config[PCI_COMMAND];
++
+     pci_default_write_config(pci_dev, address, val, len);
+ 
+     if (range_covers_byte(address, len, PCI_COMMAND) &&
+         !(pci_dev->config[PCI_COMMAND] & PCI_COMMAND_MASTER) &&
+-        !(proxy->flags & VIRTIO_PCI_FLAG_BUS_MASTER_BUG)) {
++        (cmd & PCI_COMMAND_MASTER)) {
++        /* Bus driver disables bus mastering - make it act
++         * as a kind of reset to render the device quiescent. */
+         virtio_pci_stop_ioeventfd(proxy);
+-        virtio_set_status(vdev, vdev->status & ~VIRTIO_CONFIG_S_DRIVER_OK);
++        virtio_reset(vdev);
++        msix_unuse_all_vectors(&proxy->pci_dev);
+     }
+ }
+ 
+@@ -895,11 +889,19 @@ static void virtio_pci_vmstate_change(DeviceState *d, bool running)
+     VirtIODevice *vdev = virtio_bus_get_device(&proxy->bus);
+ 
+     if (running) {
+-        /* Try to find out if the guest has bus master disabled, but is
+-           in ready state. Then we have a buggy guest OS. */
+-        if ((vdev->status & VIRTIO_CONFIG_S_DRIVER_OK) &&
+-            !(proxy->pci_dev.config[PCI_COMMAND] & PCI_COMMAND_MASTER)) {
+-            proxy->flags |= VIRTIO_PCI_FLAG_BUS_MASTER_BUG;
++        /* Linux before 2.6.34 drives the device without enabling
++           the PCI device bus master bit. Enable it automatically
++           for the guest. This is a PCI spec violation but so is
++           initiating DMA with bus master bit clear.
++           Note: this only makes a difference when migrating
++           across QEMU versions from an old QEMU, as for new QEMU
++           bus master and driver bits are always in sync.
++           TODO: consider enabling conditionally for compat machine types. */
++        if (vdev->status & (VIRTIO_CONFIG_S_ACKNOWLEDGE |
++                            VIRTIO_CONFIG_S_DRIVER)) {
++            pci_default_write_config(&proxy->pci_dev, PCI_COMMAND,
++                                     proxy->pci_dev.config[PCI_COMMAND] |
++                                     PCI_COMMAND_MASTER, 1);
+         }
+         virtio_pci_start_ioeventfd(proxy);
+     } else {
+@@ -1043,7 +1045,6 @@ static void virtio_pci_reset(DeviceState *qdev)
+     virtio_pci_stop_ioeventfd(proxy);
+     virtio_bus_reset(bus);
+     msix_unuse_all_vectors(&proxy->pci_dev);
+-    proxy->flags &= ~VIRTIO_PCI_FLAG_BUS_MASTER_BUG;
+ }
+ 
+ static Property virtio_pci_properties[] = {

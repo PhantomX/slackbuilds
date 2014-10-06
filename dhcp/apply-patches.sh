@@ -44,6 +44,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-bindtodevice-inet6.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-no-subnet-error2info.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-ffff-checksum.patch
 [ "${SB_SYSTEMD}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-sd_notify.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-dhc6-life.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

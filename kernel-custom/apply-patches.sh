@@ -196,10 +196,6 @@ ApplyPatch i8042-Also-store-the-aux-firmware-id-in-multi-plexed.patch
 ApplyPatch psmouse-Add-psmouse_matches_pnp_id-helper-function.patch
 ApplyPatch psmouse-Add-support-for-detecting-FocalTech-PS-2-tou.patch
 
-
-#CVE-2014-6410 rhbz 1141809 1141810
-ApplyPatch udf-Avoid-infinite-loop-when-processing-indirect-ICB.patch
-
 #rhbz 1123584
 ApplyPatch HID-rmi-check-sanity-of-incoming-report.patch
 

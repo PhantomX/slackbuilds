@@ -41,4 +41,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-disable_libboost_
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-python_linking.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-disable_icu_rpath.patch
 
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.56.0-add-missing-headers-to-shared_ptr_helper.patch
+
 set +e +o pipefail

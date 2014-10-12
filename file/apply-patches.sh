@@ -17,11 +17,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-man-return-code.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-generic-msdos.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-x86boot.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-perl.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.19-CVE-2014-3587.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.19-pascal.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.19-locale-archive.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.19-msooxml.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.19-python-3.4.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.19-cafebabe.patch
 
 # Mandriva

@@ -50,4 +50,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.0.0-dsofix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.0.0-fix-desktop-file.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.0.0-fix-install-paths.patch
 
+### Arch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/vte2.91.patch
+
 set +e +o pipefail

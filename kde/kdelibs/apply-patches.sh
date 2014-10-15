@@ -68,6 +68,7 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rc71ae727fdf3ff59a02519a66595b47e4371281e.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578

@@ -19,7 +19,7 @@ esac
 # Fedora specific patches
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
 # Unable to install addons from https pages
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-966424.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-966424.patch
 
 # Gentoo
 
@@ -31,6 +31,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-icu-strncat.patch
 
 # Upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-858919.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-858919-2.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-858919-3.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1042889.patch
 
 # OpenSuse kde integration support

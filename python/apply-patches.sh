@@ -71,6 +71,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00185-urllib2-honors-noproxy-f
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00187-add-RPATH-to-pyexpat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00189-gdb-py-bt-dont-raise-exception-from-eval.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00190-get_python_version.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00196-ssl-backport.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00197-unicode_fromformat.patch
 
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05000-autotool-intermediates.patch
 

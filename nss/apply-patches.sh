@@ -18,6 +18,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-646045.patch
 # TODO: Remove this patch when the ocsp test are fixed
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-3.14.0.0-disble-ocsp-test.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/iquote.patch
+# Upstream: https://bugzilla.mozilla.org/show_bug.cgi?id=1083900
+patch -p1 -E --backup --verbose  -d nss -i ${SB_PATCHDIR}/tls12.patch
 
 # Uncomment this if builds stops with -lz error
 #patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-fix-zlib.patch

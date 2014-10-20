@@ -52,7 +52,7 @@ ApplyOptionalPatch() {
 #rhbz 1025603
 ApplyPatch disable-libdw-unwind-on-non-x86.patch
 
-ApplyPatch perf-lib64.patch
+ApplyPatch perf-install-trace-event-plugins.patch
 
 ApplyPatch perf_timechart_fix_zero_timestamps.patch
 

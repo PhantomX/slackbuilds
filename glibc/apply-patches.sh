@@ -113,5 +113,14 @@ ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 ### Arch
 
 ### master
+ApplyPatch 0001-Fix-memory-leak-in-libio-wfileops.c-do_ftell_wide-BZ.patch
+ApplyPatch 0001-Return-failure-in-getnetgrent-only-when-all-netgroup.patch
+ApplyPatch 0002-malloc-additional-unlink-hardening-for-non-small-bin.patch
+ApplyPatch 0001-Add-new-Linux-3.16-constants-to-netinet-udp.h.patch
+ApplyPatch 0001-Add-correct-variable-names-for-_POSIX_IPV6-and-_POSI.patch
+ApplyPatch 0001-Correctly-size-profiling-reloc-table-bug-17411.patch
+ApplyPatch 0001-Handle-zero-prefix-length-in-getifaddrs-BZ-17371.patch
+ApplyPatch 0001-Fix-memory-leak-in-error-path-of-do_ftell_wide-BZ-17.patch
+ApplyPatch 0001-Fix-infinite-loop-in-check_pf-BZ-12926.patch
 
 set +e +o pipefail

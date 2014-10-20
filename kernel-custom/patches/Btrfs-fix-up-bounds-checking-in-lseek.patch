@@ -1,0 +1,88 @@
+From: Liu Bo <bo.li.liu@oracle.com>
+Date: Tue, 16 Sep 2014 17:49:30 +0800
+Subject: [PATCH] Btrfs: fix up bounds checking in lseek
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+(cherry picked from commit 4d1a40c66bed0b3fa43b9da5fbd5cbe332e4eccf)
+
+An user reported this, it is because that lseek's SEEK_SET/SEEK_CUR/SEEK_END
+allow a negative value for @offset, but btrfs's SEEK_DATA/SEEK_HOLE don't
+prepare for that and convert the negative @offset into unsigned type,
+so we get (end < start) warning.
+
+[ 1269.835374] ------------[ cut here ]------------
+[ 1269.836809] WARNING: CPU: 0 PID: 1241 at fs/btrfs/extent_io.c:430 insert_state+0x11d/0x140()
+[ 1269.838816] BTRFS: end < start 4094 18446744073709551615
+[ 1269.840334] CPU: 0 PID: 1241 Comm: a.out Tainted: G        W      3.16.0+ #306
+[ 1269.858229] Call Trace:
+[ 1269.858612]  [<ffffffff81801a69>] dump_stack+0x4e/0x68
+[ 1269.858952]  [<ffffffff8107894c>] warn_slowpath_common+0x8c/0xc0
+[ 1269.859416]  [<ffffffff81078a36>] warn_slowpath_fmt+0x46/0x50
+[ 1269.859929]  [<ffffffff813b0fbd>] insert_state+0x11d/0x140
+[ 1269.860409]  [<ffffffff813b1396>] __set_extent_bit+0x3b6/0x4e0
+[ 1269.860805]  [<ffffffff813b21c7>] lock_extent_bits+0x87/0x200
+[ 1269.861697]  [<ffffffff813a5b28>] btrfs_file_llseek+0x148/0x2a0
+[ 1269.862168]  [<ffffffff811f201e>] SyS_lseek+0xae/0xc0
+[ 1269.862620]  [<ffffffff8180b212>] system_call_fastpath+0x16/0x1b
+[ 1269.862970] ---[ end trace 4d33ea885832054b ]---
+
+This assumes that btrfs starts finding DATA/HOLE from the beginning of file
+if the assigned @offset is negative.
+
+Also we add alignment for lock_extent_bits 's range.
+
+Reported-by: Toralf Förster <toralf.foerster@gmx.de>
+Signed-off-by: Liu Bo <bo.li.liu@oracle.com>
+Signed-off-by: Chris Mason <clm@fb.com>
+---
+ fs/btrfs/file.c | 25 +++++++++++++++----------
+ 1 file changed, 15 insertions(+), 10 deletions(-)
+
+diff --git a/fs/btrfs/file.c b/fs/btrfs/file.c
+index ff1cc0399b9a..68dd92cd7d54 100644
+--- a/fs/btrfs/file.c
++++ b/fs/btrfs/file.c
+@@ -2621,23 +2621,28 @@ static int find_desired_extent(struct inode *inode, loff_t *offset, int whence)
+ 	struct btrfs_root *root = BTRFS_I(inode)->root;
+ 	struct extent_map *em = NULL;
+ 	struct extent_state *cached_state = NULL;
+-	u64 lockstart = *offset;
+-	u64 lockend = i_size_read(inode);
+-	u64 start = *offset;
+-	u64 len = i_size_read(inode);
++	u64 lockstart;
++	u64 lockend;
++	u64 start;
++	u64 len;
+ 	int ret = 0;
+ 
+-	lockend = max_t(u64, root->sectorsize, lockend);
++	if (inode->i_size == 0)
++		return -ENXIO;
++
++	/*
++	 * *offset can be negative, in this case we start finding DATA/HOLE from
++	 * the very start of the file.
++	 */
++	start = max_t(loff_t, 0, *offset);
++
++	lockstart = round_down(start, root->sectorsize);
++	lockend = round_up(i_size_read(inode), root->sectorsize);
+ 	if (lockend <= lockstart)
+ 		lockend = lockstart + root->sectorsize;
+-
+ 	lockend--;
+ 	len = lockend - lockstart + 1;
+ 
+-	len = max_t(u64, len, root->sectorsize);
+-	if (inode->i_size == 0)
+-		return -ENXIO;
+-
+ 	lock_extent_bits(&BTRFS_I(inode)->io_tree, lockstart, lockend, 0,
+ 			 &cached_state);
+ 
+-- 
+1.9.3
+

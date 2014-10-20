@@ -11,6 +11,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.7.7.1-stupid-openfile
 # Shut up pagecache overflow test whose expected result depends on compile
 # options and whatnot. Dunno why this started failing in 3.7.10 but
 # doesn't seem particularly critical...
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.7.10-pagecache-overflow-test.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.7.10-pagecache-overflow-test.patch
+# sqlite >= 3.7.10 is buggy if malloc_usable_size() is detected, disable it:
+# https://bugzilla.redhat.com/show_bug.cgi?id=801981
+# http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=665363
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.7.15-no-malloc-usable-size.patch
+# Temporary workaround for failed percentile test, see patch for details
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.8.0-percentile-test.patch
 
 set +e +o pipefail

@@ -44,12 +44,12 @@ fi
 NAME=sddm
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-SNAPBUILD=${SNAPBUILD:-YES}
+SNAPBUILD=${SNAPBUILD:-NO}
 if [ "${SNAPBUILD}" = "YES" ] ;then
   VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
   SNAPBRANCH=${SNAPBRANCH:-master}
 else
-  VERSION=${VERSION:-0.1.1}
+  VERSION=${VERSION:-0.10.0}
 fi
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -80,13 +80,16 @@ SB_SYSTEMD=${SB_SYSTEMD:-YES}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.xz
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  SRCARCHIVE=${SRCDIR}.tar.xz
+else
+  SRCARCHIVE=v${VERSION}.tar.gz
+fi
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-MIRROR_SF=${MIRROR_SF:-http://prdownloads.sourceforge.net}
-DL_URL="${MIRROR_SF}/${NAME}/${SRCARCHIVE}"
+DL_URL="https://github.com/sddm/sddm/archive/${SRCARCHIVE}"
 SNAPUPDATE=${NAME}-snapshot.sh
 export snap=${VERSION}
 export snapbranch=${SNAPBRANCH}
@@ -95,7 +98,14 @@ export snapbranch=${SNAPBRANCH}
 if [ "${SNAPBUILD}" = "YES" ] ;then
   test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
 else
-  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+  SRCARCHIVE=${SRCDIR}.tar.gz
+  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} -O ${CWD}/${SRCARCHIVE} || exit 1
+fi
+
+if ! test -s ${CWD}/${SRCARCHIVE} ;then
+  echo "${CWD}/${SRCARCHIVE} is empty"
+  echo "Delete ${CWD}/${SRCARCHIVE}, check VERSION and try again."
+  exit 1
 fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -119,7 +129,6 @@ else
 fi
 
 # Set the config option variables if they are not already set:
-[ -r ../qt4.options ] && source ../qt4.options
 [ -r ../KDE.options ] && source ../KDE.options
 [ -r /etc/profile.d/kde4.sh ] && source /etc/profile.d/kde4.sh
 
@@ -154,6 +163,15 @@ fi
 cat ${CWD}/sddm.service > services/sddm.service.in
 cat ${CWD}/pam/sddm.pam > services/sddm.pam
 cat ${CWD}/pam/sddm-autologin.pam > services/sddm-autologin.pam
+
+cp ${CWD}/Configuration.h src/common/
+
+#if [ "${SB_SLKART}" = "YES" ] ;then
+#  sed -i.orig \
+#    -e 's|circles|slk-default|g' \
+#    -e '/CursorTheme/s|QString()|_S("Bluecurve")|g' \
+#    src/common/Configuration.h
+#fi
 
 sed -i \
   -e 's| -march=native||g' \
@@ -226,12 +244,6 @@ abs2rel(){
 reldir=$(abs2rel /usr/share ${_kde4_appsdir})
 ln -sf ${reldir}/sddm ${PKG}/${_kde4_appsdir}/sddm || exit 1
 
-if [ "${SB_SLKART}" = "YES" ] ;then
-  rm -f ${PKG}/etc/sddm/*.conf
-else
-  install -pm0644 ${CWD}/sddm.conf ${PKG}/etc/sddm/sddm.conf.new || exit 1
-fi
-
 mv ${PKG}/usr/share/sddm/scripts/Xsession ${PKG}/etc/sddm/Xsession.orig
 install -pm0755 ${CWD}/Xsession ${PKG}/etc/sddm/Xsession.new || exit 1
 rmdir -p ${PKG}/usr/share/sddm/scripts
@@ -247,7 +259,7 @@ EOF
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  CONTRIBUTORS COPYING README.md ${CWD}/ChangeLog.SB \
+  CONTRIBUTORS COPYING README.md ${CWD}/sddm.conf ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 [ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
@@ -279,15 +291,74 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
-cat > ${PKG}/install/doinst.sh <<EOF
-#!/bin/sh
+cat > ${PKG}/install/doinst.sh <<'EOF'
+function free_user_id {
+  # Find a free user-ID >= 100 (should be < 1000 so it's not a normal user)
+  local FREE_USER_ID=100
+  while grep --quiet "^.*:.*:${FREE_USER_ID}:.*:.*:.*:" etc/passwd; do
+    let FREE_USER_ID++
+  done
+  echo ${FREE_USER_ID}
+}
+function free_group_id {
+  # Find a free group-ID >= 120 (should be < 1000 so it's not a normal group)
+  local FREE_GROUP_ID=120
+  while grep --quiet "^.*:.*:${FREE_GROUP_ID}:" etc/group; do
+    let FREE_GROUP_ID++
+  done
+  echo ${FREE_GROUP_ID}
+}
+
 # Figure out our root directory
-ROOTDIR=\$(pwd)
+ROOTDIR=$(pwd)
 unset CHROOT
-if test "\${ROOTDIR}" != "/"; then
-  CHROOT="chroot \${ROOTDIR} "
-  ROOTDIR="\${ROOTDIR}/"
+if test "${ROOTDIR}" != "/"; then
+ CHROOT="chroot ${ROOTDIR} "
+  ROOTDIR="${ROOTDIR}/"
 fi
+
+# Set up groups.
+if ! grep --quiet '^sddm:' etc/group ;then
+  ${CHROOT} /usr/sbin/groupadd \
+    -g $(free_group_id) \
+    sddm 2> /dev/null
+fi
+
+# Set up user: add it if it doesn't exist, update it if it already does.
+if OLD_ENTRY=$(grep --max-count=1 '^sddm:' etc/passwd) \
+  || OLD_ENTRY=$(grep --max-count=1 \
+  ':/var/lib/sddm:[a-z/]*$' etc/passwd)
+then
+  # Modify existing user
+  OLD_USER=$(echo ${OLD_ENTRY} | cut --fields=1 --delimiter=':')
+  USER_ID=$(echo ${OLD_ENTRY} | cut --fields=3 --delimiter=':')
+  test ${USER_ID} -ge 1000 && USER_ID=$(free_user_id)
+  if test "${OLD_USER}" = "sddm"; then
+    echo -n "Updating unprivileged user" 1>&2
+  else
+    echo -ne "Changing unprivileged user \e[1m${OLD_USER}\e[0m to" 1>&2
+  fi
+  ${CHROOT} /usr/sbin/usermod \
+      -d '/var/lib/sddm' \
+      -u ${USER_ID} \
+      -s /bin/false \
+      -g sddm \
+      ${OLD_USER}
+else
+  # Add new user
+  echo -n "Creating unprivileged user" 1>&2
+  ${CHROOT} /usr/sbin/useradd \
+    -c 'Simple Desktop Display Manager' \
+    -u $(free_user_id) \
+    -g sddm \
+    -s /bin/false \
+    -d '/var/lib/sddm' \
+    sddm 2> /dev/null
+fi
+
+EOF
+
+cat >> ${PKG}/install/doinst.sh <<EOF
 config() {
   NEW="\$1"
   OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
@@ -300,6 +371,7 @@ config() {
   fi
   # Otherwise, we leave the .new copy for the admin to consider...
 }
+
 ## List of conf files to check.  The conf files in your package should end in .new
 EOF
 
@@ -323,7 +395,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   mkdir -p ${SBDIR}/{pam,patches}
   install -pm0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/apply-patches.sh ${CWD}/${SNAPUPDATE} ${CWD}/Xsession ${CWD}/*.service \
-    ${CWD}/sddm.conf ${SBDIR}/
+    ${CWD}/sddm.conf ${CWD}/Configuration.h ${SBDIR}/
   install -pm0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -pm0644 ${CWD}/pam/*.* \

@@ -1,0 +1,208 @@
+diff -r 847a0e74c4cc Lib/test/test_unicode.py
+--- a/Lib/test/test_unicode.py	Sun Jul 20 21:26:04 2014 -0700
++++ b/Lib/test/test_unicode.py	Tue Jul 22 00:13:24 2014 +0200
+@@ -1659,6 +1659,122 @@ class UnicodeTest(
+         self.assertEqual("%s" % u, u'__unicode__ overridden')
+         self.assertEqual("{}".format(u), '__unicode__ overridden')
+ 
++    # Test PyUnicode_FromFormat()
++    def test_from_format(self):
++        test_support.import_module('ctypes')
++        from ctypes import (
++            pythonapi, py_object, sizeof,
++            c_int, c_long, c_longlong, c_ssize_t,
++            c_uint, c_ulong, c_ulonglong, c_size_t, c_void_p)
++        if sys.maxunicode == 0xffff:
++            name = "PyUnicodeUCS2_FromFormat"
++        else:
++            name = "PyUnicodeUCS4_FromFormat"
++        _PyUnicode_FromFormat = getattr(pythonapi, name)
++        _PyUnicode_FromFormat.restype = py_object
++
++        def PyUnicode_FromFormat(format, *args):
++            cargs = tuple(
++                py_object(arg) if isinstance(arg, unicode) else arg
++                for arg in args)
++            return _PyUnicode_FromFormat(format, *cargs)
++
++        def check_format(expected, format, *args):
++            text = PyUnicode_FromFormat(format, *args)
++            self.assertEqual(expected, text)
++
++        # ascii format, non-ascii argument
++        check_format(u'ascii\x7f=unicode\xe9',
++                     b'ascii\x7f=%U', u'unicode\xe9')
++
++        # non-ascii format, ascii argument: ensure that PyUnicode_FromFormatV()
++        # raises an error
++        #self.assertRaisesRegex(ValueError,
++        #    '^PyUnicode_FromFormatV\(\) expects an ASCII-encoded format '
++        #    'string, got a non-ASCII byte: 0xe9$',
++        #    PyUnicode_FromFormat, b'unicode\xe9=%s', u'ascii')
++
++        # test "%c"
++        check_format(u'\uabcd',
++                     b'%c', c_int(0xabcd))
++        if sys.maxunicode > 0xffff:
++            check_format(u'\U0010ffff',
++                         b'%c', c_int(0x10ffff))
++        with self.assertRaises(OverflowError):
++            PyUnicode_FromFormat(b'%c', c_int(0x110000))
++        # Issue #18183
++        if sys.maxunicode > 0xffff:
++            check_format(u'\U00010000\U00100000',
++                         b'%c%c', c_int(0x10000), c_int(0x100000))
++
++        # test "%"
++        check_format(u'%',
++                     b'%')
++        check_format(u'%',
++                     b'%%')
++        check_format(u'%s',
++                     b'%%s')
++        check_format(u'[%]',
++                     b'[%%]')
++        check_format(u'%abc',
++                     b'%%%s', b'abc')
++
++        # test %S
++        check_format(u"repr=abc",
++                     b'repr=%S', u'abc')
++
++        # test %R
++        check_format(u"repr=u'abc'",
++                     b'repr=%R', u'abc')
++
++        # test integer formats (%i, %d, %u)
++        check_format(u'010',
++                     b'%03i', c_int(10))
++        check_format(u'0010',
++                     b'%0.4i', c_int(10))
++        check_format(u'-123',
++                     b'%i', c_int(-123))
++        check_format(u'-123',
++                     b'%li', c_long(-123))
++        check_format(u'-123',
++                     b'%zi', c_ssize_t(-123))
++
++        check_format(u'-123',
++                     b'%d', c_int(-123))
++        check_format(u'-123',
++                     b'%ld', c_long(-123))
++        check_format(u'-123',
++                     b'%zd', c_ssize_t(-123))
++
++        check_format(u'123',
++                     b'%u', c_uint(123))
++        check_format(u'123',
++                     b'%lu', c_ulong(123))
++        check_format(u'123',
++                     b'%zu', c_size_t(123))
++
++        # test long output
++        PyUnicode_FromFormat(b'%p', c_void_p(-1))
++
++        # test %V
++        check_format(u'repr=abc',
++                     b'repr=%V', u'abc', b'xyz')
++        check_format(u'repr=\xe4\xba\xba\xe6\xb0\x91',
++                     b'repr=%V', None, b'\xe4\xba\xba\xe6\xb0\x91')
++        check_format(u'repr=abc\xff',
++                     b'repr=%V', None, b'abc\xff')
++
++        # not supported: copy the raw format string. these tests are just here
++        # to check for crashs and should not be considered as specifications
++        check_format(u'%s',
++                     b'%1%s', b'abc')
++        check_format(u'%1abc',
++                     b'%1abc')
++        check_format(u'%+i',
++                     b'%+i', c_int(10))
++        check_format(u'%s',
++                     b'%.%s', b'abc')
++
+     @test_support.cpython_only
+     def test_encode_decimal(self):
+         from _testcapi import unicode_encodedecimal
+diff -r 847a0e74c4cc Objects/unicodeobject.c
+--- a/Objects/unicodeobject.c	Sun Jul 20 21:26:04 2014 -0700
++++ b/Objects/unicodeobject.c	Tue Jul 22 00:13:24 2014 +0200
+@@ -690,7 +690,12 @@ makefmt(char *fmt, int longflag, int siz
+     *fmt = '\0';
+ }
+ 
+-#define appendstring(string) {for (copy = string;*copy;) *s++ = *copy++;}
++#define appendstring(string) \
++    do { \
++        for (copy = string;*copy; copy++) { \
++            *s++ = (unsigned char)*copy; \
++        } \
++    } while (0)
+ 
+ PyObject *
+ PyUnicode_FromFormatV(const char *format, va_list vargs)
+@@ -845,7 +850,7 @@ PyUnicode_FromFormatV(const char *format
+                 str = PyObject_Str(obj);
+                 if (!str)
+                     goto fail;
+-                n += PyUnicode_GET_SIZE(str);
++                n += PyString_GET_SIZE(str);
+                 /* Remember the str and switch to the next slot */
+                 *callresult++ = str;
+                 break;
+@@ -925,12 +930,12 @@ PyUnicode_FromFormatV(const char *format
+             }
+             /* handle the long flag, but only for %ld and %lu.
+                others can be added when necessary. */
+-            if (*f == 'l' && (f[1] == 'd' || f[1] == 'u')) {
++            if (*f == 'l' && (f[1] == 'd' || f[1] == 'i' || f[1] == 'u')) {
+                 longflag = 1;
+                 ++f;
+             }
+             /* handle the size_t flag. */
+-            if (*f == 'z' && (f[1] == 'd' || f[1] == 'u')) {
++            if (*f == 'z' && (f[1] == 'd' || f[1] == 'i' || f[1] == 'u')) {
+                 size_tflag = 1;
+                 ++f;
+             }
+@@ -939,8 +944,9 @@ PyUnicode_FromFormatV(const char *format
+             case 'c':
+                 *s++ = va_arg(vargs, int);
+                 break;
++            case 'i':
+             case 'd':
+-                makefmt(fmt, longflag, size_tflag, zeropad, width, precision, 'd');
++                makefmt(fmt, longflag, size_tflag, zeropad, width, precision, *f);
+                 if (longflag)
+                     sprintf(realbuffer, fmt, va_arg(vargs, long));
+                 else if (size_tflag)
+@@ -959,11 +965,6 @@ PyUnicode_FromFormatV(const char *format
+                     sprintf(realbuffer, fmt, va_arg(vargs, unsigned int));
+                 appendstring(realbuffer);
+                 break;
+-            case 'i':
+-                makefmt(fmt, 0, 0, zeropad, width, precision, 'i');
+-                sprintf(realbuffer, fmt, va_arg(vargs, int));
+-                appendstring(realbuffer);
+-                break;
+             case 'x':
+                 makefmt(fmt, 0, 0, zeropad, width, precision, 'x');
+                 sprintf(realbuffer, fmt, va_arg(vargs, int));
+@@ -1006,15 +1007,10 @@ PyUnicode_FromFormatV(const char *format
+             case 'S':
+             case 'R':
+             {
+-                Py_UNICODE *ucopy;
+-                Py_ssize_t usize;
+-                Py_ssize_t upos;
++                const char *str = PyString_AS_STRING(*callresult);
+                 /* unused, since we already have the result */
+                 (void) va_arg(vargs, PyObject *);
+-                ucopy = PyUnicode_AS_UNICODE(*callresult);
+-                usize = PyUnicode_GET_SIZE(*callresult);
+-                for (upos = 0; upos<usize;)
+-                    *s++ = ucopy[upos++];
++                appendstring(str);
+                 /* We're done with the unicode()/repr() => forget it */
+                 Py_DECREF(*callresult);
+                 /* switch to next unicode()/repr() result */

@@ -49,7 +49,7 @@ ApplyOptionalPatch() {
 
 ApplyOptionalPatch git-linus.diff
 
-ApplyPatch makefile-after_link.patch
+ApplyPatch kbuild-AFTER_LINK.patch
 
 #
 # misc small stuff to make things compile
@@ -73,7 +73,7 @@ ApplyPatch add-cpu-optimizations.patch
 
 ApplyPatch x86_64-hpet-64bit-timer.patch
 
-ApplyPatch 0001-lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
+ApplyPatch lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
 
 #
 # Intel IOMMU
@@ -102,7 +102,7 @@ ApplyPatch 0001-lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
 # WMI
 
 # ACPI
-ApplyPatch defaults-acpi-video.patch
+ApplyPatch Revert-Revert-ACPI-video-change-acpi-video-brightnes.patch
 
 # cpufreq
 #ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
@@ -145,7 +145,7 @@ ApplyPatch die-floppy-die.patch
 ApplyPatch no-pcspkr-modalias.patch
 
 # Silence some useless messages that still get printed with 'quiet'
-ApplyPatch silence-noise.patch
+ApplyPatch input-silence-i8042-noise.patch
 
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch silence-fbcon-logo.patch
@@ -181,7 +181,7 @@ ApplyPatch disable-i8042-check-on-apple-mac.patch
 ApplyPatch lis3-improve-handling-of-null-rate.patch
 
 # Disable watchdog on virtual machines.
-ApplyPatch nowatchdog-on-virt.patch
+ApplyPatch watchdog-Disable-watchdog-on-virtual-machines.patch
 
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
@@ -192,12 +192,50 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 ApplyPatch criu-no-expert.patch
 
 #rhbz 1110011
-ApplyPatch i8042-Also-store-the-aux-firmware-id-in-multi-plexed.patch
 ApplyPatch psmouse-Add-psmouse_matches_pnp_id-helper-function.patch
 ApplyPatch psmouse-Add-support-for-detecting-FocalTech-PS-2-tou.patch
 
 #rhbz 1123584
 ApplyPatch HID-rmi-check-sanity-of-incoming-report.patch
+
+#rhbz 1145318
+ApplyPatch KEYS-Reinstate-EPERM-for-a-key-type-name-beginning-w.patch
+
+ApplyPatch GFS2-Make-rename-not-save-dirent-location.patch
+
+#CVE-2014-7970 rhbz 1151095 1151484
+ApplyPatch mnt-Prevent-pivot_root-from-creating-a-loop-in-the-m.patch
+
+#rhbz 1149509
+ApplyPatch USB-core-add-device-qualifier-quirk.patch
+ApplyPatch USB-quirks-enable-device-qualifier-quirk-for-Elan-To.patch
+ApplyPatch USB-quirks-enable-device-qualifier-quirk-for-another.patch
+ApplyPatch HID-usbhid-add-always-poll-quirk.patch
+ApplyPatch HID-usbhid-enable-always-poll-quirk-for-Elan-Touchsc.patch
+ApplyPatch HID-usbhid-always-poll-quirk-for-Elan-Touchscreen-00.patch
+ApplyPatch USB-quirks-device-qualifier-quirk-for-another-Elan-t.patch
+ApplyPatch HID-usbhid-always-poll-quirk-for-Elan-Touchscreen-01.patch
+
+#CVE-2014-7975 rhbz 1151108 1152025
+ApplyPatch fs-Add-a-missing-permission-check-to-do_umount.patch
+
+# btrfs fixes queued for 3.17.y
+ApplyPatch btrfs-wake-up-transaction-thread-from-SYNC_FS-ioctl.patch
+ApplyPatch btrfs-don-t-go-readonly-on-existing-qgroup-items.patch
+ApplyPatch btrfs-Fix-a-deadlock-in-btrfs_dev_replace_finishing.patch
+ApplyPatch Btrfs-add-missing-compression-property-remove-in-btr.patch
+ApplyPatch Btrfs-fix-up-bounds-checking-in-lseek.patch
+ApplyPatch btrfs-Fix-and-enhance-merge_extent_mapping-to-insert.patch
+ApplyPatch Btrfs-don-t-do-async-reclaim-during-log-replay.patch
+ApplyPatch Btrfs-try-not-to-ENOSPC-on-log-replay.patch
+ApplyPatch Btrfs-cleanup-error-handling-in-build_backref_tree.patch
+ApplyPatch Btrfs-fix-build_backref_tree-issue-with-multiple-sha.patch
+ApplyPatch btrfs-Fix-the-wrong-condition-judgment-about-subset-.patch
+ApplyPatch Btrfs-fix-race-in-WAIT_SYNC-ioctl.patch
+ApplyPatch Revert-Btrfs-race-free-update-of-commit-root-for-ro-.patch
+
+#CVE-2014-8086 rhbz 1151353 1152608
+ApplyPatch ext4-fix-race-between-write-and-fcntl-F_SETFL.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

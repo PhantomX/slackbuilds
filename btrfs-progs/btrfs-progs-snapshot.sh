@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://git.kernel.org/pub/scm/linux/kernel/git/mason/${module}.git"
+snaproot="git://git.kernel.org/pub/scm/linux/kernel/git/kdave/${module}.git"
 
 tmp=$(mktemp -d)
 
@@ -24,8 +24,8 @@ gittree=${gittree:-${snapbranch}}
 [ "${snapbranch}" = "master" ] || snapbranch="origin/${snapbranch}"
 
 pushd "${tmp}"
-  git clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
-  pushd ${module}-${snap}
+  git clone ${SNAP_COOPTS} ${snaproot} ${module}-v${snap}
+  pushd ${module}-v${snap}
     if [ "${snap}" != "$(date +%Y%m%d)" ] && [ -z "${snaptag}" ] ; then
       gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
       git checkout $(git rev-list -n 1 --before="${gitdate}" ${snapbranch})
@@ -40,6 +40,6 @@ pushd "${tmp}"
         exit 1
       fi
     fi
-    git archive --format=tar --prefix=${module}-${snap}/ ${gittree} | xz -9 > "${pwd}"/${module}-${snap}.tar.xz
+    git archive --format=tar --prefix=${module}-v${snap}/ ${gittree} | xz -9 > "${pwd}"/${module}-v${snap}.tar.xz
   popd
 popd >/dev/null

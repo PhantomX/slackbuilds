@@ -43,11 +43,11 @@ pushd "${tmp}"
       fi
     fi
     pushd 3rdparty
-      rm -rf GL SoundTouch bzip2 google libjpeg portaudio soundtouch_linux_include w32pthreads winpcap wxWidgets zlib
+      rm -rf GL SoundTouch bzip2 google libjpeg portaudio soundtouch* w32pthreads winpcap wxWidgets zlib
     popd >/dev/null
     GITREV="$(LC_ALL=C git show  -s --format=%ci HEAD)"
     sed -i \
-      -e "/COMMAND/s|git -C \${CMAKE_SOURCE_DIR} show  -s --format=%ci HEAD|echo \"${GITREV}\"|g" \
+      -e "/COMMAND/s|\${GIT_EXECUTABLE} show -s --format=%ci HEAD|echo \"${GITREV}\"|g" \
       cmake/Pcsx2Utils.cmake
     find . -type d -name .git -print0 | xargs -0r rm -rf
     rm -rf .gitignore

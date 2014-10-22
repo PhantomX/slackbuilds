@@ -14,7 +14,4 @@ zcat ${SB_PATCHDIR}/glibc-open-macro.patch.gz | patch -p1 -E --backup --verbose
   patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/rpm-spec-mode-changelog.patch
 )
 
-### Arch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/emacs-24.3-giflib5.patch
-
 set +e +o pipefail

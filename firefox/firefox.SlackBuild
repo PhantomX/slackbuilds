@@ -43,7 +43,7 @@ fi
 NAME=firefox
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-33.0}
+VERSION=${VERSION:-33.0.1}
 FXAPP_ID="{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"
 SLKDIST=${SLKDIST:-Slackware}
 SLKVER=${SLKVER:-$(awk '{print $2}' /etc/slackware-version)}
@@ -79,9 +79,13 @@ SB_OFFICIAL=${SB_OFFICIAL:-YES}
 # If not official, set a name you like (else it will take the default from Mozilla)
 SB_NOFFICIAL_NAME=${SB_NOFFICIAL_NAME:-}
 
+# Set to YES to enable system cairo
+SB_CAIRO=${SB_CAIRO:-NO}
 # Set to YES to enable KDE integration support
 # do not push any dependencies, needs optional kmozillahelper and kde session
 SB_KDE=${SB_KDE:-YES}
+# Set to YES to enable pulseaudio support
+SB_PA=${SB_PA:-NO}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -166,8 +170,6 @@ cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-XULRUNNER_FDIR="$(pkg-config --variable=libdir libxul)"
-
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh
 fi
@@ -176,6 +178,18 @@ sed -i 's@ ""@@' browser/base/Makefile.in
 
 # Add Slackware to custom dists (fix some web user agent recognizing scripts)
 [ "${SLKDIST}" = "Slackware" ] || export SLKDIST="${SLKDIST} (Slackware)"
+
+if [ "${SB_CAIRO}" = "YES" ] ;then
+  echo "ac_add_options --enable-system-cairo" >> .mozconfig
+else
+  echo "ac_add_options --disable-system-cairo" >> .mozconfig
+fi
+
+if [ "${SB_PA}" = "YES" ] ;then
+  echo "ac_add_options --enable-pulseaudio" >> .mozconfig
+else
+  echo "ac_add_options --disable-pulseaudio" >> .mozconfig
+fi
 
 rm -f .mozconfig
 cat ${CWD}/${NAME}-mozconfig > .mozconfig || exit 1
@@ -198,16 +212,6 @@ else
   fi
 fi
 
-# Set up SDK path
-MOZILLA_SDK_PATH=$(pkg-config --variable=sdkdir libxul)
-if [ -z ${MOZILLA_SDK_PATH} ]; then
-  echo "XulRunner SDK is not available!"
-  exit 1
-else
-  echo "XulRunner SDK path: ${MOZILLA_SDK_PATH}"
-  echo "ac_add_options --with-libxul-sdk=${MOZILLA_SDK_PATH}" >> .mozconfig
-fi
-
 echo "ac_add_options --build=${SLKTARGET}-${SLKDTARGET}-linux" >> .mozconfig || exit 1
 echo "ac_add_options --host=${SLKTARGET}-${SLKDTARGET}-linux" >> .mozconfig || exit 1
 echo "ac_add_options --target=${SLKTARGET}-${SLKDTARGET}-linux" >> .mozconfig || exit 1
@@ -217,7 +221,14 @@ echo "ac_add_options --target=${SLKTARGET}-${SLKDTARGET}-linux" >> .mozconfig ||
 MOZ_OPT_FLAGS="$(echo ${SLKCFLAGS} | sed -e 's/-Wall//') -D_FORTIFY_SOURCE=2"
 
 export CFLAGS="${MOZ_OPT_FLAGS}"
-export CXXFLAGS="${MOZ_OPT_FLAGS} -mno-avx"
+export CXXFLAGS="${MOZ_OPT_FLAGS} -fpermissive -mno-avx"
+
+# To avoid link time crashes with not enough memory
+# (approximately <= 4Gb)
+if [ $(awk '/^MemTotal:/ { print $2 }' /proc/meminfo) -lt 4200000 ] ;then
+  MOZ_LINK_FLAGS="-Wl,--no-keep-memory -Wl,--reduce-memory-overheads"
+  export LDFLAGS="${MOZ_LINK_FLAGS} ${LDFLAGS}"
+fi
 
 export PREFIX='/usr'
 export LIBDIR="/usr/lib${LIBDIRSUFFIX}"
@@ -225,7 +236,7 @@ export LIBDIR="/usr/lib${LIBDIRSUFFIX}"
 mozappdir=/usr/lib${LIBDIRSUFFIX}/${NAME}
 
 export LDFLAGS="-Wl,-rpath,${mozappdir} ${LDFLAGS}"
-make -f client.mk build STRIP="/bin/true" MOZ_MAKE_FLAGS="-j${NJOBS}" || exit 1
+make -f client.mk build STRIP="/bin/true" MOZ_MAKE_FLAGS="-j${NJOBS}" MOZ_SERVICES_SYNC="1" || exit $?
 
 # set up our default preferences
 sed \
@@ -239,16 +250,10 @@ pref("browser.newtabpage.pinned", '[{"url":"${SB_INDEXHTML}","title":"${SLKDIST}
 pref("network.protocol-handler.app.mailto", "${SB_DMAIL}");
 EOF
 
-if [ "${SB_KDE}" = "YES" ] ;then
-cat >> slk-default-prefs << 'EOF'
-pref("browser.preferences.instantApply", false);
-EOF
-fi
-
 cp slk-default-prefs objdir/dist/bin/browser/defaults/preferences/all-slackware.js || exit 1
-sed -i \
-  -e 's|@BINPATH@/browser/@PREF_DIR@/firefox.js|@BINPATH@/browser/@PREF_DIR@/all-slackware.js\n&|' \
-  browser/installer/package-manifest.in || exit 1
+#sed -i \
+#  -e 's|@BINPATH@/browser/@PREF_DIR@/firefox.js|@BINPATH@/browser/@PREF_DIR@/all-slackware.js\n&|' \
+#  browser/installer/package-manifest.in || exit 1
 
 # Export correct locale
 cat > objdir/dist/bin/browser/defaults/preferences/firefox-l10n.js << EOF
@@ -260,7 +265,13 @@ cat > objdir/dist/bin/browser/chrome/en-US/locale/branding/browserconfig.propert
 browser.startup.homepage=${SB_INDEXHTML}
 EOF
 
-DESTDIR=${PKG} make -C objdir install || exit 1
+if [ "${SB_KDE}" = "YES" ] ;then
+cat >> objdir/dist/bin/defaults/pref/kde.js << 'EOF'
+pref("browser.preferences.instantApply", false);
+EOF
+fi
+
+DESTDIR=${PKG} make -C objdir install INSTALL_SDK= || exit 1
 
 # Use ${NAME} as directory
 if [ -d ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME}-${VERSION} ] ; then
@@ -273,23 +284,27 @@ mkdir -p ${PKG}/usr{/lib${LIBDIRSUFFIX},/bin,/share/applications}
 
 # Start script install
 rm -f ${PKG}/usr/bin/${NAME}
-XULRUNNER_DIR=$(pkg-config --variable=libdir libxul | sed -e "s,/usr/lib${LIBDIRSUFFIX}/,,g")
-sed \
-  -e "s,XULRUNNER_DIRECTORY,${XULRUNNER_DIR},g" \
-  ${CWD}/${NAME}.sh.in \
-  > ${PKG}/usr/bin/${NAME} || exit 1
-chmod 0755 ${PKG}/usr/bin/${NAME}
+install -pm0755 ${CWD}/${NAME}.sh.in \
+  ${PKG}/usr/bin/${NAME} || exit 1
 
 rm -f ${PKG}/${mozappdir}/${NAME}-config
+rm -f ${PKG}/${mozappdir}/update-settings.ini
 
-# Link with xulrunner 
-ln -s ../${XULRUNNER_DIR} ${PKG}/${mozappdir}/xulrunner || exit 1
+rm -rf ${PKG}/usr/lib*/pkgconfig
+rm -rf ${PKG}/usr/include
+rm -rf ${PKG}/usr/lib*/${NAME}-devel-*
+rm -rf ${PKG}/usr/lib*/${NAME}-devel*
+rm -rf ${PKG}/usr/share/idl
+
+rm -f ${PKG}${mozappdir}/removed-files
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=658850
 # Duplicated. Unneeded for packages without updater support
 ln -sf firefox ${PKG}/${mozappdir}/firefox-bin || exit 1
 
-rm -f ${PKG}${mozappdir}/removed-files
+# Use the system hunspell dictionaries
+rm -rf ${PKG}${mozappdir}/dictionaries
+ln -s ../../share/myspell ${PKG}${mozappdir}/dictionaries
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null

@@ -1,0 +1,435 @@
+From 0d29e379601819c7f7ed8de18b54de803a9f4049 Mon Sep 17 00:00:00 2001
+From: Tomas Mraz <tmraz@fedoraproject.org>
+Date: Fri, 5 Sep 2014 09:09:37 +0200
+Subject: [PATCH] Add grantor field to audit records of libpam.
+
+The grantor field gives audit trail of PAM modules which granted access
+for successful return from libpam calls. In case of failed return
+the grantor field is set to '?'.
+libpam/pam_account.c (pam_acct_mgmt): Remove _pam_auditlog() call.
+libpam/pam_auth.c (pam_authenticate, pam_setcred): Likewise.
+libpam/pam_password.c (pam_chauthtok): Likewise.
+libpam/pam_session.c (pam_open_session, pam_close_session): Likewise.
+libpam/pam_audit.c (_pam_audit_writelog): Add grantors parameter,
+add grantor= field to the message if grantors is set.
+(_pam_list_grantors): New function creating the string with grantors list.
+(_pam_auditlog): Add struct handler pointer parameter, call _pam_list_grantors()
+to list the grantors from the handler list.
+(_pam_audit_end): Add NULL handler parameter to _pam_auditlog() call.
+(pam_modutil_audit_write): Add NULL grantors parameter to _pam_audit_writelog().
+libpam/pam_dispatch.c (_pam_dispatch_aux): Set h->grantor where appropriate.
+(_pam_clear_grantors): New function to clear grantor field of handler.
+(_pam_dispatch): Call _pam_clear_grantors() before executing the stack.
+Call _pam_auditlog() when appropriate.
+libpam/pam_handlers.c (extract_modulename): Do not allow empty module name
+or just "?" to avoid confusing audit trail.
+(_pam_add_handler): Test for NULL return from extract_modulename().
+Clear grantor field of handler.
+libpam/pam_private.h: Add grantor field to struct handler, add handler pointer
+parameter to _pam_auditlog().
+---
+ libpam/pam_account.c  |  4 ---
+ libpam/pam_audit.c    | 84 +++++++++++++++++++++++++++++++++++++++++++--------
+ libpam/pam_auth.c     |  8 -----
+ libpam/pam_dispatch.c | 41 ++++++++++++++++++++-----
+ libpam/pam_handlers.c | 14 +++++++--
+ libpam/pam_password.c |  4 ---
+ libpam/pam_private.h  |  3 +-
+ libpam/pam_session.c  |  7 -----
+ 8 files changed, 119 insertions(+), 46 deletions(-)
+
+diff --git a/libpam/pam_account.c b/libpam/pam_account.c
+index 572acc4..3a4fb1f 100644
+--- a/libpam/pam_account.c
++++ b/libpam/pam_account.c
+@@ -19,9 +19,5 @@ int pam_acct_mgmt(pam_handle_t *pamh, int flags)
+ 
+     retval = _pam_dispatch(pamh, flags, PAM_ACCOUNT);
+ 
+-#ifdef HAVE_LIBAUDIT
+-    retval = _pam_auditlog(pamh, PAM_ACCOUNT, retval, flags);
+-#endif
+-
+     return retval;
+ }
+diff --git a/libpam/pam_audit.c b/libpam/pam_audit.c
+index 531746a..24fb799 100644
+--- a/libpam/pam_audit.c
++++ b/libpam/pam_audit.c
+@@ -6,12 +6,12 @@
+    Authors:
+    Steve Grubb <sgrubb@redhat.com> */
+ 
+-#include <stdio.h>
+-#include <syslog.h>
+ #include "pam_private.h"
+ #include "pam_modutil_private.h"
+ 
+ #ifdef HAVE_LIBAUDIT
++#include <stdio.h>
++#include <syslog.h>
+ #include <libaudit.h>
+ #include <pwd.h>
+ #include <netdb.h>
+@@ -25,17 +25,24 @@
+ 
+ static int
+ _pam_audit_writelog(pam_handle_t *pamh, int audit_fd, int type,
+-	const char *message, int retval)
++	const char *message, const char *grantors, int retval)
+ {
+   static int old_errno = -1;
+-  int rc;
+-  char buf[32];
++  int rc = -ENOMEM;
++  char *buf;
++  const char *grantors_field = " grantors=";
+ 
+-  snprintf(buf, sizeof(buf), "PAM:%s", message);
++  if (grantors == NULL) {
++      grantors = "";
++      grantors_field = "";
++  }
+ 
+-  rc = audit_log_acct_message (audit_fd, type, NULL, buf,
+-       (retval != PAM_USER_UNKNOWN && pamh->user) ? pamh->user : "?",
+-	-1, pamh->rhost, NULL, pamh->tty, retval == PAM_SUCCESS );
++  if (asprintf(&buf, "PAM:%s%s%s", message, grantors_field, grantors) >= 0) {
++      rc = audit_log_acct_message(audit_fd, type, NULL, buf,
++	(retval != PAM_USER_UNKNOWN && pamh->user) ? pamh->user : "?",
++	-1, pamh->rhost, NULL, pamh->tty, retval == PAM_SUCCESS);
++      free(buf);
++  }
+ 
+   /* libaudit sets errno to his own negative error code. This can be
+      an official errno number, but must not. It can also be a audit
+@@ -78,12 +85,54 @@ _pam_audit_open(pam_handle_t *pamh)
+   return audit_fd;
+ }
+ 
++static int
++_pam_list_grantors(struct handler *hlist, int retval, char **list)
++{
++  *list = NULL;
++
++  if (retval == PAM_SUCCESS) {
++    struct handler *h;
++    char *p = NULL;
++    size_t len = 0;
++
++    for (h = hlist; h != NULL; h = h->next) {
++      if (h->grantor) {
++        len += strlen(h->mod_name) + 1;
++      }
++    }
++
++    if (len == 0) {
++      return 0;
++    }
++
++    *list = malloc(len);
++    if (*list == NULL) {
++      return -1;
++    }
++
++    for (h = hlist; h != NULL; h = h->next) {
++      if (h->grantor) {
++        if (p == NULL) {
++          p = *list;
++        } else {
++          p = stpcpy(p, ",");
++        }
++
++        p = stpcpy(p, h->mod_name);
++      }
++    }
++  }
++
++  return 0;
++}
++
+ int
+-_pam_auditlog(pam_handle_t *pamh, int action, int retval, int flags)
++_pam_auditlog(pam_handle_t *pamh, int action, int retval, int flags, struct handler *h)
+ {
+   const char *message;
+   int type;
+   int audit_fd;
++  char *grantors;
+ 
+   if ((audit_fd=_pam_audit_open(pamh)) == -1) {
+     return PAM_SYSTEM_ERR;
+@@ -134,8 +183,17 @@ _pam_auditlog(pam_handle_t *pamh, int action, int retval, int flags)
+     retval = PAM_SYSTEM_ERR;
+   }
+ 
+-  if (_pam_audit_writelog(pamh, audit_fd, type, message, retval) < 0)
++  if (_pam_list_grantors(h, retval, &grantors) < 0) {
++    /* allocation failure */
++    pam_syslog(pamh, LOG_CRIT, "_pam_list_grantors() failed: %m");
+     retval = PAM_SYSTEM_ERR;
++  }
++
++  if (_pam_audit_writelog(pamh, audit_fd, type, message,
++      grantors ? grantors : "?", retval) < 0)
++    retval = PAM_SYSTEM_ERR;
++
++  free(grantors);
+ 
+   audit_close(audit_fd);
+   return retval;
+@@ -149,7 +207,7 @@ _pam_audit_end(pam_handle_t *pamh, int status UNUSED)
+      * stacks having been run. Assume that this is sshd faking
+      * things for an unknown user.
+      */
+-    _pam_auditlog(pamh, _PAM_ACTION_DONE, PAM_USER_UNKNOWN, 0);
++    _pam_auditlog(pamh, _PAM_ACTION_DONE, PAM_USER_UNKNOWN, 0, NULL);
+   }
+ 
+   return 0;
+@@ -168,7 +226,7 @@ pam_modutil_audit_write(pam_handle_t *pamh, int type,
+     return retval;
+   }
+ 
+-  rc = _pam_audit_writelog(pamh, audit_fd, type, message, retval);
++  rc = _pam_audit_writelog(pamh, audit_fd, type, message, NULL, retval);
+ 
+   audit_close(audit_fd);
+ 
+diff --git a/libpam/pam_auth.c b/libpam/pam_auth.c
+index 5984fa5..1e7bc6e 100644
+--- a/libpam/pam_auth.c
++++ b/libpam/pam_auth.c
+@@ -45,10 +45,6 @@ int pam_authenticate(pam_handle_t *pamh, int flags)
+     prelude_send_alert(pamh, retval);
+ #endif
+ 
+-#ifdef HAVE_LIBAUDIT
+-    retval = _pam_auditlog(pamh, PAM_AUTHENTICATE, retval, flags);
+-#endif
+-
+     return retval;
+ }
+ 
+@@ -71,10 +67,6 @@ int pam_setcred(pam_handle_t *pamh, int flags)
+ 
+     retval = _pam_dispatch(pamh, flags, PAM_SETCRED);
+ 
+-#ifdef HAVE_LIBAUDIT
+-    retval = _pam_auditlog(pamh, PAM_SETCRED, retval, flags);
+-#endif
+-
+     D(("pam_setcred exit"));
+ 
+     return retval;
+diff --git a/libpam/pam_dispatch.c b/libpam/pam_dispatch.c
+index eb52c82..cf632e8 100644
+--- a/libpam/pam_dispatch.c
++++ b/libpam/pam_dispatch.c
+@@ -217,8 +217,14 @@ static int _pam_dispatch_aux(pam_handle_t *pamh, int flags, struct handler *h,
+                     status = retval;
+                 }
+ 	    }
+-	    if ( impression == _PAM_POSITIVE && action == _PAM_ACTION_DONE ) {
+-		goto decision_made;
++	    if ( impression == _PAM_POSITIVE ) {
++		if ( retval == PAM_SUCCESS ) {
++		    h->grantor = 1;
++		}
++
++		if ( action == _PAM_ACTION_DONE ) {
++		    goto decision_made;
++		}
+ 	    }
+ 	    break;
+ 
+@@ -262,6 +268,9 @@ static int _pam_dispatch_aux(pam_handle_t *pamh, int flags, struct handler *h,
+ 			|| (impression == _PAM_POSITIVE
+ 			    && status == PAM_SUCCESS) ) {
+ 			if ( retval != PAM_IGNORE || cached_retval == retval ) {
++			    if ( impression == _PAM_UNDEF && retval == PAM_SUCCESS ) {
++				h->grantor = 1;
++			    }
+ 			    impression = _PAM_POSITIVE;
+ 			    status = retval;
+ 			}
+@@ -308,6 +317,13 @@ decision_made:     /* by getting  here we have made a decision */
+     return status;
+ }
+ 
++static void _pam_clear_grantors(struct handler *h)
++{
++    for (; h != NULL; h = h->next) {
++	h->grantor = 0;
++    }
++}
++
+ /*
+  * This function translates the module dispatch request into a pointer
+  * to the stack of modules that will actually be run.  the
+@@ -318,21 +334,21 @@ decision_made:     /* by getting  here we have made a decision */
+ int _pam_dispatch(pam_handle_t *pamh, int flags, int choice)
+ {
+     struct handler *h = NULL;
+-    int retval, use_cached_chain;
++    int retval = PAM_SYSTEM_ERR, use_cached_chain;
+     _pam_boolean resumed;
+ 
+     IF_NO_PAMH("_pam_dispatch", pamh, PAM_SYSTEM_ERR);
+ 
+     if (__PAM_FROM_MODULE(pamh)) {
+ 	D(("called from a module!?"));
+-	return PAM_SYSTEM_ERR;
++	goto end;
+     }
+ 
+     /* Load all modules, resolve all symbols */
+ 
+     if ((retval = _pam_init_handlers(pamh)) != PAM_SUCCESS) {
+ 	pam_syslog(pamh, LOG_ERR, "unable to dispatch function");
+-	return retval;
++	goto end;
+     }
+ 
+     use_cached_chain = _PAM_PLEASE_FREEZE;
+@@ -360,7 +376,8 @@ int _pam_dispatch(pam_handle_t *pamh, int flags, int choice)
+ 	break;
+     default:
+ 	pam_syslog(pamh, LOG_ERR, "undefined fn choice; %d", choice);
+-	return PAM_ABORT;
++	retval = PAM_ABORT;
++	goto end;
+     }
+ 
+     if (h == NULL) {     /* there was no handlers.conf... entry; will use
+@@ -393,11 +410,13 @@ int _pam_dispatch(pam_handle_t *pamh, int flags, int choice)
+ 	    pam_syslog(pamh, LOG_ERR,
+ 			    "application failed to re-exec stack [%d:%d]",
+ 			    pamh->former.choice, choice);
+-	    return PAM_ABORT;
++	    retval = PAM_ABORT;
++	    goto end;
+ 	}
+ 	resumed = PAM_TRUE;
+     } else {
+ 	resumed = PAM_FALSE;
++	_pam_clear_grantors(h);
+     }
+ 
+     __PAM_TO_MODULE(pamh);
+@@ -417,5 +436,13 @@ int _pam_dispatch(pam_handle_t *pamh, int flags, int choice)
+ 	pamh->former.choice = PAM_NOT_STACKED;
+     }
+ 
++end:
++
++#ifdef HAVE_LIBAUDIT
++    if (choice != PAM_CHAUTHTOK || flags & PAM_UPDATE_AUTHTOK || retval != PAM_SUCCESS) {
++	retval = _pam_auditlog(pamh, choice, retval, flags, h);
++    }
++#endif
++
+     return retval;
+ }
+diff --git a/libpam/pam_handlers.c b/libpam/pam_handlers.c
+index 02714f7..df3a1d9 100644
+--- a/libpam/pam_handlers.c
++++ b/libpam/pam_handlers.c
+@@ -611,6 +611,12 @@ extract_modulename(const char *mod_path)
+   if (dot)
+     *dot = '\0';
+ 
++  if (*retval == '\0' || strcmp(retval, "?") == 0) {
++    /* do not allow empty module name or "?" to avoid confusing audit trail */
++    _pam_drop(retval);
++    return NULL;
++  }
++
+   return retval;
+ }
+ 
+@@ -888,7 +894,9 @@ int _pam_add_handler(pam_handle_t *pamh
+     (*handler_p)->cached_retval_p = &((*handler_p)->cached_retval);
+     (*handler_p)->argc = argc;
+     (*handler_p)->argv = argv;                       /* not a copy */
+-    (*handler_p)->mod_name = extract_modulename(mod_path);
++    if (((*handler_p)->mod_name = extract_modulename(mod_path)) == NULL)
++	return PAM_ABORT;
++    (*handler_p)->grantor = 0;
+     (*handler_p)->next = NULL;
+ 
+     /* some of the modules have a second calling function */
+@@ -920,7 +928,9 @@ int _pam_add_handler(pam_handle_t *pamh
+ 	} else {
+ 	    (*handler_p2)->argv = NULL;              /* no arguments */
+ 	}
+-	(*handler_p2)->mod_name = extract_modulename(mod_path);
++	if (((*handler_p2)->mod_name = extract_modulename(mod_path)) == NULL)
++	    return PAM_ABORT;
++	(*handler_p2)->grantor = 0;
+ 	(*handler_p2)->next = NULL;
+     }
+ 
+diff --git a/libpam/pam_password.c b/libpam/pam_password.c
+index 75db5e5..592e01f 100644
+--- a/libpam/pam_password.c
++++ b/libpam/pam_password.c
+@@ -57,9 +57,5 @@ int pam_chauthtok(pam_handle_t *pamh, int flags)
+ 	D(("will resume when ready", retval));
+     }
+ 
+-#ifdef HAVE_LIBAUDIT
+-    retval = _pam_auditlog(pamh, PAM_CHAUTHTOK, retval, flags);
+-#endif
+-
+     return retval;
+ }
+diff --git a/libpam/pam_private.h b/libpam/pam_private.h
+index 134dc72..d93283c 100644
+--- a/libpam/pam_private.h
++++ b/libpam/pam_private.h
+@@ -55,6 +55,7 @@ struct handler {
+     struct handler *next;
+     char *mod_name;
+     int stack_level;
++    int grantor;
+ };
+ 
+ #define PAM_HT_MODULE       0
+@@ -316,7 +317,7 @@ if ((pamh) == NULL) {                             \
+         do { (pamh)->caller_is = _PAM_CALLED_FROM_APP; } while (0)
+ 
+ #ifdef HAVE_LIBAUDIT
+-extern int _pam_auditlog(pam_handle_t *pamh, int action, int retval, int flags);
++extern int _pam_auditlog(pam_handle_t *pamh, int action, int retval, int flags, struct handler *h);
+ extern int _pam_audit_end(pam_handle_t *pamh, int pam_status);
+ #endif
+ 
+diff --git a/libpam/pam_session.c b/libpam/pam_session.c
+index 512153f..cb393c1 100644
+--- a/libpam/pam_session.c
++++ b/libpam/pam_session.c
+@@ -22,9 +22,6 @@ int pam_open_session(pam_handle_t *pamh, int flags)
+     }
+     retval = _pam_dispatch(pamh, flags, PAM_OPEN_SESSION);
+ 
+-#ifdef HAVE_LIBAUDIT
+-    retval = _pam_auditlog(pamh, PAM_OPEN_SESSION, retval, flags);
+-#endif
+     return retval;
+ }
+ 
+@@ -43,10 +40,6 @@ int pam_close_session(pam_handle_t *pamh, int flags)
+ 
+     retval = _pam_dispatch(pamh, flags, PAM_CLOSE_SESSION);
+ 
+-#ifdef HAVE_LIBAUDIT
+-    retval = _pam_auditlog(pamh, PAM_CLOSE_SESSION, retval, flags);
+-#endif
+-
+     return retval;
+ 
+ }
+-- 
+1.8.3.1
+

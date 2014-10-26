@@ -17,3 +17,7 @@ pref("extensions.autoDisableScope", 0);
 pref("media.gstreamer.enabled", true);
 pref("media.use_cubeb", false);
 pref("shell.checkDefaultApps", 0);
+pref("network.manage-offline-status", true);
+pref("toolkit.networkmanager.disable", false);
+pref("toolkit.storage.synchronous", 0);
+pref("offline.autoDetect", true);

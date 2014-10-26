@@ -25,3 +25,7 @@ pref("extensions.shownSelectionUI", true);
 pref("gfx.color_management.enablev4", true);
 pref("dom.ipc.plugins.enabled.nswrapper*",  false);
 pref("startup.homepage_override_url", "");
+pref("network.manage-offline-status", true);
+pref("toolkit.networkmanager.disable", false);
+pref("toolkit.storage.synchronous", 0);
+pref("offline.autoDetect", true);

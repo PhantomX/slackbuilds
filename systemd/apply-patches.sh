@@ -29,19 +29,10 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/udev-microsoft-3000-keymap.pat
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 
 # Upstream
-ApplyPatch 0001-systemctl-fail-in-the-case-that-no-unit-files-were-f.patch
-ApplyPatch 0002-build-remove-repeated-KMOD-section.patch
-ApplyPatch 0003-machine-id-setup-don-t-try-to-read-UUID-from-VM-cont.patch
-ApplyPatch 0004-resolved-dns-rr-fix-typo.patch
-ApplyPatch 0005-resolved-fix-which-return-codes-we-check.patch
-ApplyPatch 0006-journal-remote-remove-unreachable-code.patch
-ApplyPatch 0007-util-return-after-freeing-all-members-of-array.patch
-ApplyPatch 0008-journal-upload-make-sure-that-r-is-initialized.patch
-ApplyPatch 0009-resolved-write-resolv.conf-search-switch-arguments.patch
-ApplyPatch 0001-service-don-t-invoke-functions-at-the-same-time-as-d.patch
-ApplyPatch 0001-service-use-the-right-timeout-for-stop-processes-we-.patch
-ApplyPatch 0001-udev-hwdb-do-not-look-at-usb_device-parents.patch
-ApplyPatch 0001-networkctl-do-not-mix-dns-and-ntp-servers.patch
+
+
+### Fedora
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fedora-disable-resolv.conf-symlink.patch
 
 ### Arch
 

@@ -17,7 +17,7 @@ case "${ARCH}" in
 esac
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.29-enable-addons.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.30-installdir.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.25-elfhack.patch
+#patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.25-elfhack.patch
 
 # Upstream patches
 patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-858919.patch

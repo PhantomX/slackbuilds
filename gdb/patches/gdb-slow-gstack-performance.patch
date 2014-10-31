@@ -1,0 +1,349 @@
+Date: Thu, 2 Oct 2014 17:56:53 +0200
+From: Jan Kratochvil <jan dot kratochvil at redhat dot com>
+To: Doug Evans <dje at google dot com>
+Cc: gdb-patches at sourceware dot org
+Subject: [patchv2] Fix 100x slowdown regression on DWZ files
+Message-ID: <20141002155653.GA9001@host2.jankratochvil.net>
+
+--cNdxnHkX5QqsyA0e
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline
+
+On Thu, 02 Oct 2014 01:51:38 +0200, Doug Evans wrote:
+> I tested this patch with --target_board=dwarf4-gdb-index
+> and got a failure in m-static.exp:
+
+That is particularly with -fdebug-types-section.
+
+
+> Type units read the line table in a separate path,
+
+OK, therefore I dropped that separate struct dwarf2_lineinfo
+and reused struct line_header instead.
+
+
+> OTOH, I do want to avoid any confusion that this patch may inadvertently
+> introduce. For example, IIUC with your patch as is,
+> if we read a partial_unit first, before a compile_unit
+> that has the same stmt_list value, we'll do more processing in
+> dwarf_decode_lines than we really need to since we only need a file
+> number to symtab mapping. And if we later read in a compile_unit
+> with the same stmt_value we'll call dwarf_decode_lines again,
+> and this time we need the pc/line mapping it computes.
+> Whereas if we process these in the opposite order we'll only call
+> dwarf_decode_lines once. I'm sure this will be confusing at first
+> to some later developer going through this code.
+> [I could be missing something of course, and I'm happy for any corrections.]
+
+Implemented (omitting some story why I did not include it before).
+
+
+> The code that processes stmt_list for type_units is in setup_type_unit_groups.
+> Note that this code goes to the trouble of re-initializing the buildsym
+> machinery (see the calls to restart_symtab in dwarf2read.c) when we process
+> the second and subsequent type units that share a stmt_list value.
+> This is something that used to be done before your patch and will no
+> longer be done with your patch (since if we get a cache hit we exit).
+> It may be that the type_unit support is doing this unnecessarily,
+> which would be great because we can then simplify it.
+
+I hope this patch should no longer break -fdebug-types-section.
+If it additionally enables some future optimization for -fdebug-types-section
+the better.
+
+
+>  > +  /* Offset of line number information in .debug_line section.  */
+>  > +  sect_offset offset;
+>  > +  unsigned offset_in_dwz : 1;
+> 
+> IWBN to document why offset_in_dwz is here.
+> It's not obvious why it's needed.
++
+On Thu, 02 Oct 2014 01:57:03 +0200, Doug Evans wrote:
+> Ah, I guess the offset_in_dwz flag will ensure dwarf_decode_lines gets called
+> twice regardless of order.  But is that the only reason for the flag?
+
+I have added there now:
++  /* OFFSET is for struct dwz_file associated with dwarf2_per_objfile.  */
+
+If one removes it regressions really happen.  What happens is that this
+line_header_hash (former lineinfo_hash) is in struct dwarf2_per_objfile which
+is common for both objfile and its objfile.dwz (that one is normally in
+/usr/lib/debug/.dwz/ - common for multiple objfiles).  And there are two
+different DIEs at offset 0xb - one in objfile and one in objfile.dwz - which
+would match single line_header if offset_in_dwz was not there.
+
+Also existing dwarf2read.c code usually transfers "dwz flag" together with DIE
+offset, such as:
+	dwarf2_find_containing_comp_unit (sect_offset offset,
+					  unsigned int offset_in_dwz,
+					  struct objfile *objfile)
+This reminds me - why doesn't similar ambiguity happen also for dwp_file?
+I am unfortunately not much aware of the dwp implementation details.
+
+
+>  > -      struct line_header *line_header
+>  > -	= dwarf_decode_line_header (line_offset, cu);
+>  > +      dwarf2_per_objfile->lineinfo_hash =
+> 
+> As much as I prefer "=" going here, convention says to put it on the
+> next line.
+
+I have changed it but this was just blind copy from existing line 21818.
+
+
+>  > +	htab_create_alloc_ex (127, dwarf2_lineinfo_hash, dwarf2_lineinfo_eq,
+> 
+> I don't have any data, but 127 seems high.
+
+I have not changed it but this was just blind copy from existing line 21818.
+
+
+> I wouldn't change it, I just wanted to ask if you have any data
+> guiding this choice.
+
+Tuning some constants really makes no sense when GDB has missing + insanely
+complicated data structures and in consequence GDB is using inappropriate data
+structures with bad algorithmic complexity.  One needs to switch GDB to C++
+and its STL before one can start talking about data structures performance.
+
+
+No regressions on {x86_64,x86_64-m32,i686}-fedora20-linux-gnu in DWZ mode and
+in -fdebug-types-section mode.
+
+
+Thanks,
+Jan
+
+--cNdxnHkX5QqsyA0e
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline; filename="partialunit5.patch"
+
+gdb/
+2014-10-02  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	Fix 100x slowdown regression on DWZ files.
+	* dwarf2read.c (struct dwarf2_per_objfile): Add line_header_hash.
+	(struct line_header): Add offset and offset_in_dwz.
+	(dwarf_decode_lines): Add parameter decode_mapping to the declaration.
+	(free_line_header_voidp): New declaration.
+	(line_header_hash, line_header_eq): New functions.
+	(dwarf2_build_include_psymtabs): Update dwarf_decode_lines caller.
+	(handle_DW_AT_stmt_list): Use dwarf2_per_objfile->line_header_hash.
+	(free_line_header_voidp): New function.
+	(dwarf_decode_line_header): Initialize offset and offset_in_dwz.
+	(dwarf_decode_lines): New parameter decode_mapping, use it.
+
+Index: gdb-7.8/gdb/dwarf2read.c
+===================================================================
+--- gdb-7.8.orig/gdb/dwarf2read.c
++++ gdb-7.8/gdb/dwarf2read.c
+@@ -312,6 +312,9 @@ struct dwarf2_per_objfile
+ 
+   /* The CUs we recently read.  */
+   VEC (dwarf2_per_cu_ptr) *just_read_cus;
++
++  /* Table containing line_header indexed by offset and offset_in_dwz.  */
++  htab_t line_header_hash;
+ };
+ 
+ static struct dwarf2_per_objfile *dwarf2_per_objfile;
+@@ -1028,6 +1031,12 @@ typedef void (die_reader_func_ftype) (co
+    which contains the following information.  */
+ struct line_header
+ {
++  /* Offset of line number information in .debug_line section.  */
++  sect_offset offset;
++
++  /* OFFSET is for struct dwz_file associated with dwarf2_per_objfile.  */
++  unsigned offset_in_dwz : 1;
++
+   unsigned int total_length;
+   unsigned short version;
+   unsigned int header_length;
+@@ -1516,7 +1525,7 @@ static struct line_header *dwarf_decode_
+ 
+ static void dwarf_decode_lines (struct line_header *, const char *,
+ 				struct dwarf2_cu *, struct partial_symtab *,
+-				int);
++				int, int decode_mapping);
+ 
+ static void dwarf2_start_subfile (const char *, const char *, const char *);
+ 
+@@ -1849,6 +1858,8 @@ static void process_cu_includes (void);
+ 
+ static void check_producer (struct dwarf2_cu *cu);
+ 
++static void free_line_header_voidp (void *arg);
++
+ static int
+ attr_to_dynamic_prop (const struct attribute *attr, struct die_info *die,
+ 		      struct dwarf2_cu *cu, struct dynamic_prop *prop,
+@@ -1920,6 +1931,29 @@ dwarf2_invalid_attrib_class_complaint (c
+ 	     _("invalid attribute class or form for '%s' in '%s'"),
+ 	     arg1, arg2);
+ }
++
++/* Hash function for line_header_hash.  */
++
++static hashval_t
++line_header_hash (const void *item)
++{
++  const struct line_header *ofs = item;
++
++  return ofs->offset.sect_off ^ ofs->offset_in_dwz;
++}
++
++/* Equality function for line_header_hash.  */
++
++static int
++line_header_eq (const void *item_lhs, const void *item_rhs)
++{
++  const struct line_header *ofs_lhs = item_lhs;
++  const struct line_header *ofs_rhs = item_rhs;
++
++  return (ofs_lhs->offset.sect_off == ofs_rhs->offset.sect_off
++	  && ofs_lhs->offset_in_dwz == ofs_rhs->offset_in_dwz);
++}
++
+ 
+ #if WORDS_BIGENDIAN
+ 
+@@ -4459,7 +4493,7 @@ dwarf2_build_include_psymtabs (struct dw
+     return;  /* No linetable, so no includes.  */
+ 
+   /* NOTE: pst->dirname is DW_AT_comp_dir (if present).  */
+-  dwarf_decode_lines (lh, pst->dirname, cu, pst, 1);
++  dwarf_decode_lines (lh, pst->dirname, cu, pst, 1, 1);
+ 
+   free_line_header (lh);
+ }
+@@ -8989,24 +9023,64 @@ static void
+ handle_DW_AT_stmt_list (struct die_info *die, struct dwarf2_cu *cu,
+ 			const char *comp_dir) /* ARI: editCase function */
+ {
++  struct objfile *objfile = dwarf2_per_objfile->objfile;
+   struct attribute *attr;
++  unsigned int line_offset;
++  struct line_header *line_header, line_header_local;
++  unsigned u;
++  void **slot;
++  int decode_mapping;
+ 
+   gdb_assert (! cu->per_cu->is_debug_types);
+ 
+   attr = dwarf2_attr (die, DW_AT_stmt_list, cu);
+-  if (attr)
++  if (attr == NULL)
++    return;
++
++  line_offset = DW_UNSND (attr);
++
++  if (dwarf2_per_objfile->line_header_hash == NULL)
+     {
+-      unsigned int line_offset = DW_UNSND (attr);
+-      struct line_header *line_header
+-	= dwarf_decode_line_header (line_offset, cu);
+-
+-      if (line_header)
+-	{
+-	  cu->line_header = line_header;
+-	  make_cleanup (free_cu_line_header, cu);
+-	  dwarf_decode_lines (line_header, comp_dir, cu, NULL, 1);
+-	}
++      dwarf2_per_objfile->line_header_hash
++	= htab_create_alloc_ex (127, line_header_hash, line_header_eq,
++				free_line_header_voidp,
++				&objfile->objfile_obstack,
++				hashtab_obstack_allocate,
++				dummy_obstack_deallocate);
++    }
++
++  line_header_local.offset.sect_off = line_offset;
++  line_header_local.offset_in_dwz = cu->per_cu->is_dwz;
++  slot = htab_find_slot (dwarf2_per_objfile->line_header_hash,
++			 &line_header_local, NO_INSERT);
++
++  /* For DW_TAG_compile_unit we need info like symtab::linetable which
++     is not present in *SLOT.  */
++  if (die->tag == DW_TAG_partial_unit && slot != NULL)
++    {
++      gdb_assert (*slot != NULL);
++      cu->line_header = *slot;
++      return;
++    }
++
++  line_header = dwarf_decode_line_header (line_offset, cu);
++  if (line_header == NULL)
++    return;
++  cu->line_header = line_header;
++
++  slot = htab_find_slot (dwarf2_per_objfile->line_header_hash,
++			 &line_header_local, INSERT);
++  gdb_assert (slot != NULL);
++  if (*slot == NULL)
++    *slot = line_header;
++  else
++    {
++      gdb_assert (die->tag != DW_TAG_partial_unit);
++      make_cleanup (free_cu_line_header, cu);
+     }
++  decode_mapping = (die->tag != DW_TAG_partial_unit);
++  dwarf_decode_lines (line_header, comp_dir, cu, NULL, 1,
++		      decode_mapping);
+ }
+ 
+ /* Process DW_TAG_compile_unit or DW_TAG_partial_unit.  */
+@@ -16969,6 +17043,16 @@ free_line_header (struct line_header *lh
+   xfree (lh);
+ }
+ 
++/* Stub for free_line_header to match void * callback types.  */
++
++static void
++free_line_header_voidp (void *arg)
++{
++  struct line_header *lh = arg;
++
++  free_line_header (lh);
++}
++
+ /* Add an entry to LH's include directory table.  */
+ 
+ static void
+@@ -17099,6 +17183,9 @@ dwarf_decode_line_header (unsigned int o
+   back_to = make_cleanup ((make_cleanup_ftype *) free_line_header,
+                           (void *) lh);
+ 
++  lh->offset.sect_off = offset;
++  lh->offset_in_dwz = cu->per_cu->is_dwz;
++
+   line_ptr = section->buffer + offset;
+ 
+   /* Read in the header.  */
+@@ -17596,18 +17683,22 @@ dwarf_decode_lines_1 (struct line_header
+    as the corresponding symtab.  Since COMP_DIR is not used in the name of the
+    symtab we don't use it in the name of the psymtabs we create.
+    E.g. expand_line_sal requires this when finding psymtabs to expand.
+-   A good testcase for this is mb-inline.exp.  */
++   A good testcase for this is mb-inline.exp.
++
++   Boolean DECODE_MAPPING specifies we need to fully decode .debug_line
++   for its PC<->lines mapping information.  Otherwise only filenames
++   tables is read in.  */
+ 
+ static void
+ dwarf_decode_lines (struct line_header *lh, const char *comp_dir,
+ 		    struct dwarf2_cu *cu, struct partial_symtab *pst,
+-		    int want_line_info)
++		    int want_line_info, int decode_mapping)
+ {
+   struct objfile *objfile = cu->objfile;
+   const int decode_for_pst_p = (pst != NULL);
+   struct subfile *first_subfile = current_subfile;
+ 
+-  if (want_line_info)
++  if (want_line_info && decode_mapping)
+     dwarf_decode_lines_1 (lh, comp_dir, cu, pst);
+ 
+   if (decode_for_pst_p)

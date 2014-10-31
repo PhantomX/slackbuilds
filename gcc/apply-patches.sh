@@ -22,16 +22,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-no-copy-dt-needed-entrie
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr56493.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-color-auto.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-libgo-p224.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-rh1117799.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc.git-31fcc7c04378b7853d91e72ef2d5213ee167266a.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc.git-83864badef3fc9c52cd60a71370daaaba734e2c3.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc.git-50ee62fb67dbf6736de7d6e5d4222df6274f9ad9.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc.git-d8ab989f1dd165289074530bd99c61d1d12556ae.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc.git-0a48f9be7748166f6794d810c67931ebd87e4269.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc.git-21ee3bbd3dea078f32f6431cde5a82cff339a739.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr61656.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr61920-1.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr61920-2.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr63633.patch
 
 # From Gentoo
 patch -p1 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_default-fortify-source.patch
@@ -39,6 +30,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/15_all_libgfortran-Werror.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/16_all_libgomp-Werror.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/17_all_libitm-Werror.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/18_all_libatomic-Werror.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/19_all_libbacktrace-Werror.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/50_all_libiberty-asprintf.patch
 
 ### Arch

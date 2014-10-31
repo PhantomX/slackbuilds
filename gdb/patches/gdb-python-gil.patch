@@ -1,0 +1,224 @@
+diff -dup -ruNp gdb-7.8-orig/gdb/doc/python.texi gdb-7.8/gdb/doc/python.texi
+--- gdb-7.8-orig/gdb/doc/python.texi	2014-08-13 22:04:14.162441271 +0200
++++ gdb-7.8/gdb/doc/python.texi	2014-08-13 22:07:20.894643853 +0200
+@@ -228,6 +228,14 @@ returned as a string.  The default is @c
+ return value is @code{None}.  If @var{to_string} is @code{True}, the
+ @value{GDBN} virtual terminal will be temporarily set to unlimited width
+ and height, and its pagination will be disabled; @pxref{Screen Size}.
++
++The @var{release_gil} flag specifies whether @value{GDBN} ought to
++release the Python GIL before executing the command.  This is useful
++in multi-threaded Python programs where by default the Python
++interpreter will acquire the GIL and lock other threads from
++executing.  After the command has completed executing in @value{GDBN}
++the Python GIL is reacquired. This flag must be a boolean value.  If
++omitted, it defaults to @code{False}.
+ @end defun
+ 
+ @findex gdb.breakpoints
+diff -dup -ruNp gdb-7.8-orig/gdb/python/python-internal.h gdb-7.8/gdb/python/python-internal.h
+--- gdb-7.8-orig/gdb/python/python-internal.h	2014-08-13 22:04:14.835441977 +0200
++++ gdb-7.8/gdb/python/python-internal.h	2014-08-13 22:07:20.895643867 +0200
+@@ -143,6 +143,8 @@ typedef int Py_ssize_t;
+ #define PyGILState_Release(ARG) ((void)(ARG))
+ #define PyEval_InitThreads()
+ #define PyThreadState_Swap(ARG) ((void)(ARG))
++#define PyEval_SaveThread() ((void)(ARG))
++#define PyEval_RestoreThread(ARG) ((void)(ARG))
+ #define PyEval_ReleaseLock()
+ #endif
+ 
+diff -dup -ruNp gdb-7.8-orig/gdb/python/python.c gdb-7.8/gdb/python/python.c
+--- gdb-7.8-orig/gdb/python/python.c	2014-08-13 22:04:14.164441273 +0200
++++ gdb-7.8/gdb/python/python.c	2014-08-13 22:07:20.895643867 +0200
+@@ -620,14 +620,19 @@ execute_gdb_command (PyObject *self, PyO
+ {
+   const char *arg;
+   PyObject *from_tty_obj = NULL, *to_string_obj = NULL;
+-  int from_tty, to_string;
++  PyObject *release_gil_obj = NULL;
++  int from_tty, to_string, release_gil;
+   volatile struct gdb_exception except;
+-  static char *keywords[] = {"command", "from_tty", "to_string", NULL };
++  static char *keywords[] = {"command", "from_tty", "to_string",
++			     "release_gil", NULL };
+   char *result = NULL;
++  /* Initialize it just to avoid a GCC false warning.  */
++  PyThreadState *state = NULL;
+ 
+-  if (! PyArg_ParseTupleAndKeywords (args, kw, "s|O!O!", keywords, &arg,
++  if (! PyArg_ParseTupleAndKeywords (args, kw, "s|O!O!O!", keywords, &arg,
+ 				     &PyBool_Type, &from_tty_obj,
+-				     &PyBool_Type, &to_string_obj))
++				     &PyBool_Type, &to_string_obj,
++				     &PyBool_Type, &release_gil_obj))
+     return NULL;
+ 
+   from_tty = 0;
+@@ -648,12 +652,28 @@ execute_gdb_command (PyObject *self, PyO
+       to_string = cmp;
+     }
+ 
++  release_gil = 0;
++  if (release_gil_obj)
++    {
++      int cmp = PyObject_IsTrue (release_gil_obj);
++      if (cmp < 0)
++	return NULL;
++      release_gil = cmp;
++    }
++
+   TRY_CATCH (except, RETURN_MASK_ALL)
+     {
+       /* Copy the argument text in case the command modifies it.  */
+       char *copy = xstrdup (arg);
+       struct cleanup *cleanup = make_cleanup (xfree, copy);
+ 
++      /* In the case of long running GDB commands, allow the user to
++	 release the Python GIL acquired by Python.  Restore the GIL
++	 after the command has completed before handing back to
++	 Python.  */
++      if (release_gil)
++	state = PyEval_SaveThread();
++
+       make_cleanup_restore_integer (&interpreter_async);
+       interpreter_async = 0;
+ 
+@@ -666,9 +686,21 @@ execute_gdb_command (PyObject *self, PyO
+ 	  execute_command (copy, from_tty);
+ 	}
+ 
++      /* Reacquire the GIL if it was released earlier.  */
++      if (release_gil)
++	PyEval_RestoreThread (state);
++
+       do_cleanups (cleanup);
+     }
+-  GDB_PY_HANDLE_EXCEPTION (except);
++  if (except.reason < 0)
++    {
++      /* Reacquire the GIL if it was released earlier.  */
++      if (release_gil)
++	PyEval_RestoreThread (state);
++
++      gdbpy_convert_exception (except);
++      return NULL;
++    }
+ 
+   /* Do any commands attached to breakpoint we stopped at.  */
+   bpstat_do_actions ();
+diff -dup -ruNp gdb-7.8-orig/gdb/testsuite/gdb.python/py-gil-mthread.c gdb-7.8/gdb/testsuite/gdb.python/py-gil-mthread.c
+--- gdb-7.8-orig/gdb/testsuite/gdb.python/py-gil-mthread.c	1970-01-01 01:00:00.000000000 +0100
++++ gdb-7.8/gdb/testsuite/gdb.python/py-gil-mthread.c	2014-08-13 22:33:05.052648912 +0200
+@@ -0,0 +1,12 @@
++#include <stdio.h>
++
++int
++main (void)
++{
++  int i;
++  for (i = 0; i < 10; i++)
++    {
++      sleep (1); /* break-here */
++      printf ("Sleeping %d\n", i);
++    }
++}
+diff -dup -ruNp gdb-7.8-orig/gdb/testsuite/gdb.python/py-gil-mthread.exp gdb-7.8/gdb/testsuite/gdb.python/py-gil-mthread.exp
+--- gdb-7.8-orig/gdb/testsuite/gdb.python/py-gil-mthread.exp	1970-01-01 01:00:00.000000000 +0100
++++ gdb-7.8/gdb/testsuite/gdb.python/py-gil-mthread.exp	2014-08-13 22:33:00.660641300 +0200
+@@ -0,0 +1,69 @@
++# Copyright (C) 2014 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++standard_testfile .c .py
++set executable $testfile
++
++if { [prepare_for_testing $testfile.exp $executable $srcfile] } {
++    return -1
++}
++
++# Skip all tests if Python scripting is not enabled.
++if { [skip_python_tests] } { continue }
++
++if ![runto_main] {
++    return -1
++}
++
++gdb_breakpoint $srcfile:[gdb_get_line_number "break-here"] temporary
++gdb_continue_to_breakpoint "break-here" ".* break-here .*"
++
++set test "response"
++set timeout 60
++set sleeping_last -1
++set hello_last 0
++set minimal 5
++gdb_test_multiple "python execfile('$srcdir/$subdir/$srcfile2')" $test {
++    -re "Error: unable to start thread\r\n" {
++	fail $test
++	# Not $gdb_prompt-synced!
++    }
++    -re "Sleeping (\[0-9\]+)\r\n" {
++	set n $expect_out(1,string)
++	if { $sleeping_last + 1 != $n } {
++	    fail $test
++	} else {
++	    set sleeping_last $n
++	    if { $sleeping_last >= $minimal && $hello_last >= $minimal } {
++		pass $test
++	    } else {
++		exp_continue
++	    }
++	}
++    }
++    -re "Hello \\( (\[0-9\]+) \\)\r\n" {
++	set n $expect_out(1,string)
++	if { $hello_last + 1 != $n } {
++	    fail $test
++	} else {
++	    set hello_last $n
++	    if { $sleeping_last >= $minimal && $hello_last >= $minimal } {
++		pass $test
++	    } else {
++		exp_continue
++	    }
++	}
++    }
++}
+diff -dup -ruNp gdb-7.8-orig/gdb/testsuite/gdb.python/py-gil-mthread.py gdb-7.8/gdb/testsuite/gdb.python/py-gil-mthread.py
+--- gdb-7.8-orig/gdb/testsuite/gdb.python/py-gil-mthread.py	1970-01-01 01:00:00.000000000 +0100
++++ gdb-7.8/gdb/testsuite/gdb.python/py-gil-mthread.py	2014-08-13 22:33:08.996654320 +0200
+@@ -0,0 +1,22 @@
++import thread
++import time
++import gdb
++
++# Define a function for the thread
++def print_thread_hello():
++   count = 0
++   while count < 10:
++      time.sleep(1)
++      count += 1
++      print "Hello (", count, ")"
++
++# Create a threads a continue
++try:
++   thread.start_new_thread( print_thread_hello, ())
++   gdb.execute ("continue", release_gil=True)
++   
++except:
++   print "Error: unable to start thread"
++
++while 1:
++   pass

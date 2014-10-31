@@ -1,0 +1,191 @@
+http://sourceware.org/ml/gdb-patches/2014-10/msg00524.html
+Subject: [patch 1/2] Accelerate iter_match_first_hashed 1.8x
+
+
+--17pEHd4RhPHOinZp
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline
+
+Hi,
+
+very simple caching.  dict_hash() is being called again and again for the same
+string.
+
+#0  in skip_spaces_const (chp=0x7fffb10f9bb6 "ts<char>, std::allocator<char> >::npos") at ./cli/cli-utils.c:244
+#1  in msymbol_hash_iw (string=0x7fffb10f9bb6 "ts<char>, std::allocator<char> >::npos") at minsyms.c:89
+#2  in dict_hash ( string0=0x7fffb10f9b90 "std::basic_string<char, std::char_traits<char>, std::allocator<char> >::npos") at dictionary.c:840
+#3  in iter_match_first_hashed (dict=0x105a7840, name=0x7fffb10f9b90 "std::basic_string<char, std::char_traits<char>, std::allocator<char> >::npos", compare=0x8b82f8 <strcmp_iw>, iterator=0x7fffb10f9970) at dictionary.c:659
+#4  in dict_iter_match_first (dict=0x105a7840, name=0x7fffb10f9b90 "std::basic_string<char, std::char_traits<char>, std::allocator<char> >::npos", compare=0x8b82f8 <strcmp_iw>, iterator=0x7fffb10f9970) at dictionary.c:555
+#5  in dict_iter_name_first (dict=0x105a7840, name=0x7fffb10f9b90 "std::basic_string<char, std::char_traits<char>, std::allocator<char> >::npos", iterator=0x7fffb10f9970) at dictionary.c:541
+#6  in block_iter_name_step (iterator=0x7fffb10f9960, name=0x7fffb10f9b90 "std::basic_string<char, std::char_traits<char>, std::allocator<char> >::npos", first=1) at block.c:580
+#7  in block_iter_name_first (block=0x10593e10, name=0x7fffb10f9b90 "std::basic_string<char, std::char_traits<char>, std::allocator<char> >::npos", iterator=0x7fffb10f9960) at block.c:609
+#8  in lookup_block_symbol (block=0x10593e10, name=0x7fffb10f9b90 "std::basic_string<char, std::char_traits<char>, std::allocator<char> >::npos", domain=VAR_DOMAIN) at symtab.c:2062
+#9  in lookup_symbol_aux_objfile (objfile=0x466f870, block_index=0, name=0x7fffb10f9b90 "std::basic_string<char, std::char_traits<char>, std::allocator<char> >::npos", domain=VAR_DOMAIN) at symtab.c:1664
+#10 in lookup_symbol_global_iterator_cb (objfile=0x466f870, cb_data=0x7fffb10f9ad0) at symtab.c:1868
+
+
+Maybe it could get cached at the caller but:
+ * We would need to pass the hash value along the whole {dict,block}_iter_*
+   call chain.
+ * The DICT_VECTOR virtualization would get violated as dict_linear*_vector do
+   not use any hash values.
+
+
+Jan
+
+--17pEHd4RhPHOinZp
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline; filename="idxcache1.patch"
+
+gdb/
+2014-10-20  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* dictionary.c (iter_match_first_hashed): Provide state cache for
+	hash_index from NAME.
+
+diff --git a/gdb/dictionary.c b/gdb/dictionary.c
+index 055c87e..90bcd6d 100644
+--- a/gdb/dictionary.c
++++ b/gdb/dictionary.c
+@@ -656,9 +656,26 @@ iter_match_first_hashed (const struct dictionary *dict, const char *name,
+ 			 symbol_compare_ftype *compare,
+ 			 struct dict_iterator *iterator)
+ {
+-  unsigned int hash_index = dict_hash (name) % DICT_HASHED_NBUCKETS (dict);
++  unsigned int hash_index;
+   struct symbol *sym;
+ 
++  /* Cache HASH_INDEX.  */
++  {
++    static const char *name_ptr_cached;
++    static char *name_content_cached;
++    static unsigned int dict_hash_cached;
++
++    if (name_ptr_cached != name || strcmp (name_content_cached, name) != 0)
++      {
++	dict_hash_cached = dict_hash (name);
++	name_ptr_cached = name;
++	xfree (name_content_cached);
++	name_content_cached = xstrdup (name);
++      }
++    hash_index = dict_hash_cached;
++  }
++  hash_index %= DICT_HASHED_NBUCKETS (dict);
++
+   DICT_ITERATOR_DICT (iterator) = dict;
+ 
+   /* Loop through the symbols in the given bucket, breaking when SYM
+
+--17pEHd4RhPHOinZp--
+
+
+
+http://sourceware.org/ml/gdb-patches/2014-10/msg00612.html
+Subject: [patchv2 2/2] Accelerate lookup_symbol_aux_objfile 14.5x  [Re: [patch 0/2] Accelerate symbol lookups 15x]
+
+
+--vtzGhvizbBRQ85DL
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline
+
+On Wed, 22 Oct 2014 10:55:18 +0200, Doug Evans wrote:
+> For example, the count of calls to dict_hash before/after goes from 13.8M to 31.
+> I'm guessing one t hing we're doing here is coping with an artifact of
+> dwz:
+
+During my simple test on non-DWZ file (./gdb itself) it went 3684->3484.
+
+The problem is that dict_cash(val) is called for the same val for each block
+(== symtab).
+
+On DWZ the saving is probably much larger as there are many more symtabs due
+to DW_TAG_partial_unit ones.
+
+
+> what was once one global block to represent the entire objfile is
+> now N.
+
+Without DWZ there are X global blocks for X primary symtabs for X CUs of
+objfile.  With DWZ there are X+Y global blocks for X+Y primary symtabs for
+X+Y CUs where Y are 'DW_TAG_partial_unit's.
+
+For 'DW_TAG_partial_unit's (Ys) their blockvector is usually empty.  But not
+always, I have found there typedef symbols, there can IMO be optimized-out
+static variables etc.
+
+
+> [I'm sure the patches help in the non-dwz case, but I suspect it's less.
+> Which isn't to say the patches aren't useful.
+> I just need play with a few more examples.]
+
+I agree.
+
+[patch 2/2] could needlessly performance-regress non-DWZ cases, therefore
+I have put back original ALL_OBJFILE_PRIMARY_SYMTABS (instead of my
+ALL_OBJFILE_SYMTABS) as it is perfectly sufficient.  For the performance
+testcase of mine:
+
+Benchmark on non-trivial application with    'p <tab><tab>':
+Command execution time:   4.215000 (cpu),   4.241466 (wall) --- both fixes with new [patch 2/2]
+Command execution time:   7.373000 (cpu),   7.395095 (wall) --- both fixes
+Command execution time:  13.572000 (cpu),  13.592689 (wall) --- just lookup_symbol_aux_objfile fix
+Command execution time: 113.036000 (cpu), 113.067995 (wall) --- FSF GDB HEAD
+
+That is additional 1.75x improvement, making the total improvement 26.8x.
+
+
+No regressions on {x86_64,x86_64-m32,i686}-fedora21pre-linux-gnu in standard
+and .gdb_index-enabled runs.  Neither of the patches should cause any visible
+behavior change.
+
+
+Thanks,
+Jan
+
+--vtzGhvizbBRQ85DL
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline; filename="idxcache2doug.patch"
+
+gdb/
+2014-10-23  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* symtab.c (lookup_symbol_aux_objfile): Use ALL_OBJFILE_SYMTABS, inline
+	lookup_block_symbol.
+
+diff --git a/gdb/symtab.c b/gdb/symtab.c
+index c530d50..da13861 100644
+--- a/gdb/symtab.c
++++ b/gdb/symtab.c
+@@ -1657,15 +1657,25 @@ lookup_symbol_aux_objfile (struct objfile *objfile, int block_index,
+   const struct block *block;
+   struct symtab *s;
+ 
++  gdb_assert (block_index == GLOBAL_BLOCK || block_index == STATIC_BLOCK);
++
+   ALL_OBJFILE_PRIMARY_SYMTABS (objfile, s)
+     {
++      struct dict_iterator dict_iter;
++
+       bv = BLOCKVECTOR (s);
+       block = BLOCKVECTOR_BLOCK (bv, block_index);
+-      sym = lookup_block_symbol (block, name, domain);
+-      if (sym)
++
++      for (sym = dict_iter_name_first (block->dict, name, &dict_iter);
++	   sym != NULL;
++	   sym = dict_iter_name_next (name, &dict_iter))
+ 	{
+-	  block_found = block;
+-	  return fixup_symbol_section (sym, objfile);
++	  if (symbol_matches_domain (SYMBOL_LANGUAGE (sym),
++				     SYMBOL_DOMAIN (sym), domain))
++	    {
++	      block_found = block;
++	      return fixup_symbol_section (sym, objfile);
++	    }
+ 	}
+     }
+ 
+
+--vtzGhvizbBRQ85DL--
+

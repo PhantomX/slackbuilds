@@ -354,6 +354,22 @@ ApplyPatch gdb-btrobust.patch
 ApplyPatch gdb-python-completer-1of2.patch
 ApplyPatch gdb-python-completer-2of2.patch
 
+# Display Fortran strings in backtraces.
+ApplyPatch gdb-fortran-frame-string.patch
+
+# Fix Python GIL with gdb.execute("continue") (Phil Muldoon, BZ 1116957).
+ApplyPatch gdb-python-gil.patch
+
+# Fix "save breakpoints" for signal catchpoints and disabled breakpoints
+# (BZ 1146170, Miroslav Franc).
+ApplyPatch gdb-save-breakpoints-fix.patch
+
+# Fix 'Slow gstack performance' (RH BZ 1103894, Jan Kratochvil).
+ApplyPatch gdb-slow-gstack-performance.patch
+
+# Accelerate interactive symbols lookup 15x.
+ApplyPatch gdb-symbols-lookup-accel.patch
+
 ### END Fedora
 
 set +e +o pipefail

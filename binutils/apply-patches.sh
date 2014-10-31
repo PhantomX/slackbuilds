@@ -21,5 +21,9 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-set-section-macr
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-fake-zlib-sections.patch
 # Fix detections little endian PPC shared libraries
 #patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-ldforcele.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-corrupt-srec.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-corrupt-groups.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-corrupt-elf.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-corrupt-elf.2.patch
 
 set +e +o pipefail

@@ -22,7 +22,6 @@ zcat ${SB_PATCHDIR}/netpbm-fiasco-overflow.patch.gz | patch -p1 -E --backup --ve
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-noppmtompeg.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-cmuwtopbm.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pamtojpeg2k.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-manfix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-ppmtopict.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-pnmtopclxl.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/netpbm-disable-pbmtog3.patch

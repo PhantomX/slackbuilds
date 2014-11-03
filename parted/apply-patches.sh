@@ -43,8 +43,14 @@ IgnorePatch() {
 }
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+ApplyPatch 0001-tests-Try-several-UTF8-locales.patch
+ApplyPatch 0002-maint-post-release-administrivia.patch
+ApplyPatch 0003-libparted-also-link-to-UUID_LIBS.patch
+ApplyPatch 0004-lib-fs-resize-Prevent-crash-resizing-FAT16-file-syst.patch
+ApplyPatch 0005-tests-t3000-resize-fs.sh-Add-FAT16-resizing-test.patch
+ApplyPatch 0006-tests-t3000-resize-fs.sh-Add-requirement-on-mkfs.vfa.patch
 
 # Set to YES if autogen is needed
-SB_AUTOGEN=NO
+SB_AUTOGEN=YES
 
 set +e +o pipefail

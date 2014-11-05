@@ -34,6 +34,8 @@ ApplyPatch 0001-sd-dhcp-client-clean-up-raw-socket-sd_event_source-w.patch
 ApplyPatch 0001-shared-install-avoid-prematurely-rejecting-missing-u.patch
 ApplyPatch 0001-sd-bus-properly-handle-removals-of-non-existing-matc.patch
 ApplyPatch 0001-units-don-t-order-journal-flushing-afte-remote-fs.ta.patch
+ApplyPatch 0001-units-order-sd-journal-flush-after-sd-remount-fs.patch
+ApplyPatch 0001-units-make-systemd-journald.service-Type-notify.patch
 
 ### Fedora
 ApplyPatch fedora-disable-resolv.conf-symlink.patch

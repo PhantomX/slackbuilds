@@ -18,6 +18,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-btrfsfix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-bootpart-name-fix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-mounted-partitions-fix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-factor-out-logger.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-factored-logger-efi-fix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-umount-fix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-grub2-parsefix.patch
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-util-linux-2.24.patch
 
 set +e +o pipefail

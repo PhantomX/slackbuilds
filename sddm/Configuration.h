@@ -1,5 +1,5 @@
 /*
- * SDDM Fedora configuration
+ * SDDM Chinforinfula configuration
  */
 
 #ifndef SDDM_CONFIGURATION_H
@@ -40,7 +40,7 @@ namespace SDDM {
             Entry(ServerPath,          QString,     _S("/usr/bin/X"),                           _S("X server path"));
             Entry(XauthPath,           QString,     _S("/usr/bin/xauth"),                       _S("Xauth path"));
             Entry(SessionDir,          QString,     _S("/usr/share/xsessions"),                 _S("Session description directory"));
-            Entry(SessionCommand,      QString,     _S("/etc/X11/xinit/Xsession"),              _S("Xsession script path\n"
+            Entry(SessionCommand,      QString,     _S("/etc/sddm/Xsession"),              _S("Xsession script path\n"
                                                                                                    "A script to execute when starting the desktop session"));
             Entry(DisplayCommand,      QString,     _S(DATA_INSTALL_DIR "/scripts/Xsetup"),     _S("Xsetup script path\n"
                                                                                                    "A script to execute when starting the display server"));

@@ -32,6 +32,7 @@ ApplyPatch() {
 ApplyPatch cups-no-gzip-man.patch
 [ "${SB_PAM}" = "YES" ] && ApplyPatch cups-system-auth.patch
 ApplyPatch cups-multilib.patch
+ApplyPatch cups-str4476.patch
 ApplyPatch cups-banners-slk.patch
 ApplyPatch cups-serverbin-compat.patch
 ApplyPatch cups-no-export-ssllibs.patch
@@ -65,6 +66,7 @@ ApplyPatch cups-web-devices-timeout.patch
 [ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-journal.patch
 ApplyPatch cups-synconclose.patch
 ApplyPatch cups-str4500.patch
+ApplyPatch cups-str4496.patch
 
 ## SECURITY PATCHES:
 

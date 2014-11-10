@@ -7,13 +7,14 @@ SB_PATCHDIR=${CWD}/patches
 ## RPMFusion
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.5.5-remove-llvm-version-check.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.7.2-llvm-libs-hack.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.7.2-llvm33.patch
 
-### Ubuntu
+### Debian/Ubuntu
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-for-llvm33.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/detect-llvm34.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-for-llvm34.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-for-llvm35.patch
 
-## Mageia
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.7.2-ffmpeg-2.0.patch
+### Gentoo
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.7.2-ffmpeg20.patch
 
 set +e +o pipefail

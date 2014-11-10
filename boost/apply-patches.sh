@@ -18,9 +18,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.50.0-pool.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-spirit-unused_typedef.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-spirit-unused_typedef-2.patch
 
-# https://svn.boost.org/trac/boost/ticket/8871
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-numeric-unused_typedef.patch
-
 # https://svn.boost.org/trac/boost/ticket/8878
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.54.0-locale-unused_typedef.patch
 
@@ -41,6 +38,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-disable_libboost_
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-python_linking.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.48.0-disable_icu_rpath.patch
 
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.56.0-add-missing-headers-to-shared_ptr_helper.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Add-missing-include-to-signals2-trackable.hpp.patch
 
 set +e +o pipefail

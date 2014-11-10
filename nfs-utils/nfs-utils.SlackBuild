@@ -44,7 +44,7 @@ fi
 NAME=nfs-utils
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.3.0}
+VERSION=${VERSION:-1.3.1}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -156,7 +156,7 @@ make -j${NJOBS} all || make all || exit $?
 
 mkdir ${PKG}/sbin
 
-make install DESTDIR=${PKG} || exit $?
+make install DESTDIR=${PKG} statduser=$(id -un) || exit $?
 
 install -m 755 tools/rpcdebug/rpcdebug ${PKG}/usr/sbin/ || exit $?
 mkdir -p ${PKG}/etc
@@ -172,24 +172,25 @@ mkdir -p ${PKG}/etc/rc.d
 install -pm0644 ${CWD}/rc.nfsd ${PKG}/etc/rc.d/rc.nfsd.new || exit 1
 
 mkdir -p ${PKG}/lib/systemd/system
-install -pm0644 ${CWD}/systemd/*.{service,mount,target} ${PKG}/lib/systemd/system/ || exit 1
+for file in systemd/*.{service,mount,target}  ; do
+  install -m 644 ${file} ${PKG}/lib/systemd/system/ || exit 1
+done
 
 ( cd ${PKG}/lib/systemd/system
   ln -s nfs-server.service nfs.service
 )
 
 if [ "${SB_KRB5}" != "YES" ] ;then
-  rm -f ${PKG}/lib/systemd/system/*-secure*.service
+  rm -fv ${PKG}/lib/systemd/system/*gss*.service
 fi
 
 mkdir -p ${PKG}/usr/libexec/${NAME}
-install -pm0755 ${CWD}/systemd/*.{pre,post}config ${PKG}/usr/libexec/${NAME}/ || exit 1
-install -pm0755 ${CWD}/systemd/nfs-utils_env.sh ${PKG}/usr/libexec/${NAME}/ || exit 1
+install -pm0755 ${CWD}/nfs-utils_env.sh ${PKG}/usr/libexec/${NAME}/ || exit 1
 
 install -m 644 utils/mount/nfsmount.conf ${PKG}/etc/nfsmount.conf.new || exit 1
 
 # These might be in use:
-for config_file in etab rmtab state xtab ; do
+for config_file in etab rmtab xtab ; do
   mv ${PKG}/var/lib/nfs/${config_file} ${PKG}/var/lib/nfs/${config_file}.new || exit 1
 done
 
@@ -200,7 +201,7 @@ mkdir -p ${PKG}/var/lib/nfs/statd/sm
 mkdir -p ${PKG}/var/lib/nfs/statd/sm.bak
 mkdir -p ${PKG}/var/lib/nfs/v4recovery
 
-cp ${PKG}/var/lib/nfs/state.new ${PKG}/var/lib/nfs/statd/ || exit 1
+mv ${PKG}/var/lib/nfs/statd/state ${PKG}/var/lib/nfs/statd/state.new || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -249,13 +250,6 @@ STATDARG=""
 #
 # Optional arguments passed to rpc.idmapd. See rpc.idmapd(8)
 RPCIDMAPDARGS=""
-#
-# Optional arguments passed to rpc.gssd. See rpc.gssd(8)
-RPCGSSDARGS=""
-#
-# Optional arguments passed to rpc.svcgssd. See rpc.svcgssd(8)
-RPCSVCGSSDARGS=""
-#
 # To enable RDMA support on the server by setting this to
 # the port the server should listen on
 #RDMA_PORT=20049
@@ -263,9 +257,32 @@ RPCSVCGSSDARGS=""
 BLKMAPDARGS=""
 EOF
 
+if [ "${SB_KRB5}" = "YES" ] ;then
+cat >> ${PKG}/etc/default/nfs.new <<'EOF'
+#
+# Optional arguments passed to rpc.gssd. See rpc.gssd(8)
+RPCGSSDARGS=""
+# Enable usage of gssproxy. See gssproxy-mech(8).
+GSS_USE_PROXY="yes"
+#
+# Optional arguments passed to rpc.svcgssd. See rpc.svcgssd(8)
+RPCSVCGSSDARGS=""
+EOF
+fi
+
 mkdir -p ${PKG}/lib/modprobe.d
 cat > ${PKG}/lib/modprobe.d/nfs.conf <<'EOF'
 alias nfs4 nfs
+EOF
+
+cat > ${PKG}/lib/modprobe.d/lockd.conf <<'EOF'
+#
+# To be installed in /etc/modprobe.d
+#
+# Those who have need for lockd to listen on a particular port should
+# uncomment the line below and set the values appropriately.
+#
+#options lockd nlm_tcpport=32803 nlm_udpport=32769
 EOF
 
 # Add a documentation directory:
@@ -350,25 +367,24 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/{patches,systemd}
+  mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${CWD}/rc.nfsd ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/rc.nfsd ${CWD}/nfs-utils_env.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
-  install -m0644 ${CWD}/systemd/*.* \
-    ${SBDIR}/systemd/
   rmdir ${SBDIR}/patches
 fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;
   /bin/chown nobody.root ./var/lib/nfs/statd/{sm,sm.bak} ;
-  /bin/chown nobody.root ./var/lib/nfs/state.new ./var/lib/nfs/statd/state.new ;
+  /bin/chown nobody.root ./var/lib/nfs/statd/state.new ;
   /bin/chmod 4511 ./sbin/mount.nfs ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}

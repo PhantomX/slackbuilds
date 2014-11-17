@@ -29,3 +29,5 @@ pref("network.manage-offline-status", true);
 pref("toolkit.networkmanager.disable", false);
 pref("toolkit.storage.synchronous", 0);
 pref("offline.autoDetect", true);
+pref("media.gmp-gmpopenh264.provider.enabled",false);
+pref("browser.newtabpage.directory.source","");

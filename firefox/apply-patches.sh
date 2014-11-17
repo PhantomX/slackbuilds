@@ -13,7 +13,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-install-dir.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build-prbool.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-enable-addons.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-duckduckgo.patch
+
 case "${ARCH}" in
   i[3-6]86|s390)
     patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-baseline-disable.patch

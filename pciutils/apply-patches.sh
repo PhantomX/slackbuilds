@@ -6,9 +6,6 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pciutils.update.pci.ids.url.diff
 
-#multilib support
-zcat ${SB_PATCHDIR}/pciutils-3.0.2-multilib.patch.gz | patch -p1 -E --backup --verbose
-
 #add support for directory with another pci.ids
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pciutils-dir-d.patch
 

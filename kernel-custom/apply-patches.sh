@@ -200,25 +200,6 @@ ApplyPatch KEYS-Reinstate-EPERM-for-a-key-type-name-beginning-w.patch
 
 ApplyPatch GFS2-Make-rename-not-save-dirent-location.patch
 
-#CVE-2014-7970 rhbz 1151095 1151484
-ApplyPatch mnt-Prevent-pivot_root-from-creating-a-loop-in-the-m.patch
-
-#rhbz 1149509
-ApplyPatch USB-core-add-device-qualifier-quirk.patch
-ApplyPatch USB-quirks-enable-device-qualifier-quirk-for-Elan-To.patch
-ApplyPatch USB-quirks-enable-device-qualifier-quirk-for-another.patch
-ApplyPatch HID-usbhid-add-always-poll-quirk.patch
-ApplyPatch HID-usbhid-enable-always-poll-quirk-for-Elan-Touchsc.patch
-ApplyPatch HID-usbhid-always-poll-quirk-for-Elan-Touchscreen-00.patch
-ApplyPatch USB-quirks-device-qualifier-quirk-for-another-Elan-t.patch
-ApplyPatch HID-usbhid-always-poll-quirk-for-Elan-Touchscreen-01.patch
-
-#CVE-2014-8086 rhbz 1151353 1152608
-ApplyPatch ext4-fix-race-between-write-and-fcntl-F_SETFL.patch
-
-#rhbz 1153381
-ApplyPatch Input-synaptics-gate-forcepad-support-by-DMI-check.patch
-
 #CVE-2014-3688 rhbz 1155745 1155751
 ApplyPatch net-sctp-fix-skb_over_panic-when-receiving-malformed.patch
 
@@ -227,6 +208,12 @@ ApplyPatch net-sctp-fix-panic-on-duplicate-ASCONF-chunks.patch
 
 #CVE-2014-3673 rhbz 1147850 1155727
 ApplyPatch net-sctp-fix-remote-memory-pressure-from-excessive-q.patch
+
+#rhbz 1159592
+ApplyPatch x86-microcode-AMD-Fix-early-ucode-loading-on-32-bit.patch
+
+#CVE-2014-7841 rhbz 1163087 1163095
+ApplyPatch net-sctp-fix-NULL-pointer-dereference-in-af-from_add.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

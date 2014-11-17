@@ -23,5 +23,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-fake-zlib-sectio
 #patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-ldforcele.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-corrupt-binaries.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-strings-default-all.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.24-corrupt-ar.patch
 
 set +e +o pipefail

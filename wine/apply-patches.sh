@@ -7,17 +7,29 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-1.1.15-winegcc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-winemenubuilder-silence-an-err.patch
 
+# Update wine-mono version
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/wine-1.7.31-winemono.patch
+
 # Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-cjk.patch
-
-# winepulse backend
-# http://repo.or.cz/w/wine/multimedia.git
-filterdiff -p1 -x configure -z ${SB_PATCHDIR}/wine-pulse-1.7.12.patch | patch -p1 -E --backup --verbose
 
 # bugfixes
 # http://bugs.winehq.org/show_bug.cgi?id=7698
 # http://bugs2.winehq.org/attachment.cgi?id=6853
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-csd.patch
+
+if [ "${SB_STAGING}" = "YES" ] ;then
+  sed -i \
+    -e '/autoreconf -f/d' \
+    -e '/\.\/tools\/make_requests/d' \
+    ${STSRCDIR}/patches/Makefile
+  make -C ${STSRCDIR}/patches DESTDIR="${SB_SROOT}" install
+
+elif [ "${SB_PA}" = "YES" ] ;then
+  for p in $(ls ${STSRCDIR}/patches/winepulse-PulseAudio_Support/*patch); do
+    patch -p1 -i ${p}
+  done
+fi
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

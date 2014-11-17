@@ -44,14 +44,15 @@ pushd "${tmp}"
         exit 1
       fi
     fi
-    rm -rf ffmpeg/*
+    rm -rf ffmpeg/* dx9sdk/* pspautotests/* redist/*
     GITVER="$(git describe --always)"
     sed -i \
       -e "/GIT_VERSION/s|unknown|${GITVER}|g" \
       -e "/COMMAND/s|\${GIT_EXECUTABLE} describe --always|echo \"${GITVER}\"|g" \
       git-version.cmake
     find . -type d -name .git -print0 | xargs -0r rm -rf
-    rm -rf Installer .hgeol .hgignore .gitignore config.git-hash
+    find . -type f -name .gitignore -print0 | xargs -0r rm -f
+    rm -rf .hgeol .hgignore config.git-hash
   popd
   tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null

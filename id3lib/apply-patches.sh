@@ -16,5 +16,8 @@ patch -p1 -E --backup -z .zlib --verbose -i ${SB_PATCHDIR}/${NAME}-3.8.3-die-loc
 
 # http://launchpadlibrarian.net/33114077/id3lib-vbr_buffer_overflow.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-vbr_buffer_overflow.diff
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/20-create-manpages.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/60-fix_make_check.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/60-id3lib-missing-nullpointer-check.patch
 
 set +e +o pipefail

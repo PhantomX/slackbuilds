@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://git.linphone.org/srtp.git"
+snaproot="git://github.com/cisco/${module}.git"
 
 tmp=$(mktemp -d)
 

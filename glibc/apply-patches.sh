@@ -67,9 +67,13 @@ ApplyPatch glibc-fedora-include-bits-ldbl.patch
 # Needs to be sent upstream
 ApplyPatch glibc-rh841318.patch
 
+ApplyPatch glibc-fedora-linux-tcsetattr.patch
 ApplyPatch glibc-fedora-nptl-linklibc.patch
 ApplyPatch glibc-fedora-i386-tls-direct-seg-refs.patch
 ApplyPatch glibc-fedora-nis-rh188246.patch
+ApplyPatch glibc-fedora-locarchive.patch
+ApplyPatch glibc-fedora-streams-rh436349.patch
+ApplyPatch glibc-fedora-localedata-rh61908.patch
 ApplyPatch glibc-fedora-uname-getrlimit.patch
 ApplyPatch glibc-fedora-elf-rh737223.patch
 ApplyPatch glibc-fedora-elf-ORIGIN.patch
@@ -95,7 +99,6 @@ ApplyPatch glibc-rh819430.patch
 ApplyPatch glibc-rh1070416.patch
 ApplyPatch glibc-aarch64-tls-fixes.patch
 ApplyPatch glibc-aarch64-workaround-nzcv-clobber-in-tlsdesc.patch
-ApplyPatch glibc-extern-always-inline.patch
 
 ## Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
@@ -103,7 +106,6 @@ ApplyPatch glibc-2.9-ldd-non-exec.patch.gz
 ApplyPatch glibc-2.17-nss-upgrade.patch
 ApplyPatch glibc-2.19-compat-EUR-currencies.patch
 ApplyPatch glibc-2.9-nscd-no-host-cache.patch.gz
-ApplyPatch glibc-2.3.2-tcsetattr-kernel-bug-workaround.patch.gz
 ApplyPatch glibc-2.10.1-biarch-cpp-defines.patch.gz
 ApplyPatch glibc-2.6-nice_fix.patch
 ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
@@ -111,16 +113,16 @@ ApplyPatch glibc-2.16-multiarch.patch
 ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 
 ### Arch
+ApplyPatch glibc-2.20-roundup.patch
+
+###
+ApplyPatch glibc-rh1133508.patch
 
 ### master
-ApplyPatch 0001-Fix-memory-leak-in-libio-wfileops.c-do_ftell_wide-BZ.patch
 ApplyPatch 0001-Return-failure-in-getnetgrent-only-when-all-netgroup.patch
 ApplyPatch 0002-malloc-additional-unlink-hardening-for-non-small-bin.patch
-ApplyPatch 0001-Add-new-Linux-3.16-constants-to-netinet-udp.h.patch
 ApplyPatch 0001-Add-correct-variable-names-for-_POSIX_IPV6-and-_POSI.patch
 ApplyPatch 0001-Correctly-size-profiling-reloc-table-bug-17411.patch
-ApplyPatch 0001-Handle-zero-prefix-length-in-getifaddrs-BZ-17371.patch
-ApplyPatch 0001-Fix-memory-leak-in-error-path-of-do_ftell_wide-BZ-17.patch
 ApplyPatch 0001-Fix-infinite-loop-in-check_pf-BZ-12926.patch
 
 set +e +o pipefail

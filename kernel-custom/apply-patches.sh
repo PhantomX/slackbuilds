@@ -195,26 +195,6 @@ ApplyPatch criu-no-expert.patch
 ApplyPatch psmouse-Add-psmouse_matches_pnp_id-helper-function.patch
 ApplyPatch psmouse-Add-support-for-detecting-FocalTech-PS-2-tou.patch
 
-#rhbz 1145318
-ApplyPatch KEYS-Reinstate-EPERM-for-a-key-type-name-beginning-w.patch
-
-ApplyPatch GFS2-Make-rename-not-save-dirent-location.patch
-
-#CVE-2014-3688 rhbz 1155745 1155751
-ApplyPatch net-sctp-fix-skb_over_panic-when-receiving-malformed.patch
-
-#CVE-2014-3687 rhbz 1155731 1155738
-ApplyPatch net-sctp-fix-panic-on-duplicate-ASCONF-chunks.patch
-
-#CVE-2014-3673 rhbz 1147850 1155727
-ApplyPatch net-sctp-fix-remote-memory-pressure-from-excessive-q.patch
-
-#rhbz 1159592
-ApplyPatch x86-microcode-AMD-Fix-early-ucode-loading-on-32-bit.patch
-
-#CVE-2014-7841 rhbz 1163087 1163095
-ApplyPatch net-sctp-fix-NULL-pointer-dereference-in-af-from_add.patch
-
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

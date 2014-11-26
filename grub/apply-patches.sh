@@ -35,6 +35,11 @@ for patch in \
   install_signed.patch \
   sleep_shift.patch \
   probe-delimiter.patch \
+  tolerate-lvm-snapshots.patch \
+  net-receive-packets-yield.patch \
+  net-ramp-up-interval.patch \
+  probe_nvme.patch \
+  mkconfig-kernels-infloop.patch \
   ; do
   patch -p1 -E --backup --verbose -z .pdeb -i debian/patches/${patch}
 done

@@ -80,6 +80,8 @@ if [ ! -d "$datadir/mysql" ] ; then
         fi
         exit $ret
     fi
+    # upgrade does not need to be run on a fresh datadir
+    echo "@VERSION@-MariaDB" >"$datadir/mysql_upgrade_info"
     # In case we're running as root, make sure files are owned properly
     chown -R "$myuser:$mygroup" "$datadir"
 fi

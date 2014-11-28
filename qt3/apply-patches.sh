@@ -46,6 +46,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-qimage-pare
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-system-zlib-header.patch
 # work around -Werror=format-security false positives (#1037297)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-\#1037297.patch
+# search for FreeType using pkg-config, fixes FTBFS with freetype >= 2.5.1
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-freetype251.patch
 
 # immodule patches
 bzcat ${SB_PATCHDIR}/qt-x11-immodule-unified-qt3.3.8-20071116.diff.bz2 | patch -p1 -E --backup --verbose
@@ -76,6 +78,8 @@ zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8b-gcc43.patch.gz | patch -p1 -E --backup --
 # security patches
 # fix for CVE-2013-4549 backported from Qt 4
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-CVE-2013-4549.patch
+# fix for CVE-2014-0190 (QTBUG-38367) backported from Qt 4
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-CVE-2014-0190.patch
 
 zcat ${SB_PATCHDIR}/qt-ulibc.patch.gz | patch -p1 -E --backup --verbose
 

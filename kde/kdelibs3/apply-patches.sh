@@ -34,8 +34,12 @@ zcat ${SB_PATCHDIR}/kdelibs-3.5.9-KDE3.patch.gz | patch -p1 --verbose --backup -
 zcat ${SB_PATCHDIR}/kdelibs-3.5.9-fix-flock-redefinition.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # update the KatePart latex.xml syntax definition to the version from Kile 2.0.3
 zcat ${SB_PATCHDIR}/kdelibs-3.5.10-latex-syntax-kile-2.0.3.patch.gz | patch -p1 --verbose --backup --suffix=.orig
+# fix ftbfs (#631195)
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.10-qcolor_gcc_ftbfs.patch
 # fix FTBFS (cups-util.c must include stdio.h, #714133)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.10-cups-util-missing-header.patch
+# fix FTBFS with CUPS 2.0 due to bad CUPS_VERSION_MAJOR checks
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.10-cups20.patch
 
 # use /etc/kde in addition to /usr/share/config, borrowed from debian
 zcat ${SB_PATCHDIR}/kdelibs-3.5.5-kstandarddirs.patch.gz | patch -p1 --verbose --backup --suffix=.orig
@@ -54,7 +58,7 @@ patch -p4 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-3.5.10-kme
 # kde4.4 backport
 patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/kdelibs-3.5.10-kde-config_kde-version.patch
 # cups 1.6 patch adapted from Trinity Desktop
-patch -p1 --verbose --backup -z .cups16 -i ${SB_PATCHDIR}/kdelibs-3.5.10-cups-1.6.patch
+patch -p1 --verbose --backup -z .cups16 -i ${SB_PATCHDIR}/kdelibs-3.5.10-cups16.patch
 
 # security fixes
 ## security fixes
@@ -76,6 +80,8 @@ zcat ${SB_PATCHDIR}/kdelibs-3.5.10-oCERT-2009-015-xmlhttprequest.patch.gz | patc
 zcat ${SB_PATCHDIR}/libltdl-CVE-2009-3736.patch.gz | patch -p1 --verbose --backup --suffix=.orig
 # CVE-2011-3365, input validation failure in KSSL
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.x-CVE-2011-3365.patch
+# CVE-2013-2074, prints passwords contained in HTTP URLs in error messages
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-3.5.10-CVE-2013-2074.patch
 
 # tweak autoconfigury so that it builds with autoconf 2.64 or 2.65
 zcat ${SB_PATCHDIR}/kde3-acinclude.patch.gz | patch -p1 --verbose --backup --suffix=.orig

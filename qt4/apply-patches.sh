@@ -139,11 +139,16 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-22829.patch
 
 ## upstream git
 ApplyPatch 0010-QDbus-Fix-a-b-comparison.patch
+ApplyPatch 0023-Don-t-crash-on-broken-GIF-images.patch
 ApplyPatch 0025-Fix-visual-index-lookup-in-QTreeViewPrivate-adjustVi.patch
+ApplyPatch 0030-Memory-and-file-descriptor-leak-in-QFontCache.patch
 ApplyPatch 0034-Fix-raster-graphics-on-X11-RGB30.patch
+ApplyPatch 0047-QSslCertificate-blacklist-NIC-certificates-from-Indi.patch
+ApplyPatch 0065-Fix-QPainter-drawPolyline-painting-errors-with-cosme.patch
+ApplyPatch 0066-Allow-Qt4-to-also-build-in-ppc64-el-le.patch
+ApplyPatch 0067-Fix-AArch64-arm64-detection.patch
+ApplyPatch 0072-Fix-font-cache-check-in-QFontEngineFT-recalcAdvances.patch
 
 # security patches
-# https://bugreports.qt-project.org/browse/QTBUG-38367
-ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-38367.patch
 
 set +e +o pipefail

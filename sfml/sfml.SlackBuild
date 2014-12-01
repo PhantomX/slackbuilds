@@ -44,7 +44,7 @@ PNAME=SFML
 NAME=sfml
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.6}
+VERSION=${VERSION:-2.1}
 SFMLSOVER=$(echo ${VERSION} | cut -d. -f1)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -59,7 +59,7 @@ else
   PARCH=32
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-5}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -70,13 +70,12 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${PNAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}-sdk-linux-${PARCH}.tar.gz
+SRCARCHIVE=${SRCDIR}-sources.zip
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-MIRROR_SF=${MIRROR_SF:-http://prdownloads.sourceforge.net}
-DL_URL="${MIRROR_SF}/${NAME}/${SRCARCHIVE}"
+DL_URL="http://www.sfml-dev.org/download/${NAME}/${VERSION}/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
@@ -109,14 +108,16 @@ mkdir -p ${PKG}
 
 cd ${TMP}
 rm -rf ${SRCDIR}
-tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
+unzip ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
+rm -rf extlibs
+
 echo "Fixing EOLs"
 find . -type f \
-  '(' -name 'Makefile' -o -name '*.cpp' -o -name '*.hpp' -o -name '*.inl' -o -name '*.txt' -o -name '*.htm' -o -name '*.hh?' -o -name '*.css' ')' \
+  '(' -name '*.cmake' -o -name '*.cpp' -o -name '*.hpp' -o -name '*.inl' -o -name '*.txt' -o -name '*.htm' -o -name '*.hh?' -o -name '*.css' ')' \
   -print0 | xargs -0 sed -e 's/\r//' -i || exit 1
 
 for file in *.txt ;do
@@ -125,42 +126,50 @@ for file in *.txt ;do
   touch -r ${file}.tmp ${file}; rm -f ${file}.tmp
 done
 
-rm -rf src/SFML/Window/glext src/SFML/Graphics/{GLEW,SOIL,libjpeg,libpng,zlib}
-
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh
 fi
 
-sed -i -e '/^#include <iostream>/a#include <cstring>' \
-  src/SFML/Graphics/ImageLoader.cpp || exit 1
+export CFLAGS="${SLKCFLAGS}"
+export CXXFLAGS="${SLKCFLAGS}"
+export FFLAGS="${SLKCFLAGS}"
 
-sed -i \
-  -e "/DEBUGFLAGS/s|-O2|${SLKCFLAGS} $(pkg-config --cflags-only-I sndfile)|g" \
-  -e "/LINKFLAGS/s|-shared|\0 ${LDFLAGS}|g" \
-  src/SFML/Makefile || exit 1
+mkdir -p build
+( cd build || exit $?
 
-make mrproper || exit 1
+  cmake .. \
+    -DCMAKE_C_FLAGS_RELEASE:STRING="-DNDEBUG" \
+    -DCMAKE_CXX_FLAGS_RELEASE:STRING="-DNDEBUG" \
+    -DCMAKE_Fortran_FLAGS_RELEASE:STRING="-DNDEBUG" \
+    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DINCLUDE_INSTALL_DIR:PATH=/usr/include \
+    -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSHARE_INSTALL_PREFIX:PATH=/usr/share \
+    -DMAN_INSTALL_DIR:PATH=/usr/man \
+    -DCMAKE_BUILD_TYPE:STRING=Release \
+    -DBUILD_SHARED_LIBS:BOOL=ON \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+    -DSNDFILE_INCLUDE_DIR:PATH=$(pkg-config --variable=includedir sndfile) \
+    || exit $?
 
-( unset VERSION
   make -j${NJOBS} || make || exit $?
+  make install/fast DESTDIR=${PKG} || exit $?
+
 ) || exit $?
-
-mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}
-install -pm0755 lib/lib*.so.* ${PKG}/usr/lib${LIBDIRSUFFIX}/ || exit $?
-for lib in audio graphics network system window ;do
-  ln -sf libsfml-${lib}.so.${VERSION} \
-    ${PKG}/usr/lib${LIBDIRSUFFIX}/libsfml-${lib}.so.${SFMLSOVER} || exit 1
-  ln -sf libsfml-${lib}.so.${SFMLSOVER} \
-    ${PKG}/usr/lib${LIBDIRSUFFIX}/libsfml-${lib}.so || exit 1
-done
-
-mkdir -p ${PKG}/usr/include/SFML
-cp -R include/SFML/* ${PKG}/usr/include/SFML/ || exit 1
-find ${PKG}/usr/include/SFML/ -type d -print0 | xargs -0 chmod 0755
-find ${PKG}/usr/include/SFML/ -type f -print0 | xargs -0 chmod 0644
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
+
+mkdir -p ${PKG}/usr/share/cmake/Modules
+mv ${PKG}/usr/share/${PNAME}/cmake/Modules/FindSFML.cmake \
+  ${PKG}/usr/share/cmake/Modules/ || exit 1
+# remove duplicated documentation
+rm -rf ${PKG}/usr/share/${PNAME}/*.txt
+rm -rf ${PKG}/usr/share/${PNAME}/doc
+rmdir -p ${PKG}/usr/share/${PNAME}/cmake/Modules
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -214,6 +223,7 @@ fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"

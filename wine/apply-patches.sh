@@ -7,9 +7,6 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-1.1.15-winegcc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-winemenubuilder-silence-an-err.patch
 
-# Update wine-mono version
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/wine-1.7.31-winemono.patch
-
 # Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-cjk.patch
 
@@ -23,6 +20,9 @@ if [ "${SB_STAGING}" = "YES" ] ;then
     -e '/autoreconf -f/d' \
     -e '/\.\/tools\/make_requests/d' \
     ${STSRCDIR}/patches/Makefile
+  for ignore in configure-Detect_Gnutls wined3d-FFP_Fog ;do
+    sed -i -e "/${ignore}.ok \\\/d" ${STSRCDIR}/patches/Makefile
+  done
   make -C ${STSRCDIR}/patches DESTDIR="${SB_SROOT}" install
 
 elif [ "${SB_PA}" = "YES" ] ;then

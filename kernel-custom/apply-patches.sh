@@ -195,6 +195,14 @@ ApplyPatch criu-no-expert.patch
 ApplyPatch psmouse-Add-psmouse_matches_pnp_id-helper-function.patch
 ApplyPatch psmouse-Add-support-for-detecting-FocalTech-PS-2-tou.patch
 
+#rhbz 1094048
+ApplyPatch Input-xpad-use-proper-endpoint-type.patch
+
+ApplyPatch drm-i915-Ignore-long-hpds-on-eDP-ports.patch
+
+#CVE-2014-9090 rhbz 1170691
+ApplyPatch x86_64-traps-Stop-using-IST-for-SS.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

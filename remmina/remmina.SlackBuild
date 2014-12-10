@@ -44,7 +44,7 @@ PNAME=Remmina
 NAME=remmina
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.0.0}
+VERSION=${VERSION:-1.2.0-rcgit.1}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -67,15 +67,22 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${PNAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+SRCARCHIVE=v${VERSION}.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="https://github.com/downloads/FreeRDP/${PNAME}/${SRCARCHIVE}"
+DL_URL="https://github.com/FreeRDP/${PNAME}/archive/${SRCARCHIVE}"
 
+SRCARCHIVE=${SRCDIR}.tar.gz
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} -O ${CWD}/${SRCARCHIVE} || exit 1
+
+if ! test -s ${CWD}/${SRCARCHIVE} ;then
+  echo "${CWD}/${SRCARCHIVE} is empty"
+  echo "Delete ${CWD}/${SRCARCHIVE}, check VERSION and try again."
+  exit 1
+fi
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -115,13 +122,22 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh
 fi
 
-sed -e 's|^_||g' remmina/desktop/${NAME}.desktop.in \
-  > ${NAME}.desktop || exit 1
-
 sed -i \
   -e 's|/lib/|/${CMAKE_INSTALL_LIBDIR}/|g' \
   -e '/REMMINA_DATADIR/s|/share/remmina|/share|g' \
   CMakeLists.txt  || exit 1
+
+# Do not install tools into user home directory
+sed -i \
+  -e "s@\$ENV{HOME}/.${NAME}@/usr/libexec/${NAME}@g" \
+  -e '/^file(MAKE_DIRECTORY/d' \
+  ${NAME}/external_tools/CMakeLists.txt || exit 1
+sed -i \
+  -e "s@%s/.${NAME}@/usr/libexec/${NAME}@g" \
+  ${NAME}/src/${NAME}_external_tools.c || exit 1
+
+#? Hack: https://github.com/FreeRDP/Remmina/issues/292
+sed -i 's#install(DIRECTORY include/remmina DESTINATION include/remmina #install(DIRECTORY remmina/include/remmina DESTINATION include/ #' CMakeLists.txt || exit 1
 
 export CFLAGS="${SLKCFLAGS}"
 export CXXFLAGS="${SLKCFLAGS}"
@@ -143,7 +159,18 @@ mkdir -p build
     -DBUILD_SHARED_LIBS:BOOL=ON \
     -DCMAKE_SKIP_RPATH:BOOL=ON \
     -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+    -DCMAKE_INSTALL_COMPONENT=1 \
+    -DLIBVNCSERVER_WITH_CLIENT_TLS=1 \
     -DWITH_APPINDICATOR:BOOL=OFF \
+    -DWITH_AVAHI:BOOL=ON \
+    -DWITH_FREERDP:BOOL=ON \
+    -DWITH_GCRYPT:BOOL=ON \
+    -DWITH_GETTEXT:BOOL=ON \
+    -DWITH_LIBSSH:BOOL=ON \
+    -DWITH_PTHREAD:BOOL=ON \
+    -DWITH_TELEPATHY:BOOL=ON \
+    -DWITH_VTE:BOOL=ON \
+    -DWITH_ZLIB:BOOL=ON \
     || exit $?
 
   make -j${NJOBS} || make || exit $?
@@ -151,17 +178,14 @@ mkdir -p build
 
 ) || exit $?
 
-rmdir -p ${PKG}/usr/include/${NAME}
-
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
-mkdir -p ${PKG}/usr/share/applications
-
-desktop-file-install --vendor="" \
-  --dir ${PKG}/usr/share/applications \
-  --remove-key="Actions" \
-  ${NAME}.desktop || exit 1
+mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/cmake/${NAME}/
+cp -pr cmake/*.cmake ${PKG}/usr/lib${LIBDIRSUFFIX}/cmake/${NAME}/ || exit 1
+cp -pr config.h.in ${PKG}//usr/include/${NAME}/ || exit 1
+cp -p ${CWD}/pluginBuild-CMakeLists.txt \
+  ${PKG}/usr/include/${NAME}/ || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
@@ -223,7 +247,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-    ${CWD}/apply-patches.sh ${SBDIR}/
+    ${CWD}/apply-patches.sh ${CWD}/pluginBuild-CMakeLists.txt ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
@@ -233,6 +257,7 @@ fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"

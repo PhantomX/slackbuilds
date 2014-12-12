@@ -38,12 +38,14 @@ rm -fv mkspecs/linux-g++*/qmake.conf.multilib-optflags
 # fix QTBUG-35459 (too low entityCharacterLimit=1024 for CVE-2013-4549)
 ApplyPatch qtbase-opensource-src-5.3.2-QTBUG-35459.patch
 
-# Prefer QPA implementation in qsystemtrayicon_x11 if available
-ApplyPatch qtbase-5.3.1-prefer-qpa-implementation.patch
-
 # unconditionally enable freetype lcdfilter support
 ApplyPatch qtbase-opensource-src-5.2.0-enable_ft_lcdfilter.patch
 
 ##upstream patches
+# Bad font rendering, http://bugzilla.redhat.com/1052389
+# tweak font gamma correction, from:
+# https://bugreports.qt-project.org/browse/QTBUG-41590
+ApplyPatch 0009-Do-not-apply-subpixel-gamma-correction-on-XCB.patch
+ApplyPatch 0173-qimage_conversions.cpp-Fix-build-on-big-endian-syste.patch
 
 set +e +o pipefail

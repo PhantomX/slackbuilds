@@ -47,8 +47,6 @@ ApplyOptionalPatch() {
 
 # Most patches are retrieved from Fedora git repository
 
-ApplyOptionalPatch git-linus.diff
-
 ApplyPatch kbuild-AFTER_LINK.patch
 
 #
@@ -164,16 +162,11 @@ ApplyPatch crash-driver.patch
 # crypto/
 
 # DRM core
-#ApplyPatch drm-vgem.patch
 
 # Nouveau DRM
 
 # Intel DRM
-ApplyOptionalPatch drm-intel-next.patch
 ApplyPatch drm-i915-hush-check-crtc-state.patch
-
-# Media (V4L/DVB/IR) updates/fixes/experimental drivers
-ApplyOptionalPatch drivers-media-update.patch
 
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
@@ -191,17 +184,13 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 1110011
-ApplyPatch psmouse-Add-psmouse_matches_pnp_id-helper-function.patch
-ApplyPatch psmouse-Add-support-for-detecting-FocalTech-PS-2-tou.patch
+#CVE-2014-8134 rhbz 1172765 1172769
+ApplyPatch x86-kvm-Clear-paravirt_enabled-on-KVM-guests-for-esp.patch
 
-#rhbz 1094048
-ApplyPatch Input-xpad-use-proper-endpoint-type.patch
-
-ApplyPatch drm-i915-Ignore-long-hpds-on-eDP-ports.patch
-
-#CVE-2014-9090 rhbz 1170691
-ApplyPatch x86_64-traps-Stop-using-IST-for-SS.patch
+#rhbz 1164945
+ApplyPatch xhci-Add-broken-streams-quirk-for-Fresco-Logic-FL100.patch
+ApplyPatch uas-Add-US_FL_NO_ATA_1X-for-Seagate-devices-with-usb.patch
+ApplyPatch uas-Add-US_FL_NO_REPORT_OPCODES-for-JMicron-JMS566-w.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

@@ -27,12 +27,4 @@ ApplyPatch() {
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 
-ApplyPatch 0001-loader-Add-load_image_gzipped-function.patch
-ApplyPatch 0002-aarch64-Allow-kernel-option-to-take-a-gzip-compresse.patch
-ApplyPatch 0003-block.curl-adding-timeout-option.patch
-ApplyPatch 0004-curl-Allow-a-cookie-or-cookies-to-be-sent-with-http-.patch
-ApplyPatch 0005-curl-Don-t-deref-NULL-pointer-in-call-to-aio_poll.patch
-ApplyPatch 0006-virtio-pci-enable-bus-master-for-old-guests.patch
-ApplyPatch 0007-virtio-pci-fix-migration-for-pci-bus-master.patch
-
 set +e +o pipefail

@@ -29,20 +29,15 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/udev-microsoft-3000-keymap.pat
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 
 # Upstream
-ApplyPatch 0001-nspawn-ignore-EEXIST-when-creating-mount-point.patch
-ApplyPatch 0001-sd-dhcp-client-clean-up-raw-socket-sd_event_source-w.patch
-ApplyPatch 0001-shared-install-avoid-prematurely-rejecting-missing-u.patch
-ApplyPatch 0001-sd-bus-properly-handle-removals-of-non-existing-matc.patch
-ApplyPatch 0001-units-don-t-order-journal-flushing-afte-remote-fs.ta.patch
-ApplyPatch 0001-units-order-sd-journal-flush-after-sd-remount-fs.patch
-ApplyPatch 0001-units-make-systemd-journald.service-Type-notify.patch
+ApplyPatch 0001-use-correct-format-types.patch
 
 ### Fedora
 ApplyPatch fedora-disable-resolv.conf-symlink.patch
+ApplyPatch fedora-add-bridge-sysctl-configuration.patch
 
 ### Arch
 
 # Set to YES if autogen is needed
-SB_AUTOGEN=NO
+SB_AUTOGEN=YES
 
 set +e +o pipefail

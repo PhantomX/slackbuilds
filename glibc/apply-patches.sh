@@ -115,9 +115,6 @@ ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
 ### Arch
 ApplyPatch glibc-2.20-roundup.patch
 
-###
-ApplyPatch glibc-rh1133508.patch
-
 ### master
 ApplyPatch 0001-Return-failure-in-getnetgrent-only-when-all-netgroup.patch
 ApplyPatch 0002-malloc-additional-unlink-hardening-for-non-small-bin.patch

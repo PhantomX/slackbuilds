@@ -43,7 +43,7 @@ fi
 NAME=qca
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-2.0.3}
+VERSION=${VERSION:-2.1.0}
 SVER=$(echo ${VERSION} | cut -d . -f1-2)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -56,7 +56,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-2}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -67,12 +67,12 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.bz2
+SRCARCHIVE=${SRCDIR}.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://delta.affinix.com/download/${NAME}/${SVER}/${SRCARCHIVE}"
+DL_URL="http://delta.affinix.com/download/${NAME}/2.0/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
@@ -97,6 +97,16 @@ else
   LIBDIRSUFFIX=""
 fi
 
+# Set the config option variables if they are not already set:
+[ -r ../qt4.options ] && source ../qt4.options
+
+_qt4_prefix=${_qt4_prefix:-/usr/lib${LIBDIRSUFFIX}/qt4}
+_qt4_bindir=${_qt4_bindir:-${_qt4_prefix}/bin}
+_qt4_headerdir=${_qt4_headerdir:-/usr/include}
+_qt4_libdir=${_qt4_libdir:-/usr/lib${LIBDIRSUFFIX}}
+_qt4_plugindir=${_qt4_plugindir:-${_qt4_prefix}/plugins}
+_qt4_qmake=${_qt4_qmake:-${_qt4_bindir}/qmake}
+
 if [ -d ${PKG} ]; then
   # Clean up a previous build
   rm -rf ${PKG}
@@ -104,8 +114,8 @@ fi
 mkdir -p ${PKG}
 
 unset QTDIR QTINC QTLIB
-export QTDIR=$(qmake-qt4 -query QT_INSTALL_PREFIX)
-PATH="$(qmake-qt4 -query QT_INSTALL_BINS)${PATH:+:$PATH}" ; export PATH
+export QTDIR=$(${_qt4_qmake} -query QT_INSTALL_PREFIX)
+PATH="$(${_qt4_qmake} -query QT_INSTALL_BINS)${PATH:+:${PATH}}" ; export PATH
 
 cd ${TMP}
 rm -rf ${SRCDIR}
@@ -118,24 +128,41 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh
 fi
 
-for filepro in $(find . -type f -name "*.pro") ; do
-  echo "QMAKE_CFLAGS_RELEASE = ${SLKCFLAGS}" >> "${filepro}"
-  echo "QMAKE_CXXFLAGS_RELEASE = ${SLKCFLAGS}" >> "${filepro}"
-  echo "QMAKE_LFLAGS_RELEASE = ${LDFLAGS}" >> "${filepro}"
-done
+export CFLAGS="${SLKCFLAGS}"
+export CXXFLAGS="${SLKCFLAGS}"
+export FFLAGS="${SLKCFLAGS}"
 
-./configure \
-  --prefix=/usr \
-  --includedir=/usr/include \
-  --libdir=/usr/lib${LIBDIRSUFFIX} \
-  --datadir=/usr/share \
-  --qtdir=${QTDIR} \
-  --no-separate-debug-info \
-  --verbose || exit 1
+mkdir -p build
+( cd build || exit $?
 
-sed -i -e /strip/d Makefile || exit 1
-make -j${NJOBS} || make || exit 1
-make install INSTALL_ROOT=${PKG} || exit 1
+  cmake .. \
+    -DCMAKE_C_FLAGS_RELEASE:STRING="-DNDEBUG" \
+    -DCMAKE_CXX_FLAGS_RELEASE:STRING="-DNDEBUG" \
+    -DCMAKE_Fortran_FLAGS_RELEASE:STRING="-DNDEBUG" \
+    -DCMAKE_INSTALL_PREFIX:PATH=/usr \
+    -DSYSCONF_INSTALL_DIR:PATH=/etc \
+    -DINCLUDE_INSTALL_DIR:PATH=/usr/include \
+    -DLIB_INSTALL_DIR:PATH=/usr/lib${LIBDIRSUFFIX} \
+    -DLIB_SUFFIX=${LIBDIRSUFFIX} \
+    -DSHARE_INSTALL_PREFIX:PATH=/usr/share \
+    -DMAN_INSTALL_DIR:PATH=/usr/man \
+    -DCMAKE_BUILD_TYPE:STRING=Release \
+    -DBUILD_SHARED_LIBS:BOOL=ON \
+    -DCMAKE_SKIP_RPATH:BOOL=ON \
+    -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
+    -DQCA_DOC_INSTALL_DIR:PATH=/usr/doc/qca \
+    -DQCA_FEATURE_INSTALL_DIR:PATH=${_qt4_prefix}/mkspecs/features \
+    -DQCA_INCLUDE_INSTALL_DIR:PATH=${_qt4_headerdir} \
+    -DQCA_PLUGINS_INSTALL_DIR:PATH=${_qt4_plugindir} \
+    -DQCA_PRIVATE_INCLUDE_INSTALL_DIR:PATH=${_qt4_headerdir} \
+    -DQCA_LIBRARY_INSTALL_DIR:PATH=${_qt4_libdir} \
+    -DQT4_BUILD:BOOL=ON \
+    || exit $?
+
+  make -j${NJOBS} || make || exit $?
+  make install/fast DESTDIR=${PKG} || exit $?
+
+) || exit $?
 
 sed -i \
   -e "/^QMAKE_PRL_BUILD_DIR/d" \
@@ -148,6 +175,7 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 # Add a documentation directory:
+ln -s ${PKG}/usr/doc/${NAME} ${NAME}-${VERSION}
 mkdir -p ${DOCDIR}
 cp -a \
   COPYING README TODO ${CWD}/ChangeLog.SB \
@@ -197,6 +225,7 @@ fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"

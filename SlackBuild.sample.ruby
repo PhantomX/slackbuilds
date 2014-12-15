@@ -59,7 +59,7 @@ DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/ruby-modules/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-tgz}
-PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+PKGNAME=${NAME}-${VERSION//-/.}-${ARCH}-${BUILD}${PACKAGER_ID}
 
 RUBYSITELIB=$(ruby -rrbconfig -e "puts Config::CONFIG['sitelibdir']")
 RUBYSITEARCH=$(ruby -rrbconfig -e 'puts Config::CONFIG["sitearchdir"]')

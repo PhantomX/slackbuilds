@@ -4,8 +4,9 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-# Fedora
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nv50-fix-build.patch
+### Fedora
+grep -q ^/ src/gallium/auxiliary/vl/vl_decoder.c
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mesa-10.0-nv50-fix-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mesa-9.2-hardware-float.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mesa-10.2-evergreen-big-endian.patch
 

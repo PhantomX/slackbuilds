@@ -18,7 +18,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-generic-msdos.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-x86boot.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-perl.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.19-cafebabe.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.20-CVE-2014-3710.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose

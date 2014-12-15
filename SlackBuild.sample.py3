@@ -58,7 +58,7 @@ DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/python-modules/${NAME}
 PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-tgz}
-PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
+PKGNAME=${NAME}-${VERSION//-/.}-${ARCH}-${BUILD}${PACKAGER_ID}
 
 PY3SITEARCH=$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib(1))')
 PY3SITELIB=$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')

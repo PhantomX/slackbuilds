@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="https://github.com/wine-compholio/${module}.git"
+snaproot="git://github.com/wine-compholio/${module}.git"
 
 tmp=$(mktemp -d)
 

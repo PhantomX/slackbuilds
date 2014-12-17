@@ -192,6 +192,12 @@ ApplyPatch xhci-Add-broken-streams-quirk-for-Fresco-Logic-FL100.patch
 ApplyPatch uas-Add-US_FL_NO_ATA_1X-for-Seagate-devices-with-usb.patch
 ApplyPatch uas-Add-US_FL_NO_REPORT_OPCODES-for-JMicron-JMS566-w.patch
 
+#rhbz 1172543
+ApplyPatch cfg80211-don-t-WARN-about-two-consecutive-Country-IE.patch
+
+#CVE-2014-8133 rhbz 1172797 1174374
+ApplyPatch x86-tls-Validate-TLS-entries-to-protect-espfix.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

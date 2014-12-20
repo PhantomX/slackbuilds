@@ -62,6 +62,11 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-klauncher-no-glib.
 # opening a terminal in Konqueror / Dolphin does not inherit environment variables
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.13.2-invokeTerminal.patch
 
+# Kolab request
+# https://obs.kolabsys.com/package/view_file/Kontact:4.13:Development/kdelibs/0001-KRecursiveFilterProxyModel-Fixed-the-model.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-KRecursiveFilterProxyModel-Fixed-the-model.patch
+
+
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
 
@@ -70,6 +75,7 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # Branch upstream
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rdb1b9b53be979b11bbf0c7235ea4446a70930e22.diff
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r9ba9651cec6c6b444db1b3ad72ea73552d4a3254.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0011-Fix-warning-No-such-signal-org-freedesktop-UPower-De.patch
 
 # revert these commits for
 #https://bugs.kde.org/315578

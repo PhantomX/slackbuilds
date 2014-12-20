@@ -94,6 +94,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.9.4-fontconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.3-fix-kcmkdm-locale.patch
 
 ## upstream patches
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r4d711942f60198f8ceae164a332a51f18fd67a82.diff
 
 ## trunk patches
 

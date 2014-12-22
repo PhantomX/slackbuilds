@@ -1,0 +1,206 @@
+From c4d23ebca047b5790dedb0c52232afff03199082 Mon Sep 17 00:00:00 2001
+From: Keith Packard <keithp@keithp.com>
+Date: Fri, 18 Jul 2014 11:16:27 -0700
+Subject: [PATCH] glamor: Add support for SHM sync fences
+
+This hooks up SHM sync fences to complete the requirements for DRI3
+running on Glamor.
+
+Signed-off-by: Keith Packard <keithp@keithp.com>
+Reviewed-by: Eric Anholt <eric@anholt.net>
+
+diff --git a/glamor/Makefile.am b/glamor/Makefile.am
+index bde58b6..5efa035 100644
+--- a/glamor/Makefile.am
++++ b/glamor/Makefile.am
+@@ -44,6 +44,7 @@ libglamor_la_SOURCES = \
+ 	glamor_vbo.c \
+ 	glamor_window.c\
+ 	glamor_fbo.c\
++	glamor_sync.c\
+ 	glamor_compositerects.c\
+ 	glamor_utils.h\
+ 	glamor.h
+diff --git a/glamor/glamor.c b/glamor/glamor.c
+index 3588903..6fec87e 100644
+--- a/glamor/glamor.c
++++ b/glamor/glamor.c
+@@ -516,6 +516,7 @@ glamor_init(ScreenPtr screen, unsigned int flags)
+ #endif
+     glamor_pixmap_init(screen);
+     glamor_glyphs_init(screen);
++    glamor_sync_init(screen);
+ 
+     glamor_priv->screen = screen;
+ 
+@@ -587,6 +588,7 @@ glamor_close_screen(ScreenPtr screen)
+ #endif
+     glamor_priv = glamor_get_screen_private(screen);
+     flags = glamor_priv->flags;
++    glamor_sync_close(screen);
+     glamor_glyphs_fini(screen);
+     screen->CloseScreen = glamor_priv->saved_procs.close_screen;
+     screen->CreateScreenResources =
+diff --git a/glamor/glamor_priv.h b/glamor/glamor_priv.h
+index c56c559..f783513 100644
+--- a/glamor/glamor_priv.h
++++ b/glamor/glamor_priv.h
+@@ -32,6 +32,11 @@
+ #include <xorg-server.h>
+ #include "glamor.h"
+ 
++#if XSYNC
++#include "misyncshm.h"
++#include "misyncstr.h"
++#endif
++
+ #include <epoxy/gl.h>
+ #if GLAMOR_HAS_GBM
+ #define MESA_EGL_NO_X11_HEADERS
+@@ -183,6 +188,9 @@ struct glamor_saved_procs {
+     DestroyPictureProcPtr destroy_picture;
+     UnrealizeGlyphProcPtr unrealize_glyph;
+     SetWindowPixmapProcPtr set_window_pixmap;
++#if XSYNC
++    SyncScreenFuncsRec sync_screen_funcs;
++#endif
+ };
+ 
+ #define CACHE_FORMAT_COUNT 3
+@@ -1007,6 +1015,13 @@ void glamor_composite_rectangles(CARD8 op,
+                                  xRenderColor *color,
+                                  int num_rects, xRectangle *rects);
+ 
++/* glamor_sync.c */
++Bool
++glamor_sync_init(ScreenPtr screen);
++
++void
++glamor_sync_close(ScreenPtr screen);
++
+ /* glamor_xv */
+ typedef struct {
+     uint32_t transform_index;
+diff --git a/glamor/glamor_sync.c b/glamor/glamor_sync.c
+new file mode 100644
+index 0000000..d3d64a9
+--- /dev/null
++++ b/glamor/glamor_sync.c
+@@ -0,0 +1,117 @@
++/*
++ * Copyright © 2014 Keith Packard
++ *
++ * Permission to use, copy, modify, distribute, and sell this software and its
++ * documentation for any purpose is hereby granted without fee, provided that
++ * the above copyright notice appear in all copies and that both that copyright
++ * notice and this permission notice appear in supporting documentation, and
++ * that the name of the copyright holders not be used in advertising or
++ * publicity pertaining to distribution of the software without specific,
++ * written prior permission.  The copyright holders make no representations
++ * about the suitability of this software for any purpose.  It is provided "as
++ * is" without express or implied warranty.
++ *
++ * THE COPYRIGHT HOLDERS DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
++ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO
++ * EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY SPECIAL, INDIRECT OR
++ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
++ * DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
++ * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
++ * OF THIS SOFTWARE.
++ */
++
++
++#include "glamor_priv.h"
++#include "misyncshm.h"
++#include "misyncstr.h"
++
++#if XSYNC
++/*
++ * This whole file exists to wrap a sync fence trigger operation so
++ * that we can flush GL to provide serialization between the server
++ * and the shm fence client
++ */
++
++static DevPrivateKeyRec glamor_sync_fence_key;
++
++struct glamor_sync_fence {
++        SyncFenceSetTriggeredFunc set_triggered;
++};
++
++static inline struct glamor_sync_fence *
++glamor_get_sync_fence(SyncFence *fence)
++{
++    return (struct glamor_sync_fence *) dixLookupPrivate(&fence->devPrivates, &glamor_sync_fence_key);
++}
++
++static void
++glamor_sync_fence_set_triggered (SyncFence *fence)
++{
++	ScreenPtr screen = fence->pScreen;
++	glamor_screen_private *glamor = glamor_get_screen_private(screen);
++	struct glamor_sync_fence *glamor_fence = glamor_get_sync_fence(fence);
++
++	/* Flush pending rendering operations */
++        glamor_make_current(glamor);
++        glFinish();
++
++	fence->funcs.SetTriggered = glamor_fence->set_triggered;
++	fence->funcs.SetTriggered(fence);
++	glamor_fence->set_triggered = fence->funcs.SetTriggered;
++	fence->funcs.SetTriggered = glamor_sync_fence_set_triggered;
++}
++
++static void
++glamor_sync_create_fence(ScreenPtr screen,
++                        SyncFence *fence,
++                        Bool initially_triggered)
++{
++	glamor_screen_private *glamor = glamor_get_screen_private(screen);
++	SyncScreenFuncsPtr screen_funcs = miSyncGetScreenFuncs(screen);
++	struct glamor_sync_fence *glamor_fence = glamor_get_sync_fence(fence);
++
++	screen_funcs->CreateFence = glamor->saved_procs.sync_screen_funcs.CreateFence;
++	screen_funcs->CreateFence(screen, fence, initially_triggered);
++	glamor->saved_procs.sync_screen_funcs.CreateFence = screen_funcs->CreateFence;
++	screen_funcs->CreateFence = glamor_sync_create_fence;
++
++	glamor_fence->set_triggered = fence->funcs.SetTriggered;
++	fence->funcs.SetTriggered = glamor_sync_fence_set_triggered;
++}
++#endif
++
++Bool
++glamor_sync_init(ScreenPtr screen)
++{
++#if XSYNC
++	glamor_screen_private   *glamor = glamor_get_screen_private(screen);
++	SyncScreenFuncsPtr      screen_funcs;
++
++	if (!dixPrivateKeyRegistered(&glamor_sync_fence_key)) {
++		if (!dixRegisterPrivateKey(&glamor_sync_fence_key,
++					   PRIVATE_SYNC_FENCE,
++					   sizeof (struct glamor_sync_fence)))
++			return FALSE;
++	}
++
++	if (!miSyncShmScreenInit(screen))
++		return FALSE;
++
++	screen_funcs = miSyncGetScreenFuncs(screen);
++	glamor->saved_procs.sync_screen_funcs.CreateFence = screen_funcs->CreateFence;
++	screen_funcs->CreateFence = glamor_sync_create_fence;
++#endif
++	return TRUE;
++}
++
++void
++glamor_sync_close(ScreenPtr screen)
++{
++#if XSYNC
++        glamor_screen_private   *glamor = glamor_get_screen_private(screen);
++        SyncScreenFuncsPtr      screen_funcs = miSyncGetScreenFuncs(screen);
++
++        if (screen_funcs)
++                screen_funcs->CreateFence = glamor->saved_procs.sync_screen_funcs.CreateFence;
++#endif
++}

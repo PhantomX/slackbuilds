@@ -56,14 +56,14 @@ ApplyPatch 0001-Fedora-hack-Make-the-suid-root-wrapper-always-start-.patch
 # submitted http://lists.x.org/archives/xorg-devel/2014-July/042936.html
 ApplyPatch 0001-xwayland-Snap-damage-reports-to-the-bounding-box.patch
 
+ApplyPatch glamor-add-shm-sync-fence-support.patch
+
 # misc
 ApplyPatch 0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
 
 ApplyPatch xserver-force-hal-disable.patch
 
 ### Arch
-# Use nouveau/nv/nvidia drivers for nvidia devices
-ApplyPatch autoconfig-nvidia.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

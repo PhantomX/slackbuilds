@@ -6,11 +6,7 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ### Fedora
 zcat ${SB_PATCHDIR}/${NAME}-2.6.0-boolean.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-fixintrospection.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-fix-redraw.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-gnutls-no-libgcrypt.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-librevenge.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-libebook.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-link-grammar-5.patch
 
 # abiword documentation

@@ -1,0 +1,113 @@
+diff --git a/Makefile.am b/Makefile.am
+index c99566d..ea5725f 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -13,7 +13,7 @@ AM_CPPFLAGS = \
+ 	$(TIRPC_CFLAGS)
+ 
+ if DEBUG
+-AM_CPPFLAGS +=	-DRPCBIND_DEBUG -DSVC_RUN_DEBUG -DDEBUG_RMTCALL
++AM_CPPFLAGS +=	-DRPCBIND_DEBUG -DDEBUG_RMTCALL
+ AM_CPPFLAGS +=	-DND_DEBUG -DBIND_DEBUG
+ endif
+ 
+diff --git a/configure.ac b/configure.ac
+index 75e7e71..27496c7 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -55,4 +55,6 @@ AS_IF([test x$enable_libwrap = xyes], [
+ 
+ AC_SEARCH_LIBS([pthread_create], [pthread])
+ 
++AC_CHECK_HEADERS(nss.h)
++
+ AC_OUTPUT([Makefile])
+diff --git a/src/rpcbind.c b/src/rpcbind.c
+index f7c71ee..0c81e8c 100644
+--- a/src/rpcbind.c
++++ b/src/rpcbind.c
+@@ -50,6 +50,7 @@
+ #include <sys/file.h>
+ #include <sys/socket.h>
+ #include <sys/un.h>
++#include <netinet/in.h>
+ #include <rpc/rpc.h>
+ #include <rpc/rpc_com.h>
+ #ifdef PORTMAP
+@@ -268,6 +269,13 @@ main(int argc, char *argv[])
+ 
+ 	network_init();
+ 
++#ifdef SYSTEMD
++	/* Try to notify system of successful startup, regardless of whether we
++	 * used systemd socket activation or not. When started from the command
++	 * line, this should not hurt either.
++	 */
++	sd_notify(0, "READY=1");
++#endif
+ 	my_svc_run();
+ 	syslog(LOG_ERR, "svc_run returned unexpectedly");
+ 	rpcbind_abort();
+@@ -277,6 +285,31 @@ main(int argc, char *argv[])
+ }
+ 
+ /*
++ * Normally systemd will open sockets in dual ipv4/ipv6 mode.
++ * That won't work with netconfig and we'll only match
++ * the ipv6 socket. Convert it to IPV6_V6ONLY and issue
++ * a warning for the user to fix their systemd config.
++ */
++static int
++handle_ipv6_socket(int fd)
++{
++	int opt;
++	socklen_t len = sizeof(opt);
++
++	if (getsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &opt, &len)) {
++		syslog(LOG_ERR, "failed to get ipv6 socket opts: %m");
++		return -1;
++	}
++
++	if (opt) /* socket is already in V6ONLY mode */
++		return 0;
++
++	syslog(LOG_ERR, "systemd has passed an IPv4/IPv6 dual-mode socket.");
++	syslog(LOG_ERR, "Please fix your systemd config by specifying IPv4 and IPv6 sockets separately and using BindIPv6Only=ipv6-only.");
++	return -1;
++}
++
++/*
+  * Adds the entry into the rpcbind database.
+  * If PORTMAP, then for UDP and TCP, it adds the entries for version 2 also
+  * Returns 0 if succeeds, else fails
+@@ -361,6 +394,9 @@ init_transport(struct netconfig *nconf)
+ 			goto error;
+ 		}
+ 
++		if (sa.sa.sa_family == AF_INET6 && handle_ipv6_socket(fd))
++		        goto error;
++
+ 		/* Copy the address */
+ 		taddr.addr.maxlen = taddr.addr.len = addrlen;
+ 		taddr.addr.buf = malloc(addrlen);
+diff --git a/src/warmstart.c b/src/warmstart.c
+index d1bb971..85ecf96 100644
+--- a/src/warmstart.c
++++ b/src/warmstart.c
+@@ -101,13 +101,13 @@ read_struct(char *filename, xdrproc_t structproc, void *list)
+ {
+ 	FILE *fp;
+ 	XDR xdrs;
+-	 
++
+ 	if (debugging)
+ 		fprintf(stderr, "rpcbind: using '%s' startup file\n", filename);
+ 
+-	if ((fp = fopen(filename, "r")) == NULL) {
++	if (((fp = fopen(filename, "r")) == NULL) && errno != ENOENT) {
+ 		syslog(LOG_ERR,
+-			"Cannot open '%s' file for reading, errno %d (%s)", 
++			"Cannot open '%s' file for reading, errno %d (%s)",
+ 			filename, errno, strerror(errno));
+ 		goto error;
+ 	}

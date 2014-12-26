@@ -22,4 +22,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-2.8.11-rc4-lua-5.2.patch
 # http://www.cmake.org/Bug/view.php?id=14314
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-strict_aliasing.patch
 
+# Dirty fix for ruby 2.2.0
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-findruby22.patch
+
 set +e +o pipefail

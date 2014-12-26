@@ -16,6 +16,7 @@ case "${ARCH}" in
     patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-baseline-disable.patch
     ;;
 esac
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-1173156.patch
 
 # Fedora specific patches
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch

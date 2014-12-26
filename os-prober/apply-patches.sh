@@ -21,6 +21,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-factor-out-logger.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-factored-logger-efi-fix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-umount-fix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-grub2-parsefix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-grepfix.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-util-linux-2.24.patch
 

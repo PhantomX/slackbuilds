@@ -22,7 +22,7 @@ zcat ${SB_PATCHDIR}/openssl-0.9.6-x509.patch.gz | patch -p1 -E --backup --verbos
 zcat ${SB_PATCHDIR}/openssl-0.9.8j-version-add-engines.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1h-ipv6-apps.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-0.9.8j-env-nozlib.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-beta2-dtls1-abi.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1k-dtls1-abi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-version.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0d-apps-dgst.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0d-xmpp-starttls.patch
@@ -30,9 +30,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0e-chil-fixes.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-dh-1024.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-weak-ciphers.patch
 # Backported fixes including security fixes
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1-beta2-padlock64.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1k-padlock64.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1i-manfix.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1i-trusted-first.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1k-trusted-first.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1k-ephemeral-key-size.patch
 
 # Use .so.${SSLSOVER}, not .so.${VERSION}:
 sed -e "s|_SB_SOVER_|${SSLSOVER}|g" ${SB_PATCHDIR}/openssl.soname.diff \

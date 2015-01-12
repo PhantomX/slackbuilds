@@ -184,9 +184,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#CVE-2014-8134 rhbz 1172765 1172769
-ApplyPatch x86-kvm-Clear-paravirt_enabled-on-KVM-guests-for-esp.patch
-
 #rhbz 1164945
 ApplyPatch xhci-Add-broken-streams-quirk-for-Fresco-Logic-FL100.patch
 ApplyPatch uas-Add-US_FL_NO_ATA_1X-for-Seagate-devices-with-usb.patch
@@ -194,9 +191,6 @@ ApplyPatch uas-Add-US_FL_NO_REPORT_OPCODES-for-JMicron-JMS566-w.patch
 
 #rhbz 1172543
 ApplyPatch cfg80211-don-t-WARN-about-two-consecutive-Country-IE.patch
-
-#CVE-2014-8133 rhbz 1172797 1174374
-ApplyPatch x86-tls-Validate-TLS-entries-to-protect-espfix.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

@@ -47,7 +47,7 @@ pushd "${tmp}"
     popd >/dev/null
     GITREV="$(LC_ALL=C git show  -s --format=%ci HEAD)"
     sed -i \
-      -e 's|PCSX2_WC_TIME 0|PCSX2_WC_TIME ${GITREV}|g' \
+      -e "s|PCSX2_WC_TIME 0|PCSX2_WC_TIME ${GITREV}|g" \
       -e "/COMMAND/s|\${GIT_EXECUTABLE} show -s --format=%ci HEAD|echo \"${GITREV}\"|g" \
       cmake/Pcsx2Utils.cmake
     find . -type d -name .git -print0 | xargs -0r rm -rf

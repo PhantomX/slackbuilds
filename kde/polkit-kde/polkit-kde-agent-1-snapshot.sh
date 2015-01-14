@@ -20,7 +20,7 @@ snap=${snap:-$(date +%Y%m%d)}
 snapbranch=${snapbranch:-master}
 gittree=${gittree:-${snapbranch}}
 
-[ "${snap}" = "$(date +%Y%m%d)" ] && SNAP_COOPTS="--depth 1"
+[ "${snap}" = "$(date +%Y%m%d)" ] && [ "${snapbranch}" = "master" ] && SNAP_COOPTS="--depth 1"
 [ "${snapbranch}" = "master" ] || snapbranch="origin/${snapbranch}"
 
 pushd "${tmp}"
@@ -30,6 +30,8 @@ pushd "${tmp}"
       gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
       git checkout $(git rev-list -n 1 --before="${gitdate}" ${snapbranch})
       gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
+    elif [ "${snapbranch}" != "master" ] ;then
+       gittree="${snapbranch}"
     fi
     if [ -n "${snaptag}" ] ;then
       if git tag | grep -q "^${snaptag}$" ;then

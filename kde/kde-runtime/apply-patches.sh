@@ -32,7 +32,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.6.0-canberra
 ## upstreamable patches
 
 ## upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_ra977b2378ff4d88b561d599a1116821c694493f1.diff
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/changeset_r6ec92cf19376bcae8b13c0a741c81f222db0b2f5.diff
 
 set +e +o pipefail

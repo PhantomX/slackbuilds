@@ -40,15 +40,19 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-solid_qt_no_debug_output.
 # https://git.reviewboard.kde.org/r/102439/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.0-knewstuff2_gpg2.patch
 
-# glibc-2.20 has deprecated _BSD_SOURCE in favor of _DEFAULT_SOURCE
-# http://sourceware.org/glibc/wiki/Release/2.20#Packaging_Changes
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.13.2-glibc_DEFAULT_SOURCE.patch
-
 # Toggle solid upnp support at runtime via env var SOLID_UPNP=1 (disabled by default)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-SOLID_UPNP.patch
 
 # return valid locale (RFC 1766)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.8.4-kjs-locale.patch
+
+# borrow from  opensuse
+# https://build-test.opensuse.org/package/view_file/home:coolo:test/kdelibs4/0001-Drop-Nepomuk-from-KParts-LINK_INTERFACE_LIBRARIES.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/Drop-Nepomuk-from-KParts-LINK_INTERFACE_LIBRARIES.patch
+
+# candidate fix for: kde deamon crash on wakeup
+# https://bugs.kde.org/show_bug.cgi?id=288410
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-kdebug288410.patch
 
 # make filter working
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-kcm_ssl.patch
@@ -73,9 +77,7 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rdb1b9b53be979b11bbf0c7235ea4446a70930e22.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r9ba9651cec6c6b444db1b3ad72ea73552d4a3254.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0011-Fix-warning-No-such-signal-org-freedesktop-UPower-De.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rb110b14eaec647e569c94d0ed80ba2b8145faadc.diff
 
 # revert these commits for
 #https://bugs.kde.org/315578

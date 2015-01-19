@@ -63,6 +63,7 @@ PKGNAME=${NAME}-${VERSION//-/.}-${ARCH}-${BUILD}${PACKAGER_ID}
 PY3SITEARCH=$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib(1))')
 PY3SITELIB=$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
 PY3ABI=$(python3 -c 'import sys; sys.stdout.write(sys.version[:3])')
+PY3VER=$(python3 -c 'import sys; sys.stdout.write(sys.version.split(" ")[0])')
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
@@ -169,7 +170,7 @@ fi
 
 mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
-sed -e "s|_PYVER_|${PYVER}|g" ${CWD}/slack-required \
+sed -e "s|_PY3VER_|${PY3VER}|g" ${CWD}/slack-required \
   > ${PKG}/install/slack-required
 
 cat > ${PKG}/install/doinst.sh <<EOF

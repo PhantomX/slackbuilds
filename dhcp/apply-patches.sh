@@ -34,6 +34,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-IPoIB-log-id.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-improved-xid.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-duidv4.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-gpxe-cid.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-systemtap.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-getifaddrs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-omapi-leak.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-rfc5970-dhcpv6-options-for-network-boot.patch
@@ -45,6 +46,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-no-subnet-error2info.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-ffff-checksum.patch
 [ "${SB_SYSTEMD}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-sd_notify.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-dhc6-life.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-skip-vlan.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-relay-hop-limit.patch
+[ "${SB_KRB5}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-ldapgssapi.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-option97-pxe-client-id.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-stateless-DUID-LLT.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-bind996.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

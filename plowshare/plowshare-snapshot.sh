@@ -22,9 +22,12 @@ snap=${snap:-$(date +%Y%m%d)}
 
 pushd "${tmp}"
   svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
+  svn co --depth=files --force ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
+    sed -i -e "/^DISTDIR =/s|=.*|= ${module}-${snap}|g" ./Makefile
+    make distdir
     find . -type d -name .svn -print0 | xargs -0r rm -rf
+    tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
   popd
-  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null
 

@@ -1,0 +1,94 @@
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Thu, 8 Jan 2015 14:42:01 +0100
+Subject: [PATCH] uas: Do not blacklist ASM1153 disk enclosures
+
+Our detection logic to avoid doing UAS on ASM1051 bridge chips causes problems
+with newer ASM1153 disk enclosures in 2 ways:
+
+1) Some ASM1153 disk enclosures re-use the ASM1051 device-id of 5106, which
+   we assume is always an ASM1051, so remove the quirk for 5106, and instead
+   use the same detection logic as we already use for device-id 55aa, which is
+   used for all of ASM1051, ASM1053 and ASM1153 devices <sigh>.
+
+2) Our detection logic to differentiate between ASM1051 and ASM1053 sees
+   ASM1153 devices as ASM1051 because they have 32 streams like ASM1051 devs.
+   Luckily the ASM1153 descriptors are not 100% identical, unlike the previous
+   models the ASM1153 has bMaxPower == 0, so use that to differentiate it.
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+---
+ drivers/usb/storage/uas-detect.h  | 33 ++++++++++++++++++++++++++++-----
+ drivers/usb/storage/unusual_uas.h |  8 --------
+ 2 files changed, 28 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/usb/storage/uas-detect.h b/drivers/usb/storage/uas-detect.h
+index 8a6f371ed6e7..9893d696fc97 100644
+--- a/drivers/usb/storage/uas-detect.h
++++ b/drivers/usb/storage/uas-detect.h
+@@ -69,16 +69,39 @@ static int uas_use_uas_driver(struct usb_interface *intf,
+ 		return 0;
+ 
+ 	/*
+-	 * ASM1051 and older ASM1053 devices have the same usb-id, and UAS is
+-	 * broken on the ASM1051, use the number of streams to differentiate.
+-	 * New ASM1053-s also support 32 streams, but have a different prod-id.
++	 * ASMedia has a number of usb3 to sata bridge chips, at the time of
++	 * this writing the following versions exist:
++	 * ASM1051 - no uas support version
++	 * ASM1051 - with broken (*) uas support
++	 * ASM1053 - with working uas support
++	 * ASM1153 - with working uas support
++	 *
++	 * Devices with these chips re-use a number of device-ids over the
++	 * entire line, so the device-id is useless to determine if we're
++	 * dealing with an ASM1051 (which we want to avoid).
++	 *
++	 * The ASM1153 can be identified by config.MaxPower == 0,
++	 * where as the ASM105x models have config.MaxPower == 36.
++	 *
++	 * Differentiating between the ASM1053 and ASM1051 is trickier, when
++	 * connected over USB-3 we can look at the number of streams supported,
++	 * ASM1051 supports 32 streams, where as early ASM1053 versions support
++	 * 16 streams, newer ASM1053-s also support 32 streams, but have a
++	 * different prod-id.
++	 *
++	 * (*) ASM1051 chips do work with UAS with some disks (with the
++	 *     US_FL_NO_REPORT_OPCODES quirk), but are broken with other disks
+ 	 */
+ 	if (le16_to_cpu(udev->descriptor.idVendor) == 0x174c &&
+-			le16_to_cpu(udev->descriptor.idProduct) == 0x55aa) {
+-		if (udev->speed < USB_SPEED_SUPER) {
++			(le16_to_cpu(udev->descriptor.idProduct) == 0x5106 ||
++			 le16_to_cpu(udev->descriptor.idProduct) == 0x55aa)) {
++		if (udev->actconfig->desc.bMaxPower == 0) {
++			/* ASM1153, do nothing */
++		} else if (udev->speed < USB_SPEED_SUPER) {
+ 			/* No streams info, assume ASM1051 */
+ 			flags |= US_FL_IGNORE_UAS;
+ 		} else if (usb_ss_max_streams(&eps[1]->ss_ep_comp) == 32) {
++			/* Possibly an ASM1051, disable uas */
+ 			flags |= US_FL_IGNORE_UAS;
+ 		}
+ 	}
+diff --git a/drivers/usb/storage/unusual_uas.h b/drivers/usb/storage/unusual_uas.h
+index 2f0a3d35269a..f8492c1fd0e8 100644
+--- a/drivers/usb/storage/unusual_uas.h
++++ b/drivers/usb/storage/unusual_uas.h
+@@ -96,14 +96,6 @@ UNUSUAL_DEV(0x152d, 0x0567, 0x0000, 0x9999,
+ 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
+ 		US_FL_NO_REPORT_OPCODES),
+ 
+-/* Most ASM1051 based devices have issues with uas, blacklist them all */
+-/* Reported-by: Hans de Goede <hdegoede@redhat.com> */
+-UNUSUAL_DEV(0x174c, 0x5106, 0x0000, 0x9999,
+-		"ASMedia",
+-		"ASM1051",
+-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
+-		US_FL_IGNORE_UAS),
+-
+ /* Reported-by: Hans de Goede <hdegoede@redhat.com> */
+ UNUSUAL_DEV(0x2109, 0x0711, 0x0000, 0x9999,
+ 		"VIA",
+-- 
+2.1.0
+

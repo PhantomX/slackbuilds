@@ -192,6 +192,22 @@ ApplyPatch uas-Add-US_FL_NO_REPORT_OPCODES-for-JMicron-JMS566-w.patch
 #rhbz 1172543
 ApplyPatch cfg80211-don-t-WARN-about-two-consecutive-Country-IE.patch
 
+ApplyPatch uapi-linux-target_core_user.h-fix-headers_install.sh.patch
+
+#rhbz 1163927
+ApplyPatch Set-UID-in-sess_auth_rawntlmssp_authenticate-too.patch
+
+#CVE-2014-9428 rhbz 1178826,1178833
+ApplyPatch batman-adv-Calculate-extra-tail-size-based-on-queued.patch
+
+#CVE-2014-9529 rhbz 1179813 1179853
+ApplyPatch KEYS-close-race-between-key-lookup-and-freeing.patch
+
+#rhbz 1124119
+ApplyPatch uas-Do-not-blacklist-ASM1153-disk-enclosures.patch
+ApplyPatch uas-Add-US_FL_NO_ATA_1X-for-2-more-Seagate-disk-encl.patch
+ApplyPatch uas-Add-no-report-opcodes-quirk-for-Simpletech-devic.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

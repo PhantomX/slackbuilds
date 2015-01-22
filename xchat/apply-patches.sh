@@ -30,6 +30,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xchat-2.8.8-libnotify07.patch
 # link against libnotify
 # https://sourceforge.net/tracker/?func=detail&aid=3280223&group_id=239&atid=100239
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xchat-2.8.8-link-against-libnotify.patch
+# http://sourceforge.net/p/xchat/bugs/1506/
+patch -p1 -E --backup --verbose -z.xdg -i ${SB_PATCHDIR}/xchat-2.8.8-xdg-dirs.patch
+# http://sourceforge.net/p/xchat/bugs/1397/
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xchat-2.8.8-desktop-file-name.patch
 # http://sourceforge.net/tracker/?func=detail&aid=3535920&group_id=239&atid=100239
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Autoload-from-.xchat2-plugins-also-as-like-perl-plug.patch
 # http://sourceforge.net/tracker/?func=detail&aid=3536005&group_id=239&atid=100239

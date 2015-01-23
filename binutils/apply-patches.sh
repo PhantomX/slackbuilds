@@ -17,5 +17,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.4-no-config
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-addr2line-dynsymtab.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.25-kernel-ld-r.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.2-aarch64-em.patch
+# Fix allocation of space for x86_64 PIE relocs.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.25-x86_64-pie-relocs.patch
 
 set +e +o pipefail

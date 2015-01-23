@@ -31,9 +31,9 @@ ApplyPatch() {
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Internal debug
 #ApplyPatch openssh-5.9p1-wIm.patch
-ApplyPatch openssh-6.6.1p1-coverity.patch
+#ApplyPatch openssh-6.6.1p1-coverity.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1872
-ApplyPatch openssh-6.3p1-fingerprint.patch
+ApplyPatch openssh-6.7p1-fingerprint.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1894
 #ApplyPatch openssh-5.8p1-getaddrinfo.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1889
@@ -54,7 +54,7 @@ if [ "${SB_PAM}" = "YES" ] ;then
 fi
 
 echo "Applying openssh-6.6p1-ldap.patch"
-sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.6p1-ldap.patch | ${PATCHCOM}
+sed 's|-lfipscheck||g' ${SB_PATCHDIR}/openssh-6.7p1-ldap.patch | ${PATCHCOM}
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1644
 ApplyPatch openssh-5.2p1-allow-ip-opts.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1701
@@ -70,11 +70,9 @@ ApplyPatch openssh-5.8p2-sigpipe.patch
 ApplyPatch openssh-6.1p1-askpass-ld.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1789
 ApplyPatch openssh-5.5p1-x11.patch
-ApplyPatch openssh-5.6p1-exit-deadlock.patch
 ApplyPatch openssh-5.1p1-askpass-progress.patch
 ApplyPatch openssh-4.3p2-askpass-grab-info.patch
 ApplyPatch openssh-5.1p1-scp-manpage.patch
-ApplyPatch openssh-5.9p1-edns.patch
 ApplyPatch openssh-5.8p1-localdomain.patch
 ApplyPatch openssh-6.3p1-chinfo.patch -z .chinfo
 [ "${SB_PAM}" = "YES" ] || sed -i -e '/^UsePAM yes/d' sshd_config
@@ -89,23 +87,11 @@ ApplyPatch openssh-6.2p1-vendor.patch
 ApplyPatch openssh-6.3p1-ctr-evp-fast.patch
 # add cavs test binary for the aes-ctr
 ApplyPatch openssh-6.6p1-ctr-cavstest-slk.patch
-# obsolete RequiredAuthentications options
-ApplyPatch openssh-6.2p1-required-authentications.patch
 
 # Run ssh-copy-id in the legacy mode when SSH_COPY_ID_LEGACY variable is set (#969375
 ApplyPatch openssh-6.4p1-legacy-ssh-copy-id.patch
 # Use tty allocation for a remote scp (#985650)
 ApplyPatch openssh-6.4p1-fromto-remote.patch
-# Try CLOCK_BOOTTIME with fallback (#1091992)
-ApplyPatch openssh-6.4p1-CLOCK_BOOTTIME.patch
-# Prevents a server from skipping SSHFP lookup and forcing a new-hostkey
-# dialog by offering only certificate keys. (#1081338)
-ApplyPatch openssh-6.6p1-CVE-2014-2653.patch
-# OpenSSH 6.5 and 6.6 sometimes encode a value used in the curve25519 key exchange incorrectly
-# Disable the curve25519 KEX when speaking to OpenSSH 6.5 or 6.6
-ApplyPatch openssh-5618210618256bbf5f4f71b2887ff186fd451736.patch
-# standardise on NI_MAXHOST for gethostname() string lengths (#1051490)
-ApplyPatch openssh-6.6.1p1-NI_MAXHOST.patch
 # set a client's address right after a connection is set
 # http://bugzilla.mindrot.org/show_bug.cgi?id=2257
 ApplyPatch openssh-6.6p1-set_remote_ipaddr.patch
@@ -116,9 +102,15 @@ ApplyPatch openssh-6.6.1p1-utf8-banner.patch
 # don't consider a partial success as a failure
 # https://bugzilla.mindrot.org/show_bug.cgi?id=2270
 ApplyPatch openssh-6.6.1p1-partial-success.patch
-# Ignore SIGXFSZ in postauth monitor
-# https://bugzilla.mindrot.org/show_bug.cgi?id=2263
-ApplyPatch openssh-6.6.1p1-ignore-SIGXFSZ-in-postauth.patch
+# use different values for DH for Cisco servers (#1026430)
+ApplyPatch openssh-6.6.1p1-cisco-dh-keys.patch
+# scp file into non-existing directory (#1142223)
+ApplyPatch openssh-6.6.1p1-scp-non-existing-directory.patch
+# Config parser shouldn't accept ip/port syntax (#1130733)
+ApplyPatch openssh-6.6.1p1-ip-port-config-parser.patch
+# restore tcp wrappers support, based on Debian patch
+# https://lists.mindrot.org/pipermail/openssh-unix-dev/2014-April/032497.html
+ApplyPatch openssh-6.7p1-debian-restore-tcp-wrappers.patch
 
 set +e +o pipefail
 

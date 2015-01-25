@@ -4,7 +4,10 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-# http://bugzilla.redhat.com/show_bug.cgi?id=480868
-#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/poppler-0.12.4-annot-appearance.patch
+# fix configure checks for moc versions
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/poppler-0.24.2-mocversiongrep.patch
+
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
 
 set +e +o pipefail

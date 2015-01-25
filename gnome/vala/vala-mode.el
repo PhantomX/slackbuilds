@@ -83,6 +83,8 @@
 ;; This inserts the bulk of the code.
 (require 'cc-mode)
 
+(require 'cl)
+
 ;; These are only required at compile time to get the sources for the
 ;; language constants.  (The cc-fonts require and the font-lock
 ;; related constants could additionally be put inside an

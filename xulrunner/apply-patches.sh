@@ -35,6 +35,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-bmo1088588.patch
 
 # Upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-858919.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1097550-dict-fix.patch
 
 # OpenSuse kde integration support
 if [ "${SB_KDE}" = "YES" ] ;then

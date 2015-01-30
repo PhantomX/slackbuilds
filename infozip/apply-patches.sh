@@ -25,10 +25,12 @@ SB_PATCHDIR=${CWD}/patches
   # downstream fix for "-Werror=format-security"
   # upstream doesn't want hear about this option again
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-format-secure.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-valgrind.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-x-option.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-overflow.patch
 
   ### Debian
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/04-handle-pkware-verification-bit.patch
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/05-fix-uid-gid-handling.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/07-increase-size-of-cfactorstr.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/08-allow-greater-hostver-values.patch
 )
@@ -40,6 +42,7 @@ SB_PATCHDIR=${CWD}/patches
   zcat ${SB_PATCHDIR}/zip-3.0-exec-shield.patch.gz | patch -p1 -E --backup --verbose
   # Not upstreamed.
   zcat ${SB_PATCHDIR}/zip-3.0-currdir.patch.gz | patch -p1 -E --backup --verbose
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/man.patch
 
   ### Gentoo
   zcat ${SB_PATCHDIR}/${ZIPNAME}-3.0-build.patch.gz | patch -p1 -E --backup --verbose

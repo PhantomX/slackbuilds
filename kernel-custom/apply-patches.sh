@@ -166,7 +166,8 @@ ApplyPatch crash-driver.patch
 # Nouveau DRM
 
 # Intel DRM
-ApplyPatch drm-i915-hush-check-crtc-state.patch
+ApplyPatch drm-i915-tame-the-chattermouth-v2.patch
+ApplyPatch drm-i915-Disable-verbose-state-checks.patch
 
 # Patches headed upstream
 ApplyPatch disable-i8042-check-on-apple-mac.patch
@@ -187,16 +188,10 @@ ApplyPatch criu-no-expert.patch
 #rhbz 1163927
 ApplyPatch Set-UID-in-sess_auth_rawntlmssp_authenticate-too.patch
 
-#CVE-2014-9529 rhbz 1179813 1179853
-ApplyPatch KEYS-close-race-between-key-lookup-and-freeing.patch
-
 #rhbz 1124119
 ApplyPatch uas-Do-not-blacklist-ASM1153-disk-enclosures.patch
 ApplyPatch uas-Add-US_FL_NO_ATA_1X-for-2-more-Seagate-disk-encl.patch
 ApplyPatch uas-Add-no-report-opcodes-quirk-for-Simpletech-devic.patch
-
-#CVE-2015-0239 rhbz 1186448 1186453
-ApplyPatch KVM-x86-SYSENTER-emulation-is-broken.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

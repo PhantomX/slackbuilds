@@ -46,6 +46,18 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-delaycalib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-noservres.patch
 # ntpbz #2612
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-monwarn.patch
+# ntpbz #2538
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-testmain.patch
+# ntpbz #1232
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-nanoshm.patch
+# ntpbz #2666
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2014-9294.patch
+# ntpbz #2665
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2014-9293.patch
+# ntpbz #2667
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2014-9295.patch
+# ntpbz #2670
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2014-9296.patch
 
 ( cd ntpstat-${NSVER}
   # handle unknown clock types

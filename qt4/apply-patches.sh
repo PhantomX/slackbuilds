@@ -135,7 +135,7 @@ ApplyPatch qt-everywhere-opensource-src-4.7.1-webkit_debug_javascriptcore.patch
 # https://bugreports.qt-project.org/browse/QTBUG-5545
 ApplyPatch qt-everywhere-opensource-src-4.8.5-qgtkstyle_disable_gtk_theme_check.patch
 # workaround for MOC issues with Boost headers (#756395,QTBUG-22829)
-ApplyPatch qt-everywhere-opensource-src-4.8.5-QTBUG-22829.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-22829.patch
 
 ## upstream git
 ApplyPatch 0010-QDbus-Fix-a-b-comparison.patch

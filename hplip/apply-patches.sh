@@ -57,9 +57,10 @@ do
 done
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-scan-tmp.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-codec.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-log-stderr.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-avahi-parsing.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-reportlab.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dj990c-margin.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-strncpy.patch
 
 set +e +o pipefail

@@ -1,0 +1,238 @@
+#!/bin/sh
+# postgresql	This is the init script for starting up the PostgreSQL
+#		server
+#
+# chkconfig: - 64 36
+# description: Starts and stops the PostgreSQL backend daemon that handles \
+#	       all database requests.
+# processname: postmaster
+# pidfile: /var/run/postmaster.pid
+
+# Version 6.5.3-2 Lamar Owen
+# Added code to determine if PGDATA exists, whether it is current version
+#     or not, and initdb if no PGDATA (initdb will not overwrite a database).
+
+# Version 7.0 Lamar Owen
+# Added logging code
+# Changed PGDATA.
+
+# Version 7.0.2 Trond Eivind Glomsrd <teg@redhat.com>
+# use functions, add conditional restart
+          
+# Version 7.0.3 Lamar Owen <lamar@postgresql.org>
+# Check for the existence of functions before blindly using them 
+# in particular -- check for success () and failure () before using.
+# More Cross-distribution support -- PGVERSION variable, and docdir checks.
+
+# Version 7.1 Release Candidate Lamar Owen <lamar@postgresql.org>
+# initdb parameters have changed.
+
+# Version 7.1.2 Trond Eivind Glomsrd <teg@redhat.com>
+# Specify shell for su
+# Handle stop better - kill unwanted output, make it wait until the database is ready
+# Handle locales slightly differently - always using "C" isn't a valid option 
+# Kill output from database initialization 
+# Mark messages for translation
+
+# Version 7.1.2-2.PGDG Lamar Owen <lamar.owen@wgcr.org>
+# sync up.
+# Karl's fixes for some quoting issues.
+
+# Version 7.2b2 Lamar Owen <lamar.owen@wgcr.org>
+# version change.
+
+# Version 7.2 final.  Lamar Owen <lamar.owen@wgcr.org>
+# reload from Peter E.
+# Eliminate the pidof postmaster test in stop -- we're using pg_ctl so we don't need pidof.
+# Tested the $? return for the stop script -- it does in fact propagate.
+# TODO: multiple postmasters.
+
+# Version 7.3 Lamar Owen <lamar.owen@ramifordistat.net>
+# Multiple postmasters, courtesy Karl DeBisschop
+
+# Version 7.4 Lamar Owen.
+
+# Version 7.4.3 Tom Lane <tgl@sss.pgh.pa.us>
+# Support condstop for uninstall
+# Minor other changes suggested by Fernando Nasser.
+
+# Version 7.4.5 Tom Lane <tgl@sss.pgh.pa.us>
+# Rewrite to start postmaster directly, rather than via pg_ctl; this avoids
+# fooling the postmaster's stale-lockfile check by having too many
+# postgres-owned processes laying about.
+
+# Version 8.1 Devrim Gunduz <devrim@PostgreSQL.org>
+# Increased sleep time from 1 sec to 2 sec.
+
+# Version 8.2 Devrim Gunduz <devrim@CommandPrompt.com>
+# Set initdb as a seperate option.
+
+# PGVERSION is the full package version, e.g., 8.2.0
+# Note: the specfile ordinarily updates this during install
+PGVERSION=xxxx
+# PGMAJORVERSION is major version, e.g., 8.2 (this should match PG_VERSION)
+PGMAJORVERSION=$(echo "$PGVERSION" | sed 's/^\([0-9]*\.[0-9]*\).*$/\1/')
+
+# Get function listing for cross-distribution logic.
+TYPESET=$(typeset -f|grep "declare")
+
+# Find the name of the script
+NAME=postgresql
+
+SU=su
+
+# Set defaults for configuration variables
+PGENGINE=/usr/bin
+PGPORT=5432
+PGDATA=/var/lib/pgsql
+if [ -f "${PGDATA}/PG_VERSION" ] && [ -d "${PGDATA}/base/template1" ]
+then
+  echo "Using old-style directory structure"
+else
+  PGDATA=/var/lib/pgsql/data
+fi
+PGLOG=/var/lib/pgsql/pgstartup.log
+
+# Override defaults from /etc/sysconfig/pgsql if file is present
+[ -f /etc/pgsql/${NAME} ] && . /etc/pgsql/${NAME}
+
+export PGDATA
+export PGPORT
+
+#[ -f "${PGENGINE}/postmaster" ] || exit 1
+
+script_result=0
+
+start(){
+  PSQL_START="Starting ${NAME} service: "
+
+  # Make sure startup-time log file is valid
+  if [ ! -e "${PGLOG}" -a ! -h "${PGLOG}" ]
+  then
+    touch "${PGLOG}" || exit 1
+    chown postgres:postgres "${PGLOG}"
+    chmod go-rwx "${PGLOG}"
+  fi
+
+  # Check for the PGDATA structure
+  if [ -f "${PGDATA}/PG_VERSION" ] && [ -d "${PGDATA}/base" ]
+  then
+  # Check version of existing PGDATA
+
+    if [ x$(cat "${PGDATA}/PG_VERSION") != x"${PGMAJORVERSION}" ]
+    then
+      SYSDOCDIR="(Your System's documentation directory)"
+      if [ -d "/usr/doc/postgresql-${PGVERSION}" ]
+      then
+        SYSDOCDIR=/usr/doc
+      fi
+      if [ -d "/usr/share/doc/postgresql-${PGVERSION}" ]
+      then
+        SYSDOCDIR=/usr/share/doc
+      fi
+      if [ -d "/usr/doc/packages/postgresql-${PGVERSION}" ]
+      then
+        SYSDOCDIR=/usr/doc/packages
+      fi
+      if [ -d "/usr/share/doc/packages/postgresql-${PGVERSION}" ]
+      then
+        SYSDOCDIR=/usr/share/doc/packages
+      fi
+      echo
+      echo "An old version of the database format was found."
+      echo "You need to upgrade the data format before using PostgreSQL."
+      echo "See ${SYSDOCDIR}/postgresql-${PGVERSION}/README.rpm-dist for more information."
+      exit 1
+    fi
+
+  # No existing PGDATA! Warn the user to initdb it.
+
+  else
+    echo
+        echo "${PGDATA} is missing. Use \"service postgresql initdb\" to initialize the cluster first."
+    echo -e "\t\t\t\t\t\t\t[FAILED]\r"
+    echo
+    exit 1
+  fi
+
+  echo -n "${PSQL_START}"
+  ${SU} - postgres -c "${PGENGINE}/postmaster -p '$PGPORT' -D '$PGDATA' ${PGOPTS} &" >> "${PGLOG}" 2>&1 < /dev/null
+  sleep 2
+  pid=$(/sbin/pidof -s "$PGENGINE/postmaster")
+  if [ ${pid} ] && [ -f "${PGDATA}/postmaster.pid" ]
+  then
+    echo -e "\t\t\t\t\t[  OK  ]\r"
+    touch /var/lock/subsys/${NAME}
+    head -n 1 "${PGDATA}/postmaster.pid" > "/var/run/postmaster.${PGPORT}.pid"
+  else
+    echo -e "\t\t\t\t\tFAILED]\r"
+    script_result=1
+  fi
+}
+
+stop(){
+  echo -n "Stopping ${NAME} service: "
+  ${SU} - postgres -c "${PGENGINE}/pg_ctl stop -D '$PGDATA' -s -m fast" > /dev/null 2>&1 < /dev/null
+  ret=$? 
+  if [ ${ret} -eq 0 ]
+  then
+    echo -e "\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\tFAILED]\r"
+    script_result=1
+  fi
+  rm -f "/var/run/postmaster.${PGPORT}.pid"
+  rm -f "/var/lock/subsys/${NAME}"
+}
+
+restart(){
+  stop
+  start
+}
+
+condrestart(){
+  [ -e /var/lock/subsys/${NAME} ] && restart
+}
+
+condstop(){
+  [ -e /var/lock/subsys/${NAME} ] && stop
+}
+
+reload(){
+  ${SU} - postgres -c "${PGENGINE}/pg_ctl reload -D '$PGDATA' -s" > /dev/null 2>&1 < /dev/null
+}
+
+initdb(){
+  /usr/bin/postgresql-setup initdb >/dev/null 2>&1
+  ret=$?
+  if [ ${ret} -eq 0 ]
+  then
+    echo -e "\t\t\t\t\t[  OK  ]\r"
+  else
+    echo -e "\t\t\t\t\tFAILED]\r"
+    script_result=1
+  fi
+}
+
+# This script is slightly unusual in that the name of the daemon (postmaster)
+# is not the same as the name of the subsystem (postgresql)
+
+# See how we were called.
+case "$1" in
+  start|stop|restart|condrestart|condstop|initdb)
+    "$1"
+    ;;
+  status)
+    if [ -f ${lockfile} ]; then
+      echo "postmaster is running in pid $(/sbin/pidof postmaster)."
+    else
+      echo "postmaster is not running."
+    fi
+    ;;
+  reload|force-reload)
+    reload
+    ;;
+  *)
+  echo $"Usage: $0 {start|stop|status|restart|condrestart|condstop|reload|force-reload|initdb}"
+  exit 1
+esac

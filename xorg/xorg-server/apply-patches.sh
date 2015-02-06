@@ -44,24 +44,17 @@ ApplyPatch xserver-1.6.99-right-of.patch
 
 ApplyPatch 0001-Always-install-vbe-and-int10-sdk-headers.patch
 
-# Fix multiple monitors in reverse optimus configurations
-ApplyPatch 0001-pixmap-fix-reverse-optimus-support-with-multiple-hea.patch
-
 # submitted: http://lists.x.org/archives/xorg-devel/2013-October/037996.html
 ApplyPatch exa-only-draw-valid-trapezoids.patch
 
 # because the display-managers are not ready yet, do not upstream
 ApplyPatch 0001-Fedora-hack-Make-the-suid-root-wrapper-always-start-.patch
 
-# submitted http://lists.x.org/archives/xorg-devel/2014-July/042936.html
-ApplyPatch 0001-xwayland-Snap-damage-reports-to-the-bounding-box.patch
-
-ApplyPatch glamor-add-shm-sync-fence-support.patch
-
 # misc
 ApplyPatch 0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch
 
 ApplyPatch xserver-force-hal-disable.patch
+ApplyPatch xserver-1.7.0-systemd209.patch
 
 ### Arch
 

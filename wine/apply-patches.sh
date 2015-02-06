@@ -9,6 +9,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-winemenubuilder-silence-a
 
 # Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-cjk.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-Bump-MSVCRT_MB_LEN_MAX-to-5-and-use-it-in-MSVCRT__wc.patch
 
 # bugfixes
 # http://bugs.winehq.org/show_bug.cgi?id=7698

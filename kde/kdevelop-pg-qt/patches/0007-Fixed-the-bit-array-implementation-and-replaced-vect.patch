@@ -1,0 +1,324 @@
+From 2d403c527a697e91441d2ecb94a947d04c55bafb Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonathan=20Schmidt-Domin=C3=A9?= <git@the-user.org>
+Date: Sat, 13 Oct 2012 23:10:58 +0200
+Subject: [PATCH 07/17] Fixed the bit array implementation and replaced
+ vector<bool>, now it should build with gcc4.4
+
+---
+ kdev-pg/kdev-pg-bit-array.h  | 104 +++++++++++++++++++++++++++++--------------
+ kdev-pg/kdev-pg-generate.cpp |   2 +-
+ kdev-pg/kdev-pg-lexer.cc     |   8 ++++
+ kdev-pg/kdev-pg-lexer.ll     |   8 ++++
+ kdev-pg/kdev-pg-regexp.cpp   |  14 +++---
+ 5 files changed, 97 insertions(+), 39 deletions(-)
+
+diff --git a/kdev-pg/kdev-pg-bit-array.h b/kdev-pg/kdev-pg-bit-array.h
+index fd4c311..9e8c773 100644
+--- a/kdev-pg/kdev-pg-bit-array.h
++++ b/kdev-pg/kdev-pg-bit-array.h
+@@ -22,16 +22,39 @@
+ 
+ #include <iostream>
+ #include <cstring>
+-#include <tr1/unordered_set>
+-
+-using namespace std;
+-using namespace tr1;
++#include <unordered_set>
+ 
+ class BitArray
+ {
++  typedef std::size_t size_t;
+   size_t mSize;
+-  unsigned char *mData;
+-  friend struct ::std::tr1::hash<BitArray>;
++  union
++  {
++    unsigned char *mByte;
++    size_t *mWord;
++  };
++  friend struct ::std::hash<BitArray>;
++  enum { BPW = sizeof(size_t) * 8 }; // Bits per word
++  static inline size_t words(size_t n)
++  {
++    return (n + BPW - 1) / BPW;
++  }
++  inline size_t words() const
++  {
++    return words(mSize);
++  }
++  static inline size_t bytes(size_t n)
++  {
++    return words(n) * sizeof(size_t);
++  }
++  inline size_t bytes() const
++  {
++    return bytes(mSize);
++  }
++  inline void setZerosAtEnd()
++  {
++    mWord[words() - 1] &= ((~size_t(0)) << (BPW - mSize % BPW));
++  }
+ public:
+   struct BitRef
+   {
+@@ -41,7 +64,7 @@ public:
+     {}
+     inline operator bool() const
+     {
+-      return byte & (1 << bit);
++      return (byte & (1 << bit)) == (1 << bit);
+     }
+     inline BitRef& operator=(bool val)
+     {
+@@ -51,22 +74,23 @@ public:
+         byte &= ~(1 << bit);
+       return *this;
+     }
+-    inline BitRef& operator=(BitRef val)
++    inline BitRef& operator=(const BitRef& val)
+     {
+       return *this = (bool)val;
+     }
+   };
+-  inline BitArray(size_t size, bool val = false) : mSize(size), mData(reinterpret_cast<unsigned char*>(malloc((size + 8 * sizeof(size_t) - 1) / 8)))
++  inline BitArray(size_t size, bool val = false) : mSize(size), mByte(reinterpret_cast<unsigned char*>(malloc(bytes())))
+   {
+-    memset(mData, (val ? (~(size_t(0))) : 0), (size + 8 * sizeof(size_t) - 1) / 8);
++    memset(mByte, (val ? (~(size_t(0))) : 0), bytes());
++    setZerosAtEnd();
+   }
+-  inline BitArray() : mSize(0), mData((unsigned char*)malloc(0))
++  inline BitArray() : mSize(0), mByte((unsigned char*)malloc(0))
+   {
+   }
+-  inline BitArray(const BitArray& o) : mSize(o.mSize), mData(reinterpret_cast<unsigned char*>(malloc((mSize + 8 * sizeof(size_t) - 1) / 8)))
++  inline BitArray(const BitArray& o) : mSize(o.mSize), mByte(reinterpret_cast<unsigned char*>(malloc(bytes())))
+   {
+-    for(size_t *i = reinterpret_cast<size_t*>(mData), *j = reinterpret_cast<size_t*>(o.mData); i != reinterpret_cast<size_t*>(mData) + (mSize + 8 * sizeof(size_t) - 1) / 8 / sizeof(size_t); ++i, ++j)
+-        *i = *j;
++    for(size_t *i = mWord, *j = o.mWord; i != mWord + words(); ++i, ++j)
++      *i = *j;
+   }
+   inline bool operator<(const BitArray& o) const
+   {
+@@ -77,18 +101,18 @@ public:
+     if(size() == 0)
+       return false;
+     size_t *i, *j;
+-    for(i = reinterpret_cast<size_t*>(mData), j = reinterpret_cast<size_t*>(o.mData); i != reinterpret_cast<size_t*>(mData) + (mSize + 8 * sizeof(size_t) - 1) / 8 / sizeof(size_t) - 1; ++i, ++j)
++    for(i = mWord, j = o.mWord; i != mWord + words(); ++i, ++j)
+     {
+       if(*i < *j)
+         return true;
+       if(*j < *i)
+         return false;
+     }
+-    return (*i & (1 << (8 * sizeof(size_t) - size() % (8 * sizeof(size_t))))) < (*j & (1 << (8 * sizeof(size_t) - size() % (8 * sizeof(size_t)))));
++    return false;
+   }
+   inline ~BitArray()
+   {
+-    free(mData);
++    free(mByte);
+   }
+   inline bool operator==(const BitArray& o) const
+   {
+@@ -97,12 +121,14 @@ public:
+     if(size() == 0)
+       return true;
+     size_t *i, *j;
+-    for(i = reinterpret_cast<size_t*>(mData), j = reinterpret_cast<size_t*>(o.mData); i != reinterpret_cast<size_t*>(mData) + (mSize + 8 * sizeof(size_t) - 1) / 8 / sizeof(size_t) - 1; ++i, ++j)
++    for(i = mWord, j = o.mWord; i != mWord + words(); ++i, ++j)
++    {
+       if(*i != *j)
+         return false;
+-    return (*i & (1 << (8 * sizeof(size_t) - size() % (8 * sizeof(size_t))))) == (*j & (1 << (8 * sizeof(size_t) - size() % (8 * sizeof(size_t)))));
++    }
++    return true;
+   }
+-  inline BitArray& operator[](const BitArray& o)
++  inline BitArray& operator=(const BitArray& o)
+   {
+     if(&o != this)
+     {
+@@ -113,19 +139,22 @@ public:
+   }
+   inline bool operator[](size_t x) const
+   {
+-    return size_t(mData[x >> 3]) & (1 << (x & 7));
++    if(x > size())
++      cerr << "out of bounds" << endl;
++    return (mByte[x >> 3] & (1 << (x & 7))) == (1 << (x & 7));
+   }
+   inline BitRef operator[](size_t x)
+   {
+-    return BitRef(mData[x >> 3], x & 7);
++    if(x > size())
++      cerr << "out of bounds" << endl;
++    return BitRef(mByte[x >> 3], x & 7);
+   }
+   inline void resize(size_t size)
+   {
+-    mData = reinterpret_cast<unsigned char*>(realloc(mData, size / 8));
++    mByte = reinterpret_cast<unsigned char*>(realloc(mByte, bytes(size)));
+     if(size > mSize)
+     {
+-      memset(reinterpret_cast<size_t*>(mData) + (mSize + 8 * sizeof(size_t) - 1) / 8 / sizeof(size_t), 0,  (size + 8 * sizeof(size_t) - 1) / 8 / sizeof(size_t) - (mSize + 8 * sizeof(size_t) - 1) / 8 / sizeof(size_t));
+-      mData[(mSize - 1) / 8 / sizeof(size_t)] &= ((~size_t(0)) << (sizeof(size_t) * 8 - mSize % (sizeof(size_t) * 8)));
++      memset(mWord + words(), 0, bytes(size) - bytes());
+     }
+     mSize = size;
+   }
+@@ -137,19 +166,28 @@ public:
+ 
+ namespace std
+ {
+-  namespace tr1
++  template<> struct hash<BitArray>
+   {
+-    template<> struct hash<BitArray>
++    inline size_t operator()(const BitArray &x) const
+     {
+-      inline size_t operator()(const BitArray &x) const
++      size_t ret = 0;
++      for(size_t *i = x.mWord; i != x.mWord + x.words(); ++i)
+       {
+-        size_t ret = 0;
+-        for(size_t *i = reinterpret_cast<size_t*>(x.mData); i != reinterpret_cast<size_t*>(x.mData) + (x.mSize + 8 * sizeof(size_t) - 1) / 8 / sizeof(size_t); ++i)
+-          ret ^= *i;
+-        return ret;
++        ret ^= *i;
++        ret = (ret >> (sizeof(size_t)*8 - 17)) | (ret << 17);
+       }
+-    };
++      return ret;
++    }
++  };
++}
++
++std::ostream& operator<<(std::ostream &o, const BitArray &a)
++{
++  for(size_t i = 0; i != a.size(); ++i)
++  {
++    o << (int)a[i];
+   }
++  return o;
+ }
+ 
+ #endif
+diff --git a/kdev-pg/kdev-pg-generate.cpp b/kdev-pg/kdev-pg-generate.cpp
+index 97dfd1c..2af2b98 100644
+--- a/kdev-pg/kdev-pg-generate.cpp
++++ b/kdev-pg/kdev-pg-generate.cpp
+@@ -659,7 +659,7 @@ void generateLexer()
+     LEXER_EXTRA_CODE_GEN(destructorCode)
+     s << "}" << endl << endl
+             
+-      << "#define PP_CONCAT_IMPL(x, y) x ## y\n" // necesarry, otherwise CURRENT_RULE_SET would not get resolved
++      << "#define PP_CONCAT_IMPL(x, y) x ## y\n" // necessary, otherwise CURRENT_RULE_SET would not get resolved
+          "#define PP_CONCAT(x, y) PP_CONCAT_IMPL(x, y)\n\n"
+          
+          "#define lxCURR_POS (Iterator::plain())\n"
+diff --git a/kdev-pg/kdev-pg-lexer.cc b/kdev-pg/kdev-pg-lexer.cc
+index 2a84b4c..0009ccb 100644
+--- a/kdev-pg/kdev-pg-lexer.cc
++++ b/kdev-pg/kdev-pg-lexer.cc
+@@ -3391,6 +3391,14 @@ void clearLineBuffer()
+   endOfLine = false;
+ }
+ 
++struct InitLineBuffer
++{
++  InitLineBuffer()
++  {
++    clearLineBuffer();
++  }
++} _initLineBuffer;
++
+  /* add the current token to the current line */
+ void appendLineBuffer()
+ {
+diff --git a/kdev-pg/kdev-pg-lexer.ll b/kdev-pg/kdev-pg-lexer.ll
+index e5138aa..a0864af 100644
+--- a/kdev-pg/kdev-pg-lexer.ll
++++ b/kdev-pg/kdev-pg-lexer.ll
+@@ -393,6 +393,14 @@ void clearLineBuffer()
+   endOfLine = false;
+ }
+ 
++struct InitLineBuffer
++{
++  InitLineBuffer()
++  {
++    clearLineBuffer();
++  }
++} _initLineBuffer;
++
+  /* add the current token to the current line */
+ void appendLineBuffer()
+ {
+diff --git a/kdev-pg/kdev-pg-regexp.cpp b/kdev-pg/kdev-pg-regexp.cpp
+index 1066360..33293ff 100644
+--- a/kdev-pg/kdev-pg-regexp.cpp
++++ b/kdev-pg/kdev-pg-regexp.cpp
+@@ -21,9 +21,12 @@
+ #include "kdev-pg-regexp.h"
+ #include "kdev-pg.h"
+ #include "kdev-pg-regexp-helper.h"
++#include "kdev-pg-bit-array.h"
+ #include <iostream>
+ #include <queue>
+ #include <stack>
++#include <QHash>
++#include <QSet>
+ #include <unordered_set>
+ #include <unordered_map>
+ 
+@@ -50,11 +53,10 @@ namespace std                                               \
+ 
+ q_Hash_to_tr1_hash(QBitArray)
+ 
+-
+ namespace KDevPG
+ {
+ 
+-typedef vector<bool> UsedBitArray;
++typedef BitArray UsedBitArray;
+ typedef QUtf8ToUcs4Iterator Iterator;
+ // typedef TableCharSet<Ascii> CharSet;
+ 
+@@ -533,8 +535,9 @@ public:
+         rules.resize(nstates);
+         return *this;
+     }
+-    UsedBitArray closure(UsedBitArray s)
++    UsedBitArray closure(const UsedBitArray& states)
+     {
++        UsedBitArray s(states);
+         assert(s.size() == nstates);
+         stack<size_t> todo;
+         for(size_t i = 0; i != nstates; ++i)
+@@ -562,8 +565,9 @@ public:
+             res[i] = res[i] || b[i];
+         return res;
+     }
+-    vector< pair<CharSet, UsedBitArray > > follow(UsedBitArray s)
++    vector< pair<CharSet, UsedBitArray > > follow(const UsedBitArray& states)
+     {
++        UsedBitArray s(states);
+         vector<pair<CharSet, UsedBitArray > > pr(nstates);
+         for(size_t i = 0; i != nstates; ++i)
+         {
+@@ -630,7 +634,7 @@ public:
+     }
+     DFA<CharSet> dfa()
+     {
+-        unordered_set<UsedBitArray > states;
++        unordered_set<UsedBitArray> states;
+         unordered_map<UsedBitArray, vector<pair<CharSet, UsedBitArray > > > rules;
+         stack<UsedBitArray > todo;
+         UsedBitArray start(nstates);
+-- 
+1.9.3
+

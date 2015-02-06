@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ postgresql.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008-2014 Phantom X, Goiania, Brazil.
+# Copyright 2008-2015 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -36,17 +36,15 @@ SB_REP=${SB_REP:-YES}
 
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
-if [ ! -d ${TMP} ]; then
-  mkdir -p ${TMP}
-fi
 
 NAME=postgresql
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-9.4.0}
+VERSION=${VERSION:-9.4.1}
 SVER=$(echo ${VERSION} | cut -d . -f1-2)
 DVER=${DVER:-${VERSION}}
 DTVER=${DTVER:-20070115}
+SETVER=${SETVER=2.0}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -77,9 +75,11 @@ grep --quiet '^postgres:' /etc/passwd && SB_HUSER=1
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
+SETSRCDIR=${NAME}-setup-${SETVER}
 SRCARCHIVE=${SRCDIR}.tar.bz2
 SSRCARCHIVE=${SRCARCHIVE}.md5
 SRCARCHIVE2=postgresql-${DVER}-US.pdf
+SETSRCARCHIVE=${SETSRCDIR}.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
@@ -87,12 +87,16 @@ DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 MIRROR_PGRE=${MIRROR_PGRE:-http://ftp.postgresql.org/pub}
 DL_URL="${MIRROR_PGRE}/source/v${VERSION}"
 DL_URL2="http://www.postgresql.org/files/documentation/pdf/${SVER}/${SRCARCHIVE2}"
+SETDL_URL="http://praiskup.fedorapeople.org/proj/postgresql-setup/${SETSRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible
 for file in ${SRCARCHIVE} ${SSRCARCHIVE} ;do
   test -r ${CWD}/${file} || ${DL_PROG} ${DL_OPTS} ${DL_URL}/${file} || exit 1
 done
 #test -r ${CWD}/${SRCARCHIVE2} || ${DL_PROG} ${DL_OPTS} ${DL_URL2} || exit 1
+test -r ${CWD}/${SETSRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${SETDL_URL} || exit 1
+
+[ "$1" = "--dlsrc" ] && exit 0
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -114,6 +118,9 @@ else
   LIBDIRSUFFIX=""
 fi
 
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
 if [ -d ${PKG} ]; then
   # Clean up a previous build
   rm -rf ${PKG}
@@ -124,6 +131,7 @@ cd ${TMP}
 rm -rf ${SRCDIR}
 tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
 cd ${SRCDIR} || exit 1
+tar -xvf ${CWD}/${SETSRCARCHIVE} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
@@ -140,6 +148,7 @@ SLKCFLAGS="$(echo ${SLKCFLAGS}|xargs -n 1|grep -v ffast-math|xargs -n 100)"
 export CFLAGS="${SLKCFLAGS} -DLINUX_OOM_SCORE_ADJ=0"
 export CXXFLAGS="${SLKCFLAGS}"
 
+SB_CONFIGURE(){
 ./configure \
   --prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
@@ -148,6 +157,35 @@ export CXXFLAGS="${SLKCFLAGS}"
   --datadir=/usr/share/pgsql \
   --infodir=/usr/info \
   --mandir=/usr/man \
+  --disable-silent-rules \
+  --disable-dependency-tracking \
+  --build=${SLKTARGET}-${SLKDTARGET}-linux "$@"
+}
+
+( cd ${SETSRCDIR} || exit $?
+
+  export POSTGRES_BIN=/usr/bin/postgres \
+    PG_CTL_BIN=/usr/bin/pg_ctl \
+    PGVERSION=${VERSION} \
+    PGMAJORVERSION=${SVER} \
+    PGENGINE=/usr/bin \
+    PREVMAJORVERSION=${SVER} \
+    PREVPGENGINE=/dev/null \
+    README_DIST=/usr/doc/${NAME}-${VERSION}/README.rpm-dist \
+    PKGCONFIG_DIR=/etc/pgsql
+
+  export pgsetup_cv_os_family=redhat
+
+  SB_CONFIGURE \
+     --docdir=/usr/doc/${NAME}-${VERSION} || exit $?
+  make -j${NJOBS} || make || exit $?
+  make install DESTDIR=${PKG} systemdunitsdir=/lib/systemd/system || exit $?
+
+  rm -rf ${PKG}/usr/libexec/initscripts
+
+) || exit $?
+
+SB_CONFIGURE \
   --with-docdir=/usr/doc \
   --disable-rpath \
   --with-perl \
@@ -158,8 +196,7 @@ export CXXFLAGS="${SLKCFLAGS}"
   ${SB_KRB5OPTS} \
   --enable-nls \
   --enable-thread-safety \
-  --with-system-tzdata=/usr/share/zoneinfo \
-  --build=${SLKTARGET}-${SLKDTARGET}-linux || exit 1
+  --with-system-tzdata=/usr/share/zoneinfo || exit 1
 
 make -j${NJOBS} world || make world || exit $?
 
@@ -208,7 +245,6 @@ if [ -n "${MARCH}" ] ;then
   zcat ${CWD}/ecpg_config.h.gz > ${PKG}/usr/include/ecpg_config_${MARCH}.h || exit 1
 fi
 
-
 mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/pgsql/tutorial
 cp src/tutorial/* ${PKG}/usr/lib${LIBDIRSUFFIX}/pgsql/tutorial/ || exit 1
 
@@ -230,7 +266,7 @@ mkdir -p ${PKG}/etc/pgsql
 chmod 0700 ${PKG}/etc/pgsql
 
 mkdir -p ${PKG}/etc/rc.d
-zcat ${CWD}/rc.${NAME}.gz | sed "s/^PGVERSION=.*$/PGVERSION=${VERSION}/" \
+sed "s/^PGVERSION=.*$/PGVERSION=${VERSION}/" ${CWD}/rc.${NAME} \
   > ${PKG}/etc/rc.d/rc.${NAME} || exit 1
 chmod 0755 ${PKG}/etc/rc.d/rc.${NAME} || exit 1
 
@@ -238,23 +274,6 @@ mkdir -p ${PKG}/var/log/setup
 zcat ${CWD}/setup.onlyonce.rc${NAME}.gz \
   > ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
 chmod 0755 ${PKG}/var/log/setup/setup.onlyonce.rc${NAME} || exit 1
-
-# prep the setup script, including insertion of some values it needs
-sed \
-  -e "s|^PGVERSION=.*$|PGVERSION=${VERSION}|" \
-  -e 's|^PGENGINE=.*$|PGENGINE=/usr/bin|' \
-  ${CWD}/${NAME}-setup > ${PKG}/usr/bin/${NAME}-setup || exit 1
-chmod 0755 ${PKG}/usr/bin/${NAME}-setup
-
-# prep the startup check script, including insertion of some values it needs
-sed \
-  -e "s|^PGVERSION=.*$|PGVERSION=${VERSION}|" \
-  -e "s|^PGDOCDIR=.*$|PGDOCDIR=/usr/doc/${NAME}-${VERSION}|" \
-  ${CWD}/${NAME}-check-db-dir > ${PKG}/usr/bin/${NAME}-check-db-dir || exit 1
-chmod 0755 ${PKG}/usr/bin/${NAME}-check-db-dir
-
-mkdir -p ${PKG}/lib/systemd/system
-install -pm0644 ${CWD}/${NAME}.service ${PKG}/lib/systemd/system/ || exit 1
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -267,7 +286,7 @@ mkdir -p ${PKG}/var/run/postgresql
 
 # Add a documentation directory:
 if [ -d ${PKG}/usr/doc/pgsql ] ; then
-  mv ${PKG}/usr/doc/pgsql ${DOCDIR}
+  mv ${PKG}/usr/doc/pgsql/* ${DOCDIR}/
 fi
 mkdir -p ${DOCDIR}/contrib
 if [ -d ${PKG}/usr/share/doc ] ; then
@@ -276,7 +295,7 @@ if [ -d ${PKG}/usr/share/doc ] ; then
   rmdir -p ${PKG}/usr/share
 fi
 cp -a \
-  COPYRIGHT README HISTORY doc/src/FAQ ${CWD}/README.rpm-dist ${CWD}/ChangeLog.SB \
+  COPYRIGHT README HISTORY doc/src/FAQ ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
 [ -f ${CWD}/${SRCARCHIVE2} ] && cp -a ${CWD}/${SRCARCHIVE2} ${DOCDIR}/
 cp -a  contrib/*/README.* contrib/spi/*.example ${DOCDIR}/contrib/
@@ -392,7 +411,7 @@ config() {
 EOF
 
 ( cd ${PKG}
-  find etc/ -name *.new -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
   echo >> ${PKG}/install/doinst.sh
 )
 
@@ -420,8 +439,8 @@ if [ "${SB_REP}" = "YES" ] ;then
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/apply-patches.sh ${CWD}/${NAME}-bashprofile.gz ${CWD}/*.h.gz \
-    ${CWD}/README.*.dist ${CWD}/{rc.,setup.onlyonce.rc}*.gz ${CWD}/${NAME}.service \
-    ${CWD}/Makefile*.gz ${CWD}/${NAME}-setup ${CWD}/${NAME}-check-db-dir ${SBDIR}/
+    ${CWD}/setup.onlyonce.rc*.gz ${CWD}/rc.${NAME} ${CWD}/Makefile*.gz \
+    ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \

@@ -44,6 +44,9 @@ if [ "${SB_BOOTSTRP}" = "YES" ] ;then
   ApplyPatch glibc.pthread-disable-forced-unwind-check.diff
 fi
 
+cp -f ${SB_PATCHDIR}/00_all_0007-rtld-do-not-ignore-arch-specific-CFLAGS.patch patches/
+cp -f ${SB_PATCHDIR}/00_all_0008-nptl-handle-EAGAIN-with-some-futex-operations.patch patches/
+
 ### Gentoo
 ( SB_PATCHDIR=patches
 
@@ -61,11 +64,7 @@ fi
 
 ## Fedora
 # Needs to be sent upstream
-ApplyPatch glibc-fedora-getrlimit-PLT.patch
 ApplyPatch glibc-fedora-include-bits-ldbl.patch
-
-# Needs to be sent upstream
-ApplyPatch glibc-rh841318.patch
 
 ApplyPatch glibc-fedora-linux-tcsetattr.patch
 ApplyPatch glibc-fedora-nptl-linklibc.patch
@@ -75,7 +74,7 @@ ApplyPatch glibc-fedora-locarchive.patch
 ApplyPatch glibc-fedora-streams-rh436349.patch
 ApplyPatch glibc-fedora-localedata-rh61908.patch
 ApplyPatch glibc-fedora-uname-getrlimit.patch
-ApplyPatch glibc-fedora-elf-rh737223.patch
+ApplyPatch glibc-fedora-__libc_multiple_libcs.patch
 ApplyPatch glibc-fedora-elf-ORIGIN.patch
 ApplyPatch glibc-fedora-elf-init-hidden_undef.patch
 
@@ -84,6 +83,9 @@ ApplyPatch glibc-rh952799.patch
 
 # Allow applications to call pthread_atfork without libpthread.so.
 ApplyPatch glibc-rh1013801.patch
+
+ApplyPatch glibc-nscd-sysconfig.patch
+sed -i -e 's|/sysconfig/|/default/|g' nscd/nscd.service
 
 # http://sourceware.org/ml/libc-alpha/2012-12/msg00103.html
 ApplyPatch glibc-rh697421.patch
@@ -110,16 +112,11 @@ ApplyPatch glibc-2.10.1-biarch-cpp-defines.patch.gz
 ApplyPatch glibc-2.6-nice_fix.patch
 ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
 ApplyPatch glibc-2.16-multiarch.patch
-ApplyPatch glibc-2.3.6-pt_BR-i18nfixes.patch.gz
+ApplyPatch glibc-2.21-pt_BR-i18nfixes.patch
 
 ### Arch
-ApplyPatch glibc-2.20-roundup.patch
 
 ### master
-ApplyPatch 0001-Return-failure-in-getnetgrent-only-when-all-netgroup.patch
-ApplyPatch 0002-malloc-additional-unlink-hardening-for-non-small-bin.patch
-ApplyPatch 0001-Add-correct-variable-names-for-_POSIX_IPV6-and-_POSI.patch
-ApplyPatch 0001-Correctly-size-profiling-reloc-table-bug-17411.patch
-ApplyPatch 0001-Fix-infinite-loop-in-check_pf-BZ-12926.patch
+ApplyPatch 0001-x86-Clean-up-__vdso_clock_gettime-variable.patch
 
 set +e +o pipefail

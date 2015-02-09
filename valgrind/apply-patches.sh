@@ -29,12 +29,15 @@ ApplyPatch() {
 }
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+ApplyPatch ${NAME}-3.10.1-glibc-2.21.patch
 ### Fedora
 ApplyPatch ${NAME}-3.9.0-cachegrind-improvements.patch
 # KDE#211352 - helgrind races in helgrind's own mythread_wrapper
 ApplyPatch ${NAME}-3.9.0-helgrind-race-supp.patch
 ApplyPatch ${NAME}-3.9.0-stat_h.patch
 ApplyPatch ${NAME}-3.9.0-ldso-supp.patch
+# KDE#342795 Internal glibc __GI_mempcpy call should be intercepted
+ApplyPatch ${NAME}-3.10.1-mempcpy.patch
 
 ### Arch
 

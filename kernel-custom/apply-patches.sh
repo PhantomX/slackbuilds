@@ -191,7 +191,12 @@ ApplyPatch Set-UID-in-sess_auth_rawntlmssp_authenticate-too.patch
 #rhbz 1124119
 ApplyPatch uas-Do-not-blacklist-ASM1153-disk-enclosures.patch
 ApplyPatch uas-Add-US_FL_NO_ATA_1X-for-2-more-Seagate-disk-encl.patch
-ApplyPatch uas-Add-no-report-opcodes-quirk-for-Simpletech-devic.patch
+
+# rhbz 1183744 1188347
+ApplyPatch ipv4-try-to-cache-dst_entries-which-would-cause-a-re.patch
+
+#rhbz 1188074
+ApplyPatch 0001-ntp-Fixup-adjtimex-freq-validation-on-32bit-systems.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

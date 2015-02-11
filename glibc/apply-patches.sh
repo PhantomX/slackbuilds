@@ -115,6 +115,7 @@ ApplyPatch glibc-2.16-multiarch.patch
 ApplyPatch glibc-2.21-pt_BR-i18nfixes.patch
 
 ### Arch
+ApplyPatch glibc-2.21-roundup.patch
 
 ### master
 ApplyPatch 0001-x86-Clean-up-__vdso_clock_gettime-variable.patch

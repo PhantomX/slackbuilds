@@ -185,15 +185,8 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 1163927
-ApplyPatch Set-UID-in-sess_auth_rawntlmssp_authenticate-too.patch
-
-#rhbz 1124119
-ApplyPatch uas-Do-not-blacklist-ASM1153-disk-enclosures.patch
-ApplyPatch uas-Add-US_FL_NO_ATA_1X-for-2-more-Seagate-disk-encl.patch
-
-# rhbz 1183744 1188347
-ApplyPatch ipv4-try-to-cache-dst_entries-which-would-cause-a-re.patch
+#rhbz 1188638
+ApplyPatch nfs-don-t-call-blocking-operations-while-TASK_RUNNIN.patch
 
 #rhbz 1188074
 ApplyPatch 0001-ntp-Fixup-adjtimex-freq-validation-on-32bit-systems.patch

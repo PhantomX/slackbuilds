@@ -31,6 +31,11 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-cmake.patch
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-no_rpath.patch
 
+# reduce stderr spamming about invalid mimetypes (kWarning->kDebug)
+# workaround for http://bugzilla.redhat.com/1184918
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.14.4-unknown_mimetype_spam.patch
+# limit solid qDebug spam
+
 # limit solid qDebug spam
 # http://bugzilla.redhat.com/882731
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-solid_qt_no_debug_output.patch
@@ -66,18 +71,15 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-klauncher-no-glib.
 # opening a terminal in Konqueror / Dolphin does not inherit environment variables
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.13.2-invokeTerminal.patch
 
-# Kolab request
-# https://obs.kolabsys.com/package/view_file/Kontact:4.13:Development/kdelibs/0001-KRecursiveFilterProxyModel-Fixed-the-model.patch
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-KRecursiveFilterProxyModel-Fixed-the-model.patch
-
-
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
 
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_rb110b14eaec647e569c94d0ed80ba2b8145faadc.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r5f957ebf94aa5a02815c5bf1e3f59060363efd77.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r2b5c6e42fc8114c6854ce490b9cdd4356be683d9.diff
+
 
 # revert these commits for
 #https://bugs.kde.org/315578

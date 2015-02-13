@@ -4,8 +4,6 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-
-# Set to YES if autogen is needed
-SB_AUTOGEN=NO
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.1.0-qiconfix-loader.patch
 
 set +e +o pipefail

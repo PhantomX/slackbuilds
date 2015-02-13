@@ -10,7 +10,7 @@ if [ "${SB_SYSTEMD}" = "YES" ] ;then
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/libsystemd.patch
   rm -f sd-daemon.h
 fi
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/systemd205.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rtkit-controlgroup.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

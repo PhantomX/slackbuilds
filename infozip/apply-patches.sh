@@ -28,10 +28,13 @@ SB_PATCHDIR=${CWD}/patches
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-valgrind.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-x-option.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-overflow.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-cve-2014-8139.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-cve-2014-8140.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-cve-2014-8141.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-overflow-long-fsize.patch
 
   ### Debian
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/04-handle-pkware-verification-bit.patch
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/07-increase-size-of-cfactorstr.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/08-allow-greater-hostver-values.patch
 )
 

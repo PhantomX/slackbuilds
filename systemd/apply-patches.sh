@@ -29,13 +29,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/udev-microsoft-3000-keymap.pat
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 
 # Upstream
-ApplyPatch 0001-use-correct-format-types.patch
-ApplyPatch 0001-systemctl-fix-argument-handling-when-invoked-as-shut.patch
 
 ### Fedora
-ApplyPatch 0001-nspawn-fix-invocation-of-the-raw-clone-system-call-o.patch
-ApplyPatch 0002-journald-when-we-detect-the-journal-file-we-are-abou.patch
-ApplyPatch 0003-hwdb-add-a-touchpad-hwdb.patch
 ApplyPatch fedora-disable-resolv.conf-symlink.patch
 ApplyPatch fedora-add-bridge-sysctl-configuration.patch
 

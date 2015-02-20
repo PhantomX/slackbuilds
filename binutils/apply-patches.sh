@@ -19,5 +19,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.25-kernel-ld-r.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.2-aarch64-em.patch
 # Fix allocation of space for x86_64 PIE relocs.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.25-x86_64-pie-relocs.patch
+# https://sourceware.org/bugzilla/show_bug.cgi?id=16992
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.25-fix-dynamic-list.patch
 
 set +e +o pipefail

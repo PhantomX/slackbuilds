@@ -30,7 +30,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.9.1-P2-dlz-libdb.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.9.1-P2-multlib-conflict.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-rh640538.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh669163.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-rh985918.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.10-dist-native-pkcs11.patch
 
 # IDN paches

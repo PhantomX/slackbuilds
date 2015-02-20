@@ -66,7 +66,7 @@ ApplyPatch perl-5.14.1-offtest.patch
 ApplyPatch perl-5.16.3-create_libperl_soname.patch
 
 # Install libperl.so to -Dshrpdir value
-ApplyPatch perl-5.16.3-Install-libperl.so-to-shrpdir-on-Linux.patch
+ApplyPatch perl-5.20.2-Install-libperl.so-to-shrpdir-on-Linux.patch
 
 # Document Math::BigInt::CalcEmu requires Math::BigInt, rhbz#959096,
 # CPAN RT#85015
@@ -78,6 +78,23 @@ ApplyPatch perl-5.18.2-t-op-crypt.t-Perform-SHA-256-algorithm-if-default-on.patc
 
 # Make *DBM_File desctructors thread-safe, bug #1107543, RT#61912
 ApplyPatch perl-5.18.2-Destroy-GDBM-NDBM-ODBM-SDBM-_File-objects-only-from-.patch
+
+# Report inaccesible file on failed require, bug #1166504, RT#123270,
+# in upstream after 5.21.6
+ApplyPatch perl-5.21.6-Report-inaccesible-file-on-failed-require.patch
+
+# Use stronger algorithm needed for FIPS in t/op/taint.t, bug #1128032,
+# RT#123338, in upstream after 5.21.6
+ApplyPatch perl-5.21.6-t-op-taint.t-Perform-SHA-256-algorithm-by-crypt-if-d.patch
+
+# Fix Errno.pm generation for GCC 5.0, RT#123784, in upstream after 5.21.8
+ApplyPatch perl-5.20.2-Fix-Errno.pm-generation-for-gcc-5.0.patch
+
+# Handle hexadecimal constants by h2ph, RT#123784, in upstream after 5.21.8
+ApplyPatch perl-5.21.8-h2ph-correct-handling-of-hex-constants-for-the-pream.patch
+
+# Do not use -_h2ph_pre.ph from system at tests, RT#123784
+ApplyPatch perl-5.21.8-lib-h2ph.t-to-test-generated-t-_h2ph_pre.ph-instead-.patch
 
 # Link XS modules to libperl.so with EU::CBuilder on Linux, bug #960048
 ApplyPatch perl-5.16.3-Link-XS-modules-to-libperl.so-with-EU-CBuilder-on-Li.patch

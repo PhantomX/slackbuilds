@@ -37,7 +37,13 @@ ApplyPatch gdb-archer.patch
 
 # Backported fixups post the source tarball.
 #Xdrop: Just backports.
-#ApplyPatch gdb-upstream.patch
+ApplyPatch gdb-upstream.patch
+
+# VLA (Fortran dynamic arrays) from Intel + archer-jankratochvil-vla tests.
+ApplyPatch gdb-vla-intel.patch
+ApplyPatch gdb-vla-intel-logical-not.patch
+ApplyPatch gdb-vla-intel-stringbt-fix.patch
+ApplyPatch gdb-vla-intel-04of23-fix.patch
 
 # Work around out-of-date dejagnu that does not have KFAIL
 ApplyPatch gdb-6.3-rh-dummykfail-20041202.patch.gz
@@ -89,9 +95,6 @@ ApplyPatch gdb-6.3-inheritancetest-20050726.patch
 
 # Add readnever option
 ApplyPatch gdb-6.3-readnever-20050907.patch
-
-# Fix ia64 gdb problem with user-specified SIGILL handling
-ApplyPatch gdb-6.3-ia64-sigill-20051115.patch
 
 # Fix debuginfo addresses resolving for --emit-relocs Linux kernels (BZ 203661).
 ApplyPatch gdb-6.5-bz203661-emit-relocs.patch
@@ -320,13 +323,13 @@ ApplyPatch gdb-rhbz-818343-set-solib-absolute-prefix-testcase.patch
 # Fix "GDB cannot access struct member whose offset is larger than 256MB"
 # (RH BZ 795424).
 #=push+work
-#ApplyPatch gdb-rhbz795424-bitpos-20of25.patch
-#ApplyPatch gdb-rhbz795424-bitpos-21of25.patch
-#ApplyPatch gdb-rhbz795424-bitpos-22of25.patch
-#ApplyPatch gdb-rhbz795424-bitpos-23of25.patch
-#ApplyPatch gdb-rhbz795424-bitpos-25of25.patch
-#ApplyPatch gdb-rhbz795424-bitpos-25of25-test.patch
-#ApplyPatch gdb-rhbz795424-bitpos-lazyvalue.patch
+ApplyPatch gdb-rhbz795424-bitpos-20of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-21of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-22of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-23of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-25of25.patch
+ApplyPatch gdb-rhbz795424-bitpos-25of25-test.patch
+ApplyPatch gdb-rhbz795424-bitpos-lazyvalue.patch
 
 # Import regression test for `gdb/findvar.c:417: internal-error:
 # read_var_value: Assertion `frame' failed.' (RH BZ 947564) from RHEL 6.5.
@@ -339,20 +342,10 @@ ApplyPatch gdb-enable-count-crash.patch
 # Fix crash of -readnow /usr/lib/debug/usr/bin/gnatbind.debug (BZ 1069211).
 ApplyPatch gdb-gnat-dwarf-crash-3of3.patch
 
-# VLA (Fortran dynamic arrays) from Intel + archer-jankratochvil-vla tests.
 ApplyPatch gdb-archer-vla-tests.patch
-ApplyPatch gdb-vla-intel.patch
-ApplyPatch gdb-vla-intel-04of23-fix.patch
-
-# Fix --with-system-readline with readline-6.3 patch 5.
-ApplyPatch gdb-readline-6.3.5.patch
 
 # Continue backtrace even if a frame filter throws an exception (Phil Muldoon).
 ApplyPatch gdb-btrobust.patch
-
-# Python completion w/overriden completer (Sergio Durigan Junior, BZ 1075199).
-ApplyPatch gdb-python-completer-1of2.patch
-ApplyPatch gdb-python-completer-2of2.patch
 
 # Display Fortran strings in backtraces.
 ApplyPatch gdb-fortran-frame-string.patch
@@ -360,15 +353,11 @@ ApplyPatch gdb-fortran-frame-string.patch
 # Fix Python GIL with gdb.execute("continue") (Phil Muldoon, BZ 1116957).
 ApplyPatch gdb-python-gil.patch
 
-# Fix "save breakpoints" for signal catchpoints and disabled breakpoints
-# (BZ 1146170, Miroslav Franc).
-ApplyPatch gdb-save-breakpoints-fix.patch
+# Fix jit-reader.h for multi-lib.
+ApplyPatch gdb-jit-reader-multilib.patch
 
-# Fix 'Slow gstack performance' (RH BZ 1103894, Jan Kratochvil).
-ApplyPatch gdb-slow-gstack-performance.patch
-
-# Accelerate interactive symbols lookup 15x.
-ApplyPatch gdb-symbols-lookup-accel.patch
+# Temporarily disable dg-extract-results.py to fix gdb.sum sorting.
+ApplyPatch gdb-no-dg-extract-results-py.patch
 
 ### END Fedora
 

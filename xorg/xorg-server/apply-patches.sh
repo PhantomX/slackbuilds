@@ -47,6 +47,9 @@ ApplyPatch 0001-Always-install-vbe-and-int10-sdk-headers.patch
 # submitted: http://lists.x.org/archives/xorg-devel/2013-October/037996.html
 ApplyPatch exa-only-draw-valid-trapezoids.patch
 
+# submitted upstream: regression in 1.17.0
+ApplyPatch 0001-os-access-fix-regression-in-server-interpreted-auth.patch
+
 # because the display-managers are not ready yet, do not upstream
 ApplyPatch 0001-Fedora-hack-Make-the-suid-root-wrapper-always-start-.patch
 
@@ -57,6 +60,7 @@ ApplyPatch xserver-force-hal-disable.patch
 ApplyPatch xserver-1.7.0-systemd209.patch
 
 ### Arch
+ApplyPatch v2-xserver-Fix-a-crash-with-XDMCP-error-handler.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

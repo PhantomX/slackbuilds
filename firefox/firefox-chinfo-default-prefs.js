@@ -18,8 +18,6 @@ pref("general.autoScroll", false);
 pref("general.smoothScroll", false);
 pref("layout.spellcheckDefault", 0);
 pref("middlemouse.contentLoadURL", false);
-pref("general.useragent.vendor", "FIREFOX_SLK_DIST");
-pref("general.useragent.vendorSub", "FIREFOX_SLK_VR");
 pref("intl.locale.matchOS", true);
 pref("extensions.shownSelectionUI", true);
 pref("gfx.color_management.enablev4", true);

@@ -1,0 +1,600 @@
+diff --git a/src/gui/kernel/qplatformintegration.cpp b/src/gui/kernel/qplatformintegration.cpp
+index 39b031e..7f808da 100644
+--- a/src/gui/kernel/qplatformintegration.cpp
++++ b/src/gui/kernel/qplatformintegration.cpp
+@@ -429,16 +429,40 @@ QList<int> QPlatformIntegration::possibleKeys(const QKeyEvent *) const
+   This adds the screen to QGuiApplication::screens(), and emits the
+   QGuiApplication::screenAdded() signal.
+
++  If the added screen is a primary screen (isPrimary = true), it is prepended
++  to the QGuiApplicationPrivate::screen_list, since
++  QGuiApplication::primaryScreen always returns the first screen in the list.
++
+   The screen is automatically removed when the QPlatformScreen is destroyed.
+ */
+-void QPlatformIntegration::screenAdded(QPlatformScreen *ps)
++void QPlatformIntegration::screenAdded(QPlatformScreen *ps, bool isPrimary)
+ {
+     QScreen *screen = new QScreen(ps);
+     ps->d_func()->screen = screen;
+-    QGuiApplicationPrivate::screen_list << screen;
++    if (isPrimary) {
++        QGuiApplicationPrivate::screen_list.prepend(screen);
++    } else {
++        QGuiApplicationPrivate::screen_list.append(screen);
++    }
+     emit qGuiApp->screenAdded(screen);
+ }
+
++/*!
++  Should be called by the implementation whenever a screen is removed.
++
++  The implementation should ensure that the screen removed is not the
++  primary screen.
++*/
++void QPlatformIntegration::screenRemoved(QPlatformScreen *ps)
++{
++    if (ps->screen() == QGuiApplicationPrivate::screen_list.first()) {
++        qWarning("Primary screen removed, expect trouble");
++    }
++    if (QGuiApplicationPrivate::screen_list.removeOne(ps->screen()) && qApp) {
++        Q_EMIT qApp->screenRemoved(ps->screen());
++    }
++}
++
+ QStringList QPlatformIntegration::themeNames() const
+ {
+     return QStringList();
+diff --git a/src/gui/kernel/qplatformintegration.h b/src/gui/kernel/qplatformintegration.h
+index d510240..5ec7896 100644
+--- a/src/gui/kernel/qplatformintegration.h
++++ b/src/gui/kernel/qplatformintegration.h
+@@ -169,7 +169,8 @@ public:
+ #endif
+
+ protected:
+-    void screenAdded(QPlatformScreen *screen);
++    void screenAdded(QPlatformScreen *screen, bool isPrimary = false);
++    void screenRemoved(QPlatformScreen *screen);
+ };
+
+ QT_END_NAMESPACE
+diff --git a/src/gui/kernel/qplatformscreen.cpp b/src/gui/kernel/qplatformscreen.cpp
+index 71710d1..4fb7114 100644
+--- a/src/gui/kernel/qplatformscreen.cpp
++++ b/src/gui/kernel/qplatformscreen.cpp
+@@ -52,8 +52,6 @@ QPlatformScreen::QPlatformScreen()
+ QPlatformScreen::~QPlatformScreen()
+ {
+     Q_D(QPlatformScreen);
+-
+-    QGuiApplicationPrivate::screen_list.removeOne(d->screen);
+     delete d->screen;
+ }
+
+diff --git a/src/gui/kernel/qscreen.cpp b/src/gui/kernel/qscreen.cpp
+index ed6e8dd..8909eed 100644
+--- a/src/gui/kernel/qscreen.cpp
++++ b/src/gui/kernel/qscreen.cpp
+@@ -66,16 +66,6 @@ QScreen::QScreen(QPlatformScreen *screen)
+ {
+ }
+
+-
+-/*!
+-    Destroys the screen.
+- */
+-QScreen::~QScreen()
+-{
+-    if (qApp)
+-        Q_EMIT qApp->screenRemoved(this);
+-}
+-
+ /*!
+   Get the platform screen handle.
+ */
+diff --git a/src/gui/kernel/qscreen.h b/src/gui/kernel/qscreen.h
+index 766b3d8..144730a 100644
+--- a/src/gui/kernel/qscreen.h
++++ b/src/gui/kernel/qscreen.h
+@@ -81,7 +81,6 @@ class Q_GUI_EXPORT QScreen : public QObject
+     Q_PROPERTY(qreal refreshRate READ refreshRate NOTIFY refreshRateChanged)
+
+ public:
+-    ~QScreen();
+     QPlatformScreen *handle() const;
+
+     QString name() const;
+diff --git a/src/plugins/platforms/xcb/qxcbclipboard.cpp b/src/plugins/platforms/xcb/qxcbclipboard.cpp
+index f56a29d..0dca2da 100644
+--- a/src/plugins/platforms/xcb/qxcbclipboard.cpp
++++ b/src/plugins/platforms/xcb/qxcbclipboard.cpp
+@@ -276,7 +276,7 @@ QXcbClipboard::QXcbClipboard(QXcbConnection *c)
+     m_timestamp[QClipboard::Clipboard] = XCB_CURRENT_TIME;
+     m_timestamp[QClipboard::Selection] = XCB_CURRENT_TIME;
+
+-    m_screen = connection()->primaryScreen();
++    QXcbScreen * screen = connection()->primaryScreen();
+
+     int x = 0, y = 0, w = 3, h = 3;
+
+@@ -284,11 +284,11 @@ QXcbClipboard::QXcbClipboard(QXcbConnection *c)
+     Q_XCB_CALL(xcb_create_window(xcb_connection(),
+                                  XCB_COPY_FROM_PARENT,            // depth -- same as root
+                                  m_owner,                        // window id
+-                                 m_screen->screen()->root,                   // parent window id
++                                 screen->screen()->root,                   // parent window id
+                                  x, y, w, h,
+                                  0,                               // border width
+                                  XCB_WINDOW_CLASS_INPUT_OUTPUT,   // window class
+-                                 m_screen->screen()->root_visual, // visual
++                                 screen->screen()->root_visual, // visual
+                                  0,                               // value mask
+                                  0));                             // value list
+ #ifndef QT_NO_DEBUG
+@@ -462,8 +462,15 @@ bool QXcbClipboard::ownsMode(QClipboard::Mode mode) const
+     return m_timestamp[mode] != XCB_CURRENT_TIME;
+ }
+
++QXcbScreen *QXcbClipboard::screen() const
++{
++    return connection()->primaryScreen();
++}
++
+ xcb_window_t QXcbClipboard::requestor() const
+ {
++     QXcbScreen * screen = connection()->primaryScreen();
++
+     if (!m_requestor) {
+         const int x = 0, y = 0, w = 3, h = 3;
+         QXcbClipboard *that = const_cast<QXcbClipboard *>(this);
+@@ -472,11 +479,11 @@ xcb_window_t QXcbClipboard::requestor() const
+         Q_XCB_CALL(xcb_create_window(xcb_connection(),
+                                      XCB_COPY_FROM_PARENT,            // depth -- same as root
+                                      window,                        // window id
+-                                     m_screen->screen()->root,                   // parent window id
++                                     screen->screen()->root,                   // parent window id
+                                      x, y, w, h,
+                                      0,                               // border width
+                                      XCB_WINDOW_CLASS_INPUT_OUTPUT,   // window class
+-                                     m_screen->screen()->root_visual, // visual
++                                     screen->screen()->root_visual, // visual
+                                      0,                               // value mask
+                                      0));                             // value list
+ #ifndef QT_NO_DEBUG
+diff --git a/src/plugins/platforms/xcb/qxcbclipboard.h b/src/plugins/platforms/xcb/qxcbclipboard.h
+index e76d502..b6cbda4 100644
+--- a/src/plugins/platforms/xcb/qxcbclipboard.h
++++ b/src/plugins/platforms/xcb/qxcbclipboard.h
+@@ -59,7 +59,7 @@ public:
+     bool supportsMode(QClipboard::Mode mode) const;
+     bool ownsMode(QClipboard::Mode mode) const;
+
+-    QXcbScreen *screen() const { return m_screen; }
++    QXcbScreen *screen() const;
+
+     xcb_window_t requestor() const;
+     void setRequestor(xcb_window_t window);
+@@ -91,8 +91,6 @@ private:
+     xcb_atom_t atomForMode(QClipboard::Mode mode) const;
+     QClipboard::Mode modeForAtom(xcb_atom_t atom) const;
+
+-    QXcbScreen *m_screen;
+-
+     // Selection and Clipboard
+     QXcbClipboardMime *m_xClipboard[2];
+     QMimeData *m_clientClipboard[2];
+diff --git a/src/plugins/platforms/xcb/qxcbconnection.cpp b/src/plugins/platforms/xcb/qxcbconnection.cpp
+index 5510c3b..c9600f0 100644
+--- a/src/plugins/platforms/xcb/qxcbconnection.cpp
++++ b/src/plugins/platforms/xcb/qxcbconnection.cpp
+@@ -182,7 +182,6 @@ QXcbScreen* QXcbConnection::findOrCreateScreen(QList<QXcbScreen *>& newScreens,
+ void QXcbConnection::updateScreens()
+ {
+     xcb_screen_iterator_t it = xcb_setup_roots_iterator(m_setup);
+-    int screenNumber = 0;       // index of this QScreen in QGuiApplication::screens()
+     int xcbScreenNumber = 0;    // screen number in the xcb sense
+     QSet<QXcbScreen *> activeScreens;
+     QList<QXcbScreen *> newScreens;
+@@ -194,7 +193,7 @@ void QXcbConnection::updateScreens()
+         // which will become virtual siblings.
+         xcb_screen_t *xcbScreen = it.data;
+         QList<QPlatformScreen *> siblings;
+-        int outputCount = 0;
++        int outputCount = 0, connectedOutputCount = 0;
+         if (has_randr_extension) {
+             xcb_generic_error_t *error = NULL;
+             xcb_randr_get_output_primary_cookie_t primaryCookie =
+@@ -239,7 +238,7 @@ void QXcbConnection::updateScreens()
+                         QXcbScreen *screen = findOrCreateScreen(newScreens, xcbScreenNumber, xcbScreen, output);
+                         siblings << screen;
+                         activeScreens << screen;
+-                        ++screenNumber;
++                        ++connectedOutputCount;
+                         // There can be multiple outputs per screen, use either
+                         // the first or an exact match.  An exact match isn't
+                         // always available if primary->output is XCB_NONE
+@@ -262,7 +261,7 @@ void QXcbConnection::updateScreens()
+         }
+         // If there's no randr extension, or there was some error above, or the screen
+         // doesn't have outputs for some other reason (e.g. on VNC or ssh -X), just assume there is one screen.
+-        if (outputCount == 0) {
++        if (connectedOutputCount == 0) {
+ #ifdef Q_XCB_DEBUG
+                 qDebug("Found a screen with zero outputs");
+ #endif
+@@ -271,7 +270,6 @@ void QXcbConnection::updateScreens()
+             activeScreens << screen;
+             if (!primaryScreen)
+                 primaryScreen = screen;
+-            ++screenNumber;
+         }
+         foreach (QPlatformScreen* s, siblings)
+             ((QXcbScreen*)s)->setVirtualSiblings(siblings);
+@@ -279,28 +277,39 @@ void QXcbConnection::updateScreens()
+         ++xcbScreenNumber;
+     } // for each xcb screen
+
+-    // Now activeScreens is the complete set of screens which are active at this time.
+-    // Delete any existing screens which are not in activeScreens
++    // Rebuild screen list, ensuring primary screen is always in front,
++    // both in the QXcbConnection::m_screens list as well as in the
++    // QGuiApplicationPrivate::screen_list list, which gets updated via
++    //  - screen added: ((QXcbIntegration*)QGuiApplicationPrivate::platformIntegration())->screenAdded();
++    //  - screen removed: QPlatformScreen::~QPlatformScreen() via QXcbScreen::~QXcbScreen()
++
++    // Gather screens to delete
++    QList<QXcbScreen*> screensToDelete;
+     for (int i = m_screens.count() - 1; i >= 0; --i) {
+         if (!activeScreens.contains(m_screens[i])) {
+-            delete m_screens[i];
+-            m_screens.removeAt(i);
++            screensToDelete.append(m_screens.takeAt(i));
+         }
+     }
+
+-    // Add any new screens, and make sure the primary screen comes first
+-    // since it is used by QGuiApplication::primaryScreen()
++    // If there is a new primary screen, add that one first
++    if (newScreens.contains(primaryScreen)) {
++        newScreens.removeOne(primaryScreen);
++
++        m_screens.prepend(primaryScreen);
++        ((QXcbIntegration*)QGuiApplicationPrivate::platformIntegration())->screenAdded(primaryScreen, true);
++    }
++
++    // Add the remaining new screens
+     foreach (QXcbScreen* screen, newScreens) {
+-        if (screen == primaryScreen)
+-            m_screens.prepend(screen);
+-        else
+-            m_screens.append(screen);
++        m_screens.append(screen);
++        ((QXcbIntegration*)QGuiApplicationPrivate::platformIntegration())->screenAdded(screen);
+     }
+
+-    // Now that they are in the right order, emit the added signals for new screens only
+-    foreach (QXcbScreen* screen, m_screens)
+-        if (newScreens.contains(screen))
+-            ((QXcbIntegration*)QGuiApplicationPrivate::platformIntegration())->screenAdded(screen);
++    // And finally, delete the old screens, now that the new ones were added and we are sure that there is at least one screen available
++    foreach (QXcbScreen* screen, screensToDelete) {
++        ((QXcbIntegration*)QGuiApplicationPrivate::platformIntegration())->screenRemoved(screen);
++        delete screen;
++    }
+ }
+
+ QXcbConnection::QXcbConnection(QXcbNativeInterface *nativeInterface, bool canGrabServer, const char *displayName)
+diff --git a/src/plugins/platforms/xcb/qxcbwindow.cpp b/src/plugins/platforms/xcb/qxcbwindow.cpp
+index 0094278..44d33e1 100644
+--- a/src/plugins/platforms/xcb/qxcbwindow.cpp
++++ b/src/plugins/platforms/xcb/qxcbwindow.cpp
+@@ -257,9 +257,7 @@ QXcbWindow::QXcbWindow(QWindow *window)
+     , m_syncState(NoSyncNeeded)
+     , m_pendingSyncRequest(0)
+ {
+-    m_screen = static_cast<QXcbScreen *>(window->screen()->handle());
+-
+-    setConnection(m_screen->connection());
++    setConnection(xcbscreen()->connection());
+
+     if (window->type() != Qt::ForeignWindow)
+         create();
+@@ -298,11 +296,13 @@ void QXcbWindow::create()
+
+     Qt::WindowType type = window()->type();
+
++    QXcbScreen* screen = this->xcbscreen();
++
+     if (type == Qt::Desktop) {
+-        m_window = m_screen->root();
+-        m_depth = m_screen->screen()->root_depth;
+-        m_visualId = m_screen->screen()->root_visual;
+-        const xcb_visualtype_t *visual = m_screen->visualForId(m_visualId);
++        m_window = screen->root();
++        m_depth = screen->screen()->root_depth;
++        m_visualId = screen->screen()->root_visual;
++        const xcb_visualtype_t *visual = screen->visualForId(m_visualId);
+         m_imageFormat = imageFormatForVisual(m_depth, visual->red_mask, visual->blue_mask);
+         connection()->addWindowEventListener(m_window, this);
+         return;
+@@ -343,7 +343,7 @@ void QXcbWindow::create()
+         rect.setHeight(defaultWindowHeight);
+     }
+
+-    xcb_window_t xcb_parent_id = m_screen->root();
++    xcb_window_t xcb_parent_id = screen->root();
+     if (parent()) {
+         xcb_parent_id = static_cast<QXcbWindow *>(parent())->xcb_window();
+         m_embedded = parent()->window()->type() == Qt::ForeignWindow;
+@@ -358,7 +358,7 @@ void QXcbWindow::create()
+ #if (defined(XCB_USE_GLX) || defined(XCB_USE_EGL)) && defined(XCB_USE_XLIB)
+     if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::OpenGL)) {
+ #if defined(XCB_USE_GLX)
+-        XVisualInfo *visualInfo = qglx_findVisualInfo(DISPLAY_FROM_XCB(m_screen), m_screen->screenNumber(), &m_format);
++        XVisualInfo *visualInfo = qglx_findVisualInfo(DISPLAY_FROM_XCB(screen), screen->screenNumber(), &m_format);
+ #elif defined(XCB_USE_EGL)
+         EGLDisplay eglDisplay = connection()->egl_display();
+         EGLConfig eglConfig = q_configFromGLFormat(eglDisplay, m_format, true);
+@@ -387,8 +387,8 @@ void QXcbWindow::create()
+             Colormap cmap = XCreateColormap(DISPLAY_FROM_XCB(this), xcb_parent_id, visualInfo->visual, AllocNone);
+
+             XSetWindowAttributes a;
+-            a.background_pixel = WhitePixel(DISPLAY_FROM_XCB(this), m_screen->screenNumber());
+-            a.border_pixel = BlackPixel(DISPLAY_FROM_XCB(this), m_screen->screenNumber());
++            a.background_pixel = WhitePixel(DISPLAY_FROM_XCB(this), screen->screenNumber());
++            a.border_pixel = BlackPixel(DISPLAY_FROM_XCB(this), screen->screenNumber());
+             a.colormap = cmap;
+
+             m_visualId = visualInfo->visualid;
+@@ -407,14 +407,14 @@ void QXcbWindow::create()
+ #endif //defined(XCB_USE_GLX) || defined(XCB_USE_EGL)
+     {
+         m_window = xcb_generate_id(xcb_connection());
+-        m_visualId = m_screen->screen()->root_visual;
+-        m_depth = m_screen->screen()->root_depth;
++        m_visualId = screen->screen()->root_visual;
++        m_depth = screen->screen()->root_depth;
+
+         uint32_t mask = 0;
+         uint32_t values[3];
+
+         if (m_format.alphaBufferSize() == 8) {
+-            xcb_depth_iterator_t depthIter = xcb_screen_allowed_depths_iterator(m_screen->screen());
++            xcb_depth_iterator_t depthIter = xcb_screen_allowed_depths_iterator(screen->screen());
+             while (depthIter.rem) {
+                 if (depthIter.data->depth == 32) {
+                     xcb_visualtype_iterator_t visualIter = xcb_depth_visuals_iterator(depthIter.data);
+@@ -425,8 +425,8 @@ void QXcbWindow::create()
+                         xcb_create_colormap(xcb_connection(), XCB_COLORMAP_ALLOC_NONE, colormap,
+                                             xcb_parent_id, m_visualId);
+                         mask |= XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP;
+-                        values[0] = m_screen->screen()->white_pixel;
+-                        values[1] = m_screen->screen()->black_pixel;
++                        values[0] = screen->screen()->white_pixel;
++                        values[1] = screen->screen()->black_pixel;
+                         values[2] = colormap;
+                         break;
+                     }
+@@ -435,7 +435,7 @@ void QXcbWindow::create()
+             }
+         }
+
+-        const xcb_visualtype_t *visual = m_screen->visualForId(m_visualId);
++        const xcb_visualtype_t *visual = screen->visualForId(m_visualId);
+         m_imageFormat = imageFormatForVisual(m_depth, visual->red_mask, visual->blue_mask);
+
+         Q_XCB_CALL(xcb_create_window(xcb_connection(),
+@@ -465,7 +465,7 @@ void QXcbWindow::create()
+     properties[propertyCount++] = atom(QXcbAtom::WM_TAKE_FOCUS);
+     properties[propertyCount++] = atom(QXcbAtom::_NET_WM_PING);
+
+-    m_usingSyncProtocol = m_screen->syncRequestSupported();
++    m_usingSyncProtocol = screen->syncRequestSupported();
+ #if !defined(XCB_USE_GLX)
+     // synced resize only implemented on GLX
+     if (window()->supportsOpenGL())
+@@ -524,7 +524,7 @@ void QXcbWindow::create()
+
+     xcb_set_wm_hints(xcb_connection(), m_window, &hints);
+
+-    xcb_window_t leader = m_screen->clientLeader();
++    xcb_window_t leader = screen->clientLeader();
+     Q_XCB_CALL(xcb_change_property(xcb_connection(), XCB_PROP_MODE_REPLACE, m_window,
+                                    atom(QXcbAtom::WM_CLIENT_LEADER), XCB_ATOM_WINDOW, 32,
+                                    1, &leader));
+@@ -550,7 +550,7 @@ void QXcbWindow::create()
+
+ #ifdef XCB_USE_XLIB
+     // force sync to read outstanding requests - see QTBUG-29106
+-    XSync(DISPLAY_FROM_XCB(m_screen), false);
++    XSync(DISPLAY_FROM_XCB(screen), false);
+ #endif
+
+ #ifndef QT_NO_DRAGANDDROP
+@@ -744,7 +744,7 @@ void QXcbWindow::show()
+             // Default to client leader if there is no transient parent, else modal dialogs can
+             // be hidden by their parents.
+             if (!transientXcbParent)
+-                transientXcbParent = static_cast<QXcbScreen *>(screen())->clientLeader();
++                transientXcbParent = static_cast<QXcbScreen *>(xcbscreen())->clientLeader();
+             if (transientXcbParent) { // ICCCM 4.1.2.6
+                 Q_XCB_CALL(xcb_change_property(xcb_connection(), XCB_PROP_MODE_REPLACE, m_window,
+                                                XCB_ATOM_WM_TRANSIENT_FOR, XCB_ATOM_WINDOW, 32,
+@@ -772,7 +772,7 @@ void QXcbWindow::show()
+     if (QGuiApplication::modalWindow() == window())
+         requestActivateWindow();
+
+-    m_screen->windowShown(this);
++    xcbscreen()->windowShown(this);
+
+     connection()->sync();
+ }
+@@ -784,10 +784,10 @@ void QXcbWindow::hide()
+     // send synthetic UnmapNotify event according to icccm 4.1.4
+     xcb_unmap_notify_event_t event;
+     event.response_type = XCB_UNMAP_NOTIFY;
+-    event.event = m_screen->root();
++    event.event = xcbscreen()->root();
+     event.window = m_window;
+     event.from_configure = false;
+-    Q_XCB_CALL(xcb_send_event(xcb_connection(), false, m_screen->root(),
++    Q_XCB_CALL(xcb_send_event(xcb_connection(), false, xcbscreen()->root(),
+                               XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&event));
+
+     xcb_flush(xcb_connection());
+@@ -1107,7 +1107,7 @@ void QXcbWindow::changeNetWmState(bool set, xcb_atom_t one, xcb_atom_t two)
+     event.data.data32[3] = 0;
+     event.data.data32[4] = 0;
+
+-    Q_XCB_CALL(xcb_send_event(xcb_connection(), 0, m_screen->root(), XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&event));
++    Q_XCB_CALL(xcb_send_event(xcb_connection(), 0, xcbscreen()->root(), XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&event));
+ }
+
+ void QXcbWindow::setWindowState(Qt::WindowState state)
+@@ -1148,7 +1148,7 @@ void QXcbWindow::setWindowState(Qt::WindowState state)
+             event.data.data32[3] = 0;
+             event.data.data32[4] = 0;
+
+-            Q_XCB_CALL(xcb_send_event(xcb_connection(), 0, m_screen->root(), XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&event));
++            Q_XCB_CALL(xcb_send_event(xcb_connection(), 0, xcbscreen()->root(), XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&event));
+         }
+         break;
+     case Qt::WindowMaximized:
+@@ -1391,7 +1391,7 @@ void QXcbWindow::setParent(const QPlatformWindow *parent)
+         xcb_parent_id = qXcbParent->xcb_window();
+         m_embedded = qXcbParent->window()->type() == Qt::ForeignWindow;
+     } else {
+-        xcb_parent_id = m_screen->root();
++        xcb_parent_id = xcbscreen()->root();
+         m_embedded = false;
+     }
+     Q_XCB_CALL(xcb_reparent_window(xcb_connection(), xcb_window(), xcb_parent_id, topLeft.x(), topLeft.y()));
+@@ -1559,7 +1559,7 @@ void QXcbWindow::requestActivateWindow()
+         event.data.data32[3] = 0;
+         event.data.data32[4] = 0;
+
+-        Q_XCB_CALL(xcb_send_event(xcb_connection(), 0, m_screen->root(), XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&event));
++        Q_XCB_CALL(xcb_send_event(xcb_connection(), 0, xcbscreen()->root(), XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&event));
+     } else {
+         Q_XCB_CALL(xcb_set_input_focus(xcb_connection(), XCB_INPUT_FOCUS_PARENT, m_window, connection()->time()));
+     }
+@@ -1796,15 +1796,15 @@ void QXcbWindow::handleClientMessageEvent(const xcb_client_message_event_t *even
+             relayFocusToModalWindow();
+             return;
+         } else if (event->data.data32[0] == atom(QXcbAtom::_NET_WM_PING)) {
+-            if (event->window == m_screen->root())
++            if (event->window == xcbscreen()->root())
+                 return;
+
+             xcb_client_message_event_t reply = *event;
+
+             reply.response_type = XCB_CLIENT_MESSAGE;
+-            reply.window = m_screen->root();
++            reply.window = xcbscreen()->root();
+
+-            xcb_send_event(xcb_connection(), 0, m_screen->root(), XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&reply);
++            xcb_send_event(xcb_connection(), 0, xcbscreen()->root(), XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&reply);
+             xcb_flush(xcb_connection());
+         } else if (event->data.data32[0] == atom(QXcbAtom::_NET_WM_SYNC_REQUEST)) {
+             connection()->setTime(event->data.data32[1]);
+@@ -1871,7 +1871,7 @@ void QXcbWindow::handleConfigureNotifyEvent(const xcb_configure_notify_event_t *
+     if (!parent() && !fromSendEvent) {
+         // Do not trust the position, query it instead.
+         xcb_translate_coordinates_cookie_t cookie = xcb_translate_coordinates(xcb_connection(), xcb_window(),
+-                                                                              m_screen->root(), 0, 0);
++                                                                              xcbscreen()->root(), 0, 0);
+         xcb_translate_coordinates_reply_t *reply = xcb_translate_coordinates_reply(xcb_connection(), cookie, NULL);
+         if (reply) {
+             pos.setX(reply->dst_x);
+@@ -1888,8 +1888,7 @@ void QXcbWindow::handleConfigureNotifyEvent(const xcb_configure_notify_event_t *
+     QWindowSystemInterface::handleGeometryChange(window(), rect);
+
+     QPlatformScreen *newScreen = screenForNativeGeometry(nativeRect);
+-    if (newScreen != m_screen) {
+-        m_screen = static_cast<QXcbScreen*>(newScreen);
++    if (newScreen != screen()) {
+         QWindowSystemInterface::handleWindowScreenChanged(window(), newScreen->screen());
+         int newDpr = devicePixelRatio();
+         if (newDpr != dpr) {
+@@ -1933,7 +1932,7 @@ QPoint QXcbWindow::mapToGlobal(const QPoint &pos) const
+     const int dpr = int(devicePixelRatio());
+     QPoint ret;
+     xcb_translate_coordinates_cookie_t cookie =
+-        xcb_translate_coordinates(xcb_connection(), xcb_window(), m_screen->root(),
++        xcb_translate_coordinates(xcb_connection(), xcb_window(), xcbscreen()->root(),
+                                   pos.x() * dpr, pos.y() * dpr);
+     xcb_translate_coordinates_reply_t *reply =
+         xcb_translate_coordinates_reply(xcb_connection(), cookie, NULL);
+@@ -1954,7 +1953,7 @@ QPoint QXcbWindow::mapFromGlobal(const QPoint &pos) const
+     const int dpr = int(devicePixelRatio());
+     QPoint ret;
+     xcb_translate_coordinates_cookie_t cookie =
+-        xcb_translate_coordinates(xcb_connection(), m_screen->root(), xcb_window(),
++        xcb_translate_coordinates(xcb_connection(), xcbscreen()->root(), xcb_window(),
+                                   pos.x() *dpr, pos.y() * dpr);
+     xcb_translate_coordinates_reply_t *reply =
+         xcb_translate_coordinates_reply(xcb_connection(), cookie, NULL);
+@@ -2178,8 +2177,8 @@ void QXcbWindow::handlePropertyNotifyEvent(const xcb_property_notify_event_t *ev
+             m_windowState = newState;
+         }
+         return;
+-    } else if (event->atom == atom(QXcbAtom::_NET_WORKAREA) && event->window == m_screen->root()) {
+-        m_screen->updateGeometry(event->time);
++    } else if (event->atom == atom(QXcbAtom::_NET_WORKAREA) && event->window == xcbscreen()->root()) {
++        xcbscreen()->updateGeometry(event->time);
+     }
+ }
+
+@@ -2308,7 +2307,7 @@ bool QXcbWindow::startSystemResize(const QPoint &pos, Qt::Corner corner)
+     xev.data.data32[3] = XCB_BUTTON_INDEX_1;
+     xev.data.data32[4] = 0;
+     xcb_ungrab_pointer(connection()->xcb_connection(), XCB_CURRENT_TIME);
+-    xcb_send_event(connection()->xcb_connection(), false, m_screen->root(),
++    xcb_send_event(connection()->xcb_connection(), false, xcbscreen()->root(),
+                    XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                    (const char *)&xev);
+     return true;
+@@ -2444,13 +2443,18 @@ void QXcbWindow::postSyncWindowRequest()
+     if (!m_pendingSyncRequest) {
+         QXcbSyncWindowRequest *e = new QXcbSyncWindowRequest(this);
+         m_pendingSyncRequest = e;
+-        QCoreApplication::postEvent(m_screen->connection(), e);
++        QCoreApplication::postEvent(xcbscreen()->connection(), e);
+     }
+ }
+
+ qreal QXcbWindow::devicePixelRatio() const
+ {
+-    return m_screen ? m_screen->devicePixelRatio() : 1.0;
++    return xcbscreen() ? xcbscreen()->devicePixelRatio() : 1.0;
++}
++
++QXcbScreen *QXcbWindow::xcbscreen() const
++{
++    return static_cast<QXcbScreen *>(screen());
+ }
+
+ QT_END_NAMESPACE
+diff --git a/src/plugins/platforms/xcb/qxcbwindow.h b/src/plugins/platforms/xcb/qxcbwindow.h
+index 254421e..966a834 100644
+--- a/src/plugins/platforms/xcb/qxcbwindow.h
++++ b/src/plugins/platforms/xcb/qxcbwindow.h
+@@ -152,6 +152,8 @@ public:
+     void postSyncWindowRequest();
+     void clearSyncWindowRequest() { m_pendingSyncRequest = 0; }
+
++    QXcbScreen *xcbscreen() const;
++
+     qreal devicePixelRatio() const;
+
+     QPlatformScreen *screenForNativeGeometry(const QRect &newGeometry) const;
+@@ -188,8 +190,6 @@ private:
+     void doFocusIn();
+     void doFocusOut();
+
+-    QXcbScreen *m_screen;
+-
+     xcb_window_t m_window;
+
+     uint m_depth;

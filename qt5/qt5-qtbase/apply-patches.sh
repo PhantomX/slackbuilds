@@ -42,10 +42,9 @@ ApplyPatch qtbase-opensource-src-5.3.2-QTBUG-35459.patch
 ApplyPatch qtbase-opensource-src-5.2.0-enable_ft_lcdfilter.patch
 
 ##upstream patches
-# Bad font rendering, http://bugzilla.redhat.com/1052389
-# tweak font gamma correction, from:
-# https://bugreports.qt-project.org/browse/QTBUG-41590
-ApplyPatch 0009-Do-not-apply-subpixel-gamma-correction-on-XCB.patch
-ApplyPatch 0173-qimage_conversions.cpp-Fix-build-on-big-endian-syste.patch
+
+# https://bugzilla.redhat.com/show_bug.cgi?id=1083664
+# https://bugreports.qt.io/browse/QTBUG-42985
+ApplyPatch qtbase-opensource-src-5.4.0-QTBUG-42985.patch
 
 set +e +o pipefail

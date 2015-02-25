@@ -6,8 +6,6 @@ pref("browser.zoom.full", false);
 pref("general.smoothScroll", false);
 pref("general.autoScroll", false);
 pref("middlemouse.contentLoadURL", false);
-pref("general.useragent.vendor", "XUL_SLK_DIST");
-pref("general.useragent.vendorSub", "XUL_SLK_VR");
 pref("intl.locale.matchOS", true);
 pref("network.manage-offline-status", true);
 pref("toolkit.networkmanager.disable", false);

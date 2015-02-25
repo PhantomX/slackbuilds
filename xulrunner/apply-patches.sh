@@ -4,7 +4,6 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 -E --backup --verbose -d gfx/cairo/cairo -i ${SB_PATCHDIR}/01_fix_slowness.patch
 
 # build patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-install-dir.patch
@@ -34,8 +33,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-icu-strncat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-bmo1088588.patch
 
 # Upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-858919.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1097550-dict-fix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1129859-dictfix2.patch
 
 # OpenSuse kde integration support
 if [ "${SB_KDE}" = "YES" ] ;then

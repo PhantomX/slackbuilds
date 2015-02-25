@@ -9,6 +9,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #
-if [ -x "/usr/bin/dbus-launch" ] && [ -z "${DBUS_SESSION_BUS_ADDRESS}" ]; then
+if [ -x "/usr/bin/dbus-launch" ] && [ -z "${DBUS_SESSION_BUS_ADDRESS-}" ]; then
   eval `/usr/bin/dbus-launch --sh-syntax --exit-with-session`
 fi

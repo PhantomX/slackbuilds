@@ -31,6 +31,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.9.1-P2-multlib-conflict
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind99-rh640538.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind97-rh669163.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.10-dist-native-pkcs11.patch
+# [ISC-Bugs #38710]
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.10-ISC-Bugs-38710.patch
 
 # IDN paches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-99-libidn.patch

@@ -1,0 +1,191 @@
+diff -up ntp-4.2.6p5/html/drivers/driver28.html.shmperm ntp-4.2.6p5/html/drivers/driver28.html
+--- ntp-4.2.6p5/html/drivers/driver28.html.shmperm	2009-12-09 08:36:37.000000000 +0100
++++ ntp-4.2.6p5/html/drivers/driver28.html	2015-02-09 15:57:57.450877311 +0100
+@@ -18,7 +18,8 @@
+             Driver ID: <tt>SHM</tt></p>
+ 
+         <h4>Description</h4>
+-        <p>This driver receives its reference clock info from a shared memory-segment. The shared memory-segment is created with owner-only access for unit 0 and 1, and world access for unit 2 and 3</p>
++        <p>This driver receives its reference clock info from a shared memory-segment. The shared memory-segment is created with owner-only access for unit 0 and 1, and world access for other units unless the mode word is set for owner-only access.</p>
++
+ 
+         <h4>Structure of shared memory-segment</h4>
+         <pre>struct shmTime {
+@@ -94,6 +95,40 @@ Here is a sample showing the GPS recepti
+ 54364 85700.160 127.127.28.0  65   0  65   0   0
+ </pre>
+ 
++    <h4>The 'mode' word</h4>
++    
++    <p>
++      Some aspects of the driver behavior can be adjusted by setting bits of
++      the 'mode' word in the server configuration line:<br>
++      &nbsp;&nbsp;<tt>server 127.127.28.</tt><i>x</i><tt> mode </tt><i>Y</i>
++    </p>
++
++    <table border="1" width="100%">
++      <caption>mode word bits and bit groups</caption>
++      <tbody><tr>
++	<th align="center">Bit</th>
++	<th align="center">Dec</th>
++	<th align="center">Hex</th>
++	<th align="left">Meaning</th>
++      </tr>
++      
++      <tr>
++	<td align="center">0</td>
++	<td align="center">1</td>
++	<td align="center">1</td>
++	<td>The SHM segment is private (mode 0600). This is the fixed
++	default for clock units 0 and 1; clock units &gt;1 are mode
++	0666 unless this bit is set for the specific unit.</td>
++
++      </tr><tr>
++	<td align="center">1-31</td>
++	<td align="center">-</td>
++	<td align="center">-</td>
++	<td><i>reserved -- do not use</i></td>
++	</tr>
++      </tbody>
++      </table>
++    
+ 	<h4>Fudge Factors</h4>
+         <dl>
+             <dt><tt>time1 <i>time</i></tt>
+@@ -112,9 +147,64 @@ Here is a sample showing the GPS recepti
+             <dd>Not used by this driver.
+             <dt><tt>flag4 0 | 1</tt>
+             <dd>If flag4 is set, clockstats records will be written when the driver is polled.
+-            <h4>Additional Information</h4>
+-            <p><a href="../refclock.html">Reference Clock Drivers</a></p>
+         </dl>
++
++	<h4>Public vs. Private SHM segments</h4>
++
++	<p>The driver attempts to create a shared memory segment with an
++	  identifier depending on the unit number. This identifier (which can be
++	  a numeric value or a string) clearly depends on the method used, which
++	  in turn depends on the host operating system:</p>
++
++	<ul>
++	  <li><p>
++	      <tt>Windows</tt> uses a file mapping to the page file with the
++	      name '<tt>Global\NTP</tt><i>u</i>' for public accessible
++	      mappings, where <i>u</i> is the clock unit. Private /
++	      non-public mappings are created as
++	      '<tt>Local\NTP</tt><i>u</i>'.
++	    </p><p>
++	      Public access assigns a NULL DACL to the memory mapping, while
++	      private access just uses the default DACL of the process creating
++	      the mapping.
++	    </p> 
++	  </li>
++	  <li><p>
++	      <tt>SYSV IPC</tt> creates a shared memory segment with a key value
++	      of <tt>0x4E545030</tt> + <i>u</i>, where <i>u</i> is again
++	      the clock unit. (This value could be hex-decoded as 'NTP0',
++	      'NTP1',..., with funny characters for units &gt; 9.)
++	    </p><p>
++	      Public access means a permission set of 0666, while private access
++	      creates the mapping with a permission set of 0600.
++	    </p>
++	  </li>
++	</ul>
++	
++	<p>There's no support for POSIX shared memory yet.</p>
++
++	<p><i>NTPD</i> is started as root on most POSIX-like operating systems
++	and uses the setuid/setgid system API to run under reduced rights once
++	the initial setup of the process is done. One consequence out of this
++	is that the allocation of SHM segments must be done early during the
++	clock setup. The actual polling of the clock is done as the run-time
++	user; deferring the creation of the SHM segment to this point will
++	create a SHM segment owned by the runtime-user account. The internal
++	structure of <i>NTPD</i> does not permit the use of a fudge flag if
++	this is to be avoided; this is the reason why a mode bit is used for
++	the configuration of a public segment.
++	</p>
++	
++	<p>When running under Windows, the chosen user account must be able to
++	create a SHM segment in the global object name space for SHM clocks with
++	public access. Otherwise the session isolation used by Windows kernels
++	after WinXP will get into the way if the client program does not run in
++	the same session.
++	</p>
++
++        <h4>Additional Information</h4>
++        <p><a href="../refclock.html">Reference Clock Drivers</a></p>
++
+         <hr>
+         <script type="text/javascript" language="javascript" src="scripts/footer.txt"></script>
+     </body>
+diff -up ntp-4.2.6p5/ntpd/refclock_shm.c.shmperm ntp-4.2.6p5/ntpd/refclock_shm.c
+--- ntp-4.2.6p5/ntpd/refclock_shm.c.shmperm	2015-02-09 15:52:06.131877933 +0100
++++ ntp-4.2.6p5/ntpd/refclock_shm.c	2015-02-09 15:52:06.137877933 +0100
+@@ -52,6 +52,11 @@
+ #define NSAMPLES        3       /* stages of median filter */
+ 
+ /*
++ * Mode flags
++ */
++#define SHM_MODE_PRIVATE 0x0001
++
++/*
+  * Function prototypes
+  */
+ static  int     shm_start       (int unit, struct peer *peer);
+@@ -99,6 +104,7 @@ struct shmTime {
+ 
+ struct shmunit {
+ 	struct shmTime *shm;	/* pointer to shared memory segment */
++	int forall;		/* access for all UIDs?	*/
+ 
+ 	/* debugging/monitoring counters - reset when printed */
+ 	int ticks;		/* number of attempts to read data*/
+@@ -109,9 +115,12 @@ struct shmunit {
+ };
+ 
+ 
+-struct shmTime *getShmTime(int);
+-
+-struct shmTime *getShmTime (int unit) {
++static struct shmTime*
++getShmTime(
++	int unit,
++	int/*BOOL*/ forall
++	)
++{
+ #ifndef SYS_WINNT
+ 	int shmid=0;
+ 
+@@ -119,8 +128,8 @@ struct shmTime *getShmTime (int unit) {
+ 	 * Big units will give non-ascii but that's OK
+ 	 * as long as everybody does it the same way. 
+ 	 */
+-	shmid=shmget (0x4e545030+unit, sizeof (struct shmTime), 
+-		      IPC_CREAT|(unit<2?0600:0666));
++	shmid=shmget(0x4e545030 + unit, sizeof (struct shmTime),
++		      IPC_CREAT | (forall ? 0666 : 0600));
+ 	if (shmid==-1) { /*error */
+ 		msyslog(LOG_ERR,"SHM shmget (unit %d): %s",unit,strerror(errno));
+ 		return 0;
+@@ -199,7 +208,9 @@ shm_start(
+ 	memset(up, 0, sizeof(*up));
+ 	pp->unitptr = (caddr_t)up;
+ 
+-	up->shm = getShmTime(unit);
++	up->forall = (unit >= 2) && !(peer->ttl & SHM_MODE_PRIVATE);
++
++	up->shm = getShmTime(unit, up->forall);
+ 
+ 	/*
+ 	 * Initialize miscellaneous peer variables
+@@ -314,7 +325,7 @@ int shm_peek(
+ 	if (up->shm == 0) {
+ 		/* try to map again - this may succeed if meanwhile some-
+ 		body has ipcrm'ed the old (unaccessible) shared mem segment */
+-		up->shm = getShmTime(unit);
++		up->shm = getShmTime(unit, up->forall);
+ 	}
+ 	shm = up->shm;
+ 	if (shm == 0) {

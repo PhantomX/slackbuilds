@@ -58,6 +58,22 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2014-9293.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2014-9295.patch
 # ntpbz #2670
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2014-9296.patch
+# ntpbz #2671
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2014-9297.patch
+# ntpbz #2672
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2014-9298.patch
+# ntpbz #2174
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-sourceport.patch
+# ntpbz #2661
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-mreadvar.patch
+# ntpbz #730
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-rsaexp.patch
+# ntpbz #2537
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-keylen.patch
+# ntpbz #2627
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-shmperm.patch
+# ntpbz #2745
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-xleap.patch
 
 ( cd ntpstat-${NSVER}
   # handle unknown clock types

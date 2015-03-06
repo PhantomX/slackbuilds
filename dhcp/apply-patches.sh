@@ -15,7 +15,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-release-by-ifup.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-dhclient-decline-backoff.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-unicast-bootp.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-default-requested-options.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-xen-checksum.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-manpages.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-paths.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-CLOEXEC.patch
@@ -43,15 +42,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-interval.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-range6.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-bindtodevice-inet6.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-no-subnet-error2info.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-ffff-checksum.patch
 [ "${SB_SYSTEMD}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-sd_notify.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-dhc6-life.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-skip-vlan.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-relay-hop-limit.patch
 [ "${SB_KRB5}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-ldapgssapi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-option97-pxe-client-id.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-stateless-DUID-LLT.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-bind996.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-client-request-release-bind-iface.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

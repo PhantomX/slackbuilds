@@ -185,12 +185,6 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#rhbz 1188638
-ApplyPatch nfs-don-t-call-blocking-operations-while-TASK_RUNNIN.patch
-
-#rhbz 1188074
-ApplyPatch 0001-ntp-Fixup-adjtimex-freq-validation-on-32bit-systems.patch
-
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

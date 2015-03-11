@@ -77,8 +77,10 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.pat
 # official backports
 
 # Branch upstream
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r0dc2ca34ba830dda4da87c3d5db9cc0cb2b206e4.diff
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/changeset_r45edd7e5c333ea5dd90e3a9814b1f30216dda667.diff
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0001-Add-dollar.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0002-More-up-to-date-image-for-web-pages-forgotten-cmake-.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0003-Fix-BIC-introduced-in-4.14.6.patch
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/0004-Fix-parsing-single-quoted-meta-charset-attribute.patch
 
 # revert these commits for
 #https://bugs.kde.org/315578

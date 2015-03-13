@@ -37,16 +37,11 @@ SB_REP=${SB_REP:-YES}
 
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
-if [ ! -d ${TMP} ]; then
-  mkdir -p ${TMP}
-fi
 
 NAME=jsoncpp
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.5.0}
-SOVER=$(echo ${VERSION} | cut -d. -f1)
-LIBVER=$(echo ${VERSION} | cut -d- -f1)
+VERSION=${VERSION:-1.5.4}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -68,17 +63,25 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}-src-${VERSION}
-SRCARCHIVE=${SRCDIR}.tar.gz
+SRCDIR=${NAME}-${VERSION}
+SRCARCHIVE=${VERSION}.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-MIRROR_SF=${MIRROR_SF:-http://prdownloads.sourceforge.net}
-DL_URL="${MIRROR_SF}/${NAME}/${SRCARCHIVE}"
+DL_URL="https://github.com/open-source-parsers/${NAME}/archive/${SRCARCHIVE}"
 
+SRCARCHIVE=${SRCDIR}.tar.gz
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
+test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} -O ${CWD}/${SRCARCHIVE} || exit 1
+
+if ! test -s ${CWD}/${SRCARCHIVE} ;then
+  echo "${CWD}/${SRCARCHIVE} is empty"
+  echo "Delete ${CWD}/${SRCARCHIVE}, check VERSION and try again."
+  exit 1
+fi
+
+[ "$1" = "--dlsrc" ] && exit 0
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -100,6 +103,9 @@ else
   LIBDIRSUFFIX=""
 fi
 
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
 if [ -d ${PKG} ]; then
   # Clean up a previous build
   rm -rf ${PKG}
@@ -117,9 +123,29 @@ if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh
 fi
 
+# Get version (not using cmake due circular dependency)
+PCVER="$(grep JSONCPP_VERSION CMakeLists.txt |grep -v ^# | grep ^SET | awk '{print $3}')"
+if [ -z "${PCVER}" ] ;then
+  echo "Variable PCVER not defined"
+  exit 1
+fi
+
+SOVER=$(echo ${PCVER} | cut -d. -f1)
+LIBVER=$(echo ${PCVER} | cut -d- -f1)
+
+sed -i \
+  -e "s|@CMAKE_INSTALL_PREFIX@|/usr|g" \
+  -e "/^libdir=/s|=.*$|=/usr/lib${LIBDIRSUFFIX}|g" \
+  -e "s|@INCLUDE_INSTALL_DIR@|include|g" \
+  -e "s|@JSONCPP_VERSION@|${PCVER}|g" \
+  -e "/^Cflags:/s|{includedir}|\0/${NAME}|g" \
+  pkg-config/${NAME}.pc.in || exit 1
+
+SLKCFLAGS+=" -std=c++11 -Wall -Wextra -pedantic -DJSON_DLL_BUILD -Djsoncpp_lib_EXPORTS"
+
 # From Gentoo
 cxx_wrapper() {
-  set -- g++ ${CXXFLAGS} ${LDFLAGS} "$@"
+  set -- g++ ${SLKCFLAGS} ${LDFLAGS} "$@"
     echo "$@"
     "$@"
 }
@@ -133,19 +159,8 @@ install -pm0755 ${libname}.so.${LIBVER} ${PKG}/usr/lib${LIBDIRSUFFIX}/ || exit 1
 ln -sf ${libname}.so.${LIBVER} ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so.${SOVER} || exit 1
 ln -sf ${libname}.so.${SOVER} ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so || exit 1
 
-cat > ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig/${NAME}.pc <<EOF
-prefix=/usr
-exec_prefix=\${prefix}
-libdir=/usr/lib${LIBDIRSUFFIX}
-includedir=\${prefix}/include
-
-Name: jsoncpp
-Description: API for manipulating JSON
-Version: ${LIBVER}
-URL: http://jsoncpp.sourceforge.net/
-Libs: -L\${libdir} -ljsoncpp
-Cflags: -I\${includedir}/jsoncpp/
-EOF
+install -pm0644 pkg-config/${NAME}.pc.in \
+  ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig/${NAME}.pc || exit 1
 
 mkdir -p ${PKG}/usr/include/${NAME}/json
 install -pm0644 include/json/*.h ${PKG}/usr/include/${NAME}/json/ || exit 1

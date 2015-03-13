@@ -6,7 +6,6 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Link against the shared Python library rather than the static one
 patch -p1 -E --backup -z .pylibs --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.10-FindPythonLibs.patch
-patch -p1 -E --backup -z .libform --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.10-libform.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-FindBLAS.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.0.0-FindLAPACK.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.8.12-qt5.patch

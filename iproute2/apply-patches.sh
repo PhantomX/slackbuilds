@@ -15,6 +15,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.6.35-print-route.pat
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.12.0-lnstat-dump-to-stdout.patch
 # Rejected by upstream <http://thread.gmane.org/gmane.linux.network/284101>
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.11.0-tc-ok.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.11.0-rtt.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-3.12.0-lnstat-interval.patch
 
 set +e +o pipefail

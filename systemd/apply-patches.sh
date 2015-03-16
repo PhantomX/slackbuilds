@@ -35,6 +35,12 @@ ApplyPatch fedora-disable-resolv.conf-symlink.patch
 ApplyPatch fedora-add-bridge-sysctl-configuration.patch
 
 ### Arch
+ApplyPatch 0001-tmpfiles-avoid-creating-duplicate-acl-entries.patch
+ApplyPatch 0001-tmpfiles-quietly-ignore-ACLs-on-unsupported-filesyst.patch
+ApplyPatch 0001-nspawn-when-connected-to-pipes-for-stdin-stdout-pass.patch
+ApplyPatch 0001-core-shared-in-deserializing-match-same-files-reache.patch
+ApplyPatch 0001-tmpfiles-Fix-handling-of-duplicate-lines.patch
+ApplyPatch 0001-core-do-not-spawn-jobs-or-touch-other-units-during-c.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

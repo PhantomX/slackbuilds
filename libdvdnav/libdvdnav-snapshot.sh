@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="git://gitorious.org/videolan/${module}.git"
+snaproot="git://git.videolan.org/${module}.git"
 
 tmp=$(mktemp -d)
 

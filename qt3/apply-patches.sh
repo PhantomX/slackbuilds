@@ -80,6 +80,8 @@ zcat ${SB_PATCHDIR}/qt-x11-free-3.3.8b-gcc43.patch.gz | patch -p1 -E --backup --
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-CVE-2013-4549.patch
 # fix for CVE-2014-0190 (QTBUG-38367) backported from Qt 4
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-CVE-2014-0190.patch
+# fix for CVE-2015-0295 backported from Qt 4
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/qt-x11-free-3.3.8b-CVE-2015-0295.patch
 
 zcat ${SB_PATCHDIR}/qt-ulibc.patch.gz | patch -p1 -E --backup --verbose
 

@@ -50,6 +50,10 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-webcore_debuginfo.patch
 # cups16 printer discovery
 ApplyPatch qt-cupsEnumDests.patch
 
+# prefer adwaita over gtk+ on DE_GNOME
+# https://bugzilla.redhat.com/show_bug.cgi?id=1192453
+patch ${DRYRUN_OPT} -p0 -F1 ${VERBOSE_OPT} -i ${SB_PATCHDIR}/qt-prefer_adwaita_on_gnome.patch
+
 # enable ft lcdfilter
 ApplyPatch qt-x11-opensource-src-4.5.1-enable_ft_lcdfilter.patch.gz
 ApplyPatch qt-everywhere-opensource-src-4.7.0-beta2-phonon_servicesfile.patch 
@@ -70,6 +74,12 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-qt_plugin_path.patch
 ## upstreamable bits
 # add support for pkgconfig's Requires.private to qmake
 ApplyPatch qt-everywhere-opensource-src-4.8.4-qmake_pkgconfig_requires_private.patch
+# backport part of 'Fix detection of GCC5'
+# https://qt.gitorious.org/qt/qtbase/commit/9fb4c2c412621b63c06dbbd899f44041b2e126c2
+ApplyPatch qt-fix_detection_of_gcc5.patch
+# ensure QT_BUILD_KEY remains the same too with gcc5 using gcc4 ABI
+# TODO: ask upstream how to handle gcc5 moving forward, use g++-5 or not?
+ApplyPatch qt-gcc5_compat_qt_build_key.patch
 # fix invalid inline assembly in qatomic_{i386,x86_64}.h (de)ref implementations
 # should fix the reference counting in qt_toX11Pixmap and thus the Kolourpaint
 # crash with Qt 4.5
@@ -126,6 +136,9 @@ ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-37380.patch
 patch ${DRYRUN_OPT} -p0 -F1 ${VERBOSE_OPT} -i ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.8.6-QTBUG-34614.patch
 patch ${DRYRUN_OPT} -p0 -F1 ${VERBOSE_OPT} -i ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.8.6-QTBUG-38585.patch
 
+# build against the system clucene09-core
+ApplyPatch qt-everywhere-opensource-src-4.8.6-system-clucene.patch
+
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore
 # UPSTREAM ME
@@ -150,5 +163,8 @@ ApplyPatch 0067-Fix-AArch64-arm64-detection.patch
 ApplyPatch 0072-Fix-font-cache-check-in-QFontEngineFT-recalcAdvances.patch
 
 # security patches
+# CVE-2015-0295
+# http://lists.qt-project.org/pipermail/announce/2015-February/000059.html
+ApplyPatch 0137-Fix-a-division-by-zero-when-processing-malformed-BMP.patch
 
 set +e +o pipefail

@@ -41,7 +41,7 @@ ulimit -c 0
 ##
 MOZ_DIST_BIN="LIBDIR/seamonkey"
 MOZ_PROGRAM="LIBDIR/seamonkey/seamonkey"
-MOZ_LAUNCHER="${MOZ_DIST_BIN}/run-mozilla.sh"
+MOZ_CLIENT_PROGRAM="LIBDIR/seamonkey/seamonkey -remote"
 MOZ_EXTENSIONS_DIR="${MOZ_DIST_BIN}/extensions"
 
 ##
@@ -108,13 +108,50 @@ export GNOME_DISABLE_CRASH_DIALOG
 ##
 export G_SLICE=always-malloc
 
-##
-## Use /var/tmp instead of /tmp because of 1GB /tmp limit in some tmpfs settings
-##
-TMPDIR="/var/tmp"
-export TMPDIR
+# BEAST fix (rhbz#838879)
+NSS_SSL_CBC_RANDOM_IV=${NSS_SSL_CBC_RANDOM_IV-1}
+export NSS_SSL_CBC_RANDOM_IV
+
+function check_running() {
+    ${MOZ_CLIENT_PROGRAM} 'ping()' 2>/dev/null >/dev/null
+    RETURN_VAL=$?
+    if [ "$RETURN_VAL" -eq "2" ]; then
+      echo 0
+      return 0
+    else
+      echo 1
+      return 1
+    fi
+}
+
+function open_mail() {
+    if [ "${ALREADY_RUNNING}" -eq "1" ]; then
+      exec ${MOZ_CLIENT_PROGRAM }'xfeDoCommand(openInbox)' \
+        2>/dev/null >/dev/null
+    else
+      exec ${MOZ_PROGRAM} $*
+    fi
+}
+
+function open_compose() {
+    if [ "${ALREADY_RUNNING}" -eq "1" ]; then
+      exec ${MOZ_CLIENT_PROGRAM} 'xfeDoCommand(composeMessage)' \
+        2>/dev/null >/dev/null
+    else
+      exec ${MOZ_PROGRAM} $*
+    fi
+}
 
 # OK, here's where all the real work gets done
+
+# check to see if there's an already running instance or not
+ALREADY_RUNNING=$(check_running)
+
+# If there is no command line argument at all then try to open a new
+# window in an already running instance.
+if [ "${ALREADY_RUNNING}" -eq "1" ] && [ -z "$1" ]; then
+  exec ${MOZ_CLIENT_PROGRAM} "xfeDoCommand(openBrowser)" 2>/dev/null >/dev/null
+fi
 
 # check system locale
 MOZARGS=
@@ -129,44 +166,42 @@ MOZLOCALE=$(echo ${LC_MESSAGES} | sed "s|_\([^.]*\).*|-\1|g")
 # if there's no command line argument and there's not a running
 # instance then just fire up a new copy of the browser
 if [ -z "$1" ]; then
-  exec ${MOZ_LAUNCHER} ${MOZARGS} ${MOZ_PROGRAM} 2>/dev/null >/dev/null
+  exec ${MOZ_PROGRAM} ${MOZARGS} 2>/dev/null >/dev/null
 fi
+
+unset RETURN_VAL
 
 # If there's a command line argument but it doesn't begin with a -
 # it's probably a url.  Try to send it to a running instance.
 
-pass_arg_count=0
-while [ $# -gt ${pass_arg_count} ]
-do
-  case "$1" in
-    -g | --debug)
-      MOZARGS="${MOZARGS} -g"
-      debugging=1
-      shift
+USE_EXIST=0
+opt="$1"
+case "$opt" in
+  -mail)
+      open_mail ${1+"$@"}
       ;;
-    -d | --debugger)
-      if [ $# -gt 1 ]; then
-        MOZARGS="${MOZARGS} -d $2"
-        shift 2
-      else
-        shift
-      fi
+  -compose)
+      open_compose ${1+"$@"}
       ;;
-    *)
-      # Move the unrecognized argument to the end of the list.
-      arg="$1"
-      shift
-      set -- "$@" "${arg}"
-      pass_arg_count=$(expr $pass_arg_count + 1)
-      ;;
-  esac
-done
+  -*) ;;
+  *) USE_EXIST=1 ;;
+esac
 
-# Run the browser
-debugging=0
-if [ ${debugging} = 1 ]
-then
-  echo ${MOZ_LAUNCHER} ${MOZARGS} ${MOZ_PROGRAM} ${1+"$@"}
+if [ "${USE_EXIST}" -eq "1" ] && [ "${ALREADY_RUNNING}" -eq "1" ]; then
+  # check to make sure that the command contains at least a :/ in it.
+  echo ${opt} | grep -e ':/' 2>/dev/null > /dev/null
+  RETURN_VAL=$?
+  if [ "$RETURN_VAL" -eq "1" ]; then
+    # if it doesn't begin with a '/' and it exists when the pwd is
+    # prepended to it then append the full path
+    echo ${opt} | grep -e '^/' 2>/dev/null > /dev/null
+    if [ "${RETURN_VAL}" -ne "0" ] && [ -e "$(pwd)/${opt}" ]; then
+      opt="$(pwd)/${opt}"
+    fi
+    exec ${MOZ_CLIENT_PROGRAM} "openurl(${opt})" 2>/dev/null >/dev/null
+  fi
+  # just pass it off if it looks like a url
+  exec ${MOZ_CLIENT_PROGRAM} "openurl(${opt},new-window)" 2>/dev/null >/dev/null
 fi
 
-exec ${MOZ_LAUNCHER} ${MOZARGS} ${MOZ_PROGRAM} ${1+"$@"}
+exec ${MOZ_PROGRAM} ${MOZARGS} ${1+"$@"}

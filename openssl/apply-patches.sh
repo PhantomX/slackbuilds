@@ -38,6 +38,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1i-manfix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1k-trusted-first.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1k-ephemeral-key-size.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-cc-reqs.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1k-cve-2015-0209.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-cve-2015-0286.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-cve-2015-0287.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-cve-2015-0288.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1k-cve-2015-0289.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1e-cve-2015-0293.patch
 
 # Use .so.${SSLSOVER}, not .so.${VERSION}:
 sed -e "s|_SB_SOVER_|${SSLSOVER}|g" ${SB_PATCHDIR}/openssl.soname.diff \

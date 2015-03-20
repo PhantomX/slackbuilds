@@ -167,6 +167,7 @@ ApplyPatch crash-driver.patch
 
 # Intel DRM
 ApplyPatch drm-i915-tame-the-chattermouth-v2.patch
+ApplyPatch drm-i915-hush-check-crtc-state.patch
 ApplyPatch drm-i915-Disable-verbose-state-checks.patch
 
 # Patches headed upstream
@@ -184,6 +185,21 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
+
+#CVE-XXXX-XXXX rhbz 1189864 1192079
+ApplyPatch vhost-scsi-potential-memory-corruption.patch
+
+#CVE-2015-0275 rhbz 1193907 1195178
+ApplyPatch ext4-Allocate-entire-range-in-zero-range.patch
+
+#CVE-2015-2150 rhbz 1196266 1200397
+ApplyPatch xen-pciback-limit-guest-control-of-command-register.patch
+
+#CVE-2014-8159 rhbz 1181166 1200950
+ApplyPatch IB-core-Prevent-integer-overflow-in-ib_umem_get-addr.patch
+
+#rhbz 1201532
+ApplyPatch HID-multitouch-add-support-of-clickpads.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

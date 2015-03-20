@@ -1,0 +1,113 @@
+Description: Fix buffer overflows when building strings
+ The first occurs in lockfile_create_save_tmplock() when building the
+ filename for the temporary lock file. The p buffer may not be large enough to
+ hold large pid numbers or long hostnames. This issue is fixed by using
+ snprintf(), rather than sprintf(), and adding appropriate field widths to the
+ conversion string. Long hostnames will be truncated to fit in the remainder of
+ the buffer length.
+ .
+ The second occurs in lockfile_create_save_tmplock() when buf is not long
+ enough to store large pid numbers. This issue is fixed by using snprintf().
+ Also, the length of buf is increased to 40, which is enough to hold a 128 bit
+ signed int. This will be sufficient for holding pid values for quite some time
+ into the future.
+ .
+ Additionally, the sprintf() in do_extern() is changed to snprintf() for
+ general security hardening. An overflow of buf is not currently possible.
+Bug-Debian: http://bugs.debian.org/677225
+Bug-Ubuntu: https://launchpad.net/bugs/941968
+Bug-Ubuntu: https://launchpad.net/bugs/1011477
+Author: Tyler Hicks <tyhicks@canonical.com>
+Index: liblockfile-1.09/lockfile.c
+===================================================================
+--- liblockfile-1.09.orig/lockfile.c	2013-01-09 10:54:49.948588615 -0800
++++ liblockfile-1.09/lockfile.c	2013-01-09 12:19:07.328708811 -0800
+@@ -158,7 +158,7 @@
+ 	if ((pid = fork()) < 0)
+ 		return L_ERROR;
+ 	if (pid == 0) {
+-		sprintf(buf, "%d", retries % 1000);
++		snprintf(buf, sizeof(buf), "%d", retries % 1000);
+ 		execl(LOCKPROG, LOCKPROG, opt, "-r", buf, "-q",
+ 			(flags & L_PID) ? "-p" : "-N", lockfile, NULL);
+ 		_exit(L_ERROR);
+@@ -185,6 +185,14 @@
+ 
+ #endif
+ 
++#define TMPLOCKSTR		".lk"
++#define TMPLOCKSTRSZ		strlen(TMPLOCKSTR)
++#define TMPLOCKPIDSZ		5
++#define TMPLOCKTIMESZ		1
++#define TMPLOCKSYSNAMESZ	23
++#define TMPLOCKFILENAMESZ	(TMPLOCKSTRSZ + TMPLOCKPIDSZ + \
++				 TMPLOCKTIMESZ + TMPLOCKSYSNAMESZ)
++
+ /*
+  *	Create a lockfile.
+  */
+@@ -196,7 +204,7 @@
+ {
+ 	struct stat	st, st1;
+ 	char		sysname[256];
+-	char		buf[8];
++	char		buf[40];
+ 	char		*p;
+ 	int		sleeptime = 0;
+ 	int		statfailed = 0;
+@@ -209,13 +217,13 @@
+ 	/*
+ 	 *	Safety measure.
+ 	 */
+-	if (strlen(lockfile) + 32 > MAXPATHLEN) {
++	if (strlen(lockfile) + TMPLOCKFILENAMESZ > MAXPATHLEN) {
+ 		errno = ENAMETOOLONG;
+ 		return L_ERROR;
+ 	}
+ #endif
+ 
+-	if (strlen(lockfile) + 32 + 1 > tmplocksz) {
++	if (strlen(lockfile) + TMPLOCKFILENAMESZ + 1 > tmplocksz) {
+ 		errno = EINVAL;
+ 		return L_ERROR;
+ 	}
+@@ -233,14 +241,16 @@
+ 		return L_ERROR;
+ 	if ((p = strchr(sysname, '.')) != NULL)
+ 		*p = 0;
+-	/* strcpy is safe: length-check above, limited at sprintf below */
++	/* strcpy is safe: length-check above, limited at snprintf below */
+ 	strcpy(tmplock, lockfile);
+ 	if ((p = strrchr(tmplock, '/')) == NULL)
+ 		p = tmplock;
+ 	else
+ 		p++;
+-	sprintf(p, ".lk%05d%x%s",
+-		(int)getpid(), (int)time(NULL) & 15, sysname);
++	snprintf(p, TMPLOCKFILENAMESZ, "%s%0*d%0*x%s", TMPLOCKSTR,
++		 TMPLOCKPIDSZ, (int)getpid(),
++		 TMPLOCKTIMESZ, (int)time(NULL) & 15,
++		 sysname);
+ 	i = umask(022);
+ 	fd = open(tmplock, O_WRONLY|O_CREAT|O_EXCL, 0644);
+ 	e = errno;
+@@ -251,8 +261,8 @@
+ 		return L_TMPLOCK;
+ 	}
+ 	if (flags & (L_PID | L_PPID)) {
+-		sprintf(buf, "%d\n",
+-			(flags & L_PID) ? (int)getpid() : (int)getppid());
++		snprintf(buf, sizeof(buf), "%d\n",
++			 (flags & L_PID) ? (int)getpid() : (int)getppid());
+ 		p = buf;
+ 		len = strlen(buf);
+ 	} else {
+@@ -363,7 +373,7 @@
+ 	char *tmplock;
+ 	int l, r, e;
+ 
+-	l = strlen(lockfile)+32+1;
++	l = strlen(lockfile)+TMPLOCKFILENAMESZ+1;
+ 	if ((tmplock = (char *)malloc(l)) == NULL)
+ 		return L_ERROR;
+ 	tmplock[0] = 0;

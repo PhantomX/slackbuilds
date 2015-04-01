@@ -21,6 +21,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-1014858.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
 # Unable to install addons from https pages
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-966424.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1108834.patch
 
 # Gentoo
 

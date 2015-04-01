@@ -30,6 +30,7 @@ fi
 
 # Unable to install addons from https pages
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-966424.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1108834.patch
 
 # Upstream patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1129859-dictfix2.patch

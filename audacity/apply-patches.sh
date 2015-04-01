@@ -7,7 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-CVE-2007-6061.patch
 
 sed -e "s|__RPM_LIBDIR__|/usr/lib${LIBDIRSUFFIX}|g" \
-  ${SB_PATCHDIR}/${NAME}-2.0.6-libdir.patch | patch -p1 -E --backup --verbose
+  ${SB_PATCHDIR}/${NAME}-2.1.0-libdir.patch | patch -p1 -E --backup --verbose
 
 sed \
   -e "s|__RPM_LIBDIR__|/usr/lib${LIBDIRSUFFIX}|g" \

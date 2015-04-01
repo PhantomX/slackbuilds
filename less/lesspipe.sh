@@ -74,7 +74,7 @@ lesspipe() {
     elif which rar 1> /dev/null ; then
       $(which rar) va "$1"
     elif which lsar 1> /dev/null ; then
-      $(which unrar) -l "$1" 
+      $(which lsar) -l "$1" 
     fi ;;
   *.1|*.2|*.3|*.4|*.5|*.6|*.7|*.8|*.9|*.n|*.man) # *roff src?
     if file -L "$1" | grep roff 1> /dev/null ; then

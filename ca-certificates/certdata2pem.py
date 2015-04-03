@@ -132,6 +132,18 @@ trust_types = {
   "CKA_TRUST_STEP_UP_APPROVED": "step-up-approved",
 }
 
+legacy_trust_types = {
+  "LEGACY_CKA_TRUST_SERVER_AUTH": "server-auth",
+  "LEGACY_CKA_TRUST_CODE_SIGNING": "code-signing",
+  "LEGACY_CKA_TRUST_EMAIL_PROTECTION": "email-protection",
+}
+
+legacy_to_real_trust_types = {
+  "LEGACY_CKA_TRUST_SERVER_AUTH": "CKA_TRUST_SERVER_AUTH",
+  "LEGACY_CKA_TRUST_CODE_SIGNING": "CKA_TRUST_CODE_SIGNING",
+  "LEGACY_CKA_TRUST_EMAIL_PROTECTION": "CKA_TRUST_EMAIL_PROTECTION",
+}
+
 openssl_trust = {
   "CKA_TRUST_SERVER_AUTH": "serverAuth",
   "CKA_TRUST_CLIENT_AUTH": "clientAuth",
@@ -147,6 +159,8 @@ for tobj in objects:
         distrustbits = []
         openssl_trustflags = []
         openssl_distrustflags = []
+        legacy_trustbits = []
+        legacy_openssl_trustflags = []
         for t in trust_types.keys():
             if tobj.has_key(t) and tobj[t] == 'CKT_NSS_TRUSTED_DELEGATOR':
                 trustbits.append(t)
@@ -156,6 +170,15 @@ for tobj in objects:
                 distrustbits.append(t)
                 if t in openssl_trust:
                     openssl_distrustflags.append(openssl_trust[t])
+
+        for t in legacy_trust_types.keys():
+            if tobj.has_key(t) and tobj[t] == 'CKT_NSS_TRUSTED_DELEGATOR':
+                real_t = legacy_to_real_trust_types[t]
+                legacy_trustbits.append(real_t)
+                if real_t in openssl_trust:
+                    legacy_openssl_trustflags.append(openssl_trust[real_t])
+            if tobj.has_key(t) and tobj[t] == 'CKT_NSS_NOT_TRUSTED':
+                raise NotImplementedError, 'legacy distrust not supported.\n' + line
 
         fname = obj_to_filename(tobj)
         try:
@@ -167,6 +190,26 @@ for tobj in objects:
             fname += ".crt"
         else:
             fname += ".p11-kit"
+
+        is_legacy = 0
+        if tobj.has_key('LEGACY_CKA_TRUST_SERVER_AUTH') or tobj.has_key('LEGACY_CKA_TRUST_EMAIL_PROTECTION') or tobj.has_key('LEGACY_CKA_TRUST_CODE_SIGNING'):
+            is_legacy = 1
+            if obj == None:
+                raise NotImplementedError, 'found legacy trust without certificate.\n' + line
+            legacy_fname = "legacy-default/" + fname
+            f = open(legacy_fname, 'w')
+            f.write("# alias=%s\n"%tobj['CKA_LABEL'])
+            f.write("# trust=" + " ".join(legacy_trustbits) + "\n")
+            if legacy_openssl_trustflags:
+                f.write("# openssl-trust=" + " ".join(legacy_openssl_trustflags) + "\n")
+            f.write("-----BEGIN CERTIFICATE-----\n")
+            f.write("\n".join(textwrap.wrap(base64.b64encode(obj['CKA_VALUE']), 64)))
+            f.write("\n-----END CERTIFICATE-----\n")
+            f.close()
+            if tobj.has_key('CKA_TRUST_SERVER_AUTH') or tobj.has_key('CKA_TRUST_EMAIL_PROTECTION') or tobj.has_key('CKA_TRUST_CODE_SIGNING'):
+                fname = "legacy-disable/" + fname
+            else:
+                continue
 
         f = open(fname, 'w')
         if obj != None:
@@ -196,4 +239,5 @@ for tobj in objects:
             if (tobj['CKA_TRUST_SERVER_AUTH'] == 'CKT_NSS_NOT_TRUSTED') or (tobj['CKA_TRUST_EMAIL_PROTECTION'] == 'CKT_NSS_NOT_TRUSTED') or (tobj['CKA_TRUST_CODE_SIGNING'] == 'CKT_NSS_NOT_TRUSTED'):
               f.write("x-distrusted: true\n")
             f.write("\n\n")
+        f.close()
         print " -> written as '%s', trust = %s, openssl-trust = %s, distrust = %s, openssl-distrust = %s" % (fname, trustbits, openssl_trustflags, distrustbits, openssl_distrustflags)

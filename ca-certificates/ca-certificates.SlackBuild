@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ ca-certificates.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008-2014 Phantom X, Goiania, Brazil.
+# Copyright 2008-2015 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -52,7 +52,7 @@ PVER=${PVER:-2.3}
 ARCH=noarch
 SLKTARGET=${SLKTARGET:-i486}
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-1}
+BUILD=${BUILD:-2}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -71,6 +71,8 @@ SB_CABDIR=/etc/ssl
 catrustdir=${PKIDIR}/ca-trust
 classic_tls_bundle=ca-bundle.crt
 trusted_all_bundle=ca-bundle.trust.crt
+legacy_default_bundle=ca-bundle.legacy.default.crt
+legacy_disable_bundle=ca-bundle.legacy.disable.crt
 neutral_bundle=ca-bundle.neutral-trust.crt
 bundle_supplement=ca-bundle.supplement.p11-kit
 java_bundle=cacerts
@@ -81,6 +83,7 @@ VSRCARCHIVE=nssckbi.h
 SRCARCHIVE2=update-ca-trust
 SRCARCHIVE3=trust-fixes
 SRCARCHIVE4=certdata2pem.py
+SRCARCHIVE5=ca-legacy
 PSRCARCHIVE=diff-from-upstream-${PVER}.patch
 
 DL_PROG=${DL_PROG:-wget}
@@ -132,9 +135,10 @@ chmod -R u+w,go+r-w,a-s .
 
 # zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
 
-cp -f ${CWD}/update-ca-trust.8.txt  . || exit 1
+cp -f ${CWD}/update-ca-trust.8.txt . || exit 1
+cp -f ${CWD}/ca-legacy.8.txt . || exit 1
 
-mkdir certs
+mkdir -p certs/legacy-{default,disable}
 ( cd certs 
   cp ${CWD}/${SRCARCHIVE} . || exit 1
   if [ -f ${CWD}/${PSRCARCHIVE} ] ;then
@@ -155,14 +159,20 @@ done
 # Authorities.  It was generated from the Mozilla root CA list.
 # These certificates are in the OpenSSL "TRUSTED CERTIFICATE"
 # format and have trust bits set accordingly.
+# An exception are auxiliary certificates, without positive or negative
+# trust, but are used to assist in finding a preferred trust path.
+# Those neutral certificates use the plain BEGIN CERTIFICATE format.
 #
-# Source: mozilla/security/nss/lib/ckfw/builtins/certdata.txt
+# Source: nss/lib/ckfw/builtins/certdata.txt
+# Source: nss/lib/ckfw/builtins/nssckbi.h
 #
 # Generated from:
 EOF
-   ident -q ${CWD}/${SRCARCHIVE} | sed '1d;s/^/#/';
+   cat ${CWD}/${VSRCARCHIVE} | grep -w NSS_BUILTINS_LIBRARY_VERSION | awk '{print "# " $2 " " $3}';
    echo '#';
 ) > ${trusted_all_bundle}
+
+touch ${neutral_bundle}
 
 for f in certs/*.crt; do
   echo "processing ${f}"
@@ -181,17 +191,57 @@ for f in certs/*.crt; do
     done
   fi
   if [ -n "${targs}" ]; then
-    echo "trust flags ${targ}s for ${f}" >> info.trust
+    echo "trust flags ${targs} for ${f}" >> info.trust
     openssl x509 -text -in "${f}" -trustout ${targs} -setalias "${alias}" >> ${trusted_all_bundle} || exit $?
   else
     echo "no trust flags for ${f}" >> info.notrust
-    openssl x509 -text -in "${f}" -setalias "${alias}" >> ${neutral_bundle} || exit $?
+    # p11-kit-trust defines empty trust lists as "rejected for all purposes".
+    # That's why we use the simple file format
+    #   (BEGIN CERTIFICATE, no trust information)
+    # because p11-kit-trust will treat it as a certificate with neutral trust.
+    # This means we cannot use the -setalias feature for neutral trust certs.
+    openssl x509 -text -in "${f}" >> ${neutral_bundle} || exit $?
   fi
 done
 
-for p in certs/*.p11-kit; do 
-  cat "${p}" >> ${bundle_supplement}
+for f in certs/legacy-default/*.crt; do 
+  echo "processing ${f}"
+  tbits=$(sed -n '/^# openssl-trust/{s/^.*=//;p;}' ${f})
+  alias=$(sed -n '/^# alias=/{s/^.*=//;p;q;}' ${f} | sed "s/'//g" | sed 's/"//g')
+  targs=""
+  if [ -n "${tbits}" ]; then
+     for t in ${tbits}; do
+        targs="${targs} -addtrust ${t}"
+     done
+  fi
+  if [ -n "${targs}" ]; then
+     echo "legacy default flags ${targs} for ${f}" >> info.trust
+     openssl x509 -text -in "${f}" -trustout ${targs} -setalias "${alias}" >> ${legacy_default_bundle} || exit $?
+  fi
 done
+
+for f in certs/legacy-disable/*.crt; do 
+  echo "processing ${f}"
+  tbits=$(sed -n '/^# openssl-trust/{s/^.*=//;p;}' ${f})
+  alias=$(sed -n '/^# alias=/{s/^.*=//;p;q;}' ${f} | sed "s/'//g" | sed 's/"//g')
+  targs=""
+  if [ -n "${tbits}" ]; then
+     for t in ${tbits}; do
+        targs="${targs} -addtrust ${t}"
+     done
+  fi
+  if [ -n "${targs}" ]; then
+     echo "legacy disable flags ${targs} for ${f}" >> info.trust
+     openssl x509 -text -in "${f}" -trustout ${targs} -setalias "${alias}" >> ${legacy_disable_bundle} || exit $?
+  fi
+done
+
+P11FILES=$(find certs -name *.p11-kit | wc -l)
+if [ ${P11FILES} -ne 0 ]; then
+  for p in certs/*.p11-kit; do 
+    cat "${p}" >> ${bundle_supplement}
+  done
+fi
 # Append Fedora trust fixes
 cat ${CWD}/${SRCARCHIVE3} >> ${bundle_supplement} || exit $?
 
@@ -201,6 +251,7 @@ mkdir -p ${PKG}/${catrustdir}/extracted/pem
 mkdir -p ${PKG}/${catrustdir}/extracted/openssl
 mkdir -p ${PKG}/${catrustdir}/extracted/java
 mkdir -p ${PKG}/usr/share/pki/ca-trust-source/{anchors,blacklist}
+mkdir -p ${PKG}/usr/share/pki/ca-trust-legacy
 
 readmedir=${CWD}/readmes
 install -p -m 644 ${readmedir}/README.usr ${PKG}/usr/share/pki/ca-trust-source/README
@@ -217,12 +268,23 @@ install -p -m 644 ${neutral_bundle} \
   ${PKG}/usr/share/pki/ca-trust-source/${neutral_bundle} || exit 1
 install -p -m 644 ${bundle_supplement} \
   ${PKG}/usr/share/pki/ca-trust-source/${bundle_supplement} || exit 1
+
+install -p -m 644 ${legacy_default_bundle} \
+  ${PKG}/usr/share/pki/ca-trust-legacy/${legacy_default_bundle} || exit 1
+install -p -m 644 ${legacy_disable_bundle} \
+  ${PKG}/usr/share/pki/ca-trust-legacy/${legacy_disable_bundle} || exit 1
+
 touch -r ${CWD}/${SRCARCHIVE} ${PKG}/usr/share/pki/ca-trust-source/${trusted_all_bundle}
 touch -r ${CWD}/${SRCARCHIVE} ${PKG}/usr/share/pki/ca-trust-source/${neutral_bundle}
 touch -r ${CWD}/${SRCARCHIVE} ${PKG}/usr/share/pki/ca-trust-source/${bundle_supplement}
+touch -r ${CWD}/${SRCARCHIVE} ${PKG}/usr/share/pki/ca-trust-legacy/${legacy_default_bundle}
+touch -r ${CWD}/${SRCARCHIVE} ${PKG}/usr/share/pki/ca-trust-legacy/${legacy_disable_bundle}
 
 mkdir -p ${PKG}/usr/bin
 install -p -m 755 ${CWD}/${SRCARCHIVE2} ${PKG}/usr/bin/update-ca-trust || exit 1
+install -p -m 755 ${CWD}/${SRCARCHIVE5} ${PKG}/usr/bin/ca-legacy || exit 1
+
+install -p -m 644 ${CWD}/ca-legacy.conf ${PKG}/${catrustdir}/ca-legacy.conf.new || exit 1
 
 # touch ghosted files that will be extracted dynamically
 touch ${PKG}/${catrustdir}/extracted/pem/tls-ca-bundle.pem
@@ -253,8 +315,13 @@ asciidoc -v -d manpage -b docbook update-ca-trust.8.txt || exit 1
 xsltproc --nonet -o update-ca-trust.8 \
   /usr/share/asciidoc/docbook-xsl/manpage.xsl update-ca-trust.8.xml || exit 1
 
+asciidoc.py -v -d manpage -b docbook ca-legacy.8.txt
+xsltproc --nonet -o ca-legacy.8 \
+  /usr/share/asciidoc/docbook-xsl/manpage.xsl ca-legacy.8.xml || exit 1
+
 mkdir -p ${PKG}/usr/man/man8
 install -pm0644 update-ca-trust.8 ${PKG}/usr/man/man8/ || exit 1
+install -pm0644 ca-legacy.8 ${PKG}/usr/man/man8/ || exit 1
 
 # Add a documentation directeory:
 mkdir -p ${DOCDIR}
@@ -297,7 +364,40 @@ if test "\${ROOTDIR}" != "/"; then
   CHROOT="chroot \${ROOTDIR} "
   ROOTDIR="\${ROOTDIR}/"
 fi
-\${CHROOT} /usr/bin/update-ca-trust >/dev/null 2>&1
+EOF
+
+cat > ${PKG}/install/doinst.sh <<EOF
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+config() {
+  NEW="\$1"
+  OLD="\$(dirname \$NEW)/\$(basename \$NEW .new)"
+  # If there's no config file by that name, mv it over:
+  if [ ! -r \$OLD ]; then
+    mv \$NEW \$OLD
+  elif [ "\$(cat \$OLD | md5sum)" = "\$(cat \$NEW | md5sum)" ]; then
+    # toss the redundant copy
+    rm \$NEW
+  fi
+  # Otherwise, we leave the .new copy for the admin to consider...
+}
+## List of conf files to check.  The conf files in your package should end in .new
+EOF
+
+( cd ${PKG}
+  find etc/ -name '*.new' -exec echo config {} ';' | sort >> ${PKG}/install/doinst.sh
+  find etc/ -name '*.new' -a -size 0 -exec echo rm -f {} ';' | sort >> ${PKG}/install/doinst.sh
+  echo >> ${PKG}/install/doinst.sh
+)
+
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+${CHROOT} /usr/bin/ca-legacy install >/dev/null 2>&1
+${CHROOT} /usr/bin/update-ca-trust >/dev/null 2>&1
 EOF
 
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
@@ -308,7 +408,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   mkdir -p ${SBDIR}/readmes
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/${FEDORADIST} ${CWD}/${SRCARCHIVE2} ${CWD}/${SRCARCHIVE3} \
-    ${CWD}/${SRCARCHIVE4} ${SBDIR}/
+    ${CWD}/${SRCARCHIVE4} ${CWD}/*.8.txt ${CWD}/ca-legacy.conf ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -pm0644 ${CWD}/readmes/*.* \

@@ -44,9 +44,6 @@ if [ "${SB_BOOTSTRP}" = "YES" ] ;then
   ApplyPatch glibc.pthread-disable-forced-unwind-check.diff
 fi
 
-cp -f ${SB_PATCHDIR}/00_all_0007-rtld-do-not-ignore-arch-specific-CFLAGS.patch patches/
-cp -f ${SB_PATCHDIR}/00_all_0008-nptl-handle-EAGAIN-with-some-futex-operations.patch patches/
-
 ### Gentoo
 ( SB_PATCHDIR=patches
 
@@ -57,9 +54,9 @@ cp -f ${SB_PATCHDIR}/00_all_0008-nptl-handle-EAGAIN-with-some-futex-operations.p
   ApplyPatch 00_all_0005-reload-etc-resolv.conf-when-it-has-changed.patch
   ApplyPatch 00_all_0006-nptl-support-thread-stacks-that-grow-up.patch
   ApplyPatch 00_all_0007-rtld-do-not-ignore-arch-specific-CFLAGS.patch
-  ApplyPatch 00_all_0008-nptl-handle-EAGAIN-with-some-futex-operations.patch
-  ApplyPatch 00_all_0009-gentoo-support-running-tests-under-sandbox.patch
-  ApplyPatch 00_all_0010-gentoo-disable-building-in-timezone-subdir.patch
+  ApplyPatch 00_all_0008-gentoo-support-running-tests-under-sandbox.patch
+  ApplyPatch 00_all_0009-gentoo-disable-building-in-timezone-subdir.patch
+  ApplyPatch 00_all_0016-Fix-__memcpy_chk-on-non-SSE2-CPUs.patch
 )
 
 ## Fedora
@@ -115,9 +112,32 @@ ApplyPatch glibc-2.16-multiarch.patch
 ApplyPatch glibc-2.21-pt_BR-i18nfixes.patch
 
 ### Arch
-ApplyPatch glibc-2.21-roundup.patch
 
 ### master
 ApplyPatch 0001-x86-Clean-up-__vdso_clock_gettime-variable.patch
+ApplyPatch 0001-Fix-sincos-errno-setting-bug-15467.patch
+ApplyPatch 0001-Fix-dbl-64-wordsize-64-remquo-bug-17569.patch
+ApplyPatch 0001-Filter-out-PTHREAD_MUTEX_NO_ELISION_NP-bit-in-pthrea.patch
+ApplyPatch 0001-Fix-exp2-spurious-underflows-bug-16560.patch
+ApplyPatch 0001-Fix-remquo-spurious-overflows-bug-17978.patch
+ApplyPatch 0001-Fix-sign-of-remquo-zero-remainder-in-round-downward-.patch
+ApplyPatch 0001-Fix-posix_spawn-getrlimit64-namespace-bug-17991.patch
+ApplyPatch 0001-Fix-search.h-namespace-bug-17996.patch
+ApplyPatch 0001-Fix-atan-atan2-missing-underflows-bug-15319.patch
+ApplyPatch 0002-Fix-scandir-scandirat-namespace-bug-17999.patch
+ApplyPatch 0001-Adjust-timeouts-for-some-tests-to-accommodate-slow-p.patch
+ApplyPatch 0001-Compile-gcrt1.o-with-fPIC.patch
+ApplyPatch 0001-linux-open-and-openat-ignore-mode-with-O_TMPFILE-in-.patch
+ApplyPatch 0001-Fix-x86-x86_64-scalb-qNaN-Inf-bug-16783.patch
+ApplyPatch 0002-alloca-fix-buf-interaction.patch
+ApplyPatch 0003-Fix-ldbl-128ibm-acoshl-inaccuracy-bug-18019.patch
+ApplyPatch 0001-BZ-15969-search-locale-archive-again-after-alias-exp.patch
+ApplyPatch 0002-Fix-constness-error-just-introduced-in-findlocale.patch
+ApplyPatch 0001-Fix-asin-missing-underflows-bug-16351.patch
+ApplyPatch 0001-Fix-BZ-18043-buffer-overflow-read-past-the-end-in-wo.patch
+ApplyPatch 0001-Refactor-wordexp-test.c-such-that-words-always-ends-.patch
+ApplyPatch 0002-Fix-off-by-one-which-caused-BZ-18042-and-add-a-test-.patch
+ApplyPatch 0001-Fix-BZ-18043-c4-buffer-overflow-read-past-the-end-in.patch
+ApplyPatch 0001-Avoid-SIGFPE-in-wordexp-BZ-18100.patch
 
 set +e +o pipefail

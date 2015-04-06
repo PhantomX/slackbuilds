@@ -43,7 +43,7 @@ pushd "${tmp}"
       fi
     fi
     pushd Externals
-      rm -rf Cg* GLew gettext libiconv-* libjpeg libpng libusbx LZO miniupnpc msvcrt OpenAL polarssl portaudio Qt SDL* SFML SOIL soundtouch wxWidgets3 XAudio2* zlib
+      rm -rf Cg* enet GLew gettext libiconv-* libjpeg libpng libusbx LZO miniupnpc msvcrt OpenAL polarssl portaudio Qt SDL* SFML SOIL soundtouch wxWidgets3 XAudio2* zlib
     popd >/dev/null
     echo "$(git rev-parse HEAD 2> /dev/null)" > wcrev
     echo "$(git describe --always --long 2> /dev/null)" > wcdesc

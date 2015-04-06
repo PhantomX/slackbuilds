@@ -84,6 +84,10 @@ ApplyPatch glibc-rh1013801.patch
 ApplyPatch glibc-nscd-sysconfig.patch
 sed -i -e 's|/sysconfig/|/default/|g' nscd/nscd.service
 
+# Allow up to 32 libraries to use static TLS. Should go upstream after
+# more testing.
+ApplyPatch glibc-rh1124987.patch
+
 # http://sourceware.org/ml/libc-alpha/2012-12/msg00103.html
 ApplyPatch glibc-rh697421.patch
 ApplyPatch glibc-rh757881.patch

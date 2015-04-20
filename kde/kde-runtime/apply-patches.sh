@@ -20,12 +20,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.5.95-compiz.
 # https://bugs.kde.org/show_bug.cgi?id=316546
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-mouseeventlistener.patch
 
-# Volume gets restored to 100% after each knotify event
-# https://bugs.kde.org/show_bug.cgi?id=324975
-# knotify/libcanberra support from mageia
-# http://svnweb.mageia.org/packages/cauldron/kdebase4-runtime/current/SOURCES/kdebase-runtime-4.6.0-canberra.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.6.0-canberra.patch
-
 # tirpc support
 #patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.6.4-tirpc.patch
 

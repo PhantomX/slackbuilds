@@ -47,4 +47,23 @@ ApplyPatch qtbase-opensource-src-5.2.0-enable_ft_lcdfilter.patch
 # https://bugreports.qt.io/browse/QTBUG-42985
 ApplyPatch qtbase-opensource-src-5.4.0-QTBUG-42985.patch
 
+# workaround https://bugreports.qt-project.org/browse/QTBUG-43057
+# 'make docs' crash on el6, use qSort instead of std::sort
+ApplyPatch qtbase-opensource-src-5.4.0-QTBUG-43057.patch
+
+# Qt 5.5 patches
+ApplyPatch qt5-qtbase-5.5-Get_display_number_when_screen_number_is_omitted.patch
+
+ApplyPatch 0012-Fix-a-crash-in-QPlainTextEdit-documentChanged.patch
+ApplyPatch 0072-CMake-Fix-QObject-connect-failing-on-ARM.patch
+ApplyPatch 0094-Fix-Meta-.-shortcuts-on-XCB.patch
+ApplyPatch 0132-Call-ofono-nm-Registered-delayed-in-constructor-othe.patch
+ApplyPatch 0136-Make-sure-there-s-a-scene-before-using-it.patch
+# http://lists.qt-project.org/pipermail/announce/2015-February/000059.html
+# CVE-2015-0295
+ApplyPatch 0149-Fix-a-division-by-zero-when-processing-malformed-BMP.patch
+# CVE-2015-1858, CVE-2015-1859, CVE-2015-1860
+ApplyPatch 0200-Fixes-crash-in-gif-image-decoder.patch
+ApplyPatch 0201-Fixes-crash-in-bmp-and-ico-image-decoding.patch
+
 set +e +o pipefail

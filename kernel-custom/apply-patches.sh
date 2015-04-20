@@ -192,9 +192,6 @@ ApplyPatch vhost-scsi-potential-memory-corruption.patch
 #CVE-2015-0275 rhbz 1193907 1195178
 ApplyPatch ext4-Allocate-entire-range-in-zero-range.patch
 
-#CVE-2014-8159 rhbz 1181166 1200950
-ApplyPatch IB-core-Prevent-integer-overflow-in-ib_umem_get-addr.patch
-
 #rhbz 1201532
 ApplyPatch HID-multitouch-add-support-of-clickpads.patch
 
@@ -203,6 +200,18 @@ ApplyPatch x86-microcode-intel-Guard-against-stack-overflow-in-.patch
 
 #rhbz 1204512
 ApplyPatch tun-return-proper-error-code-from-tun_do_read.patch
+
+#CVE-2015-2150 rhbz 1196266 1200397
+ApplyPatch xen-pciback-Don-t-disable-PCI_COMMAND-on-PCI-device-.patch
+
+#rhbz 1207789
+ApplyPatch tg3-Hold-tp-lock-before-calling-tg3_halt-from-tg3_in.patch
+
+#CVE-2015-XXXX rhbz 1203712 1208491
+ApplyPatch ipv6-Don-t-reduce-hop-limit-for-an-interface.patch
+
+#rhbz 1208953
+ApplyPatch pty-Fix-input-race-when-closing.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

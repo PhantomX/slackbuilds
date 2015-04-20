@@ -183,7 +183,7 @@ EOF
   fi
 }
 
-case $1 in
+case "$1" in
   -h|--help|-c|--compat32|-f|--file|-t|--template)
     ;;
   *)

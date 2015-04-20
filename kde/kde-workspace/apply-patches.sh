@@ -64,11 +64,14 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-kcm_fonts_dont_change_
 # support BUILD_KCM_RANDR (default ON) option
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.2-BUILD_KCM_RANDR.patch
 
+# avoid conflict between kcm_colors 4 and plasma-desktop 5
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.16-colorschemes-kde4.patch
+
 if [ "${SB_SYSTEMD}" = "YES" ] ;then
   # add support for automatic multi-seat provided by systemd using existing reserve seats in KDM
   # needs having ServerCmd=/usr/lib/systemd/systemd-multi-seat-x set in /etc/kde/kdm/kdmrc
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.11.1-kdm-logind-multiseat.patch
-  # pam/systemd bogosity: kdm restart/shutdown does not work 
+  # pam/systemd bogosity: kdm restart/shutdown does not work
   # http://bugzilla.redhat.com/796969
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.8.0-bug796969.patch
 fi

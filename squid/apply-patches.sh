@@ -7,7 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 if [ "${PVER}" != "0" ] ;then
   mkdir -p patches
   SB_CP="filterdiff -p0 -x 'doc/release-notes/*'"
-  for i in ${PVER} ; do
+  for i in $(eval echo "${PVER}") ; do
     ${SB_CP} ${SB_PATCHDIR}/updates/${NAME}-${SVER}-${i}.patch \
       > patches/${NAME}-${SVER}-${i}.patch \
     || ${SB_CP} ${SB_PATCHDIR}/updates/${NAME}-${SVER}-${i}.patch \

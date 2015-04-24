@@ -143,5 +143,9 @@ ApplyPatch 0001-Refactor-wordexp-test.c-such-that-words-always-ends-.patch
 ApplyPatch 0002-Fix-off-by-one-which-caused-BZ-18042-and-add-a-test-.patch
 ApplyPatch 0001-Fix-BZ-18043-c4-buffer-overflow-read-past-the-end-in.patch
 ApplyPatch 0001-Avoid-SIGFPE-in-wordexp-BZ-18100.patch
+ApplyPatch 0001-Fuller-check-for-invalid-NSID-in-_dl_open.patch
+ApplyPatch 0002-Avoid-confusing-compiler-with-dynamically-impossible.patch
+ApplyPatch 0003-Better-fix-for-setenv-.-NULL.patch
+ApplyPatch 0001-CVE-2015-1781-resolv-nss_dns-dns-host.c-buffer-overf.patch
 
 set +e +o pipefail

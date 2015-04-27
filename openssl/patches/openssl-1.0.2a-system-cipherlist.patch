@@ -1,0 +1,285 @@
+diff -up openssl-1.0.2a/Configure.system openssl-1.0.2a/Configure
+--- openssl-1.0.2a/Configure.system	2015-04-22 15:23:47.970633650 +0200
++++ openssl-1.0.2a/Configure	2015-04-22 15:23:48.042635407 +0200
+@@ -10,7 +10,7 @@ use strict;
+ 
+ # see INSTALL for instructions.
+ 
+-my $usage="Usage: Configure [no-<cipher> ...] [enable-<cipher> ...] [experimental-<cipher> ...] [-Dxxx] [-lxxx] [-Lxxx] [-fxxx] [-Kxxx] [no-hw-xxx|no-hw] [[no-]threads] [[no-]shared] [[no-]zlib|zlib-dynamic] [no-asm] [no-dso] [no-krb5] [sctp] [386] [--prefix=DIR] [--openssldir=OPENSSLDIR] [--with-xxx[=vvv]] [--test-sanity] os/compiler[:flags]\n";
++my $usage="Usage: Configure [no-<cipher> ...] [enable-<cipher> ...] [experimental-<cipher> ...] [-Dxxx] [-lxxx] [-Lxxx] [-fxxx] [-Kxxx] [no-hw-xxx|no-hw] [[no-]threads] [[no-]shared] [[no-]zlib|zlib-dynamic] [no-asm] [no-dso] [no-krb5] [sctp] [386] [--prefix=DIR] [--openssldir=OPENSSLDIR] [--system-ciphers-file=SYSTEMCIPHERFILE] [--with-xxx[=vvv]] [--test-sanity] os/compiler[:flags]\n";
+ 
+ # Options:
+ #
+@@ -35,6 +35,9 @@ my $usage="Usage: Configure [no-<cipher>
+ # --with-krb5-flavor  Declare what flavor of Kerberos 5 is used.  Currently
+ #		supported values are "MIT" and "Heimdal".  A value is required.
+ #
++# --system-ciphers-file  A file to read cipher string from when the PROFILE=SYSTEM
++#		cipher is specified (default).
++#
+ # --test-sanity Make a number of sanity checks on the data in this file.
+ #               This is a debugging tool for OpenSSL developers.
+ #
+@@ -703,6 +706,7 @@ my $prefix="";
+ my $libdir="";
+ my $openssldir="";
+ my $enginesdir="";
++my $system_ciphers_file="";
+ my $exe_ext="";
+ my $install_prefix= "$ENV{'INSTALL_PREFIX'}";
+ my $cross_compile_prefix="";
+@@ -934,6 +938,10 @@ PROCESS_ARGS:
+ 				{
+ 				$enginesdir=$1;
+ 				}
++			elsif (/^--system-ciphers-file=(.*)$/)
++				{
++				$system_ciphers_file=$1;
++				}
+ 			elsif (/^--install.prefix=(.*)$/)
+ 				{
+ 				$install_prefix=$1;
+@@ -1096,6 +1104,7 @@ print "Configuring for $target\n";
+ 
+ &usage if (!defined($table{$target}));
+ 
++chop $system_ciphers_file if $system_ciphers_file =~ /\/$/;
+ 
+ foreach (sort (keys %disabled))
+ 	{
+@@ -1667,6 +1676,7 @@ while (<IN>)
+ 	s/^INSTALLTOP=.*$/INSTALLTOP=$prefix/;
+ 	s/^MULTILIB=.*$/MULTILIB=$multilib/;
+ 	s/^OPENSSLDIR=.*$/OPENSSLDIR=$openssldir/;
++	s/^SYSTEM_CIPHERS_FILE=.*$/SYSTEM_CIPHERS_FILE=$system_ciphers_file/;
+ 	s/^LIBDIR=.*$/LIBDIR=$libdir/;
+ 	s/^INSTALL_PREFIX=.*$/INSTALL_PREFIX=$install_prefix/;
+ 	s/^PLATFORM=.*$/PLATFORM=$target/;
+@@ -1877,6 +1887,14 @@ while (<IN>)
+ 		$foo =~ s/\\/\\\\/g;
+ 		print OUT "#define ENGINESDIR \"$foo\"\n";
+ 		}
++	elsif	(/^#((define)|(undef))\s+SYSTEM_CIPHERS_FILE/)
++		{
++		my $foo = "$system_ciphers_file";
++		if ($foo ne '') {
++			$foo =~ s/\\/\\\\/g;
++			print OUT "#define SYSTEM_CIPHERS_FILE \"$foo\"\n";
++		}
++		}
+ 	elsif	(/^#((define)|(undef))\s+OPENSSL_EXPORT_VAR_AS_FUNCTION/)
+ 		{ printf OUT "#undef OPENSSL_EXPORT_VAR_AS_FUNCTION\n"
+ 			if $export_var_as_fn;
+diff -up openssl-1.0.2a/crypto/opensslconf.h.in.system openssl-1.0.2a/crypto/opensslconf.h.in
+--- openssl-1.0.2a/crypto/opensslconf.h.in.system	2015-04-22 15:23:47.988634089 +0200
++++ openssl-1.0.2a/crypto/opensslconf.h.in	2015-04-22 15:23:48.042635407 +0200
+@@ -25,6 +25,8 @@
+ #endif
+ #endif
+ 
++#undef SYSTEM_CIPHERS_FILE
++
+ #undef OPENSSL_UNISTD
+ #define OPENSSL_UNISTD <unistd.h>
+ 
+diff -up openssl-1.0.2a/ssl/ssl_ciph.c.system openssl-1.0.2a/ssl/ssl_ciph.c
+--- openssl-1.0.2a/ssl/ssl_ciph.c.system	2015-04-22 15:23:47.993634211 +0200
++++ openssl-1.0.2a/ssl/ssl_ciph.c	2015-04-22 15:29:30.185982356 +0200
+@@ -1463,6 +1463,50 @@ static int check_suiteb_cipher_list(cons
+ }
+ #endif
+ 
++#ifdef SYSTEM_CIPHERS_FILE
++static char *load_system_str(const char *suffix)
++{
++    FILE *fp;
++    char buf[1024];
++    char *new_rules;
++    unsigned len, slen;
++
++    fp = fopen(SYSTEM_CIPHERS_FILE, "r");
++    if (fp == NULL || fgets(buf, sizeof(buf), fp) == NULL) {
++        /* cannot open or file is empty */
++        snprintf(buf, sizeof(buf), "%s", SSL_DEFAULT_CIPHER_LIST);
++    }
++
++    if (fp)
++        fclose(fp);
++
++    slen = strlen(suffix);
++    len = strlen(buf);
++
++    if (buf[len - 1] == '\n') {
++        len--;
++        buf[len] = 0;
++    }
++    if (buf[len - 1] == '\r') {
++        len--;
++        buf[len] = 0;
++    }
++
++    new_rules = OPENSSL_malloc(len + slen + 1);
++    if (new_rules == 0)
++        return NULL;
++
++    memcpy(new_rules, buf, len);
++    if (slen > 0) {
++        memcpy(&new_rules[len], suffix, slen);
++        len += slen;
++    }
++    new_rules[len] = 0;
++
++    return new_rules;
++}
++#endif
++
+ STACK_OF(SSL_CIPHER) *ssl_create_cipher_list(const SSL_METHOD *ssl_method, STACK_OF(SSL_CIPHER)
+                                              **cipher_list, STACK_OF(SSL_CIPHER)
+                                              **cipher_list_by_id,
+@@ -1471,19 +1515,29 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_
+     int ok, num_of_ciphers, num_of_alias_max, num_of_group_aliases;
+     unsigned long disabled_mkey, disabled_auth, disabled_enc, disabled_mac,
+         disabled_ssl;
+-    STACK_OF(SSL_CIPHER) *cipherstack, *tmp_cipher_list;
++    STACK_OF(SSL_CIPHER) *cipherstack = NULL, *tmp_cipher_list;
+     const char *rule_p;
+     CIPHER_ORDER *co_list = NULL, *head = NULL, *tail = NULL, *curr;
+     const SSL_CIPHER **ca_list = NULL;
++#ifdef SYSTEM_CIPHERS_FILE
++    char *new_rules = NULL;
++
++    if (rule_str != NULL && strncmp(rule_str, "PROFILE=SYSTEM", 14) == 0) {
++        char *p = rule_str + 14;
++    
++        new_rules = load_system_str(p);
++        rule_str = new_rules;
++    }
++#endif
+ 
+     /*
+      * Return with error if nothing to do.
+      */
+     if (rule_str == NULL || cipher_list == NULL || cipher_list_by_id == NULL)
+-        return NULL;
++        goto end;
+ #ifndef OPENSSL_NO_EC
+     if (!check_suiteb_cipher_list(ssl_method, c, &rule_str))
+-        return NULL;
++        goto end;
+ #endif
+ 
+     /*
+@@ -1507,7 +1561,7 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_
+         (CIPHER_ORDER *)OPENSSL_malloc(sizeof(CIPHER_ORDER) * num_of_ciphers);
+     if (co_list == NULL) {
+         SSLerr(SSL_F_SSL_CREATE_CIPHER_LIST, ERR_R_MALLOC_FAILURE);
+-        return (NULL);          /* Failure */
++        goto end;
+     }
+ 
+     ssl_cipher_collect_ciphers(ssl_method, num_of_ciphers,
+@@ -1568,8 +1622,7 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_
+      * in force within each class
+      */
+     if (!ssl_cipher_strength_sort(&head, &tail)) {
+-        OPENSSL_free(co_list);
+-        return NULL;
++        goto end;
+     }
+ 
+     /* Now disable everything (maintaining the ordering!) */
+@@ -1587,9 +1640,8 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_
+     num_of_alias_max = num_of_ciphers + num_of_group_aliases + 1;
+     ca_list = OPENSSL_malloc(sizeof(SSL_CIPHER *) * num_of_alias_max);
+     if (ca_list == NULL) {
+-        OPENSSL_free(co_list);
+         SSLerr(SSL_F_SSL_CREATE_CIPHER_LIST, ERR_R_MALLOC_FAILURE);
+-        return (NULL);          /* Failure */
++        goto end;
+     }
+     ssl_cipher_collect_aliases(ca_list, num_of_group_aliases,
+                                disabled_mkey, disabled_auth, disabled_enc,
+@@ -1615,8 +1667,7 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_
+     OPENSSL_free((void *)ca_list); /* Not needed anymore */
+ 
+     if (!ok) {                  /* Rule processing failure */
+-        OPENSSL_free(co_list);
+-        return (NULL);
++        goto end;
+     }
+ 
+     /*
+@@ -1624,8 +1675,7 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_
+      * if we cannot get one.
+      */
+     if ((cipherstack = sk_SSL_CIPHER_new_null()) == NULL) {
+-        OPENSSL_free(co_list);
+-        return (NULL);
++        goto end;
+     }
+ 
+     /*
+@@ -1646,12 +1696,12 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_
+ #endif
+         }
+     }
+-    OPENSSL_free(co_list);      /* Not needed any longer */
+ 
+     tmp_cipher_list = sk_SSL_CIPHER_dup(cipherstack);
+     if (tmp_cipher_list == NULL) {
+         sk_SSL_CIPHER_free(cipherstack);
+-        return NULL;
++        cipherstack = NULL;
++        goto end;
+     }
+     if (*cipher_list != NULL)
+         sk_SSL_CIPHER_free(*cipher_list);
+@@ -1663,6 +1713,12 @@ STACK_OF(SSL_CIPHER) *ssl_create_cipher_
+                                      ssl_cipher_ptr_id_cmp);
+ 
+     sk_SSL_CIPHER_sort(*cipher_list_by_id);
++
++ end:
++    OPENSSL_free(co_list);
++#ifdef SYSTEM_CIPHERS_FILE
++    OPENSSL_free(new_rules);
++#endif
+     return (cipherstack);
+ }
+ 
+diff -up openssl-1.0.2a/ssl/ssl.h.system openssl-1.0.2a/ssl/ssl.h
+--- openssl-1.0.2a/ssl/ssl.h.system	2015-04-22 15:23:48.043635431 +0200
++++ openssl-1.0.2a/ssl/ssl.h	2015-04-22 15:35:43.666093799 +0200
+@@ -345,6 +345,11 @@ extern "C" {
+  * throwing out anonymous and unencrypted ciphersuites! (The latter are not
+  * actually enabled by ALL, but "ALL:RSA" would enable some of them.)
+  */
++# ifdef SYSTEM_CIPHERS_FILE
++#  define SSL_SYSTEM_DEFAULT_CIPHER_LIST "PROFILE=SYSTEM"
++# else
++#  define SSL_SYSTEM_DEFAULT_CIPHER_LIST SSL_DEFAULT_CIPHER_LIST
++# endif
+ 
+ /* Used in SSL_set_shutdown()/SSL_get_shutdown(); */
+ # define SSL_SENT_SHUTDOWN       1
+diff -up openssl-1.0.2a/ssl/ssl_lib.c.system openssl-1.0.2a/ssl/ssl_lib.c
+--- openssl-1.0.2a/ssl/ssl_lib.c.system	2015-04-22 15:23:48.044635455 +0200
++++ openssl-1.0.2a/ssl/ssl_lib.c	2015-04-22 15:31:55.794534631 +0200
+@@ -273,7 +273,7 @@ int SSL_CTX_set_ssl_version(SSL_CTX *ctx
+                                 &(ctx->cipher_list_by_id),
+                                 meth->version ==
+                                 SSL2_VERSION ? "SSLv2" :
+-                                SSL_DEFAULT_CIPHER_LIST, ctx->cert);
++                                SSL_SYSTEM_DEFAULT_CIPHER_LIST, ctx->cert);
+     if ((sk == NULL) || (sk_SSL_CIPHER_num(sk) <= 0)) {
+         SSLerr(SSL_F_SSL_CTX_SET_SSL_VERSION,
+                SSL_R_SSL_LIBRARY_HAS_NO_CIPHERS);
+@@ -1945,7 +1945,7 @@ SSL_CTX *SSL_CTX_new(const SSL_METHOD *m
+     ssl_create_cipher_list(ret->method,
+                            &ret->cipher_list, &ret->cipher_list_by_id,
+                            meth->version ==
+-                           SSL2_VERSION ? "SSLv2" : SSL_DEFAULT_CIPHER_LIST,
++                           SSL2_VERSION ? "SSLv2" : SSL_SYSTEM_DEFAULT_CIPHER_LIST,
+                            ret->cert);
+     if (ret->cipher_list == NULL || sk_SSL_CIPHER_num(ret->cipher_list) <= 0) {
+         SSLerr(SSL_F_SSL_CTX_NEW, SSL_R_LIBRARY_HAS_NO_CIPHERS);

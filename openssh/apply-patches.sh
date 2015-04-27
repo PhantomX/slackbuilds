@@ -31,9 +31,6 @@ ApplyPatch() {
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # Internal debug
 #ApplyPatch openssh-5.9p1-wIm.patch
-#ApplyPatch openssh-6.6.1p1-coverity.patch
-# https://bugzilla.mindrot.org/show_bug.cgi?id=1872
-ApplyPatch openssh-6.7p1-fingerprint.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1894
 #ApplyPatch openssh-5.8p1-getaddrinfo.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1889
@@ -67,12 +64,10 @@ ApplyPatch openssh-5.8p2-remove-stale-control-socket.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1925
 ApplyPatch openssh-5.9p1-ipv6man.patch
 ApplyPatch openssh-5.8p2-sigpipe.patch
-ApplyPatch openssh-6.1p1-askpass-ld.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=1789
 ApplyPatch openssh-5.5p1-x11.patch
 ApplyPatch openssh-5.1p1-askpass-progress.patch
 ApplyPatch openssh-4.3p2-askpass-grab-info.patch
-ApplyPatch openssh-5.1p1-scp-manpage.patch
 ApplyPatch openssh-5.8p1-localdomain.patch
 ApplyPatch openssh-6.3p1-chinfo.patch -z .chinfo
 [ "${SB_PAM}" = "YES" ] || sed -i -e '/^UsePAM yes/d' sshd_config
@@ -87,6 +82,8 @@ ApplyPatch openssh-6.2p1-vendor.patch
 ApplyPatch openssh-6.3p1-ctr-evp-fast.patch
 # add cavs test binary for the aes-ctr
 ApplyPatch openssh-6.6p1-ctr-cavstest-slk.patch
+# add SSH KDF CAVS test driver
+ApplyPatch openssh-6.7p1-kdf-cavs-chinfo.patch
 
 # Run ssh-copy-id in the legacy mode when SSH_COPY_ID_LEGACY variable is set (#969375
 ApplyPatch openssh-6.4p1-legacy-ssh-copy-id.patch
@@ -99,9 +96,6 @@ ApplyPatch openssh-6.6p1-set_remote_ipaddr.patch
 # https://bugzilla.mindrot.org/show_bug.cgi?id=2058
 # slightly changed patch from comment 10
 ApplyPatch openssh-6.6.1p1-utf8-banner.patch
-# don't consider a partial success as a failure
-# https://bugzilla.mindrot.org/show_bug.cgi?id=2270
-ApplyPatch openssh-6.6.1p1-partial-success.patch
 # use different values for DH for Cisco servers (#1026430)
 ApplyPatch openssh-6.6.1p1-cisco-dh-keys.patch
 # scp file into non-existing directory (#1142223)
@@ -111,6 +105,20 @@ ApplyPatch openssh-6.6.1p1-ip-port-config-parser.patch
 # restore tcp wrappers support, based on Debian patch
 # https://lists.mindrot.org/pipermail/openssh-unix-dev/2014-April/032497.html
 ApplyPatch openssh-6.7p1-debian-restore-tcp-wrappers.patch
+# apply upstream patch and make sshd -T more consistent (rh#1187521)
+ApplyPatch openssh-6.7p1-sshdT-output.patch
+# fix ssh-copy-id on non-sh shells (rh#1045191)
+ApplyPatch openssh-6.7p1-fix-ssh-copy-id-on-non-sh-shell.patch
+# AArch64 has seccomp support since 3.19 kernel (rh#1195065)
+ApplyPatch openssh-6.7p1-seccomp-aarch64.patch
+# Solve issue with ssh-copy-id and keys without trailing newline (rh#1093168)
+ApplyPatch openssh-6.7p1-ssh-copy-id-truncated-keys.patch
+# Add sftp option to force mode of created files (rh#1191055)
+ApplyPatch openssh-6.7p1-sftp-force-permission.patch
+# Upstream bug #1878 reintroduced in openssh6.7p1
+ApplyPatch openssh-6.8p1-880575.patch
+
+ApplyPatch openssh-6.7p1-coverity.patch
 
 set +e +o pipefail
 

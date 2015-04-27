@@ -14,6 +14,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/detect-llvm34.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-for-llvm34.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix-for-llvm35.patch
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/lightspark-llvm36.patch
+
 ### Gentoo
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0.7.2-ffmpeg20.patch
 

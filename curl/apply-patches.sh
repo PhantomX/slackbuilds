@@ -6,7 +6,7 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ### Fedora
 # implement public key pinning for NSS backend
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-curl-7.42.0-b47c17d6.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-curl-7.42.1-b47c17d6.patch
 # patch making libcurl multilib ready
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0101-curl-7.32.0-multilib.patch
 # prevent configure script from discarding -g in CFLAGS

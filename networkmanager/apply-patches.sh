@@ -10,10 +10,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/02-dbus_access_network_manager
 ### Arch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/disable_set_hostname.patch
 
-### Fedora
-# https://bugzilla.redhat.com/show_bug.cgi?id=1162636
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/NetworkManager-1.0.0-bridge_resume.patch
-
 # Set to YES if autogen is needed
 SB_AUTOGEN=NO
 

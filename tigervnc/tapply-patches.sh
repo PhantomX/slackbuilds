@@ -17,5 +17,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-shebang.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-format-security.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-xstartup.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-xserver117.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-gnutls-3.4.patch
 
 set +e +o pipefail

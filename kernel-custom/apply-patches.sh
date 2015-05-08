@@ -202,12 +202,14 @@ ApplyPatch pty-Fix-input-race-when-closing.patch
 #rhbz 1208999
 ApplyPatch SCSI-add-1024-max-sectors-black-list-flag.patch
 
-#rhbz 1211017 1211013
-ApplyPatch nfs-fix-DIO-good-bytes-calculation.patch
-ApplyPatch nfs-remove-WARN_ON_ONCE-from-nfs_direct_good_bytes.patch
-
 #rhbz 1210857
 ApplyPatch blk-loop-avoid-too-many-pending-per-work-IO.patch
+
+#CVE-2015-3636 rhbz 1218074 1218110
+ApplyPatch ipv4-Missing-sk_nulls_node_init-in-ping_unhash.patch
+
+#rhbz 1218662
+ApplyPatch libata-Blacklist-queued-TRIM-on-all-Samsung-800-seri.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

@@ -74,6 +74,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-keylen.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-shmperm.patch
 # ntpbz #2745
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-xleap.patch
+# ntpbz #2779
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2015-1798.patch
+# ntpbz #2781
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-cve-2015-1799.patch
+# ntpbz #2797
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ntp-4.2.6p5-bigkeygen.patch
 
 ( cd ntpstat-${NSVER}
   # handle unknown clock types

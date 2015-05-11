@@ -161,10 +161,13 @@ ApplyPatch 0065-Fix-QPainter-drawPolyline-painting-errors-with-cosme.patch
 ApplyPatch 0066-Allow-Qt4-to-also-build-in-ppc64-el-le.patch
 ApplyPatch 0067-Fix-AArch64-arm64-detection.patch
 ApplyPatch 0072-Fix-font-cache-check-in-QFontEngineFT-recalcAdvances.patch
+ApplyPatch 0163-QNAM-Fix-upload-corruptions-when-server-closes-conne.patch
 
 # security patches
 # CVE-2015-0295
 # http://lists.qt-project.org/pipermail/announce/2015-February/000059.html
 ApplyPatch 0137-Fix-a-division-by-zero-when-processing-malformed-BMP.patch
+# CVE-2015-1860 CVE-2015-1859 CVE-2015-1858
+ApplyPatch qt-4.8.6-CVE-2015-1860_CVE-2015-1859_CVE-2015-1858.patch
 
 set +e +o pipefail

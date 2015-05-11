@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="http://${module}.googlecode.com/svn/trunk/"
+snaproot="git://github.com/Cyan4973/${module}.git"
 
 tmp=$(mktemp -d)
 
@@ -17,15 +17,31 @@ unset CDPATH
 unset SNAP_COOPTS
 pwd=$(pwd)
 snap=${snap:-$(date +%Y%m%d)}
+snapbranch=${snapbranch:-master}
+gittree=${gittree:-${snapbranch}}
 
-[ "${snap}" = "$(date +%Y%m%d)" ] || SNAP_COOPTS="-r {$snap}"
-[ -n "${snaptag}" ] && SNAP_COOPTS="-r ${snap}"
+[ "${snap}" = "$(date +%Y%m%d)" ] && [ "${snapbranch}" = "master" ] && SNAP_COOPTS="--depth 1"
+[ "${snapbranch}" = "master" ] || snapbranch="origin/${snapbranch}"
 
 pushd "${tmp}"
-  svn export ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
+  git clone ${SNAP_COOPTS} ${snaproot} ${module}-${snap}
   pushd ${module}-${snap}
-    find . -type d -name .svn -print0 | xargs -0r rm -rf
+    if [ "${snap}" != "$(date +%Y%m%d)" ] && [ -z "${snaptag}" ] ; then
+      gitdate="$(echo -n ${snap} | head -c -4)-$(echo -n ${snap} | tail -c -4|head -c -2)-$(echo -n ${snap} | tail -c -2)"
+      git checkout $(git rev-list -n 1 --before="${gitdate}" ${snapbranch})
+      gittree=$(git reflog | grep 'HEAD@{0}' | awk '{print $1}')
+    elif [ "${snapbranch}" != "master" ] ;then
+       gittree="${snapbranch}"
+    fi
+    if [ -n "${snaptag}" ] ;then
+      if git tag | grep -q ${snaptag} ;then
+        gittree="${snaptag}"
+      else
+        echo "Tag not found! Printing available."
+        git tag
+        exit 1
+      fi
+    fi
+    git archive --format=tar --prefix=${module}-${snap}/ ${gittree} | xz -9 > "${pwd}"/${module}-${snap}.tar.xz
   popd
-  tar -Jcf "${pwd}"/${module}-${snap}.tar.xz ${module}-${snap}
 popd >/dev/null
-

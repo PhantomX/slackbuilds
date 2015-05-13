@@ -10,6 +10,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-fix-preferences-chinfo
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-install-dir.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build-prbool.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-nss-3.18.0.patch
 
 # Unable to install addons from https pages
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-966424.patch
@@ -26,7 +27,6 @@ if [ "${SB_UA}" = "YES" ] ;then
 fi
 
 # Upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1129859-dictfix2.patch
 
 ### OpenSUSE
 # http://www.rosenauer.org/hg/mozilla/

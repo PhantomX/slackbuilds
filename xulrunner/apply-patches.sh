@@ -9,6 +9,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-install-dir.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build-prbool.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-nss-3.18.0.patch
 
 # Fedora specific patches
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
@@ -27,7 +28,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-prefer_plugin_pref.pat
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-icu-strncat.patch
 
 # Upstream patches
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1129859-dictfix2.patch
 
 # OpenSuse kde integration support
 if [ "${SB_KDE}" = "YES" ] ;then

@@ -39,5 +39,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-strings.pat
 patch -p1 -E --backup -z .libcxx --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-libcxx.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-noansi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.1.2-testmangle.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.26-gcc.patch
 
 set +e +o pipefail

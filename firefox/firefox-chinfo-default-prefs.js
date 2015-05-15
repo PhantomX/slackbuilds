@@ -6,7 +6,9 @@ pref("browser.display.use_system_colors",   true);
 pref("browser.download.folderList",         1);
 pref("browser.fixup.alternate.enabled", false);
 pref("browser.link.open_external",          3);
+pref("browser.newtabpage.directory.source","");
 pref("browser.newtabpage.enabled", false);
+pref("browser.preferences.inContent", false);
 pref("browser.search.suggest.enabled", false);
 pref("browser.shell.checkDefaultBrowser",   false);
 pref("browser.tabs.onTop", false);
@@ -30,4 +32,4 @@ pref("offline.autoDetect", true);
 pref("media.gmp-gmpopenh264.provider.enabled",false);
 pref("media.gmp-gmpopenh264.autoupdate",false);
 pref("media.gmp-gmpopenh264.enabled",false);
-pref("browser.newtabpage.directory.source","");
+

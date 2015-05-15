@@ -199,14 +199,8 @@ ApplyPatch xen-pciback-Don-t-disable-PCI_COMMAND-on-PCI-device-.patch
 #rhbz 1208953
 ApplyPatch pty-Fix-input-race-when-closing.patch
 
-#rhbz 1208999
-ApplyPatch SCSI-add-1024-max-sectors-black-list-flag.patch
-
 #rhbz 1210857
 ApplyPatch blk-loop-avoid-too-many-pending-per-work-IO.patch
-
-#CVE-2015-3636 rhbz 1218074 1218110
-ApplyPatch ipv4-Missing-sk_nulls_node_init-in-ping_unhash.patch
 
 #rhbz 1218662
 ApplyPatch libata-Blacklist-queued-TRIM-on-all-Samsung-800-seri.patch

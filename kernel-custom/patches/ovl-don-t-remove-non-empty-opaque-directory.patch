@@ -1,0 +1,57 @@
+From: Miklos Szeredi <mszeredi@suse.cz>
+Date: Thu, 14 May 2015 10:04:44 +0200
+Subject: [PATCH] ovl: don't remove non-empty opaque directory
+
+When removing an opaque directory we can't just call rmdir() to check for
+emptiness, because the directory will need to be replaced with a whiteout.
+The replacement is done with RENAME_EXCHANGE, which doesn't check
+emptiness.
+
+Solution is just to check emptiness by reading the directory.  In the
+future we could add a new rename flag to check for emptiness even for
+RENAME_EXCHANGE to optimize this case.
+
+Reported-by: Vincent Batts <vbatts@gmail.com>
+Signed-off-by: Miklos Szeredi <mszeredi@suse.cz>
+Tested-by: Jordi Pujol Palomer <jordipujolp@gmail.com>
+Fixes: 263b4a0fee43 ("ovl: dont replace opaque dir")
+Cc: <stable@vger.kernel.org> # v4.0+
+---
+ fs/overlayfs/dir.c | 24 +++++++++++++++++++-----
+ 1 file changed, 19 insertions(+), 5 deletions(-)
+
+diff --git a/fs/overlayfs/dir.c b/fs/overlayfs/dir.c
+index d139405d2bfa..2578a0c0677d 100644
+--- a/fs/overlayfs/dir.c
++++ b/fs/overlayfs/dir.c
+@@ -506,11 +506,25 @@ static int ovl_remove_and_whiteout(struct dentry *dentry, bool is_dir)
+ 	struct dentry *opaquedir = NULL;
+ 	int err;
+ 
+-	if (is_dir && OVL_TYPE_MERGE_OR_LOWER(ovl_path_type(dentry))) {
+-		opaquedir = ovl_check_empty_and_clear(dentry);
+-		err = PTR_ERR(opaquedir);
+-		if (IS_ERR(opaquedir))
+-			goto out;
++	if (is_dir) {
++		if (OVL_TYPE_MERGE_OR_LOWER(ovl_path_type(dentry))) {
++			opaquedir = ovl_check_empty_and_clear(dentry);
++			err = PTR_ERR(opaquedir);
++			if (IS_ERR(opaquedir))
++				goto out;
++		} else {
++			LIST_HEAD(list);
++
++			/*
++			 * When removing an empty opaque directory, then it
++			 * makes no sense to replace it with an exact replica of
++			 * itself.  But emptiness still needs to be checked.
++			 */
++			err = ovl_check_empty_dir(dentry, &list);
++			ovl_cache_free(&list);
++			if (err)
++				goto out;
++		}
+ 	}
+ 
+ 	err = ovl_lock_rename_workdir(workdir, upperdir);

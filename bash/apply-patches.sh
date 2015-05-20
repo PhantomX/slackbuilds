@@ -48,7 +48,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-size_type.patch
 # rhbz#1112710 - mention ulimit -c and -f POSIX block size
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-man-ulimit.patch
 # A series of patches emitted by upstream since 4.3-18
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-parse-time-keyword.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-pathexp-globignore-delim.patch
 # rhbz#1102815 - fix double echoes in vi visual mode
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-noecho.patch

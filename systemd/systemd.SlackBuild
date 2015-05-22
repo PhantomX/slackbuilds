@@ -45,7 +45,7 @@ fi
 NAME=systemd
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-219}
+VERSION=${VERSION:-220}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -57,7 +57,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-3}
+BUILD=${BUILD:-1}
 SLKDIST=${SLKDIST:-Slackware}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
@@ -138,6 +138,8 @@ fi
     rm -fv ${i%.in}
   done
 )
+find src/ -name '*-name.gperf' -print -delete
+find src/ \( -name '*-to-name.h' -o -name '*-from-name.h' \) -print -delete
 
 sed -i \
   -e 's|@RC_LOCAL_SCRIPT_PATH_START@|/etc/rc.d/rc.local|g' \
@@ -197,6 +199,7 @@ CXXFLAGS="${SLKCFLAGS}" \
   --enable-lz4 \
   ${SB_PAMOPTS} \
   --disable-audit \
+  --disable-efi \
   --disable-ima \
   --disable-selinux \
   --disable-kdbus \
@@ -206,6 +209,8 @@ CXXFLAGS="${SLKCFLAGS}" \
   --with-certificate-root=${SB_CABDIR} \
   ${SB_QROPTS} \
   --build=${SLKTARGET}-${SLKDTARGET}-linux || exit $?
+
+export GCC_COLORS=""
 
 make -j${NJOBS} || make || exit $?
 make install DESTDIR=${PKG} \
@@ -240,9 +245,6 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
 
 ################################### systemd ####################################
-# Slackware inittab compliance
-ln -sf graphical.target ${PKG}/lib/systemd/system/runlevel4.target || exit 1
-
 # rc.local and rc.local_shutdown
 install -pm0644 units/rc-local.service.in \
   ${PKG}/lib/systemd/system/rc-local.service || exit 1
@@ -302,7 +304,10 @@ touch ${PKG}/etc/vconsole.conf.new
 touch ${PKG}/etc/locale.conf.new
 touch ${PKG}/etc/machine-id.new
 touch ${PKG}/etc/machine-info.new
-touch ${PKG}/etc/systemd/system/default.target
+ln -sf multi-user.target ${PKG}/etc/systemd/system/default.target.new
+
+mkdir -p ${PKG}/etc/X11/xorg.conf.d
+touch ${PKG}/etc/X11/xorg.conf.d/00-keyboard.conf.new
 
 mkdir -p ${PKG}/{etc,lib}/systemd/system-preset
 mkdir -p ${PKG}/{etc,lib}/systemd/user-preset
@@ -325,24 +330,21 @@ mkdir -p ${PKG}/lib/systemd/system/default.target.wants
 mkdir -p ${PKG}/lib/systemd/system/dbus.target.wants
 mkdir -p ${PKG}/lib/systemd/system/syslog.target.wants
 
-# Temporary workaround for rhbz#1002806
-mkdir -p ${PKG}/lib/systemd/system/poweroff.target.wants
-mkdir -p ${PKG}/lib/systemd/system/rescue.target.wants
-mkdir -p ${PKG}/lib/systemd/system/multi-user.target.wants
-mkdir -p ${PKG}/lib/systemd/system/graphical.target.wants
-mkdir -p ${PKG}/lib/systemd/system/reboot.target.wants
-ln -s ../systemd-update-utmp-runlevel.service ${PKG}/lib/systemd/system/poweroff.target.wants/
-ln -s ../systemd-update-utmp-runlevel.service ${PKG}/lib/systemd/system/rescue.target.wants/
-ln -s ../systemd-update-utmp-runlevel.service ${PKG}/lib/systemd/system/multi-user.target.wants/
-ln -s ../systemd-update-utmp-runlevel.service ${PKG}/lib/systemd/system/graphical.target.wants/
-ln -s ../systemd-update-utmp-runlevel.service ${PKG}/lib/systemd/system/reboot.target.wants/
-
 # Make sure the user generators dir exists too
 mkdir -p ${PKG}/lib/systemd/system-generators
 mkdir -p ${PKG}/lib/systemd/user-generators
 
-# Mask legacy stuff
-ln -s rescue.service ${PKG}/lib/systemd/system/single.service
+# Make sure directories in /var exist
+mkdir -p ${PKG}/var/lib/systemd/coredump
+mkdir -p ${PKG}/var/lib/systemd/catalog
+mkdir -p ${PKG}/var/lib/systemd/backlight
+mkdir -p ${PKG}/var/lib/systemd/rfkill
+mkdir -p ${PKG}/var/lib/systemd/journal-upload
+mkdir -p ${PKG}/var/log/journal
+touch ${PKG}/var/lib/systemd/catalog/database.new
+touch ${PKG}/etc/udev/hwdb.bin.new
+touch ${PKG}/var/lib/systemd/random-seed.new
+touch ${PKG}/var/lib/systemd/clock.new
 
 for file in bootchart journald journal-remote journal-upload logind resolved system timesyncd user ;do
   mv ${PKG}/etc/systemd/${file}.conf ${PKG}/etc/systemd/${file}.conf.new || exit 1
@@ -747,17 +749,6 @@ enableservice () {
     ${CHROOT} /bin/systemctl enable "${1}" 2>&1
   fi
 }
-
-# Try to read default runlevel from the old inittab if it exists
-runlevel=$(${CHROOT} /bin/awk -F':' '$3 == "initdefault" && $1 !~ "^#" { print $2 }' /etc/inittab 2> /dev/null)
-if [ -z "${runlevel}" ]; then
-  target="/lib/systemd/system/graphical.target"
-else
-  target="/lib/systemd/system/runlevel${runlevel}.target"
-fi
-
-# And symlink what we found to the new-style default.target
-${CHROOT} /bin/ln -sf "${target}" /etc/systemd/system/default.target
 
 if [ -r lib/systemd/systemd ]; then
   mv -f lib/systemd/systemd lib/systemd/systemd.old

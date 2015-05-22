@@ -18,5 +18,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.7.7.1-stupid-openfile
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.7.15-no-malloc-usable-size.patch
 # Temporary workaround for failed percentile test, see patch for details
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.8.0-percentile-test.patch
-
+# Fix define of new compile option
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/sqlite-3.8.10.1-dbstat-vtab-define-fix.patch
+ 
 set +e +o pipefail

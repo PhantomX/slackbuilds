@@ -31,20 +31,10 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 # Upstream
 
 ### Fedora
-ApplyPatch fedora-disable-resolv.conf-symlink.patch
-ApplyPatch fedora-add-bridge-sysctl-configuration.patch
 
 ### Arch
-ApplyPatch 0001-tmpfiles-avoid-creating-duplicate-acl-entries.patch
-ApplyPatch 0001-tmpfiles-quietly-ignore-ACLs-on-unsupported-filesyst.patch
-ApplyPatch 0001-nspawn-when-connected-to-pipes-for-stdin-stdout-pass.patch
-ApplyPatch 0001-core-shared-in-deserializing-match-same-files-reache.patch
-ApplyPatch 0001-tmpfiles-Fix-handling-of-duplicate-lines.patch
-ApplyPatch 0001-core-do-not-spawn-jobs-or-touch-other-units-during-c.patch
-ApplyPatch 0001-use-x-machine-unix-prefix-for-the-container-bus-on-dbus1.patch
-ApplyPatch 0001-core-rework-device-state-logic.patch
-ApplyPatch 0001-unit-use-weaker-dependencies-between-mount-and-devic.patch
-ApplyPatch 0001-core-don-t-change-removed-devices-to-state-tentative.patch
+
+### Debian
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

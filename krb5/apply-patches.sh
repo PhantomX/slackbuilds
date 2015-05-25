@@ -19,6 +19,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-run_user_0.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.11-kpasswdtest.patch
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-socket_wrapper_eventfd_prototype_mismatch.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-1.14-Support-KDC_ERR_MORE_PREAUTH_DATA_REQUIRED.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/krb5-tests_use_libs_from_build.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

@@ -19,10 +19,11 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-cloog-dl2.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr38757.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-libstdc++-docs.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-no-copy-dt-needed-entries.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr56493.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-color-auto.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-libgo-p224.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr63633.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr64336.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-r223418.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc49-pr66224.patch
 
 # From Gentoo
 patch -p1 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_default-fortify-source.patch
@@ -32,10 +33,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/17_all_libitm-Werror.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/18_all_libatomic-Werror.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/19_all_libbacktrace-Werror.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/50_all_libiberty-asprintf.patch
-
-### Arch
-# http://gcc.gnu.org/bugzilla/show_bug.cgi?id=57653
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc-4.8-filename-output.patch
 
 # Test CLSOVER
 CLSORVER="$(grep -F 'libcloog-isl.so.' ${SB_PATCHDIR}/gcc49-cloog-dl.patch |awk -F\" '{print $2}' | cut -d. -f3)"

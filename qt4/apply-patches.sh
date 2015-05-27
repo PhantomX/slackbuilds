@@ -74,12 +74,6 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-qt_plugin_path.patch
 ## upstreamable bits
 # add support for pkgconfig's Requires.private to qmake
 ApplyPatch qt-everywhere-opensource-src-4.8.4-qmake_pkgconfig_requires_private.patch
-# backport part of 'Fix detection of GCC5'
-# https://qt.gitorious.org/qt/qtbase/commit/9fb4c2c412621b63c06dbbd899f44041b2e126c2
-ApplyPatch qt-fix_detection_of_gcc5.patch
-# ensure QT_BUILD_KEY remains the same too with gcc5 using gcc4 ABI
-# TODO: ask upstream how to handle gcc5 moving forward, use g++-5 or not?
-ApplyPatch qt-gcc5_compat_qt_build_key.patch
 # fix invalid inline assembly in qatomic_{i386,x86_64}.h (de)ref implementations
 # should fix the reference counting in qt_toX11Pixmap and thus the Kolourpaint
 # crash with Qt 4.5
@@ -151,23 +145,7 @@ ApplyPatch qt-everywhere-opensource-src-4.8.5-qgtkstyle_disable_gtk_theme_check.
 ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-22829.patch
 
 ## upstream git
-ApplyPatch 0010-QDbus-Fix-a-b-comparison.patch
-ApplyPatch 0023-Don-t-crash-on-broken-GIF-images.patch
-ApplyPatch 0025-Fix-visual-index-lookup-in-QTreeViewPrivate-adjustVi.patch
-ApplyPatch 0030-Memory-and-file-descriptor-leak-in-QFontCache.patch
-ApplyPatch 0034-Fix-raster-graphics-on-X11-RGB30.patch
-ApplyPatch 0047-QSslCertificate-blacklist-NIC-certificates-from-Indi.patch
-ApplyPatch 0065-Fix-QPainter-drawPolyline-painting-errors-with-cosme.patch
-ApplyPatch 0066-Allow-Qt4-to-also-build-in-ppc64-el-le.patch
-ApplyPatch 0067-Fix-AArch64-arm64-detection.patch
-ApplyPatch 0072-Fix-font-cache-check-in-QFontEngineFT-recalcAdvances.patch
-ApplyPatch 0163-QNAM-Fix-upload-corruptions-when-server-closes-conne.patch
 
 # security patches
-# CVE-2015-0295
-# http://lists.qt-project.org/pipermail/announce/2015-February/000059.html
-ApplyPatch 0137-Fix-a-division-by-zero-when-processing-malformed-BMP.patch
-# CVE-2015-1860 CVE-2015-1859 CVE-2015-1858
-ApplyPatch qt-4.8.6-CVE-2015-1860_CVE-2015-1859_CVE-2015-1858.patch
 
 set +e +o pipefail

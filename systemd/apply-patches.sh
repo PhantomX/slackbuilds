@@ -29,12 +29,22 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/udev-microsoft-3000-keymap.pat
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 
 # Upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-udev-net_id-Only-read-the-first-64-bytes-of-PCI-conf.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-bootctl-ferror-must-be-called-before-FILE-is-closed.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-bootctl-fix-an-error-check.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-udevd-worker-fully-clean-up-unnecessary-fds.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-udevd-worker-modernize-a-bit.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-udevd-event-fix-event-queue-in-daemenozied-mode.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-shared-generator-correct-path-to-systemd-fsck.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-udev-fix-inotify-handling.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-treewide-fix-typos.patch
 
 ### Fedora
 
 ### Arch
 
 ### Debian
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Don-t-enable-audit-by-default.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

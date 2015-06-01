@@ -28,7 +28,7 @@ fi
 # From Fedora
 #patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-config.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.5-cflags.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-2.5.1-plural-fix.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.1-plural-fix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.5.1-sqlite-encoding.patch
 # Add various constants to the socketmodule:
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/python-2.7rc1-socketmodule-constants.patch

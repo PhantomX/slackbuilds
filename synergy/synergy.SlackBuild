@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ synergy.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008-2014 Phantom X, Goiania, Brazil.
+# Copyright 2008-2015 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -36,14 +36,11 @@ SB_REP=${SB_REP:-YES}
 
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
-if [ ! -d ${TMP} ]; then
-  mkdir -p ${TMP}
-fi
 
 NAME=synergy
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-1.6.1}
+VERSION=${VERSION:-1.7.3}
 RVER=$(echo ${VERSION} | cut -d- -f1)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
@@ -64,10 +61,13 @@ PKGDEST=${PKGDEST:-${CWD}}
 PKGFORMAT=${PKGFORMAT:-tgz}
 PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 
+# Set to YES to enable gui
+SB_GUI=${SB_GUI:-YES}
+
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
-SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${VERSION}.tar.gz
+SRCDIR=${NAME}-${VERSION}-stable
+SRCARCHIVE=v${VERSION}-stable.tar.gz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
@@ -83,6 +83,8 @@ if ! test -s ${CWD}/${SRCARCHIVE} ;then
   echo "Delete ${CWD}/${SRCARCHIVE}, check VERSION and try again."
   exit 1
 fi
+
+[ "$1" = "--dlsrc" ] && exit 0
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
   SLKCFLAGS="-O2 -march=native -mtune=native -pipe"
@@ -104,11 +106,26 @@ else
   LIBDIRSUFFIX=""
 fi
 
+# Set the config option variables if they are not already set:
+[ -r ../qt5.options ] && source ../qt5.options
+
+_qt5_prefix=${_qt5_prefix:-/usr/lib${LIBDIRSUFFIX}/qt5}
+_qt5_archdatadir=${_qt5_archdatadir:-/usr/lib${LIBDIRSUFFIX}/qt5}
+_qt5_bindir=${_qt5_bindir:-${_qt5_prefix}/bin}
+_qt5_qmake=${_qt5_qmake:-${_qt5_bindir}/qmake}
+
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
 if [ -d ${PKG} ]; then
   # Clean up a previous build
   rm -rf ${PKG}
 fi
 mkdir -p ${PKG}
+
+unset QTDIR QTINC QTLIB
+export QTDIR=$(${_qt5_qmake} -query QT_INSTALL_PREFIX)
+PATH="$(${_qt5_qmake} -query QT_INSTALL_BINS)${PATH:+:${PATH}}" ; export PATH
 
 cd ${TMP}
 rm -rf ${SRCDIR}
@@ -120,6 +137,12 @@ chmod -R u+w,go+r-w,a-s .
 if [ -r ${CWD}/apply-patches.sh ]; then
   . ${CWD}/apply-patches.sh
 fi
+
+for filepro in $(find . -type f -name "*.pro") ; do
+  echo "QMAKE_CFLAGS_RELEASE += ${SLKCFLAGS}" >> "${filepro}"
+  echo "QMAKE_CXXFLAGS_RELEASE += ${SLKCFLAGS}" >> "${filepro}"
+  echo "QMAKE_LFLAGS_RELEASE += ${LDFLAGS}" >> "${filepro}"
+done
 
 export CFLAGS="${SLKCFLAGS}"
 export CXXFLAGS="${SLKCFLAGS}"
@@ -151,7 +174,20 @@ mkdir -p build
 ) || exit $?
 
 mkdir -p ${PKG}/usr/bin
-install -pm0755 bin/${NAME}{c,s} ${PKG}/usr/bin/ || exit $?
+install -pm0755 bin/${NAME}{c,d,s} bin/u${NAME} bin/syntool ${PKG}/usr/bin/ || exit $?
+
+mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME}
+install -pm0755 bin/plugins/libns.so ${PKG}/usr/lib${LIBDIRSUFFIX}/${NAME}/ || exit $?
+
+if [ "${SB_GUI}" = "YES" ] ;then
+  ( cd src/gui
+    ${_qt5_qmake} gui.pro PREFIX=/usr || exit $?
+    make -j${NJOBS} || make
+  ) || exit $?
+
+  install -pm0755 bin/${NAME} ${PKG}/usr/bin/ || exit $?
+
+fi
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -159,6 +195,36 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 mkdir -p ${PKG}/usr/man/man1
 for man in ${NAME}{c,s} ;do
   install -pm0644 doc/${man}.man ${PKG}/usr/man/man1/${man}.1 || exit 1
+done
+
+if [ "${SB_GUI}" = "YES" ] ;then
+  mkdir -p  ${PKG}/usr/share/applications
+  desktop-file-install --mode 0644 \
+    --dir ${PKG}/usr/share/applications \
+    --set-icon="${NAME}" \
+    --add-category="Qt" \
+    res/${NAME}.desktop || exit 1
+
+  icotool -x res/${NAME}.ico || exit 1
+  for res in 16 24 32 48 256 ;do
+    dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
+    mkdir -p ${dir}
+    install -p -m 644 *${res}x${res}x32.png \
+      ${dir}/${NAME}.png || exit 1
+  done
+  for res in 20 22 36 64 72 96 128 192 ;do
+    dir=${PKG}/usr/share/icons/hicolor/${res}x${res}/apps
+    mkdir -p ${dir}
+    convert *256x256x32.png -filter Lanczos -resize ${res}x${res} -depth 8 \
+      ${dir}/${NAME}.png || exit 1
+  done
+fi
+
+### Arch
+mkdir -p ${PKG}/lib/systemd/system
+for i in service socket ;do
+  install -pm0644 ${CWD}/systemd/${NAME}s.${i} \
+    ${PKG}/lib/systemd/system/${NAME}s\@.${i} || exit 1
 done
 
 # Add a documentation directory:
@@ -196,18 +262,45 @@ mkdir -p ${PKG}/install
 cat ${CWD}/slack-desc > ${PKG}/install/slack-desc
 cat ${CWD}/slack-required > ${PKG}/install/slack-required
 
+cat > ${PKG}/install/doinst.sh <<EOF
+# Figure out our root directory
+ROOTDIR=\$(pwd)
+unset CHROOT
+if test "\${ROOTDIR}" != "/"; then
+  CHROOT="chroot \${ROOTDIR} "
+  ROOTDIR="\${ROOTDIR}/"
+fi
+if [ -x bin/systemctl ] ; then
+  \${CHROOT} /bin/systemctl --system daemon-reload >/dev/null 2>&1
+fi
+EOF
+
+if [ "${SB_GUI}" = "YES" ] ;then
+cat >> ${PKG}/install/doinst.sh <<'EOF'
+if [ -x usr/bin/update-desktop-database ]; then
+  ${CHROOT} /usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1
+fi
+if [ -x usr/bin/gtk-update-icon-cache ]; then
+  ${CHROOT} /usr/bin/touch --no-create /usr/share/icons/hicolor >/dev/null 2>&1
+  ${CHROOT} /usr/bin/gtk-update-icon-cache /usr/share/icons/hicolor >/dev/null 2>&1
+fi
+EOF
+fi
+
 sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
        ${PKG}/install/slack-desc
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}/patches
+  mkdir -p ${SBDIR}/{patches,systemd}
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/apply-patches.sh ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/patches/*.* \
     ${SBDIR}/patches/
+  install -m0644 ${CWD}/systemd/*.* \
+    ${SBDIR}/systemd/
   rmdir ${SBDIR}/patches
 fi
 
@@ -219,7 +312,7 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
-  /sbin/makepkg --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
+  /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "
 
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}

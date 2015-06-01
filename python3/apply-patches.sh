@@ -27,14 +27,16 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00131-disable-tests-in-test_io
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00134-fix-COUNT_ALLOCS-failure-in-test_sys.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00135-fix-test-within-test_weakref-in-debug-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00141-fix-tests_with_COUNT_ALLOCS.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00156-gdb-autoload-safepath.patch
+#patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00153-fix-test_gdb-noise.patch
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00156-gdb-autoload-safepath.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00157-uid-gid-overflows.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00178-dont-duplicate-flags-in-sysconfig.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00179-dont-raise-error-on-gdb-corrupted-frames-in-backtrace.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00184-ctypes-should-build-with-libffi-multilib-wrapper.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00186-dont-raise-from-py_compile.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00195-dont-add-Werror-declaration-after-statement.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00200-gettext-plural-fix.patch
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/00201-fix-memory-leak-in-gdbm.patch 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/00202-fix-undefined-behaviour-in-faulthandler.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

@@ -1,0 +1,429 @@
+
+# HG changeset patch
+# User Jakub Adam <jakub.adam@ktknet.cz>
+# Date 1426122329 0
+# Node ID a0906e7a6bae86f1251d8369b30ba82a9daf1836
+# Parent  fcecf7f838e266dc2c3bfd306df58ade3fc3ac93
+Implement media encryption
+
+diff --git a/libpurple/media.c b/libpurple/media.c
+--- a/libpurple/media.c
++++ b/libpurple/media.c
+@@ -1276,6 +1276,34 @@
+ }
+ 
+ gboolean
++purple_media_set_encryption_parameters(PurpleMedia *media, const gchar *sess_id,
++		const gchar *cipher, const gchar *auth,
++		const gchar *key, gsize key_len)
++{
++#ifdef USE_VV
++	g_return_val_if_fail(PURPLE_IS_MEDIA(media), FALSE);
++	return purple_media_backend_set_encryption_parameters(media->priv->backend,
++			sess_id, cipher, auth, key, key_len);
++#else
++	return FALSE;
++#endif
++}
++
++gboolean
++purple_media_set_decryption_parameters(PurpleMedia *media, const gchar *sess_id,
++		const gchar *participant, const gchar *cipher,
++		const gchar *auth, const gchar *key, gsize key_len)
++{
++#ifdef USE_VV
++	g_return_val_if_fail(PURPLE_IS_MEDIA(media), FALSE);
++	return purple_media_backend_set_decryption_parameters(media->priv->backend,
++			sess_id, participant, cipher, auth, key, key_len);
++#else
++	return FALSE;
++#endif
++}
++
++gboolean
+ purple_media_codecs_ready(PurpleMedia *media, const gchar *sess_id)
+ {
+ #ifdef USE_VV
+diff --git a/libpurple/media.h b/libpurple/media.h
+--- a/libpurple/media.h
++++ b/libpurple/media.h
+@@ -349,6 +349,43 @@
+ gboolean purple_media_set_send_codec(PurpleMedia *media, const gchar *sess_id, PurpleMediaCodec *codec);
+ 
+ /**
++ * Sets the encryption parameters of our media in the session.
++ *
++ * @param media The media object to find the session in.
++ * @param sess_id The session id of the session to set parameters of.
++ * @param cipher The cipher to use to encrypt our media in the session.
++ * @param auth The algorithm to use to compute authentication codes for our
++ *        media frames.
++ * @param key The encryption key.
++ * @param key_len Byte length of the encryption key.
++ *
++ * @since 2.11.0
++ */
++gboolean purple_media_set_encryption_parameters(PurpleMedia *media,
++		const gchar *sess_id, const gchar *cipher,
++		const gchar *auth, const gchar *key, gsize key_len);
++
++/**
++ * Sets the decryption parameters for a session participant's media.
++ *
++ * @param media The media object to find the session in.
++ * @param sess_id The session id of the session to set parameters of.
++ * @param participant The participant of the session to set parameters of.
++ * @param cipher The cipher to use to decrypt media coming from this session's
++ *          participant.
++ * @param auth The algorithm to use for authentication of the media coming
++ *        from the session's participant.
++ * @param key The decryption key.
++ * @param key_len Byte length of the decryption key.
++ *
++ * @since 2.11.0
++ */
++gboolean purple_media_set_decryption_parameters(PurpleMedia *media,
++		const gchar *sess_id, const gchar *participant,
++		const gchar *cipher, const gchar *auth,
++		const gchar *key, gsize key_len);
++
++/**
+  * Gets whether a session's codecs are ready to be used.
+  *
+  * @param media The media object to find the session in.
+diff --git a/libpurple/media/backend-fs2.c b/libpurple/media/backend-fs2.c
+--- a/libpurple/media/backend-fs2.c
++++ b/libpurple/media/backend-fs2.c
+@@ -85,6 +85,15 @@
+ static GList *purple_media_backend_fs2_get_local_candidates(
+ 		PurpleMediaBackend *self,
+ 		const gchar *sess_id, const gchar *participant);
++#if GST_CHECK_VERSION(1,0,0)
++static gboolean purple_media_backend_fs2_set_encryption_parameters (
++	PurpleMediaBackend *self, const gchar *sess_id, const gchar *cipher,
++	const gchar *auth, const gchar *key, gsize key_len);
++static gboolean purple_media_backend_fs2_set_decryption_parameters(
++		PurpleMediaBackend *self, const gchar *sess_id,
++		const gchar *participant, const gchar *cipher,
++		const gchar *auth, const gchar *key, gsize key_len);
++#endif
+ static gboolean purple_media_backend_fs2_set_remote_codecs(
+ 		PurpleMediaBackend *self,
+ 		const gchar *sess_id, const gchar *participant,
+@@ -545,6 +554,12 @@
+ 			purple_media_backend_fs2_get_local_candidates;
+ 	iface->set_remote_codecs = purple_media_backend_fs2_set_remote_codecs;
+ 	iface->set_send_codec = purple_media_backend_fs2_set_send_codec;
++#if GST_CHECK_VERSION(1,0,0)
++	iface->set_encryption_parameters =
++			purple_media_backend_fs2_set_encryption_parameters;
++	iface->set_decryption_parameters =
++			purple_media_backend_fs2_set_decryption_parameters;
++#endif
+ 	iface->set_params = purple_media_backend_fs2_set_params;
+ 	iface->get_available_params = purple_media_backend_fs2_get_available_params;
+ 	iface->send_dtmf = purple_media_backend_fs2_send_dtmf;
+@@ -2471,6 +2486,97 @@
+ 	return TRUE;
+ }
+ 
++#if GST_CHECK_VERSION(1,0,0)
++static GstStructure *
++create_fs2_srtp_structure(const gchar *cipher, const gchar *auth,
++	const gchar *key, gsize key_len)
++{
++	GstStructure *result;
++	GstBuffer *buffer;
++	GstMapInfo info;
++
++	buffer = gst_buffer_new_allocate(NULL, key_len, NULL);
++	gst_buffer_map(buffer, &info, GST_MAP_WRITE);
++	memcpy(info.data, key, key_len);
++	gst_buffer_unmap(buffer, &info);
++
++	result = gst_structure_new("FarstreamSRTP",
++			"cipher", G_TYPE_STRING, cipher,
++			"auth", G_TYPE_STRING, auth,
++			"key", GST_TYPE_BUFFER, buffer,
++			NULL);
++	gst_buffer_unref(buffer);
++
++	return result;
++}
++
++static gboolean
++purple_media_backend_fs2_set_encryption_parameters (PurpleMediaBackend *self,
++		const gchar *sess_id, const gchar *cipher, const gchar *auth,
++		const gchar *key, gsize key_len)
++{
++	PurpleMediaBackendFs2Session *session;
++	GstStructure *srtp;
++	GError *err = NULL;
++	gboolean result;
++
++	g_return_val_if_fail(PURPLE_IS_MEDIA_BACKEND_FS2(self), FALSE);
++
++	session = get_session(PURPLE_MEDIA_BACKEND_FS2(self), sess_id);
++	if (!session)
++		return FALSE;
++
++	srtp = create_fs2_srtp_structure(cipher, auth, key, key_len);
++	if (!srtp)
++		return FALSE;
++
++	result = fs_session_set_encryption_parameters(session->session, srtp,
++						&err);
++	if (!result) {
++		purple_debug_error("backend-fs2",
++				"Error setting encryption parameters: %s\n", err->message);
++		g_error_free(err);
++	}
++
++	gst_structure_free(srtp);
++	return result;
++}
++
++static gboolean
++purple_media_backend_fs2_set_decryption_parameters (PurpleMediaBackend *self,
++		const gchar *sess_id, const gchar *participant,
++		const gchar *cipher, const gchar *auth,
++		const gchar *key, gsize key_len)
++{
++	PurpleMediaBackendFs2Stream *stream;
++	GstStructure *srtp;
++	GError *err = NULL;
++	gboolean result;
++
++	g_return_val_if_fail(PURPLE_IS_MEDIA_BACKEND_FS2(self), FALSE);
++
++	stream = get_stream(PURPLE_MEDIA_BACKEND_FS2(self), sess_id,
++			participant);
++	if (!stream)
++		return FALSE;
++
++	srtp = create_fs2_srtp_structure(cipher, auth, key, key_len);
++	if (!srtp)
++		return FALSE;
++
++	result = fs_stream_set_decryption_parameters(stream->stream, srtp,
++						&err);
++	if (!result) {
++		purple_debug_error("backend-fs2",
++				"Error setting decryption parameters: %s\n", err->message);
++		g_error_free(err);
++	}
++
++	gst_structure_free(srtp);
++	return result;
++}
++#endif /* GST 1.0+ */
++
+ static gboolean
+ purple_media_backend_fs2_set_send_codec(PurpleMediaBackend *self,
+ 		const gchar *sess_id, PurpleMediaCodec *codec)
+diff --git a/libpurple/media/backend-iface.c b/libpurple/media/backend-iface.c
+--- a/libpurple/media/backend-iface.c
++++ b/libpurple/media/backend-iface.c
+@@ -193,6 +193,35 @@
+ 			sess_id, codec);
+ }
+ 
++gboolean
++purple_media_backend_set_encryption_parameters(PurpleMediaBackend *self,
++		const gchar *sess_id, const gchar *cipher,
++		const gchar *auth, const gchar *key, gsize key_len)
++{
++	PurpleMediaBackendIface *backend_iface;
++
++	g_return_val_if_fail(PURPLE_IS_MEDIA_BACKEND(self), FALSE);
++	backend_iface = PURPLE_MEDIA_BACKEND_GET_INTERFACE(self);
++	g_return_val_if_fail(backend_iface->set_encryption_parameters, FALSE);
++	return backend_iface->set_encryption_parameters(self,
++			sess_id, cipher, auth, key, key_len);
++}
++
++gboolean
++purple_media_backend_set_decryption_parameters(PurpleMediaBackend *self,
++		const gchar *sess_id, const gchar *participant,
++		const gchar *cipher, const gchar *auth,
++		const gchar *key, gsize key_len)
++{
++	PurpleMediaBackendIface *backend_iface;
++
++	g_return_val_if_fail(PURPLE_IS_MEDIA_BACKEND(self), FALSE);
++	backend_iface = PURPLE_MEDIA_BACKEND_GET_INTERFACE(self);
++	g_return_val_if_fail(backend_iface->set_decryption_parameters, FALSE);
++	return backend_iface->set_decryption_parameters(self,
++			sess_id, participant, cipher, auth, key, key_len);
++}
++
+ void
+ purple_media_backend_set_params(PurpleMediaBackend *self,
+ 		guint num_params, GParameter *params)
+diff --git a/libpurple/media/backend-iface.h b/libpurple/media/backend-iface.h
+--- a/libpurple/media/backend-iface.h
++++ b/libpurple/media/backend-iface.h
+@@ -68,6 +68,13 @@
+ 		GList *codecs);
+ 	gboolean (*set_send_codec) (PurpleMediaBackend *self,
+ 		const gchar *sess_id, PurpleMediaCodec *codec);
++	gboolean (*set_encryption_parameters) (PurpleMediaBackend *self,
++		const gchar *sess_id, const gchar *cipher,
++		const gchar *auth, const gchar *key, gsize key_len);
++	gboolean (*set_decryption_parameters) (PurpleMediaBackend *self,
++		const gchar *sess_id, const gchar *participant,
++		const gchar *cipher, const gchar *auth,
++		const gchar *key, gsize key_len);
+ 	void (*set_params) (PurpleMediaBackend *self,
+ 		guint num_params, GParameter *params);
+ 	const gchar **(*get_available_params) (void);
+@@ -198,6 +205,43 @@
+ 		const gchar *sess_id, PurpleMediaCodec *codec);
+ 
+ /**
++ * Sets the encryption parameters of our media in the session.
++ *
++ * @param self The media backend the session is in.
++ * @param sess_id The session id of the session to set parameters of.
++ * @param cipher The cipher to use to encrypt our media in the session.
++ * @param auth The algorithm to use to compute authentication codes for our
++ *        media frames.
++ * @param key The encryption key.
++ * @param key_len Byte length of the encryption key.
++ *
++ * @since 2.11.0
++ */
++gboolean purple_media_backend_set_encryption_parameters(PurpleMediaBackend *self,
++		const gchar *sess_id, const gchar *cipher,
++		const gchar *auth, const gchar *key, gsize key_len);
++
++/**
++ * Sets the decryption parameters for a session participant's media.
++ *
++ * @param self The media backend the session is in.
++ * @param sess_id The session id of the session to set parameters of.
++ * @param participant The participant of the session to set parameters of.
++ * @param cipher The cipher to use to decrypt media coming from this session's
++ *          participant.
++ * @param auth The algorithm to use for authentication of the media coming
++ *        from the session's participant.
++ * @param key The decryption key.
++ * @param key_len Byte length of the decryption key.
++ *
++ * @since 2.11.0
++ */
++gboolean purple_media_backend_set_decryption_parameters(PurpleMediaBackend *self,
++		const gchar *sess_id, const gchar *participant,
++		const gchar *cipher, const gchar *auth,
++		const gchar *key, gsize key_len);
++
++/**
+  * Sets various optional parameters of the media backend.
+  *
+  * @param self The media backend to set the parameters on.
+diff --git a/libpurple/media/enum-types.c b/libpurple/media/enum-types.c
+--- a/libpurple/media/enum-types.c
++++ b/libpurple/media/enum-types.c
+@@ -217,3 +217,44 @@
+ 	return type;
+ }
+ 
++/*
++ * PurpleMediaCipher
++ */
++
++GType
++purple_media_cipher_get_type()
++{
++	static GType type = 0;
++	if (type == 0) {
++		static const GEnumValue values[] = {
++			{ PURPLE_MEDIA_CIPHER_NULL,
++				"PURPLE_MEDIA_CIPHER_NULL", "null" },
++			{ PURPLE_MEDIA_CIPHER_AES_128_ICM,
++				"PURPLE_MEDIA_CIPHER_AES_128_ICM", "AES-128-ICM" },
++			{ PURPLE_MEDIA_CIPHER_AES_256_ICM,
++				"PURPLE_MEDIA_CIPHER_AES_256_ICM", "AES-256-ICM" },
++			{ 0, NULL, NULL }
++		};
++		type = g_enum_register_static("PurpleMediaCipher", values);
++	}
++	return type;
++}
++
++GType
++purple_media_authentication_get_type(void)
++{
++	static GType type = 0;
++	if (type == 0) {
++		static const GEnumValue values[] = {
++			{ PURPLE_MEDIA_AUTHENTICATION_NULL,
++				"PURPLE_MEDIA_AUTHENTICATION_NULL", "null" },
++			{ PURPLE_MEDIA_AUTHENTICATION_HMAC_SHA1_32,
++				"PURPLE_MEDIA_AUTHENTICATION_HMAC_SHA1_32", "HMAC_SHA1_32" },
++			{ PURPLE_MEDIA_AUTHENTICATION_HMAC_SHA1_80,
++				"PURPLE_MEDIA_AUTHENTICATION_HMAC_SHA1_80", "HMAC_SHA1_80" },
++			{ 0, NULL, NULL }
++		};
++		type = g_enum_register_static("PurpleMediaAuthentication", values);
++	}
++	return type;
++}
+diff --git a/libpurple/media/enum-types.h b/libpurple/media/enum-types.h
+--- a/libpurple/media/enum-types.h
++++ b/libpurple/media/enum-types.h
+@@ -106,6 +106,28 @@
+ } PurpleMediaState;
+ 
+ /**
++ * PurpleMediaCipher:
++ *
++ * Media ciphers
++ */
++typedef enum {
++	PURPLE_MEDIA_CIPHER_NULL,
++	PURPLE_MEDIA_CIPHER_AES_128_ICM,
++	PURPLE_MEDIA_CIPHER_AES_256_ICM
++} PurpleMediaCipher;
++
++/**
++ * PurpleMediaAuthentication:
++ *
++ * Media message authentication algorithms
++ */
++typedef enum {
++	PURPLE_MEDIA_AUTHENTICATION_NULL,
++	PURPLE_MEDIA_AUTHENTICATION_HMAC_SHA1_32,
++	PURPLE_MEDIA_AUTHENTICATION_HMAC_SHA1_80
++} PurpleMediaAuthentication;
++
++/**
+  * Gets the media candidate type's GType
+  *
+  * @return The media candidate type's GType.
+@@ -159,6 +181,24 @@
+  */
+ GType purple_media_state_changed_get_type(void);
+ 
++/**
++ * purple_media_cipher_get_type:
++ *
++ * Gets the type of the cipher enum
++ *
++ * Returns: The cipher enum's GType
++ */
++GType purple_media_cipher_get_type(void);
++
++/**
++ * purple_media_authentication_get_type:
++ *
++ * Gets the type of the authentication enum
++ *
++ * Returns: The authentication enum's GType
++ */
++GType purple_media_authentication_get_type(void);
++
+ G_END_DECLS
+ 
+ #endif  /* _PURPLE_MEDIA_ENUM_TYPES_ */
+

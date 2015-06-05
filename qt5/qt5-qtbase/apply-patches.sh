@@ -41,11 +41,29 @@ ApplyPatch qtbase-opensource-src-5.3.2-QTBUG-35459.patch
 # unconditionally enable freetype lcdfilter support
 ApplyPatch qtbase-opensource-src-5.2.0-enable_ft_lcdfilter.patch
 
+# hack out largely useless (to users) warnings about qdbusconnection
+# (often in kde apps), keep an eye on https://git.reviewboard.kde.org/r/103699/
+ApplyPatch qtbase-opensource-src-5.5.1-qdbusconnection_no_debug.patch
+
 ##upstream patches
 
 # https://bugzilla.redhat.com/show_bug.cgi?id=1083664
 # https://bugreports.qt.io/browse/QTBUG-42985
 ApplyPatch qtbase-opensource-src-5.4.0-QTBUG-42985.patch
+
+# https://bugzilla.redhat.com/show_bug.cgi?id=1219173
+# https://bugreports.qt.io/browse/QTBUG-33093
+# https://codereview.qt-project.org/#/c/95219/
+ApplyPatch qtbase-opensource-src-5.4.1-QTBUG-33093.patch
+
+# https://bugreports.qt.io/browse/QTBUG-45484
+# QWidget::setWindowRole does nothing
+# adapted to apply on top of patch51
+ApplyPatch qtbase-opensource-src-5.4.1-QTBUG-45484.patch
+
+# https://bugreports.qt.io/browse/QTBUG-46310
+#SM_CLIENT_ID property is not set
+ApplyPatch 0002-xcb-set-SM_CLIENT_ID-property.patch
 
 # workaround https://bugreports.qt-project.org/browse/QTBUG-43057
 # 'make docs' crash on el6, use qSort instead of std::sort
@@ -53,17 +71,5 @@ ApplyPatch qtbase-opensource-src-5.4.0-QTBUG-43057.patch
 
 # Qt 5.5 patches
 ApplyPatch qt5-qtbase-5.5-Get_display_number_when_screen_number_is_omitted.patch
-
-ApplyPatch 0012-Fix-a-crash-in-QPlainTextEdit-documentChanged.patch
-ApplyPatch 0072-CMake-Fix-QObject-connect-failing-on-ARM.patch
-ApplyPatch 0094-Fix-Meta-.-shortcuts-on-XCB.patch
-ApplyPatch 0132-Call-ofono-nm-Registered-delayed-in-constructor-othe.patch
-ApplyPatch 0136-Make-sure-there-s-a-scene-before-using-it.patch
-# http://lists.qt-project.org/pipermail/announce/2015-February/000059.html
-# CVE-2015-0295
-ApplyPatch 0149-Fix-a-division-by-zero-when-processing-malformed-BMP.patch
-# CVE-2015-1858, CVE-2015-1859, CVE-2015-1860
-ApplyPatch 0200-Fixes-crash-in-gif-image-decoder.patch
-ApplyPatch 0201-Fixes-crash-in-bmp-and-ico-image-decoding.patch
 
 set +e +o pipefail

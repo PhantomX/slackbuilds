@@ -1,0 +1,156 @@
+
+# HG changeset patch
+# User David Woodhouse <David.Woodhouse@intel.com>
+# Date 1426128379 0
+# Node ID a071658c37250aa6acf5e0803f87c9a969541410
+# Parent  a52798da5cfa8b67e2b96b8799af2b00a64a8e1a
+Add purple_xfer_{read,write}_file functions
+
+Backport these functions from 3.x because the SIPE plugin wants to use them
+for file transfer.
+
+diff --git a/libpurple/ft.c b/libpurple/ft.c
+--- a/libpurple/ft.c
++++ b/libpurple/ft.c
+@@ -1109,6 +1109,101 @@
+ 
+ 	return r;
+ }
++gboolean
++purple_xfer_write_file(PurpleXfer *xfer, const guchar *buffer, gsize size)
++{
++	PurpleXferUiOps *ui_ops;
++	gsize wc;
++	gboolean fs_known;
++
++	g_return_val_if_fail(buffer != NULL, FALSE);
++
++	ui_ops = purple_xfer_get_ui_ops(xfer);
++	fs_known = (purple_xfer_get_size(xfer) > 0);
++
++	if (fs_known && size > purple_xfer_get_bytes_remaining(xfer)) {
++		purple_debug_warning("xfer",
++			"Got too much data (truncating at %" G_GOFFSET_FORMAT
++			").\n", purple_xfer_get_size(xfer));
++		size = purple_xfer_get_bytes_remaining(xfer);
++	}
++
++	if (ui_ops && ui_ops->ui_write)
++		wc = ui_ops->ui_write(xfer, buffer, size);
++	else {
++		if (xfer->dest_fp == NULL) {
++			purple_debug_error("xfer",
++				"File is not opened for writing\n");
++			purple_xfer_cancel_local(xfer);
++			return FALSE;
++		}
++		wc = fwrite(buffer, 1, size, xfer->dest_fp);
++	}
++
++	if (wc != size) {
++		purple_debug_error("xfer",
++			"Unable to write whole buffer.\n");
++		purple_xfer_cancel_local(xfer);
++		return FALSE;
++	}
++
++	purple_xfer_set_bytes_sent(xfer, purple_xfer_get_bytes_sent(xfer) +
++		size);
++
++	return TRUE;
++}
++
++gssize
++purple_xfer_read_file(PurpleXfer *xfer, guchar *buffer, gsize size)
++{
++	PurpleXferUiOps *ui_ops;
++	gssize got_len;
++
++	g_return_val_if_fail(buffer != NULL, FALSE);
++
++	ui_ops = purple_xfer_get_ui_ops(xfer);
++
++	if (ui_ops && ui_ops->ui_read) {
++		guchar *buffer_got = NULL;
++
++		got_len = ui_ops->ui_read(xfer, &buffer_got, size);
++
++		if (got_len >= 0 && (gsize)got_len > size) {
++			g_free(buffer_got);
++			purple_debug_error("xfer",
++				"Got too much data from UI.\n");
++			purple_xfer_cancel_local(xfer);
++			return -1;
++		}
++
++		if (got_len > 0)
++			memcpy(buffer, buffer_got, got_len);
++		g_free(buffer_got);
++	} else {
++		if (xfer->dest_fp == NULL) {
++			purple_debug_error("xfer",
++				"File is not opened for reading\n");
++			purple_xfer_cancel_local(xfer);
++			return -1;
++		}
++		got_len = fread(buffer, 1, size, xfer->dest_fp);
++		if ((got_len < 0 || (gsize)got_len != size) &&
++			ferror(xfer->dest_fp))
++		{
++			purple_debug_error("xfer",
++				"Unable to read file.\n");
++			purple_xfer_cancel_local(xfer);
++			return -1;
++		}
++	}
++
++	if (got_len > 0) {
++		purple_xfer_set_bytes_sent(xfer,
++			purple_xfer_get_bytes_sent(xfer) + got_len);
++	}
++
++	return got_len;
++}
+ 
+ static void
+ do_transfer(PurpleXfer *xfer)
+diff --git a/libpurple/ft.h b/libpurple/ft.h
+--- a/libpurple/ft.h
++++ b/libpurple/ft.h
+@@ -590,6 +590,35 @@
+ gssize purple_xfer_write(PurpleXfer *xfer, const guchar *buffer, gsize size);
+ 
+ /**
++ * Writes chunk of received file.
++ *
++ * @param xfer   The file transfer.
++ * @param buffer The buffer to read the data from.
++ * @param size   The number of bytes to write.
++ *
++ * @return TRUE on success, FALSE otherwise.
++ *
++ * @since 2.11.0
++ */
++gboolean
++purple_xfer_write_file(PurpleXfer *xfer, const guchar *buffer, gsize size);
++
++/**
++ * Writes chunk of file being sent.
++ *
++ * @param xfer   The file transfer.
++ * @param buffer The buffer to write the data to.
++ * @param size   The size of buffer.
++ *
++ * @return Number of bytes written (0 means, the device is busy), or -1 on
++ *         failure.
++ *
++ * @since 2.11.0
++ */
++gssize
++purple_xfer_read_file(PurpleXfer *xfer, guchar *buffer, gsize size);
++
++/**
+  * Starts a file transfer.
+  *
+  * Either @a fd must be specified <i>or</i> @a ip and @a port on a
+

@@ -19,10 +19,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.10.1-xterm.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.11.3-macropen.patch
 #upstream fix for out of screen dialogs
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-scroll.patch
-# Port elinks to use NSS library for cryptography
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-nss.patch
-# Port elinks to use NSS library for cryptography (#346861) - incremental patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-nss-inc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre5-js185.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre5-ddg-search.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elinks-0.12pre6-autoconf.patch

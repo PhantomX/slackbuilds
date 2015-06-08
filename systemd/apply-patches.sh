@@ -38,8 +38,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-udevd-event-fix-event-que
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-shared-generator-correct-path-to-systemd-fsck.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-udev-fix-inotify-handling.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-treewide-fix-typos.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-core-namespace-Protect-usr-instead-of-home-with-Prot.patch
 
 ### Fedora
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-udevd-fix-SIGCHLD-handling-in-daemon-mode.patch
 
 ### Arch
 

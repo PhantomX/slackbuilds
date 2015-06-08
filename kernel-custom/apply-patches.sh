@@ -196,23 +196,30 @@ ApplyPatch HID-multitouch-add-support-of-clickpads.patch
 #CVE-2015-2150 rhbz 1196266 1200397
 ApplyPatch xen-pciback-Don-t-disable-PCI_COMMAND-on-PCI-device-.patch
 
-#rhbz 1208953
-ApplyPatch pty-Fix-input-race-when-closing.patch
-
 #rhbz 1210857
 ApplyPatch blk-loop-avoid-too-many-pending-per-work-IO.patch
-
-#rhbz 1218662
-ApplyPatch libata-Blacklist-queued-TRIM-on-all-Samsung-800-seri.patch
 
 #rhbz 1219343
 ApplyPatch 0001-HID-usbhid-Add-HID_QUIRK_NOGET-for-Aten-DVI-KVM-swit.patch
 
-#rhbz 1220915
-ApplyPatch ovl-don-t-remove-non-empty-opaque-directory.patch
-
 #rhbz 1220118
 ApplyPatch 0001-media-media-Fix-regression-in-some-more-dib0700-base.patch
+
+#rhbz 1214474
+ApplyPatch Input-add-vmmouse-driver.patch
+ApplyPatch Input-joydev-don-t-classify-the-vmmouse-as-a-joystic.patch
+
+#rhbz 1218882
+ApplyPatch 0001-target-use-vfs_iter_read-write-in-fd_do_rw.patch
+
+#rhbz 1188695
+ApplyPatch 0001-n_tty-Fix-auditing-support-for-cannonical-mode.patch
+
+#rhbz 1133378
+ApplyPatch 0001-firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
+
+#rhbz 1226621
+ApplyPatch block-discard-bdi_unregister-in-favour-of-bdi_destro.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

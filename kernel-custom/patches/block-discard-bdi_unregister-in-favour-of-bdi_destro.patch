@@ -1,0 +1,117 @@
+From: NeilBrown <neilb@suse.de>
+Date: Tue, 19 May 2015 15:58:37 +1000
+Subject: [PATCH] block: discard bdi_unregister() in favour of bdi_destroy()
+
+bdi_unregister() now contains very little functionality.
+
+It contains a "WARN_ON" if bdi->dev is NULL.  This warning is of no
+real consequence as bdi->dev isn't needed by anything else in the function,
+and it triggers if
+   blk_cleanup_queue() -> bdi_destroy()
+is called before bdi_unregister, which happens since
+  Commit: 6cd18e711dd8 ("block: destroy bdi before blockdev is unregistered.")
+
+So this isn't wanted.
+
+It also calls bdi_set_min_ratio().  This needs to be called after
+writes through the bdi have all been flushed, and before the bdi is destroyed.
+Calling it early is better than calling it late as it frees up a global
+resource.
+
+Calling it immediately after bdi_wb_shutdown() in bdi_destroy()
+perfectly fits these requirements.
+
+So bdi_unregister() can be discarded with the important content moved to
+bdi_destroy(), as can the
+  writeback_bdi_unregister
+event which is already not used.
+
+Reported-by: Mike Snitzer <snitzer@redhat.com>
+Cc: stable@vger.kernel.org (v4.0)
+Fixes: c4db59d31e39 ("fs: don't reassign dirty inodes to default_backing_dev_info")
+Fixes: 6cd18e711dd8 ("block: destroy bdi before blockdev is unregistered.")
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Dan Williams <dan.j.williams@intel.com>
+Tested-by: Nicholas Moulin <nicholas.w.moulin@linux.intel.com>
+Signed-off-by: NeilBrown <neilb@suse.de>
+Reviewed-by: Christoph Hellwig <hch@lst.de>
+Signed-off-by: Jens Axboe <axboe@fb.com>
+---
+ block/genhd.c                    |  1 -
+ include/linux/backing-dev.h      |  1 -
+ include/trace/events/writeback.h |  1 -
+ mm/backing-dev.c                 | 18 +-----------------
+ 4 files changed, 1 insertion(+), 20 deletions(-)
+
+diff --git a/block/genhd.c b/block/genhd.c
+index 0a536dc05f3b..666e11b83983 100644
+--- a/block/genhd.c
++++ b/block/genhd.c
+@@ -653,7 +653,6 @@ void del_gendisk(struct gendisk *disk)
+ 	disk->flags &= ~GENHD_FL_UP;
+ 
+ 	sysfs_remove_link(&disk_to_dev(disk)->kobj, "bdi");
+-	bdi_unregister(&disk->queue->backing_dev_info);
+ 	blk_unregister_queue(disk);
+ 	blk_unregister_region(disk_devt(disk), disk->minors);
+ 
+diff --git a/include/linux/backing-dev.h b/include/linux/backing-dev.h
+index aff923ae8c4b..d87d8eced064 100644
+--- a/include/linux/backing-dev.h
++++ b/include/linux/backing-dev.h
+@@ -116,7 +116,6 @@ __printf(3, 4)
+ int bdi_register(struct backing_dev_info *bdi, struct device *parent,
+ 		const char *fmt, ...);
+ int bdi_register_dev(struct backing_dev_info *bdi, dev_t dev);
+-void bdi_unregister(struct backing_dev_info *bdi);
+ int __must_check bdi_setup_and_register(struct backing_dev_info *, char *);
+ void bdi_start_writeback(struct backing_dev_info *bdi, long nr_pages,
+ 			enum wb_reason reason);
+diff --git a/include/trace/events/writeback.h b/include/trace/events/writeback.h
+index 5a14ead59696..885d3a380451 100644
+--- a/include/trace/events/writeback.h
++++ b/include/trace/events/writeback.h
+@@ -233,7 +233,6 @@ DEFINE_EVENT(writeback_class, name, \
+ DEFINE_WRITEBACK_EVENT(writeback_nowork);
+ DEFINE_WRITEBACK_EVENT(writeback_wake_background);
+ DEFINE_WRITEBACK_EVENT(writeback_bdi_register);
+-DEFINE_WRITEBACK_EVENT(writeback_bdi_unregister);
+ 
+ DECLARE_EVENT_CLASS(wbc_class,
+ 	TP_PROTO(struct writeback_control *wbc, struct backing_dev_info *bdi),
+diff --git a/mm/backing-dev.c b/mm/backing-dev.c
+index 6dc4580df2af..000e7b3b9896 100644
+--- a/mm/backing-dev.c
++++ b/mm/backing-dev.c
+@@ -359,23 +359,6 @@ static void bdi_wb_shutdown(struct backing_dev_info *bdi)
+ 	flush_delayed_work(&bdi->wb.dwork);
+ }
+ 
+-/*
+- * Called when the device behind @bdi has been removed or ejected.
+- *
+- * We can't really do much here except for reducing the dirty ratio at
+- * the moment.  In the future we should be able to set a flag so that
+- * the filesystem can handle errors at mark_inode_dirty time instead
+- * of only at writeback time.
+- */
+-void bdi_unregister(struct backing_dev_info *bdi)
+-{
+-	if (WARN_ON_ONCE(!bdi->dev))
+-		return;
+-
+-	bdi_set_min_ratio(bdi, 0);
+-}
+-EXPORT_SYMBOL(bdi_unregister);
+-
+ static void bdi_wb_init(struct bdi_writeback *wb, struct backing_dev_info *bdi)
+ {
+ 	memset(wb, 0, sizeof(*wb));
+@@ -443,6 +426,7 @@ void bdi_destroy(struct backing_dev_info *bdi)
+ 	int i;
+ 
+ 	bdi_wb_shutdown(bdi);
++	bdi_set_min_ratio(bdi, 0);
+ 
+ 	WARN_ON(!list_empty(&bdi->work_list));
+ 	WARN_ON(delayed_work_pending(&bdi->wb.dwork));

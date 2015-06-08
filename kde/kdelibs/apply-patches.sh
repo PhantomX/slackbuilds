@@ -45,6 +45,9 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-solid_qt_no_debug_output.
 # https://git.reviewboard.kde.org/r/102439/
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.7.0-knewstuff2_gpg2.patch
 
+# fix hunspell/myspell dict paths
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.14.9-myspell_paths.patch
+
 # Toggle solid upnp support at runtime via env var SOLID_UPNP=1 (disabled by default)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-SOLID_UPNP.patch
 
@@ -87,5 +90,7 @@ patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/coding-style-fixes.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-application-icons-properly.patch
 
 # Trunk patches
+
+patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/0015-Remove-bookmarks-syncing-from-KFilePlacesModel-and-u.patch
 
 set +e +o pipefail

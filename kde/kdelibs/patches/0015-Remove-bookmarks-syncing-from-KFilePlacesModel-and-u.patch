@@ -1,0 +1,474 @@
+From 5c0a31a2f2a46aa44b8c34baae67b6951b2abcaf Mon Sep 17 00:00:00 2001
+From: Emmanuel Pescosta <emmanuelpescosta099@gmail.com>
+Date: Wed, 29 Apr 2015 16:02:02 +0200
+Subject: [PATCH 15/32] Remove bookmarks syncing from KFilePlacesModel and use
+ user-places.xbel only.
+
+FIXED-IN: 4.14.8
+BUG: 345174
+REVIEW: 123568
+---
+ kfile/CMakeLists.txt                 |   1 -
+ kfile/kfileplacesmodel.cpp           |  21 +--
+ kfile/kfileplacessharedbookmarks.cpp | 276 -----------------------------------
+ kfile/kfileplacessharedbookmarks_p.h |  56 -------
+ 4 files changed, 3 insertions(+), 351 deletions(-)
+ delete mode 100644 kfile/kfileplacessharedbookmarks.cpp
+ delete mode 100644 kfile/kfileplacessharedbookmarks_p.h
+
+diff --git a/kfile/CMakeLists.txt b/kfile/CMakeLists.txt
+index ceae140..e796908 100644
+--- a/kfile/CMakeLists.txt
++++ b/kfile/CMakeLists.txt
+@@ -22,7 +22,6 @@ set(kfile_LIB_SRCS
+   kfilewidget.cpp
+   kfileplacesitem.cpp
+   kfileplacesmodel.cpp
+-  kfileplacessharedbookmarks.cpp
+   kfileplacesview.cpp
+   kfileplaceeditdialog.cpp
+   kfilepreviewgenerator.cpp
+diff --git a/kfile/kfileplacesmodel.cpp b/kfile/kfileplacesmodel.cpp
+index 24f95ad..a3ac9fb 100644
+--- a/kfile/kfileplacesmodel.cpp
++++ b/kfile/kfileplacesmodel.cpp
+@@ -19,7 +19,6 @@
+ */
+ #include "kfileplacesmodel.h"
+ #include "kfileplacesitem_p.h"
+-#include "kfileplacessharedbookmarks_p.h"
+ 
+ #ifdef _WIN32_WCE
+ #include "Windows.h"
+@@ -61,10 +60,9 @@
+ class KFilePlacesModel::Private
+ {
+ public:
+-    Private(KFilePlacesModel *self) : q(self), bookmarkManager(0), sharedBookmarks(0) {}
++    Private(KFilePlacesModel *self) : q(self), bookmarkManager(0) {}
+     ~Private()
+     {
+-        delete sharedBookmarks;
+         qDeleteAll(items);
+     }
+ 
+@@ -76,7 +74,6 @@ public:
+ 
+     Solid::Predicate predicate;
+     KBookmarkManager *bookmarkManager;
+-    KFilePlacesSharedBookmarks * sharedBookmarks;
+ 
+     void reloadAndSignal();
+     QList<KFilePlacesItem *> loadBookmarkList();
+@@ -93,8 +90,8 @@ public:
+ KFilePlacesModel::KFilePlacesModel(QObject *parent)
+     : QAbstractItemModel(parent), d(new Private(this))
+ {
+-    const QString file = KStandardDirs::locateLocal("data", "kfileplaces/bookmarks.xml");
+-    d->bookmarkManager = KBookmarkManager::managerForFile(file, "kfilePlaces");
++    const QString file = KStandardDirs().localxdgdatadir() + "user-places.xbel";
++    d->bookmarkManager = KBookmarkManager::managerForExternalFile(file);
+ 
+     // Let's put some places in there if it's empty. We have a corner case here:
+     // Given you have bookmarked some folders (which have been saved on
+@@ -146,9 +143,6 @@ KFilePlacesModel::KFilePlacesModel(QObject *parent)
+         d->bookmarkManager->saveAs(file);
+     }
+ 
+-    // create after, so if we have own places, they are added afterwards, in case of equal priorities
+-    d->sharedBookmarks = new KFilePlacesSharedBookmarks(d->bookmarkManager);
+-
+     QString predicate("[[[[ StorageVolume.ignored == false AND [ StorageVolume.usage == 'FileSystem' OR StorageVolume.usage == 'Encrypted' ]]"
+         " OR "
+         "[ IS StorageAccess AND StorageDrive.driveType == 'Floppy' ]]"
+@@ -632,8 +626,6 @@ bool KFilePlacesModel::dropMimeData(const QMimeData *data, Qt::DropAction action
+         return false;
+     }
+ 
+-    d->sharedBookmarks->updateSharedBookmarks();
+-
+     d->reloadAndSignal();
+ 
+     return true;
+@@ -661,8 +653,6 @@ void KFilePlacesModel::addPlace(const QString &text, const KUrl &url,
+         d->bookmarkManager->root().moveBookmark(bookmark, item->bookmark());
+     }
+ 
+-    d->sharedBookmarks->updateSharedBookmarks();
+-
+     d->reloadAndSignal();
+ }
+ 
+@@ -684,8 +674,6 @@ void KFilePlacesModel::editPlace(const QModelIndex &index, const QString &text,
+     bookmark.setIcon(iconName);
+     bookmark.setMetaDataItem("OnlyInApp", appName);
+ 
+-    d->sharedBookmarks->updateSharedBookmarks();
+-
+     d->reloadAndSignal();
+     emit dataChanged(index, index);
+ }
+@@ -703,7 +691,6 @@ void KFilePlacesModel::removePlace(const QModelIndex &index) const
+     if (bookmark.isNull()) return;
+ 
+     d->bookmarkManager->root().deleteBookmark(bookmark);
+-    d->sharedBookmarks->updateSharedBookmarks();
+     d->reloadAndSignal();
+ }
+ 
+@@ -719,8 +706,6 @@ void KFilePlacesModel::setPlaceHidden(const QModelIndex &index, bool hidden)
+ 
+     bookmark.setMetaDataItem("IsHidden", (hidden ? "true" : "false"));
+ 
+-    d->sharedBookmarks->updateSharedBookmarks();
+-
+     d->reloadAndSignal();
+     emit dataChanged(index, index);
+ }
+diff --git a/kfile/kfileplacessharedbookmarks.cpp b/kfile/kfileplacessharedbookmarks.cpp
+deleted file mode 100644
+index 5385d42..0000000
+--- a/kfile/kfileplacessharedbookmarks.cpp
++++ /dev/null
+@@ -1,276 +0,0 @@
+-/*  This file is part of the KDE project
+-    Copyright (C) 2008 Norbert Frese <nf2@scheinwelt.at>
+-
+-    This library is free software; you can redistribute it and/or
+-    modify it under the terms of the GNU Library General Public
+-    License version 2 as published by the Free Software Foundation.
+-
+-    This library is distributed in the hope that it will be useful,
+-    but WITHOUT ANY WARRANTY; without even the implied warranty of
+-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-    Library General Public License for more details.
+-
+-    You should have received a copy of the GNU Library General Public License
+-    along with this library; see the file COPYING.LIB.  If not, write to
+-    the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+-    Boston, MA 02110-1301, USA.
+-
+-*/
+-
+-#include "kfileplacessharedbookmarks_p.h"
+-
+-#include <QtCore/QObject>
+-#include <QtCore/QTextStream>
+-#include <QtCore/QFile>
+-#include <kstandarddirs.h>
+-#include <kbookmarkmanager.h>
+-#include <kbookmark.h>
+-#include <kdebug.h>
+-
+-//////////////// utility functions
+-
+-static bool compareBookmarks(const KBookmark & bookmark1, const KBookmark & bookmark2)
+-{
+-    return (bookmark1.url() == bookmark2.url() || bookmark1.text() == bookmark2.text());
+-}
+-
+-static bool deepCompareDomNodes(const QDomNode & node1, const QDomNode & node2)
+-{
+-    
+-    // compare name and value
+-    if (node1.nodeName() != node2.nodeName() || node1.nodeValue() != node2.nodeValue())
+-        return false;
+-    
+-    // recursively compare children
+-    const QDomNodeList node1Children  = node1.childNodes();
+-    const QDomNodeList node2Children  = node2.childNodes();
+-    
+-    if (node1Children.count () != node2Children.count ())
+-        return false;
+-    
+-    for (int i=0; i<node1Children.count ();i++) {
+-        if (!deepCompareDomNodes(node1Children.at(i), node2Children.at(i) ))
+-            return false;
+-    }
+-    return true;
+-}
+-
+-/*
+-static QString nodeAsString(const QDomNode & node1)
+-{
+-    QString str;
+-    QTextStream ts( &str, QIODevice::WriteOnly );
+-    ts << node1; 
+-    return str;    
+-}
+-*/
+-
+-static bool exactCompareBookmarks(const KBookmark & bookmark1, const KBookmark & bookmark2)
+-{
+-    //kDebug() << "excat comparing:\n" << nodeAsString(bookmark1.internalElement()) << "\nwith:\n" << nodeAsString(bookmark2.internalElement()); 
+-    return deepCompareDomNodes(bookmark1.internalElement(), bookmark2.internalElement());
+-}
+-
+-static void cloneBookmarkContents(const KBookmark & target, const KBookmark & source)
+-{
+-    const QDomElement targetEl = target.internalElement();
+-    QDomNode parent = targetEl.parentNode ();
+-    QDomNode clonedNode = source.internalElement().cloneNode(true);
+-    parent.replaceChild (clonedNode , targetEl );
+-}
+-
+-static KBookmark cloneBookmark(const KBookmark & toClone)
+-{
+-    const QDomNode cloned = toClone.internalElement().cloneNode(true);
+-    return KBookmark(cloned.toElement ()); 
+-}
+-
+-
+-static void emptyBookmarkGroup(KBookmarkGroup & root)
+-{
+-    KBookmark bookmark = root.first();
+-    while (!bookmark.isNull()) {
+-        KBookmark bookmarkToRemove = bookmark; 
+-        bookmark = root.next(bookmark);
+-        root.deleteBookmark(bookmarkToRemove);
+-    }
+-}
+-
+-static int bookmarkGroupSize(KBookmarkGroup & root)
+-{
+-    int count=0;
+-    KBookmark bookmark = root.first();
+-    while (!bookmark.isNull()) {
+-        count++;
+-        bookmark = root.next(bookmark);
+-    }
+-    return count;
+-}
+-
+-//////////////// class KFilePlacesSharedBookmarks
+-
+-KFilePlacesSharedBookmarks::KFilePlacesSharedBookmarks(KBookmarkManager * mgr)
+-{
+-    m_placesBookmarkManager = mgr;
+-    
+-    // we check later if the directory exists 
+-    KStandardDirs::makeDir(KStandardDirs().localxdgdatadir());
+-    const QString file = KStandardDirs().localxdgdatadir() + "user-places.xbel";
+-    m_sharedBookmarkManager = KBookmarkManager::managerForExternalFile(file); 
+-    
+-    connect(m_sharedBookmarkManager, SIGNAL(changed(QString,QString)),
+-              this, SLOT(slotSharedBookmarksChanged()));
+-    connect(m_sharedBookmarkManager, SIGNAL(bookmarksChanged(QString)),
+-              this, SLOT(slotSharedBookmarksChanged()));
+-
+-    integrateSharedBookmarks();
+-}
+-
+-bool KFilePlacesSharedBookmarks::integrateSharedBookmarks()
+-{
+-    KBookmarkGroup root = m_placesBookmarkManager->root();
+-    KBookmark bookmark = root.first();
+-    
+-    KBookmarkGroup sharedRoot = m_sharedBookmarkManager->root();
+-    KBookmark sharedBookmark = sharedRoot.first();
+-  
+-    bool dirty = false;
+-    
+-    while (!bookmark.isNull()) {
+-        //kDebug() << "importing" << bookmark.text();
+-      
+-        // skip over system items
+-        if (bookmark.metaDataItem("isSystemItem") == "true") {
+-            bookmark = root.next(bookmark);
+-            continue;
+-        }
+-
+-        // do the bookmarks match?
+-        if (!sharedBookmark.isNull() && compareBookmarks(bookmark, sharedBookmark)) {
+-            //kDebug() << "excat comparing: targetbk:\n" << nodeAsString(bookmark.internalElement()) << "\nsourcbk:\n" << nodeAsString(sharedBookmark.internalElement());
+-          
+-            if (!exactCompareBookmarks(bookmark, sharedBookmark)) {
+-                KBookmark cloneTarget=bookmark;
+-                KBookmark cloneSource = sharedBookmark;
+-              
+-                sharedBookmark = sharedRoot.next(sharedBookmark);
+-                bookmark = root.next(bookmark);
+-
+-                //kDebug() << "cloning" << cloneSource.text();
+-                //kDebug() << "cloning: target=\n" << nodeAsString(cloneTarget.internalElement()) << "\n source:\n" << nodeAsString(cloneSource.internalElement());
+-
+-                cloneBookmarkContents(cloneTarget, cloneSource);
+-                dirty = true;
+-                continue;
+-            } else {
+-                //kDebug() << "keeping" << bookmark.text();
+-            }
+-            sharedBookmark = sharedRoot.next(sharedBookmark);
+-            bookmark = root.next(bookmark);
+-            continue;
+-        }
+-        
+-        // they don't match -> remove
+-        //kDebug() << "removing" << bookmark.text();
+-        KBookmark bookmarkToRemove = bookmark; 
+-        bookmark = root.next(bookmark);
+-        root.deleteBookmark(bookmarkToRemove);
+-        
+-        dirty = true;
+-    }
+-
+-    // append the remaining shared bookmarks
+-    while(!sharedBookmark.isNull()) {
+-        root.addBookmark(cloneBookmark(sharedBookmark));
+-        sharedBookmark = sharedRoot.next(sharedBookmark);
+-        dirty = true;
+-    }
+-  
+-    return dirty;
+-}
+-
+-bool KFilePlacesSharedBookmarks::exportSharedBookmarks()
+-{
+-    KBookmarkGroup root = m_placesBookmarkManager->root();
+-    KBookmark bookmark = root.first();
+-    
+-    KBookmarkGroup sharedRoot = m_sharedBookmarkManager->root();
+-    KBookmark sharedBookmark = sharedRoot.first();
+-  
+-    bool dirty = false;
+-    
+-    // first check if they are the same
+-    int count=0;
+-    while (!bookmark.isNull()) {
+-        //kDebug() << "exporting..." << bookmark.text();
+-      
+-        // skip over system items
+-        if (bookmark.metaDataItem("isSystemItem") == "true") {
+-          bookmark = root.next(bookmark);
+-          continue;
+-        }
+-        count++;
+-        
+-        // end of sharedBookmarks?
+-        if (sharedBookmark.isNull()) {
+-            dirty=true;
+-            break;
+-        }
+-        
+-        // do the bookmarks match?
+-        if (compareBookmarks(bookmark, sharedBookmark)) {
+-            if (!exactCompareBookmarks(bookmark, sharedBookmark)) {
+-                dirty = true;
+-                break;
+-            }
+-        } else {
+-            dirty=true;
+-            break;
+-        }
+-        sharedBookmark = sharedRoot.next(sharedBookmark);
+-        bookmark = root.next(bookmark);
+-    }
+-  
+-    //kDebug() << "dirty=" << dirty << " oldsize=" << bookmarkGroupSize(sharedRoot) << " count=" << count;
+-    
+-    if (bookmarkGroupSize(sharedRoot) != count)
+-        dirty=true;
+-    
+-    if (dirty) {
+-        emptyBookmarkGroup(sharedRoot);
+-
+-        // append all bookmarks
+-        KBookmark bookmark = root.first();
+-      
+-        while(!bookmark.isNull()) {
+-          
+-            if (bookmark.metaDataItem("isSystemItem") == "true") {
+-              bookmark = root.next(bookmark);
+-              continue;
+-            }
+-          
+-            sharedRoot.addBookmark(cloneBookmark(bookmark));
+-            bookmark = root.next(bookmark);
+-            dirty = true;
+-        }
+-    }
+-    
+-    return dirty;    
+-  
+-}
+-
+-void KFilePlacesSharedBookmarks::slotSharedBookmarksChanged()
+-{
+-    //kDebug() << "shared bookmarks changed";
+-    bool dirty = integrateSharedBookmarks();
+-    if (dirty) m_placesBookmarkManager->emitChanged();
+-}
+-
+-void KFilePlacesSharedBookmarks::updateSharedBookmarks()
+-{
+-    //kDebug() << "places bookmarks changed";
+-    bool dirty = exportSharedBookmarks();
+-    if (dirty) m_sharedBookmarkManager->emitChanged();
+-}
+-
+-#include "kfileplacessharedbookmarks_p.moc"
+diff --git a/kfile/kfileplacessharedbookmarks_p.h b/kfile/kfileplacessharedbookmarks_p.h
+deleted file mode 100644
+index 654fe18..0000000
+--- a/kfile/kfileplacessharedbookmarks_p.h
++++ /dev/null
+@@ -1,56 +0,0 @@
+-/*  This file is part of the KDE project
+-    Copyright (C) 2008 Norbert Frese <nf2@scheinwelt.at>
+-
+-    This library is free software; you can redistribute it and/or
+-    modify it under the terms of the GNU Library General Public
+-    License version 2 as published by the Free Software Foundation.
+-
+-    This library is distributed in the hope that it will be useful,
+-    but WITHOUT ANY WARRANTY; without even the implied warranty of
+-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-    Library General Public License for more details.
+-
+-    You should have received a copy of the GNU Library General Public License
+-    along with this library; see the file COPYING.LIB.  If not, write to
+-    the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+-    Boston, MA 02110-1301, USA.
+-
+-*/
+-
+-#ifndef KFILEPLACESSHAREDBOOKMARKS_P_H
+-#define KFILEPLACESSHAREDBOOKMARKS_P_H
+-
+-#include <QtCore/QObject>
+-#include <kbookmarkmanager.h>
+-
+-/**
+- *  keeps the KFilePlacesModel bookmarks and the shared bookmark spec
+- *  shortcuts in sync
+- */
+-class KFilePlacesSharedBookmarks : public QObject
+-{
+-    Q_OBJECT
+-public:  
+-  
+-    KFilePlacesSharedBookmarks(KBookmarkManager * mgr);
+-    ~KFilePlacesSharedBookmarks() { /* delete m_sharedBookmarkManager; */} 
+-      
+-    void updateSharedBookmarks();
+-
+-private:
+-  
+-    bool integrateSharedBookmarks();
+-    bool exportSharedBookmarks();
+-  
+-    KBookmarkManager *m_placesBookmarkManager;
+-    KBookmarkManager *m_sharedBookmarkManager;
+-    
+-private Q_SLOTS:    
+-
+-    void slotSharedBookmarksChanged();
+-};
+-
+-
+-
+-
+-#endif /*KFILEPLACESSHARED_P_H_*/
+-- 
+2.4.2
+

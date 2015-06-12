@@ -32,7 +32,6 @@ ApplyPatch() {
 ApplyPatch cups-no-gzip-man.patch
 [ "${SB_PAM}" = "YES" ] && ApplyPatch cups-system-auth.patch
 ApplyPatch cups-multilib.patch
-ApplyPatch cups-busy-loop.patch
 ApplyPatch cups-banners-slk.patch
 ApplyPatch cups-serverbin-compat.patch
 ApplyPatch cups-no-export-ssllibs.patch

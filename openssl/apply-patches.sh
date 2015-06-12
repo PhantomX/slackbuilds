@@ -15,7 +15,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-perlfind.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.1c-aliasing.patch
 
 # Bug fixes
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-default-paths.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2b-default-paths.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-issuer-hash.patch
 
 # Functionality changes
@@ -29,14 +29,13 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-apps-dgst.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-xmpp-starttls.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-chil-fixes.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-pkgconfig-krb5.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-dh-1024.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-weak-ciphers.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-enc-fail.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-system-cipherlist.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-disable-sslv2v3.patch
 # Backported fixes including security fixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-padlock64.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-trusted-first-doc.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2b-trusted-first-doc.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.2a-cc-reqs.patch
 
 # Use .so.${SSLSOVER}, not .so.${VERSION}:

@@ -16,7 +16,6 @@ zcat ${SB_PATCHDIR}/bind-9.5-PIE.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.5-dlz-64bit.patch
 # needs inpection
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.10-dyndb.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bind-9.5-parallel-build.patch
 zcat ${SB_PATCHDIR}/bind-96-libtool2.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/bind-95-rh452060.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/bind93-rh490837.patch.gz | patch -p0 -E --backup --verbose

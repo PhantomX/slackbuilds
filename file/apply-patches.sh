@@ -16,8 +16,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-volume_key.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-man-return-code.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.04-generic-msdos.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-x86boot.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.14-perl.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.19-cafebabe.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.23-perl.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.23-cafebabe.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.22-awk-perl.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.22-zlib.patch
 
 # Mandriva
 zcat ${SB_PATCHDIR}/file-4.24-selinux.patch.gz | patch -p1 -E --backup --verbose
@@ -28,7 +30,7 @@ zcat ${SB_PATCHDIR}/file-4.21-svn.patch.gz | patch -p1 -E --backup --verbose
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/file-4.20-images.patch
 zcat ${SB_PATCHDIR}/file-4.20-apple.patch.gz | patch -p0 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.05-audio.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.05-xz-container.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/file-5.23-xz-container.patch
 
 rm -f magic/Magdir/*{~,.orig}
 

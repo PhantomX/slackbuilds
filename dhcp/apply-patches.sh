@@ -6,9 +6,11 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhclient-script.PATH.diff
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-remove-bind.patch
+sed -e '/BIND9_LIBDIR/s|-export||g' ${SB_PATCHDIR}/dhcp-remove-bind.patch \
+  | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-remove-dst.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-sharedlib.patch
+sed -e '/BIND9_LIBDIR/s|-export||g' ${SB_PATCHDIR}/dhcp-sharedlib.patch \
+  | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-errwarn-message.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-dhclient-options.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-release-by-ifup.patch
@@ -21,7 +23,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-CLOEXEC.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-garbage-chars.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-add_timeout_when_NULL.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-64_bit_lease_parse.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-capability.patch
+sed -e '/BIND9_LIBDIR/s|-export||g' ${SB_PATCHDIR}/dhcp-capability.patch \
+  | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-UseMulticast.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-sendDecline.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-rfc3442-classless-static-routes.patch

@@ -3,7 +3,7 @@
 set -e
 
 module=$(basename $0 -snapshot.sh)
-snaproot="http://git.chromium.org/webm/${module}.git"
+snaproot="https://chromium.googlesource.com/${module}"
 
 tmp=$(mktemp -d)
 

@@ -1,0 +1,241 @@
+From 92bc12b7085ff80d4f5a2389b5a00cda501e27c7 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Wed, 21 Jan 2015 09:31:39 +0100
+Subject: [PATCH v2 1/3] linux: Add linux_parse_vt_settings and
+ linux_get_keeptty helpers
+
+systemd-logind integration does not work when starting X on a new tty, as
+that detaches X from the current session and after hat systemd-logind revokes
+all rights on any already open fds and refuses to open new fds for X.
+
+This means that currently e.g. "startx -- vt7" breaks, and breaks badly,
+requiring ssh access to the system to kill X.
+
+The fix for this is easy, we must not use systemd-logind integration when
+not using KeepTty, or iow we may only use systemd-logind integration together
+with KeepTty.
+
+But the final KeepTty value is not known until the code to chose which vtno to
+run on has been called, which currently happens after intializing
+systemd-logind.
+
+This commit is step 1 in fixing the "startx -- vt7" breakage, it factors out
+the linux xf86OpenConsole bits which set xf86Info.vtno and keepTty so that
+these can be called earlier. Calling this earlier is safe as this code has
+no side effects other than setting xf86Info.vtno and keepTty.
+
+Note this basically only moves a large chunk of xf86OpenConsole() into
+linux_parse_vt_settings() without changing a single line of it, this is
+hard to see in the diff because the identation level has changed.
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
+---
+Changes in v2:
+-Rename linux_get_vtno to linux_parse_vt_settings
+Changes in v3:
+-Carry the rename of linux_get_vtno to linux_parse_vt_settings over into
+ the commit msg
+---
+ hw/xfree86/os-support/linux/linux.h    |  32 +++++++++
+ hw/xfree86/os-support/linux/lnx_init.c | 122 ++++++++++++++++++++-------------
+ 2 files changed, 105 insertions(+), 49 deletions(-)
+ create mode 100644 hw/xfree86/os-support/linux/linux.h
+
+diff --git a/hw/xfree86/os-support/linux/linux.h b/hw/xfree86/os-support/linux/linux.h
+new file mode 100644
+index 0000000..8cb8e3d
+--- /dev/null
++++ b/hw/xfree86/os-support/linux/linux.h
+@@ -0,0 +1,32 @@
++/*
++ * Copyright © 2015 Red Hat, Inc.
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the next
++ * paragraph) shall be included in all copies or substantial portions of the
++ * Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++ * DEALINGS IN THE SOFTWARE.
++ *
++ * Author: Hans de Goede <hdegoede@redhat.com>
++ */
++
++#ifndef XF86_LINUX_H
++#define XF86_LINUX_H
++
++void linux_parse_vt_settings(void);
++int linux_get_keeptty(void);
++
++#endif
+diff --git a/hw/xfree86/os-support/linux/lnx_init.c b/hw/xfree86/os-support/linux/lnx_init.c
+index 9485307..22c61bf 100644
+--- a/hw/xfree86/os-support/linux/lnx_init.c
++++ b/hw/xfree86/os-support/linux/lnx_init.c
+@@ -31,6 +31,7 @@
+ #include <X11/Xmd.h>
+ 
+ #include "compiler.h"
++#include "linux.h"
+ 
+ #include "xf86.h"
+ #include "xf86Priv.h"
+@@ -80,71 +81,94 @@ switch_to(int vt, const char *from)
+ #pragma GCC diagnostic ignored "-Wformat-nonliteral"
+ 
+ void
+-xf86OpenConsole(void)
++linux_parse_vt_settings(void)
+ {
+     int i, fd = -1, ret, current_vt = -1;
+-    struct vt_mode VT;
+     struct vt_stat vts;
+     struct stat st;
+     MessageType from = X_PROBED;
+     const char *tty0[] = { "/dev/tty0", "/dev/vc/0", NULL };
+-    const char *vcs[] = { "/dev/vc/%d", "/dev/tty%d", NULL };
+ 
+-    if (serverGeneration == 1) {
+-        /*
+-         * setup the virtual terminal manager
+-         */
+-        if (xf86Info.vtno != -1) {
+-            from = X_CMDLINE;
+-        }
+-        else {
++    /* Only do this once */
++    static int vt_settings_parsed = 0;
+ 
+-            i = 0;
+-            while (tty0[i] != NULL) {
+-                if ((fd = open(tty0[i], O_WRONLY, 0)) >= 0)
+-                    break;
+-                i++;
+-            }
++    if (vt_settings_parsed)
++        return;
+ 
+-            if (fd < 0)
+-                FatalError("xf86OpenConsole: Cannot open /dev/tty0 (%s)\n",
+-                           strerror(errno));
++    /*
++     * setup the virtual terminal manager
++     */
++    if (xf86Info.vtno != -1) {
++        from = X_CMDLINE;
++    }
++    else {
+ 
+-            if (xf86Info.ShareVTs) {
+-                SYSCALL(ret = ioctl(fd, VT_GETSTATE, &vts));
+-                if (ret < 0)
+-                    FatalError("xf86OpenConsole: Cannot find the current"
+-                               " VT (%s)\n", strerror(errno));
+-                xf86Info.vtno = vts.v_active;
+-            }
+-            else {
+-                SYSCALL(ret = ioctl(fd, VT_OPENQRY, &xf86Info.vtno));
+-                if (ret < 0)
+-                    FatalError("xf86OpenConsole: Cannot find a free VT: "
+-                               "%s\n", strerror(errno));
+-                if (xf86Info.vtno == -1)
+-                    FatalError("xf86OpenConsole: Cannot find a free VT\n");
+-            }
+-            close(fd);
++        i = 0;
++        while (tty0[i] != NULL) {
++            if ((fd = open(tty0[i], O_WRONLY, 0)) >= 0)
++                break;
++            i++;
+         }
+ 
+-        xf86Msg(from, "using VT number %d\n\n", xf86Info.vtno);
++        if (fd < 0)
++            FatalError("parse_vt_settings: Cannot open /dev/tty0 (%s)\n",
++                       strerror(errno));
+ 
+-        /* Some of stdin / stdout / stderr maybe redirected to a file */
+-        for (i = STDIN_FILENO; i <= STDERR_FILENO; i++) {
+-            ret = fstat(i, &st);
+-            if (ret == 0 && S_ISCHR(st.st_mode) && major(st.st_rdev) == 4) {
+-                current_vt = minor(st.st_rdev);
+-                break;
+-            }
++        if (xf86Info.ShareVTs) {
++            SYSCALL(ret = ioctl(fd, VT_GETSTATE, &vts));
++            if (ret < 0)
++                FatalError("parse_vt_settings: Cannot find the current"
++                           " VT (%s)\n", strerror(errno));
++            xf86Info.vtno = vts.v_active;
+         }
++        else {
++            SYSCALL(ret = ioctl(fd, VT_OPENQRY, &xf86Info.vtno));
++            if (ret < 0)
++                FatalError("parse_vt_settings: Cannot find a free VT: "
++                           "%s\n", strerror(errno));
++            if (xf86Info.vtno == -1)
++                FatalError("parse_vt_settings: Cannot find a free VT\n");
++        }
++        close(fd);
++    }
++
++    xf86Msg(from, "using VT number %d\n\n", xf86Info.vtno);
+ 
+-        if (!KeepTty && current_vt == xf86Info.vtno) {
+-            xf86Msg(X_PROBED,
+-                    "controlling tty is VT number %d, auto-enabling KeepTty\n",
+-                    current_vt);
+-            KeepTty = TRUE;
++    /* Some of stdin / stdout / stderr maybe redirected to a file */
++    for (i = STDIN_FILENO; i <= STDERR_FILENO; i++) {
++        ret = fstat(i, &st);
++        if (ret == 0 && S_ISCHR(st.st_mode) && major(st.st_rdev) == 4) {
++            current_vt = minor(st.st_rdev);
++            break;
+         }
++    }
++
++    if (!KeepTty && current_vt == xf86Info.vtno) {
++        xf86Msg(X_PROBED,
++                "controlling tty is VT number %d, auto-enabling KeepTty\n",
++                current_vt);
++        KeepTty = TRUE;
++    }
++
++    vt_settings_parsed = 1;
++}
++
++int
++linux_get_keeptty(void)
++{
++    return KeepTty;
++}
++
++void
++xf86OpenConsole(void)
++{
++    int i, ret;
++    struct vt_stat vts;
++    struct vt_mode VT;
++    const char *vcs[] = { "/dev/vc/%d", "/dev/tty%d", NULL };
++
++    if (serverGeneration == 1) {
++        linux_parse_vt_settings();
+ 
+         if (!KeepTty) {
+             pid_t ppid = getppid();
+-- 
+2.4.0
+

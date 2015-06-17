@@ -47,11 +47,17 @@ ApplyPatch 0001-Always-install-vbe-and-int10-sdk-headers.patch
 # submitted: http://lists.x.org/archives/xorg-devel/2013-October/037996.html
 ApplyPatch exa-only-draw-valid-trapezoids.patch
 
-# submitted upstream: regression in 1.17.0
-ApplyPatch 0001-os-access-fix-regression-in-server-interpreted-auth.patch
-
 # because the display-managers are not ready yet, do not upstream
 ApplyPatch 0001-Fedora-hack-Make-the-suid-root-wrapper-always-start-.patch
+
+# rhbz1203780, submitted upstream
+ApplyPatch 0001-linux-Add-linux_parse_vt_settings-and-linux_get_keep.patch
+ApplyPatch 0002-linux-Add-a-may_fail-paramter-to-linux_parse_vt_sett.patch
+ApplyPatch 0003-systemd-logind-Only-use-systemd-logind-integration-t.patch
+
+# rhbz1208992, already upstream
+ApplyPatch 0001-dix-Add-unaccelerated-valuators-to-the-ValuatorMask.patch
+ApplyPatch 0002-dix-hook-up-the-unaccelerated-valuator-masks.patch
 
 # misc
 ApplyPatch 0001-Fix-segfault-when-killing-X-with-ctrl-alt-backspace.patch

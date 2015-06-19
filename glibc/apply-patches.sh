@@ -84,10 +84,6 @@ ApplyPatch glibc-rh1013801.patch
 ApplyPatch glibc-nscd-sysconfig.patch
 sed -i -e 's|/sysconfig/|/default/|g' nscd/nscd.service
 
-# Allow up to 32 libraries to use static TLS. Should go upstream after
-# more testing.
-ApplyPatch glibc-rh1124987.patch
-
 # http://sourceware.org/ml/libc-alpha/2012-12/msg00103.html
 ApplyPatch glibc-rh697421.patch
 ApplyPatch glibc-rh757881.patch
@@ -142,10 +138,13 @@ ApplyPatch 0001-Fix-BZ-18043-buffer-overflow-read-past-the-end-in-wo.patch
 ApplyPatch 0001-Refactor-wordexp-test.c-such-that-words-always-ends-.patch
 ApplyPatch 0002-Fix-off-by-one-which-caused-BZ-18042-and-add-a-test-.patch
 ApplyPatch 0001-Fix-BZ-18043-c4-buffer-overflow-read-past-the-end-in.patch
+ApplyPatch 0001-powerpc-Remove-HAVE_ASM_GLOBAL_DOT_NAME-define.patch
 ApplyPatch 0001-Avoid-SIGFPE-in-wordexp-BZ-18100.patch
+ApplyPatch 0001-Fix-DTV-race-assert-DTV_SURPLUS-Static-TLS-limit-and.patch
 ApplyPatch 0001-Fuller-check-for-invalid-NSID-in-_dl_open.patch
 ApplyPatch 0002-Avoid-confusing-compiler-with-dynamically-impossible.patch
 ApplyPatch 0003-Better-fix-for-setenv-.-NULL.patch
 ApplyPatch 0001-CVE-2015-1781-resolv-nss_dns-dns-host.c-buffer-overf.patch
+ApplyPatch 0001-Make-time-zone-file-parser-more-robust-BZ-17715.patch
 
 set +e +o pipefail

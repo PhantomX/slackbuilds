@@ -1,0 +1,231 @@
+2015-04-17  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/65689
+	* genpreds.c (struct constraint_data): Add maybe_allows_reg and
+	maybe_allows_mem bitfields.
+	(maybe_allows_none_start, maybe_allows_none_end,
+	maybe_allows_reg_start, maybe_allows_reg_end, maybe_allows_mem_start,
+	maybe_allows_mem_end): New variables.
+	(compute_maybe_allows): New function.
+	(add_constraint): Use it to initialize maybe_allows_reg and
+	maybe_allows_mem fields.
+	(choose_enum_order): Sort the non-is_register/is_const_int/is_memory/
+	is_address constraints such that those that allow neither mem nor
+	reg come first, then those that only allow reg but not mem, then
+	those that only allow mem but not reg, then the rest.
+	(write_allows_reg_mem_function): New function.
+	(write_tm_preds_h): Call it.
+	* stmt.c (parse_output_constraint, parse_input_constraint): Use
+	the generated insn_extra_constraint_allows_reg_mem function
+	instead of always setting *allows_reg = true; *allows_mem = true;
+	for unknown extra constraints.
+
+	* gcc.target/aarch64/c-output-template-4.c: New test.
+
+--- gcc/genpreds.c.jj	2015-04-08 18:23:50.643556230 +0200
++++ gcc/genpreds.c	2015-04-17 17:44:23.097650110 +0200
+@@ -640,12 +640,14 @@ struct constraint_data
+   const char *regclass;  /* for register constraints */
+   rtx exp;               /* for other constraints */
+   unsigned int lineno;   /* line of definition */
+-  unsigned int is_register  : 1;
+-  unsigned int is_const_int : 1;
+-  unsigned int is_const_dbl : 1;
+-  unsigned int is_extra     : 1;
+-  unsigned int is_memory    : 1;
+-  unsigned int is_address   : 1;
++  unsigned int is_register	: 1;
++  unsigned int is_const_int	: 1;
++  unsigned int is_const_dbl	: 1;
++  unsigned int is_extra		: 1;
++  unsigned int is_memory	: 1;
++  unsigned int is_address	: 1;
++  unsigned int maybe_allows_reg : 1;
++  unsigned int maybe_allows_mem : 1;
+ };
+ 
+ /* Overview of all constraints beginning with a given letter.  */
+@@ -691,6 +693,9 @@ static unsigned int satisfied_start;
+ static unsigned int const_int_start, const_int_end;
+ static unsigned int memory_start, memory_end;
+ static unsigned int address_start, address_end;
++static unsigned int maybe_allows_none_start, maybe_allows_none_end;
++static unsigned int maybe_allows_reg_start, maybe_allows_reg_end;
++static unsigned int maybe_allows_mem_start, maybe_allows_mem_end;
+ 
+ /* Convert NAME, which contains angle brackets and/or underscores, to
+    a string that can be used as part of a C identifier.  The string
+@@ -711,6 +716,34 @@ mangle (const char *name)
+   return XOBFINISH (rtl_obstack, const char *);
+ }
+ 
++/* Return a bitmask, bit 1 if EXP maybe allows a REG/SUBREG, 2 if EXP
++   maybe allows a MEM.  Bits should be clear only when we are sure it
++   will not allow a REG/SUBREG or a MEM.  */
++static int
++compute_maybe_allows (rtx exp)
++{
++  switch (GET_CODE (exp))
++    {
++    case IF_THEN_ELSE:
++      /* Conservative answer is like IOR, of the THEN and ELSE branches.  */
++      return compute_maybe_allows (XEXP (exp, 1))
++	     | compute_maybe_allows (XEXP (exp, 2));
++    case AND:
++      return compute_maybe_allows (XEXP (exp, 0))
++	     & compute_maybe_allows (XEXP (exp, 1));
++    case IOR:
++      return compute_maybe_allows (XEXP (exp, 0))
++	     | compute_maybe_allows (XEXP (exp, 1));
++    case MATCH_CODE:
++      if (*XSTR (exp, 1) == '\0')
++	return (strstr (XSTR (exp, 0), "reg") != NULL ? 1 : 0)
++	       | (strstr (XSTR (exp, 0), "mem") != NULL ? 2 : 0);
++      /* FALLTHRU */
++    default:
++      return 3;
++    }
++}
++
+ /* Add one constraint, of any sort, to the tables.  NAME is its name;
+    REGCLASS is the register class, if any; EXP is the expression to
+    test, if any;  IS_MEMORY and IS_ADDRESS indicate memory and address
+@@ -866,6 +899,11 @@ add_constraint (const char *name, const
+   c->is_extra = !(regclass || is_const_int || is_const_dbl);
+   c->is_memory = is_memory;
+   c->is_address = is_address;
++  int maybe_allows = 3;
++  if (exp)
++    maybe_allows = compute_maybe_allows (exp);
++  c->maybe_allows_reg = (maybe_allows & 1) != 0;
++  c->maybe_allows_mem = (maybe_allows & 2) != 0;
+ 
+   c->next_this_letter = *slot;
+   *slot = c;
+@@ -940,8 +978,30 @@ choose_enum_order (void)
+       enum_order[next++] = c;
+   address_end = next;
+ 
++  maybe_allows_none_start = next;
++  FOR_ALL_CONSTRAINTS (c)
++    if (!c->is_register && !c->is_const_int && !c->is_memory && !c->is_address
++	&& !c->maybe_allows_reg && !c->maybe_allows_mem)
++      enum_order[next++] = c;
++  maybe_allows_none_end = next;
++
++  maybe_allows_reg_start = next;
++  FOR_ALL_CONSTRAINTS (c)
++    if (!c->is_register && !c->is_const_int && !c->is_memory && !c->is_address
++	&& c->maybe_allows_reg && !c->maybe_allows_mem)
++      enum_order[next++] = c;
++  maybe_allows_reg_end = next;
++
++  maybe_allows_mem_start = next;
++  FOR_ALL_CONSTRAINTS (c)
++    if (!c->is_register && !c->is_const_int && !c->is_memory && !c->is_address
++	&& !c->maybe_allows_reg && c->maybe_allows_mem)
++      enum_order[next++] = c;
++  maybe_allows_mem_end = next;
++
+   FOR_ALL_CONSTRAINTS (c)
+-    if (!c->is_register && !c->is_const_int && !c->is_memory && !c->is_address)
++    if (!c->is_register && !c->is_const_int && !c->is_memory && !c->is_address
++	&& c->maybe_allows_reg && c->maybe_allows_mem)
+       enum_order[next++] = c;
+   gcc_assert (next == num_constraints);
+ }
+@@ -1229,6 +1289,41 @@ write_range_function (const char *name,
+ 	    "}\n\n", name);
+ }
+ 
++/* Write a definition for insn_extra_constraint_allows_reg_mem function.  */
++static void
++write_allows_reg_mem_function (void)
++{
++  printf ("static inline void\n"
++	  "insn_extra_constraint_allows_reg_mem (enum constraint_num c,\n"
++	  "\t\t\t\t      bool *allows_reg, bool *allows_mem)\n"
++	  "{\n");
++  if (maybe_allows_none_start != maybe_allows_none_end)
++    printf ("  if (c >= CONSTRAINT_%s && c <= CONSTRAINT_%s)\n"
++	    "    return;\n",
++	    enum_order[maybe_allows_none_start]->c_name,
++	    enum_order[maybe_allows_none_end - 1]->c_name);
++  if (maybe_allows_reg_start != maybe_allows_reg_end)
++    printf ("  if (c >= CONSTRAINT_%s && c <= CONSTRAINT_%s)\n"
++	    "    {\n"
++	    "      *allows_reg = true;\n"
++	    "      return;\n"
++	    "    }\n",
++	    enum_order[maybe_allows_reg_start]->c_name,
++	    enum_order[maybe_allows_reg_end - 1]->c_name);
++  if (maybe_allows_mem_start != maybe_allows_mem_end)
++    printf ("  if (c >= CONSTRAINT_%s && c <= CONSTRAINT_%s)\n"
++	    "    {\n"
++	    "      *allows_mem = true;\n"
++	    "      return;\n"
++	    "    }\n",
++	    enum_order[maybe_allows_mem_start]->c_name,
++	    enum_order[maybe_allows_mem_end - 1]->c_name);
++  printf ("  (void) c;\n"
++	  "  *allows_reg = true;\n"
++	  "  *allows_mem = true;\n"
++	  "}\n\n");
++}
++
+ /* VEC is a list of key/value pairs, with the keys being lower bounds
+    of a range.  Output a decision tree that handles the keys covered by
+    [VEC[START], VEC[END]), returning FALLBACK for keys lower then VEC[START]'s.
+@@ -1326,6 +1421,7 @@ write_tm_preds_h (void)
+ 			    memory_start, memory_end);
+       write_range_function ("insn_extra_address_constraint",
+ 			    address_start, address_end);
++      write_allows_reg_mem_function ();
+ 
+       if (constraint_max_namelen > 1)
+         {
+--- gcc/stmt.c.jj	2015-04-08 18:23:50.660555956 +0200
++++ gcc/stmt.c	2015-04-17 17:36:50.623044548 +0200
+@@ -342,13 +342,7 @@ parse_output_constraint (const char **co
+ 	else if (insn_extra_memory_constraint (cn))
+ 	  *allows_mem = true;
+ 	else
+-	  {
+-	    /* Otherwise we can't assume anything about the nature of
+-	       the constraint except that it isn't purely registers.
+-	       Treat it like "g" and hope for the best.  */
+-	    *allows_reg = true;
+-	    *allows_mem = true;
+-	  }
++	  insn_extra_constraint_allows_reg_mem (cn, allows_reg, allows_mem);
+ 	break;
+       }
+ 
+@@ -465,13 +459,7 @@ parse_input_constraint (const char **con
+ 	else if (insn_extra_memory_constraint (cn))
+ 	  *allows_mem = true;
+ 	else
+-	  {
+-	    /* Otherwise we can't assume anything about the nature of
+-	       the constraint except that it isn't purely registers.
+-	       Treat it like "g" and hope for the best.  */
+-	    *allows_reg = true;
+-	    *allows_mem = true;
+-	  }
++	  insn_extra_constraint_allows_reg_mem (cn, allows_reg, allows_mem);
+ 	break;
+       }
+ 
+--- gcc/testsuite/gcc.target/aarch64/c-output-template-4.c.jj	2015-04-17 17:48:27.588654584 +0200
++++ gcc/testsuite/gcc.target/aarch64/c-output-template-4.c	2015-04-17 17:48:22.149743468 +0200
+@@ -0,0 +1,10 @@
++/* { dg-do compile } */
++/* { dg-options "-O0" } */
++
++void
++test (void)
++{
++    __asm__ ("@ %c0" : : "S" (&test + 4));
++}
++
++/* { dg-final { scan-assembler "@ test\\+4" } } */

@@ -1,0 +1,1 @@
+../gcc/apply-patches.sh

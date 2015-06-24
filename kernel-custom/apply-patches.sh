@@ -203,7 +203,7 @@ ApplyPatch blk-loop-avoid-too-many-pending-per-work-IO.patch
 ApplyPatch 0001-HID-usbhid-Add-HID_QUIRK_NOGET-for-Aten-DVI-KVM-swit.patch
 
 #rhbz 1220118
-ApplyPatch 0001-media-media-Fix-regression-in-some-more-dib0700-base.patch
+ApplyPatch media-Fix-regression-in-some-more-dib0700-base.patch
 
 #rhbz 1214474
 ApplyPatch Input-add-vmmouse-driver.patch
@@ -212,14 +212,25 @@ ApplyPatch Input-joydev-don-t-classify-the-vmmouse-as-a-joystic.patch
 #rhbz 1218882
 ApplyPatch 0001-target-use-vfs_iter_read-write-in-fd_do_rw.patch
 
-#rhbz 1188695
-ApplyPatch 0001-n_tty-Fix-auditing-support-for-cannonical-mode.patch
-
 #rhbz 1133378
-ApplyPatch 0001-firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
+ApplyPatch firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
 
-#rhbz 1226621
-ApplyPatch block-discard-bdi_unregister-in-favour-of-bdi_destro.patch
+# FAF Problem 885578
+ApplyPatch 0001-mwifiex-use-del_timer-variant-in-interrupt-context.patch
+
+#rhbz 1226743
+ApplyPatch drm-i915-turn-off-wc-mmaps.patch
+
+#rhbz 1212230
+ApplyPatch Input-Revert-Revert-synaptics-use-dmax-in-input_mt_a.patch
+ApplyPatch Input-synaptics-allocate-3-slots-to-keep-stability-i.patch
+ApplyPatch Input-synaptics-pin-3-touches-when-the-firmware-repo.patch
+
+# CVE-2015-XXXX rhbz 1230770 1230774
+ApplyPatch kvm-x86-fix-kvm_apic_has_events-to-check-for-NULL-po.patch
+
+#rhbz 1227891
+ApplyPatch HID-rmi-Disable-populating-F30-when-the-touchpad-has.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

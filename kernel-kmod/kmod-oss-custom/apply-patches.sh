@@ -9,5 +9,6 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -d ${RSRCDIR} -i ${SB_PATCHDIR}/oss-v4.2-linux-4.0-patch
 ### Arch
 patch -p0 -E --backup --verbose -d ${RSRCDIR} -i ${SB_PATCHDIR}/ossvermagic.patch
+patch -p0 -E --backup --verbose -d ${RSRCDIR} -i ${SB_PATCHDIR}/gcc-5.patch
 
 set +e +o pipefail

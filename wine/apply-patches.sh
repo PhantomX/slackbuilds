@@ -10,11 +10,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0003-winemenubuilder-silence-a
 # Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-cjk.patch
 
-# bugfixes
-# http://bugs.winehq.org/show_bug.cgi?id=7698
-# http://bugs2.winehq.org/attachment.cgi?id=6853
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-csd.patch
-
 if [ "${SB_STAGING}" = "YES" ] ;then
   sed -i \
     -e '/autoreconf -f/d' \
@@ -29,6 +24,12 @@ elif [ "${SB_PA}" = "YES" ] ;then
   for p in $(ls ${STSRCDIR}/patches/winepulse-PulseAudio_Support/*patch); do
     patch -p1 -i ${p}
   done
+fi
+
+if [ "${SB_STAGING}" = "YES" ] ;then
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-gcc5-st.patch
+else
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-gcc5.patch
 fi
 
 # Set to YES if autogen is needed

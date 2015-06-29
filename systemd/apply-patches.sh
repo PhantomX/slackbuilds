@@ -30,6 +30,9 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 
 # Upstream
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-pam_systemd-Properly-check-kdbus-availability.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-core-fix-reversed-dependency-check-in-unit_check_unn.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-rules-remove-all-power-management-from-udev.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-logind-fix-delayed-execution-regression.patch
 
 ### Fedora
 
@@ -39,6 +42,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-pam_systemd-Properly-chec
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Don-t-enable-audit-by-default.patch
 
 # Set to YES if autogen is needed
-SB_AUTOGEN=NO
+SB_AUTOGEN=YES
 
 set +e +o pipefail

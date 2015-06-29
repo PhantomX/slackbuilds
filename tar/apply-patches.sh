@@ -37,5 +37,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.28-sparse-inf-loops.patc
 #    http://www.mail-archive.com/bug-tar@gnu.org/msg04489.html
 # ~> #916995
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.28-big-sparse-listing.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.28-T-matchflags.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.28-T-recursion-tests.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/tar-1.28-T-tests-false-failure.patch
+
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
 
 set +e +o pipefail

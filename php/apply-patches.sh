@@ -21,7 +21,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.7-odbctimer.patch
 
 # Functional changes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-dlopen.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.6.3-systzdata-v11.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.6.9-systzdata-v12.patch
 # See http://bugs.php.net/53436
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-phpize.patch
 # Use -lldap_r for OpenLDAP

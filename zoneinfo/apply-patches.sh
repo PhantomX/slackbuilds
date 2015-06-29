@@ -9,6 +9,10 @@ patch -p1 -E --backup -z .makefile --verbose -i ${SB_PATCHDIR}/timezone-data-201
 if [ "${SB_JAVA}" = "YES" ] ;then
   patch -p0 -E --backup --verbose -d javazic -i ${SB_PATCHDIR}/javazic-fixup.patch
   patch -p0 -E --backup --verbose -d javazic -i ${SB_PATCHDIR}/javazic-exclusion-fix.patch
+  patch -p0 -E --backup --verbose -d javazic -i ${SB_PATCHDIR}/rebase-01.patch
+  patch -p0 -E --backup --verbose -d javazic -i ${SB_PATCHDIR}/rebase-02.patch
+  patch -p0 -E --backup --verbose -d javazic -i ${SB_PATCHDIR}/7090844.patch
+  patch -p0 -E --backup --verbose -d javazic -i ${SB_PATCHDIR}/7133138.patch
 fi
 
 set +e +o pipefail

@@ -9,6 +9,8 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -R --backup --verbose -i ${SB_PATCHDIR}/gtk+3-3.10.0-gtk-recent-files-limit.patch
 patch -p1 -R --backup --verbose -i ${SB_PATCHDIR}/gtk+3-3.10.0-gtk-toolbar-icon-size.patch
 patch -p1 -R --backup --verbose -i ${SB_PATCHDIR}/gtk+3-3.10.0-gtk-toolbar-style.patch
+# Disable this @#$& by default
+patch -p1 --backup --verbose -i ${SB_PATCHDIR}/gtk+3-3.16.4-disable-overlay.patch
 
 ### Debian
 patch -p1 --backup --verbose -i ${SB_PATCHDIR}/015_default-fallback-icon-theme.patch

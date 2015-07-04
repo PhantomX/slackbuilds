@@ -10,7 +10,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-fix-preferences-chinfo
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-install-dir.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build-prbool.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-nss-3.18.0.patch
 
 # Unable to install addons from https pages
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-966424.patch
@@ -33,7 +32,6 @@ fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-branded-icons.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/toolkit-download-folder.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-nongnome-proxies.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-prefer_plugin_pref.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-icu-strncat.patch
 
 # Upstream patches

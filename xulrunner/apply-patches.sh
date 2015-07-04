@@ -9,7 +9,6 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-install-dir.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build-prbool.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-nss-3.18.0.patch
 
 # Fedora specific patches
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
@@ -24,7 +23,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-1014858.patch
 # http://www.rosenauer.org/hg/mozilla/
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/toolkit-download-folder.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-nongnome-proxies.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-prefer_plugin_pref.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-icu-strncat.patch
 
 # Upstream patches

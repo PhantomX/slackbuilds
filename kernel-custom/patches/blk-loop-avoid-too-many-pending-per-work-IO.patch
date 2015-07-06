@@ -1,133 +1,10 @@
-Documentation/workqueue.txt:
-	If there is dependency among multiple work items used
-	during memory reclaim, they should be queued to separate
-	wq each with WQ_MEM_RECLAIM.
-
-Loop devices can be stacked, so we have to convert to per-device
-workqueue. One example is Fedora live CD.
-
-Fixes: b5dd2f6047ca108001328aac0e8588edd15f1778
-Cc: stable@vger.kernel.org (v4.0)
-Cc: Justin M. Forbes <jforbes@fedoraproject.org>
-Signed-off-by: Ming Lei <ming.lei@canonical.com>
----
- drivers/block/loop.c | 30 ++++++++++++++----------------
- drivers/block/loop.h |  1 +
- 2 files changed, 15 insertions(+), 16 deletions(-)
-
-diff --git a/drivers/block/loop.c b/drivers/block/loop.c
-index ae3fcb4..3dc1598 100644
---- a/drivers/block/loop.c
-+++ b/drivers/block/loop.c
-@@ -86,8 +86,6 @@ static DEFINE_MUTEX(loop_index_mutex);
- static int max_part;
- static int part_shift;
- 
--static struct workqueue_struct *loop_wq;
--
- /*
-  * Transfer functions
-  */
-@@ -725,6 +723,12 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
- 	size = get_loop_size(lo, file);
- 	if ((loff_t)(sector_t)size != size)
- 		goto out_putf;
-+	error = -ENOMEM;
-+	lo->wq = alloc_workqueue("kloopd%d",
-+			WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_UNBOUND, 0,
-+			lo->lo_number);
-+	if (!lo->wq)
-+		goto out_putf;
- 
- 	error = 0;
- 
-@@ -872,6 +876,8 @@ static int loop_clr_fd(struct loop_device *lo)
- 	lo->lo_flags = 0;
- 	if (!part_shift)
- 		lo->lo_disk->flags |= GENHD_FL_NO_PART_SCAN;
-+	destroy_workqueue(lo->wq);
-+	lo->wq = NULL;
- 	mutex_unlock(&lo->lo_ctl_mutex);
- 	/*
- 	 * Need not hold lo_ctl_mutex to fput backing file.
-@@ -1425,9 +1431,13 @@ static int loop_queue_rq(struct blk_mq_hw_ctx *hctx,
- 		const struct blk_mq_queue_data *bd)
- {
- 	struct loop_cmd *cmd = blk_mq_rq_to_pdu(bd->rq);
-+	struct loop_device *lo = cmd->rq->q->queuedata;
- 
- 	blk_mq_start_request(bd->rq);
- 
-+	if (lo->lo_state != Lo_bound)
-+		return -EIO;
-+
- 	if (cmd->rq->cmd_flags & REQ_WRITE) {
- 		struct loop_device *lo = cmd->rq->q->queuedata;
- 		bool need_sched = true;
-@@ -1441,9 +1451,9 @@ static int loop_queue_rq(struct blk_mq_hw_ctx *hctx,
- 		spin_unlock_irq(&lo->lo_lock);
- 
- 		if (need_sched)
--			queue_work(loop_wq, &lo->write_work);
-+			queue_work(lo->wq, &lo->write_work);
- 	} else {
--		queue_work(loop_wq, &cmd->read_work);
-+		queue_work(lo->wq, &cmd->read_work);
- 	}
- 
- 	return BLK_MQ_RQ_QUEUE_OK;
-@@ -1455,9 +1465,6 @@ static void loop_handle_cmd(struct loop_cmd *cmd)
- 	struct loop_device *lo = cmd->rq->q->queuedata;
- 	int ret = -EIO;
- 
--	if (lo->lo_state != Lo_bound)
--		goto failed;
--
- 	if (write && (lo->lo_flags & LO_FLAGS_READ_ONLY))
- 		goto failed;
- 
-@@ -1806,13 +1813,6 @@ static int __init loop_init(void)
- 		goto misc_out;
- 	}
- 
--	loop_wq = alloc_workqueue("kloopd",
--			WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_UNBOUND, 0);
--	if (!loop_wq) {
--		err = -ENOMEM;
--		goto misc_out;
--	}
--
- 	blk_register_region(MKDEV(LOOP_MAJOR, 0), range,
- 				  THIS_MODULE, loop_probe, NULL, NULL);
- 
-@@ -1850,8 +1850,6 @@ static void __exit loop_exit(void)
- 	blk_unregister_region(MKDEV(LOOP_MAJOR, 0), range);
- 	unregister_blkdev(LOOP_MAJOR, "loop");
- 
--	destroy_workqueue(loop_wq);
--
- 	misc_deregister(&loop_misc);
- }
- 
-diff --git a/drivers/block/loop.h b/drivers/block/loop.h
-index 301c27f..49564ed 100644
---- a/drivers/block/loop.h
-+++ b/drivers/block/loop.h
-@@ -54,6 +54,7 @@ struct loop_device {
- 	gfp_t		old_gfp_mask;
- 
- 	spinlock_t		lo_lock;
-+	struct workqueue_struct *wq;
- 	struct list_head	write_cmd_head;
- 	struct work_struct	write_work;
- 	bool			write_started;
--- 
-1.9.1
 If there are too many pending per work I/O, too many
 high priority work thread can be generated so that
 system performance can be effected.
 
-This patch limits the max_active parameter of workqueue as 16.
+This patch limits the max pending per work I/O as 16,
+and will fackback to single queue mode when the max
+number is reached.
 
 This patch fixes Fedora 22 live booting performance
 regression when it is booted from squashfs over dm
@@ -146,24 +23,82 @@ as loop block, and ext3fs.img is inside the squashfs
 
 Fixes: b5dd2f6047ca108001328aac0e8588edd15f1778
 Cc: stable@vger.kernel.org (v4.0)
-Cc: Justin M. Forbes <jforbes@fedoraproject.org>
+Reported-by: Justin M. Forbes <jforbes@fedoraproject.org>
+Tested-by: Justin M. Forbes <jforbes@fedoraproject.org>
 Signed-off-by: Ming Lei <ming.lei@canonical.com>
 ---
- drivers/block/loop.c | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ drivers/block/loop.c | 19 +++++++++++++++++--
+ drivers/block/loop.h |  2 ++
+ 2 files changed, 19 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/block/loop.c b/drivers/block/loop.c
-index 3dc1598..1bee523 100644
+index ae3fcb4..5a728c6 100644
 --- a/drivers/block/loop.c
 +++ b/drivers/block/loop.c
-@@ -725,7 +725,7 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
- 		goto out_putf;
- 	error = -ENOMEM;
- 	lo->wq = alloc_workqueue("kloopd%d",
--			WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_UNBOUND, 0,
-+			WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_UNBOUND, 16,
- 			lo->lo_number);
- 	if (!lo->wq)
- 		goto out_putf;
+@@ -1425,13 +1425,24 @@ static int loop_queue_rq(struct blk_mq_hw_ctx *hctx,
+ 		const struct blk_mq_queue_data *bd)
+ {
+ 	struct loop_cmd *cmd = blk_mq_rq_to_pdu(bd->rq);
++	struct loop_device *lo = cmd->rq->q->queuedata;
++	bool single_queue = !!(cmd->rq->cmd_flags & REQ_WRITE);
++
++	/*
++	 * Fallback to single queue mode if the pending per work
++	 * I/O number reaches 16, otherwise too many high priority
++	 * worker thread may effect system performance as reported
++	 * in fedora live booting from squashfs over loop.
++	 */
++	if (atomic_read(&lo->pending_per_work_io) >= 16)
++		single_queue = true;
+ 
+ 	blk_mq_start_request(bd->rq);
+ 
+-	if (cmd->rq->cmd_flags & REQ_WRITE) {
+-		struct loop_device *lo = cmd->rq->q->queuedata;
++	if (single_queue) {
+ 		bool need_sched = true;
+ 
++		cmd->per_work_io = false;
+ 		spin_lock_irq(&lo->lo_lock);
+ 		if (lo->write_started)
+ 			need_sched = false;
+@@ -1443,6 +1454,8 @@ static int loop_queue_rq(struct blk_mq_hw_ctx *hctx,
+ 		if (need_sched)
+ 			queue_work(loop_wq, &lo->write_work);
+ 	} else {
++		atomic_inc(&lo->pending_per_work_io);
++		cmd->per_work_io = true;
+ 		queue_work(loop_wq, &cmd->read_work);
+ 	}
+ 
+@@ -1467,6 +1480,8 @@ static void loop_handle_cmd(struct loop_cmd *cmd)
+ 	if (ret)
+ 		cmd->rq->errors = -EIO;
+ 	blk_mq_complete_request(cmd->rq);
++	if (cmd->per_work_io)
++		atomic_dec(&lo->pending_per_work_io);
+ }
+ 
+ static void loop_queue_write_work(struct work_struct *work)
+diff --git a/drivers/block/loop.h b/drivers/block/loop.h
+index 301c27f..eb855f5 100644
+--- a/drivers/block/loop.h
++++ b/drivers/block/loop.h
+@@ -57,6 +57,7 @@ struct loop_device {
+ 	struct list_head	write_cmd_head;
+ 	struct work_struct	write_work;
+ 	bool			write_started;
++	atomic_t		pending_per_work_io;
+ 	int			lo_state;
+ 	struct mutex		lo_ctl_mutex;
+ 
+@@ -68,6 +69,7 @@ struct loop_device {
+ struct loop_cmd {
+ 	struct work_struct read_work;
+ 	struct request *rq;
++	bool per_work_io;
+ 	struct list_head list;
+ };
+ 
 -- 
 1.9.1

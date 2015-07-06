@@ -47,6 +47,11 @@ if [ "${SB_PAM}" = "YES" ] ;then
   ApplyPatch pam_ssh_agent_auth-0.9.2-visibility.patch
   # don't use xfree (#1024965)
   ApplyPatch pam_ssh_agent_auth-0.9.3-no-xfree.patch
+  # use SSH_DIGEST_* for fingerprint hashes
+  ApplyPatch pam_ssh_agent_auth-0.9.3-fingerprint-hash.patch -p2
+  # update to current version of agent structure
+  ApplyPatch pam_ssh_agent_auth-0.9.3-agent_structure.patch -p2
+  rm -f $(cat ${CWD}/pam_ssh_agent-rmheaders)
 )
 fi
 
@@ -97,7 +102,7 @@ ApplyPatch openssh-6.6p1-set_remote_ipaddr.patch
 # slightly changed patch from comment 10
 ApplyPatch openssh-6.6.1p1-utf8-banner.patch
 # use different values for DH for Cisco servers (#1026430)
-ApplyPatch openssh-6.6.1p1-cisco-dh-keys.patch
+#ApplyPatch openssh-6.6.1p1-cisco-dh-keys.patch
 # scp file into non-existing directory (#1142223)
 ApplyPatch openssh-6.6.1p1-scp-non-existing-directory.patch
 # Config parser shouldn't accept ip/port syntax (#1130733)
@@ -106,17 +111,18 @@ ApplyPatch openssh-6.6.1p1-ip-port-config-parser.patch
 # https://lists.mindrot.org/pipermail/openssh-unix-dev/2014-April/032497.html
 ApplyPatch openssh-6.7p1-debian-restore-tcp-wrappers.patch
 # apply upstream patch and make sshd -T more consistent (rh#1187521)
-ApplyPatch openssh-6.7p1-sshdT-output.patch
+ApplyPatch openssh-6.8p1-sshdT-output.patch
 # fix ssh-copy-id on non-sh shells (rh#1045191)
-ApplyPatch openssh-6.7p1-fix-ssh-copy-id-on-non-sh-shell.patch
+ApplyPatch openssh-6.8p1-fix-ssh-copy-id-on-non-sh-shell.patch
 # AArch64 has seccomp support since 3.19 kernel (rh#1195065)
 ApplyPatch openssh-6.7p1-seccomp-aarch64.patch
 # Solve issue with ssh-copy-id and keys without trailing newline (rh#1093168)
 ApplyPatch openssh-6.7p1-ssh-copy-id-truncated-keys.patch
 # Add sftp option to force mode of created files (rh#1191055)
 ApplyPatch openssh-6.7p1-sftp-force-permission.patch
-# Upstream bug #1878 reintroduced in openssh6.7p1
-ApplyPatch openssh-6.8p1-880575.patch
+# Memory problems
+# https://bugzilla.mindrot.org/show_bug.cgi?id=2401
+ApplyPatch openssh-6.8p1-memory-problems.patch
 
 ApplyPatch openssh-6.7p1-coverity.patch
 

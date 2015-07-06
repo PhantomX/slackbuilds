@@ -146,5 +146,7 @@ ApplyPatch 0002-Avoid-confusing-compiler-with-dynamically-impossible.patch
 ApplyPatch 0003-Better-fix-for-setenv-.-NULL.patch
 ApplyPatch 0001-CVE-2015-1781-resolv-nss_dns-dns-host.c-buffer-overf.patch
 ApplyPatch 0001-Make-time-zone-file-parser-more-robust-BZ-17715.patch
+ApplyPatch 0001-Record-TTL-also-for-DNS-PTR-queries-bug-18513.patch
+ApplyPatch 0001-Update-headers-for-Linux-4.0-4.1-definitions.patch
 
 set +e +o pipefail

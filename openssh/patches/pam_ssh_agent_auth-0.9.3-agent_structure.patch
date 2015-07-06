@@ -1,0 +1,124 @@
+diff -up openssh-6.8p1/pam_ssh_agent_auth-0.9.3/iterate_ssh_agent_keys.c.psaa-agent openssh-6.8p1/pam_ssh_agent_auth-0.9.3/iterate_ssh_agent_keys.c
+--- openssh-6.8p1/pam_ssh_agent_auth-0.9.3/iterate_ssh_agent_keys.c.psaa-agent	2015-06-02 16:43:09.231902255 +0200
++++ openssh-6.8p1/pam_ssh_agent_auth-0.9.3/iterate_ssh_agent_keys.c	2015-06-02 16:43:09.235902253 +0200
+@@ -37,6 +37,7 @@
+ #include "buffer.h"
+ #include "key.h"
+ #include "authfd.h"
++#include "ssherr.h"
+ #include "ssh.h"
+ #include <stdio.h>
+ #include <sys/types.h>
+@@ -177,34 +178,40 @@ int
+ find_authorized_keys(uid_t uid)
+ {
+     Identity *id;
+-    Key *key;
+     AuthenticationConnection *ac;
+-    char *comment;
+     uint8_t retval = 0;
++    struct ssh_identitylist *idlist;
++    int r, i;
+ 
+     OpenSSL_add_all_digests();
+     session_id2 = session_id2_gen();
+ 
+     if ((ac = ssh_get_authentication_connection_for_uid(uid))) {
+         verbose("Contacted ssh-agent of user %s (%u)", getpwuid(uid)->pw_name, uid);
+-        for (key = ssh_get_first_identity(ac, &comment, 2); key != NULL; key = ssh_get_next_identity(ac, &comment, 2)) 
++		if ((r = ssh_fetch_identitylist(ac->fd, 2,
++		    &idlist)) != 0) {
++			if (r != SSH_ERR_AGENT_NO_IDENTITIES)
++				fprintf(stderr, "error fetching identities for "
++				    "protocol %d: %s\n", 2, ssh_err(r));
++		} else
++		for (i = 0; i < idlist->nkeys; i++)
+         {
+-            if(key != NULL) {
++            if(idlist->keys[i] != NULL) {
+                 id = xcalloc(1, sizeof(*id));
+-                id->key = key;
+-                id->filename = comment;
++                id->key = idlist->keys[i];
++                id->filename = idlist->comments[i];
+                 id->ac = ac;
+                 if(userauth_pubkey_from_id(id)) {
+                     retval = 1;
+                 }
+-                free(id->filename);
+-                key_free(id->key);
+                 free(id);
+                 if(retval == 1)
+                     break;
+             }
+         }
+-        ssh_close_authentication_connection(ac);
++        ssh_free_identitylist(idlist);
++        ssh_close_authentication_socket(ac->fd);
++        free(ac);
+     }
+     else {
+         verbose("No ssh-agent could be contacted");
+diff -up openssh-6.8p1/pam_ssh_agent_auth-0.9.3/identity.h.psaa-agent openssh-6.8p1/pam_ssh_agent_auth-0.9.3/identity.h
+--- openssh-6.8p1/pam_ssh_agent_auth-0.9.3/identity.h.psaa-agent	2009-08-09 02:54:21.000000000 +0200
++++ openssh-6.8p1/pam_ssh_agent_auth-0.9.3/identity.h	2015-06-02 16:43:09.235902253 +0200
+@@ -14,6 +14,12 @@
+ typedef struct identity Identity;
+ typedef struct idlist Idlist;
+ 
++typedef struct {
++       int     fd;
++       Buffer  identities;
++       int     howmany;
++}      AuthenticationConnection;
++
+ struct identity {
+     TAILQ_ENTRY(identity) next;
+     AuthenticationConnection *ac;   /* set if agent supports key */
+diff -up openssh-6.8p1/pam_ssh_agent_auth-0.9.3/userauth_pubkey_from_id.c.psaa-agent openssh-6.8p1/pam_ssh_agent_auth-0.9.3/userauth_pubkey_from_id.c
+--- openssh-6.8p1/pam_ssh_agent_auth-0.9.3/userauth_pubkey_from_id.c.psaa-agent	2015-06-02 16:43:09.232902254 +0200
++++ openssh-6.8p1/pam_ssh_agent_auth-0.9.3/userauth_pubkey_from_id.c	2015-06-02 16:45:07.699822094 +0200
+@@ -54,10 +54,11 @@ extern uint8_t  session_id_len;
+ int
+ userauth_pubkey_from_id(Identity * id)
+ {
+-    Buffer          b = { 0 };
++    Buffer          b;
+     char           *pkalg = NULL;
+     u_char         *pkblob = NULL, *sig = NULL;
+-    u_int           blen = 0, slen = 0;
++    u_int           blen = 0;
++    size_t          slen = 0;
+     int             authenticated = 0;
+ 
+     pkalg = (char *) key_ssh_name(id->key);
+@@ -65,10 +65,10 @@ userauth_pubkey_from_id(Identity * id)
+ 
+     /* first test if this key is even allowed */
+     if(! pam_user_key_allowed(id->key))
+-        goto user_auth_clean_exit;
++        goto user_auth_clean_exit_without_buffer;
+ 
+     if(key_to_blob(id->key, &pkblob, &blen) == 0)
+-        goto user_auth_clean_exit;
++        goto user_auth_clean_exit_without_buffer;
+ 
+     /* construct packet to sign and test */
+     buffer_init(&b);
+@@ -70,7 +70,7 @@ userauth_pubkey_from_id(Identity * id)
+     buffer_put_cstring(&b, pkalg);
+     buffer_put_string(&b, pkblob, blen);
+ 
+-    if(ssh_agent_sign(id->ac, id->key, &sig, &slen, buffer_ptr(&b), buffer_len(&b)) != 0)
++    if(ssh_agent_sign(id->ac->fd, id->key, &sig, &slen, buffer_ptr(&b), buffer_len(&b), 1) != 0)
+         goto user_auth_clean_exit;
+ 
+     /* test for correct signature */
+@@ -92,6 +92,7 @@ userauth_pubkey_from_id(Identity * id)
+   user_auth_clean_exit:
+     if(&b != NULL)
+         buffer_free(&b);
++  user_auth_clean_exit_without_buffer:
+     if(sig != NULL)
+         free(sig);
+     if(pkblob != NULL)

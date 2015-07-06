@@ -1,0 +1,439 @@
+From 8bbf108c19b8e9d42f538941a3ae5db49d4c53cd Mon Sep 17 00:00:00 2001
+From: Paulo Flabiano Smorigo <pfsmorigo@linux.vnet.ibm.com>
+Date: Wed, 13 Aug 2014 19:00:19 +0000
+Subject: [PATCH 142/152] Files reorganization and include some libgcc fuctions
+
+As we avoid libgcc dependency for powerpc64el, we moved some functions
+to other files and add the necessary ones.
+
+* Makefile.core.def: Include compiler-rt.S.
+* misc.c: Add the necessary libgcc functions.
+* compiler-rt.S: New file.
+* libgcc.h: Move some content from here ...
+* compiler.h: ... to here.
+
+Also-By: Brent Baude <bbaude@redhat.com>
+Also-By: Vladimir 'phcoder' Serbinenko <phcoder@gmail.com>
+---
+ grub-core/Makefile.core.def          |   1 +
+ grub-core/kern/misc.c                | 107 ++++++++++++++++++++++++++++
+ grub-core/kern/powerpc/compiler-rt.S | 130 +++++++++++++++++++++++++++++++++++
+ include/grub/compiler.h              |  61 ++++++++++++++++
+ include/grub/libgcc.h                |  67 ------------------
+ 5 files changed, 299 insertions(+), 67 deletions(-)
+ create mode 100644 grub-core/kern/powerpc/compiler-rt.S
+
+diff --git a/grub-core/Makefile.core.def b/grub-core/Makefile.core.def
+index 7bf1c8a..9ff9ae5 100644
+--- a/grub-core/Makefile.core.def
++++ b/grub-core/Makefile.core.def
+@@ -252,6 +252,7 @@ kernel = {
+ 
+   powerpc_ieee1275 = kern/powerpc/cache.S;
+   powerpc_ieee1275 = kern/powerpc/dl.c;
++  powerpc_ieee1275 = kern/powerpc/compiler-rt.S;
+ 
+   sparc64_ieee1275 = kern/sparc64/cache.S;
+   sparc64_ieee1275 = kern/sparc64/dl.c;
+diff --git a/grub-core/kern/misc.c b/grub-core/kern/misc.c
+index a56cfe7..a3e5056 100644
+--- a/grub-core/kern/misc.c
++++ b/grub-core/kern/misc.c
+@@ -1345,3 +1345,110 @@ grub_real_boot_time (const char *file,
+   grub_error_pop ();
+ }
+ #endif
++
++#if defined (NO_LIBGCC)
++
++/* Based on libgcc2.c from gcc suite.  */
++int
++__ucmpdi2 (grub_uint64_t a, grub_uint64_t b)
++{
++  union component64 ac, bc;
++  ac.full = a;
++  bc.full = b;
++
++  if (ac.high < bc.high)
++    return 0;
++  else if (ac.high > bc.high)
++    return 2;
++
++  if (ac.low < bc.low)
++    return 0;
++  else if (ac.low > bc.low)
++    return 2;
++  return 1;
++}
++
++
++/* Based on libgcc2.c from gcc suite.  */
++grub_uint64_t
++__lshrdi3 (grub_uint64_t u, int b)
++{
++  if (b == 0)
++    return u;
++
++  const union component64 uu = {.full = u};
++  const int bm = 32 - b;
++  union component64 w;
++
++  if (bm <= 0)
++    {
++      w.high = 0;
++      w.low = (grub_uint32_t) uu.high >> -bm;
++    }
++  else
++    {
++      const grub_uint32_t carries = (grub_uint32_t) uu.high << bm;
++
++      w.high = (grub_uint32_t) uu.high >> b;
++      w.low = ((grub_uint32_t) uu.low >> b) | carries;
++    }
++
++  return w.full;
++}
++
++/* Based on libgcc2.c from gcc suite.  */
++grub_uint64_t
++__ashrdi3 (grub_uint64_t u, int b)
++{
++  if (b == 0)
++    return u;
++
++  const union component64 uu = {.full = u};
++  const int bm = 32 - b;
++  union component64 w;
++
++  if (bm <= 0)
++    {
++      /* w.high = 1..1 or 0..0 */
++      w.high = uu.high >> (32 - 1);
++      w.low = uu.high >> -bm;
++    }
++  else
++    {
++      const grub_uint32_t carries = (grub_uint32_t) uu.high << bm;
++
++      w.high = uu.high >> b;
++      w.low = ((grub_uint32_t) uu.low >> b) | carries;
++    }
++
++  return w.full;
++}
++
++/* Based on libgcc2.c from gcc suite.  */
++grub_uint64_t
++__ashldi3 (grub_uint64_t u, int b)
++{
++  if (b == 0)
++    return u;
++
++  const union component64 uu = {.full = u};
++  const int bm = 32 - b;
++  union component64 w;
++
++  if (bm <= 0)
++    {
++      w.low = 0;
++      w.high = (grub_uint32_t) uu.low << -bm;
++    }
++  else
++    {
++      const grub_uint32_t carries = (grub_uint32_t) uu.low >> bm;
++
++      w.low = (grub_uint32_t) uu.low << b;
++      w.high = ((grub_uint32_t) uu.high << b) | carries;
++    }
++
++  return w.full;
++}
++
++#endif
+diff --git a/grub-core/kern/powerpc/compiler-rt.S b/grub-core/kern/powerpc/compiler-rt.S
+new file mode 100644
+index 0000000..63e3a0d
+--- /dev/null
++++ b/grub-core/kern/powerpc/compiler-rt.S
+@@ -0,0 +1,130 @@
++/*
++ * Special support for eabi and SVR4
++ *
++ *   Copyright (C) 1995-2014 Free Software Foundation, Inc.
++ *   Written By Michael Meissner
++ *   64-bit support written by David Edelsohn
++ *
++ * This file is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License as published by the
++ * Free Software Foundation; either version 3, or (at your option) any
++ * later version.
++ *
++ * This file is distributed in the hope that it will be useful, but
++ * WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * Under Section 7 of GPL version 3, you are granted additional
++ * permissions described in the GCC Runtime Library Exception, version
++ * 3.1, as published by the Free Software Foundation.
++ *
++ * You should have received a copy of the GNU General Public License and
++ * a copy of the GCC Runtime Library Exception along with this program;
++ * see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
++ * <http://www.gnu.org/licenses/>.
++ */
++
++/* Do any initializations needed for the eabi environment */
++
++#include <grub/symbol.h>
++#include <grub/dl.h>
++
++	.section ".text"
++
++#define CFI_RESTORE(reg)		.cfi_restore reg
++#define CFI_OFFSET(reg, off)		.cfi_offset reg, off
++#define CFI_DEF_CFA_REGISTER(reg)	.cfi_def_cfa_register reg
++#define CFI_STARTPROC			.cfi_startproc
++#define CFI_ENDPROC			.cfi_endproc
++
++/* Routines for restoring integer registers, called by the compiler.  */
++/* Called with r11 pointing to the stack header word of the caller of the */
++/* function, just beyond the end of the integer restore area.  */
++
++CFI_STARTPROC
++CFI_DEF_CFA_REGISTER (11)
++CFI_OFFSET (65, 4)
++CFI_OFFSET (14, -72)
++CFI_OFFSET (15, -68)
++CFI_OFFSET (16, -64)
++CFI_OFFSET (17, -60)
++CFI_OFFSET (18, -56)
++CFI_OFFSET (19, -52)
++CFI_OFFSET (20, -48)
++CFI_OFFSET (21, -44)
++CFI_OFFSET (22, -40)
++CFI_OFFSET (23, -36)
++CFI_OFFSET (24, -32)
++CFI_OFFSET (25, -28)
++CFI_OFFSET (26, -24)
++CFI_OFFSET (27, -20)
++CFI_OFFSET (28, -16)
++CFI_OFFSET (29, -12)
++CFI_OFFSET (30, -8)
++CFI_OFFSET (31, -4)
++FUNCTION(_restgpr_14_x)	lwz	14,-72(11)	/* restore gp registers */
++CFI_RESTORE (14)
++FUNCTION(_restgpr_15_x)	lwz	15,-68(11)
++CFI_RESTORE (15)
++FUNCTION(_restgpr_16_x)	lwz	16,-64(11)
++CFI_RESTORE (16)
++FUNCTION(_restgpr_17_x)	lwz	17,-60(11)
++CFI_RESTORE (17)
++FUNCTION(_restgpr_18_x)	lwz	18,-56(11)
++CFI_RESTORE (18)
++FUNCTION(_restgpr_19_x)	lwz	19,-52(11)
++CFI_RESTORE (19)
++FUNCTION(_restgpr_20_x)	lwz	20,-48(11)
++CFI_RESTORE (20)
++FUNCTION(_restgpr_21_x)	lwz	21,-44(11)
++CFI_RESTORE (21)
++FUNCTION(_restgpr_22_x)	lwz	22,-40(11)
++CFI_RESTORE (22)
++FUNCTION(_restgpr_23_x)	lwz	23,-36(11)
++CFI_RESTORE (23)
++FUNCTION(_restgpr_24_x)	lwz	24,-32(11)
++CFI_RESTORE (24)
++FUNCTION(_restgpr_25_x)	lwz	25,-28(11)
++CFI_RESTORE (25)
++FUNCTION(_restgpr_26_x)	lwz	26,-24(11)
++CFI_RESTORE (26)
++FUNCTION(_restgpr_27_x)	lwz	27,-20(11)
++CFI_RESTORE (27)
++FUNCTION(_restgpr_28_x)	lwz	28,-16(11)
++CFI_RESTORE (28)
++FUNCTION(_restgpr_29_x)	lwz	29,-12(11)
++CFI_RESTORE (29)
++FUNCTION(_restgpr_30_x)	lwz	30,-8(11)
++CFI_RESTORE (30)
++FUNCTION(_restgpr_31_x)	lwz	0,4(11)
++				lwz	31,-4(11)
++CFI_RESTORE (31)
++				mtlr	0
++CFI_RESTORE (65)
++				mr	1,11
++CFI_DEF_CFA_REGISTER (1)
++				blr
++CFI_ENDPROC
++
++CFI_STARTPROC
++FUNCTION(_savegpr_14)	stw	14,-72(11)	/* save gp registers */
++FUNCTION(_savegpr_15)	stw	15,-68(11)
++FUNCTION(_savegpr_16)	stw	16,-64(11)
++FUNCTION(_savegpr_17)	stw	17,-60(11)
++FUNCTION(_savegpr_18)	stw	18,-56(11)
++FUNCTION(_savegpr_19)	stw	19,-52(11)
++FUNCTION(_savegpr_20)	stw	20,-48(11)
++FUNCTION(_savegpr_21)	stw	21,-44(11)
++FUNCTION(_savegpr_22)	stw	22,-40(11)
++FUNCTION(_savegpr_23)	stw	23,-36(11)
++FUNCTION(_savegpr_24)	stw	24,-32(11)
++FUNCTION(_savegpr_25)	stw	25,-28(11)
++FUNCTION(_savegpr_26)	stw	26,-24(11)
++FUNCTION(_savegpr_27)	stw	27,-20(11)
++FUNCTION(_savegpr_28)	stw	28,-16(11)
++FUNCTION(_savegpr_29)	stw	29,-12(11)
++FUNCTION(_savegpr_30)	stw	30,-8(11)
++FUNCTION(_savegpr_31)	stw	31,-4(11)
++			blr
++CFI_ENDPROC
+diff --git a/include/grub/compiler.h b/include/grub/compiler.h
+index c9e1d7a..a9a684c 100644
+--- a/include/grub/compiler.h
++++ b/include/grub/compiler.h
+@@ -48,4 +48,65 @@
+ #  define WARN_UNUSED_RESULT
+ #endif
+ 
++#include "types.h"
++
++union component64
++{
++  grub_uint64_t full;
++  struct
++  {
++#ifdef GRUB_CPU_WORDS_BIGENDIAN
++    grub_uint32_t high;
++    grub_uint32_t low;
++#else
++    grub_uint32_t low;
++    grub_uint32_t high;
++#endif
++  };
++};
++
++#if defined (__powerpc__)
++grub_uint64_t EXPORT_FUNC (__lshrdi3) (grub_uint64_t u, int b);
++grub_uint64_t EXPORT_FUNC (__ashrdi3) (grub_uint64_t u, int b);
++grub_uint64_t EXPORT_FUNC (__ashldi3) (grub_uint64_t u, int b);
++int EXPORT_FUNC(__ucmpdi2) (grub_uint64_t a, grub_uint64_t b);
++void EXPORT_FUNC (_restgpr_14_x) (void);
++void EXPORT_FUNC (_restgpr_15_x) (void);
++void EXPORT_FUNC (_restgpr_16_x) (void);
++void EXPORT_FUNC (_restgpr_17_x) (void);
++void EXPORT_FUNC (_restgpr_18_x) (void);
++void EXPORT_FUNC (_restgpr_19_x) (void);
++void EXPORT_FUNC (_restgpr_20_x) (void);
++void EXPORT_FUNC (_restgpr_21_x) (void);
++void EXPORT_FUNC (_restgpr_22_x) (void);
++void EXPORT_FUNC (_restgpr_23_x) (void);
++void EXPORT_FUNC (_restgpr_24_x) (void);
++void EXPORT_FUNC (_restgpr_25_x) (void);
++void EXPORT_FUNC (_restgpr_26_x) (void);
++void EXPORT_FUNC (_restgpr_27_x) (void);
++void EXPORT_FUNC (_restgpr_28_x) (void);
++void EXPORT_FUNC (_restgpr_29_x) (void);
++void EXPORT_FUNC (_restgpr_30_x) (void);
++void EXPORT_FUNC (_restgpr_31_x) (void);
++void EXPORT_FUNC (_savegpr_14) (void);
++void EXPORT_FUNC (_savegpr_15) (void);
++void EXPORT_FUNC (_savegpr_16) (void);
++void EXPORT_FUNC (_savegpr_17) (void);
++void EXPORT_FUNC (_savegpr_18) (void);
++void EXPORT_FUNC (_savegpr_19) (void);
++void EXPORT_FUNC (_savegpr_20) (void);
++void EXPORT_FUNC (_savegpr_21) (void);
++void EXPORT_FUNC (_savegpr_22) (void);
++void EXPORT_FUNC (_savegpr_23) (void);
++void EXPORT_FUNC (_savegpr_24) (void);
++void EXPORT_FUNC (_savegpr_25) (void);
++void EXPORT_FUNC (_savegpr_26) (void);
++void EXPORT_FUNC (_savegpr_27) (void);
++void EXPORT_FUNC (_savegpr_28) (void);
++void EXPORT_FUNC (_savegpr_29) (void);
++void EXPORT_FUNC (_savegpr_30) (void);
++void EXPORT_FUNC (_savegpr_31) (void);
++
++#endif
++
+ #endif /* ! GRUB_COMPILER_HEADER */
+diff --git a/include/grub/libgcc.h b/include/grub/libgcc.h
+index 8e93b67..5bdb8fb 100644
+--- a/include/grub/libgcc.h
++++ b/include/grub/libgcc.h
+@@ -16,73 +16,6 @@
+  *  along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
+-/* We need to include config-util.h.in for HAVE_*.  */
+-#ifndef __STDC_VERSION__
+-#define __STDC_VERSION__ 0
+-#endif
+-#include <config-util.h>
+-
+-/* On x86 these functions aren't really needed. Save some space.  */
+-#if !defined (__i386__) && !defined (__x86_64__)
+-# ifdef HAVE___ASHLDI3
+-void EXPORT_FUNC (__ashldi3) (void);
+-# endif
+-# ifdef HAVE___ASHRDI3
+-void EXPORT_FUNC (__ashrdi3) (void);
+-# endif
+-# ifdef HAVE___LSHRDI3
+-void EXPORT_FUNC (__lshrdi3) (void);
+-# endif
+-# ifdef HAVE___UCMPDI2
+-void EXPORT_FUNC (__ucmpdi2) (void);
+-# endif
+-# ifdef HAVE___BSWAPSI2
+-void EXPORT_FUNC (__bswapsi2) (void);
+-# endif
+-# ifdef HAVE___BSWAPDI2
+-void EXPORT_FUNC (__bswapdi2) (void);
+-# endif
+-#endif
+-
+-#ifdef HAVE__RESTGPR_14_X
+-void EXPORT_FUNC (_restgpr_14_x) (void);
+-void EXPORT_FUNC (_restgpr_15_x) (void);
+-void EXPORT_FUNC (_restgpr_16_x) (void);
+-void EXPORT_FUNC (_restgpr_17_x) (void);
+-void EXPORT_FUNC (_restgpr_18_x) (void);
+-void EXPORT_FUNC (_restgpr_19_x) (void);
+-void EXPORT_FUNC (_restgpr_20_x) (void);
+-void EXPORT_FUNC (_restgpr_21_x) (void);
+-void EXPORT_FUNC (_restgpr_22_x) (void);
+-void EXPORT_FUNC (_restgpr_23_x) (void);
+-void EXPORT_FUNC (_restgpr_24_x) (void);
+-void EXPORT_FUNC (_restgpr_25_x) (void);
+-void EXPORT_FUNC (_restgpr_26_x) (void);
+-void EXPORT_FUNC (_restgpr_27_x) (void);
+-void EXPORT_FUNC (_restgpr_28_x) (void);
+-void EXPORT_FUNC (_restgpr_29_x) (void);
+-void EXPORT_FUNC (_restgpr_30_x) (void);
+-void EXPORT_FUNC (_restgpr_31_x) (void);
+-void EXPORT_FUNC (_savegpr_14) (void);
+-void EXPORT_FUNC (_savegpr_15) (void);
+-void EXPORT_FUNC (_savegpr_16) (void);
+-void EXPORT_FUNC (_savegpr_17) (void);
+-void EXPORT_FUNC (_savegpr_18) (void);
+-void EXPORT_FUNC (_savegpr_19) (void);
+-void EXPORT_FUNC (_savegpr_20) (void);
+-void EXPORT_FUNC (_savegpr_21) (void);
+-void EXPORT_FUNC (_savegpr_22) (void);
+-void EXPORT_FUNC (_savegpr_23) (void);
+-void EXPORT_FUNC (_savegpr_24) (void);
+-void EXPORT_FUNC (_savegpr_25) (void);
+-void EXPORT_FUNC (_savegpr_26) (void);
+-void EXPORT_FUNC (_savegpr_27) (void);
+-void EXPORT_FUNC (_savegpr_28) (void);
+-void EXPORT_FUNC (_savegpr_29) (void);
+-void EXPORT_FUNC (_savegpr_30) (void);
+-void EXPORT_FUNC (_savegpr_31) (void);
+-#endif
+-
+ #if defined (__arm__)
+ void EXPORT_FUNC (__aeabi_lasr) (void);
+ void EXPORT_FUNC (__aeabi_llsl) (void);
+-- 
+1.9.3
+

@@ -3,8 +3,18 @@ set -e -o pipefail
 
 SB_PATCHDIR=${CWD}/patches
 
-# fix for gcc 4.4/glibc 2.9.90 http://developer.berlios.de/patch/index.php?func=detailpatch&patch_id=2699&group_id=5358
-zcat ${SB_PATCHDIR}/${NAME}-drop-const.patch.gz | patch -p1 -E --backup --verbose
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dso.patch
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
+### Fedora
+# use system tinyxml, squirrel, astyle libraries
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-13.12-unbundle.patch
+# set Fedora specific paths for spellchecker and thesaurus
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-13.12-spellchecker-settings.patch
+# wxTreeItemId needs to be initialized with long int
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-wxtreeitemid.patch
+# backported change for astyle 2.05
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-13.12-astyle-2.05.patch
+
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
 
 set +e +o pipefail

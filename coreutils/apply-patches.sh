@@ -40,4 +40,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-getgrouplist.patch
 # Prevent buffer overflow in who(1).
 zcat ${SB_PATCHDIR}/${NAME}-overflow.patch.gz | patch -p1 -E --backup --verbose
 
+# Set to YES if autogen is needed
+SB_AUTOGEN=YES
+
 set +e +o pipefail

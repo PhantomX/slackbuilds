@@ -35,7 +35,7 @@ ApplyPatch() {
   esac
 }
 
-## upstream patches
+ApplyPatch use-python2.patch
 
 # search /usr/lib{,64}/mozilla/plugins-wrapped for browser plugins too
 ApplyPatch webkit-qtwebkit-2.2-tp1-pluginpath.patch
@@ -43,8 +43,11 @@ ApplyPatch webkit-qtwebkit-2.2-tp1-pluginpath.patch
 # smaller debuginfo s/-g/-g1/ (debian uses -gstabs) to avoid 4gb size limit
 ApplyPatch qtwebkit-2.3-debuginfo.patch
 
-# tweak linker flags to minimize memory usage on "small" platforms
-ApplyPatch qtwebkit-2.3-save_memory.patch
+if [ $(awk '/^MemTotal:/ { print $2 }' /proc/meminfo) -lt 4200000 ] ;then
+  # tweak linker flags to minimize memory usage on "small" platforms
+  ApplyPatch qtwebkit-2.3-save_memory.patch
+  export BINUTILS_LD=bfd
+fi
 
 case "${ARCH}" in
   s390*)
@@ -58,5 +61,13 @@ esac
 
 # truly madly deeply no rpath please, kthxbye
 ApplyPatch webkit-qtwebkit-23-no_rpath.patch
+
+## upstream patches
+# backport from qt5-qtwebkit
+# qtwebkit: undefined symbol: g_type_class_adjust_private_offset
+# https://bugzilla.redhat.com/show_bug.cgi?id=1202735
+ApplyPatch webkit-qtwebkit-23-gcc5.patch
+# backport from qt5-qtwebkit: URLs visited during private browsing show up in WebpageIcons.db
+ApplyPatch webkit-qtwebkit-23-private_browsing.patch
 
 set +e +o pipefail

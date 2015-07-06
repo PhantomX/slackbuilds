@@ -184,47 +184,23 @@ ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
-#CVE-2015-0275 rhbz 1193907 1195178
-ApplyPatch ext4-Allocate-entire-range-in-zero-range.patch
-
-#rhbz 1196825
-ApplyPatch security-yama-Remove-unnecessary-selects-from-Kconfi.patch
-
-#rhbz 1201532
-ApplyPatch HID-multitouch-add-support-of-clickpads.patch
-
 #CVE-2015-2150 rhbz 1196266 1200397
 ApplyPatch xen-pciback-Don-t-disable-PCI_COMMAND-on-PCI-device-.patch
+
+#rhbz 1212230
+ApplyPatch Input-synaptics-pin-3-touches-when-the-firmware-repo.patch
 
 #rhbz 1210857
 ApplyPatch blk-loop-avoid-too-many-pending-per-work-IO.patch
 
-#rhbz 1219343
-ApplyPatch 0001-HID-usbhid-Add-HID_QUIRK_NOGET-for-Aten-DVI-KVM-swit.patch
-
 #rhbz 1220118
 ApplyPatch media-Fix-regression-in-some-more-dib0700-base.patch
-
-#rhbz 1214474
-ApplyPatch Input-add-vmmouse-driver.patch
-ApplyPatch Input-joydev-don-t-classify-the-vmmouse-as-a-joystic.patch
-
-#rhbz 1218882
-ApplyPatch 0001-target-use-vfs_iter_read-write-in-fd_do_rw.patch
 
 #rhbz 1133378
 ApplyPatch firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
 
-# FAF Problem 885578
-ApplyPatch 0001-mwifiex-use-del_timer-variant-in-interrupt-context.patch
-
 #rhbz 1226743
 ApplyPatch drm-i915-turn-off-wc-mmaps.patch
-
-#rhbz 1212230
-ApplyPatch Input-Revert-Revert-synaptics-use-dmax-in-input_mt_a.patch
-ApplyPatch Input-synaptics-allocate-3-slots-to-keep-stability-i.patch
-ApplyPatch Input-synaptics-pin-3-touches-when-the-firmware-repo.patch
 
 # CVE-2015-XXXX rhbz 1230770 1230774
 ApplyPatch kvm-x86-fix-kvm_apic_has_events-to-check-for-NULL-po.patch

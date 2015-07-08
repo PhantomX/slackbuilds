@@ -19,6 +19,7 @@ patch -p1 --verbose --backup --suffix=.orig -i ${SB_PATCHDIR}/${NAME}-5.26-webco
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.12-test-passwd-segv-tty.patch
 # patch to compile driver/test-xdpms
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.12-tests-miscfix.patch
-# Fix test-passwd compilation for lock.c change
+# Enable double buffer on cubestorm
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/${NAME}-5.32-0004-cubestorm-enable-double-buffer-on-linux.patch
 
 set +e +o pipefail

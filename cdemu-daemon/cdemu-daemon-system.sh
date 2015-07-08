@@ -11,4 +11,4 @@ SYS_AUDIO_DRIVER=${SYS_AUDIO_DRIVER:-null}
 SYS_LOG_FILE=${SYS_LOG_FILE:-/tmp/cdemu-daemon.log}
 
 # Start the daemon
-/usr/sbin/cdemud --ctl-device=/dev/vhba_ctl --bus=system --num-devices=${NUM_DEVICES} --audio-driver=${SYS_AUDIO_DRIVER} --logfile=${SYS_LOG_FILE}
+exec /usr/bin/cdemu-daemon --ctl-device=/dev/vhba_ctl --bus=system --num-devices=${NUM_DEVICES} --audio-driver=${SYS_AUDIO_DRIVER} --logfile=${SYS_LOG_FILE}

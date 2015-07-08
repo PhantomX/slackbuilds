@@ -28,5 +28,13 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio.32bit.crc.diff
 # ~> downstream
 # ~> http://lists.gnu.org/archive/html/bug-cpio/2013-09/msg00005.html
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.11-treat-read-errors.patch
+# heap-based buffer overrun
+# ~> #1167573
+# ~> upstream: git diff 3945f9db..58df4f1b
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.11-CVE-2014-9112.patch
+# Related to CVE-2014-9112 patch.
+# ~> reported upstream:
+#    http://lists.gnu.org/archive/html/bug-cpio/2014-12/msg00005.html
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cpio-2.11-testsuite-CVE-2014-9112.patch
 
 set +e +o pipefail

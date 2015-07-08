@@ -12,4 +12,4 @@ AUDIO_DRIVER=${AUDIO_DRIVER:-pulse}
 LOG_FILE=${LOG_FILE:-~/.cdemu-daemon.log}
 
 # Start the daemon
-/usr/sbin/cdemud --ctl-device=/dev/vhba_ctl --bus=session --num-devices=${NUM_DEVICES} --audio-driver=${AUDIO_DRIVER} --logfile=${LOG_FILE}
+exec /usr/bin/cdemu-daemon --ctl-device=/dev/vhba_ctl --bus=session --num-devices=${NUM_DEVICES} --audio-driver=${AUDIO_DRIVER} --logfile=${LOG_FILE}

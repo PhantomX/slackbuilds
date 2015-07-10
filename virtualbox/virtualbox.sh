@@ -99,7 +99,7 @@ if [ "${SHUTDOWN}" = "true" ]; then
   exit 0
 fi
 
-APP=$(which $0)
+APP=$(basename $0)
 APP=${APP##/*/}
 case "$APP" in
   VirtualBox|VBox|virtualbox)

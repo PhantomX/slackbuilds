@@ -4,8 +4,8 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-# VBOX_WITH_UPDATE to enable/disable update dialog
-patch -p1 -E --backup -z .noup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.4-noupdate.patch
+patch -p1 -E --backup -z .fix --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.0-fix.patch
+#patch -p1 -E --backup -z .noup --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.4-noupdate.patch
 patch -p1 -E --backup -z .nodkms --verbose -i ${SB_PATCHDIR}/${NAME}-4.2.0-nodkms.patch
 patch -p1 -E --backup -z .dso --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.0-dso.patch
 
@@ -13,8 +13,6 @@ patch -p1 -E --backup -z .dso --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.0-dso.patc
 # unset useless/problematic mesa checks in configure
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ose-3.2.8-mesa-check.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.1.4-asneeded.patch
-# add the --enable-vnc option to configure script
-#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4-vnc.patch
 # Mantain ~/.Virtualbox
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.2-restore_old_machines_dir.patch
 
@@ -29,7 +27,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.0-user-courier-ins
 # don't check for:
 # mkisofs: we're not going to build the additions .iso file
 # makeself: we're not going to create the stanalone .run installers
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.0-dont-check-for-mkisofs-or-makeself.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.0-dont-check-for-mkisofs-or-makeself.patch
 # Set linux 2.6 as default on new machines selector
 patch -p1 -E --backup -z .defsys --verbose -i ${SB_PATCHDIR}/${NAME}-default-to-linux26.patch
 # (tmb) fix build with gsoap >= 2.8.13
@@ -39,6 +37,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-strings.pat
 patch -p1 -E --backup -z .libcxx --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-libcxx.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-noansi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.1.2-testmangle.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.26-gcc.patch
 
 set +e +o pipefail

@@ -19,6 +19,4 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-obex-Use-GLib-helper-func
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0002-autopair-Don-t-handle-the-iCade.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0004-agent-Assert-possible-infinite-loop.patch
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-profiles-network-Fix-not-being-able-to-initiate-conn.patch
-
 set +e +o pipefail

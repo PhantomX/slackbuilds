@@ -1,0 +1,778 @@
+From 4c1fc3e404d648c70bd2f50ac50aeac6ece8872e Mon Sep 17 00:00:00 2001
+From: Daniel Mack <daniel@zonque.org>
+Date: Mon, 6 Jul 2015 19:19:25 -0400
+Subject: [PATCH 2/3] fileio: consolidate write_string_file*()
+
+Merge write_string_file(), write_string_file_no_create() and
+write_string_file_atomic() into write_string_file() and provide a flags mask
+that allows combinations of atomic writing, newline appending and automatic
+file creation. Change all users accordingly.
+---
+ src/backlight/backlight.c                   |  2 +-
+ src/basic/capability.c                      |  2 +-
+ src/basic/cgroup-util.c                     | 12 ++---
+ src/basic/fileio-label.c                    |  2 +-
+ src/basic/fileio.c                          | 74 ++++++++++++++---------------
+ src/basic/fileio.h                          | 10 ++--
+ src/basic/smack-util.c                      |  2 +-
+ src/basic/util.c                            |  2 +-
+ src/binfmt/binfmt.c                         |  6 +--
+ src/core/execute.c                          |  2 +-
+ src/core/machine-id-setup.c                 |  2 +-
+ src/core/main.c                             |  2 +-
+ src/core/smack-setup.c                      |  2 +-
+ src/firstboot/firstboot.c                   |  4 +-
+ src/gpt-auto-generator/gpt-auto-generator.c |  3 +-
+ src/hibernate-resume/hibernate-resume.c     |  2 +-
+ src/login/logind-dbus.c                     |  4 +-
+ src/network/networkd-link.c                 |  6 +--
+ src/nspawn/nspawn.c                         |  8 ++--
+ src/rfkill/rfkill.c                         |  2 +-
+ src/shared/sysctl-util.c                    |  2 +-
+ src/sleep/sleep.c                           |  2 +-
+ src/test/test-btrfs.c                       |  2 +-
+ src/test/test-copy.c                        |  6 +--
+ src/test/test-fileio.c                      | 10 ++--
+ src/test/test-util.c                        | 20 ++++----
+ src/udev/udevd.c                            | 10 ++--
+ src/user-sessions/user-sessions.c           |  2 +-
+ src/vconsole/vconsole-setup.c               |  4 +-
+ 29 files changed, 106 insertions(+), 101 deletions(-)
+
+diff --git a/src/backlight/backlight.c b/src/backlight/backlight.c
+index c79ad65..c8961de 100644
+--- a/src/backlight/backlight.c
++++ b/src/backlight/backlight.c
+@@ -415,7 +415,7 @@ int main(int argc, char *argv[]) {
+                         return EXIT_FAILURE;
+                 }
+ 
+-                r = write_string_file(saved, value);
++                r = write_string_file(saved, value, WRITE_STRING_FILE_CREATE);
+                 if (r < 0) {
+                         log_error_errno(r, "Failed to write %s: %m", saved);
+                         return EXIT_FAILURE;
+diff --git a/src/basic/capability.c b/src/basic/capability.c
+index 58f00e6..8dbe4da 100644
+--- a/src/basic/capability.c
++++ b/src/basic/capability.c
+@@ -204,7 +204,7 @@ static int drop_from_file(const char *fn, uint64_t drop) {
+         if (asprintf(&p, "%u %u", lo, hi) < 0)
+                 return -ENOMEM;
+ 
+-        r = write_string_file(fn, p);
++        r = write_string_file(fn, p, WRITE_STRING_FILE_CREATE);
+         free(p);
+ 
+         return r;
+diff --git a/src/basic/cgroup-util.c b/src/basic/cgroup-util.c
+index 439c551..34a3060 100644
+--- a/src/basic/cgroup-util.c
++++ b/src/basic/cgroup-util.c
+@@ -646,7 +646,7 @@ int cg_attach(const char *controller, const char *path, pid_t pid) {
+ 
+         snprintf(c, sizeof(c), PID_FMT"\n", pid);
+ 
+-        return write_string_file_no_create(fs, c);
++        return write_string_file(fs, c, 0);
+ }
+ 
+ int cg_attach_fallback(const char *controller, const char *path, pid_t pid) {
+@@ -820,7 +820,7 @@ int cg_install_release_agent(const char *controller, const char *agent) {
+ 
+         sc = strstrip(contents);
+         if (sc[0] == 0) {
+-                r = write_string_file_no_create(fs, agent);
++                r = write_string_file(fs, agent, 0);
+                 if (r < 0)
+                         return r;
+         } else if (!streq(sc, agent))
+@@ -840,7 +840,7 @@ int cg_install_release_agent(const char *controller, const char *agent) {
+ 
+         sc = strstrip(contents);
+         if (streq(sc, "0")) {
+-                r = write_string_file_no_create(fs, "1");
++                r = write_string_file(fs, "1", 0);
+                 if (r < 0)
+                         return r;
+ 
+@@ -861,7 +861,7 @@ int cg_uninstall_release_agent(const char *controller) {
+         if (r < 0)
+                 return r;
+ 
+-        r = write_string_file_no_create(fs, "0");
++        r = write_string_file(fs, "0", 0);
+         if (r < 0)
+                 return r;
+ 
+@@ -872,7 +872,7 @@ int cg_uninstall_release_agent(const char *controller) {
+         if (r < 0)
+                 return r;
+ 
+-        r = write_string_file_no_create(fs, "");
++        r = write_string_file(fs, "", 0);
+         if (r < 0)
+                 return r;
+ 
+@@ -1708,7 +1708,7 @@ int cg_set_attribute(const char *controller, const char *path, const char *attri
+         if (r < 0)
+                 return r;
+ 
+-        return write_string_file_no_create(p, value);
++        return write_string_file(p, value, 0);
+ }
+ 
+ int cg_get_attribute(const char *controller, const char *path, const char *attribute, char **ret) {
+diff --git a/src/basic/fileio-label.c b/src/basic/fileio-label.c
+index bec988c..f596f1d 100644
+--- a/src/basic/fileio-label.c
++++ b/src/basic/fileio-label.c
+@@ -31,7 +31,7 @@ int write_string_file_atomic_label(const char *fn, const char *line) {
+         if (r < 0)
+                 return r;
+ 
+-        r = write_string_file_atomic(fn, line);
++        r = write_string_file(fn, line, WRITE_STRING_FILE_CREATE|WRITE_STRING_FILE_ATOMIC);
+ 
+         mac_selinux_create_file_clear();
+ 
+diff --git a/src/basic/fileio.c b/src/basic/fileio.c
+index 82b40aa..d592bf5 100644
+--- a/src/basic/fileio.c
++++ b/src/basic/fileio.c
+@@ -45,42 +45,7 @@ int write_string_stream(FILE *f, const char *line, bool enforce_newline) {
+         return 0;
+ }
+ 
+-int write_string_file(const char *fn, const char *line) {
+-        _cleanup_fclose_ FILE *f = NULL;
+-
+-        assert(fn);
+-        assert(line);
+-
+-        f = fopen(fn, "we");
+-        if (!f)
+-                return -errno;
+-
+-        return write_string_stream(f, line, true);
+-}
+-
+-int write_string_file_no_create(const char *fn, const char *line) {
+-        _cleanup_fclose_ FILE *f = NULL;
+-        int fd;
+-
+-        assert(fn);
+-        assert(line);
+-
+-        /* We manually build our own version of fopen(..., "we") that
+-         * works without O_CREAT */
+-        fd = open(fn, O_WRONLY|O_CLOEXEC|O_NOCTTY);
+-        if (fd < 0)
+-                return -errno;
+-
+-        f = fdopen(fd, "we");
+-        if (!f) {
+-                safe_close(fd);
+-                return -errno;
+-        }
+-
+-        return write_string_stream(f, line, true);
+-}
+-
+-int write_string_file_atomic(const char *fn, const char *line) {
++static int write_string_file_atomic(const char *fn, const char *line, bool enforce_newline) {
+         _cleanup_fclose_ FILE *f = NULL;
+         _cleanup_free_ char *p = NULL;
+         int r;
+@@ -94,7 +59,7 @@ int write_string_file_atomic(const char *fn, const char *line) {
+ 
+         fchmod_umask(fileno(f), 0644);
+ 
+-        r = write_string_stream(f, line, true);
++        r = write_string_stream(f, line, enforce_newline);
+         if (r >= 0) {
+                 if (rename(p, fn) < 0)
+                         r = -errno;
+@@ -106,6 +71,41 @@ int write_string_file_atomic(const char *fn, const char *line) {
+         return r;
+ }
+ 
++int write_string_file(const char *fn, const char *line, WriteStringFileFlags flags) {
++        _cleanup_fclose_ FILE *f = NULL;
++
++        assert(fn);
++        assert(line);
++
++        if (flags & WRITE_STRING_FILE_ATOMIC) {
++                assert(flags & WRITE_STRING_FILE_CREATE);
++
++                return write_string_file_atomic(fn, line, !(flags & WRITE_STRING_FILE_AVOID_NEWLINE));
++        }
++
++        if (flags & WRITE_STRING_FILE_CREATE) {
++                f = fopen(fn, "we");
++                if (!f)
++                        return -errno;
++        } else {
++                int fd;
++
++                /* We manually build our own version of fopen(..., "we") that
++                 * works without O_CREAT */
++                fd = open(fn, O_WRONLY|O_CLOEXEC|O_NOCTTY);
++                if (fd < 0)
++                        return -errno;
++
++                f = fdopen(fd, "we");
++                if (!f) {
++                        safe_close(fd);
++                        return -errno;
++                }
++        }
++
++        return write_string_stream(f, line, !(flags & WRITE_STRING_FILE_AVOID_NEWLINE));
++}
++
+ int read_one_line_file(const char *fn, char **line) {
+         _cleanup_fclose_ FILE *f = NULL;
+         char t[LINE_MAX], *c;
+diff --git a/src/basic/fileio.h b/src/basic/fileio.h
+index 989b904..2e8148f 100644
+--- a/src/basic/fileio.h
++++ b/src/basic/fileio.h
+@@ -25,10 +25,14 @@
+ 
+ #include "macro.h"
+ 
++typedef enum {
++        WRITE_STRING_FILE_CREATE = 1,
++        WRITE_STRING_FILE_ATOMIC = 2,
++        WRITE_STRING_FILE_AVOID_NEWLINE = 4,
++} WriteStringFileFlags;
++
+ int write_string_stream(FILE *f, const char *line, bool enforce_newline);
+-int write_string_file(const char *fn, const char *line);
+-int write_string_file_no_create(const char *fn, const char *line);
+-int write_string_file_atomic(const char *fn, const char *line);
++int write_string_file(const char *fn, const char *line, WriteStringFileFlags flags);
+ 
+ int read_one_line_file(const char *fn, char **line);
+ int read_full_file(const char *fn, char **contents, size_t *size);
+diff --git a/src/basic/smack-util.c b/src/basic/smack-util.c
+index 2e24b1e..0c3697b 100644
+--- a/src/basic/smack-util.c
++++ b/src/basic/smack-util.c
+@@ -139,7 +139,7 @@ int mac_smack_apply_pid(pid_t pid, const char *label) {
+                 return 0;
+ 
+         p = procfs_file_alloca(pid, "attr/current");
+-        r = write_string_file(p, label);
++        r = write_string_file(p, label, WRITE_STRING_FILE_CREATE);
+         if (r < 0)
+                 return r;
+ #endif
+diff --git a/src/basic/util.c b/src/basic/util.c
+index aa912bd..e4e302a 100644
+--- a/src/basic/util.c
++++ b/src/basic/util.c
+@@ -4716,7 +4716,7 @@ int update_reboot_param_file(const char *param) {
+ 
+         if (param) {
+ 
+-                r = write_string_file(REBOOT_PARAM_FILE, param);
++                r = write_string_file(REBOOT_PARAM_FILE, param, WRITE_STRING_FILE_CREATE);
+                 if (r < 0)
+                         log_error("Failed to write reboot param to "
+                                   REBOOT_PARAM_FILE": %s", strerror(-r));
+diff --git a/src/binfmt/binfmt.c b/src/binfmt/binfmt.c
+index 6028ed6..24eb410 100644
+--- a/src/binfmt/binfmt.c
++++ b/src/binfmt/binfmt.c
+@@ -53,7 +53,7 @@ static int delete_rule(const char *rule) {
+         if (!fn)
+                 return log_oom();
+ 
+-        return write_string_file(fn, "-1");
++        return write_string_file(fn, "-1", 0);
+ }
+ 
+ static int apply_rule(const char *rule) {
+@@ -61,7 +61,7 @@ static int apply_rule(const char *rule) {
+ 
+         delete_rule(rule);
+ 
+-        r = write_string_file("/proc/sys/fs/binfmt_misc/register", rule);
++        r = write_string_file("/proc/sys/fs/binfmt_misc/register", rule, 0);
+         if (r < 0)
+                 return log_error_errno(r, "Failed to add binary format: %m");
+ 
+@@ -191,7 +191,7 @@ int main(int argc, char *argv[]) {
+                 }
+ 
+                 /* Flush out all rules */
+-                write_string_file("/proc/sys/fs/binfmt_misc/status", "-1");
++                write_string_file("/proc/sys/fs/binfmt_misc/status", "-1", WRITE_STRING_FILE_CREATE);
+ 
+                 STRV_FOREACH(f, files) {
+                         k = apply_file(*f, true);
+diff --git a/src/core/execute.c b/src/core/execute.c
+index c92db51..61e7304 100644
+--- a/src/core/execute.c
++++ b/src/core/execute.c
+@@ -1446,7 +1446,7 @@ static int exec_child(
+                  * shouldn't trip up over that. */
+ 
+                 sprintf(t, "%i", context->oom_score_adjust);
+-                r = write_string_file("/proc/self/oom_score_adj", t);
++                r = write_string_file("/proc/self/oom_score_adj", t, WRITE_STRING_FILE_CREATE);
+                 if (r == -EPERM || r == -EACCES) {
+                         log_open();
+                         log_unit_debug_errno(unit, r, "Failed to adjust OOM setting, assuming containerized execution, ignoring: %m");
+diff --git a/src/core/machine-id-setup.c b/src/core/machine-id-setup.c
+index b3d2284..8e26362 100644
+--- a/src/core/machine-id-setup.c
++++ b/src/core/machine-id-setup.c
+@@ -260,7 +260,7 @@ int machine_id_setup(const char *root) {
+          * /run/machine-id as a replacement */
+ 
+         RUN_WITH_UMASK(0022) {
+-                r = write_string_file(run_machine_id, id);
++                r = write_string_file(run_machine_id, id, WRITE_STRING_FILE_CREATE);
+         }
+         if (r < 0) {
+                 (void) unlink(run_machine_id);
+diff --git a/src/core/main.c b/src/core/main.c
+index 523f0ce..c412457 100644
+--- a/src/core/main.c
++++ b/src/core/main.c
+@@ -1203,7 +1203,7 @@ static int write_container_id(void) {
+         if (isempty(c))
+                 return 0;
+ 
+-        return write_string_file("/run/systemd/container", c);
++        return write_string_file("/run/systemd/container", c, WRITE_STRING_FILE_CREATE);
+ }
+ 
+ int main(int argc, char *argv[]) {
+diff --git a/src/core/smack-setup.c b/src/core/smack-setup.c
+index ddb02a1..cbe7d0b 100644
+--- a/src/core/smack-setup.c
++++ b/src/core/smack-setup.c
+@@ -221,7 +221,7 @@ int mac_smack_setup(bool *loaded_policy) {
+         }
+ 
+ #ifdef SMACK_RUN_LABEL
+-        r = write_string_file("/proc/self/attr/current", SMACK_RUN_LABEL);
++        r = write_string_file("/proc/self/attr/current", SMACK_RUN_LABEL, 0);
+         if (r)
+                 log_warning("Failed to set SMACK label \"%s\" on self: %s",
+                             SMACK_RUN_LABEL, strerror(-r));
+diff --git a/src/firstboot/firstboot.c b/src/firstboot/firstboot.c
+index cda96d4..3805b29 100644
+--- a/src/firstboot/firstboot.c
++++ b/src/firstboot/firstboot.c
+@@ -415,7 +415,7 @@ static int process_hostname(void) {
+                 return 0;
+ 
+         mkdir_parents(etc_hostname, 0755);
+-        r = write_string_file(etc_hostname, arg_hostname);
++        r = write_string_file(etc_hostname, arg_hostname, WRITE_STRING_FILE_CREATE);
+         if (r < 0)
+                 return log_error_errno(r, "Failed to write %s: %m", etc_hostname);
+ 
+@@ -436,7 +436,7 @@ static int process_machine_id(void) {
+                 return 0;
+ 
+         mkdir_parents(etc_machine_id, 0755);
+-        r = write_string_file(etc_machine_id, sd_id128_to_string(arg_machine_id, id));
++        r = write_string_file(etc_machine_id, sd_id128_to_string(arg_machine_id, id), WRITE_STRING_FILE_CREATE);
+         if (r < 0)
+                 return log_error_errno(r, "Failed to write machine id: %m");
+ 
+diff --git a/src/gpt-auto-generator/gpt-auto-generator.c b/src/gpt-auto-generator/gpt-auto-generator.c
+index b46e160..da5f3b6 100644
+--- a/src/gpt-auto-generator/gpt-auto-generator.c
++++ b/src/gpt-auto-generator/gpt-auto-generator.c
+@@ -183,7 +183,8 @@ static int add_cryptsetup(const char *id, const char *what, bool rw, char **devi
+         r = write_string_file(p,
+                         "# Automatically generated by systemd-gpt-auto-generator\n\n"
+                         "[Unit]\n"
+-                        "JobTimeoutSec=0\n"); /* the binary handles timeouts anyway */
++                        "JobTimeoutSec=0\n",
++                        WRITE_STRING_FILE_CREATE); /* the binary handles timeouts anyway */
+         if (r < 0)
+                 return log_error_errno(r, "Failed to write device drop-in: %m");
+ 
+diff --git a/src/hibernate-resume/hibernate-resume.c b/src/hibernate-resume/hibernate-resume.c
+index 43aac61..1f3b169 100644
+--- a/src/hibernate-resume/hibernate-resume.c
++++ b/src/hibernate-resume/hibernate-resume.c
+@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
+                 return EXIT_FAILURE;
+         }
+ 
+-        r = write_string_file("/sys/power/resume", major_minor);
++        r = write_string_file("/sys/power/resume", major_minor, WRITE_STRING_FILE_CREATE);
+         if (r < 0) {
+                 log_error_errno(r, "Failed to write '%s' to /sys/power/resume: %m", major_minor);
+                 return EXIT_FAILURE;
+diff --git a/src/login/logind-dbus.c b/src/login/logind-dbus.c
+index 659ce18..b56a61c 100644
+--- a/src/login/logind-dbus.c
++++ b/src/login/logind-dbus.c
+@@ -1196,7 +1196,7 @@ static int trigger_device(Manager *m, struct udev_device *d) {
+                 if (!t)
+                         return -ENOMEM;
+ 
+-                write_string_file(t, "change");
++                write_string_file(t, "change", WRITE_STRING_FILE_CREATE);
+         }
+ 
+         return 0;
+@@ -1795,7 +1795,7 @@ static int nologin_timeout_handler(
+ 
+         log_info("Creating /run/nologin, blocking further logins...");
+ 
+-        r = write_string_file_atomic("/run/nologin", "System is going down.");
++        r = write_string_file("/run/nologin", "System is going down.", WRITE_STRING_FILE_ATOMIC);
+         if (r < 0)
+                 log_error_errno(r, "Failed to create /run/nologin: %m");
+         else
+diff --git a/src/network/networkd-link.c b/src/network/networkd-link.c
+index 5607cf4..9550e89 100644
+--- a/src/network/networkd-link.c
++++ b/src/network/networkd-link.c
+@@ -1495,7 +1495,7 @@ static int link_set_ipv4_forward(Link *link) {
+         p = strjoina("/proc/sys/net/ipv4/conf/", link->ifname, "/forwarding");
+         v = one_zero(link_ipv4_forward_enabled(link));
+ 
+-        r = write_string_file_no_create(p, v);
++        r = write_string_file(p, v, 0);
+         if (r < 0) {
+                 /* If the right value is set anyway, don't complain */
+                 if (verify_one_line_file(p, v) > 0)
+@@ -1524,7 +1524,7 @@ static int link_set_ipv6_forward(Link *link) {
+         p = strjoina("/proc/sys/net/ipv6/conf/", link->ifname, "/forwarding");
+         v = one_zero(link_ipv6_forward_enabled(link));
+ 
+-        r = write_string_file_no_create(p, v);
++        r = write_string_file(p, v, 0);
+         if (r < 0) {
+                 /* If the right value is set anyway, don't complain */
+                 if (verify_one_line_file(p, v) > 0)
+@@ -1553,7 +1553,7 @@ static int link_set_ipv6_privacy_extensions(Link *link) {
+         p = strjoina("/proc/sys/net/ipv6/conf/", link->ifname, "/use_tempaddr");
+         xsprintf(buf, "%u", link->network->ipv6_privacy_extensions);
+ 
+-        r = write_string_file_no_create(p, buf);
++        r = write_string_file(p, buf, 0);
+         if (r < 0) {
+                 /* If the right value is set anyway, don't complain */
+                 if (verify_one_line_file(p, buf) > 0)
+diff --git a/src/nspawn/nspawn.c b/src/nspawn/nspawn.c
+index ab9fbaf..c7f4d02 100644
+--- a/src/nspawn/nspawn.c
++++ b/src/nspawn/nspawn.c
+@@ -1703,7 +1703,7 @@ static int setup_boot_id(const char *dest) {
+ 
+         id128_format_as_uuid(rnd, as_uuid);
+ 
+-        r = write_string_file(from, as_uuid);
++        r = write_string_file(from, as_uuid, WRITE_STRING_FILE_CREATE);
+         if (r < 0)
+                 return log_error_errno(r, "Failed to write boot id: %m");
+ 
+@@ -2508,7 +2508,7 @@ static int reset_audit_loginuid(void) {
+         if (streq(p, "4294967295"))
+                 return 0;
+ 
+-        r = write_string_file("/proc/self/loginuid", "4294967295");
++        r = write_string_file("/proc/self/loginuid", "4294967295", WRITE_STRING_FILE_CREATE);
+         if (r < 0) {
+                 log_error_errno(r,
+                                 "Failed to reset audit login UID. This probably means that your kernel is too\n"
+@@ -4448,13 +4448,13 @@ static int setup_uid_map(pid_t pid) {
+ 
+         xsprintf(uid_map, "/proc/" PID_FMT "/uid_map", pid);
+         xsprintf(line, UID_FMT " " UID_FMT " " UID_FMT "\n", 0, arg_uid_shift, arg_uid_range);
+-        r = write_string_file(uid_map, line);
++        r = write_string_file(uid_map, line, WRITE_STRING_FILE_CREATE);
+         if (r < 0)
+                 return log_error_errno(r, "Failed to write UID map: %m");
+ 
+         /* We always assign the same UID and GID ranges */
+         xsprintf(uid_map, "/proc/" PID_FMT "/gid_map", pid);
+-        r = write_string_file(uid_map, line);
++        r = write_string_file(uid_map, line, WRITE_STRING_FILE_CREATE);
+         if (r < 0)
+                 return log_error_errno(r, "Failed to write GID map: %m");
+ 
+diff --git a/src/rfkill/rfkill.c b/src/rfkill/rfkill.c
+index 5a90c77..904dec6 100644
+--- a/src/rfkill/rfkill.c
++++ b/src/rfkill/rfkill.c
+@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
+                         return EXIT_SUCCESS;
+                 }
+ 
+-                r = write_string_file(saved, value);
++                r = write_string_file(saved, value, WRITE_STRING_FILE_CREATE);
+                 if (r < 0) {
+                         log_error_errno(r, "Failed to write %s: %m", saved);
+                         return EXIT_FAILURE;
+diff --git a/src/shared/sysctl-util.c b/src/shared/sysctl-util.c
+index 55f4e48..232a005 100644
+--- a/src/shared/sysctl-util.c
++++ b/src/shared/sysctl-util.c
+@@ -66,7 +66,7 @@ int sysctl_write(const char *property, const char *value) {
+         log_debug("Setting '%s' to '%s'", property, value);
+ 
+         p = strjoina("/proc/sys/", property);
+-        return write_string_file(p, value);
++        return write_string_file(p, value, WRITE_STRING_FILE_CREATE);
+ }
+ 
+ int sysctl_read(const char *property, char **content) {
+diff --git a/src/sleep/sleep.c b/src/sleep/sleep.c
+index 2be63b4..2b23101 100644
+--- a/src/sleep/sleep.c
++++ b/src/sleep/sleep.c
+@@ -42,7 +42,7 @@ static int write_mode(char **modes) {
+         STRV_FOREACH(mode, modes) {
+                 int k;
+ 
+-                k = write_string_file("/sys/power/disk", *mode);
++                k = write_string_file("/sys/power/disk", *mode, 0);
+                 if (k == 0)
+                         return 0;
+ 
+diff --git a/src/test/test-btrfs.c b/src/test/test-btrfs.c
+index 838ffcb..e4771c9 100644
+--- a/src/test/test-btrfs.c
++++ b/src/test/test-btrfs.c
+@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
+         if (r < 0)
+                 log_error_errno(r, "Failed to make subvolume: %m");
+ 
+-        r = write_string_file("/xxxtest/afile", "ljsadhfljasdkfhlkjdsfha");
++        r = write_string_file("/xxxtest/afile", "ljsadhfljasdkfhlkjdsfha", WRITE_STRING_FILE_CREATE);
+         if (r < 0)
+                 log_error_errno(r, "Failed to write file: %m");
+ 
+diff --git a/src/test/test-copy.c b/src/test/test-copy.c
+index b1385b8..b73c958 100644
+--- a/src/test/test-copy.c
++++ b/src/test/test-copy.c
+@@ -43,7 +43,7 @@ static void test_copy_file(void) {
+         assert_se(fd >= 0);
+         close(fd);
+ 
+-        assert_se(write_string_file(fn, "foo bar bar bar foo") == 0);
++        assert_se(write_string_file(fn, "foo bar bar bar foo", WRITE_STRING_FILE_CREATE) == 0);
+ 
+         assert_se(copy_file(fn, fn_copy, 0, 0644, 0) == 0);
+ 
+@@ -67,7 +67,7 @@ static void test_copy_file_fd(void) {
+         out_fd = mkostemp_safe(out_fn, O_RDWR);
+         assert_se(out_fd >= 0);
+ 
+-        assert_se(write_string_file(in_fn, text) == 0);
++        assert_se(write_string_file(in_fn, text, WRITE_STRING_FILE_CREATE) == 0);
+         assert_se(copy_file_fd("/a/file/which/does/not/exist/i/guess", out_fd, true) < 0);
+         assert_se(copy_file_fd(in_fn, out_fd, true) >= 0);
+         assert_se(lseek(out_fd, SEEK_SET, 0) == 0);
+@@ -94,7 +94,7 @@ static void test_copy_tree(void) {
+                 char *f = strjoina(original_dir, *p);
+ 
+                 assert_se(mkdir_parents(f, 0755) >= 0);
+-                assert_se(write_string_file(f, "file") == 0);
++                assert_se(write_string_file(f, "file", WRITE_STRING_FILE_CREATE) == 0);
+         }
+ 
+         STRV_FOREACH_PAIR(link, p, links) {
+diff --git a/src/test/test-fileio.c b/src/test/test-fileio.c
+index 725c2fa..be3a879 100644
+--- a/src/test/test-fileio.c
++++ b/src/test/test-fileio.c
+@@ -334,7 +334,7 @@ static void test_write_string_file(void) {
+         fd = mkostemp_safe(fn, O_RDWR);
+         assert_se(fd >= 0);
+ 
+-        assert_se(write_string_file(fn, "boohoo") == 0);
++        assert_se(write_string_file(fn, "boohoo", WRITE_STRING_FILE_CREATE) == 0);
+ 
+         assert_se(read(fd, buf, sizeof(buf)) == 7);
+         assert_se(streq(buf, "boohoo\n"));
+@@ -350,8 +350,8 @@ static void test_write_string_file_no_create(void) {
+         fd = mkostemp_safe(fn, O_RDWR);
+         assert_se(fd >= 0);
+ 
+-        assert_se(write_string_file_no_create("/a/file/which/does/not/exists/i/guess", "boohoo") < 0);
+-        assert_se(write_string_file_no_create(fn, "boohoo") == 0);
++        assert_se(write_string_file("/a/file/which/does/not/exists/i/guess", "boohoo", 0) < 0);
++        assert_se(write_string_file(fn, "boohoo", 0) == 0);
+ 
+         assert_se(read(fd, buf, sizeof(buf)) == strlen("boohoo\n"));
+         assert_se(streq(buf, "boohoo\n"));
+@@ -377,8 +377,8 @@ static void test_load_env_file_pairs(void) {
+                         "ANSI_COLOR=\"0;36\"\n"
+                         "HOME_URL=\"https://www.archlinux.org/\"\n"
+                         "SUPPORT_URL=\"https://bbs.archlinux.org/\"\n"
+-                        "BUG_REPORT_URL=\"https://bugs.archlinux.org/\"\n"
+-                        );
++                        "BUG_REPORT_URL=\"https://bugs.archlinux.org/\"\n",
++                        WRITE_STRING_FILE_CREATE);
+         assert_se(r == 0);
+ 
+         f = fdopen(fd, "r");
+diff --git a/src/test/test-util.c b/src/test/test-util.c
+index ad9ea3b..9fbfece 100644
+--- a/src/test/test-util.c
++++ b/src/test/test-util.c
+@@ -565,14 +565,14 @@ static void test_read_hostname_config(void) {
+         close(fd);
+ 
+         /* simple hostname */
+-        write_string_file(path, "foo");
++        write_string_file(path, "foo", WRITE_STRING_FILE_CREATE);
+         assert_se(read_hostname_config(path, &hostname) == 0);
+         assert_se(streq(hostname, "foo"));
+         free(hostname);
+         hostname = NULL;
+ 
+         /* with comment */
+-        write_string_file(path, "# comment\nfoo");
++        write_string_file(path, "# comment\nfoo", WRITE_STRING_FILE_CREATE);
+         assert_se(read_hostname_config(path, &hostname) == 0);
+         assert_se(hostname);
+         assert_se(streq(hostname, "foo"));
+@@ -580,7 +580,7 @@ static void test_read_hostname_config(void) {
+         hostname = NULL;
+ 
+         /* with comment and extra whitespace */
+-        write_string_file(path, "# comment\n\n foo ");
++        write_string_file(path, "# comment\n\n foo ", WRITE_STRING_FILE_CREATE);
+         assert_se(read_hostname_config(path, &hostname) == 0);
+         assert_se(hostname);
+         assert_se(streq(hostname, "foo"));
+@@ -588,7 +588,7 @@ static void test_read_hostname_config(void) {
+         hostname = NULL;
+ 
+         /* cleans up name */
+-        write_string_file(path, "!foo/bar.com");
++        write_string_file(path, "!foo/bar.com", WRITE_STRING_FILE_CREATE);
+         assert_se(read_hostname_config(path, &hostname) == 0);
+         assert_se(hostname);
+         assert_se(streq(hostname, "foobar.com"));
+@@ -597,7 +597,7 @@ static void test_read_hostname_config(void) {
+ 
+         /* no value set */
+         hostname = (char*) 0x1234;
+-        write_string_file(path, "# nothing here\n");
++        write_string_file(path, "# nothing here\n", WRITE_STRING_FILE_CREATE);
+         assert_se(read_hostname_config(path, &hostname) == -ENOENT);
+         assert_se(hostname == (char*) 0x1234);  /* does not touch argument on error */
+ 
+@@ -1191,11 +1191,11 @@ static void test_execute_directory(void) {
+         masked = strjoina(template_lo, "/masked");
+         mask = strjoina(template_hi, "/masked");
+ 
+-        assert_se(write_string_file(name, "#!/bin/sh\necho 'Executing '$0\ntouch $(dirname $0)/it_works") == 0);
+-        assert_se(write_string_file(name2, "#!/bin/sh\necho 'Executing '$0\ntouch $(dirname $0)/it_works2") == 0);
+-        assert_se(write_string_file(overridden, "#!/bin/sh\necho 'Executing '$0\ntouch $(dirname $0)/failed") == 0);
+-        assert_se(write_string_file(override, "#!/bin/sh\necho 'Executing '$0") == 0);
+-        assert_se(write_string_file(masked, "#!/bin/sh\necho 'Executing '$0\ntouch $(dirname $0)/failed") == 0);
++        assert_se(write_string_file(name, "#!/bin/sh\necho 'Executing '$0\ntouch $(dirname $0)/it_works", WRITE_STRING_FILE_CREATE) == 0);
++        assert_se(write_string_file(name2, "#!/bin/sh\necho 'Executing '$0\ntouch $(dirname $0)/it_works2", WRITE_STRING_FILE_CREATE) == 0);
++        assert_se(write_string_file(overridden, "#!/bin/sh\necho 'Executing '$0\ntouch $(dirname $0)/failed", WRITE_STRING_FILE_CREATE) == 0);
++        assert_se(write_string_file(override, "#!/bin/sh\necho 'Executing '$0", WRITE_STRING_FILE_CREATE) == 0);
++        assert_se(write_string_file(masked, "#!/bin/sh\necho 'Executing '$0\ntouch $(dirname $0)/failed", WRITE_STRING_FILE_CREATE) == 0);
+         assert_se(symlink("/dev/null", mask) == 0);
+         assert_se(chmod(name, 0755) == 0);
+         assert_se(chmod(name2, 0755) == 0);
+diff --git a/src/udev/udevd.c b/src/udev/udevd.c
+index e27fb1f..8a31089 100644
+--- a/src/udev/udevd.c
++++ b/src/udev/udevd.c
+@@ -398,7 +398,7 @@ static void worker_spawn(Manager *manager, struct event *event) {
+                 prctl(PR_SET_PDEATHSIG, SIGTERM);
+ 
+                 /* reset OOM score, we only protect the main daemon */
+-                write_string_file("/proc/self/oom_score_adj", "0");
++                write_string_file("/proc/self/oom_score_adj", "0", WRITE_STRING_FILE_CREATE);
+ 
+                 for (;;) {
+                         struct udev_event *udev_event;
+@@ -1091,7 +1091,7 @@ static int synthesize_change(struct udev_device *dev) {
+                  */
+                 log_debug("device %s closed, synthesising 'change'", udev_device_get_devnode(dev));
+                 strscpyl(filename, sizeof(filename), udev_device_get_syspath(dev), "/uevent", NULL);
+-                write_string_file(filename, "change");
++                write_string_file(filename, "change", WRITE_STRING_FILE_CREATE);
+ 
+                 udev_list_entry_foreach(item, udev_enumerate_get_list_entry(e)) {
+                         _cleanup_udev_device_unref_ struct udev_device *d = NULL;
+@@ -1106,7 +1106,7 @@ static int synthesize_change(struct udev_device *dev) {
+                         log_debug("device %s closed, synthesising partition '%s' 'change'",
+                                   udev_device_get_devnode(dev), udev_device_get_devnode(d));
+                         strscpyl(filename, sizeof(filename), udev_device_get_syspath(d), "/uevent", NULL);
+-                        write_string_file(filename, "change");
++                        write_string_file(filename, "change", WRITE_STRING_FILE_CREATE);
+                 }
+ 
+                 return 0;
+@@ -1114,7 +1114,7 @@ static int synthesize_change(struct udev_device *dev) {
+ 
+         log_debug("device %s closed, synthesising 'change'", udev_device_get_devnode(dev));
+         strscpyl(filename, sizeof(filename), udev_device_get_syspath(dev), "/uevent", NULL);
+-        write_string_file(filename, "change");
++        write_string_file(filename, "change", WRITE_STRING_FILE_CREATE);
+ 
+         return 0;
+ }
+@@ -1747,7 +1747,7 @@ int main(int argc, char *argv[]) {
+ 
+                 setsid();
+ 
+-                write_string_file("/proc/self/oom_score_adj", "-1000");
++                write_string_file("/proc/self/oom_score_adj", "-1000", WRITE_STRING_FILE_CREATE);
+         }
+ 
+         r = run(fd_ctrl, fd_uevent, cgroup);
+diff --git a/src/user-sessions/user-sessions.c b/src/user-sessions/user-sessions.c
+index 1c31769..ddeb310 100644
+--- a/src/user-sessions/user-sessions.c
++++ b/src/user-sessions/user-sessions.c
+@@ -65,7 +65,7 @@ int main(int argc, char*argv[]) {
+         } else if (streq(argv[1], "stop")) {
+                 int r;
+ 
+-                r = write_string_file_atomic("/run/nologin", "System is going down.");
++                r = write_string_file("/run/nologin", "System is going down.", WRITE_STRING_FILE_ATOMIC);
+                 if (r < 0) {
+                         log_error_errno(r, "Failed to create /run/nologin: %m");
+                         return EXIT_FAILURE;
+diff --git a/src/vconsole/vconsole-setup.c b/src/vconsole/vconsole-setup.c
+index f7728dc..4b21175 100644
+--- a/src/vconsole/vconsole-setup.c
++++ b/src/vconsole/vconsole-setup.c
+@@ -56,7 +56,7 @@ static int disable_utf8(int fd) {
+         if (k < 0)
+                 r = k;
+ 
+-        k = write_string_file("/sys/module/vt/parameters/default_utf8", "0");
++        k = write_string_file("/sys/module/vt/parameters/default_utf8", "0", WRITE_STRING_FILE_CREATE);
+         if (k < 0)
+                 r = k;
+ 
+@@ -89,7 +89,7 @@ static int enable_utf8(int fd) {
+         if (k < 0)
+                 r = k;
+ 
+-        k = write_string_file("/sys/module/vt/parameters/default_utf8", "1");
++        k = write_string_file("/sys/module/vt/parameters/default_utf8", "1", WRITE_STRING_FILE_CREATE);
+         if (k < 0)
+                 r = k;
+ 
+-- 
+2.4.5
+

@@ -31,6 +31,8 @@ if [ "${SB_STAGING}" = "YES" ] ;then
 else
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-gcc5.patch
 fi
+#https://bugs.winehq.org/show_bug.cgi?id=38653#c15
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/wine-gcc5-wineboot.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

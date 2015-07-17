@@ -148,5 +148,7 @@ ApplyPatch 0001-CVE-2015-1781-resolv-nss_dns-dns-host.c-buffer-overf.patch
 ApplyPatch 0001-Make-time-zone-file-parser-more-robust-BZ-17715.patch
 ApplyPatch 0001-Record-TTL-also-for-DNS-PTR-queries-bug-18513.patch
 ApplyPatch 0001-Update-headers-for-Linux-4.0-4.1-definitions.patch
+ApplyPatch 0001-Set-errno-to-ENOMEM-on-overflow-in-sbrk-bug-18592.patch
+ApplyPatch 0001-Fix-ruserok-scalability-with-large-.rhosts-file.patch
 
 set +e +o pipefail

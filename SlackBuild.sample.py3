@@ -73,7 +73,7 @@ SRCARCHIVE=${SRCDIR}.tar.bz2
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-MIRROR_GNU=${MIRROR_GNU:-http://ftp.gnu.org/gnu}
+MIRROR_GNU=${MIRROR_GNU:-http://ftpmirror.gnu.org}
 DL_URL="${MIRROR_GNU}/${NAME}/${SRCARCHIVE}"
 
 # if source is not present, download in source rootdir if possible

@@ -19,17 +19,15 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-isl-dl.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-no-copy-dt-needed-entries.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-libgo-p224.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr65689.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr65956.patch
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-r224063.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr65527.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66289.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66450.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66387.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr58063.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66536.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66429.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66571.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66748.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66896.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66725.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc.git-303a4dcbfb01788efe8edf70a67b6af2a50d0959.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr56520.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66545.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc5-pr66864.patch
+
 
 # From Gentoo
 patch -p1 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_default-fortify-source.patch

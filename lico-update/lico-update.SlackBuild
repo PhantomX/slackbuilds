@@ -33,14 +33,17 @@ SB_REP=${SB_REP:-YES}
 
 CWD=$(pwd)
 TMP=${TMP:-/tmp}
-if [ ! -d ${TMP} ]; then
-  mkdir -p ${TMP}
-fi
 
 NAME=lico-update
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-0.3.17}
+SNAPBUILD=${SNAPBUILD:-YES}
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  VERSION=${VERSION:-"$(LC_ALL=C date +%Y%m%d)"}
+  SNAPBRANCH=${SNAPBRANCH:-master}
+else
+  VERSION=${VERSION:-0.0.4}
+fi
 ARCH=noarch
 SLKTARGET=${SLKTARGET:-i486}
 SLKDTARGET=${SLKDTARGET:-slackware}
@@ -55,50 +58,62 @@ PKGNAME=${NAME}-$(echo ${VERSION} | tr - . )-${ARCH}-${BUILD}${PACKAGER_ID}
 DATE=$(LC_ALL=C date +%d-%b-%Y)
 
 SRCDIR=${NAME}-${VERSION}
-SRCARCHIVE=${NAME}.sh
+SRCARCHIVE=${SRCDIR}.tar.xz
 
 DL_PROG=${DL_PROG:-wget}
 DL_TO=${DL_TO:-5}
 DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
-DL_URL="http://linuxcounter.net/script/${SRCARCHIVE}"
+DL_URL="https://github.com/alexloehner/linuxcounter-update-examples/raw/master/_official/${SRCARCHIVE}"
+SNAPUPDATE=${NAME}-snapshot.sh
+export snap=${VERSION}
+export snapbranch=${SNAPBRANCH}
 
 # if source is not present, download in source rootdir if possible
-test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
-
-RVER="$(grep ^scriptversion= ${CWD}/${SRCARCHIVE}  | awk '{print $3}' | tr -d \" )"
-if [ "${RVER}" != "${VERSION}" ] ;then
-  echo "Version mismatch. You have ${RVER} in ${CWD}/${SRCARCHIVE} instead ${VERSION} "
-  echo "Remove ${CWD}/${SRCARCHIVE} and try again"
-  exit 1
+if [ "${SNAPBUILD}" = "YES" ] ;then
+  test -r ${CWD}/${SRCARCHIVE} || sh ${CWD}/${SNAPUPDATE} || exit 1
+else
+  test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} || exit 1
 fi
 
+[ "$1" = "--dlsrc" ] && exit 0
+
+if [ ! -d ${TMP} ]; then
+  mkdir -p ${TMP}
+fi
 if [ -d ${PKG} ]; then
   # Clean up a previous build
   rm -rf ${PKG}
 fi
 mkdir -p ${PKG}
 
-cd ${PKG} || exit 1
+cd ${TMP}
+rm -rf ${SRCDIR}
+tar -xvf ${CWD}/${SRCARCHIVE} || exit 1
+cd ${SRCDIR} || exit 1
 
 chmod -R u+w,go+r-w,a-s .
 
-# zcat ${CWD}/${NAME}.patch.gz | patch -p0 -E --backup --verbose || exit 1
-
-mkdir -p ${PKG}/usr/bin
-install -pm0755 ${CWD}/${SRCARCHIVE} ${PKG}/usr/bin/lico-update || exit 1
+if [ -r ${CWD}/apply-patches.sh ]; then
+  . ${CWD}/apply-patches.sh
+fi
 
 sed -i \
   -e "s|distribution=\"\"|distribution=\"\$(awk '{print \$1}' /etc/slackware-version)\"|" \
   -e "s|distribversion=\"\"|distribversion=\"\$(awk '{print \$2}' /etc/slackware-version)\"|" \
-  ${PKG}/usr/bin/lico-update || exit 1
+  _official/lico-update.sh  || exit 1
+
+mkdir -p ${PKG}/usr/bin
+install -pm0755 _official/lico-update.sh ${PKG}/usr/bin/lico-update || exit 1
 
 # Add a documentation directory:
 mkdir -p ${DOCDIR}
 cp -a \
-  ${CWD}/ChangeLog.SB \
+  LICENSE _official/README.md ${CWD}/ChangeLog.SB \
   ${DOCDIR}/
+[ -r ChangeLog ] && head -n 1000 ChangeLog > ${DOCDIR}/ChangeLog
 find ${DOCDIR}/ -type d -print0 | xargs -0 chmod 0755
 find ${DOCDIR}/ -type f -print0 | xargs -0 chmod 0644
+find ${DOCDIR}/ -type f -size 0 -print0 | xargs -0 rm -f
 
 # Compress and link manpages, if any:
 if [ -d ${PKG}/usr/share/man ]; then
@@ -130,15 +145,19 @@ sed -i "s|_PACKAGER|${PACKAGER}|g; s|_BUILD_DATE|${DATE}|g" \
 
 if [ "${SB_REP}" = "YES" ] ;then
   # Replicate slackbuild and patches
-  mkdir -p ${SBDIR}
-  install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
-                 ${SBDIR}/
-  install -m0755 ${CWD}/${NAME}.SlackBuild \
-                 ${SBDIR}/${NAME}.SlackBuild
+  mkdir -p ${SBDIR}/patches
+  install -pm0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
+    ${CWD}/apply-patches.sh ${CWD}/${SNAPUPDATE} ${SBDIR}/
+  install -pm0755 ${CWD}/${NAME}.SlackBuild \
+    ${SBDIR}/${NAME}.SlackBuild
+  install -pm0644 ${CWD}/patches/*.* \
+    ${SBDIR}/patches/
+  rmdir ${SBDIR}/patches
 fi
 
 # Build package:
 set +o xtrace        # no longer print commands upon execution
+set -e
 
 ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   /bin/chown --recursive root:root .  ;"

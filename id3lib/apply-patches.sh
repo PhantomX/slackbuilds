@@ -19,5 +19,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-vbr_buffer_overflow.di
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/20-create-manpages.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/60-fix_make_check.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/60-id3lib-missing-nullpointer-check.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/60-add-c-wrapper-functions.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/id3lib-3.8.3-fix-utf16-stringlists.patch
 
 set +e +o pipefail

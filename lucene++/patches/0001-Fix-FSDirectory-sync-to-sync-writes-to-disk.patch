@@ -1,0 +1,78 @@
+From 972c9cb37457c70530610c22a5f3ff68adf3bd5b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Va=CC=81clav=20Slavi=CC=81k?= <vaclav@slavik.io>
+Date: Tue, 3 Feb 2015 18:22:25 +0100
+Subject: [PATCH 1/6] Fix FSDirectory::sync() to sync writes to disk
+
+Contrary to the documentation, FSDirectory::sync() conversion to C++
+omitted the most important line of the Java original: actually fsyncing
+the file descriptor. As the result, its current code amounts to little
+more than a little nonsensical noop dance.
+
+Add the missing fsync() call. Use fsync() on Unix, its
+FlushFileBuffers() equivalent on Windows, and F_FULLFSYNC on OS X where
+fsync() is documented as not always sufficient. F_FULLFSYNC is more
+expensive than fsync(), but guarantees physical write; SQLite uses it
+too.
+---
+ src/core/store/FSDirectory.cpp | 25 +++++++++++++++++++++----
+ 1 file changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/src/core/store/FSDirectory.cpp b/src/core/store/FSDirectory.cpp
+index 82b5736..2cb257a 100644
+--- a/src/core/store/FSDirectory.cpp
++++ b/src/core/store/FSDirectory.cpp
+@@ -5,7 +5,6 @@
+ /////////////////////////////////////////////////////////////////////////////
+ 
+ #include "LuceneInc.h"
+-#include <boost/filesystem/fstream.hpp>
+ #include "FSDirectory.h"
+ #include "NativeFSLockFactory.h"
+ #include "SimpleFSDirectory.h"
+@@ -14,6 +13,15 @@
+ #include "FileUtils.h"
+ #include "StringUtils.h"
+ 
++#if defined(_WIN32)
++    #include <windows.h>
++#elif defined(__APPLE__)
++    #include <fcntl.h>
++#else
++    #include <unistd.h>
++#endif
++#include <boost/iostreams/device/file_descriptor.hpp>
++
+ extern "C"
+ {
+ #include "../util/md5/md5.h"
+@@ -148,15 +156,24 @@ void FSDirectory::sync(const String& name) {
+     bool success = false;
+ 
+     for (int32_t retryCount = 0; retryCount < 5; ++retryCount) {
+-        boost::filesystem::ofstream syncFile;
++        boost::iostreams::file_descriptor syncFile;
+         try {
+-            syncFile.open(path, std::ios::binary | std::ios::in | std::ios::out);
++            syncFile.open(boost::filesystem::path(path));
+         } catch (...) {
+         }
+ 
+         if (syncFile.is_open()) {
++            boost::iostreams::file_descriptor::handle_type fd = syncFile.handle();
++#if defined(_WIN32)
++            bool ok = ::FlushFileBuffers(fd) != 0;
++#elif defined(__APPLE__)
++            bool ok = fcntl(fd, F_FULLFSYNC) == 0;
++#else
++            bool ok = fsync(fd) == 0;
++#endif
+             syncFile.close();
+-            success = true;
++            if (ok)
++                success = true;
+             break;
+         }
+ 
+-- 
+2.3.6
+

@@ -16,9 +16,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dcmtk.patch
 # http://public.kitware.com/Bug/view.php?id=12965
 # https://bugzilla.redhat.com/show_bug.cgi?id=822796
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-findruby.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-2.8.11-rc4-lua-5.2.patch
-# Add -fno-strict-aliasing when compiling cm_sha2.c
-# http://www.cmake.org/Bug/view.php?id=14314
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-strict_aliasing.patch
 
 set +e +o pipefail

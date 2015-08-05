@@ -190,12 +190,6 @@ ApplyPatch xen-pciback-Don-t-disable-PCI_COMMAND-on-PCI-device-.patch
 #rhbz 1212230
 ApplyPatch Input-synaptics-pin-3-touches-when-the-firmware-repo.patch
 
-#rhbz 1210857
-ApplyPatch blk-loop-avoid-too-many-pending-per-work-IO.patch
-
-#rhbz 1220118
-ApplyPatch media-Fix-regression-in-some-more-dib0700-base.patch
-
 #rhbz 1133378
 ApplyPatch firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
 
@@ -207,6 +201,20 @@ ApplyPatch kvm-x86-fix-kvm_apic_has_events-to-check-for-NULL-po.patch
 
 #rhbz 1227891
 ApplyPatch HID-rmi-Disable-populating-F30-when-the-touchpad-has.patch
+
+# rhbz 1180920 1206724
+ApplyPatch pcmcia-fix-a-boot-time-warning-in-pcmcia-cs-code.patch
+
+# CVE-2015-3290 CVE-2015-3291 rhbz 1243465 1245927
+ApplyPatch x86-asm-entry-64-Remove-pointless-jump-to-irq_return.patch
+ApplyPatch x86-entry-Stop-using-PER_CPU_VAR-kernel_stack.patch
+ApplyPatch x86-entry-Define-cpu_current_top_of_stack-for-64-bit.patch
+ApplyPatch x86-nmi-Enable-nested-do_nmi-handling-for-64-bit-ker.patch
+ApplyPatch x86-nmi-64-Remove-asm-code-that-saves-cr2.patch
+ApplyPatch x86-nmi-64-Switch-stacks-on-userspace-NMI-entry.patch
+ApplyPatch x86-nmi-64-Improve-nested-NMI-comments.patch
+ApplyPatch x86-nmi-64-Reorder-nested-NMI-checks.patch
+ApplyPatch x86-nmi-64-Use-DF-to-avoid-userspace-RSP-confusing-n.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

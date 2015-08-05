@@ -49,6 +49,14 @@ ApplyPatch 0003-libparted-also-link-to-UUID_LIBS.patch
 ApplyPatch 0004-lib-fs-resize-Prevent-crash-resizing-FAT16-file-syst.patch
 ApplyPatch 0005-tests-t3000-resize-fs.sh-Add-FAT16-resizing-test.patch
 ApplyPatch 0006-tests-t3000-resize-fs.sh-Add-requirement-on-mkfs.vfa.patch
+ApplyPatch 0007-tests-Change-minimum-size-to-256MiB.patch
+ApplyPatch 0008-parted-don-t-crash-in-disk_set-when-disk-label-not-f.patch
+ApplyPatch 0009-tests-Add-a-test-for-device-mapper-partition-sizes.patch
+ApplyPatch 0010-libparted-device-mapper-uses-512b-sectors.patch
+ApplyPatch 0011-Update-manpage-NAME-so-whatis-will-work.patch
+ApplyPatch 0012-tests-Make-sure-the-extended-partition-length-is-2-1.patch
+ApplyPatch 0013-libparted-BLKPG_RESIZE_PARTITION-uses-bytes-not-sect.patch
+ApplyPatch 0014-parted-Fix-crash-with-name-command-and-no-disklabel-.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

@@ -57,5 +57,7 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-memleak.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-select-readonly.patch
 #1241533,1224855 - bash leaks memory when LC_ALL set
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-memleak-lc_all.patch
+#1245233 - old memleak reappeared, taken from upstream
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-old-memleak.patch
 
 set +e +o pipefail

@@ -216,6 +216,12 @@ ApplyPatch x86-nmi-64-Improve-nested-NMI-comments.patch
 ApplyPatch x86-nmi-64-Reorder-nested-NMI-checks.patch
 ApplyPatch x86-nmi-64-Use-DF-to-avoid-userspace-RSP-confusing-n.patch
 
+# CVE-2015-5697 (rhbz 1249011 1249013)
+ApplyPatch md-use-kzalloc-when-bitmap-is-disabled.patch
+
+#rhbz 1251877 1251880 1250279 1248741
+ApplyPatch HID-hid-input-Fix-accessing-freed-memory-during-devi.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
 

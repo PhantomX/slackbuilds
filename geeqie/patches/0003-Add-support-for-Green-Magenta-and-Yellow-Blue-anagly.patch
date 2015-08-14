@@ -1,0 +1,338 @@
+From a22d0360d80834054c3333e02b08b0d2859ecb29 Mon Sep 17 00:00:00 2001
+From: Alexey Akishin <alex@science.su>
+Date: Mon, 8 Dec 2014 11:46:18 +0000
+Subject: [PATCH 3/3] Add support for Green-Magenta and Yellow-Blue anaglyph
+ modes
+
+---
+ src/pixbuf-renderer.c | 99 +++++++++++++++++++++++++++++++++++++++++----------
+ src/preferences.c     | 58 ++++++++++++++++++++++--------
+ src/typedefs.h        | 58 ++++++++++++++++++------------
+ 3 files changed, 161 insertions(+), 54 deletions(-)
+
+diff --git a/src/pixbuf-renderer.c b/src/pixbuf-renderer.c
+index 32f8641..da191b0 100644
+--- a/src/pixbuf-renderer.c
++++ b/src/pixbuf-renderer.c
+@@ -2150,7 +2150,11 @@ static void pr_signals_connect(PixbufRenderer *pr)
+  */
+ 
+ #define COLOR_BYTES 3   /* rgb */
+-static void pr_create_anaglyph_RC(GdkPixbuf *pixbuf, GdkPixbuf *right, gint x, gint y, gint w, gint h)
++#define RC 0            /* Red-Cyan */
++#define GM 1            /* Green-Magenta */
++#define YB 2            /* Yellow-Blue */
++
++static void pr_create_anaglyph_color(GdkPixbuf *pixbuf, GdkPixbuf *right, gint x, gint y, gint w, gint h, guint mode)
+ {
+ 	gint srs, drs;
+ 	guchar *s_pix, *d_pix;
+@@ -2172,14 +2176,26 @@ static void pr_create_anaglyph_RC(GdkPixbuf *pixbuf, GdkPixbuf *right, gint x, g
+ 		dp = dpi + (i * drs);
+ 		for (j = 0; j < w; j++)
+ 			{
+-			*dp = *sp; /* copy red channel */
++			switch(mode)
++				{
++				case RC:
++					dp[0] = sp[0]; /* copy red channel */
++					break;
++				case GM:
++					dp[1] = sp[1];
++					break;
++				case YB:
++					dp[0] = sp[0];
++					dp[1] = sp[1];
++					break;
++				}
+ 			sp += COLOR_BYTES;
+ 			dp += COLOR_BYTES;
+ 			}
+ 		}
+ }
+ 
+-static void pr_create_anaglyph_gray(GdkPixbuf *pixbuf, GdkPixbuf *right, gint x, gint y, gint w, gint h)
++static void pr_create_anaglyph_gray(GdkPixbuf *pixbuf, GdkPixbuf *right, gint x, gint y, gint w, gint h, guint mode)
+ {
+ 	gint srs, drs;
+ 	guchar *s_pix, *d_pix;
+@@ -2204,28 +2220,63 @@ static void pr_create_anaglyph_gray(GdkPixbuf *pixbuf, GdkPixbuf *right, gint x,
+ 			{
+ 			guchar g1 = dp[0] * gc[0] + dp[1] * gc[1] + dp[2] * gc[2];
+ 			guchar g2 = sp[0] * gc[0] + sp[1] * gc[1] + sp[2] * gc[2];
+-			dp[0] = g2; /* red channel from sp */
+-			dp[1] = g1; /* green and blue from dp */
+-			dp[2] = g1;
++			switch(mode)
++				{
++				case RC:
++					dp[0] = g2; /* red channel from sp */
++					dp[1] = g1; /* green and blue from dp */
++					dp[2] = g1;
++					break;
++				case GM:
++					dp[0] = g1;
++					dp[1] = g2;
++					dp[2] = g1;
++					break;
++				case YB:
++					dp[0] = g2;
++					dp[1] = g2;
++					dp[2] = g1;
++					break;
++				}
+ 			sp += COLOR_BYTES;
+ 			dp += COLOR_BYTES;
+ 			}
+ 		}
+ }
+ 
+-const double pr_dubois_matrix[3][6] = {
+-	{ 0.456,  0.500,  0.176, -0.043, -0.088, -0.002},
+-	{-0.040, -0.038, -0.016,  0.378,  0.734, -0.018},
+-	{-0.015, -0.021, -0.005, -0.072, -0.113,  1.226}
+-	};
+-
+-static void pr_create_anaglyph_dubois(GdkPixbuf *pixbuf, GdkPixbuf *right, gint x, gint y, gint w, gint h)
++static void pr_create_anaglyph_dubois(GdkPixbuf *pixbuf, GdkPixbuf *right, gint x, gint y, gint w, gint h, guint mode)
+ {
+ 	gint srs, drs;
+ 	guchar *s_pix, *d_pix;
+ 	guchar *sp, *dp;
+ 	guchar *spi, *dpi;
+ 	gint i, j, k;
++	double pr_dubois_matrix[3][6];
++	const static double pr_dubois_matrix_RC[3][6] = {
++		{ 0.456,  0.500,  0.176, -0.043, -0.088, -0.002},
++		{-0.040, -0.038, -0.016,  0.378,  0.734, -0.018},
++		{-0.015, -0.021, -0.005, -0.072, -0.113,  1.226}};
++	const static double pr_dubois_matrix_GM[3][6] = {
++		{-0.062, -0.158, -0.039,  0.529,  0.705,  0.024},
++		{ 0.284,  0.668,  0.143, -0.016, -0.015, -0.065},
++		{-0.015, -0.027,  0.021,  0.009,  0.075,  0.937}};
++	const static double pr_dubois_matrix_YB[3][6] = {
++		{ 1.000, -0.193,  0.282, -0.015, -0.116, -0.016},
++		{-0.024,  0.855,  0.064,  0.006,  0.058, -0.016},
++		{-0.036, -0.163,  0.021,  0.089,  0.174,  0.858}};
++
++	switch(mode)
++		{
++		case RC:
++			memcpy(pr_dubois_matrix, pr_dubois_matrix_RC, sizeof pr_dubois_matrix);
++			break;
++		case GM:
++			memcpy(pr_dubois_matrix, pr_dubois_matrix_GM, sizeof pr_dubois_matrix);
++			break;
++		case YB:
++			memcpy(pr_dubois_matrix, pr_dubois_matrix_YB, sizeof pr_dubois_matrix);
++			break;
++		}
+ 
+ 	srs = gdk_pixbuf_get_rowstride(right);
+ 	s_pix = gdk_pixbuf_get_pixels(right);
+@@ -2261,11 +2312,23 @@ static void pr_create_anaglyph_dubois(GdkPixbuf *pixbuf, GdkPixbuf *right, gint
+ void pr_create_anaglyph(guint mode, GdkPixbuf *pixbuf, GdkPixbuf *right, gint x, gint y, gint w, gint h)
+ {
+ 	if (mode & PR_STEREO_ANAGLYPH_RC)
+-		pr_create_anaglyph_RC(pixbuf, right, x, y, w, h);
+-	else if (mode & PR_STEREO_ANAGLYPH_GRAY)
+-		pr_create_anaglyph_gray(pixbuf, right, x, y, w, h);
+-	else if (mode & PR_STEREO_ANAGLYPH_DB)
+-		pr_create_anaglyph_dubois(pixbuf, right, x, y, w, h);
++		pr_create_anaglyph_color(pixbuf, right, x, y, w, h, RC);
++	else if (mode & PR_STEREO_ANAGLYPH_GM)
++		pr_create_anaglyph_color(pixbuf, right, x, y, w, h, GM);
++	else if (mode & PR_STEREO_ANAGLYPH_YB)
++		pr_create_anaglyph_color(pixbuf, right, x, y, w, h, YB);
++	else if (mode & PR_STEREO_ANAGLYPH_GRAY_RC)
++		pr_create_anaglyph_gray(pixbuf, right, x, y, w, h, RC);
++	else if (mode & PR_STEREO_ANAGLYPH_GRAY_GM)
++		pr_create_anaglyph_gray(pixbuf, right, x, y, w, h, GM);
++	else if (mode & PR_STEREO_ANAGLYPH_GRAY_YB)
++		pr_create_anaglyph_gray(pixbuf, right, x, y, w, h, YB);
++	else if (mode & PR_STEREO_ANAGLYPH_DB_RC)
++		pr_create_anaglyph_dubois(pixbuf, right, x, y, w, h, RC);
++	else if (mode & PR_STEREO_ANAGLYPH_DB_GM)
++		pr_create_anaglyph_dubois(pixbuf, right, x, y, w, h, GM);
++	else if (mode & PR_STEREO_ANAGLYPH_DB_YB)
++		pr_create_anaglyph_dubois(pixbuf, right, x, y, w, h, YB);
+ }
+ 
+ /*
+diff --git a/src/preferences.c b/src/preferences.c
+index 7881572..d91b8ed 100644
+--- a/src/preferences.c
++++ b/src/preferences.c
+@@ -528,24 +528,42 @@ static void stereo_mode_menu_cb(GtkWidget *combo, gpointer data)
+ 			*option = PR_STEREO_ANAGLYPH_RC;
+ 			break;
+ 		case 2:
+-			*option = PR_STEREO_ANAGLYPH_GRAY;
++			*option = PR_STEREO_ANAGLYPH_GM;
+ 			break;
+ 		case 3:
+-			*option = PR_STEREO_ANAGLYPH_DB;
++			*option = PR_STEREO_ANAGLYPH_YB;
+ 			break;
+ 		case 4:
+-			*option = PR_STEREO_HORIZ;
++			*option = PR_STEREO_ANAGLYPH_GRAY_RC;
+ 			break;
+ 		case 5:
+-			*option = PR_STEREO_HORIZ | PR_STEREO_HALF;
++			*option = PR_STEREO_ANAGLYPH_GRAY_GM;
+ 			break;
+ 		case 6:
+-			*option = PR_STEREO_VERT;
++			*option = PR_STEREO_ANAGLYPH_GRAY_YB;
+ 			break;
+ 		case 7:
+-			*option = PR_STEREO_VERT | PR_STEREO_HALF;
++			*option = PR_STEREO_ANAGLYPH_DB_RC;
+ 			break;
+ 		case 8:
++			*option = PR_STEREO_ANAGLYPH_DB_GM;
++			break;
++		case 9:
++			*option = PR_STEREO_ANAGLYPH_DB_YB;
++			break;
++		case 10:
++			*option = PR_STEREO_HORIZ;
++			break;
++		case 11:
++			*option = PR_STEREO_HORIZ | PR_STEREO_HALF;
++			break;
++		case 12:
++			*option = PR_STEREO_VERT;
++			break;
++		case 13:
++			*option = PR_STEREO_VERT | PR_STEREO_HALF;
++			break;
++		case 14:
+ 			*option = PR_STEREO_FIXED;
+ 			break;
+ 		}
+@@ -567,31 +585,43 @@ static void add_stereo_mode_menu(GtkWidget *table, gint column, gint row, const
+ 
+ 	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Red-Cyan"));
+ 	if (option & PR_STEREO_ANAGLYPH_RC) current = 1;
++	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Green-Magenta"));
++	if (option & PR_STEREO_ANAGLYPH_GM) current = 2;
++	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Yellow-Blue"));
++	if (option & PR_STEREO_ANAGLYPH_YB) current = 3;
+ 	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Gray Red-Cyan"));
+-	if (option & PR_STEREO_ANAGLYPH_GRAY) current = 2;
+-	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Dubois"));
+-	if (option & PR_STEREO_ANAGLYPH_DB) current = 3;
++	if (option & PR_STEREO_ANAGLYPH_GRAY_RC) current = 4;
++	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Gray Green-Magenta"));
++	if (option & PR_STEREO_ANAGLYPH_GRAY_GM) current = 5;
++	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Gray Yellow-Blue"));
++	if (option & PR_STEREO_ANAGLYPH_GRAY_YB) current = 6;
++	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Dubois Red-Cyan"));
++	if (option & PR_STEREO_ANAGLYPH_DB_RC) current = 7;
++	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Dubois Green-Magenta"));
++	if (option & PR_STEREO_ANAGLYPH_DB_GM) current = 8;
++	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Anaglyph Dubois Yellow-Blue"));
++	if (option & PR_STEREO_ANAGLYPH_DB_YB) current = 9;
+ 
+ 	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Side by Side"));
+ 	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Side by Side Half size"));
+ 	if (option & PR_STEREO_HORIZ)
+ 		{
+-		current = 4;
+-		if (option & PR_STEREO_HALF) current = 5;
++		current = 10;
++		if (option & PR_STEREO_HALF) current = 11;
+ 		}
+ 
+ 	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Top - Bottom"));
+ 	gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Top - Bottom Half size"));
+ 	if (option & PR_STEREO_VERT)
+ 		{
+-		current = 6;
+-		if (option & PR_STEREO_HALF) current = 7;
++		current = 12;
++		if (option & PR_STEREO_HALF) current = 13;
+ 		}
+ 
+ 	if (add_fixed)
+ 		{
+ 		gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), _("Fixed position"));
+-		if (option & PR_STEREO_FIXED) current = 8;
++		if (option & PR_STEREO_FIXED) current = 14;
+ 		}
+ 
+ 	gtk_combo_box_set_active(GTK_COMBO_BOX(combo), current);
+diff --git a/src/typedefs.h b/src/typedefs.h
+index 52068c9..d5a65c8 100644
+--- a/src/typedefs.h
++++ b/src/typedefs.h
+@@ -188,28 +188,42 @@ typedef enum {
+ } ToolbarType;
+ 
+ typedef enum {
+-	PR_STEREO_NONE           = 0,	  /* do nothing */
+-	PR_STEREO_DUAL           = 1 << 0, /* independent stereo buffers, for example nvidia opengl */
+-	PR_STEREO_FIXED          = 1 << 1, /* custom position */
+-	PR_STEREO_HORIZ          = 1 << 2, /* side by side */
+-	PR_STEREO_VERT           = 1 << 3, /* above below */
+-	PR_STEREO_RIGHT          = 1 << 4, /* render right buffer */
+-	PR_STEREO_ANAGLYPH_RC    = 1 << 5, /* anaglyph red-cyan */
+-	PR_STEREO_ANAGLYPH_GRAY  = 1 << 6, /* anaglyph gray red-cyan*/
+-	PR_STEREO_ANAGLYPH_DB    = 1 << 7, /* anaglyph dubois*/
+-	PR_STEREO_ANAGLYPH       = PR_STEREO_ANAGLYPH_RC | PR_STEREO_ANAGLYPH_GRAY | PR_STEREO_ANAGLYPH_DB, /* anaglyph mask */
+-
+-	PR_STEREO_MIRROR_LEFT    = 1 << 8, /* mirror */
+-	PR_STEREO_FLIP_LEFT      = 1 << 9, /* flip */
+-
+-	PR_STEREO_MIRROR_RIGHT   = 1 << 10, /* mirror */
+-	PR_STEREO_FLIP_RIGHT     = 1 << 11, /* flip */
+-
+-	PR_STEREO_MIRROR         = PR_STEREO_MIRROR_LEFT | PR_STEREO_MIRROR_RIGHT, /* mirror mask*/
+-	PR_STEREO_FLIP           = PR_STEREO_FLIP_LEFT | PR_STEREO_FLIP_RIGHT, /* flip mask*/
+-	PR_STEREO_SWAP           = 1 << 12,  /* swap left and right buffers */
+-	PR_STEREO_TEMP_DISABLE   = 1 << 13,  /* temporarily disable stereo mode if source image is not stereo */
+-	PR_STEREO_HALF           = 1 << 14
++	PR_STEREO_NONE             = 0,	  /* do nothing */
++	PR_STEREO_DUAL             = 1 << 0, /* independent stereo buffers, for example nvidia opengl */
++	PR_STEREO_FIXED            = 1 << 1,  /* custom position */
++	PR_STEREO_HORIZ            = 1 << 2,  /* side by side */
++	PR_STEREO_VERT             = 1 << 3,  /* above below */
++	PR_STEREO_RIGHT            = 1 << 4,  /* render right buffer */
++	PR_STEREO_ANAGLYPH_RC      = 1 << 5,  /* anaglyph red-cyan */
++	PR_STEREO_ANAGLYPH_GM      = 1 << 6,  /* anaglyph green-magenta */
++	PR_STEREO_ANAGLYPH_YB      = 1 << 7,  /* anaglyph yellow-blue */
++	PR_STEREO_ANAGLYPH_GRAY_RC = 1 << 8,  /* anaglyph gray red-cyan*/
++	PR_STEREO_ANAGLYPH_GRAY_GM = 1 << 9,  /* anaglyph gray green-magenta */
++	PR_STEREO_ANAGLYPH_GRAY_YB = 1 << 10, /* anaglyph gray yellow-blue */
++	PR_STEREO_ANAGLYPH_DB_RC   = 1 << 11, /* anaglyph dubois red-cyan */
++	PR_STEREO_ANAGLYPH_DB_GM   = 1 << 12, /* anaglyph dubois green-magenta */
++	PR_STEREO_ANAGLYPH_DB_YB   = 1 << 13, /* anaglyph dubois yellow-blue */
++	PR_STEREO_ANAGLYPH         = PR_STEREO_ANAGLYPH_RC |
++	                             PR_STEREO_ANAGLYPH_GM |
++	                             PR_STEREO_ANAGLYPH_YB |
++	                             PR_STEREO_ANAGLYPH_GRAY_RC |
++	                             PR_STEREO_ANAGLYPH_GRAY_GM |
++	                             PR_STEREO_ANAGLYPH_GRAY_YB |
++	                             PR_STEREO_ANAGLYPH_DB_RC |
++	                             PR_STEREO_ANAGLYPH_DB_GM |
++	                             PR_STEREO_ANAGLYPH_DB_YB, /* anaglyph mask */
++
++	PR_STEREO_MIRROR_LEFT      = 1 << 14, /* mirror */
++	PR_STEREO_FLIP_LEFT        = 1 << 15, /* flip */
++
++	PR_STEREO_MIRROR_RIGHT     = 1 << 16, /* mirror */
++	PR_STEREO_FLIP_RIGHT       = 1 << 17, /* flip */
++
++	PR_STEREO_MIRROR           = PR_STEREO_MIRROR_LEFT | PR_STEREO_MIRROR_RIGHT, /* mirror mask*/
++	PR_STEREO_FLIP             = PR_STEREO_FLIP_LEFT | PR_STEREO_FLIP_RIGHT, /* flip mask*/
++	PR_STEREO_SWAP             = 1 << 18,  /* swap left and right buffers */
++	PR_STEREO_TEMP_DISABLE     = 1 << 19,  /* temporarily disable stereo mode if source image is not stereo */
++	PR_STEREO_HALF             = 1 << 20
+ } PixbufRendererStereoMode;
+ 
+ typedef enum {
+-- 
+2.5.0
+

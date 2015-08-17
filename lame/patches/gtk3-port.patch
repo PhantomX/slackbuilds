@@ -1,0 +1,1094 @@
+diff -dupr frontend-old/gpkplotting.c frontend/gpkplotting.c
+--- frontend-old/gpkplotting.c	2011-05-07 18:05:17.000000000 +0200
++++ frontend/gpkplotting.c	2012-11-10 22:43:22.606040196 +0100
+@@ -27,19 +27,7 @@
+ 
+ #include "gpkplotting.h"
+ 
+-#ifdef STDC_HEADERS
+ # include <string.h>
+-#else
+-# ifndef HAVE_STRCHR
+-#  define strchr index
+-#  define strrchr rindex
+-# endif
+-char   *strchr(), *strrchr();
+-# ifndef HAVE_MEMCPY
+-#  define memcpy(d, s, n) bcopy ((s), (d), (n))
+-#  define memmove(d, s, n) bcopy ((s), (d), (n))
+-# endif
+-#endif
+ 
+ #ifdef WITH_DMALLOC
+ #include <dmalloc.h>
+@@ -47,7 +35,7 @@ char   *strchr(), *strrchr();
+ 
+ static gint num_plotwindows = 0;
+ static gint max_plotwindows = 10;
+-static GdkPixmap *pixmaps[10];
++static cairo_surface_t *pixmaps[10];
+ static GtkWidget *pixmapboxes[10];
+ 
+ 
+@@ -62,23 +50,19 @@ setcolor(GtkWidget * widget, GdkColor *
+     color->red = red * (65535 / 255);
+     color->green = green * (65535 / 255);
+     color->blue = blue * (65535 / 255);
+-    color->pixel = (gulong) (color->red * 65536 + color->green * 256 + color->blue);
+-    /* find closest in colormap, if needed */
+-    gdk_color_alloc(gtk_widget_get_colormap(widget), color);
++    //color->pixel = (gulong) (color->red * 65536 + color->green * 256 + color->blue);
+ }
+ 
+ 
+ void
+-gpk_redraw(GdkPixmap * pixmap, GtkWidget * pixmapbox)
++gpk_redraw(cairo_surface_t * pixmap, GtkWidget * pixmapbox)
+ {
+     /* redraw the entire pixmap */
+-    gdk_draw_pixmap(pixmapbox->window,
+-                    pixmapbox->style->fg_gc[GTK_WIDGET_STATE(pixmapbox)],
+-                    pixmap, 0, 0, 0, 0, pixmapbox->allocation.width, pixmapbox->allocation.height);
++    gtk_widget_queue_draw(pixmapbox);
+ }
+ 
+ 
+-static GdkPixmap **
++static cairo_surface_t **
+ findpixmap(GtkWidget * widget)
+ {
+     int     i;
+@@ -99,49 +83,67 @@ gpk_graph_draw(GtkWidget * widget, /* pl
+                char *title,  /* add a title (only if clear=1) */
+                GdkColor * color)
+ {
+-    GdkPixmap **ppixmap;
+-    GdkPoint *points;
++    cairo_surface_t **ppixmap;
+     int     i;
+     gint16  width, height;
+-    GdkFont *fixed_font;
+-    GdkGC  *gc;
+-
+-    gc = gdk_gc_new(widget->window);
+-    gdk_gc_set_foreground(gc, color);
+-
+-
++    GtkAllocation allocation;
+ 
+     if ((ppixmap = findpixmap(widget))) {
+-        width = widget->allocation.width;
+-        height = widget->allocation.height;
++        cairo_t *cr = cairo_create(*ppixmap);
++        gtk_widget_get_allocation(widget, &allocation);
++        width = allocation.width;
++        height = allocation.height;
+ 
+ 
+         if (clear) {
++            PangoLayout *layout = pango_layout_new(gtk_widget_get_pango_context(widget));
++            PangoFontDescription *fixed_font = pango_context_get_font_description(gtk_widget_get_pango_context(widget));
++            pango_font_description_set_family(fixed_font, "Monospace");
+             /* white background */
+-            gdk_draw_rectangle(*ppixmap, widget->style->white_gc, TRUE, 0, 0, width, height);
++            cairo_set_source_rgb(cr, 1, 1, 1);
++            cairo_paint(cr);
+             /* title */
+-#ifdef _WIN32
+-            fixed_font = gdk_font_load("-misc-fixed-large-r-*-*-*-100-*-*-*-*-*-*");
+-#else
+-            fixed_font = gdk_font_load("-misc-fixed-medium-r-*-*-*-100-*-*-*-*-iso8859-1");
+-#endif
+-
+-            gdk_draw_text(*ppixmap, fixed_font,
+-                          widget->style->fg_gc[GTK_WIDGET_STATE(widget)],
+-                          0, 10, title, strlen(title));
++            cairo_save(cr);
++            cairo_move_to(cr, 0, 10);
++            gdk_cairo_set_source_color(cr, &gtk_widget_get_style(widget)->fg[gtk_widget_get_state(widget)]);
++            pango_layout_set_text(layout, title, -1);
++            pango_cairo_show_layout(cr, layout);
++            g_object_unref(layout);
++            cairo_restore(cr);
+         }
+ 
+ 
+-        points = g_malloc(n * sizeof(GdkPoint));
++        gdk_cairo_set_source_color(cr, color);
++        cairo_set_line_width(cr, 1.0);
++        //cairo_set_line_cap (cr, CAIRO_LINE_CAP_SQUARE);
++        //cairo_set_antialias(cr, CAIRO_ANTIALIAS_NONE);
++        if (n > 0) cairo_move_to(cr, 
++                       .5 + ((xcord[0] - xmn) * (width - 1) / (xmx - xmn)),
++                       .5 + ((ycord[0] - ymx) * (height - 1) / (ymn - ymx)));
+         for (i = 0; i < n; i++) {
+-            points[i].x = .5 + ((xcord[i] - xmn) * (width - 1) / (xmx - xmn));
+-            points[i].y = .5 + ((ycord[i] - ymx) * (height - 1) / (ymn - ymx));
++            double point_x = .5 + ((xcord[i] - xmn) * (width - 1) / (xmx - xmn));
++            double point_y = .5 + ((ycord[i] - ymx) * (height - 1) / (ymn - ymx));
++            cairo_line_to(cr, point_x, point_y);
++            //g_print("new point: %d  x=%.2f, y=%.2f\n", i, point_x, point_y);
+         }
+-        gdk_draw_lines(*ppixmap, gc, points, n);
+-        g_free(points);
++        cairo_stroke(cr);
++#if 0
++        if (n > 0) cairo_move_to(cr, 
++                       .5 + ((xcord[0] - xmn) * (width - 1) / (xmx - xmn)),
++                       .5 + ((ycord[0] - ymx) * (height - 1) / (ymn - ymx)));
++        for (i = 0; (i < n); i++) {
++            double point_x = .5 + ((xcord[i] - xmn) * (width - 1) / (xmx - xmn));
++            double point_y = .5 + ((ycord[i] - ymx) * (height - 1) / (ymn - ymx));
++            if (cairo_status(cr) != CAIRO_STATUS_SUCCESS) 
++                g_print("%s\n", cairo_status_to_string(cairo_status(cr)));
++            //g_print("new point: x=%.2f, y=%.2f\n", point_x, point_y);
++            cairo_rectangle(cr, point_x, point_y, 1, 1);
++            cairo_fill(cr);
++        }
++#endif
++        cairo_destroy(cr);
+         gpk_redraw(*ppixmap, widget);
+     }
+-    gdk_gc_destroy(gc);
+ }
+ 
+ 
+@@ -152,20 +154,18 @@ gpk_rectangle_draw(GtkWidget * widget, /
+                    gdouble xmn, gdouble ymn, /* coordinates of corners */
+                    gdouble xmx, gdouble ymx, GdkColor * color)
+ {
+-    GdkPixmap **ppixmap;
++    cairo_surface_t **ppixmap;
+     GdkPoint points[2];
+     int     i;
+     gint16  width, height;
+-    GdkGC  *gc;
+-
+-
+-    gc = gdk_gc_new(widget->window);
+-    gdk_gc_set_foreground(gc, color);
++    GtkAllocation allocation;
+ 
+ 
+     if ((ppixmap = findpixmap(widget))) {
+-        width = widget->allocation.width;
+-        height = widget->allocation.height;
++        cairo_t *cr = cairo_create(*ppixmap);
++        gtk_widget_get_allocation(widget, &allocation);
++        width = allocation.width;
++        height = allocation.height;
+ 
+ 
+         for (i = 0; i < 2; i++) {
+@@ -174,10 +174,12 @@ gpk_rectangle_draw(GtkWidget * widget, /
+         }
+         width = points[1].x - points[0].x + 1;
+         height = points[1].y - points[0].y + 1;
+-        gdk_draw_rectangle(*ppixmap, gc, TRUE, points[0].x, points[0].y, width, height);
++        gdk_cairo_set_source_color(cr, color);
++        cairo_rectangle(cr, points[0].x, points[0].y, width, height);
++        cairo_fill(cr);
++        cairo_destroy(cr);
+         gpk_redraw(*ppixmap, widget);
+     }
+-    gdk_gc_destroy(gc);
+ }
+ 
+ 
+@@ -192,55 +194,39 @@ gpk_bargraph_draw(GtkWidget * widget, /*
+                   int barwidth, /* bar width. 0=compute based on window size */
+                   GdkColor * color)
+ {
+-    GdkPixmap **ppixmap;
++    cairo_surface_t **ppixmap;
+     GdkPoint points[2];
+     int     i;
+     gint16  width, height, x, y, barheight;
+-    GdkFont *fixed_font;
+-    GdkGC  *gc;
+-    int     titleSplit;
+-
+-
+-    gc = gdk_gc_new(widget->window);
+-    gdk_gc_set_foreground(gc, color);
++    GtkAllocation allocation;
+ 
+ 
+     if ((ppixmap = findpixmap(widget))) {
+-        width = widget->allocation.width;
+-        height = widget->allocation.height;
++        cairo_t *cr = cairo_create(*ppixmap);
++        gtk_widget_get_allocation(widget, &allocation);
++        width = allocation.width;
++        height = allocation.height;
+ 
+ 
+         if (clear) {
++            PangoLayout *layout = pango_layout_new(gtk_widget_get_pango_context(widget));
++            PangoFontDescription *fixed_font = pango_context_get_font_description(gtk_widget_get_pango_context(widget));
++            pango_font_description_set_family(fixed_font, "Monospace");
+             /* white background */
+-            gdk_draw_rectangle(*ppixmap, widget->style->white_gc, TRUE, 0, 0, width, height);
++            cairo_set_source_rgb(cr, 1, 1, 1);
++            cairo_paint(cr);
+             /* title */
+-#ifdef _WIN32
+-            fixed_font = gdk_font_load("-misc-fixed-large-r-*-*-*-100-*-*-*-*-*-*");
+-#else
+-            fixed_font = gdk_font_load("-misc-fixed-medium-r-*-*-*-100-*-*-*-*-iso8859-1");
+-#endif
+-
+-            titleSplit = strcspn(title, "\n");
+-
+-            if (titleSplit && (titleSplit != strlen(title))) {
+-                gdk_draw_text(*ppixmap, fixed_font,
+-                              widget->style->fg_gc[GTK_WIDGET_STATE(widget)],
+-                              0, 10, title, titleSplit);
+-
+-                gdk_draw_text(*ppixmap, fixed_font,
+-                              widget->style->fg_gc[GTK_WIDGET_STATE(widget)],
+-                              0, 22, title + titleSplit + 1, (strlen(title) - titleSplit) - 1);
+-
+-
+-            }
+-            else {
+-                gdk_draw_text(*ppixmap, fixed_font,
+-                              widget->style->fg_gc[GTK_WIDGET_STATE(widget)],
+-                              0, 10, title, strlen(title));
+-            }
++            cairo_save(cr);
++            cairo_move_to(cr, 0, 10);
++            gdk_cairo_set_source_color(cr, &gtk_widget_get_style(widget)->fg[gtk_widget_get_state(widget)]);
++            pango_layout_set_text(layout, title, -1);
++            pango_cairo_show_layout(cr, layout);
++            g_object_unref(layout);
++            cairo_restore(cr);
+         }
+ 
+ 
++        gdk_cairo_set_source_color(cr, color);
+         for (i = 0; i < n; i++) {
+             points[1].x = .5 + ((xcord[i] - xmn) * (width - 1) / (xmx - xmn));
+             points[1].y = .5 + ((ycord[i] - ymx) * (height - 1) / (ymn - ymx));
+@@ -255,12 +241,12 @@ gpk_bargraph_draw(GtkWidget * widget, /*
+             barwidth = barwidth < 1 ? 1 : barwidth;
+             barheight = height - 1 - y;
+             /* gdk_draw_lines(*ppixmap,gc,points,2); */
+-            gdk_draw_rectangle(*ppixmap, gc, TRUE, x, y, barwidth, barheight);
+-
++            cairo_rectangle(cr, x, y, barwidth, barheight);
++            cairo_fill(cr);
+         }
++        cairo_destroy(cr);
+         gpk_redraw(*ppixmap, widget);
+     }
+-    gdk_gc_destroy(gc);
+ }
+ 
+ 
+@@ -271,15 +257,17 @@ gpk_bargraph_draw(GtkWidget * widget, /*
+ static  gint
+ configure_event(GtkWidget * widget, GdkEventConfigure * event, gpointer data)
+ {
+-    GdkPixmap **ppixmap;
++    cairo_surface_t **ppixmap;
+     if ((ppixmap = findpixmap(widget))) {
++        cairo_t *cr;
+         if (*ppixmap)
+-            gdk_pixmap_unref(*ppixmap);
+-        *ppixmap = gdk_pixmap_new(widget->window,
+-                                  widget->allocation.width, widget->allocation.height, -1);
+-        gdk_draw_rectangle(*ppixmap,
+-                           widget->style->white_gc,
+-                           TRUE, 0, 0, widget->allocation.width, widget->allocation.height);
++            cairo_surface_destroy(*ppixmap);
++        *ppixmap = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
++                       event->width, event->height);
++        cr = cairo_create(*ppixmap);
++        cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
++        cairo_paint(cr);
++        cairo_destroy(cr);
+     }
+     return TRUE;
+ }
+@@ -287,22 +275,35 @@ configure_event(GtkWidget * widget, GdkE
+ 
+ 
+ /* Redraw the screen from the backing pixmap */
++#if !GTK_CHECK_VERSION(3, 0, 0)
+ static  gint
+ expose_event(GtkWidget * widget, GdkEventExpose * event, gpointer data)
+ {
+-    GdkPixmap **ppixmap;
++    cairo_surface_t **ppixmap;
+     if ((ppixmap = findpixmap(widget))) {
+-        gdk_draw_pixmap(widget->window,
+-                        widget->style->fg_gc[GTK_WIDGET_STATE(widget)],
+-                        *ppixmap,
+-                        event->area.x, event->area.y,
+-                        event->area.x, event->area.y, event->area.width, event->area.height);
++        cairo_t *cr = gdk_cairo_create(gtk_widget_get_window(widget));
++        gdk_cairo_region(cr, event->region);
++        cairo_clip(cr);
++        cairo_set_source_surface(cr, *ppixmap, 0, 0);
++        cairo_paint(cr);
++        cairo_destroy(cr);
+     }
+ 
+-    return FALSE;
++    return TRUE;
+ }
++#else
++static  gint
++expose_event(GtkWidget * widget, cairo_t * cr, gpointer data)
++{
++    cairo_surface_t **ppixmap;
++    if ((ppixmap = findpixmap(widget))) {
++        cairo_set_source_surface(cr, *ppixmap, 0, 0);
++        cairo_paint(cr);
++    }
+ 
+-
++    return TRUE;
++}
++#endif
+ 
+ 
+ 
+@@ -312,10 +313,14 @@ gpk_plot_new(int width, int height)
+     GtkWidget *pixmapbox;
+ 
+     pixmapbox = gtk_drawing_area_new();
+-    gtk_drawing_area_size(GTK_DRAWING_AREA(pixmapbox), width, height);
+-    gtk_signal_connect(GTK_OBJECT(pixmapbox), "expose_event", (GtkSignalFunc) expose_event, NULL);
+-    gtk_signal_connect(GTK_OBJECT(pixmapbox), "configure_event",
+-                       (GtkSignalFunc) configure_event, NULL);
++    gtk_widget_set_size_request(pixmapbox, width, height);
++    #if !GTK_CHECK_VERSION(3, 0, 0)
++    g_signal_connect(G_OBJECT(pixmapbox), "expose_event", (GCallback) expose_event, NULL);
++    #else
++    g_signal_connect(G_OBJECT(pixmapbox), "draw", (GCallback) expose_event, NULL);
++    #endif
++    g_signal_connect(G_OBJECT(pixmapbox), "configure_event",
++                       (GCallback) configure_event, NULL);
+     gtk_widget_set_events(pixmapbox, GDK_EXPOSURE_MASK);
+ 
+     if (num_plotwindows < max_plotwindows) {
+diff -dupr frontend-old/gtkanal.c frontend/gtkanal.c
+--- frontend-old/gtkanal.c	2011-05-07 18:05:17.000000000 +0200
++++ frontend/gtkanal.c	2012-11-10 23:26:08.815615691 +0100
+@@ -260,9 +260,11 @@ plot_frame(void)
+     /*int     sampindex, version = 0;*/
+     int     barthick;
+     static int firstcall = 1;
+-    static GdkColor *barcolor, *color, *grcolor[2];
+-    static GdkColor yellow, gray, cyan, magenta, orange, pink, red, green, blue, black, oncolor,
+-        offcolor;
++    static GdkColor *barcolor, *grcolor[2];
++    const char *color;
++    static GdkColor yellow, gray, cyan, magenta, orange, pink, red, green, blue, black;
++    GtkTextBuffer *buffer;
++    GtkTextIter iter;
+     int     blocktype[2][2];
+     int     headbits;
+     int     mode_gr = 2;
+@@ -294,8 +296,6 @@ plot_frame(void)
+         grcolor[1] = &green;
+         barcolor = &gray;
+ 
+-        setcolor(headerbox, &oncolor, 255, 0, 0);
+-        setcolor(headerbox, &offcolor, 175, 175, 175);
+         setcolor(pcmbox, &red, 255, 0, 0);
+         setcolor(pcmbox, &pink, 255, 0, 255);
+         setcolor(pcmbox, &magenta, 255, 0, 100);
+@@ -323,40 +323,42 @@ plot_frame(void)
+     headbits = 32 + ((pplot1->stereo == 2) ? 256 : 136);
+     gtkinfo.approxbits = (pplot1->bitrate * 1000 * 1152.0 / samp) - headbits;
+     sprintf(title2, "%3.1fkHz %ikbs ", samp / 1000, pplot1->bitrate);
+-    gtk_text_freeze(GTK_TEXT(headerbox));
+-    gtk_text_backward_delete(GTK_TEXT(headerbox), gtk_text_get_length(GTK_TEXT(headerbox)));
+-    gtk_text_set_point(GTK_TEXT(headerbox), 0);
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, &oncolor, NULL, title2, -1);
++    //gtk_text_freeze(GTK_TEXT(headerbox));
++    buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(headerbox));
++    gtk_text_buffer_set_text(buffer, "", -1);
++    gtk_text_buffer_get_start_iter(buffer, &iter);
++    gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, title2, -1, "oncolor", NULL);
+     title = " mono ";
+     if (2 == pplot1->stereo)
+         title = pplot1->js ? " js " : " s ";
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, &oncolor, NULL, title, -1);
+-    color = pplot1->ms_stereo ? &oncolor : &offcolor;
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, color, NULL, "ms ", -1);
+-    color = pplot1->i_stereo ? &oncolor : &offcolor;
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, color, NULL, "is ", -1);
++    gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, title, -1, "oncolor", NULL);
++    color = pplot1->ms_stereo ? "oncolor" : "offcolor";
++    gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, "ms ", -1, color, NULL);
++    color = pplot1->i_stereo ? "oncolor" : "offcolor";
++    gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, "is ", -1,color, NULL);
+ 
+-    color = pplot1->crc ? &oncolor : &offcolor;
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, color, NULL, "crc ", -1);
+-    color = pplot1->padding ? &oncolor : &offcolor;
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, color, NULL, "pad ", -1);
++    color = pplot1->crc ? "oncolor" : "offcolor";
++    gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, "crc ", -1, color, NULL);
++    color = pplot1->padding ? "oncolor" : "offcolor";
++    gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, "pad ", -1, color, NULL);
+ 
+-    color = pplot1->emph ? &oncolor : &offcolor;
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, color, NULL, "em ", -1);
++    color = pplot1->emph ? "oncolor" : "offcolor";
++    gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, "em ", -1, color, NULL);
+ 
+     sprintf(title2, "bv=%i,%i ", pplot1->big_values[0][ch], pplot1->big_values[1][ch]);
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, &black, NULL, title2, -1);
++    //gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, title2, -1, &black, NULL);
++    gtk_text_buffer_insert(buffer, &iter, title2, -1);
+ 
+-    color = pplot1->scfsi[ch] ? &oncolor : &offcolor;
++    color = pplot1->scfsi[ch] ? "oncolor" : "offcolor";
+     sprintf(title2, "scfsi=%i            ", pplot1->scfsi[ch]);
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, color, NULL, title2, -1);
++    gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, title2, -1, color, NULL);
+     if (gtkinfo.filetype)
+         sprintf(title2, " mdb=%i %i/NA", pplot1->maindata, pplot1->totbits);
+     else
+         sprintf(title2, " mdb=%i   %i/%i",
+                 pplot1->maindata, pplot1->totbits, pplot1->totbits + pplot->resvsize);
+-    gtk_text_insert(GTK_TEXT(headerbox), NULL, &oncolor, NULL, title2, -1);
+-    gtk_text_thaw(GTK_TEXT(headerbox));
++    gtk_text_buffer_insert_with_tags_by_name(buffer, &iter, title2, -1, "oncolor", NULL);
++    //gtk_text_thaw(GTK_TEXT(headerbox));
+ 
+ 
+ 
+@@ -850,15 +852,21 @@ plot_frame(void)
+ static void
+ update_progress(void)
+ {
+-    char    label[80];
++    char *label;
+ 
+     int     tf = lame_get_totalframes(gfp);
+     if (gtkinfo.totalframes > 0)
+         tf = gtkinfo.totalframes;
+ 
+-    sprintf(label, "Frame:%4i/%4i  %6.2fs", pplot->frameNum, (int) tf - 1, pplot->frametime);
+-    gtk_progress_set_value(GTK_PROGRESS(frameprogress), (gdouble) pplot->frameNum);
++    label = g_strdup_printf("Frame:%4i/%4i  %6.2fs", pplot->frameNum + 1, tf - 1, pplot->frametime);
+     gtk_label_set_text(GTK_LABEL(framecounter), label);
++    g_free(label);
++    if (tf > 1) {
++      gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(frameprogress), (1.0 + pplot->frameNum) / (tf - 1));
++      label = g_strdup_printf("%d%%", ((1 + pplot->frameNum) * 100 + (tf - 1) / 2) / (tf - 1));
++      gtk_progress_bar_set_text(GTK_PROGRESS_BAR(frameprogress), label);
++      g_free(label);
++    }
+ }
+ 
+ 
+@@ -885,7 +893,7 @@ plotclick(GtkWidget * widget, gpointer d
+ 
+ 
+ 
+-static int
++static gboolean
+ frameadv1(GtkWidget * widget, gpointer data)
+ {
+     int     i;
+@@ -956,11 +964,7 @@ frameadv1(GtkWidget * widget, gpointer d
+         if ((idle_count >= idle_count_max) && (!idle_end))
+             analyze();
+     }
+-    else {
+-        /*no processing to do, sleep in order to not monopolize CPU */
+-        msleep(10);
+-    }
+-    return 1;
++    return !mp3done;
+ }
+ 
+ 
+@@ -1008,7 +1012,7 @@ frameadv(GtkWidget * widget, gpointer da
+ 
+ /* another callback */
+ static void
+-delete_event(GtkWidget * widget, GdkEvent * event, gpointer data)
++delete_event(GtkWidget * widget, gpointer data)
+ {
+     /* set MP3 done flag in case the File/Quit menu item has been selected */
+     mp3done = 1;
+@@ -1023,10 +1027,8 @@ delete_event(GtkWidget * widget, GdkEven
+ 
+ 
+ static void
+-channel_option(GtkWidget * widget, gpointer data)
++channel_option(int option)
+ {
+-    long    option;
+-    option = (long) data;
+     switch (option) {
+     case 1:
+         gtkinfo.msflag = 0;
+@@ -1047,10 +1049,8 @@ channel_option(GtkWidget * widget, gpoin
+     analyze();
+ }
+ static void
+-spec_option(GtkWidget * widget, gpointer data)
++spec_option(int option)
+ {
+-    long    option;
+-    option = (long) data;
+     switch (option) {
+     case 1:
+         gtkinfo.kbflag = 0;
+@@ -1139,39 +1139,38 @@ get_mp3x_version(void)
+ 
+ 
+ static void
+-text_window(GtkWidget * widget, gpointer data)
++text_window(int option)
+ {
+-    long    option;
+-    GtkWidget *hbox, *vbox, *button, *box;
+-    GtkWidget *textwindow, *vscrollbar;
++    GtkWidget *button, *box;
++    GtkWidget *textwindow;
++    GtkTextBuffer *buffer;
++    GtkTextIter iter;
+     char    text[256];
+ 
+-    option = (long) data;
+-
+-    textwindow = gtk_window_new(GTK_WINDOW_DIALOG);
+-    gtk_signal_connect_object(GTK_OBJECT(window), "delete_event",
+-                              GTK_SIGNAL_FUNC(gtk_widget_destroy), GTK_OBJECT(textwindow));
++    textwindow = gtk_dialog_new_with_buttons(NULL, GTK_WINDOW(window), 0,
++                     GTK_STOCK_CLOSE, GTK_RESPONSE_CLOSE, NULL);
++    g_signal_connect(G_OBJECT(textwindow), "response",
++                     G_CALLBACK(gtk_widget_destroy), NULL);
+ 
+     gtk_container_set_border_width(GTK_CONTAINER(textwindow), 0);
+-    vbox = gtk_vbox_new(FALSE, 0);
+-    hbox = gtk_hbox_new(FALSE, 0);
+ 
+-    button = gtk_button_new_with_label("close");
+-    gtk_signal_connect_object(GTK_OBJECT(button), "clicked",
+-                              GTK_SIGNAL_FUNC(gtk_widget_destroy), GTK_OBJECT(textwindow));
++    button = gtk_button_new_from_stock(GTK_STOCK_CLOSE);
++    g_signal_connect_swapped(G_OBJECT(button), "clicked",
++                             G_CALLBACK(gtk_widget_destroy), G_OBJECT(textwindow));
+ 
+-    box = gtk_text_new(NULL, NULL);
+-    gtk_text_set_editable(GTK_TEXT(box), FALSE);
+-    vscrollbar = gtk_vscrollbar_new(GTK_TEXT(box)->vadj);
++    box = gtk_text_view_new();
++    gtk_text_view_set_editable(GTK_TEXT_VIEW(box), FALSE);
++    buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(box));
++    gtk_text_buffer_get_start_iter(buffer, &iter);
+ 
+ 
+     switch (option) {
+     case 0:
+         gtk_window_set_title(GTK_WINDOW(textwindow), "Documentation");
+-        gtk_widget_set_usize(box, 450, 500);
+-        gtk_text_set_word_wrap(GTK_TEXT(box), TRUE);
++        gtk_widget_set_size_request(box, 450, 500);
++        gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(box), GTK_WRAP_WORD);
+         /* text should be moved outside this function, may be in a separate file */
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL,
++        gtk_text_buffer_insert(buffer, &iter,
+                         "Frame header information: "
+                         "First the bitrate, sampling frequency and mono, stereo or jstereo "
+                         "indicators are displayed .  If the bitstream is jstereo, then mid/side "
+@@ -1187,7 +1186,7 @@ text_window(GtkWidget * widget, gpointer
+                         "maximum frame size indicates the bitstream has made use of the bit "
+                         "reservoir. \n\n", -1);
+ 
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL,
++        gtk_text_buffer_insert(buffer, &iter,
+                         "PCM data (top graph): "
+                         "The PCM data is plotted in black.  The layer3 frame is divided into 2 "
+                         "granules of 576 samples (marked with yellow vertical lines).  In the "
+@@ -1201,12 +1200,12 @@ text_window(GtkWidget * widget, gpointer
+                         "FFT is computed for each granule.  The range of these windows "
+                         "is denoted by the blue and green bars.\n\n", -1);
+ 
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL,
++        gtk_text_buffer_insert(buffer, &iter,
+                         "PCM re-synthesis data (second graph): "
+                         "Same as the PCM window described above.  The data displayed is the "
+                         "result of encoding and then decoding the original sample. \n\n", -1);
+ 
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL,
++        gtk_text_buffer_insert(buffer, &iter,
+                         "MDCT windows: "
+                         "Shows the energy in the MDCT spectrum for granule 0 (left window) "
+                         "and granule 1 (right window).  The text also shows the blocktype "
+@@ -1215,7 +1214,7 @@ text_window(GtkWidget * widget, gpointer
+                         "window will toggle between the original unquantized MDCT coefficients "
+                         "and the compressed (quantized) coefficients.\n\n", -1);
+ 
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL,
++        gtk_text_buffer_insert(buffer, &iter,
+                         "FFT window: "
+                         "The gray bars show the energy in the FFT spectrum used by the "
+                         "psycho-acoustic model.  Granule 0 is in the left window, granule 1 in "
+@@ -1235,157 +1234,205 @@ text_window(GtkWidget * widget, gpointer
+     case 1:
+         /* Set the about box information */
+         gtk_window_set_title(GTK_WINDOW(textwindow), "About");
+-        gtk_widget_set_usize(box, 350, 260);
++        gtk_widget_set_size_request(box, 350, 260);
+ 
+         sprintf(text, "LAME version %s \n%s\n\n", get_lame_version(), get_lame_url());
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+ 
+         sprintf(text, "psycho-acoustic model:  GPSYCHO version %s\n", get_psy_version());
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+ 
+         sprintf(text, "frame analyzer: MP3x version %s\n\n", get_mp3x_version());
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+ 
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL,
++        gtk_text_buffer_insert(buffer, &iter,
+                         "decoder:  mpg123/mpglib  .59q  \nMichael Hipp (www.mpg123.de)\n\n", -1);
+ 
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL,
++        gtk_text_buffer_insert(buffer, &iter,
+                         "Encoder, decoder & psy-models based on ISO\ndemonstration source. ", -1);
+         break;
+ 
+     case 2:
+         gtk_window_set_title(GTK_WINDOW(textwindow), "Statistics");
+-        gtk_widget_set_usize(box, 350, 260);
++        gtk_widget_set_size_request(box, 350, 260);
+         sprintf(text, "frames processed so far: %i \n", Pinfo[0].frameNum + 1);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "granules processed so far: %i \n\n", 4 * (Pinfo[0].frameNum + 1));
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "mean bits/frame (approximate): %i\n", gtkinfo.approxbits);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "mean bits/frame (from LAME): %i\n", 4 * Pinfo[0].mean_bits);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "bitsize of largest frame: %i \n", gtkinfo.maxbits);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "average bits/frame: %3.1f \n\n", gtkinfo.avebits);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "ms_stereo frames: %i \n", gtkinfo.totms);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "i_stereo frames: %i \n", gtkinfo.totis);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "de-emphasis frames: %i \n", gtkinfo.totemph);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "short block granules: %i \n", gtkinfo.totshort);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "mixed block granules: %i \n", gtkinfo.totmix);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         sprintf(text, "preflag granules: %i \n", gtkinfo.totpreflag);
+-        gtk_text_insert(GTK_TEXT(box), NULL, NULL, NULL, text, -1);
++        gtk_text_buffer_insert(buffer, &iter, text, -1);
+         break;
+     }
+ 
+ 
+ 
+-    gtk_widget_show(vscrollbar);
+     gtk_widget_show(box);
+-    gtk_widget_show(vbox);
+-    gtk_widget_show(hbox);
+-    gtk_widget_show(button);
+ 
+-    gtk_box_pack_start(GTK_BOX(hbox), box, FALSE, TRUE, 0);
+-    gtk_box_pack_start(GTK_BOX(hbox), vscrollbar, FALSE, FALSE, 0);
+-    gtk_box_pack_start(GTK_BOX(vbox), hbox, FALSE, TRUE, 0);
+-    gtk_box_pack_end(GTK_BOX(vbox), button, FALSE, TRUE, 0);
+-    gtk_container_add(GTK_CONTAINER(textwindow), vbox);
++    gtk_container_add(
++        GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(textwindow))),
++        box);
+     gtk_widget_show(textwindow);
+ 
+ }
+ 
+ 
+ 
++static const char menubar_desc[] =
++"<menubar>"
++"<menu action='FileMenu'>"
++"<menuitem action='Quit'/>"
++"</menu>"
++"<menu action='PlotMenu'>"
++"<menuitem action='while_adv'/>"
++"<menuitem action='after_adv'/>"
++// "<menuitem action='show_plot_sfb'/>"
++"<menuitem action='show_orig_diff'/>"
++"</menu>"
++"<menu action='ChannelMenu'>"
++"<menuitem action='ch_left'/>"
++"<menuitem action='ch_right'/>"
++"<menuitem action='ch_mid'/>"
++"<menuitem action='ch_side'/>"
++"</menu>"
++"<menu action='SPTMenu'>"
++"<menuitem action='scale_band'/>"
++"<menuitem action='wave_num'/>"
++"</menu>"
++"<menu action='MDCTMenu'>"
++"<menuitem action='orig_mdct'/>"
++"<menuitem action='compr_mdct'/>"
++"<menuitem action='show_mdct_sfb'/>"
++"</menu>"
++"<menu action='StatsMenu'>"
++"<menuitem action='ShowStats'/>"
++"</menu>"
++"<separator expand='true'/>"
++"<menu action='HelpMenu'>"
++"<menuitem action='Documentation'/>"
++"<menuitem action='About'/>"
++"</menu>"
++"</menubar>";
+ 
+-/* #include <strings.h>*/
+-
+-
+-/* This is the GtkItemFactoryEntry structure used to generate new menus.
+-   Item 1: The menu path. The letter after the underscore indicates an
+-           accelerator key once the menu is open.
+-   Item 2: The accelerator key for the entry
+-   Item 3: The callback function.
+-   Item 4: The callback action.  This changes the parameters with
+-           which the function is called.  The default is 0.
+-   Item 5: The item type, used to define what kind of an item it is.
+-           Here are the possible values:
+-
+-           NULL               -> "<Item>"
+-           ""                 -> "<Item>"
+-           "<Title>"          -> create a title item
+-           "<Item>"           -> create a simple item
+-           "<CheckItem>"      -> create a check item
+-           "<ToggleItem>"     -> create a toggle item
+-           "<RadioItem>"      -> create a radio item
+-           <path>             -> path of a radio item to link against
+-           "<Separator>"      -> create a separator
+-           "<Branch>"         -> create an item to hold sub items
+-           "<LastBranch>"     -> create a right justified branch
+-*/
++static void show_stats_window(GtkAction* action, gpointer data)
++{
++  text_window(2);
++}
++static void show_help_window(GtkAction* action, gpointer data)
++{
++  text_window(0);
++}
++static void show_about_window(GtkAction* action, gpointer data)
++{
++  text_window(1);
++}
+ 
++static GtkActionEntry entries[] = {
++ { "FileMenu", NULL, "_File" },
++ { "PlotMenu", NULL, "_Plotting" },
++ { "ChannelMenu", NULL, "_Channel" },
++ { "SPTMenu", NULL, "_Spectrum" },
++ { "MDCTMenu", NULL, "_MDCT" },
++ { "StatsMenu", NULL, "_Stats" },
++ { "HelpMenu", NULL, "_Help" },
++ { "Quit", GTK_STOCK_QUIT, "_Quit", "<control>Q", NULL, G_CALLBACK(delete_event) },
++ { "ShowStats", NULL, "_Show", NULL, NULL, G_CALLBACK(show_stats_window) },
++ { "Documentation", GTK_STOCK_HELP, "_Documentation", NULL, NULL, G_CALLBACK(show_help_window) },
++ { "About", GTK_STOCK_ABOUT, "_About", NULL, NULL, G_CALLBACK(show_about_window) }
++};
++static guint n_entries = G_N_ELEMENTS (entries);
+ 
+-#define C(chr)       "<control>" #chr
+-#define func(name)   (GtkItemFactoryCallback) (name)
++static void toggle_sfb(GtkAction* action, gpointer data)
++{
++  spec_option(7);
++}
+ 
+-static const GtkItemFactoryEntry menu_items[] = {
+-    {"/_File", NULL, NULL, 0, "<Branch>"},
+-#if 0
+-    {"/File/_New", C(N), func(print_hello), 0, NULL},
+-    {"/File/_Open", C(O), func(print_hello), 0, NULL},
+-    {"/File/_Save", C(S), func(print_hello), 0, NULL},
+-    {"/File/Save _As", NULL, NULL, 0, NULL},
+-    {"/File/sep1", NULL, NULL, 0, "<Separator>"},
+-    {"/File/Quit", C(Q), func(gtk_main_quit), 0, NULL},
+-#endif
+-    {"/File/_Quit", C(Q), func(delete_event), 0, NULL},
++static void toggle_diff(GtkAction* action, gpointer data)
++{
++  spec_option(8);
++}
+ 
+-    {"/_Plotting", NULL, NULL, 0, "<Branch>"},
+-    {"/Plotting/_While advancing", NULL, func(spec_option), 5, NULL},
+-    {"/Plotting/_After advancing", NULL, func(spec_option), 6, NULL},
+-    {"/Plotting/Toggle SFB lines", NULL, func(spec_option), 7, NULL},
+-    {"/Plotting/Toggle orig-diff", NULL, func(spec_option), 8, NULL},
++static GtkToggleActionEntry toggle_entries[] = {
++//  { "show_plot_sfb", NULL, "_Toggle SFB lines", NULL, NULL, G_CALLBACK(toggle_sfb), TRUE},
++  { "show_mdct_sfb", NULL, "_Toggle SFB lines", NULL, NULL, G_CALLBACK(toggle_sfb), TRUE},
++  { "show_orig_diff", NULL, "Toggle orig-diff", NULL, NULL, G_CALLBACK(toggle_diff), FALSE}
++};
++static guint n_toggle_entries = G_N_ELEMENTS (toggle_entries);
+ 
+-    {"/_Channel", NULL, NULL, 0, "<Branch>"},
+-    {"/Channel/show _Left", NULL, func(channel_option), 1, NULL},
+-    {"/Channel/show _Right", NULL, func(channel_option), 2, NULL},
+-    {"/Channel/show _Mid", NULL, func(channel_option), 3, NULL},
+-    {"/Channel/show _Side", NULL, func(channel_option), 4, NULL},
++enum {
++  CHAN_LEFT = 1,
++  CHAN_RIGHT = 2,
++  CHAN_MIDDLE = 3,
++  CHAN_SIDE = 4
++};
+ 
+-    {"/_Spectrum", NULL, NULL, 0, "<Branch>"},
+-    {"/Spectrum/_Scalefactor bands", NULL, func(spec_option), 1, NULL},
+-    {"/Spectrum/_Wave number", NULL, func(spec_option), 2, NULL},
++static void radio_toggle(GtkRadioAction *action, gpointer data)
++{
++  spec_option(gtk_radio_action_get_current_value(action));
++}
+ 
+-    {"/_MDCT", NULL, NULL, 0, "<Branch>"},
+-    {"/MDCT/_Original", NULL, func(spec_option), 3, NULL},
+-    {"/MDCT/_Compressed", NULL, func(spec_option), 4, NULL},
+-    {"/MDCT/_Toggle SFB lines", NULL, func(spec_option), 7, NULL},
++static void radio_channel(GtkRadioAction *action, gpointer data)
++{
++  channel_option(gtk_radio_action_get_current_value(action));
++}
+ 
+-    {"/_Stats", NULL, NULL, 0, "<Branch>"},
+-    {"/Stats/_Show", NULL, func(text_window), 2, NULL},
++static GtkRadioActionEntry channel_radio_entries[] = {
++  { "ch_left", NULL, "show _Left", NULL, NULL, CHAN_LEFT },
++  { "ch_right", NULL, "show _Right", NULL, NULL, CHAN_RIGHT },
++  { "ch_mid", NULL, "show _Mid", NULL, NULL, CHAN_MIDDLE },
++  { "ch_side", NULL, "show _Side", NULL, NULL, CHAN_SIDE }
++};
++static guint n_channel_radio_entries = G_N_ELEMENTS (channel_radio_entries);
+ 
+-    {"/_Help", NULL, NULL, 0, "<LastBranch>"},
+-    {"/_Help/_Documentation", NULL, func(text_window), 0, NULL},
+-    {"/_Help/_About", NULL, func(text_window), 1, NULL},
++static GtkRadioActionEntry spt_radio_entries[] = {
++  { "scale_band", NULL, "_Scalefactor bands", NULL, NULL, 1 },
++  { "wave_num", NULL, "_Wave number", NULL, NULL, 2 }
+ };
+ 
+-#undef C
+-#undef func
++static GtkRadioActionEntry mdct_radio_entries[] = {
++  { "orig_mdct", NULL, "_Original", NULL, NULL, 3 },
++  { "compr_mdct", NULL, "_Compressed", NULL, NULL, 4 }
++};
+ 
++static GtkRadioActionEntry plot_radio_entries[] = {
++  { "while_adv", NULL, "_While advancing", NULL, NULL, 5 },
++  { "after_adv", NULL, "_After advancing", NULL, NULL, 6 }
++};
+ 
+ static void
+ get_main_menu(GtkWidget * windows, GtkWidget ** menubar)
+ {
+-    unsigned int nmenu_items = sizeof(menu_items) / sizeof(menu_items[0]);
+-    GtkItemFactory *item_factory;
+-    GtkAccelGroup *accel_group;
++    GtkUIManager *ui;
++    GtkActionGroup *actions = gtk_action_group_new("Actions");
++    GError *error = NULL;
+ 
+-    accel_group = gtk_accel_group_new();
++    gtk_action_group_add_actions(actions, entries, n_entries, NULL);
++    gtk_action_group_add_toggle_actions(actions, toggle_entries, n_toggle_entries, NULL);
++    gtk_action_group_add_radio_actions(actions, channel_radio_entries, n_channel_radio_entries,
++        CHAN_LEFT, G_CALLBACK(radio_channel), NULL);
++    gtk_action_group_add_radio_actions(actions, spt_radio_entries, 2,
++        1, G_CALLBACK(radio_toggle), NULL);
++    gtk_action_group_add_radio_actions(actions, mdct_radio_entries, 2,
++        !is_mpeg_file_format(global_reader.input_format) ? 3 : 4, G_CALLBACK(radio_toggle), NULL);
++    gtk_action_group_add_radio_actions(actions, plot_radio_entries, 2,
++        6, G_CALLBACK(radio_toggle), NULL);
+ 
+     /* This function initializes the item factory.
+        Param 1: The type of menu - can be GTK_TYPE_MENU_BAR, GTK_TYPE_MENU,
+@@ -1395,20 +1442,25 @@ get_main_menu(GtkWidget * windows, GtkWi
+        the accelerator table while generating menus.
+      */
+ 
+-    item_factory = gtk_item_factory_new(GTK_TYPE_MENU_BAR, "<main>", accel_group);
++    ui = gtk_ui_manager_new();
++    gtk_ui_manager_insert_action_group(ui, actions, 0);
++    g_object_unref(actions);
+ 
+     /* This function generates the menu items. Pass the item factory,
+        the number of items in the array, the array itself, and any
+        callback data for the the menu items. */
+-    gtk_item_factory_create_items(item_factory, nmenu_items, (GtkItemFactoryEntry *) menu_items,
+-                                  NULL);
++    if (!gtk_ui_manager_add_ui_from_string(ui, menubar_desc, -1, &error))
++    {
++      g_message("building menus failed: %s", error->message);
++      g_error_free(error);
++    }
+ 
+     /* Attach the new accelerator group to the window. */
+-    gtk_accel_group_attach(accel_group, GTK_OBJECT(windows));
++    gtk_window_add_accel_group(GTK_WINDOW(windows), gtk_ui_manager_get_accel_group(ui));
+ 
+     if (menubar)
+         /* Finally, return the actual menu bar created by the item factory. */
+-        *menubar = gtk_item_factory_get_widget(item_factory, "<main>");
++        *menubar = gtk_ui_manager_get_widget(ui, "/menubar");
+ }
+ 
+ 
+@@ -1431,13 +1483,14 @@ gtkcontrol(lame_global_flags * gfp2, cha
+ {
+     /* GtkWidget is the storage type for widgets */
+     GtkWidget *button;
+-    GtkAdjustment *adj;
+     GtkWidget *mbox;         /* main box */
+     GtkWidget *box1;         /* frame control buttons go */
+     GtkWidget *box2;         /* frame counters */
+     GtkWidget *box3;         /* frame header info */
+     GtkWidget *table;        /* table for all the plotting areas */
+     GtkWidget *menubar;
++    GtkTextBuffer *buffer;
++    GdkColor color;
+ 
+     gint    tableops, graphx, graphy;
+     char    frameinfo[80];
+@@ -1475,10 +1528,10 @@ gtkcontrol(lame_global_flags * gfp2, cha
+ 
+     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+     gtk_window_set_title(GTK_WINDOW(window), frameinfo);
+-    gtk_signal_connect(GTK_OBJECT(window), "delete_event", GTK_SIGNAL_FUNC(delete_event), NULL);
++    g_signal_connect(G_OBJECT(window), "delete_event", G_CALLBACK(delete_event), NULL);
+ 
+-    gtk_signal_connect_object(GTK_OBJECT(window), "key_press_event",
+-                              GTK_SIGNAL_FUNC(key_press_event), GTK_OBJECT(window));
++    g_signal_connect_swapped(G_OBJECT(window), "key_press_event",
++                             G_CALLBACK(key_press_event), G_OBJECT(window));
+ 
+     gtk_container_set_border_width(GTK_CONTAINER(window), 0);
+ 
+@@ -1509,12 +1562,17 @@ gtkcontrol(lame_global_flags * gfp2, cha
+        headerbox = gtk_label_new(" ");
+        gtk_label_set_justify(GTK_LABEL(headerbox),GTK_JUSTIFY_LEFT);
+      */
+-    headerbox = gtk_text_new(NULL, NULL);
+-    gtk_text_set_editable(GTK_TEXT(headerbox), FALSE);
+-    gtk_widget_set_usize(headerbox, 200, 20);
++    headerbox = gtk_text_view_new();
++    gtk_text_view_set_editable(GTK_TEXT_VIEW(headerbox), FALSE);
++    gtk_widget_set_size_request(headerbox, 200, 20);
+     gtk_widget_show(headerbox);
+     gtk_box_pack_start(GTK_BOX(box3), headerbox, TRUE, TRUE, 0);
+ 
++    buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(headerbox));
++    color.red = 255*257; color.green = 0; color.blue = 0;
++    gtk_text_buffer_create_tag(buffer, "oncolor", "foreground-gdk", &color, NULL);
++    color.red = 175*257; color.green = 175*257; color.blue = 175*257;
++    gtk_text_buffer_create_tag(buffer, "offcolor", "foreground-gdk", &color, NULL);
+ 
+ 
+     /*********************************************************************/
+@@ -1524,17 +1582,12 @@ gtkcontrol(lame_global_flags * gfp2, cha
+     gtk_widget_show(framecounter);
+     gtk_box_pack_start(GTK_BOX(box2), framecounter, FALSE, TRUE, 0);
+ 
+-    adj = (GtkAdjustment *) gtk_adjustment_new(0, 0, (gint) lame_get_totalframes(gfp) - 1, 0, 0, 0);
+-    frameprogress = gtk_progress_bar_new_with_adjustment(adj);
+-    /* Set the format of the string that can be displayed in the
+-     * trough of the progress bar:
+-     * %p - percentage
+-     * %v - value
+-     * %l - lower range value
+-     * %u - upper range value */
+-    gtk_progress_set_format_string(GTK_PROGRESS(frameprogress), "%p%%");
+-    gtk_progress_set_value(GTK_PROGRESS(frameprogress), (gdouble) 0);
+-    gtk_progress_set_show_text(GTK_PROGRESS(frameprogress), TRUE);
++    frameprogress = gtk_progress_bar_new();
++    gtk_progress_bar_set_text(GTK_PROGRESS_BAR(frameprogress), "0%");
++    #if GTK_CHECK_VERSION(3, 0, 0)
++    gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(frameprogress), TRUE);
++    #endif
++    gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(frameprogress), 0);
+     gtk_widget_show(frameprogress);
+     gtk_box_pack_end(GTK_BOX(box2), frameprogress, FALSE, TRUE, 0);
+ 
+@@ -1544,33 +1597,33 @@ gtkcontrol(lame_global_flags * gfp2, cha
+     /* stuff in box1  buttons along bottom */
+     /*********************************************************************/
+     button = gtk_button_new_with_label("-1");
+-    gtk_signal_connect(GTK_OBJECT(button), "clicked", GTK_SIGNAL_FUNC(frameadv), (gpointer) "-1");
++    g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(frameadv), (gpointer) "-1");
+     gtk_box_pack_start(GTK_BOX(box1), button, TRUE, TRUE, 0);
+     gtk_widget_show(button);
+ 
+     button = gtk_button_new_with_label("+1");
+-    gtk_signal_connect(GTK_OBJECT(button), "clicked", GTK_SIGNAL_FUNC(frameadv), (gpointer) "1");
++    g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(frameadv), (gpointer) "1");
+     gtk_box_pack_start(GTK_BOX(box1), button, TRUE, TRUE, 0);
+     gtk_widget_show(button);
+ 
+     button = gtk_button_new_with_label("+10");
+-    gtk_signal_connect(GTK_OBJECT(button), "clicked", GTK_SIGNAL_FUNC(frameadv), (gpointer) "10");
++    g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(frameadv), (gpointer) "10");
+     gtk_box_pack_start(GTK_BOX(box1), button, TRUE, TRUE, 0);
+     gtk_widget_show(button);
+ 
+     button = gtk_button_new_with_label("+100");
+-    gtk_signal_connect(GTK_OBJECT(button), "clicked", GTK_SIGNAL_FUNC(frameadv), (gpointer) "100");
++    g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(frameadv), (gpointer) "100");
+     gtk_box_pack_start(GTK_BOX(box1), button, TRUE, TRUE, 0);
+     gtk_widget_show(button);
+ 
+     button = gtk_button_new_with_label("last frame");
+-    gtk_signal_connect(GTK_OBJECT(button), "clicked",
+-                       GTK_SIGNAL_FUNC(frameadv), (gpointer) "finish");
++    g_signal_connect(G_OBJECT(button), "clicked",
++                       G_CALLBACK(frameadv), (gpointer) "finish");
+     gtk_box_pack_start(GTK_BOX(box1), button, TRUE, TRUE, 0);
+     gtk_widget_show(button);
+ 
+     button = gtk_button_new_with_label("stop/plot");
+-    gtk_signal_connect(GTK_OBJECT(button), "clicked", GTK_SIGNAL_FUNC(plotclick), NULL);
++    g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(plotclick), NULL);
+     gtk_box_pack_start(GTK_BOX(box1), button, TRUE, TRUE, 0);
+     gtk_widget_show(button);
+ 
+@@ -1614,7 +1667,7 @@ gtkcontrol(lame_global_flags * gfp2, cha
+ 
+ 
+ 
+-    gtk_idle_add((GtkFunction) frameadv1, NULL);
++    g_timeout_add(10, (GSourceFunc) frameadv1, NULL);
+     gtk_widget_show(menubar);
+     gtk_widget_show(box2);
+     gtk_widget_show(box3);

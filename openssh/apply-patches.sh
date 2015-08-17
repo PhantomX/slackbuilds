@@ -123,6 +123,8 @@ ApplyPatch openssh-6.7p1-sftp-force-permission.patch
 # Memory problems
 # https://bugzilla.mindrot.org/show_bug.cgi?id=2401
 ApplyPatch openssh-6.8p1-memory-problems.patch
+# Handle terminal control characters in scp progressmeter (#1247204)
+ApplyPatch openssh-6.9p1-scp-progressmeter.patch
 
 ApplyPatch openssh-6.7p1-coverity.patch
 

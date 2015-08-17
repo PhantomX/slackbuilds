@@ -11,6 +11,13 @@ zcat ${SB_PATCHDIR}/${NAME}-2.5.28-mimeopen.patch.gz | patch -p1 -E --backup --v
 zcat ${SB_PATCHDIR}/${NAME}-2.5.21-menu-generate.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.5.24-module_list_remove.patch.gz | patch -p0 -E --backup --verbose
 
+# mouse buttons so this is a distro-specific patch.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fvwm-0004-Increase-number-of-mouse-buttons-supported.patch
+# https://github.com/ThomasAdam/fvwm/issues/5
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fvwm-0005-FvwmPager-be-more-careful-with-window-labels.patch
+# backported from upstream's CVS
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fvwm-0006-Comply-with-Debian-s-hardening-rules.patch
+
 # this patch enables fast translucent menus in fvwm. this is a
 # minor tweak of a patch posted to fvwm-user mailing list by Olivier
 # Chapuis in <20030827135125.GA6370@snoopy.folie>.

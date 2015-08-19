@@ -196,31 +196,17 @@ ApplyPatch firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
 #rhbz 1226743
 ApplyPatch drm-i915-turn-off-wc-mmaps.patch
 
-# CVE-2015-XXXX rhbz 1230770 1230774
-ApplyPatch kvm-x86-fix-kvm_apic_has_events-to-check-for-NULL-po.patch
-
 #rhbz 1227891
 ApplyPatch HID-rmi-Disable-populating-F30-when-the-touchpad-has.patch
 
 # rhbz 1180920 1206724
 ApplyPatch pcmcia-fix-a-boot-time-warning-in-pcmcia-cs-code.patch
 
-# CVE-2015-3290 CVE-2015-3291 rhbz 1243465 1245927
-ApplyPatch x86-asm-entry-64-Remove-pointless-jump-to-irq_return.patch
-ApplyPatch x86-entry-Stop-using-PER_CPU_VAR-kernel_stack.patch
-ApplyPatch x86-entry-Define-cpu_current_top_of_stack-for-64-bit.patch
-ApplyPatch x86-nmi-Enable-nested-do_nmi-handling-for-64-bit-ker.patch
-ApplyPatch x86-nmi-64-Remove-asm-code-that-saves-cr2.patch
-ApplyPatch x86-nmi-64-Switch-stacks-on-userspace-NMI-entry.patch
-ApplyPatch x86-nmi-64-Improve-nested-NMI-comments.patch
-ApplyPatch x86-nmi-64-Reorder-nested-NMI-checks.patch
-ApplyPatch x86-nmi-64-Use-DF-to-avoid-userspace-RSP-confusing-n.patch
-
-# CVE-2015-5697 (rhbz 1249011 1249013)
-ApplyPatch md-use-kzalloc-when-bitmap-is-disabled.patch
-
 #rhbz 1251877 1251880 1250279 1248741
 ApplyPatch HID-hid-input-Fix-accessing-freed-memory-during-devi.patch
+
+#rhbz 1253789
+ApplyPatch iSCSI-let-session-recovery_tmo-sysfs-writes-persist.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

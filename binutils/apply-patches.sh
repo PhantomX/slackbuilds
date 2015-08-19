@@ -17,6 +17,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.22.52.0.4-no-config
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.52.0.1-addr2line-dynsymtab.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.25-kernel-ld-r.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.23.2-aarch64-em.patch
+# Fix parsing of corupt iHex binaries
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.25.1-ihex-parsing.patch
 # https://sourceware.org/bugzilla/show_bug.cgi?id=16992
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/binutils-2.25-fix-dynamic-list.patch
 

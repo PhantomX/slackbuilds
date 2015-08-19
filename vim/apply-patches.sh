@@ -34,11 +34,11 @@ if [ "${PATCHLEVEL}" -gt 0 ] ;then
 mkdir -p patches
 cp ${SB_PATCHDIR}/updates/${SVER}.* patches/
 
-#cp -f ${SB_PATCHDIR}/7.4.208 patches/
+cp -f ${SB_PATCHDIR}/7.4.80{2,9} patches/
 
 ( SB_PATCHDIR=patches
   for i in $( seq -w ${PATCHLEVEL} ) $( seq 1000 ${OVERPATCHLEVEL} ) ; do
-    patch -p0 --backup --verbose -i ${SB_PATCHDIR}/${SVER}.${i}
+    patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${SVER}.${i}
   done
 )
 fi
@@ -58,9 +58,11 @@ zcat ${SB_PATCHDIR}/vim-7.0-rclocation.patch.gz | patch -p1 --verbose
 zcat ${SB_PATCHDIR}/vim-6.4-checkhl.patch.gz | patch -p1 --verbose
 patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim-7.3-fstabsyntax.patch
 zcat ${SB_PATCHDIR}/vim-7.0-warning.patch.gz | patch -p1 --verbose
-zcat ${SB_PATCHDIR}/vim-7.0-syncolor.patch.gz | patch -p1 --verbose
+patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim-7.4-syncolor.patch
 zcat ${SB_PATCHDIR}/vim-7.0-specedit.patch.gz | patch -p1 --verbose
 patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim72-rh514717.patch
+patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim-7.4-licensemacro-1151450.patch
+patch -p1 -E --verbose -i ${SB_PATCHDIR}/vim-7.4-ssh-keywords.patch
 
 patch -p0 -E --verbose -i ${SB_PATCHDIR}/vim-vimrc.patch
 

@@ -3,7 +3,8 @@ SB_PATCHDIR=${CWD}/patches
 
 set -e -o pipefail
 
-# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase.patch 
+# patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase.patch
+patch -p1 -E -R --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dolphin-configs.patch
 zcat ${SB_PATCHDIR}/kdebase-4.1.80-nsplugins-paths.patch.gz | patch -p2 -E --backup --verbose
 zcat ${SB_PATCHDIR}/kdebase-4.2.1-home-icon-slk.patch.gz | patch -p2 -E --backup --verbose
 

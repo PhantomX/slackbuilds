@@ -89,6 +89,8 @@ patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-not-break.-copy-paste-e
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/coding-style-fixes.patch
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/return-application-icons-properly.patch
 
+patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/kdelibs-cmake_minver.patch
+
 # Trunk patches
 
 patch -p1 -R --verbose --backup -i ${SB_PATCHDIR}/0015-Remove-bookmarks-syncing-from-KFilePlacesModel-and-u.patch

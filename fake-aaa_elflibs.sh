@@ -76,6 +76,18 @@ testso(){
   fi
 }
 
+# Search for .so.*
+testso2(){
+  libso=$1
+  if [ -f /lib${LIBDIRSUFFIX}/${libso} ] ;then
+    testfullname /lib${LIBDIRSUFFIX}/${libso}
+    echo lib${LIBDIRSUFFIX}/${libso}
+  elif [ -f /usr/lib${LIBDIRSUFFIX}/${libso} ] ;then
+    testfullname /usr/lib${LIBDIRSUFFIX}/${libso}
+    echo usr/lib${LIBDIRSUFFIX}/${libso}
+  fi
+}
+
 # Now soname
 testsoname(){
   libsoname="$(objdump -p $1 | grep SONAME | awk '{print $2}' 2>/dev/null)"
@@ -143,7 +155,14 @@ main(){
       echo "${ARCH} - lib${LIBDIRSUFFIX}"
       echo -n "Searching libraries "
       for lib in $(sed -n '9,$p' "${libsfile}" | sed '/^#/d;/^$/d' ) ;do
-        testso ${lib} >> ${tmp}/${filename}.tmp
+        case ${lib} in
+          *.so.*)
+            testso2 ${lib} >> ${tmp}/${filename}.tmp
+            ;;
+          *)
+            testso ${lib} >> ${tmp}/${filename}.tmp
+            ;;
+        esac
         echo -n .
       done
       echo

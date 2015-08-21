@@ -7,5 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 rm -rf js/src/editline -rf
 rm -rf js/src/ctypes/libffi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/js17-build-fixes.patch
+# http://patchwork.openembedded.org/patch/97315/
+patch -p0 -E --backup --verbose -d js -i ${SB_PATCHDIR}/fix_milestone_compile_issue.patch
 
 set +e +o pipefail

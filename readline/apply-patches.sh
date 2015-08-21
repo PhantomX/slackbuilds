@@ -4,7 +4,7 @@ set -e -o pipefail
 SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/readline-6.2-shlib-slk.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/readline-6.2-shlib.patch
 
 if [ "${PATCHLEVEL}" -gt 0 ] ;then
   for i in $( seq -w ${PATCHLEVEL} ) ; do

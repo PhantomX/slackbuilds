@@ -40,9 +40,9 @@ TMP=${TMP:-/tmp}
 NAME=ncurses
 PKG=${PKG:-${TMP}/package-${NAME}}
 
-VERSION=${VERSION:-5.9}
+VERSION=${VERSION:-6.0}
 # Set to 0 if no rollup patch, else set patch date, eg.: 20081025
-PVER=${PVER:-20141206}
+PVER=${PVER:-0}
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -54,7 +54,7 @@ else
   SLKTARGET=${SLKTARGET:-i486}
 fi
 SLKDTARGET=${SLKDTARGET:-slackware}
-BUILD=${BUILD:-13}
+BUILD=${BUILD:-1}
 NJOBS=${NJOBS:-$(( $(getconf _NPROCESSORS_ONLN) + 1 ))}
 DOCDIR=${PKG}/usr/doc/${NAME}-${VERSION}
 SBDIR=${PKG}/usr/src/slackbuilds/${NAME}
@@ -150,7 +150,7 @@ export PKG_CONFIG_LIBDIR=/usr/lib${LIBDIRSUFFIX}
 SB_CONFIGURE() {
 CFLAGS="${SLKCFLAGS}" \
 CXXFLAGS="${SLKCFLAGS}" \
-../configure \
+./configure \
   --prefix=/usr \
   --libdir=/usr/lib${LIBDIRSUFFIX} \
   --infodir=/usr/info \
@@ -160,30 +160,49 @@ CXXFLAGS="${SLKCFLAGS}" \
   --with-normal \
   --with-shared \
   --enable-symlinks \
+  --with-cxx-shared \
   --without-debug \
   --without-profile \
   --without-ada \
+  --with-ticlib=tic \
   --enable-hard-tabs \
   --enable-xmc-glitch \
   --enable-pc-files \
+  --with-termlib=tinfo \
   --with-terminfo-dirs=/etc/terminfo:/usr/share/terminfo:/lib/terminfo \
+  --with-pkg-config-libdir=/usr/lib${LIBDIRSUFFIX}/pkgconfig \
   --build=${SLKTARGET}-${SLKDTARGET}-linux $@
 }
 
-mkdir build-normal
-( cd build-normal
-  SB_CONFIGURE || exit $?
-  make -j${NJOBS} || make || exit $?
-  make install DESTDIR=${PKG} || exit $?
-) || exit $?
+abi5_options="--with-chtype=long"
 
-# Build/install again with wide character support:
-mkdir build-wide
-( cd build-wide
-  SB_CONFIGURE --enable-widec || exit $?
-  make -j${NJOBS} || make || exit $?
-  make install DESTDIR=${PKG} || exit $?
-) || exit $?
+for abi in 5 6; do
+  for char in narrowc widec; do
+    mkdir ${char}${abi}
+    ( cd ${char}${abi} || exit 1
+      ln -s ../configure .
+
+      progs=no
+      [ ${abi} = 6 -a ${char} = widec ] && progs=yes
+
+      SB_OPTIONS="$( echo --with-abi-version=${abi}
+        [ ${abi} = 5 ] && echo ${abi5_options}
+        [ ${char} = widec ] && echo --enable-widec
+        [ ${progs} = yes ] || echo --without-progs )"
+      SB_CONFIGURE ${SB_OPTIONS} || exit $?
+      make -j${NJOBS} libs || make libs || exit $?
+      if [ ${progs} = yes ] ;then
+        make -j${NJOBS} -C progs || make -C progs || exit $?
+      fi
+
+    ) || exit $?
+  done
+done
+
+make -C narrowc5 DESTDIR=${PKG} install.libs || exit $?
+make -C widec5 DESTDIR=${PKG} install.libs || exit $?
+make -C narrowc6 DESTDIR=${PKG} install.libs || exit $?
+make -C widec6 DESTDIR=${PKG} install.{libs,progs,data,includes,man} || exit $?
 
 if [ ! -d ${PKG}/usr/include/ncursesw -a ! -L ${PKG}/usr/include/ncursesw ]; then
   ( cd ${PKG}/usr/include ; ln -sf ncurses ncursesw )
@@ -191,6 +210,9 @@ fi
 
 chmod 0644 ${PKG}/usr/lib${LIBDIRSUFFIX}/*.a
 chmod 0755 ${PKG}/usr/lib${LIBDIRSUFFIX}/*.so.*
+
+rm -f ${PKG}/usr/bin/ncurses*5-config
+rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig/*_g.pc
 
 find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
   | cut -f 1 -d : | xargs strip --strip-unneeded 2> /dev/null
@@ -212,18 +234,25 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 rm -f ${PKG}/usr/lib${LIBDIRSUFFIX}/libcurses{,w}.so
 
 mkdir -p ${PKG}/lib${LIBDIRSUFFIX}
-mv ${PKG}/usr/lib${LIBDIRSUFFIX}/libncurses{,w}.so.* \
-  ${PKG}/lib${LIBDIRSUFFIX}/ || exit 1
-
 # Move the ncurses libraries into /lib, since they're important:
-for libname in libncurses libncursesw ;do
+for libname in libncurses libncursesw libtinfo ;do
+  mv ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so.* ${PKG}/lib${LIBDIRSUFFIX}/
   reldir=$(echo /usr/lib${LIBDIRSUFFIX} | sed 's,/$,,;s,/[^/]\+,../,g')lib${LIBDIRSUFFIX}
   oldlink=$(readlink ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so)
   ln -sf ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so || exit 1
 done
 
+# don't require -ltinfo when linking with --no-add-needed
+for l in ${PKG}/usr/lib${LIBDIRSUFFIX}/libncurses{,w}.so; do
+  soname=$(basename $(readlink ${l}))
+  rm -f ${l}
+  echo "INPUT(${soname} -ltinfo)" > ${l}
+done
+
 echo "INPUT(-lncurses)" > ${PKG}/usr/lib${LIBDIRSUFFIX}/libcurses.so
 echo "INPUT(-lncursesw)" > ${PKG}/usr/lib${LIBDIRSUFFIX}/libcursesw.so
+
+echo "INPUT(-ltinfo)" > ${PKG}/usr/lib${LIBDIRSUFFIX}/libtermcap.so
 
 # Set TERMINFO to point to the package:
 export TERMINFO=${PKG}/usr/share/terminfo
@@ -234,12 +263,12 @@ for tfile in ${CWD}/xterm.terminfo.gz ${CWD}/screeninfo.src.gz \
   if [ -r ${tfile} ]; then
     tfile2=temptic/"$(basename ${tfile} .gz)"
     zcat ${tfile} > ${tfile2}
-    LD_LIBRARY_PATH="${PKG}/lib${LIBDIRSUFFIX}:${PKG}/usr/lib${LIBDIRSUFFIX}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" build-wide/progs/tic -v ${tfile2} || exit 1
+    LD_LIBRARY_PATH="${PKG}/lib${LIBDIRSUFFIX}:${PKG}/usr/lib${LIBDIRSUFFIX}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" widec6/progs/tic -v ${tfile2} || exit 1
   fi
 done
 unset TERMINFO
 
-mkdir -p ${PKG}/{lib,etc}/terminfo 
+mkdir -p ${PKG}/{lib,etc}/terminfo
 
 # move few basic terminfo entries to /lib
 baseterms=

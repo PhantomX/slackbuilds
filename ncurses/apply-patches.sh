@@ -16,9 +16,6 @@ C=$(wc -l ${CWD}/${PSRCARCHIVES} | awk '{print $1}')
 if [ "$C" -gt 0 ]; then
   mkdir -p updates
   cp ${SB_PATCHDIR}/updates/* updates/
-  zcat ${SB_PATCHDIR}/updates/ncurses-5.9-20150523.patch.gz | \
-    filterdiff -p1 -x 'doc/html/man/adacurses-config.1.html' | gzip \
-    > updates/ncurses-5.9-20150523.patch.gz
   for file in $(<${CWD}/${PSRCARCHIVES}) ; do
     pver2=$(echo ${file} | cut -d- -f3 | cut -d. -f1)
     if [ "${pver2}" -gt "${PVER}" ] && [ -f ${SB_PATCHDIR}/updates/${file} ] ;then

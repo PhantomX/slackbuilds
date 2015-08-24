@@ -57,6 +57,11 @@ ApplyPatch 0011-Update-manpage-NAME-so-whatis-will-work.patch
 ApplyPatch 0012-tests-Make-sure-the-extended-partition-length-is-2-1.patch
 ApplyPatch 0013-libparted-BLKPG_RESIZE_PARTITION-uses-bytes-not-sect.patch
 ApplyPatch 0014-parted-Fix-crash-with-name-command-and-no-disklabel-.patch
+ApplyPatch 0015-UI-Avoid-memory-leaks.patch
+ApplyPatch 0016-libparted-Fix-memory-leaks.patch
+ApplyPatch 0017-libparted-Fix-possible-memory-leaks.patch
+ApplyPatch 0018-libparted-Stop-converting-.-in-sys-path-to.patch
+ApplyPatch 0019-libparted-Use-read-only-when-probing-devices-on-linu.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

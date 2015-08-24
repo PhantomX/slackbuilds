@@ -34,6 +34,8 @@ fi
 #https://bugs.winehq.org/show_bug.cgi?id=38653#c15
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/wine-gcc5-wineboot.patch
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/wine-relocate-base.patch
+
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES
 

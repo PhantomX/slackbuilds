@@ -74,8 +74,17 @@ done
 zcat ${SB_PATCHDIR}/gcc43.patch.gz | patch -p1 -E --backup --verbose
 
 # Native pulseaudio support, https://bugzilla.redhat.com/show_bug.cgi?id=471047
-zcat ${SB_PATCHDIR}/${NAME}-speech-tools-pulse.patch.gz | patch -p1 -E --backup -z .pa --verbose
+[ "${SB_PA}" = "YES" ] && patch -p1 -E --backup -z .pa --verbose -i ${SB_PATCHDIR}/${NAME}-speech-tools-pulse.patch
 
 zcat ${SB_PATCHDIR}/gcc44.patch.gz | patch -p1 -E --backup --verbose
+
+# gcc 4.7 is finnicky about ambiguous function references'
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.gcc47.patch
+
+# Bring back old patch since gcc 4.7 no longer ignores unknown options
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/no-shared-data.patch
+
+# There is a typo in the festival_server script
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-1.96-server-script-typo.patch
 
 set +e +o pipefail

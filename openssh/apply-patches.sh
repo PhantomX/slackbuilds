@@ -125,6 +125,9 @@ ApplyPatch openssh-6.7p1-sftp-force-permission.patch
 ApplyPatch openssh-6.8p1-memory-problems.patch
 # Handle terminal control characters in scp progressmeter (#1247204)
 ApplyPatch openssh-6.9p1-scp-progressmeter.patch
+# Brokend HostKeyAlgorthms on server using + sign
+# from http://lists.mindrot.org/pipermail/openssh-unix-dev/2015-August/034324.html
+ApplyPatch openssh-7.1p1-hostkeyalgorithms.patch
 
 ApplyPatch openssh-6.7p1-coverity.patch
 

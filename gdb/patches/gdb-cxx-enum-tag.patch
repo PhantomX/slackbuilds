@@ -1,0 +1,276 @@
+Last year a patch was submitted/approved/commited to eliminate
+symbol_matches_domain which was causing this problem.  It was later reverted
+because it introduced a (severe) performance regression.
+
+Recap:
+
+(gdb) list
+1	enum e {A,B,C} e;
+2	int main (void) { return 0; }
+3
+(gdb) p e
+Attempt to use a type name as an expression
+
+The parser attempts to find a symbol named "e" of VAR_DOMAIN.
+This gets passed down through lookup_symbol and (eventually) into
+block_lookup_symbol_primary, which iterates over the block's dictionary
+of symbols:
+
+  for (sym = dict_iter_name_first (block->dict, name, &dict_iter);
+       sym != NULL;
+       sym = dict_iter_name_next (name, &dict_iter))
+    {
+      if (symbol_matches_domain (SYMBOL_LANGUAGE (sym),
+                                 SYMBOL_DOMAIN (sym), domain))
+        return sym;
+    }
+
+The problem here is that we have a symbol named "e" in both STRUCT_DOMAIN
+and VAR_DOMAIN, and for languages like C++, Java, and Ada, where a tag name
+may be used as an implicit typedef of the type, symbol_matches_domain ignores
+the difference between VAR_DOMAIN and STRUCT_DOMAIN.  As it happens, the
+STRUCT_DOMAIN symbol is found first, considered a match, and that symbol is
+returned to the parser, eliciting the (now dreaded) error message.
+
+Since this bug exists specifically because we have both STRUCT and VAR_DOMAIN
+symbols in a given block/CU, this patch rather simply/naively changes
+block_lookup_symbol_primary so that it continues to search for an exact
+domain match on the symbol if symbol_matches_domain returns a symbol
+[RFC] Revisit PR 16253 ("Attempt to use a type name...")
+
+which does not exactly match the requested domain.
+
+This "fixes" the immediate problem, but admittedly might uncover other,
+related bugs.  [Paranoia?] However, it causes no regressions (functional
+or performance) in the test suite.
+
+I have also resurrected the tests from the previous submission.  However
+since we can still be given a matching symbol with a different domain than
+requested, we cannot say that a symbol "was not found."  The error messages
+today will still be the (dreaded) "Attempt to use a type name..."  I've
+updated the tests to reflect this.
+
+ChangeLog
+
+	PR 16253
+	* block.c (block_lookup_symbol_primary): If a symbol is found
+	which does not exactly match the requested domain, keep searching
+	for an exact match.  Otherwise, return the previously found "best"
+	symbol.
+
+testsuite/ChangeLog
+
+	PR 16253
+	* gdb.cp/var-tag.cc: New file.
+	* gdb.cp/var-tag.exp: New file.
+---
+ gdb/ChangeLog                    |  8 ++++
+ gdb/block.c                      | 16 +++++--
+ gdb/testsuite/ChangeLog          |  6 +++
+ gdb/testsuite/gdb.cp/var-tag.cc  | 44 +++++++++++++++++++
+ gdb/testsuite/gdb.cp/var-tag.exp | 94 ++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 165 insertions(+), 3 deletions(-)
+ create mode 100644 gdb/testsuite/gdb.cp/var-tag.cc
+ create mode 100644 gdb/testsuite/gdb.cp/var-tag.exp
+
+### a/gdb/ChangeLog
+### b/gdb/ChangeLog
+## -1,3 +1,11 @@
++2015-06-11  Keith Seitz  <keiths@redhat.com>
++
++	PR 16253
++	* block.c (block_lookup_symbol_primary): If a symbol is found
++	which does not exactly match the requested domain, keep searching
++	for an exact match.  Otherwise, return the previously found "best"
++	symbol.
++
+ 2015-06-11  Gary Benson <gbenson@redhat.com>
+ 
+ 	* nat/linux-namespaces.c (mnsh_send_message): Use pulongest.
+Index: gdb-7.9.1/gdb/block.c
+===================================================================
+--- gdb-7.9.1.orig/gdb/block.c	2015-06-16 16:53:51.720719643 +0200
++++ gdb-7.9.1/gdb/block.c	2015-06-16 16:54:42.511031683 +0200
+@@ -779,21 +779,31 @@ struct symbol *
+ block_lookup_symbol_primary (const struct block *block, const char *name,
+ 			     const domain_enum domain)
+ {
+-  struct symbol *sym;
++  struct symbol *sym, *other;
+   struct dict_iterator dict_iter;
+ 
+   /* Verify BLOCK is STATIC_BLOCK or GLOBAL_BLOCK.  */
+   gdb_assert (BLOCK_SUPERBLOCK (block) == NULL
+ 	      || BLOCK_SUPERBLOCK (BLOCK_SUPERBLOCK (block)) == NULL);
+ 
++  other = NULL;
+   for (sym = dict_iter_name_first (block->dict, name, &dict_iter);
+        sym != NULL;
+        sym = dict_iter_name_next (name, &dict_iter))
+     {
++      if (SYMBOL_DOMAIN (sym) == domain)
++	return sym;
++
++      /* This is a bit of a hack, but symbol_matches_domain might ignore
++	 STRUCT vs VAR domain symbols.  So if a matching symbol is found, make
++	 sure there is no "better" matching symbol, i.e., one with
++	 exactly the same domain.  */
+       if (symbol_matches_domain (SYMBOL_LANGUAGE (sym),
+ 				 SYMBOL_DOMAIN (sym), domain))
+-	return sym;
++	{
++	  other = sym;
++	}
+     }
+ 
+-  return NULL;
++  return other;
+ }
+Index: gdb-7.9.1/gdb/testsuite/gdb.cp/var-tag.cc
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.9.1/gdb/testsuite/gdb.cp/var-tag.cc	2015-06-16 16:53:51.721719649 +0200
+@@ -0,0 +1,44 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2014 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++int global = 3;
++
++class C {
++public:
++  struct C1 {} C1;
++  enum E1 {a1, b1, c1} E1;
++  union U1 {int a1; char b1;} U1;
++
++  C () : E1 (b1) {}
++  void global (void) const {}
++  int f (void) const { global (); return 0; }
++} C;
++
++struct S {} S;
++enum E {a, b, c} E;
++union U {int a; char b;} U;
++
++class CC {} cc;
++struct SS {} ss;
++enum EE {ea, eb, ec} ee;
++union UU {int aa; char bb;} uu;
++
++int
++main (void)
++{
++  return C.f ();
++}
+Index: gdb-7.9.1/gdb/testsuite/gdb.cp/var-tag.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.9.1/gdb/testsuite/gdb.cp/var-tag.exp	2015-06-16 16:53:51.721719649 +0200
+@@ -0,0 +1,94 @@
++# Copyright 2014, 2015 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++# This file is part of the gdb testsuite
++
++# Test expressions in which variable names shadow tag names.
++
++if {[skip_cplus_tests]} { continue }
++
++standard_testfile .cc
++
++if {[prepare_for_testing $testfile.exp $testfile $srcfile {debug c++}]} {
++    return -1
++}
++
++proc do_global_tests {lang} {
++    set invalid_print "Attempt to use a type name as an expression"
++    set ptypefmt "type = (class|enum|union|struct) %s {.*}"
++
++    with_test_prefix $lang {
++	gdb_test_no_output "set language $lang"
++	gdb_test "ptype C" "type = class C {.*}"
++	gdb_test "print E" "= a"
++	gdb_test "ptype E" "type = enum E {.*}"
++	gdb_test "print S" "= {<No data fields>}"
++	gdb_test "ptype S" "type = struct S {.*}"
++	gdb_test "print U" "= {.*}"
++	gdb_test "ptype U" "type = union U {.*}"
++	gdb_test "print cc" "= {.*}"
++	gdb_test "ptype cc" "type = class CC {.*}"
++	gdb_test "print CC" [format $invalid_print "CC"]
++	gdb_test "ptype CC" [format $ptypefmt "CC"]
++	gdb_test "print ss" "= {<No data fields>}"
++	gdb_test "ptype ss" "type = struct SS {.*}"
++	gdb_test "print SS" [format $invalid_print "SS"]
++	gdb_test "ptype SS" [format $ptypefmt "SS"]
++	gdb_test "print ee" "= .*"
++	gdb_test "ptype ee" "type = enum EE {.*}"
++	gdb_test "print EE" [format $invalid_print "EE"]
++	gdb_test "ptype EE" [format $ptypefmt "EE"]
++	gdb_test "print uu" "= {.*}"
++	gdb_test "ptype uu" "type = union UU {.*}"
++	gdb_test "print UU" [format $invalid_print  "UU"]
++	gdb_test "ptype UU" [format $ptypefmt "UU"]
++    }
++}
++
++# First test expressions when there is no context.
++with_test_prefix "before start" {
++    do_global_tests c++
++    do_global_tests c
++}
++
++# Run to main and test again.
++if {![runto_main]} {
++    perror "couldn't run to main"
++    continue
++}
++
++with_test_prefix "in main" {
++    do_global_tests c++
++    do_global_tests c
++}
++
++# Finally run to C::f and test again
++gdb_breakpoint "C::f"
++gdb_continue_to_breakpoint "continue to C::f"
++with_test_prefix "in C::f" {
++    do_global_tests c++
++    do_global_tests c
++}
++
++# Another hard-to-guess-the-users-intent bug...
++# It would be really nice if we could query the user!
++with_test_prefix "global collision" {
++    gdb_test_no_output "set language c++"
++    setup_kfail "c++/16463" "*-*-*"
++    gdb_test "print global" "= 3"
++
++    # ... with a simple workaround:
++    gdb_test "print ::global" "= 3"
++}

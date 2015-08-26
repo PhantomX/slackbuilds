@@ -359,6 +359,12 @@ ApplyPatch gdb-jit-reader-multilib.patch
 # Temporarily disable dg-extract-results.py to fix gdb.sum sorting.
 ApplyPatch gdb-no-dg-extract-results-py.patch
 
+# Fix enum e e 'Attempt to use a type name as an expr.' (Keith Seitz, PR 16253).
+ApplyPatch gdb-cxx-enum-tag.patch
+
+# Fix 'info type-printers' Python error (Clem Dickey, RH BZ 1085576).
+ApplyPatch gdb-type-printers-error.patch
+
 ### END Fedora
 
 set +e +o pipefail

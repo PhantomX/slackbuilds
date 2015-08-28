@@ -17,4 +17,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dcmtk.patch
 # https://bugzilla.redhat.com/show_bug.cgi?id=822796
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-findruby.patch
 
+## upstream patches
+# some post v3.3.1 tag commits
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0624-FindBoost-Add-support-for-Boost-1.59.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0640-FindPkgConfig-remove-variable-dereference.patch
+
 set +e +o pipefail

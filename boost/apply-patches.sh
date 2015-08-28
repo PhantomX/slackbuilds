@@ -34,8 +34,17 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.55.0-python-test-PyImp
 # https://bugzilla.redhat.com/show_bug.cgi?id=1190039
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.57.0-build-optflags.patch
 
+# https://svn.boost.org/trac/boost/ticket/11283
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.58.0-variant-includes.patch
+
 # https://svn.boost.org/trac/boost/ticket/10510
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.57.0-uuid-comparison.patch
+
+# Prevent gcc.jam from setting -m32 or -m64.
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.58.0-address-model.patch
+
+# https://github.com/boostorg/ublas/pull/25
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.58-ublas-inlines.patch
 
 # Gentoo
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/boost-1.51.0-respect_python-buildid.patch

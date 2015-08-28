@@ -7,6 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 ### Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/lvm2-set-default-preferred_names.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/lvm2-remove-mpath-device-handling-from-udev-rules.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/lvm2-fix-libdm-pkgconfig-file.patch
 
 ## Gentoo
 # bug 318513

@@ -37,7 +37,7 @@ ApplyPatch gdb-archer.patch
 
 # Backported fixups post the source tarball.
 #Xdrop: Just backports.
-ApplyPatch gdb-upstream.patch
+#ApplyPatch gdb-upstream.patch
 
 # VLA (Fortran dynamic arrays) from Intel + archer-jankratochvil-vla tests.
 ApplyPatch gdb-vla-intel.patch
@@ -54,9 +54,6 @@ ApplyPatch gdb-6.3-ppc64syscall-20040622.patch
 # Include the pc's section when doing a symbol lookup so that the
 # correct symbol is found.
 ApplyPatch gdb-6.3-ppc64displaysymbol-20041124.patch.gz
-
-# Fix upstream `set scheduler-locking step' vs. upstream PPC atomic seqs.
-ApplyPatch gdb-6.6-scheduler_locking-step-sw-watchpoints2.patch
 
 # Add a wrapper script to GDB that implements pstack using the
 # --readnever option.
@@ -223,10 +220,6 @@ ApplyPatch gdb-6.8-watchpoint-conditionals-test.patch.gz
 # Fix resolving of variables at locations lists in prelinked libs (BZ 466901).
 ApplyPatch gdb-6.8-bz466901-backtrace-full-prelinked.patch
 
-# Fix parsing elf64-i386 files for kdump PAE vmcore dumps (BZ 457187).
-# - Turn on 64-bit BFD support, globally enable AC_SYS_LARGEFILE.
-ApplyPatch gdb-6.8-bz457187-largefile-test.patch
-
 # New test for step-resume breakpoint placed in multiple threads at once.
 ApplyPatch gdb-simultaneous-step-resume-breakpoint-test.patch.gz
 
@@ -336,9 +329,6 @@ ApplyPatch gdb-rhbz795424-bitpos-lazyvalue.patch
 #=fedoratest
 ApplyPatch gdb-rhbz947564-findvar-assertion-frame-failed-testcase.patch
 
-# Fix crash on 'enable count' (Simon Marchi, BZ 993118).
-ApplyPatch gdb-enable-count-crash.patch
-
 # Fix crash of -readnow /usr/lib/debug/usr/bin/gnatbind.debug (BZ 1069211).
 ApplyPatch gdb-gnat-dwarf-crash-3of3.patch
 
@@ -355,15 +345,6 @@ ApplyPatch gdb-python-gil.patch
 
 # Fix jit-reader.h for multi-lib.
 ApplyPatch gdb-jit-reader-multilib.patch
-
-# Temporarily disable dg-extract-results.py to fix gdb.sum sorting.
-ApplyPatch gdb-no-dg-extract-results-py.patch
-
-# Fix enum e e 'Attempt to use a type name as an expr.' (Keith Seitz, PR 16253).
-ApplyPatch gdb-cxx-enum-tag.patch
-
-# Fix 'info type-printers' Python error (Clem Dickey, RH BZ 1085576).
-ApplyPatch gdb-type-printers-error.patch
 
 ### END Fedora
 

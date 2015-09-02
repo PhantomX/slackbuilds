@@ -1,1 +1,0 @@
-../vim/apply-patches.sh

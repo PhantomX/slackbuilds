@@ -8,7 +8,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhclient-script.PATH.diff
 
 sed -e '/BIND9_LIBDIR/s|-export||g' ${SB_PATCHDIR}/dhcp-remove-bind.patch \
   | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-remove-dst.patch
 sed -e '/BIND9_LIBDIR/s|-export||g' ${SB_PATCHDIR}/dhcp-sharedlib.patch \
   | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-errwarn-message.patch
@@ -25,12 +24,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-add_timeout_when_NULL.pat
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-64_bit_lease_parse.patch
 sed -e '/BIND9_LIBDIR/s|-export||g' ${SB_PATCHDIR}/dhcp-capability.patch \
   | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-UseMulticast.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-sendDecline.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-rfc3442-classless-static-routes.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-honor-expired.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-PPP.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-paranoia.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-lpf-ib.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-IPoIB-log-id.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-improved-xid.patch
@@ -40,13 +37,11 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-systemtap.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-getifaddrs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-omapi-leak.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-rfc5970-dhcpv6-options-for-network-boot.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-failOverPeer.patch 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-interval.patch 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-range6.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-bindtodevice-inet6.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-no-subnet-error2info.patch
 [ "${SB_SYSTEMD}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-sd_notify.patch
-[ "${SB_KRB5}" = "YES" ] && patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-ldapgssapi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-option97-pxe-client-id.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-stateless-DUID-LLT.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dhcp-client-request-release-bind-iface.patch

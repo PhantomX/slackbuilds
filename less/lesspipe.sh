@@ -141,7 +141,7 @@ lesspipe() {
       echo "Install mediainfo to display multimedia files info"
       exit 1
     fi ;;
-    *.mid|*.midi|*.nsf|*.spc)
+    *.mid|*.midi|*.nsf|*.spc|*.webp)
       file -L -b "$1" ;;
     *.asf|*.avi|*.flv|*.m4v|*.mkv|*.mov|*.mpg|*.mpeg|*.mp4|*.ogv|*.rmvb|*.vob|*.VOB|*.webm|*.wmv)
     if which mediainfo 1> /dev/null ; then

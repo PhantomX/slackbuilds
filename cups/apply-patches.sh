@@ -62,7 +62,6 @@ ApplyPatch cups-no-gcry.patch
 ApplyPatch cups-avahi-no-threaded.patch
 ApplyPatch cups-ipp-multifile.patch
 ApplyPatch cups-web-devices-timeout.patch
-[ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-journal.patch
 ApplyPatch cups-synconclose.patch
 
 ## SECURITY PATCHES:

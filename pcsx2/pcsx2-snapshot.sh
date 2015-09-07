@@ -43,7 +43,7 @@ pushd "${tmp}"
       fi
     fi
     pushd 3rdparty
-      rm -rf GL SoundTouch bzip2 google libjpeg portaudio soundtouch* w32pthreads winpcap wxWidgets zlib
+      rm -rf GL SoundTouch bzip2 google libjpeg portaudio pthreads4w soundtouch* winpcap wxWidgets zlib
     popd >/dev/null
     GITREV="$(LC_ALL=C git show  -s --format=%ci HEAD)"
     sed -i \

@@ -1,0 +1,161 @@
+Patch carried over from the prior iasl package and updated.  This allows
+for builds on systems requiring aligned memory access. Please see
+http://lists.acpica.org/pipermail/devel/2010-July/000159.html.  Resolves
+BZ#865013 and BZ#856856.
+--
+
+Add more platforms to the list of the ones requiring aligned memory access.
+Also fix callsites where wrong assumptions where made in terms of aligment.
+
+Signed-off-by: Mattia Dongili <malattia@linux.it>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ source/compiler/asltree.c             | 15 ++++++++++-----
+ source/components/executer/exoparg2.c | 12 +++++++++---
+ source/include/actypes.h              | 26 +++++++++++++-------------
+ 3 file modificati, 32 inserzioni(+), 21 rimozioni(-)
+
+Index: src/source/compiler/asltree.c
+===================================================================
+--- src.orig/source/compiler/asltree.c
++++ src/source/compiler/asltree.c
+@@ -862,28 +862,31 @@ TrCreateValuedLeafNode (
+         "\nCreateValuedLeafNode  Ln/Col %u/%u NewNode %p  Op %s  Value %8.8X%8.8X  ",
+         Op->Asl.LineNumber, Op->Asl.Column, Op, UtGetOpName(ParseOpcode),
+         ACPI_FORMAT_UINT64 (Value));
+-    Op->Asl.Value.Integer = Value;
+ 
+     switch (ParseOpcode)
+     {
+     case PARSEOP_STRING_LITERAL:
+ 
+-        DbgPrint (ASL_PARSE_OUTPUT, "STRING->%s", Value);
++        Op->Asl.Value.String = (ACPI_STRING) (ACPI_SIZE) Value;
++        DbgPrint (ASL_PARSE_OUTPUT, "STRING->%s", Op->Asl.Value.String);
+         break;
+ 
+     case PARSEOP_NAMESEG:
+ 
+-        DbgPrint (ASL_PARSE_OUTPUT, "NAMESEG->%s", Value);
++        Op->Asl.Value.String = (ACPI_STRING) (ACPI_SIZE) Value;
++        DbgPrint (ASL_PARSE_OUTPUT, "NAMESEG->%s", Op->Asl.Value.String);
+         break;
+ 
+     case PARSEOP_NAMESTRING:
+ 
+-        DbgPrint (ASL_PARSE_OUTPUT, "NAMESTRING->%s", Value);
++        Op->Asl.Value.String = (ACPI_STRING) (ACPI_SIZE) Value;
++        DbgPrint (ASL_PARSE_OUTPUT, "NAMESTRING->%s", Op->Asl.Value.String);
+         break;
+ 
+     case PARSEOP_EISAID:
+ 
+-        DbgPrint (ASL_PARSE_OUTPUT, "EISAID->%s", Value);
++        Op->Asl.Value.String = (ACPI_STRING) (ACPI_SIZE) Value;
++        DbgPrint (ASL_PARSE_OUTPUT, "EISAID->%s", Op->Asl.Value.String);
+         break;
+ 
+     case PARSEOP_METHOD:
+@@ -893,12 +896,14 @@ TrCreateValuedLeafNode (
+ 
+     case PARSEOP_INTEGER:
+ 
++        Op->Asl.Value.Integer = Value;
+         DbgPrint (ASL_PARSE_OUTPUT, "INTEGER->%8.8X%8.8X",
+             ACPI_FORMAT_UINT64 (Value));
+         break;
+ 
+     default:
+ 
++        Op->Asl.Value.Integer = Value;
+         break;
+     }
+ 
+Index: src/source/components/executer/exoparg2.c
+===================================================================
+--- src.orig/source/components/executer/exoparg2.c
++++ src/source/components/executer/exoparg2.c
+@@ -172,6 +172,8 @@ AcpiExOpcode_2A_2T_1R (
+     ACPI_OPERAND_OBJECT     **Operand = &WalkState->Operands[0];
+     ACPI_OPERAND_OBJECT     *ReturnDesc1 = NULL;
+     ACPI_OPERAND_OBJECT     *ReturnDesc2 = NULL;
++    UINT64                  ReturnValue1 = 0;
++    UINT64                  ReturnValue2 = 0;
+     ACPI_STATUS             Status;
+ 
+ 
+@@ -205,8 +207,10 @@ AcpiExOpcode_2A_2T_1R (
+ 
+         Status = AcpiUtDivide (Operand[0]->Integer.Value,
+                                Operand[1]->Integer.Value,
+-                               &ReturnDesc1->Integer.Value,
+-                               &ReturnDesc2->Integer.Value);
++                               &ReturnValue1, &ReturnValue2);
++        ReturnDesc1->Integer.Value = ReturnValue1;
++        ReturnDesc2->Integer.Value = ReturnValue2;
++
+         if (ACPI_FAILURE (Status))
+         {
+             goto Cleanup;
+@@ -280,6 +284,7 @@ AcpiExOpcode_2A_1T_1R (
+     ACPI_OPERAND_OBJECT     **Operand = &WalkState->Operands[0];
+     ACPI_OPERAND_OBJECT     *ReturnDesc = NULL;
+     UINT64                  Index;
++    UINT64                  ReturnValue = 0;
+     ACPI_STATUS             Status = AE_OK;
+     ACPI_SIZE               Length = 0;
+ 
+@@ -323,7 +328,8 @@ AcpiExOpcode_2A_1T_1R (
+         Status = AcpiUtDivide (Operand[0]->Integer.Value,
+                                Operand[1]->Integer.Value,
+                                NULL,
+-                               &ReturnDesc->Integer.Value);
++                               &ReturnValue);
++        ReturnDesc->Integer.Value = ReturnValue;
+         break;
+ 
+     case AML_CONCAT_OP: /* Concatenate (Data1, Data2, Result) */
+Index: src/source/include/actypes.h
+===================================================================
+--- src.orig/source/include/actypes.h
++++ src/source/include/actypes.h
+@@ -143,6 +143,19 @@ typedef COMPILER_DEPENDENT_INT64
+  */
+ #define ACPI_THREAD_ID                  UINT64
+ 
++/*
++ * In the case of the Itanium Processor Family (IPF), the hardware does not
++ * support misaligned memory transfers. Set the MISALIGNMENT_NOT_SUPPORTED flag
++ * to indicate that special precautions must be taken to avoid alignment faults.
++ * (IA64 or ia64 is currently used by existing compilers to indicate IPF.)
++ *
++ * Note: EM64T and other X86-64 processors support misaligned transfers,
++ * so there is no need to define this flag.
++ */
++#if defined (__IA64__) || defined (__ia64__) || defined(__alpha__) || defined(__sparc__) || defined(__hppa__) || defined(__arm__)
++#define ACPI_MISALIGNMENT_NOT_SUPPORTED
++#endif
++
+ 
+ /*******************************************************************************
+  *
+@@ -169,19 +182,6 @@ typedef UINT64
+ #define ACPI_SIZE_MAX                   ACPI_UINT64_MAX
+ #define ACPI_USE_NATIVE_DIVIDE          /* Has native 64-bit integer support */
+ 
+-/*
+- * In the case of the Itanium Processor Family (IPF), the hardware does not
+- * support misaligned memory transfers. Set the MISALIGNMENT_NOT_SUPPORTED flag
+- * to indicate that special precautions must be taken to avoid alignment faults.
+- * (IA64 or ia64 is currently used by existing compilers to indicate IPF.)
+- *
+- * Note: EM64T and other X86-64 processors support misaligned transfers,
+- * so there is no need to define this flag.
+- */
+-#if defined (__IA64__) || defined (__ia64__)
+-#define ACPI_MISALIGNMENT_NOT_SUPPORTED
+-#endif
+-
+ 
+ /*******************************************************************************
+  *

@@ -16,6 +16,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-dcmtk.patch
 # http://public.kitware.com/Bug/view.php?id=12965
 # https://bugzilla.redhat.com/show_bug.cgi?id=822796
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake-findruby.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake.git-371fe92e.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/cmake.git-97ffbcd8.patch
 
 ## upstream patches
 # some post v3.3.1 tag commits

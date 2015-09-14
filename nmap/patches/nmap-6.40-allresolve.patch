@@ -1,0 +1,487 @@
+diff -up nmap-6.47/ncat/ncat_connect.c.allresolve nmap-6.47/ncat/ncat_connect.c
+--- nmap-6.47/ncat/ncat_connect.c.allresolve	2015-08-31 17:46:41.343244425 +0200
++++ nmap-6.47/ncat/ncat_connect.c	2015-08-31 17:46:41.347244408 +0200
+@@ -165,6 +165,7 @@ static struct conn_state cs = {
+     0
+ };
+ 
++static void try_nsock_connect(nsock_pool nsp, struct sockaddr_list *conn_addr);
+ static void connect_handler(nsock_pool nsp, nsock_event evt, void *data);
+ static void post_connect(nsock_pool nsp, nsock_iod iod);
+ static void read_stdin_handler(nsock_pool nsp, nsock_event evt, void *data);
+@@ -532,8 +533,8 @@ static int do_proxy_socks4(void)
+     socket_buffer_init(&stateful_buf, sd);
+ 
+     if (o.verbose) {
+-        loguser("Connected to proxy %s:%hu\n", inet_socktop(&targetss),
+-            inet_port(&targetss));
++        loguser("Connected to proxy %s:%hu\n", inet_socktop(&targetaddrs->addr),
++            inet_port(&targetaddrs->addr));
+     }
+ 
+     /* Fill the socks4_data struct */
+@@ -633,8 +634,8 @@ static int do_proxy_socks5(void)
+     socket_buffer_init(&stateful_buf, sd);
+ 
+     if (o.verbose) {
+-        loguser("Connected to proxy %s:%hu\n", inet_socktop(&targetss),
+-            inet_port(&targetss));
++        loguser("Connected to proxy %s:%hu\n", inet_socktop(&targetaddrs->addr),
++            inet_port(&targetaddrs->addr));
+     }
+ 
+     zmem(&socks5msg,sizeof(socks5msg));
+@@ -930,7 +931,7 @@ int ncat_connect(void)
+ 
+             if (o.af != AF_INET)
+                 bye("Sorry, -g can only currently be used with IPv4.");
+-            ipopts = buildsrcrte(targetss.in.sin_addr, o.srcrtes, o.numsrcrtes, o.srcrteptr, &ipoptslen);
++            ipopts = buildsrcrte(targetaddrs->addr.in.sin_addr, o.srcrtes, o.numsrcrtes, o.srcrteptr, &ipoptslen);
+ 
+             nsi_set_ipoptions(cs.sock_nsi, ipopts, ipoptslen);
+             free(ipopts); /* Nsock has its own copy */
+@@ -940,49 +941,18 @@ int ncat_connect(void)
+         if (o.af == AF_UNIX) {
+             if (o.proto == IPPROTO_UDP) {
+                 nsock_connect_unixsock_datagram(mypool, cs.sock_nsi, connect_handler, NULL,
+-                                                &targetss.sockaddr,
+-                                                SUN_LEN((struct sockaddr_un *)&targetss.sockaddr));
++                                                &targetaddrs->addr.sockaddr,
++                                                SUN_LEN((struct sockaddr_un *)&targetaddrs->addr.sockaddr));
+             } else {
+                 nsock_connect_unixsock_stream(mypool, cs.sock_nsi, connect_handler, o.conntimeout,
+-                                              NULL, &targetss.sockaddr,
+-                                              SUN_LEN((struct sockaddr_un *)&targetss.sockaddr));
++                                              NULL, &targetaddrs->addr.sockaddr,
++                                              SUN_LEN((struct sockaddr_un *)&targetaddrs->addr.sockaddr));
+             }
+         } else
+ #endif
+-        if (o.proto == IPPROTO_UDP) {
+-            nsock_connect_udp(mypool, cs.sock_nsi, connect_handler,
+-                              NULL, &targetss.sockaddr, targetsslen,
+-                              inet_port(&targetss));
+-        }
+-#ifdef HAVE_OPENSSL
+-        else if (o.proto == IPPROTO_SCTP && o.ssl) {
+-            nsock_connect_ssl(mypool, cs.sock_nsi, connect_handler,
+-                              o.conntimeout, NULL,
+-                              &targetss.sockaddr, targetsslen,
+-                              IPPROTO_SCTP, inet_port(&targetss),
+-                              NULL);
+-        }
+-#endif
+-        else if (o.proto == IPPROTO_SCTP) {
+-            nsock_connect_sctp(mypool, cs.sock_nsi, connect_handler,
+-                              o.conntimeout, NULL,
+-                              &targetss.sockaddr, targetsslen,
+-                              inet_port(&targetss));
+-        }
+-#ifdef HAVE_OPENSSL
+-        else if (o.ssl) {
+-            nsock_connect_ssl(mypool, cs.sock_nsi, connect_handler,
+-                              o.conntimeout, NULL,
+-                              &targetss.sockaddr, targetsslen,
+-                              IPPROTO_TCP, inet_port(&targetss),
+-                              NULL);
+-        }
+-#endif
+-        else {
+-            nsock_connect_tcp(mypool, cs.sock_nsi, connect_handler,
+-                              o.conntimeout, NULL,
+-                              &targetss.sockaddr, targetsslen,
+-                              inet_port(&targetss));
++        {
++            /* Add connection to first resolved address. */
++            try_nsock_connect(mypool, targetaddrs);
+         }
+     } else {
+         /* A proxy connection. */
+@@ -1018,6 +988,8 @@ int ncat_connect(void)
+     /* connect */
+     rc = nsock_loop(mypool, -1);
+ 
++    free_sockaddr_list(targetaddrs);
++
+     if (o.verbose) {
+         struct timeval end_time;
+         double time;
+@@ -1041,19 +1013,73 @@ int ncat_connect(void)
+     return rc == NSOCK_LOOP_ERROR ? 1 : 0;
+ }
+ 
++static void try_nsock_connect(nsock_pool nsp, struct sockaddr_list *conn_addr)
++{
++    if (o.proto == IPPROTO_UDP) {
++        nsock_connect_udp(nsp, cs.sock_nsi, connect_handler, (void *)conn_addr->next,
++                          &conn_addr->addr.sockaddr, conn_addr->addrlen,
++                          inet_port(&conn_addr->addr));
++    }
++#ifdef HAVE_OPENSSL
++    else if (o.proto == IPPROTO_SCTP && o.ssl) {
++        nsock_connect_ssl(nsp, cs.sock_nsi, connect_handler,
++                          o.conntimeout, (void *)conn_addr->next,
++                          &conn_addr->addr.sockaddr, conn_addr->addrlen,
++                          IPPROTO_SCTP, inet_port(&conn_addr->addr),
++                          NULL);
++    }
++#endif
++    else if (o.proto == IPPROTO_SCTP) {
++        nsock_connect_sctp(nsp, cs.sock_nsi, connect_handler,
++                          o.conntimeout, (void *)conn_addr->next,
++                          &conn_addr->addr.sockaddr, conn_addr->addrlen,
++                          inet_port(&conn_addr->addr));
++    }
++#ifdef HAVE_OPENSSL
++    else if (o.ssl) {
++        nsock_connect_ssl(nsp, cs.sock_nsi, connect_handler,
++                          o.conntimeout, (void *)conn_addr->next,
++                          &conn_addr->addr.sockaddr, conn_addr->addrlen,
++                          IPPROTO_TCP, inet_port(&conn_addr->addr),
++                          NULL);
++    }
++#endif
++    else {
++        nsock_connect_tcp(nsp, cs.sock_nsi, connect_handler,
++                          o.conntimeout, (void *)conn_addr->next,
++                          &conn_addr->addr.sockaddr, conn_addr->addrlen,
++                          inet_port(&conn_addr->addr));
++    }
++}
++
+ static void connect_handler(nsock_pool nsp, nsock_event evt, void *data)
+ {
+     enum nse_status status = nse_status(evt);
+     enum nse_type type = nse_type(evt);
++    struct sockaddr_list *next_addr = (struct sockaddr_list *)data;
+ 
+     ncat_assert(type == NSE_TYPE_CONNECT || type == NSE_TYPE_CONNECT_SSL);
+ 
+-    if (status == NSE_STATUS_ERROR) {
+-        loguser("%s.\n", socket_strerror(nse_errorcode(evt)));
+-        exit(1);
+-    } else if (status == NSE_STATUS_TIMEOUT) {
+-        loguser("%s.\n", socket_strerror(ETIMEDOUT));
+-        exit(1);
++    if (status == NSE_STATUS_ERROR || status == NSE_STATUS_TIMEOUT) {
++        int errcode = (status == NSE_STATUS_TIMEOUT)?ETIMEDOUT:nse_errorcode(evt);
++        /* If there are more resolved addresses, try connecting to next one */
++        if (next_addr != NULL) {
++            if (o.verbose) {
++                union sockaddr_u peer;
++                zmem(&peer, sizeof(peer.storage));
++                nsi_getlastcommunicationinfo(cs.sock_nsi, NULL, NULL, NULL,
++                    &peer.sockaddr, sizeof(peer.storage));
++                loguser("Connection to %s failed: %s.\n", inet_socktop(&peer), socket_strerror(errcode));
++                loguser("Trying next address...\n");
++            }
++            try_nsock_connect(nsp, next_addr);
++            return;
++        }
++        else {
++            free_sockaddr_list(targetaddrs);
++            loguser("%s.\n", socket_strerror(errcode));
++            exit(1);
++        }
+     } else {
+         ncat_assert(status == NSE_STATUS_SUCCESS);
+     }
+diff -up nmap-6.47/ncat/ncat_core.c.allresolve nmap-6.47/ncat/ncat_core.c
+--- nmap-6.47/ncat/ncat_core.c.allresolve	2014-08-16 04:45:47.000000000 +0200
++++ nmap-6.47/ncat/ncat_core.c	2015-08-31 17:46:41.348244403 +0200
+@@ -147,8 +147,7 @@ int num_listenaddrs = 0;
+ union sockaddr_u srcaddr;
+ size_t srcaddrlen;
+ 
+-union sockaddr_u targetss;
+-size_t targetsslen;
++struct sockaddr_list *targetaddrs;
+ 
+ /* Global options structure. */
+ struct options o;
+@@ -210,19 +209,23 @@ void options_init(void)
+ #endif
+ }
+ 
+-/* Internal helper for resolve and resolve_numeric. addl_flags is ored into
+-   hints.ai_flags, so you can add AI_NUMERICHOST. */
++/* Internal helper for resolve and resolve_numeric.
++   addl_flags is ored into hints.ai_flags, so you can add AI_NUMERICHOST.
++   sl is a pointer to first element of sockaddr linked list, which is always
++   statically allocated. Next list elements are dynamically allocated.
++   If multiple_addrs is false then only first address is returned. */
+ static int resolve_internal(const char *hostname, unsigned short port,
+-    struct sockaddr_storage *ss, size_t *sslen, int af, int addl_flags)
++    struct sockaddr_list *sl, int af, int addl_flags, int multiple_addrs)
+ {
+     struct addrinfo hints;
+     struct addrinfo *result;
++    struct addrinfo *next;
++    struct sockaddr_list **item_ptr = &sl;
++    struct sockaddr_list *new_item;
+     char portbuf[16];
+     int rc;
+ 
+     ncat_assert(hostname != NULL);
+-    ncat_assert(ss != NULL);
+-    ncat_assert(sslen != NULL);
+ 
+     memset(&hints, 0, sizeof(hints));
+     hints.ai_family = af;
+@@ -239,8 +242,19 @@ static int resolve_internal(const char *
+     if (result == NULL)
+         return EAI_NONAME;
+     ncat_assert(result->ai_addrlen > 0 && result->ai_addrlen <= (int) sizeof(struct sockaddr_storage));
+-    *sslen = result->ai_addrlen;
+-    memcpy(ss, result->ai_addr, *sslen);
++    for (next = result; next != NULL; next = next->ai_next) {
++        if (*item_ptr == NULL)
++        {
++            *item_ptr = (struct sockaddr_list *)safe_malloc(sizeof(struct sockaddr_list));
++	    (**item_ptr).next = NULL;
++        }
++        new_item = *item_ptr;
++        new_item->addrlen = next->ai_addrlen;
++        memcpy(&new_item->addr.storage, next->ai_addr, next->ai_addrlen);
++        if (!multiple_addrs)
++            break;
++        item_ptr = &new_item->next;
++    }
+     freeaddrinfo(result);
+ 
+     return 0;
+@@ -259,12 +273,42 @@ int resolve(const char *hostname, unsign
+     struct sockaddr_storage *ss, size_t *sslen, int af)
+ {
+     int flags;
++    struct sockaddr_list sl;
++    int result;
+ 
+     flags = 0;
+     if (o.nodns)
+         flags |= AI_NUMERICHOST;
+ 
+-    return resolve_internal(hostname, port, ss, sslen, af, flags);
++    result = resolve_internal(hostname, port, &sl, af, flags, 0);
++    *ss = sl.addr.storage;
++    *sslen = sl.addrlen;
++    return result;
++}
++
++/* Resolves the given hostname or IP address with getaddrinfo, and stores
++   all results into a linked list.
++   The rest of the behavior is same as resolve(). */
++int resolve_multi(const char *hostname, unsigned short port,
++    struct sockaddr_list *sl, int af)
++{
++    int flags;
++
++    flags = 0;
++    if (o.nodns)
++        flags |= AI_NUMERICHOST;
++
++    return resolve_internal(hostname, port, sl, af, flags, 1);
++}
++
++void free_sockaddr_list(struct sockaddr_list *sl)
++{
++    struct sockaddr_list *current, *next = sl;
++    while (next != NULL) {
++        current = next;
++        next = current->next;
++        free(current);
++    }
+ }
+ 
+ int fdinfo_close(struct fdinfo *fdn)
+diff -up nmap-6.47/ncat/ncat_core.h.allresolve nmap-6.47/ncat/ncat_core.h
+--- nmap-6.47/ncat/ncat_core.h.allresolve	2014-08-16 04:45:47.000000000 +0200
++++ nmap-6.47/ncat/ncat_core.h	2015-08-31 17:46:41.348244403 +0200
+@@ -130,14 +130,20 @@
+    a IPV4 INADDR_ANY and a IPV6 in6addr_any at most or a user defined address */
+ #define NUM_LISTEN_ADDRS 2
+ 
++/* Structure to store a linked list of resolved addresses. */
++struct sockaddr_list {
++    union sockaddr_u addr;
++    size_t addrlen;
++    struct sockaddr_list* next;
++};
++
+ extern union sockaddr_u listenaddrs[NUM_LISTEN_ADDRS];
+ extern int num_listenaddrs;
+ 
+ extern union sockaddr_u srcaddr;
+ extern size_t srcaddrlen;
+ 
+-extern union sockaddr_u targetss;
+-extern size_t targetsslen;
++extern struct sockaddr_list *targetaddrs;
+ 
+ enum exec_mode {
+     EXEC_PLAIN,
+@@ -223,6 +229,14 @@ void options_init(void);
+ int resolve(const char *hostname, unsigned short port,
+             struct sockaddr_storage *ss, size_t *sslen, int af);
+ 
++/* Resolves the given hostname or IP address with getaddrinfo, and stores
++   all results into a linked list.
++   The rest of behavior is same as resolve(). */
++int resolve_multi(const char *hostname, unsigned short port,
++        struct sockaddr_list *sl, int af);
++
++void free_sockaddr_list(struct sockaddr_list *sl);
++
+ int fdinfo_close(struct fdinfo *fdn);
+ int fdinfo_recv(struct fdinfo *fdn, char *buf, size_t size);
+ int fdinfo_send(struct fdinfo *fdn, const char *buf, size_t size);
+diff -up nmap-6.47/ncat/ncat_main.c.allresolve nmap-6.47/ncat/ncat_main.c
+--- nmap-6.47/ncat/ncat_main.c.allresolve	2015-08-31 17:46:41.340244438 +0200
++++ nmap-6.47/ncat/ncat_main.c	2015-08-31 17:46:41.348244403 +0200
+@@ -648,15 +648,20 @@ int main(int argc, char *argv[])
+     }
+ #endif  /* HAVE_SYS_UN_H */
+ 
++    /* Create a static target address, because at least one target address must be always allocated */
++    static struct sockaddr_list statictargetaddr;
++    statictargetaddr.next = NULL; /* List with one item */
++    targetaddrs = (struct sockaddr_list *)safe_zalloc(sizeof(struct sockaddr_list));
++
+     /* Will be AF_INET or AF_INET6 or AF_UNIX when valid */
+-    memset(&targetss.storage, 0, sizeof(targetss.storage));
+-    targetss.storage.ss_family = AF_UNSPEC;
+-    srcaddr.storage = targetss.storage;
++    memset(&srcaddr.storage, 0, sizeof(srcaddr.storage));
++    srcaddr.storage.ss_family = AF_UNSPEC;
++    targetaddrs->addr.storage = srcaddr.storage;
+ 
+     /* Clear the listenaddrs array */
+     int i;
+     for (i = 0; i < NUM_LISTEN_ADDRS; i++) {
+-        listenaddrs[i].storage = targetss.storage;
++        listenaddrs[i].storage = srcaddr.storage;
+     }
+ 
+     if (o.proxyaddr) {
+@@ -672,12 +677,12 @@ int main(int argc, char *argv[])
+              * (due to the colons in the IPv6 address and host:port separator).
+              */
+ 
+-            targetsslen = parseproxy(o.proxyaddr,
+-                &targetss.storage, &targetsslen, &proxyport);
++            targetaddrs->addrlen = parseproxy(o.proxyaddr,
++                &targetaddrs->addr.sockaddr, &targetaddrs->addrlen, &proxyport);
+             if (o.af == AF_INET) {
+-                targetss.in.sin_port = htons(proxyport);
++                targetaddrs->addr.in.sin_port = htons(proxyport);
+             } else { // might modify to else if and test AF_{INET6|UNIX|UNSPEC}
+-                targetss.in6.sin6_port = htons(proxyport);
++                targetaddrs->addr.in6.sin6_port = htons(proxyport);
+             }
+         } else {
+             bye("Invalid proxy type \"%s\".", o.proxytype);
+@@ -746,10 +751,10 @@ int main(int argc, char *argv[])
+     } else {
+ #if HAVE_SYS_UN_H
+         if (o.af == AF_UNIX) {
+-            memset(&targetss.storage, 0, sizeof(struct sockaddr_un));
+-            targetss.un.sun_family = AF_UNIX;
+-            strncpy(targetss.un.sun_path, argv[optind], sizeof(targetss.un.sun_path));
+-            targetsslen = SUN_LEN(&targetss.un);
++            memset(&targetaddrs->addr.storage, 0, sizeof(struct sockaddr_un));
++            targetaddrs->addr.un.sun_family = AF_UNIX;
++            strncpy(targetaddrs->addr.un.sun_path, argv[optind], sizeof(targetaddrs->addr.un.sun_path));
++            targetaddrs->addrlen = SUN_LEN(&targetaddrs->addr.un);
+             o.target = argv[optind];
+             optind++;
+         } else
+@@ -763,7 +768,7 @@ int main(int argc, char *argv[])
+              * targetss contains data already and you don't want remove them
+              */
+             if( !o.proxytype
+-                && (rc = resolve(o.target, 0, &targetss.storage, &targetsslen, o.af)) != 0)
++                && (rc = resolve_multi(o.target, 0, targetaddrs, o.af)) != 0)
+ 
+                 bye("Could not resolve hostname \"%s\": %s.", o.target, gai_strerror(rc));
+             optind++;
+@@ -801,21 +806,28 @@ int main(int argc, char *argv[])
+ 
+     if (o.proxytype && !o.listen)
+         ; /* Do nothing - port is already set to proxyport  */
+-    else if (targetss.storage.ss_family == AF_INET)
+-        targetss.in.sin_port = htons(o.portno);
++    else {
++        struct sockaddr_list *targetaddrs_item = targetaddrs;
++        while (targetaddrs_item != NULL)
++        {
++            if (targetaddrs_item->addr.storage.ss_family == AF_INET)
++                targetaddrs_item->addr.in.sin_port = htons(o.portno);
+ #ifdef HAVE_IPV6
+-    else if (targetss.storage.ss_family == AF_INET6)
+-        targetss.in6.sin6_port = htons(o.portno);
++            else if (targetaddrs_item->addr.storage.ss_family == AF_INET6)
++                targetaddrs_item->addr.in6.sin6_port = htons(o.portno);
+ #endif
+ #if HAVE_SYS_UN_H
+-    /* If we use Unix domain sockets, we have to count with them. */
+-    else if (targetss.storage.ss_family == AF_UNIX)
+-        ; /* Do nothing. */
++            /* If we use Unix domain sockets, we have to count with them. */
++            else if (targetaddrs_item->addr.storage.ss_family == AF_UNIX)
++                ; /* Do nothing. */
+ #endif
+-    else if (targetss.storage.ss_family == AF_UNSPEC)
+-        ; /* Leave unspecified. */
+-    else
+-        bye("Unknown address family %d.", targetss.storage.ss_family);
++            else if (targetaddrs_item->addr.storage.ss_family == AF_UNSPEC)
++                ; /* Leave unspecified. */
++            else
++                bye("Unknown address family %d.", targetaddrs_item->addr.storage.ss_family);
++            targetaddrs_item = targetaddrs_item->next;
++        }
++    }
+ 
+     if (srcport != -1) {
+         if (o.listen) {
+@@ -827,7 +839,7 @@ int main(int argc, char *argv[])
+                 /* We have a source port but not an explicit source address;
+                    fill in an unspecified address of the same family as the
+                    target. */
+-                srcaddr.storage.ss_family = targetss.storage.ss_family;
++                srcaddr.storage.ss_family = targetaddrs->addr.storage.ss_family;
+                 if (srcaddr.storage.ss_family == AF_INET)
+                     srcaddr.in.sin_addr.s_addr = INADDR_ANY;
+                 else if (srcaddr.storage.ss_family == AF_INET6)
+@@ -919,8 +931,8 @@ static int ncat_listen_mode(void)
+         bye("/bin/sh is not executable, so `-c' won't work.");
+ #endif
+ 
+-    if (targetss.storage.ss_family != AF_UNSPEC) {
+-        listenaddrs[num_listenaddrs++] = targetss;
++    if (targetaddrs->addr.storage.ss_family != AF_UNSPEC) {
++        listenaddrs[num_listenaddrs++] = targetaddrs->addr;
+     } else {
+         size_t ss_len;
+         int rc;
+diff -up nmap-6.47/ncat/util.c.allresolve nmap-6.47/ncat/util.c
+--- nmap-6.47/ncat/util.c.allresolve	2014-08-16 04:45:47.000000000 +0200
++++ nmap-6.47/ncat/util.c	2015-08-31 17:46:41.348244403 +0200
+@@ -490,7 +490,7 @@ int do_connect(int type)
+     /* We need a socket that can be inherited by child processes in
+        ncat_exec_win.c, for --exec and --sh-exec. inheritable_socket is from
+        nbase. */
+-    sock = inheritable_socket(targetss.storage.ss_family, type, 0);
++    sock = inheritable_socket(targetaddrs->addr.storage.ss_family, type, 0);
+ 
+     if (srcaddr.storage.ss_family != AF_UNSPEC) {
+         size_t sa_len;
+@@ -507,7 +507,7 @@ int do_connect(int type)
+     }
+ 
+     if (sock != -1) {
+-        if (connect(sock, &targetss.sockaddr, (int) targetsslen) != -1)
++        if (connect(sock, &targetaddrs->addr.sockaddr, (int) targetaddrs->addrlen) != -1)
+             return sock;
+         else if (socket_errno() == EINPROGRESS || socket_errno() == EAGAIN)
+             return sock;

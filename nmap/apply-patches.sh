@@ -10,6 +10,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/zenmap-621887-workaround.patch
 # upstream provided patch for rhbz#845005, not yet in upstream repository
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncat_reg_stdin.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nmap-6.25-displayerror.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/nmap-6.40-allresolve.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

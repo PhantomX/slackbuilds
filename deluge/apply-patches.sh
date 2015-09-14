@@ -31,6 +31,5 @@ ApplyPatch new_release_check.patch
 ApplyPatch deluge-createtorrentdialog.patch
 
 # Assorted fixes from upstream
-ApplyPatch 0001-Fix-for-Twisted-15.0-URI-class-rename.patch
 
 set +e +o pipefail

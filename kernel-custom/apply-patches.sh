@@ -202,9 +202,6 @@ ApplyPatch HID-rmi-Disable-populating-F30-when-the-touchpad-has.patch
 # rhbz 1180920 1206724
 ApplyPatch pcmcia-fix-a-boot-time-warning-in-pcmcia-cs-code.patch
 
-#rhbz 1251877 1251880 1250279 1248741
-ApplyPatch HID-hid-input-Fix-accessing-freed-memory-during-devi.patch
-
 #rhbz 1253789
 ApplyPatch iSCSI-let-session-recovery_tmo-sysfs-writes-persist.patch
 

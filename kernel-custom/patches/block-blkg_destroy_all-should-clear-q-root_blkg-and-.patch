@@ -1,0 +1,64 @@
+From a08748fb2221ef03d54071e5ddfcc1b0cee6961c Mon Sep 17 00:00:00 2001
+From: Tejun Heo <tj@kernel.org>
+Date: Sat, 5 Sep 2015 15:47:36 -0400
+Subject: [PATCH] block: blkg_destroy_all() should clear q->root_blkg and
+ ->root_rl.blkg
+
+While making the root blkg unconditional, ec13b1d6f0a0 ("blkcg: always
+create the blkcg_gq for the root blkcg") removed the part which clears
+q->root_blkg and ->root_rl.blkg during q exit.  This leaves the two
+pointers dangling after blkg_destroy_all().  blk-throttle exit path
+performs blkg traversals and dereferences ->root_blkg and can lead to
+the following oops.
+
+ BUG: unable to handle kernel NULL pointer dereference at 0000000000000558
+ IP: [<ffffffff81389746>] __blkg_lookup+0x26/0x70
+ ...
+ task: ffff88001b4e2580 ti: ffff88001ac0c000 task.ti: ffff88001ac0c000
+ RIP: 0010:[<ffffffff81389746>]  [<ffffffff81389746>] __blkg_lookup+0x26/0x70
+ ...
+ Call Trace:
+  [<ffffffff8138d14a>] blk_throtl_drain+0x5a/0x110
+  [<ffffffff8138a108>] blkcg_drain_queue+0x18/0x20
+  [<ffffffff81369a70>] __blk_drain_queue+0xc0/0x170
+  [<ffffffff8136a101>] blk_queue_bypass_start+0x61/0x80
+  [<ffffffff81388c59>] blkcg_deactivate_policy+0x39/0x100
+  [<ffffffff8138d328>] blk_throtl_exit+0x38/0x50
+  [<ffffffff8138a14e>] blkcg_exit_queue+0x3e/0x50
+  [<ffffffff8137016e>] blk_release_queue+0x1e/0xc0
+ ...
+
+While the bug is a straigh-forward use-after-free bug, it is tricky to
+reproduce because blkg release is RCU protected and the rest of exit
+path usually finishes before RCU grace period.
+
+This patch fixes the bug by updating blkg_destro_all() to clear
+q->root_blkg and ->root_rl.blkg.
+
+Signed-off-by: Tejun Heo <tj@kernel.org>
+Reported-by: "Richard W.M. Jones" <rjones@redhat.com>
+Reported-by: Josh Boyer <jwboyer@fedoraproject.org>
+Link: http://lkml.kernel.org/g/CA+5PVA5rzQ0s4723n5rHBcxQa9t0cW8BPPBekr_9aMRoWt2aYg@mail.gmail.com
+Fixes: ec13b1d6f0a0 ("blkcg: always create the blkcg_gq for the root blkcg")
+Cc: stable@vger.kernel.org # v4.2+
+---
+ block/blk-cgroup.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/block/blk-cgroup.c b/block/blk-cgroup.c
+index d6283b3f5db5..9cc48d1d7abb 100644
+--- a/block/blk-cgroup.c
++++ b/block/blk-cgroup.c
+@@ -387,6 +387,9 @@ static void blkg_destroy_all(struct request_queue *q)
+ 		blkg_destroy(blkg);
+ 		spin_unlock(&blkcg->lock);
+ 	}
++
++	q->root_blkg = NULL;
++	q->root_rl.blkg = NULL;
+ }
+ 
+ /*
+-- 
+2.4.3
+

@@ -96,11 +96,11 @@ ApplyPatch lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
 # NFSv4
 
 # USB
+ApplyPatch usb-make-xhci-platform-driver-use-64-bit-or-32-bit-D.patch
 
 # WMI
 
 # ACPI
-ApplyPatch Revert-Revert-ACPI-video-change-acpi-video-brightnes.patch
 
 # cpufreq
 #ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
@@ -179,8 +179,6 @@ ApplyPatch watchdog-Disable-watchdog-on-virtual-machines.patch
 #rhbz 754518
 ApplyPatch scsi-sd_revalidate_disk-prevent-NULL-ptr-deref.patch
 
-#ApplyPatch weird-root-dentry-name-debug.patch
-
 # https://fedoraproject.org/wiki/Features/Checkpoint_Restore
 ApplyPatch criu-no-expert.patch
 
@@ -196,17 +194,44 @@ ApplyPatch firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
 #rhbz 1226743
 ApplyPatch drm-i915-turn-off-wc-mmaps.patch
 
-#rhbz 1227891
-ApplyPatch HID-rmi-Disable-populating-F30-when-the-touchpad-has.patch
-
-# rhbz 1180920 1206724
-ApplyPatch pcmcia-fix-a-boot-time-warning-in-pcmcia-cs-code.patch
-
 #rhbz 1253789
 ApplyPatch iSCSI-let-session-recovery_tmo-sysfs-writes-persist.patch
 
+#rhbz 1250717
+ApplyPatch ext4-dont-manipulate-recovery-flag-when-freezing.patch
+
+#rhbz 1257534
+ApplyPatch nv46-Change-mc-subdev-oclass-from-nv44-to-nv4c.patch
+
+#rhbz 1212201
+ApplyPatch drm-qxl-validate-monitors-config-modes.patch
+
+#rhbz 1257500
+ApplyPatch vmwgfx-Rework-device-initialization.patch
+ApplyPatch drm-vmwgfx-Allow-dropped-masters-render-node-like-ac.patch
+
+#rhbz 1259231
+ApplyPatch make-flush-workqueue-available-to-non-GPL-modules.patch
+
+#rhbz 1237136
+ApplyPatch block-blkg_destroy_all-should-clear-q-root_blkg-and-.patch
+
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch
+
+### Arch
+# fix hard lockup in e1000e_cyclecounter_read() after 4 hours of uptime
+# https://lkml.org/lkml/2015/8/18/292
+ApplyPatch 0001-e1000e-Fix-tight-loop-implementation-of-systime-read.patch
+
+# add not-yet-mainlined patch to fix network unavailability when iptables
+# rules are applied during startup - happened with Shorewall; journal had
+# many instances of this error: nf_conntrack: table full, dropping packet
+ApplyPatch 0001-netfilter-conntrack-use-nf_ct_tmpl_free-in-CT-synpro.patch
+
+# add not-yes-mainlined patch to fix bridge code
+# https://bugzilla.kernel.org/show_bug.cgi?id=104161
+ApplyPatch 0001-fix-bridge-regression.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

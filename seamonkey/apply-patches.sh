@@ -9,12 +9,12 @@ patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/firefox-build-prboo
 patch -p2 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/rhbz-966424.patch
 patch -p2 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/rhbz-1173156.patch
 patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/rhbz-1014858.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.32-enable-addons.patch
+patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.35-enable-addons.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.32-installdir.patch
 #patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/seamonkey-2.25-elfhack.patch
 
 # Upstream patches
-patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-1129859-dictfix2.patch
+patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/seamonkey-2.35-blocklist.patch
 
 # Gentoo
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.30-pulseaudio_configure_switch_fix.patch
@@ -22,6 +22,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.30-pulseaudio_config
 # OpenSUSE
 patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-nongnome-proxies.patch
 patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-icu-strncat.patch
-patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-bmo1088588.patch
+patch -p1 -E --backup --verbose -d mozilla -i ${SB_PATCHDIR}/mozilla-no-stdcxx-check.patch
 
 set +e +o pipefail

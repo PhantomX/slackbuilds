@@ -45,7 +45,7 @@ pushd "${tmp}"
         exit 1
       fi
     fi
-    rm -rf ffmpeg/* dx9sdk/* pspautotests/* redist/* native/ext/libpng17
+    rm -rf ffmpeg/* dx9sdk/* pspautotests/* redist/* ext/native/libpng17
     GITVER="$(git describe --always)"
     sed -i \
       -e "/GIT_VERSION/s|unknown|${GITVER}|g" \

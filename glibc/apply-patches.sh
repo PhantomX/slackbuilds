@@ -110,15 +110,19 @@ ApplyPatch glibc-2.17-nss-upgrade.patch
 ApplyPatch glibc-2.19-compat-EUR-currencies.patch
 ApplyPatch glibc-2.9-nscd-no-host-cache.patch.gz
 ApplyPatch glibc-2.10.1-biarch-cpp-defines.patch.gz
-ApplyPatch glibc-2.6-nice_fix.patch
+ApplyPatch 0001-Fix-BZ-18086-nice-resets-errno-to-0.patch
+ApplyPatch glibc-2.22-nice_fix.patch
 ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
-ApplyPatch glibc-2.16-multiarch.patch
-ApplyPatch glibc-2.21-pt_BR-i18nfixes.patch
+ApplyPatch glibc-2.22-multiarch.patch
+ApplyPatch glibc-2.22-pt_BR-i18nfixes.patch
 
 ### Arch
+ApplyPatch glibc-2.22-roundup.patch
 
 ### master
 ApplyPatch 0001-Fix-powf-close-to-1-large-bug-18647.patch
 ApplyPatch 0002-Also-check-dead-data-category-NULL.patch
+ApplyPatch 0002-Fix-BZ-16734-fopen-calls-mmap-to-allocate-its-buffer.patch
+ApplyPatch 0003-Fix-BZ-18820-fmemopen-may-leak-memory-on-failure.patch
 
 set +e +o pipefail

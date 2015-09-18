@@ -63,6 +63,5 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-dj990c-margin.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-strncpy.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-no-write-bytecode.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-silence-ioerror.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/hplip-CommonDefinations.patch
 
 set +e +o pipefail

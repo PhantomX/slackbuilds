@@ -68,9 +68,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.9.3-kcm_ssl.patch
 # disable dot to reduce apidoc size
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.12.90-dot.patch
 
-# set QT_NO_GLIB in klauncher_main.cpp as a possible fix/workaround for #983110
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.11.3-klauncher-no-glib.patch
-
 # opening a terminal in Konqueror / Dolphin does not inherit environment variables
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.13.2-invokeTerminal.patch
 

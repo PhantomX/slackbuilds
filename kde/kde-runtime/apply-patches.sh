@@ -16,10 +16,12 @@ zcat ${SB_PATCHDIR}/kdebase-runtime-4.3.3-home_onlyshowin_kde.patch.gz | patch -
 # Launch compiz via compiz-manager so we get window decorations and
 # other such decadent luxuries (AdamW 2011/01)
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.5.95-compiz.patch
-
-# avoid X3 mouse events
-# https://bugs.kde.org/show_bug.cgi?id=316546
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-mouseeventlistener.patch
+# disable making files read only when moving them into trash
+# (Upstream wouldn't accept this)
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.10.4-trash-readonly.patch
+# Fix FTBFS
+# workaround missing dependency on glib2 in NetworkManager.pc
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-15.08.0-fix-build.patch
 
 # tirpc support
 #patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/kdebase-runtime-4.6.4-tirpc.patch

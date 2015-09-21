@@ -8,6 +8,7 @@ pref("browser.fixup.alternate.enabled", false);
 pref("browser.link.open_external",          3);
 pref("browser.newtabpage.directory.source","");
 pref("browser.newtabpage.enabled", false);
+pref("browser.newtabpage.enhanced", false);
 pref("browser.pocket.enabled", false);
 pref("browser.preferences.inContent", false);
 pref("browser.search.suggest.enabled", false);

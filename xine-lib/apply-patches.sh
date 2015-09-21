@@ -10,8 +10,9 @@ touch -r configure.ac.stamp configure.ac
 touch -r m4/pthreads.m4 m4/pthreads.m4.stamp
 touch -r m4/pthreads.m4.stamp m4/pthreads.m4
 zcat ${SB_PATCHDIR}/${NAME}-1.1.1-deepbind-939.patch.gz | patch -p1 -E --backup --verbose
-
 # http://bugzilla.redhat.com/477226
 zcat ${SB_PATCHDIR}/${NAME}-1.1.16.2-multilib.patch.gz | patch -p1 -E --backup --verbose
+
+patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-ffmpeg.patch
 
 set +e +o pipefail

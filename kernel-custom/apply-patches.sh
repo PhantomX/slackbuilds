@@ -124,6 +124,9 @@ done
     ApplyPatch ${file}
   done
 )
+# https://groups.google.com/d/msg/bfq-iosched/a5DWtveDzJo/VOvVfnV9AwAJ
+ApplyPatch 0001-Fix-check-that-cooperators-belong-to-same-cgroup.patch
+
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -203,9 +206,6 @@ ApplyPatch ext4-dont-manipulate-recovery-flag-when-freezing.patch
 #rhbz 1257534
 ApplyPatch nv46-Change-mc-subdev-oclass-from-nv44-to-nv4c.patch
 
-#rhbz 1212201
-ApplyPatch drm-qxl-validate-monitors-config-modes.patch
-
 #rhbz 1257500
 ApplyPatch vmwgfx-Rework-device-initialization.patch
 ApplyPatch drm-vmwgfx-Allow-dropped-masters-render-node-like-ac.patch
@@ -215,6 +215,12 @@ ApplyPatch make-flush-workqueue-available-to-non-GPL-modules.patch
 
 #rhbz 1237136
 ApplyPatch block-blkg_destroy_all-should-clear-q-root_blkg-and-.patch
+
+#CVE-2015-6937 rhbz 1263139 1263140
+ApplyPatch RDS-verify-the-underlying-transport-exists-before-cr.patch
+
+#rhbz 1263762
+ApplyPatch 0001-x86-cpu-cacheinfo-Fix-teardown-path.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

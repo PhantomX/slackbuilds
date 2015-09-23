@@ -18,7 +18,6 @@ pref("browser.urlbar.clickSelectsAll", false);
 pref("browser.urlbar.doubleClickSelectsAll", true);
 pref("browser.urlbar.trimURLs", false);
 pref("browser.zoom.full", false);
-pref("dom.ipc.plugins.asyncInit", false);
 pref("general.autoScroll", false);
 pref("general.smoothScroll", false);
 pref("layout.spellcheckDefault", 0);

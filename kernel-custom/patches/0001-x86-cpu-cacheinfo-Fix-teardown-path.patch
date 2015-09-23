@@ -1,0 +1,86 @@
+From 680ac028240f8747f31c03986fbcf18b2b521e93 Mon Sep 17 00:00:00 2001
+From: Borislav Petkov <bp@suse.de>
+Date: Mon, 27 Jul 2015 09:58:05 +0200
+Subject: [PATCH] x86/cpu/cacheinfo: Fix teardown path
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Philip Müller reported a hang when booting 32-bit 4.1 kernel on
+an AMD box. A fragment of the splat was enough to pinpoint the
+issue:
+
+  task: f58e0000 ti: f58e8000 task.ti: f58e800
+  EIP: 0060:[<c135a903>] EFLAGS: 00010206 CPU: 0
+  EIP is at free_cache_attributes+0x83/0xd0
+  EAX: 00000001 EBX: f589d46c ECX: 00000090 EDX: 360c2000
+  ESI: 00000000 EDI: c1724a80 EBP: f58e9ec0 ESP: f58e9ea0
+   DS: 007b ES: 007b FS: 00d8 GS: 00e0 SS: 0068
+  CR0: 8005003b CR2: 000000ac CR3: 01731000 CR4: 000006d0
+
+cache_shared_cpu_map_setup() did check sibling CPUs cacheinfo
+descriptor while the respective teardown path
+cache_shared_cpu_map_remove() didn't. Fix that.
+
+From tglx's version: to be on the safe side, move the cacheinfo
+descriptor check to free_cache_attributes(), thus cleaning up
+the hotplug path a little and making this even more robust.
+
+Reported-by: Philip Müller <philm@manjaro.org>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Cc: <stable@vger.kernel.org> # v4.1+
+Cc: Andre Przywara <andre.przywara@arm.com>
+Cc: Guenter Roeck <linux@roeck-us.net>
+Cc: H. Peter Anvin <hpa@zytor.com>
+Cc: Linus Torvalds <torvalds@linux-foundation.org>
+Cc: Peter Zijlstra <peterz@infradead.org>
+Cc: Sudeep Holla <sudeep.holla@arm.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: linux-kernel@vger.kernel.org
+Cc: manjaro-dev@manjaro.org
+Link: http://lkml.kernel.org/r/20150727075805.GA20416@nazgul.tnic
+Link: https://lkml.kernel.org/r/55B47BB8.6080202@manjaro.org
+Signed-off-by: Ingo Molnar <mingo@kernel.org>
+---
+ drivers/base/cacheinfo.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/base/cacheinfo.c b/drivers/base/cacheinfo.c
+index 764280a91776..e9fd32e91668 100644
+--- a/drivers/base/cacheinfo.c
++++ b/drivers/base/cacheinfo.c
+@@ -148,7 +148,11 @@ static void cache_shared_cpu_map_remove(unsigned int cpu)
+ 
+ 			if (sibling == cpu) /* skip itself */
+ 				continue;
++
+ 			sib_cpu_ci = get_cpu_cacheinfo(sibling);
++			if (!sib_cpu_ci->info_list)
++				continue;
++
+ 			sib_leaf = sib_cpu_ci->info_list + index;
+ 			cpumask_clear_cpu(cpu, &sib_leaf->shared_cpu_map);
+ 			cpumask_clear_cpu(sibling, &this_leaf->shared_cpu_map);
+@@ -159,6 +163,9 @@ static void cache_shared_cpu_map_remove(unsigned int cpu)
+ 
+ static void free_cache_attributes(unsigned int cpu)
+ {
++	if (!per_cpu_cacheinfo(cpu))
++		return;
++
+ 	cache_shared_cpu_map_remove(cpu);
+ 
+ 	kfree(per_cpu_cacheinfo(cpu));
+@@ -514,8 +521,7 @@ static int cacheinfo_cpu_callback(struct notifier_block *nfb,
+ 		break;
+ 	case CPU_DEAD:
+ 		cache_remove_dev(cpu);
+-		if (per_cpu_cacheinfo(cpu))
+-			free_cache_attributes(cpu);
++		free_cache_attributes(cpu);
+ 		break;
+ 	}
+ 	return notifier_from_errno(rc);
+-- 
+2.4.3
+

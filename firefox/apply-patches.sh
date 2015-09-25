@@ -25,8 +25,6 @@ if [ "${SB_UA}" = "YES" ] ;then
     ${SB_PATCHDIR}/firefox-chinfo-ua.patch | patch -p2 -E --backup --verbose
 fi
 
-# Upstream patches
-
 ### OpenSUSE
 # http://www.rosenauer.org/hg/mozilla/
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-branded-icons.patch
@@ -36,7 +34,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-icu-strncat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-no-stdcxx-check.patch
 
 # Upstream patches
-
 
 # OpenSuse kde integration support
 if [ "${SB_KDE}" = "YES" ] ;then

@@ -32,6 +32,7 @@ SB_PATCHDIR=${CWD}/patches
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-cve-2014-8140.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-cve-2014-8141.patch
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-overflow-long-fsize.patch
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/unzip-6.0-heap-overflow-infloop.patch
 
   ### Debian
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/04-handle-pkware-verification-bit.patch

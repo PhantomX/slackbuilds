@@ -20,6 +20,7 @@ fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/squid-3.1.0.9-config.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/squid-3.1.0.9-location.patch
 zcat ${SB_PATCHDIR}/squid-3.0.STABLE1-perlpath.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/squid-3.5.9-include-guards.patch
 
 
 set +e +o pipefail

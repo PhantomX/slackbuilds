@@ -200,18 +200,12 @@ ApplyPatch drm-i915-turn-off-wc-mmaps.patch
 #rhbz 1253789
 ApplyPatch iSCSI-let-session-recovery_tmo-sysfs-writes-persist.patch
 
-#rhbz 1250717
-ApplyPatch ext4-dont-manipulate-recovery-flag-when-freezing.patch
-
 #rhbz 1257534
 ApplyPatch nv46-Change-mc-subdev-oclass-from-nv44-to-nv4c.patch
 
 #rhbz 1257500
 ApplyPatch vmwgfx-Rework-device-initialization.patch
 ApplyPatch drm-vmwgfx-Allow-dropped-masters-render-node-like-ac.patch
-
-#rhbz 1259231
-ApplyPatch make-flush-workqueue-available-to-non-GPL-modules.patch
 
 #rhbz 1237136
 ApplyPatch block-blkg_destroy_all-should-clear-q-root_blkg-and-.patch
@@ -221,6 +215,12 @@ ApplyPatch RDS-verify-the-underlying-transport-exists-before-cr.patch
 
 #rhbz 1263762
 ApplyPatch 0001-x86-cpu-cacheinfo-Fix-teardown-path.patch
+
+#CVE-2015-5257 rhbz 1265607 1265612
+ApplyPatch USB-whiteheat-fix-potential-null-deref-at-probe.patch
+
+# https://github.com/torvalds/linux/commit/30927520dbae297182990bb21d08762bcc35ce1d
+ApplyPatch tcp_cubic-better_follow_cubic_curve_after_idle_period.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

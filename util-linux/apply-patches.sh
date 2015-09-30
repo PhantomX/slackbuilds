@@ -14,6 +14,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/2.23-login-lastlog-create.patc
 
 ### Upstream Patches
 ###
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-libmount-monitor-don-t-check-for-regular-mtab.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=NO

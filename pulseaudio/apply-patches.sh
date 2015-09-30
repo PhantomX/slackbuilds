@@ -8,6 +8,8 @@ SB_PATCHDIR=${CWD}/patches
 #  patch -p1 -E --backup --verbose -i ${patch} || exit 1
 #done
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pulseaudio-7.0-localedir.patch
+
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES
 

@@ -6,7 +6,7 @@ SB_PATCHDIR=${CWD}/patches
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # This breaks far too many things.  Freetype2 developers will have to get their
 # punishment on someone else's distribution.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/freetype.illadvisederror.diff
+patch -p2 -E --backup --verbose -d include/freetype -i ${SB_PATCHDIR}/freetype.illadvisederror.diff
 
 # Bytecode interpreter
 # Upstream default is enabled
@@ -23,8 +23,8 @@ fi
 # CVS bug fixes, mostly for embolding
 zcat ${SB_PATCHDIR}/freetype-2.2.1-enable-valid.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup -z .multilib --verbose -i ${SB_PATCHDIR}/freetype-multilib.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/freetype-2.5.3-freetype-config-prefix.patch
 
 ### Upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fix_segfault_with_harfbuzz.diff
 
 set +e +o pipefail

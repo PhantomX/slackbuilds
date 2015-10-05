@@ -33,11 +33,17 @@ patch -p1 -E --backup -z .defsys --verbose -i ${SB_PATCHDIR}/${NAME}-default-to-
 # (tmb) fix build with gsoap >= 2.8.13
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-fix-build-with-gsoap-2.8.13-and-up.patch
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-strings.patch
+if [ "${SB_SYSTEMD}" = "YES" ] ;then
+  sed -e 's|/etc/rc.d/rc.vboxdrv restart|systemctl restart vboxdrv.service|g' \
+    ${SB_PATCHDIR}/${NAME}-5.0.6-strings.patch | patch -p1 -E --backup --verbose
+else
+  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.6-strings.patch
+fi
+
 patch -p1 -E --backup -z .libcxx --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-libcxx.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-noansi.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.1.2-testmangle.patch
 
-patch -p0 -E --backup -z .gcc --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.0-gcc.patch
+#patch -p0 -E --backup -z .gcc --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.0-gcc.patch
 
 set +e +o pipefail

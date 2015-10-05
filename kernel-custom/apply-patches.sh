@@ -219,6 +219,13 @@ ApplyPatch 0001-x86-cpu-cacheinfo-Fix-teardown-path.patch
 #CVE-2015-5257 rhbz 1265607 1265612
 ApplyPatch USB-whiteheat-fix-potential-null-deref-at-probe.patch
 
+#CVE-2015-2925 rhbz 1209367 1209373
+ApplyPatch dcache-Handle-escaped-paths-in-prepend_path.patch
+ApplyPatch vfs-Test-for-and-handle-paths-that-are-unreachable-f.patch
+
+#CVE-2015-7613 rhbz 1268270 1268273
+ApplyPatch Initialize-msg-shm-IPC-objects-before-doing-ipc_addi.patch
+
 # https://github.com/torvalds/linux/commit/30927520dbae297182990bb21d08762bcc35ce1d
 ApplyPatch tcp_cubic-better_follow_cubic_curve_after_idle_period.patch
 
@@ -234,10 +241,6 @@ ApplyPatch 0001-e1000e-Fix-tight-loop-implementation-of-systime-read.patch
 # rules are applied during startup - happened with Shorewall; journal had
 # many instances of this error: nf_conntrack: table full, dropping packet
 ApplyPatch 0001-netfilter-conntrack-use-nf_ct_tmpl_free-in-CT-synpro.patch
-
-# add not-yes-mainlined patch to fix bridge code
-# https://bugzilla.kernel.org/show_bug.cgi?id=104161
-ApplyPatch 0001-fix-bridge-regression.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

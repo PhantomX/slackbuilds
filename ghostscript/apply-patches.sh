@@ -15,11 +15,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-noopt.patch
 # Fix ./autgen.sh in ijs sub-project
 # Define .runlibfileifexists.
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-runlibfileifexists.patch
-# Fixed missing error check when setting ICC profile.
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-icc-missing-check.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-Fontmap.local.patch
-# Use more caution when converting floats to strings (bug rh#980085).
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-wrf-snprintf.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-system-openjpeg2.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ghostscript-system-zlib.patch
 

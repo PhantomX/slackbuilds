@@ -1,0 +1,271 @@
+From ae3dde801253b1d5f7363bb9fb06bcb230f00eb8 Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Wed, 7 Oct 2015 20:10:48 +0200
+Subject: [PATCH 2/2] machinectl: fix race when opening new shells with
+ "machinectl shell"
+
+Previously, we'd allocate the TTY, spawn a service on it, but
+immediately start processing the TTY and forwarding it to whatever the
+commnd was started on. This is however problematic, as the TTY might get
+actually opened only much later by the service. We'll hence first get
+EIOs on the master as the other side is still closed, and hence
+considered it hung up and terminated the session.
+
+With this change we add a flag to the pty forwarding logic:
+PTY_FORWARD_IGNORE_INITIAL_VHANGUP. If set, we'll ignore all hangups
+(i.e. EIOs) on the master PTY until the first byte is successfully read.
+From that point on we consider a hangup/EIO a regular connection termination. This
+way, we handle the race: when we get EIO initially we'll ignore it,
+until the connection is properly set up, at which time we start
+honouring it.
+---
+ src/machine/machinectl.c | 10 +++++-----
+ src/nspawn/nspawn.c      |  2 +-
+ src/run/run.c            |  2 +-
+ src/shared/ptyfwd.c      | 49 +++++++++++++++++++++++++++++++-----------------
+ src/shared/ptyfwd.h      | 12 +++++++++++-
+ 5 files changed, 50 insertions(+), 25 deletions(-)
+
+diff --git a/src/machine/machinectl.c b/src/machine/machinectl.c
+index 17a186e..e75b183 100644
+--- a/src/machine/machinectl.c
++++ b/src/machine/machinectl.c
+@@ -1173,7 +1173,7 @@ static int on_machine_removed(sd_bus_message *m, void *userdata, sd_bus_error *r
+         return 0;
+ }
+ 
+-static int process_forward(sd_event *event, PTYForward **forward, int master, bool ignore_vhangup, const char *name) {
++static int process_forward(sd_event *event, PTYForward **forward, int master, PTYForwardFlags flags, const char *name) {
+         char last_char = 0;
+         bool machine_died;
+         int ret = 0, r;
+@@ -1192,7 +1192,7 @@ static int process_forward(sd_event *event, PTYForward **forward, int master, bo
+         sd_event_add_signal(event, NULL, SIGINT, NULL, NULL);
+         sd_event_add_signal(event, NULL, SIGTERM, NULL, NULL);
+ 
+-        r = pty_forward_new(event, master, ignore_vhangup, false, forward);
++        r = pty_forward_new(event, master, flags, forward);
+         if (r < 0)
+                 return log_error_errno(r, "Failed to create PTY forwarder: %m");
+ 
+@@ -1203,7 +1203,7 @@ static int process_forward(sd_event *event, PTYForward **forward, int master, bo
+         pty_forward_get_last_char(*forward, &last_char);
+ 
+         machine_died =
+-                ignore_vhangup &&
++                (flags & PTY_FORWARD_IGNORE_VHANGUP) &&
+                 pty_forward_get_ignore_vhangup(*forward) == 0;
+ 
+         *forward = pty_forward_free(*forward);
+@@ -1286,7 +1286,7 @@ static int login_machine(int argc, char *argv[], void *userdata) {
+         if (r < 0)
+                 return bus_log_parse_error(r);
+ 
+-        return process_forward(event, &forward, master, true, machine);
++        return process_forward(event, &forward, master, PTY_FORWARD_IGNORE_VHANGUP, machine);
+ }
+ 
+ static int shell_machine(int argc, char *argv[], void *userdata) {
+@@ -1390,7 +1390,7 @@ static int shell_machine(int argc, char *argv[], void *userdata) {
+         if (r < 0)
+                 return bus_log_parse_error(r);
+ 
+-        return process_forward(event, &forward, master, false, machine);
++        return process_forward(event, &forward, master, PTY_FORWARD_IGNORE_INITIAL_VHANGUP, machine);
+ }
+ 
+ static int remove_image(int argc, char *argv[], void *userdata) {
+diff --git a/src/nspawn/nspawn.c b/src/nspawn/nspawn.c
+index f4a2e3d..ab93f98 100644
+--- a/src/nspawn/nspawn.c
++++ b/src/nspawn/nspawn.c
+@@ -3512,7 +3512,7 @@ int main(int argc, char *argv[]) {
+ 
+                 rtnl_socket_pair[0] = safe_close(rtnl_socket_pair[0]);
+ 
+-                r = pty_forward_new(event, master, true, !interactive, &forward);
++                r = pty_forward_new(event, master, PTY_FORWARD_IGNORE_VHANGUP | (interactive ? 0 : PTY_FORWARD_READ_ONLY), &forward);
+                 if (r < 0) {
+                         log_error_errno(r, "Failed to create PTY forwarder: %m");
+                         goto finish;
+diff --git a/src/run/run.c b/src/run/run.c
+index 6268759..bb18dd4 100644
+--- a/src/run/run.c
++++ b/src/run/run.c
+@@ -828,7 +828,7 @@ static int start_transient_service(
+                 if (!arg_quiet)
+                         log_info("Running as unit %s.\nPress ^] three times within 1s to disconnect TTY.", service);
+ 
+-                r = pty_forward_new(event, master, false, false, &forward);
++                r = pty_forward_new(event, master, PTY_FORWARD_IGNORE_INITIAL_VHANGUP, &forward);
+                 if (r < 0)
+                         return log_error_errno(r, "Failed to create PTY forwarder: %m");
+ 
+diff --git a/src/shared/ptyfwd.c b/src/shared/ptyfwd.c
+index 789f217..7749f20 100644
+--- a/src/shared/ptyfwd.c
++++ b/src/shared/ptyfwd.c
+@@ -32,6 +32,8 @@ struct PTYForward {
+ 
+         int master;
+ 
++        PTYForwardFlags flags;
++
+         sd_event_source *stdin_event_source;
+         sd_event_source *stdout_event_source;
+         sd_event_source *master_event_source;
+@@ -41,8 +43,6 @@ struct PTYForward {
+         struct termios saved_stdin_attr;
+         struct termios saved_stdout_attr;
+ 
+-        bool read_only:1;
+-
+         bool saved_stdin:1;
+         bool saved_stdout:1;
+ 
+@@ -54,8 +54,7 @@ struct PTYForward {
+         bool master_writable:1;
+         bool master_hangup:1;
+ 
+-        /* Continue reading after hangup? */
+-        bool ignore_vhangup:1;
++        bool read_from_master:1;
+ 
+         bool last_char_set:1;
+         char last_char;
+@@ -100,6 +99,18 @@ static bool look_for_escape(PTYForward *f, const char *buffer, size_t n) {
+         return false;
+ }
+ 
++static bool ignore_vhangup(PTYForward *f) {
++        assert(f);
++
++        if (f->flags & PTY_FORWARD_IGNORE_VHANGUP)
++                return true;
++
++        if ((f->flags & PTY_FORWARD_IGNORE_INITIAL_VHANGUP) && !f->read_from_master)
++                return true;
++
++        return false;
++}
++
+ static int shovel(PTYForward *f) {
+         ssize_t k;
+ 
+@@ -179,7 +190,7 @@ static int shovel(PTYForward *f) {
+                                  * EAGAIN here and try again, unless
+                                  * ignore_vhangup is off. */
+ 
+-                                if (errno == EAGAIN || (errno == EIO && f->ignore_vhangup))
++                                if (errno == EAGAIN || (errno == EIO && ignore_vhangup(f)))
+                                         f->master_readable = false;
+                                 else if (errno == EPIPE || errno == ECONNRESET || errno == EIO) {
+                                         f->master_readable = f->master_writable = false;
+@@ -190,8 +201,10 @@ static int shovel(PTYForward *f) {
+                                         log_error_errno(errno, "read(): %m");
+                                         return sd_event_exit(f->event, EXIT_FAILURE);
+                                 }
+-                        }  else
++                        }  else {
++                                f->read_from_master = true;
+                                 f->out_buffer_full += (size_t) k;
++                        }
+                 }
+ 
+                 if (f->stdout_writable && f->out_buffer_full > 0) {
+@@ -302,8 +315,7 @@ static int on_sigwinch_event(sd_event_source *e, const struct signalfd_siginfo *
+ int pty_forward_new(
+                 sd_event *event,
+                 int master,
+-                bool ignore_vhangup,
+-                bool read_only,
++                PTYForwardFlags flags,
+                 PTYForward **ret) {
+ 
+         _cleanup_(pty_forward_freep) PTYForward *f = NULL;
+@@ -314,8 +326,7 @@ int pty_forward_new(
+         if (!f)
+                 return -ENOMEM;
+ 
+-        f->read_only = read_only;
+-        f->ignore_vhangup = ignore_vhangup;
++        f->flags = flags;
+ 
+         if (event)
+                 f->event = sd_event_ref(event);
+@@ -325,7 +336,7 @@ int pty_forward_new(
+                         return r;
+         }
+ 
+-        if (!read_only) {
++        if (!(flags & PTY_FORWARD_READ_ONLY)) {
+                 r = fd_nonblock(STDIN_FILENO, true);
+                 if (r < 0)
+                         return r;
+@@ -344,7 +355,7 @@ int pty_forward_new(
+         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) >= 0)
+                 (void) ioctl(master, TIOCSWINSZ, &ws);
+ 
+-        if (!read_only) {
++        if (!(flags & PTY_FORWARD_READ_ONLY)) {
+                 if (tcgetattr(STDIN_FILENO, &f->saved_stdin_attr) >= 0) {
+                         struct termios raw_stdin_attr;
+ 
+@@ -429,16 +440,20 @@ int pty_forward_get_last_char(PTYForward *f, char *ch) {
+         return 0;
+ }
+ 
+-int pty_forward_set_ignore_vhangup(PTYForward *f, bool ignore_vhangup) {
++int pty_forward_set_ignore_vhangup(PTYForward *f, bool b) {
+         int r;
+ 
+         assert(f);
+ 
+-        if (f->ignore_vhangup == ignore_vhangup)
++        if (!!(f->flags & PTY_FORWARD_IGNORE_VHANGUP) == b)
+                 return 0;
+ 
+-        f->ignore_vhangup = ignore_vhangup;
+-        if (!f->ignore_vhangup) {
++        if (b)
++                f->flags |= PTY_FORWARD_IGNORE_VHANGUP;
++        else
++                f->flags &= ~PTY_FORWARD_IGNORE_VHANGUP;
++
++        if (!ignore_vhangup(f)) {
+ 
+                 /* We shall now react to vhangup()s? Let's check
+                  * immediately if we might be in one */
+@@ -455,5 +470,5 @@ int pty_forward_set_ignore_vhangup(PTYForward *f, bool ignore_vhangup) {
+ int pty_forward_get_ignore_vhangup(PTYForward *f) {
+         assert(f);
+ 
+-        return f->ignore_vhangup;
++        return !!(f->flags & PTY_FORWARD_IGNORE_VHANGUP);
+ }
+diff --git a/src/shared/ptyfwd.h b/src/shared/ptyfwd.h
+index 6f84e40..9b32142 100644
+--- a/src/shared/ptyfwd.h
++++ b/src/shared/ptyfwd.h
+@@ -27,7 +27,17 @@
+ 
+ typedef struct PTYForward PTYForward;
+ 
+-int pty_forward_new(sd_event *event, int master, bool ignore_vhangup, bool read_only, PTYForward **f);
++typedef enum PTYForwardFlags {
++        PTY_FORWARD_READ_ONLY = 1,
++
++        /* Continue reading after hangup? */
++        PTY_FORWARD_IGNORE_VHANGUP = 2,
++
++        /* Continue reading after hangup but only if we never read anything else? */
++        PTY_FORWARD_IGNORE_INITIAL_VHANGUP = 4,
++} PTYForwardFlags;
++
++int pty_forward_new(sd_event *event, int master, PTYForwardFlags flags, PTYForward **f);
+ PTYForward *pty_forward_free(PTYForward *f);
+ 
+ int pty_forward_get_last_char(PTYForward *f, char *ch);
+-- 
+2.6.1
+

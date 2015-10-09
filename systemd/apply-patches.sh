@@ -29,16 +29,17 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/udev-microsoft-3000-keymap.pat
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
 
 # Upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-gpt-auto-fix-ESP-options-and-description.patch
+ApplyPatch 0001-util-always-enforce-O_NOCTTY-and-O_CLOEXEC-in-openpt.patch
+ApplyPatch 0002-machinectl-fix-race-when-opening-new-shells-with-mac.patch
 
 ### Fedora
 
 ### Arch
 
 ### Debian
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/Don-t-enable-audit-by-default.patch
+ApplyPatch Don-t-enable-audit-by-default.patch
 
 # Set to YES if autogen is needed
-SB_AUTOGEN=YES
+SB_AUTOGEN=NO
 
 set +e +o pipefail

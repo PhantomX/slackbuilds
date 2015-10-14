@@ -31,11 +31,6 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-cmake.patch
 # -DCMAKE_SKIP_RPATH:BOOL=ON (finally)
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.10.0-no_rpath.patch
 
-# reduce stderr spamming about invalid mimetypes (kWarning->kDebug)
-# workaround for http://bugzilla.redhat.com/1184918
-patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.14.4-unknown_mimetype_spam.patch
-# limit solid qDebug spam
-
 # limit solid qDebug spam
 # http://bugzilla.redhat.com/882731
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-solid_qt_no_debug_output.patch

@@ -41,6 +41,14 @@ ApplyPatch qtbase-opensource-src-5.3.2-QTBUG-35459.patch
 # unconditionally enable freetype lcdfilter support
 ApplyPatch qtbase-opensource-src-5.2.0-enable_ft_lcdfilter.patch
 
+# hack out largely useless (to users) warnings about qdbusconnection
+# (often in kde apps), keep an eye on https://git.reviewboard.kde.org/r/103699/
+ApplyPatch qtbase-opensource-src-5.5.1-qdbusconnection_no_debug.patch
+
+# Qt5 application crashes when connecting/disconnecting displays
+# https://bugzilla.redhat.com/show_bug.cgi?id=1083664
+ApplyPatch qtbase-opensource-src-5.5-disconnect_displays.patch
+
 ##upstream patches
 
 set +e +o pipefail

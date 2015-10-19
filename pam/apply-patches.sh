@@ -7,7 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.2.0-redhat-modules.patch
 zcat ${SB_PATCHDIR}/pam-1.1.0-console-nochmod.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/pam-1.1.0-notally.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.2.0-faillock.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.2.1-faillock.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.6-noflex.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.3-nouserenv.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.5-limits-user.patch

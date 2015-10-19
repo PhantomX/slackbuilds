@@ -21,7 +21,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0006-Add-pkgconfig-ent
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0007-Install-autoconf-related-file.patch
 # Fedora-specific
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0008-move-default-temporary-directory-to-var-tmp.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0010-gdk.patch
+# Backported from upstream - https://code.wireshark.org/review/#/c/10015/
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-0010-Allow-redefining-all-ports-for-RADIUS.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

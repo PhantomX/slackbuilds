@@ -5,21 +5,9 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 ### Fedora
-if [ "${SB_COMPAT}" = "YES" ] ;then
-  patch -p1 -E --backup --verbose -i ${SB_EPDIR}/${PSRCARCHIVE2}
-  sleep 1
-  find . \( -name Makefile.in -o -name aclocal.m4 \) -print | xargs touch
-  sleep 1
-  find . \( -name configure -o -name config.h.in \) -print | xargs touch
-  #autoconf -f || exit 1
-fi
 #sed -i.scanf-m -e 's/%m/%a/' src/addr2line.c tests/line2addr.c || exit 1
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elfutils-0.163-unstrip-shf_info_link.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elfutils-0.163-default-yama-conf.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/elfutils-0.163-readelf-n-undefined-shift.patch
-
 # Set to YES if autogen is needed
-SB_AUTOGEN=YES
+SB_AUTOGEN=NO
 
 set +e +o pipefail

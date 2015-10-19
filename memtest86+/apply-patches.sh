@@ -9,6 +9,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.01-hardcoded_cc.patc
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.01-no-scp.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.01-no-optimization.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.01-compile-fix.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.01-array-size-fix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.01-crash-fix.patch
+### Debian
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/gcc-5.patch
 
 set +e +o pipefail

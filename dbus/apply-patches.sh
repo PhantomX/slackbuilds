@@ -7,9 +7,7 @@ SB_PATCHDIR=${CWD}/patches
 # From stock
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/dbus-1.4.x-allow_root_globally.diff
 
-
 ### Arch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/0001-user-dbus.socket-Set-DBUS_SESSION_BUS_ADDRESS.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=NO

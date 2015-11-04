@@ -15,7 +15,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build-prbool.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-966424.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-enable-addons.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-1173156.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-1014858.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-35.0-flash-click-to-play.patch
 
 if [ "${SB_UA}" = "YES" ] ;then
@@ -30,8 +29,8 @@ fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-branded-icons.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/toolkit-download-folder.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-nongnome-proxies.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-icu-strncat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-no-stdcxx-check.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-libproxy.patch
 
 # Upstream patches
 

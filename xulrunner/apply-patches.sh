@@ -15,7 +15,6 @@ patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch
 # Unable to install addons from https pages
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-966424.patch
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-1173156.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-1014858.patch
 
 # Gentoo
 
@@ -23,8 +22,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-1014858.patch
 # http://www.rosenauer.org/hg/mozilla/
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/toolkit-download-folder.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-nongnome-proxies.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-icu-strncat.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-no-stdcxx-check.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-libproxy.patch
 
 # Upstream patches
 

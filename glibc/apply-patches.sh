@@ -48,15 +48,14 @@ fi
 ( SB_PATCHDIR=patches
 
   ApplyPatch 00_all_0001-disable-ldconfig-during-install.patch
-  ApplyPatch 00_all_0002-workaround-crash-when-handling-signals-in-static-PIE.patch
   ApplyPatch 00_all_0003-Fix-localedef-segfault-when-run-under-exec-shield-Pa.patch
   ApplyPatch 00_all_0004-reload-etc-resolv.conf-when-it-has-changed.patch
   ApplyPatch 00_all_0005-nptl-support-thread-stacks-that-grow-up.patch
   ApplyPatch 00_all_0006-rtld-do-not-ignore-arch-specific-CFLAGS.patch
   ApplyPatch 00_all_0007-gentoo-support-running-tests-under-sandbox.patch
   ApplyPatch 00_all_0008-gentoo-disable-building-in-timezone-subdir.patch
-  ApplyPatch 00_all_0012-disable-PIE-when-checking-for-PIC-default.patch
   ApplyPatch 00_all_0013-nptl-fix-set-but-unused-warning-w-_STACK_GROWS_UP.patch
+  ApplyPatch 00_all_0026-Always-enable-pointer-guard-BZ-18928.patch
 )
 
 ## Fedora
@@ -83,6 +82,16 @@ ApplyPatch glibc-rh1013801.patch
 
 ApplyPatch glibc-nscd-sysconfig.patch
 sed -i -e 's|/sysconfig/|/default/|g' nscd/nscd.service
+
+# Fix -Warray-bounds warning for GCC5, likely PR/59124 or PR/66422.
+#ApplyPatch glibc-res-hconf-gcc5.patch
+ApplyPatch glibc-ld-ctype-gcc5.patch
+ApplyPatch glibc-gethnamaddr-gcc5.patch
+ApplyPatch glibc-dns-host-gcc5.patch
+ApplyPatch glibc-bug-regex-gcc5.patch
+
+# Add C.UTF-8 locale into /usr/lib/locale/
+ApplyPatch glibc-c-utf8-locale.patch
 
 # http://sourceware.org/ml/libc-alpha/2012-12/msg00103.html
 ApplyPatch glibc-rh697421.patch

@@ -18,8 +18,8 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-admincrash.patch
 
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-errno.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-string-overflow.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-covscan-signexpr.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-covscan-stroverflow.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-ssltest.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mariadb-notestdb.patch
 
 set +e +o pipefail

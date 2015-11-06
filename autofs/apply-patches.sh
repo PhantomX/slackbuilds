@@ -12,4 +12,8 @@ if [ "$C" -gt 0 ]; then
   done
 fi
 
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autofs-5.1.1-fix-fix-gcc5-complaints.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autofs-5.1.1-update-libtirpc-workaround-for-new-soname.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/autofs-5.1.1-revert-fix-libtirpc-name-clash.patch
+
 set +e +o pipefail

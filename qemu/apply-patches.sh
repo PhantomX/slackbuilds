@@ -26,8 +26,5 @@ ApplyPatch() {
 }
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-ApplyPatch 0002-target-ppc-fix-vcipher-vcipherlast-vncipherlast-and-.patch
-ApplyPatch 0003-target-ppc-fix-xscmpodp-and-xscmpudp-decoding.patch
-ApplyPatch 0005-ide-fix-ATAPI-command-permissions.patch
 
 set +e +o pipefail

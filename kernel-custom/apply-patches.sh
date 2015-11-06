@@ -60,6 +60,7 @@ ApplyOptionalPatch upstream-reverts.patch -R
 ApplyOptionalPatch hotfixes.patch
 
 # vm patches
+### openSUSE patches.fixes
 ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 
 # mm patches
@@ -69,7 +70,8 @@ ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 # Add K10 and native cpu optimization support
 ApplyPatch add-cpu-optimizations.patch
 
-ApplyPatch x86_64-hpet-64bit-timer.patch
+### openSUSE patches.fixes
+#ApplyPatch x86_64-hpet-64bit-timer.patch
 
 ApplyPatch lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
 
@@ -124,8 +126,6 @@ done
     ApplyPatch ${file}
   done
 )
-# https://groups.google.com/d/msg/bfq-iosched/a5DWtveDzJo/VOvVfnV9AwAJ
-ApplyPatch 0001-Fix-check-that-cooperators-belong-to-same-cgroup.patch
 
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
@@ -144,9 +144,6 @@ ApplyPatch input-kill-stupid-messages.patch
 ApplyPatch die-floppy-die.patch
 
 ApplyPatch no-pcspkr-modalias.patch
-
-# Silence some useless messages that still get printed with 'quiet'
-ApplyPatch input-silence-i8042-noise.patch
 
 # Make fbcon not show the penguins with 'quiet'
 ApplyPatch silence-fbcon-logo.patch
@@ -197,21 +194,12 @@ ApplyPatch firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
 #rhbz 1226743
 ApplyPatch drm-i915-turn-off-wc-mmaps.patch
 
-#rhbz 1253789
-ApplyPatch iSCSI-let-session-recovery_tmo-sysfs-writes-persist.patch
+#CVE-2015-7990 rhbz 1276437 1276438
+ApplyPatch RDS-fix-race-condition-when-sending-a-message-on-unb.patch
 
-#rhbz 1257534
-ApplyPatch nv46-Change-mc-subdev-oclass-from-nv44-to-nv4c.patch
-
-#rhbz 1257500
-ApplyPatch vmwgfx-Rework-device-initialization.patch
-ApplyPatch drm-vmwgfx-Allow-dropped-masters-render-node-like-ac.patch
-
-#CVE-2015-6937 rhbz 1263139 1263140
-ApplyPatch RDS-verify-the-underlying-transport-exists-before-cr.patch
-
-# https://github.com/torvalds/linux/commit/30927520dbae297182990bb21d08762bcc35ce1d
-ApplyPatch tcp_cubic-better_follow_cubic_curve_after_idle_period.patch
+#CVE-2015-7799 rhbz 1271134 1271135
+ApplyPatch isdn_ppp-Add-checks-for-allocation-failure-in-isdn_p.patch
+ApplyPatch ppp-slip-Validate-VJ-compression-slot-parameters-com.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

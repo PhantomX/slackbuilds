@@ -6,7 +6,7 @@
 #--
 # Script by Phantom X <megaphantomx at bol.com.br>
 #
-# Copyright 2011-2013 Phantom X, Goiania, Brazil.
+# Copyright 2011-2015 Phantom X, Goiania, Brazil.
 #
 # Redistribution and use of this script, with or without modification, is
 # permitted provided that the following conditions are met:

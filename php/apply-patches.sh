@@ -11,7 +11,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-fpm.conf.diff
 
 # Build fixes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.6.3-includedir.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.2.4-embed.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.6.3-embed.patch
 zcat ${SB_PATCHDIR}/php-5.3.0-recode.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.6.3-libdb.patch
 
@@ -21,7 +21,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.7-odbctimer.patch
 
 # Functional changes
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-dlopen.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.6.9-systzdata-v12.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.6.13-systzdata-v12.patch
 # See http://bugs.php.net/53436
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/php-5.4.0-phpize.patch
 # Use -lldap_r for OpenLDAP

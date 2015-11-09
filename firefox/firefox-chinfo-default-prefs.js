@@ -35,4 +35,6 @@ pref("media.autoplay.enabled",false);
 pref("media.gmp-gmpopenh264.provider.enabled",false);
 pref("media.gmp-gmpopenh264.autoupdate",false);
 pref("media.gmp-gmpopenh264.enabled",false);
+pref("media.gmp-manager.url","");
+pref("media.gmp-provider.enabled",false);
 

@@ -35,7 +35,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-fix-build-with-
 
 if [ "${SB_SYSTEMD}" = "YES" ] ;then
   sed -e 's|/etc/rc.d/rc.vboxdrv restart|systemctl restart vboxdrv.service|g' \
-    ${SB_PATCHDIR}/${NAME}-5.0.6-strings.patch | patch -p1 -E --backup --verbose
+    ${SB_PATCHDIR}/${NAME}-5.0.8-strings.patch | patch -p1 -E --backup --verbose
 else
   patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.8-strings.patch
 fi

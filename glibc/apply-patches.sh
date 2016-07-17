@@ -31,7 +31,7 @@ ApplyPatch glibc.locale.no-archive.diff
 # glibc-2.5:
 ApplyPatch is_IS.diff.gz
 # Fix NIS netgroups:
-ApplyPatch glibc.nis-netgroups.diff.gz
+ApplyPatch glibc.nis-netgroups.diff
 # Support ru_RU.CP1251 locale:
 ApplyPatch glibc.ru_RU.CP1251.diff.gz
 # http://sources.redhat.com/bugzilla/show_bug.cgi?id=411
@@ -47,15 +47,25 @@ fi
 ### Gentoo
 ( SB_PATCHDIR=patches
 
-  ApplyPatch 00_all_0001-disable-ldconfig-during-install.patch
-  ApplyPatch 00_all_0003-Fix-localedef-segfault-when-run-under-exec-shield-Pa.patch
-  ApplyPatch 00_all_0004-reload-etc-resolv.conf-when-it-has-changed.patch
-  ApplyPatch 00_all_0005-nptl-support-thread-stacks-that-grow-up.patch
-  ApplyPatch 00_all_0006-rtld-do-not-ignore-arch-specific-CFLAGS.patch
-  ApplyPatch 00_all_0007-gentoo-support-running-tests-under-sandbox.patch
-  ApplyPatch 00_all_0008-gentoo-disable-building-in-timezone-subdir.patch
-  ApplyPatch 00_all_0013-nptl-fix-set-but-unused-warning-w-_STACK_GROWS_UP.patch
-  ApplyPatch 00_all_0026-Always-enable-pointer-guard-BZ-18928.patch
+  ApplyPatch 00_all_0001-Updated-translations-for-2.23.patch
+  ApplyPatch 00_all_0002-Regenerate-libc.pot-for-2.23.patch
+  ApplyPatch 00_all_0003-Regenerated-configure-scripts.patch
+  ApplyPatch 00_all_0004-disable-ldconfig-during-install.patch
+  ApplyPatch 00_all_0005-reload-etc-resolv.conf-when-it-has-changed.patch
+  ApplyPatch 00_all_0006-nptl-support-thread-stacks-that-grow-up.patch
+  ApplyPatch 00_all_0007-rtld-do-not-ignore-arch-specific-CFLAGS.patch
+  ApplyPatch 00_all_0008-gentoo-support-running-tests-under-sandbox.patch
+  ApplyPatch 00_all_0009-sys-types.h-drop-sys-sysmacros.h-include.patch
+  ApplyPatch 00_all_0010-x86_64-Set-DL_RUNTIME_UNALIGNED_VEC_SIZE-to-8.patch
+  ApplyPatch 00_all_0011-Don-t-use-long-double-math-functions-if-NO_LONG_DOUB.patch
+  ApplyPatch 00_all_0012-sln-use-stat64.patch
+  ApplyPatch 00_all_0013-Add-sys-auxv.h-wrapper-to-include-sys.patch
+  ApplyPatch 00_all_0014-mips-terminate-the-FDE-before-the-return-trampoline-.patch
+  ApplyPatch 00_all_0015-Use-HAS_ARCH_FEATURE-with-Fast_Rep_String.patch
+  ApplyPatch 00_all_0016-Define-_HAVE_STRING_ARCH_mempcpy-to-1-for-x86.patch
+  ApplyPatch 00_all_0017-Or-bit_Prefer_MAP_32BIT_EXEC-in-EXTRA_LD_ENVVARS.patch
+  ApplyPatch 00_all_0018-Fix-resource-leak-in-resolver-bug-19257.patch
+  ApplyPatch 00_all_0019-resolv-Always-set-resplen2-out-parameter-in-send_dg-.patch
 )
 
 ## Fedora
@@ -105,12 +115,14 @@ ApplyPatch glibc-rh1070416.patch
 ApplyPatch glibc-aarch64-tls-fixes.patch
 ApplyPatch glibc-aarch64-workaround-nzcv-clobber-in-tlsdesc.patch
 
-# Upstream BZ 18568
-ApplyPatch glibc-rh1238412-remove-duplicate-transliterations.patch
-ApplyPatch glibc-rh1238412-addition-and-fixes-for-translit_neutral.patch
-ApplyPatch glibc-rh1238412-update-the-translit-files-to-unicode-7.0.0.patch
-ApplyPatch glibc-rh1238412-add-translit-rules-for-da-nb-nn-sv-locales.patch
-ApplyPatch glibc-rh1238412-unicode-8.0.0-update.patch
+# Group Merge Patch:
+ApplyPatch glibc-nsswitch-Add-group-merging-support.patch
+
+ApplyPatch glibc-gcc-PR69537.patch
+
+ApplyPatch glibc-rh1321372.patch
+ApplyPatch glibc-rh1204521.patch
+ApplyPatch glibc-rh1282011.patch
 
 ## Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
@@ -119,19 +131,15 @@ ApplyPatch glibc-2.17-nss-upgrade.patch
 ApplyPatch glibc-2.19-compat-EUR-currencies.patch
 ApplyPatch glibc-2.9-nscd-no-host-cache.patch.gz
 ApplyPatch glibc-2.10.1-biarch-cpp-defines.patch.gz
-ApplyPatch 0001-Fix-BZ-18086-nice-resets-errno-to-0.patch
 ApplyPatch glibc-2.22-nice_fix.patch
 ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
 ApplyPatch glibc-2.22-multiarch.patch
 ApplyPatch glibc-2.22-pt_BR-i18nfixes.patch
 
 ### Arch
-ApplyPatch glibc-2.22-roundup.patch
+
 
 ### master
-ApplyPatch 0001-Fix-powf-close-to-1-large-bug-18647.patch
-ApplyPatch 0002-Also-check-dead-data-category-NULL.patch
-ApplyPatch 0002-Fix-BZ-16734-fopen-calls-mmap-to-allocate-its-buffer.patch
-ApplyPatch 0003-Fix-BZ-18820-fmemopen-may-leak-memory-on-failure.patch
+
 
 set +e +o pipefail

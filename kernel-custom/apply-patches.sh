@@ -60,9 +60,10 @@ ApplyOptionalPatch upstream-reverts.patch -R
 ApplyOptionalPatch hotfixes.patch
 
 # vm patches
-### openSUSE patches.fixes
-ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
-
+### openSUSE patches.suse
+# Patches to export btrfs anonymous devices (VFS portion)
+ApplyPatch vfs-add-super_operations-get_inode_dev.patch
+  
 # mm patches
 
 # Architecture patches
@@ -70,7 +71,7 @@ ApplyPatch mm-Fix-assertion-mapping-nrpages-0-in-end_writeback.patch
 # Add K10 and native cpu optimization support
 ApplyPatch add-cpu-optimizations.patch
 
-### openSUSE patches.fixes
+### openSUSE patches.arch
 #ApplyPatch x86_64-hpet-64bit-timer.patch
 
 ApplyPatch lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
@@ -92,20 +93,23 @@ ApplyPatch lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
 # xfs
 
 # btrfs
+### openSUSE patches.suse
+ApplyPatch btrfs-advertise-which-crc32c-implementation-is-being-used-on-mount.patch
+ApplyPatch btrfs-provide-super_operations-get_inode_dev.patch
 
 # cifs
 
 # NFSv4
 
 # USB
-ApplyPatch usb-make-xhci-platform-driver-use-64-bit-or-32-bit-D.patch
 
 # WMI
 
 # ACPI
 
 # cpufreq
-#ApplyPatch cpufreq_ondemand_performance_optimise_default_settings.patch
+### openSUSE patches.arch
+ApplyPatch perf_timechart_fix_zero_timestamps.patch
 
 #
 # PCI
@@ -194,12 +198,40 @@ ApplyPatch firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
 #rhbz 1226743
 ApplyPatch drm-i915-turn-off-wc-mmaps.patch
 
-#CVE-2015-7990 rhbz 1276437 1276438
-ApplyPatch RDS-fix-race-condition-when-sending-a-message-on-unb.patch
+#Required for some persistent memory options
+ApplyPatch disable-CONFIG_EXPERT-for-ZONE_DMA.patch
 
-#CVE-2015-7799 rhbz 1271134 1271135
-ApplyPatch isdn_ppp-Add-checks-for-allocation-failure-in-isdn_p.patch
-ApplyPatch ppp-slip-Validate-VJ-compression-slot-parameters-com.patch
+#CVE-2016-4482 rhbz 1332931 1332932
+ApplyPatch USB-usbfs-fix-potential-infoleak-in-devio.patch
+
+#CVE-2016-4569 rhbz 1334643 1334645
+ApplyPatch ALSA-timer-Fix-leak-in-SNDRV_TIMER_IOCTL_PARAMS.patch
+ApplyPatch ALSA-timer-Fix-leak-in-events-via-snd_timer_user_cca.patch
+ApplyPatch ALSA-timer-Fix-leak-in-events-via-snd_timer_user_tin.patch
+
+#CVE-2016-4440 rhbz 1337806 1337807
+ApplyPatch kvm-vmx-more-complete-state-update-on-APICv-on-off.patch
+
+#CVE-2016-5243 rhbz 1343338 1343335
+ApplyPatch tipc-fix-an-infoleak-in-tipc_nl_compat_link_dump.patch
+
+#CVE-2016-5244 rhbz 1343338 1343337
+ApplyPatch rds-fix-an-infoleak-in-rds_inc_info_copy.txt
+
+#CVE-2016-5829 rhbz 1350509 1350513
+ApplyPatch HID-hiddev-validate-num_values-for-HIDIOCGUSAGES-HID.patch
+
+#CVE-2016-1237 rhbz 1350845 1350847
+ApplyPatch posix_acl-Add-set_posix_acl.patch
+ApplyPatch nfsd-check-permissions-when-setting-ACLs.patch
+
+#CVE-2016-5389 CVE-2016-5969 rhbz 1354708 1355615
+ApplyPatch tcp-make-challenge-acks-less-predictable.patch
+
+# https://lists.fedoraproject.org/archives/list/kernel@lists.fedoraproject.org/message/A4YCP7OGMX6JLFT5V44H57GOMAQLC3M4/
+ApplyPatch drm-amdgpu-Disable-RPM-helpers-while-reprobing.patch
+ApplyPatch drm-i915-skl-Add-support-for-the-SAGV-fix-underrun-hangs.patch
+ApplyPatch Revert-ALSA-hda-remove-controller-dependency-on-i915.patch
 
 # By Alon Bar-Lev <alon.barlev <at> gmail.com>
 #ApplyPatch ps3-control-ep.patch

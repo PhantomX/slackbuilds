@@ -52,7 +52,7 @@ ApplyPatch qt-cupsEnumDests.patch
 
 # prefer adwaita over gtk+ on DE_GNOME
 # https://bugzilla.redhat.com/show_bug.cgi?id=1192453
-patch ${DRYRUN_OPT} -p0 -F1 ${VERBOSE_OPT} -i ${SB_PATCHDIR}/qt-prefer_adwaita_on_gnome.patch
+ApplyPatch qt-prefer_adwaita_on_gnome.patch -p0
 
 # enable ft lcdfilter
 ApplyPatch qt-x11-opensource-src-4.5.1-enable_ft_lcdfilter.patch.gz
@@ -127,8 +127,8 @@ ApplyPatch qt-everywhere-opensource-src-4.8.6-systemtrayicon.patch
 
 # fixes for LibreOffice from the upstream Qt bug tracker (#1105422):
 ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-37380.patch
-patch ${DRYRUN_OPT} -p0 -F1 ${VERBOSE_OPT} -i ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.8.6-QTBUG-34614.patch
-patch ${DRYRUN_OPT} -p0 -F1 ${VERBOSE_OPT} -i ${SB_PATCHDIR}/qt-everywhere-opensource-src-4.8.6-QTBUG-38585.patch
+ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-34614.patch -p0
+ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-38585.patch -p0
 
 # build against the system clucene09-core
 ApplyPatch qt-everywhere-opensource-src-4.8.6-system-clucene.patch

@@ -24,13 +24,19 @@ ApplyPatch() {
 }
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/udev-microsoft-3000-keymap.patch
+ApplyPatch udev-microsoft-3000-keymap.patch -p0
 # From Slackware
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/60-cdrom_id.rules.diff
+ApplyPatch 60-cdrom_id.rules.diff -p0
 
 # Upstream
-ApplyPatch 0001-util-always-enforce-O_NOCTTY-and-O_CLOEXEC-in-openpt.patch
-ApplyPatch 0002-machinectl-fix-race-when-opening-new-shells-with-mac.patch
+ApplyPatch 0001-Revert-rules-allow-users-to-access-frame-buffer-devi.patch
+ApplyPatch 0001-machine-system-ctl-always-pass-changes-and-n_changes.patch
+ApplyPatch 0001-systemctl-fix-return-values-on-success.patch
+ApplyPatch 0001-automount-handle-expire_tokens-when-the-mount-unit-c.patch
+ApplyPatch 0001-networkd-networkd-ndisc-set-SO_BINDTODEVICE-on-socke.patch
+ApplyPatch 0001-resolved-when-restarting-a-transaction-make-sure-to-.patch
+ApplyPatch 0001-basic-pass-flags-to-the-fnmatch-3606.patch
+ApplyPatch 0001-nspawn-fix-uid-patching-logic-3599.patch
 
 ### Fedora
 

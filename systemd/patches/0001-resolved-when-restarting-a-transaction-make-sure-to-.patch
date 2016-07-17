@@ -1,0 +1,70 @@
+From 5278bbfe0c79c1f2b5bf8a215d8e7d63f1900ce9 Mon Sep 17 00:00:00 2001
+From: Lennart Poettering <lennart@poettering.net>
+Date: Thu, 16 Jun 2016 18:37:11 +0200
+Subject: [PATCH] resolved: when restarting a transaction make sure to not
+ touch it anymore (#3553)
+
+dns_transaction_maybe_restart() is supposed to return 1 if the the transaction
+has been restarted and 0 otherwise. dns_transaction_process_dnssec() relies on
+this behaviour. Before this change in case of restart we'd call
+dns_transaction_go() when restarting the lookup, returning its return value
+unmodified. This is wrong however, as that function returns 1 if the
+transaction is pending, and 0 if it completed immediately, which is a very
+different set of return values. Fix this, by always returning 1 on redirection.
+
+The wrong return value resulted in all kinds of bad memory accesses as we might
+continue processing a transaction that was redirected and completed immediately
+(and thus freed).
+
+This patch also adds comments to the two functions to clarify the return values
+for the future.
+
+Most likely fixes: #2942 #3475 #3484
+---
+ src/resolve/resolved-dns-transaction.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/src/resolve/resolved-dns-transaction.c b/src/resolve/resolved-dns-transaction.c
+index ed18df3..bcb1b6d 100644
+--- a/src/resolve/resolved-dns-transaction.c
++++ b/src/resolve/resolved-dns-transaction.c
+@@ -404,8 +404,12 @@ static void dns_transaction_retry(DnsTransaction *t) {
+ }
+ 
+ static int dns_transaction_maybe_restart(DnsTransaction *t) {
++        int r;
++
+         assert(t);
+ 
++        /* Returns > 0 if the transaction was restarted, 0 if not */
++
+         if (!t->server)
+                 return 0;
+ 
+@@ -420,7 +424,12 @@ static int dns_transaction_maybe_restart(DnsTransaction *t) {
+ 
+         log_debug("Server feature level is now lower than when we began our transaction. Restarting with new ID.");
+         dns_transaction_shuffle_id(t);
+-        return dns_transaction_go(t);
++
++        r = dns_transaction_go(t);
++        if (r < 0)
++                return r;
++
++        return 1;
+ }
+ 
+ static int on_stream_complete(DnsStream *s, int error) {
+@@ -1421,6 +1430,9 @@ int dns_transaction_go(DnsTransaction *t) {
+ 
+         assert(t);
+ 
++        /* Returns > 0 if the transaction is now pending, returns 0 if could be processed immediately and has finished
++         * now. */
++
+         assert_se(sd_event_now(t->scope->manager->event, clock_boottime_or_monotonic(), &ts) >= 0);
+ 
+         r = dns_transaction_prepare(t, ts);
+-- 
+2.7.4
+

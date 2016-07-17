@@ -5,7 +5,7 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 patch -p1 -E --backup -z .fix --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.0-fix.patch
-patch -p1 -E --backup -z .noup --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.0-noupdate.patch
+patch -p1 -E --backup -z .noup --verbose -i ${SB_PATCHDIR}/${NAME}-5.1.0-noupdate.patch
 patch -p1 -E --backup -z .nodkms --verbose -i ${SB_PATCHDIR}/${NAME}-4.2.0-nodkms.patch
 patch -p1 -E --backup -z .dso --verbose -i ${SB_PATCHDIR}/${NAME}-4.3.0-dso.patch
 
@@ -29,15 +29,15 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-4.0.0-user-courier-ins
 # makeself: we're not going to create the stanalone .run installers
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.0-dont-check-for-mkisofs-or-makeself.patch
 # Set linux 2.6 as default on new machines selector
-patch -p1 -E --backup -z .defsys --verbose -i ${SB_PATCHDIR}/${NAME}-default-to-linux26.patch
+patch -p1 -E --backup -z .defsys --verbose -i ${SB_PATCHDIR}/${NAME}-5.1.0-default-to-linux26.patch
 # (tmb) fix build with gsoap >= 2.8.13
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-fix-build-with-gsoap-2.8.13-and-up.patch
 
 if [ "${SB_SYSTEMD}" = "YES" ] ;then
   sed -e 's|/etc/rc.d/rc.vboxdrv restart|systemctl restart vboxdrv.service|g' \
-    ${SB_PATCHDIR}/${NAME}-5.0.8-strings.patch | patch -p1 -E --backup --verbose
+    ${SB_PATCHDIR}/${NAME}-5.1.0-strings.patch | patch -p1 -E --backup -z .istrings --verbose
 else
-  patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-5.0.8-strings.patch
+  patch -p1 -E --backup -z .istrings --verbose -i ${SB_PATCHDIR}/${NAME}-5.1.0-strings.patch
 fi
 
 patch -p1 -E --backup -z .libcxx --verbose -i ${SB_PATCHDIR}/${PNAME}-4.3.0-libcxx.patch

@@ -47,9 +47,9 @@ fi
 ### Gentoo
 ( SB_PATCHDIR=patches
 
-  ApplyPatch 00_all_0001-Updated-translations-for-2.23.patch
-  ApplyPatch 00_all_0002-Regenerate-libc.pot-for-2.23.patch
-  ApplyPatch 00_all_0003-Regenerated-configure-scripts.patch
+  #ApplyPatch 00_all_0001-Updated-translations-for-2.23.patch
+  #ApplyPatch 00_all_0002-Regenerate-libc.pot-for-2.23.patch
+  #ApplyPatch 00_all_0003-Regenerated-configure-scripts.patch
   ApplyPatch 00_all_0004-disable-ldconfig-during-install.patch
   ApplyPatch 00_all_0005-reload-etc-resolv.conf-when-it-has-changed.patch
   ApplyPatch 00_all_0006-nptl-support-thread-stacks-that-grow-up.patch

@@ -115,7 +115,7 @@ lesspipe() {
     fi ;;
   *.7z|*.7Z) # check if p7zip is installed first
     if which 7z 1> /dev/null ; then
-      $(which 7z) t "$1"
+      $(which 7z) l "$1"
     fi ;;
   *.gz) gzip -dc "$1"  ;;
   *.bz2) bzip2 -dc "$1" ;;

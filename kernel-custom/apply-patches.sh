@@ -68,8 +68,9 @@ ApplyPatch vfs-add-super_operations-get_inode_dev.patch
 
 # Architecture patches
 # x86(-64)
-# Add K10 and native cpu optimization support
-ApplyPatch add-cpu-optimizations.patch
+# Add additional cpu gcc optimization support
+# https://github.com/graysky2/kernel_gcc_patch (20160728)
+ApplyPatch enable_additional_cpu_optimizations_for_gcc_v4.9+_kernel_v3.15+.patch
 
 ### openSUSE patches.arch
 #ApplyPatch x86_64-hpet-64bit-timer.patch
@@ -94,9 +95,10 @@ ApplyPatch lib-cpumask-Make-CPUMASK_OFFSTACK-usable-without-deb.patch
 
 # btrfs
 ### openSUSE patches.suse
-ApplyPatch btrfs-advertise-which-crc32c-implementation-is-being-used-on-mount.patch
 ApplyPatch btrfs-provide-super_operations-get_inode_dev.patch
-
+ApplyPatch revert-btrfs-fix-lockdep-warning-on-deadlock-against-an-inode-s-log-mutex.patch
+ApplyPatch revert-btrfs-improve-performance-on-fsync-against-new-inode-after-rename-unlink.patch
+  
 # cifs
 
 # NFSv4
@@ -196,45 +198,32 @@ ApplyPatch Input-synaptics-pin-3-touches-when-the-firmware-repo.patch
 ApplyPatch firmware-Drop-WARN-from-usermodehelper_read_trylock-.patch
 
 #rhbz 1226743
-ApplyPatch drm-i915-turn-off-wc-mmaps.patch
+#ApplyPatch drm-i915-turn-off-wc-mmaps.patch
 
-#Required for some persistent memory options
-ApplyPatch disable-CONFIG_EXPERT-for-ZONE_DMA.patch
+#CVE-2016-3134 rhbz 1317383 1317384
+ApplyPatch netfilter-x_tables-deal-with-bogus-nextoffset-values.patch
 
-#CVE-2016-4482 rhbz 1332931 1332932
-ApplyPatch USB-usbfs-fix-potential-infoleak-in-devio.patch
+#rhbz 1360688
+ApplyPatch rc-core-fix-repeat-events.patch
 
-#CVE-2016-4569 rhbz 1334643 1334645
-ApplyPatch ALSA-timer-Fix-leak-in-SNDRV_TIMER_IOCTL_PARAMS.patch
-ApplyPatch ALSA-timer-Fix-leak-in-events-via-snd_timer_user_cca.patch
-ApplyPatch ALSA-timer-Fix-leak-in-events-via-snd_timer_user_tin.patch
+#rhbz 1374212
+ApplyPatch 0001-cpupower-Correct-return-type-of-cpu_power_is_cpu_onl.patch
 
-#CVE-2016-4440 rhbz 1337806 1337807
-ApplyPatch kvm-vmx-more-complete-state-update-on-APICv-on-off.patch
+#ongoing complaint, full discussion delayed until ksummit/plumbers
+ApplyPatch 0001-iio-Use-event-header-from-kernel-tree.patch
 
-#CVE-2016-5243 rhbz 1343338 1343335
-ApplyPatch tipc-fix-an-infoleak-in-tipc_nl_compat_link_dump.patch
+#CVE-2016-7425 rhbz 1377330 1377331
+ApplyPatch arcmsr-buffer-overflow-in-archmsr_iop_message_xfer.patch
 
-#CVE-2016-5244 rhbz 1343338 1343337
-ApplyPatch rds-fix-an-infoleak-in-rds_inc_info_copy.txt
+#rhbz 1366842
+ApplyPatch drm-virtio-reinstate-drm_virtio_set_busid.patch
 
-#CVE-2016-5829 rhbz 1350509 1350513
-ApplyPatch HID-hiddev-validate-num_values-for-HIDIOCGUSAGES-HID.patch
+# Fix memory corruption caused by p8_ghash
+ApplyPatch 0001-crypto-ghash-generic-move-common-definitions-to-a-ne.patch
+ApplyPatch 0001-crypto-vmx-Fix-memory-corruption-caused-by-p8_ghash.patch
 
-#CVE-2016-1237 rhbz 1350845 1350847
-ApplyPatch posix_acl-Add-set_posix_acl.patch
-ApplyPatch nfsd-check-permissions-when-setting-ACLs.patch
-
-#CVE-2016-5389 CVE-2016-5969 rhbz 1354708 1355615
-ApplyPatch tcp-make-challenge-acks-less-predictable.patch
-
-# https://lists.fedoraproject.org/archives/list/kernel@lists.fedoraproject.org/message/A4YCP7OGMX6JLFT5V44H57GOMAQLC3M4/
-ApplyPatch drm-amdgpu-Disable-RPM-helpers-while-reprobing.patch
-ApplyPatch drm-i915-skl-Add-support-for-the-SAGV-fix-underrun-hangs.patch
-ApplyPatch Revert-ALSA-hda-remove-controller-dependency-on-i915.patch
-
-# By Alon Bar-Lev <alon.barlev <at> gmail.com>
-#ApplyPatch ps3-control-ep.patch
+#rhbz 1384606
+ApplyPatch 0001-Make-__xfs_xattr_put_listen-preperly-report-errors.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

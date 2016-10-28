@@ -29,11 +29,15 @@ ApplyPatch udev-microsoft-3000-keymap.patch -p0
 ApplyPatch 60-cdrom_id.rules.diff -p0
 
 # Upstream
-AppyPatch 0001-If-the-notification-message-length-is-0-ignore-the-m.patch
-AppyPatch 0001-pid1-don-t-return-any-error-in-manager_dispatch_noti.patch
-AppyPatch 0001-pid1-process-zero-length-notification-messages-again.patch
-AppyPatch 0001-Revert-pid1-reconnect-to-the-console-before-being-re.patch
-AppyPatch 0001-systemctl-suppress-errors-with-show-for-nonexistent-.patch
+( SB_PATCHDIR=backports
+  [ -f ${CWD}/${PSRCARCHIVES} ] || exit 0
+  mkdir -p backports
+  cp ${DOWNDIR}/* backports/
+  cat ${CWD}/${PSRCARCHIVES} | while IFS= read -r source ;do
+    commit="$(echo "${source}" | awk '{print $1}')"
+    ApplyPatch ${commit}.patch
+  done
+)
 
 ### Fedora
 

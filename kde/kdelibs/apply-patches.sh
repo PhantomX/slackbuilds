@@ -66,6 +66,12 @@ patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.12.90-dot.patch
 # opening a terminal in Konqueror / Dolphin does not inherit environment variables
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.13.2-invokeTerminal.patch
 
+# newer glibc has 2 prototypes for trunc, check for ftrunc instead
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.14.17-glibc_trunc.patch
+
+# gcc6 FTBFS: maybe easier/cleaner to build with: -std=gnu++98 or -Wno-error-narrowing
+patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.14.17-gcc6_narrowing_hack.patch
+
 # Gentoo/Mandriva
 patch -p1 --verbose --backup -i ${SB_PATCHDIR}/kdelibs-4.6.3-no_suid_kdeinit.patch
 

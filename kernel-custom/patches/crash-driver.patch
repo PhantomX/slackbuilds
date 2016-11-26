@@ -603,3 +603,123 @@ index 085378a..0258bf8 100644
 -- 
 2.9.3
 
+From: Dave Anderson <anderson@redhat.com>
+Date: Fri, 18 Nov 2016 11:52:35 -0500
+Cc: onestero@redhat.com
+Subject: [PATCH v2] Restore live system crash analysis for ARM64
+
+This v2 version simplifies the copy out of the kimage_voffset value
+to user-space per Oleg's suggestion.
+
+Upstream status: N/A
+
+Test: v2 version tested successfully with a modified crash utility
+
+The following Linux 4.6 commit breaks support for live system
+crash analysis on ARM64:
+
+   commit a7f8de168ace487fa7b88cb154e413cf40e87fc6
+   Author: Ard Biesheuvel <ard.biesheuvel@linaro.org>
+   arm64: allow kernel Image to be loaded anywhere in physical memory
+
+The patchset drastically modified the kernel's virtual memory layout,
+where notably the static kernel text and data image was moved from the
+unity mapped region into the vmalloc region.  Prior to Linux 4.6,
+the kernel's __virt_to_phys() function was this:
+
+ #define __virt_to_phys(x)  (((phys_addr_t)(x) - PAGE_OFFSET + PHYS_OFFSET))
+
+When running on a live system, the crash utility could determine PAGE_OFFSET
+by looking at the virtual addresses compiled into the vmlinux file, and
+PHYS_OFFSET can be determined by looking at /proc/iomem.
+
+As of Linux 4.6, it is done differently:
+
+ #define __virt_to_phys(x) ({                                            \
+        phys_addr_t __x = (phys_addr_t)(x);                             \
+        __x & BIT(VA_BITS - 1) ? (__x & ~PAGE_OFFSET) + PHYS_OFFSET :   \
+                                 (__x - kimage_voffset); })
+
+The PAGE_OFFSET/PHYS_OFFSET section of the conditional expression is for
+traditional unity-mapped virtual addresses, but kernel text and static
+data requires the new "kimage_voffset" variable.  Unfortunately, the
+contents of the new "kimage_voffset" variable is not available or
+calculatable from a user-space perspective, even with root privileges.
+
+At least the ARM64 developers made its contents available to modules
+with an EXPORT_SYMBOL(kimage_voffset) declaration.  Accordingly, with
+a modification to the /dev/crash driver to return its contents, the
+crash utility can run on a live system.
+
+The patch allows for architecture-specific DEV_CRASH_ARCH_DATA ioctls
+to be created, where this is the first instance of one.
+
+
+---
+ arch/arm64/include/asm/crash-driver.h | 16 ++++++++++++++++
+ drivers/char/crash.c                  | 13 ++++++++++++-
+ 2 files changed, 28 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/include/asm/crash-driver.h b/arch/arm64/include/asm/crash-driver.h
+index 43b26da..fe68e7c 100644
+--- a/arch/arm64/include/asm/crash-driver.h
++++ b/arch/arm64/include/asm/crash-driver.h
+@@ -3,4 +3,20 @@
+ 
+ #include <asm-generic/crash-driver.h>
+ 
++#define DEV_CRASH_ARCH_DATA _IOR('c', 1, long)
++
++static long
++crash_arch_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
++{
++	extern u64 kimage_voffset;
++
++	switch (cmd)
++	{
++	case DEV_CRASH_ARCH_DATA:
++		return put_user(kimage_voffset, (unsigned long __user *)arg);
++	default:
++		return -EINVAL;
++	}
++}
++
+ #endif /* _ARM64_CRASH_H */
+diff --git a/drivers/char/crash.c b/drivers/char/crash.c
+index 0258bf8..dfb767c 100644
+--- a/drivers/char/crash.c
++++ b/drivers/char/crash.c
+@@ -32,7 +32,7 @@
+ #include <asm/types.h>
+ #include <asm/crash-driver.h>
+ 
+-#define CRASH_VERSION   "1.2"
++#define CRASH_VERSION   "1.3"
+ 
+ /*
+  *  These are the file operation functions that allow crash utility
+@@ -111,10 +111,21 @@ crash_release(struct inode *inode, struct file *filp)
+ 	return 0;
+ }
+ 
++static long
++crash_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
++{
++#ifdef DEV_CRASH_ARCH_DATA
++	return crash_arch_ioctl(file, cmd, arg);
++#else
++	return -EINVAL;
++#endif
++}
++
+ static struct file_operations crash_fops = {
+ 	.owner = THIS_MODULE,
+ 	.llseek = crash_llseek,
+ 	.read = crash_read,
++	.unlocked_ioctl = crash_ioctl,
+ 	.open = crash_open,
+ 	.release = crash_release,
+ };
+-- 
+1.8.3.1
+

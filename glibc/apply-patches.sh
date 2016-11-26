@@ -47,25 +47,35 @@ fi
 ### Gentoo
 ( SB_PATCHDIR=patches
 
-  #ApplyPatch 00_all_0001-Updated-translations-for-2.23.patch
-  #ApplyPatch 00_all_0002-Regenerate-libc.pot-for-2.23.patch
-  #ApplyPatch 00_all_0003-Regenerated-configure-scripts.patch
-  ApplyPatch 00_all_0004-disable-ldconfig-during-install.patch
-  ApplyPatch 00_all_0005-reload-etc-resolv.conf-when-it-has-changed.patch
-  ApplyPatch 00_all_0006-nptl-support-thread-stacks-that-grow-up.patch
-  ApplyPatch 00_all_0007-rtld-do-not-ignore-arch-specific-CFLAGS.patch
-  ApplyPatch 00_all_0008-gentoo-support-running-tests-under-sandbox.patch
-  ApplyPatch 00_all_0009-sys-types.h-drop-sys-sysmacros.h-include.patch
-  ApplyPatch 00_all_0010-x86_64-Set-DL_RUNTIME_UNALIGNED_VEC_SIZE-to-8.patch
-  ApplyPatch 00_all_0011-Don-t-use-long-double-math-functions-if-NO_LONG_DOUB.patch
-  ApplyPatch 00_all_0012-sln-use-stat64.patch
-  ApplyPatch 00_all_0013-Add-sys-auxv.h-wrapper-to-include-sys.patch
-  ApplyPatch 00_all_0014-mips-terminate-the-FDE-before-the-return-trampoline-.patch
-  ApplyPatch 00_all_0015-Use-HAS_ARCH_FEATURE-with-Fast_Rep_String.patch
-  ApplyPatch 00_all_0016-Define-_HAVE_STRING_ARCH_mempcpy-to-1-for-x86.patch
-  ApplyPatch 00_all_0017-Or-bit_Prefer_MAP_32BIT_EXEC-in-EXTRA_LD_ENVVARS.patch
-  ApplyPatch 00_all_0018-Fix-resource-leak-in-resolver-bug-19257.patch
-  ApplyPatch 00_all_0019-resolv-Always-set-resplen2-out-parameter-in-send_dg-.patch
+  ApplyPatch 00_all_0001-x86-Use-sysdep.o-from-libc.a-in-static-libraries.patch
+  ApplyPatch 00_all_0002-malloc-Preserve-arena-free-list-thread-count-invaria.patch
+  ApplyPatch 00_all_0003-Update-from-Translation-Project.patch
+  ApplyPatch 00_all_0004-powerpc-fix-ifunc-sel.h-with-GCC-6.patch
+  ApplyPatch 00_all_0005-powerpc-fix-ifunc-sel.h-fix-asm-constraints-and-clob.patch
+  ApplyPatch 00_all_0006-Fix-sNaN-handling-in-nearbyint-on-32-bit-sparc.patch
+  ApplyPatch 00_all_0007-sparc-remove-fdim-sparc-specific-implementations.patch
+  ApplyPatch 00_all_0008-Do-not-override-objects-in-libc.a-in-other-static-li.patch
+  ApplyPatch 00_all_0009-arm-mark-__startcontext-as-.cantunwind-bug-20435.patch
+  ApplyPatch 00_all_0010-argp-Do-not-override-GCC-keywords-with-macros-BZ-169.patch
+  ApplyPatch 00_all_0011-nptl-tst-once5-Reduce-time-to-expected-failure.patch
+  ApplyPatch 00_all_0012-NaCl-Fix-compile-error-in-clock-function.patch
+  ApplyPatch 00_all_0013-Fix-generic-wait3-after-union-wait_status-removal.patch
+  ApplyPatch 00_all_0014-NaCl-Fix-compile-error-for-__dup-after-libc_hidden_p.patch
+  ApplyPatch 00_all_0015-NaCl-Fix-libc.abilist-missing-GLIBC_2.24-A.patch
+  ApplyPatch 00_all_0016-powerpc-Fix-POWER9-implies.patch
+  ApplyPatch 00_all_0017-posix-Correctly-enable-disable-cancellation-on-Linux.patch
+  ApplyPatch 00_all_0018-posix-Correctly-block-unblock-all-signals-on-Linux-p.patch
+  ApplyPatch 00_all_0019-powerpc-Regenerate-ULPs.patch
+  ApplyPatch 00_all_0020-Fix-Linux-sh4-pread-pwrite-argument-passing.patch
+  ApplyPatch 00_all_0021-Fix-cmpli-usage-in-power6-memset.patch
+  ApplyPatch 00_all_0022-gconv.h-fix-build-with-GCC-7.patch
+  ApplyPatch 00_all_0023-Fix-linknamespace-parallel-test-failures.patch
+  ApplyPatch 00_all_0024-disable-ldconfig-during-install.patch
+  ApplyPatch 00_all_0025-reload-etc-resolv.conf-when-it-has-changed.patch
+  ApplyPatch 00_all_0026-rtld-do-not-ignore-arch-specific-CFLAGS.patch
+  ApplyPatch 00_all_0027-gentoo-support-running-tests-under-sandbox.patch
+  ApplyPatch 00_all_0028-sys-types.h-drop-sys-sysmacros.h-include.patch
+  ApplyPatch 00_all_0029-configure-accept-__stack_chk_fail_local-for-ssp-supp.patch
 )
 
 ## Fedora
@@ -94,7 +104,7 @@ ApplyPatch glibc-nscd-sysconfig.patch
 sed -i -e 's|/sysconfig/|/default/|g' nscd/nscd.service
 
 # Fix -Warray-bounds warning for GCC5, likely PR/59124 or PR/66422.
-#ApplyPatch glibc-res-hconf-gcc5.patch
+ApplyPatch glibc-res-hconf-gcc5.patch
 ApplyPatch glibc-ld-ctype-gcc5.patch
 ApplyPatch glibc-gethnamaddr-gcc5.patch
 ApplyPatch glibc-dns-host-gcc5.patch
@@ -115,14 +125,17 @@ ApplyPatch glibc-rh1070416.patch
 ApplyPatch glibc-aarch64-tls-fixes.patch
 ApplyPatch glibc-aarch64-workaround-nzcv-clobber-in-tlsdesc.patch
 
-# Group Merge Patch:
-ApplyPatch glibc-nsswitch-Add-group-merging-support.patch
-
 ApplyPatch glibc-gcc-PR69537.patch
 
-ApplyPatch glibc-rh1321372.patch
-ApplyPatch glibc-rh1204521.patch
-ApplyPatch glibc-rh1282011.patch
+# extend_alloca removal, BZ 18023
+ApplyPatch glibc-rh1315108.patch
+ApplyPatch glibc-rh1335011.patch
+
+# Upstream BZ 20313
+ApplyPatch glibc-rh1351108-update-to-unicode-9.0.0.patch
+
+# sln implemented by ldconfig, to conserve disk space.
+ApplyPatch glibc-rh1315476-1.patch
 
 ## Mandriva
 ApplyPatch glibc-2.11.1-localedef-archive-follow-symlinks.patch 
@@ -133,7 +146,7 @@ ApplyPatch glibc-2.9-nscd-no-host-cache.patch.gz
 ApplyPatch glibc-2.10.1-biarch-cpp-defines.patch.gz
 ApplyPatch glibc-2.22-nice_fix.patch
 ApplyPatch glibc-2.3.5-biarch-utils.patch.gz
-ApplyPatch glibc-2.22-multiarch.patch
+ApplyPatch glibc-2.24-multiarch.patch
 ApplyPatch glibc-2.22-pt_BR-i18nfixes.patch
 
 ### Arch

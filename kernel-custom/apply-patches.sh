@@ -133,6 +133,7 @@ done
   done
 )
 
+ApplyPatch Replace-max-wrongly-user-for-modulo-numbers.patch
 ApplyPatch make-bfq-the-default-io-scheduler.patch
 
 # ALSA
@@ -206,24 +207,17 @@ ApplyPatch netfilter-x_tables-deal-with-bogus-nextoffset-values.patch
 #rhbz 1360688
 ApplyPatch rc-core-fix-repeat-events.patch
 
-#rhbz 1374212
-ApplyPatch 0001-cpupower-Correct-return-type-of-cpu_power_is_cpu_onl.patch
-
 #ongoing complaint, full discussion delayed until ksummit/plumbers
 ApplyPatch 0001-iio-Use-event-header-from-kernel-tree.patch
 
-#CVE-2016-7425 rhbz 1377330 1377331
-ApplyPatch arcmsr-buffer-overflow-in-archmsr_iop_message_xfer.patch
+# CVE-2016-9083 CVE-2016-9084 rhbz 1389258 1389259 1389285
+ApplyPatch v3-vfio-pci-Fix-integer-overflows-bitmask-check.patch
 
-#rhbz 1366842
-ApplyPatch drm-virtio-reinstate-drm_virtio_set_busid.patch
+#rhbz 1325354
+ApplyPatch 0001-HID-input-ignore-System-Control-application-usages-i.patch
 
-# Fix memory corruption caused by p8_ghash
-ApplyPatch 0001-crypto-ghash-generic-move-common-definitions-to-a-ne.patch
-ApplyPatch 0001-crypto-vmx-Fix-memory-corruption-caused-by-p8_ghash.patch
-
-#rhbz 1384606
-ApplyPatch 0001-Make-__xfs_xattr_put_listen-preperly-report-errors.patch
+#rhbz 1392885
+ApplyPatch 0001-drm-i915-Refresh-that-status-of-MST-capable-connecto.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

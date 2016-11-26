@@ -1,0 +1,806 @@
+diff -up Linux-PAM-1.3.0/modules/pam_pwhistory/Makefile.am.pwhhelper Linux-PAM-1.3.0/modules/pam_pwhistory/Makefile.am
+--- Linux-PAM-1.3.0/modules/pam_pwhistory/Makefile.am.pwhhelper	2016-03-24 12:45:42.000000000 +0100
++++ Linux-PAM-1.3.0/modules/pam_pwhistory/Makefile.am	2016-05-06 15:18:42.307637933 +0200
+@@ -1,5 +1,6 @@
+ #
+ # Copyright (c) 2008, 2009 Thorsten Kukuk <kukuk@suse.de>
++# Copyright (c) 2013 Red Hat, Inc.
+ #
+ 
+ CLEANFILES = *~
+@@ -9,25 +10,34 @@ EXTRA_DIST = README $(MANS) $(XMLS) tst-
+ 
+ TESTS = tst-pam_pwhistory
+ 
+-man_MANS = pam_pwhistory.8
++man_MANS = pam_pwhistory.8 pwhistory_helper.8
+ 
+-XMLS = README.xml pam_pwhistory.8.xml
++XMLS = README.xml pam_pwhistory.8.xml pwhistory_helper.8.xml
+ 
+ securelibdir = $(SECUREDIR)
+ secureconfdir = $(SCONFIGDIR)
+ 
+-AM_CFLAGS = -I$(top_srcdir)/libpam/include -I$(top_srcdir)/libpamc/include
+-AM_LDFLAGS = -no-undefined -avoid-version -module
++AM_CFLAGS = -I$(top_srcdir)/libpam/include -I$(top_srcdir)/libpamc/include \
++	    -DPWHISTORY_HELPER=\"$(sbindir)/pwhistory_helper\"
++
++pam_pwhistory_la_LDFLAGS = -no-undefined -avoid-version -module
+ if HAVE_VERSIONING
+-  AM_LDFLAGS += -Wl,--version-script=$(srcdir)/../modules.map
++  pam_pwhistory_la_LDFLAGS += -Wl,--version-script=$(srcdir)/../modules.map
+ endif
+ 
+ noinst_HEADERS = opasswd.h
+ 
+ securelib_LTLIBRARIES = pam_pwhistory.la
+-pam_pwhistory_la_LIBADD = $(top_builddir)/libpam/libpam.la @LIBCRYPT@
++pam_pwhistory_la_CFLAGS = $(AM_CFLAGS)
++pam_pwhistory_la_LIBADD = $(top_builddir)/libpam/libpam.la @LIBCRYPT@ @LIBSELINUX@
+ pam_pwhistory_la_SOURCES = pam_pwhistory.c opasswd.c
+ 
++sbin_PROGRAMS = pwhistory_helper
++pwhistory_helper_CFLAGS = $(AM_CFLAGS) -DHELPER_COMPILE=\"pwhistory_helper\" @PIE_CFLAGS@
++pwhistory_helper_SOURCES = pwhistory_helper.c opasswd.c
++pwhistory_helper_LDFLAGS = -Wl,-z,now @PIE_LDFLAGS@
++pwhistory_helper_LDADD = $(top_builddir)/libpam/libpam.la @LIBCRYPT@
++
+ if ENABLE_REGENERATE_MAN
+ noinst_DATA = README
+ README: pam_pwhistory.8.xml
+diff -up Linux-PAM-1.3.0/modules/pam_pwhistory/opasswd.c.pwhhelper Linux-PAM-1.3.0/modules/pam_pwhistory/opasswd.c
+--- Linux-PAM-1.3.0/modules/pam_pwhistory/opasswd.c.pwhhelper	2016-03-24 12:45:42.000000000 +0100
++++ Linux-PAM-1.3.0/modules/pam_pwhistory/opasswd.c	2016-05-06 15:18:42.307637933 +0200
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (c) 2008 Thorsten Kukuk <kukuk@suse.de>
++ * Copyright (c) 2013 Red Hat, Inc.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+@@ -38,6 +39,7 @@
+ #endif
+ 
+ #include <pwd.h>
++#include <shadow.h>
+ #include <time.h>
+ #include <ctype.h>
+ #include <errno.h>
+@@ -47,6 +49,7 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <syslog.h>
++#include <stdarg.h>
+ #include <sys/stat.h>
+ 
+ #if defined (HAVE_XCRYPT_H)
+@@ -55,7 +58,14 @@
+ #include <crypt.h>
+ #endif
+ 
++#ifdef HELPER_COMPILE
++#define pam_modutil_getpwnam(h,n) getpwnam(n)
++#define pam_modutil_getspnam(h,n) getspnam(n)
++#define pam_syslog(h,a,...) helper_log_err(a,__VA_ARGS__)
++#else
++#include <security/pam_modutil.h>
+ #include <security/pam_ext.h>
++#endif
+ #include <security/pam_modules.h>
+ 
+ #include "opasswd.h"
+@@ -76,6 +86,19 @@ typedef struct {
+   char *old_passwords;
+ } opwd;
+ 
++#ifdef HELPER_COMPILE
++void
++helper_log_err(int err, const char *format, ...)
++{
++  va_list args;
++
++  va_start(args, format);
++  openlog(HELPER_COMPILE, LOG_CONS | LOG_PID, LOG_AUTHPRIV);
++  vsyslog(err, format, args);
++  va_end(args);
++  closelog();
++}
++#endif
+ 
+ static int
+ parse_entry (char *line, opwd *data)
+@@ -117,8 +140,8 @@ compare_password(const char *newpass, co
+ }
+ 
+ /* Check, if the new password is already in the opasswd file.  */
+-int
+-check_old_pass (pam_handle_t *pamh, const char *user,
++PAMH_ARG_DECL(int
++check_old_pass, const char *user,
+ 		const char *newpass, int debug)
+ {
+   int retval = PAM_SUCCESS;
+@@ -128,6 +151,11 @@ check_old_pass (pam_handle_t *pamh, cons
+   opwd entry;
+   int found = 0;
+ 
++#ifndef HELPER_COMPILE
++  if (SELINUX_ENABLED)
++    return PAM_PWHISTORY_RUN_HELPER;
++#endif
++
+   if ((oldpf = fopen (OLD_PASSWORDS_FILE, "r")) == NULL)
+     {
+       if (errno != ENOENT)
+@@ -213,9 +241,9 @@ check_old_pass (pam_handle_t *pamh, cons
+   return retval;
+ }
+ 
+-int
+-save_old_pass (pam_handle_t *pamh, const char *user, uid_t uid,
+-	       const char *oldpass, int howmany, int debug UNUSED)
++PAMH_ARG_DECL(int
++save_old_pass, const char *user,
++	       int howmany, int debug UNUSED)
+ {
+   char opasswd_tmp[] = TMP_PASSWORDS_FILE;
+   struct stat opasswd_stat;
+@@ -226,10 +254,35 @@ save_old_pass (pam_handle_t *pamh, const
+   char *buf = NULL;
+   size_t buflen = 0;
+   int found = 0;
++  struct passwd *pwd;
++  const char *oldpass;
++
++  pwd = pam_modutil_getpwnam (pamh, user);
++  if (pwd == NULL)
++    return PAM_USER_UNKNOWN;
+ 
+   if (howmany <= 0)
+     return PAM_SUCCESS;
+ 
++#ifndef HELPER_COMPILE
++  if (SELINUX_ENABLED)
++    return PAM_PWHISTORY_RUN_HELPER;
++#endif
++
++  if ((strcmp(pwd->pw_passwd, "x") == 0)  ||
++      ((pwd->pw_passwd[0] == '#') &&
++       (pwd->pw_passwd[1] == '#') &&
++       (strcmp(pwd->pw_name, pwd->pw_passwd + 2) == 0)))
++    {
++      struct spwd *spw = pam_modutil_getspnam (pamh, user);
++
++      if (spw == NULL)
++        return PAM_USER_UNKNOWN;
++      oldpass = spw->sp_pwdp;
++    }
++  else
++      oldpass = pwd->pw_passwd;
++
+   if (oldpass == NULL || *oldpass == '\0')
+     return PAM_SUCCESS;
+ 
+@@ -452,7 +505,7 @@ save_old_pass (pam_handle_t *pamh, const
+     {
+       char *out;
+ 
+-      if (asprintf (&out, "%s:%d:1:%s\n", user, uid, oldpass) < 0)
++      if (asprintf (&out, "%s:%d:1:%s\n", user, pwd->pw_uid, oldpass) < 0)
+ 	{
+ 	  retval = PAM_AUTHTOK_ERR;
+ 	  if (oldpf)
+diff -up Linux-PAM-1.3.0/modules/pam_pwhistory/opasswd.h.pwhhelper Linux-PAM-1.3.0/modules/pam_pwhistory/opasswd.h
+--- Linux-PAM-1.3.0/modules/pam_pwhistory/opasswd.h.pwhhelper	2016-03-24 12:45:42.000000000 +0100
++++ Linux-PAM-1.3.0/modules/pam_pwhistory/opasswd.h	2016-05-06 15:18:42.307637933 +0200
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (c) 2008 Thorsten Kukuk <kukuk@suse.de>
++ * Copyright (c) 2013 Red Hat, Inc.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+@@ -36,10 +37,32 @@
+ #ifndef __OPASSWD_H__
+ #define __OPASSWD_H__
+ 
+-extern int check_old_pass (pam_handle_t *pamh, const char *user,
+-			   const char *newpass, int debug);
+-extern int save_old_pass (pam_handle_t *pamh, const char *user,
+-			  uid_t uid, const char *oldpass,
+-			  int howmany, int debug);
++#define PAM_PWHISTORY_RUN_HELPER PAM_CRED_INSUFFICIENT
++
++#ifdef WITH_SELINUX
++#include <selinux/selinux.h>
++#define SELINUX_ENABLED is_selinux_enabled()>0
++#else
++#define SELINUX_ENABLED 0
++#endif
++
++#ifdef HELPER_COMPILE
++#define PAMH_ARG_DECL(fname, ...) fname(__VA_ARGS__)
++#define PAMH_ARG(...)               __VA_ARGS__
++#else
++#define PAMH_ARG_DECL(fname, ...) fname(pam_handle_t *pamh, __VA_ARGS__)
++#define PAMH_ARG(...)               pamh, __VA_ARGS__
++#endif
++
++#ifdef HELPER_COMPILE
++void
++helper_log_err(int err, const char *format, ...);
++#endif
++
++PAMH_ARG_DECL(int
++check_old_pass, const char *user, const char *newpass, int debug);
++
++PAMH_ARG_DECL(int
++save_old_pass, const char *user, int howmany, int debug);
+ 
+ #endif /* __OPASSWD_H__ */
+diff -up Linux-PAM-1.3.0/modules/pam_pwhistory/pam_pwhistory.c.pwhhelper Linux-PAM-1.3.0/modules/pam_pwhistory/pam_pwhistory.c
+--- Linux-PAM-1.3.0/modules/pam_pwhistory/pam_pwhistory.c.pwhhelper	2016-04-04 11:22:28.000000000 +0200
++++ Linux-PAM-1.3.0/modules/pam_pwhistory/pam_pwhistory.c	2016-05-06 15:19:31.610785512 +0200
+@@ -1,6 +1,7 @@
+ /*
+  * Copyright (c) 2008, 2012 Thorsten Kukuk
+  * Author: Thorsten Kukuk <kukuk@thkukuk.de>
++ * Copyright (c) 2013 Red Hat, Inc.
+  *
+  * Redistribution and use in source and binary forms, with or without
+  * modification, are permitted provided that the following conditions
+@@ -46,10 +47,14 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <unistd.h>
+-#include <shadow.h>
+ #include <syslog.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>
++#include <sys/time.h>
++#include <sys/resource.h>
++#include <sys/wait.h>
++#include <signal.h>
++#include <fcntl.h>
+ 
+ #include <security/pam_modules.h>
+ #include <security/pam_modutil.h>
+@@ -59,6 +64,7 @@
+ #include "opasswd.h"
+ 
+ #define DEFAULT_BUFLEN 2048
++#define MAX_FD_NO 20000
+ 
+ struct options_t {
+   int debug;
+@@ -102,6 +108,184 @@ parse_option (pam_handle_t *pamh, const
+     pam_syslog (pamh, LOG_ERR, "pam_pwhistory: unknown option: %s", argv);
+ }
+ 
++static int
++run_save_helper(pam_handle_t *pamh, const char *user,
++		int howmany, int debug)
++{
++  int retval, child;
++  struct sigaction newsa, oldsa;
++
++  memset(&newsa, '\0', sizeof(newsa));
++  newsa.sa_handler = SIG_DFL;
++  sigaction(SIGCHLD, &newsa, &oldsa);
++
++  child = fork();
++  if (child == 0)
++    {
++      int i = 0;
++      struct rlimit rlim;
++      int dummyfds[2];
++      static char *envp[] = { NULL };
++      char *args[] = { NULL, NULL, NULL, NULL, NULL, NULL };
++
++      /* replace std file descriptors with a dummy pipe */
++      if (pipe2(dummyfds, O_NONBLOCK) == 0)
++        {
++          dup2(dummyfds[0], STDIN_FILENO);
++          dup2(dummyfds[1], STDOUT_FILENO);
++          dup2(dummyfds[1], STDERR_FILENO);
++        }
++
++      if (getrlimit(RLIMIT_NOFILE,&rlim) == 0)
++        {
++          if (rlim.rlim_max >= MAX_FD_NO)
++            rlim.rlim_max = MAX_FD_NO;
++	  for (i = STDERR_FILENO + 1; i < (int)rlim.rlim_max; i++)
++             {
++		if (i != dummyfds[0])
++		  close(i);
++	     }
++	}
++
++      /* exec binary helper */
++      args[0] = strdup(PWHISTORY_HELPER);
++      args[1] = strdup("save");
++      args[2] = x_strdup(user);
++      asprintf(&args[3], "%d", howmany);
++      asprintf(&args[4], "%d", debug);
++
++      execve(args[0], args, envp);
++
++      _exit(PAM_SYSTEM_ERR);
++    }
++  else if (child > 0)
++    {
++      /* wait for child */
++      int rc = 0;
++      rc = waitpid(child, &retval, 0);  /* wait for helper to complete */
++      if (rc < 0)
++        {
++	  pam_syslog(pamh, LOG_ERR, "pwhistory_helper save waitpid returned %d: %m", rc);
++	  retval = PAM_SYSTEM_ERR;
++	}
++      else if (!WIFEXITED(retval))
++        {
++	  pam_syslog(pamh, LOG_ERR, "pwhistory_helper save abnormal exit: %d", retval);
++	  retval = PAM_SYSTEM_ERR;
++	}
++      else
++        {
++	  retval = WEXITSTATUS(retval);
++	}
++    } 
++  else
++    {
++	retval = PAM_SYSTEM_ERR;
++    }
++
++  sigaction(SIGCHLD, &oldsa, NULL);   /* restore old signal handler */
++
++  return retval;
++}
++
++static int
++run_check_helper(pam_handle_t *pamh, const char *user,
++		 const char *newpass, int debug)
++{
++  int retval, child, fds[2];
++  struct sigaction newsa, oldsa;
++
++  /* create a pipe for the password */
++  if (pipe(fds) != 0)
++    return PAM_SYSTEM_ERR;
++
++  memset(&newsa, '\0', sizeof(newsa));
++  newsa.sa_handler = SIG_DFL;
++  sigaction(SIGCHLD, &newsa, &oldsa);
++
++  child = fork();
++  if (child == 0)
++    {
++      int i = 0;
++      struct rlimit rlim;
++      int dummyfds[2];
++      static char *envp[] = { NULL };
++      char *args[] = { NULL, NULL, NULL, NULL, NULL };
++
++      /* reopen stdin as pipe */
++      dup2(fds[0], STDIN_FILENO);
++
++      /* replace std file descriptors with a dummy pipe */
++      if (pipe2(dummyfds, O_NONBLOCK) == 0)
++        {
++          dup2(dummyfds[1], STDOUT_FILENO);
++          dup2(dummyfds[1], STDERR_FILENO);
++        }
++
++      if (getrlimit(RLIMIT_NOFILE,&rlim) == 0)
++        {
++          if (rlim.rlim_max >= MAX_FD_NO)
++            rlim.rlim_max = MAX_FD_NO;
++	  for (i = STDERR_FILENO + 1; i < (int)rlim.rlim_max; i++)
++             {
++		if (i != dummyfds[0])
++		  close(i);
++	     }
++	}
++
++      /* exec binary helper */
++      args[0] = strdup(PWHISTORY_HELPER);
++      args[1] = strdup("check");
++      args[2] = x_strdup(user);
++      asprintf(&args[3], "%d", debug);
++
++      execve(args[0], args, envp);
++
++      _exit(PAM_SYSTEM_ERR);
++    }
++  else if (child > 0)
++    {
++      /* wait for child */
++      int rc = 0;
++      if (newpass == NULL)
++        newpass = "";
++ 
++      /* send the password to the child */
++      if (write(fds[1], newpass, strlen(newpass)+1) == -1)
++        {
++	  pam_syslog(pamh, LOG_ERR, "Cannot send password to helper: %m");
++	  retval = PAM_SYSTEM_ERR;
++	}
++      newpass = NULL;
++      close(fds[0]);       /* close here to avoid possible SIGPIPE above */
++      close(fds[1]);
++      rc = waitpid(child, &retval, 0);  /* wait for helper to complete */
++      if (rc < 0)
++        {
++	  pam_syslog(pamh, LOG_ERR, "pwhistory_helper check waitpid returned %d: %m", rc);
++	  retval = PAM_SYSTEM_ERR;
++	}
++      else if (!WIFEXITED(retval))
++        {
++	  pam_syslog(pamh, LOG_ERR, "pwhistory_helper check abnormal exit: %d", retval);
++	  retval = PAM_SYSTEM_ERR;
++	}
++      else
++        {
++	  retval = WEXITSTATUS(retval);
++	}
++    } 
++  else
++    {
++	close(fds[0]);
++	close(fds[1]);
++	retval = PAM_SYSTEM_ERR;
++    }
++
++  sigaction(SIGCHLD, &oldsa, NULL);   /* restore old signal handler */
++
++  return retval;
++}
+ 
+ /* This module saves the current crypted password in /etc/security/opasswd
+    and then compares the new password with all entries in this file. */
+@@ -109,7 +293,6 @@ parse_option (pam_handle_t *pamh, const
+ int
+ pam_sm_chauthtok (pam_handle_t *pamh, int flags, int argc, const char **argv)
+ {
+-  struct passwd *pwd;
+   const char *newpass;
+   const char *user;
+     int retval, tries;
+@@ -154,31 +337,13 @@ pam_sm_chauthtok (pam_handle_t *pamh, in
+       return PAM_SUCCESS;
+     }
+ 
+-  pwd = pam_modutil_getpwnam (pamh, user);
+-  if (pwd == NULL)
+-    return PAM_USER_UNKNOWN;
+-
+-  if ((strcmp(pwd->pw_passwd, "x") == 0)  ||
+-      ((pwd->pw_passwd[0] == '#') &&
+-       (pwd->pw_passwd[1] == '#') &&
+-       (strcmp(pwd->pw_name, pwd->pw_passwd + 2) == 0)))
+-    {
+-      struct spwd *spw = pam_modutil_getspnam (pamh, user);
+-      if (spw == NULL)
+-	return PAM_USER_UNKNOWN;
++  retval = save_old_pass (pamh, user, options.remember, options.debug);
+ 
+-      retval = save_old_pass (pamh, user, pwd->pw_uid, spw->sp_pwdp,
+-			      options.remember, options.debug);
+-      if (retval != PAM_SUCCESS)
+-	return retval;
+-    }
+-  else
+-    {
+-      retval = save_old_pass (pamh, user, pwd->pw_uid, pwd->pw_passwd,
+-			      options.remember, options.debug);
+-      if (retval != PAM_SUCCESS)
+-	return retval;
+-    }
++  if (retval == PAM_PWHISTORY_RUN_HELPER) 
++      retval = run_save_helper(pamh, user, options.remember, options.debug);
++
++  if (retval != PAM_SUCCESS)
++    return retval;
+ 
+   newpass = NULL;
+   tries = 0;
+@@ -207,8 +372,11 @@ pam_sm_chauthtok (pam_handle_t *pamh, in
+       if (options.debug)
+ 	pam_syslog (pamh, LOG_DEBUG, "check against old password file");
+ 
+-      if (check_old_pass (pamh, user, newpass,
+-			  options.debug) != PAM_SUCCESS)
++      retval = check_old_pass (pamh, user, newpass, options.debug);
++      if (retval == PAM_PWHISTORY_RUN_HELPER)
++	  retval = run_check_helper(pamh, user, newpass, options.debug);
++
++      if (retval != PAM_SUCCESS)
+ 	{
+ 	  if (getuid() || options.enforce_for_root ||
+ 	      (flags & PAM_CHANGE_EXPIRED_AUTHTOK))
+diff -up Linux-PAM-1.3.0/modules/pam_pwhistory/pwhistory_helper.c.pwhhelper Linux-PAM-1.3.0/modules/pam_pwhistory/pwhistory_helper.c
+--- Linux-PAM-1.3.0/modules/pam_pwhistory/pwhistory_helper.c.pwhhelper	2016-05-06 15:18:42.308637957 +0200
++++ Linux-PAM-1.3.0/modules/pam_pwhistory/pwhistory_helper.c	2016-05-06 15:18:42.308637957 +0200
+@@ -0,0 +1,209 @@
++/* 
++ * Copyright (c) 2013 Red Hat, Inc.
++ * Author: Tomas Mraz <tmraz@redhat.com>
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, and the entire permission notice in its entirety,
++ *    including the disclaimer of warranties.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ * 3. The name of the author may not be used to endorse or promote
++ *    products derived from this software without specific prior
++ *    written permission.
++ *
++ * ALTERNATIVELY, this product may be distributed under the terms of
++ * the GNU Public License, in which case the provisions of the GPL are
++ * required INSTEAD OF the above restrictions.  (This clause is
++ * necessary due to a potential bad interaction between the GPL and
++ * the restrictions contained in a BSD-style copyright.)
++ *
++ * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESS OR IMPLIED
++ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
++ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++ * DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
++ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
++ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
++ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
++ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
++ * OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#include "config.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <syslog.h>
++#include <errno.h>
++#include <unistd.h>
++#include <signal.h>
++#include <security/_pam_types.h>
++#include <security/_pam_macros.h>
++#include "opasswd.h"
++
++#define MAXPASS 200
++
++static void
++su_sighandler(int sig)
++{
++#ifndef SA_RESETHAND
++        /* emulate the behaviour of the SA_RESETHAND flag */
++        if ( sig == SIGILL || sig == SIGTRAP || sig == SIGBUS || sig = SIGSERV ) {
++		struct sigaction sa;
++		memset(&sa, '\0', sizeof(sa));
++		sa.sa_handler = SIG_DFL;
++                sigaction(sig, &sa, NULL);
++	}
++#endif
++        if (sig > 0) {
++                _exit(sig);
++        }
++}
++
++static void
++setup_signals(void)
++{
++  struct sigaction action;        /* posix signal structure */
++         
++  /*
++   * Setup signal handlers
++   */
++  (void) memset((void *) &action, 0, sizeof(action));
++  action.sa_handler = su_sighandler;
++#ifdef SA_RESETHAND
++  action.sa_flags = SA_RESETHAND;
++#endif
++  (void) sigaction(SIGILL, &action, NULL);
++  (void) sigaction(SIGTRAP, &action, NULL);
++  (void) sigaction(SIGBUS, &action, NULL);
++  (void) sigaction(SIGSEGV, &action, NULL);
++  action.sa_handler = SIG_IGN;
++  action.sa_flags = 0;
++  (void) sigaction(SIGTERM, &action, NULL);
++  (void) sigaction(SIGHUP, &action, NULL);
++  (void) sigaction(SIGINT, &action, NULL);
++  (void) sigaction(SIGQUIT, &action, NULL);
++}
++
++static int
++read_passwords(int fd, int npass, char **passwords)
++{
++  int rbytes = 0;
++  int offset = 0;
++  int i = 0;
++  char *pptr;
++  while (npass > 0)
++    {
++      rbytes = read(fd, passwords[i]+offset, MAXPASS-offset);
++
++      if (rbytes < 0)
++        {
++          if (errno == EINTR) continue;
++          break;
++        }
++      if (rbytes == 0)
++          break;
++
++      while (npass > 0 && (pptr=memchr(passwords[i]+offset, '\0', rbytes))
++             != NULL)
++        {
++          rbytes -= pptr - (passwords[i]+offset) + 1;
++          i++;
++          offset = 0;
++          npass--;
++          if (rbytes > 0)
++            {
++              if (npass > 0)
++                memcpy(passwords[i], pptr+1, rbytes);
++              memset(pptr+1, '\0', rbytes);
++            }
++        }
++      offset += rbytes;
++    }
++
++    /* clear up */
++    if (offset > 0 && npass > 0) 
++      memset(passwords[i], '\0', offset);
++
++   return i;
++}
++
++
++static int
++check_history(const char *user, const char *debug)
++{
++  char pass[MAXPASS + 1];
++  char *passwords[] = { pass };
++  int npass;
++  int dbg = atoi(debug); /* no need to be too fancy here */
++  int retval;
++
++  /* read the password from stdin (a pipe from the pam_pwhistory module) */
++  npass = read_passwords(STDIN_FILENO, 1, passwords);
++
++  if (npass != 1)
++    { /* is it a valid password? */
++      helper_log_err(LOG_DEBUG, "no password supplied");
++      return PAM_AUTHTOK_ERR;
++    }
++
++  retval = check_old_pass(user, pass, dbg);
++
++  memset(pass, '\0', MAXPASS);	/* clear memory of the password */
++
++  return retval;
++}
++
++static int
++save_history(const char *user, const char *howmany, const char *debug)
++{
++  int num = atoi(howmany);
++  int dbg = atoi(debug); /* no need to be too fancy here */
++  int retval;
++
++  retval = save_old_pass(user, num, dbg);
++
++  return retval;
++}
++
++int
++main(int argc, char *argv[])
++{
++  const char *option;
++  const char *user;
++
++  /*
++   * Catch or ignore as many signal as possible.
++   */
++  setup_signals();
++
++  /*
++   * we establish that this program is running with non-tty stdin.
++   * this is to discourage casual use.
++   */
++
++  if (isatty(STDIN_FILENO) || argc < 4)
++    {
++      fprintf(stderr,
++		"This binary is not designed for running in this way.\n");
++      sleep(10);	/* this should discourage/annoy the user */
++      return PAM_SYSTEM_ERR;
++    }
++
++  option = argv[1];
++  user = argv[2];
++
++  if (strcmp(option, "check") == 0 && argc == 4)
++    return check_history(user, argv[3]);
++  else if (strcmp(option, "save") == 0 && argc == 5)
++    return save_history(user, argv[3], argv[4]);
++
++  return PAM_SYSTEM_ERR;
++}
++
+diff -up Linux-PAM-1.3.0/modules/pam_pwhistory/pwhistory_helper.8.xml.pwhhelper Linux-PAM-1.3.0/modules/pam_pwhistory/pwhistory_helper.8.xml
+--- Linux-PAM-1.3.0/modules/pam_pwhistory/pwhistory_helper.8.xml.pwhhelper	2016-05-06 15:18:42.308637957 +0200
++++ Linux-PAM-1.3.0/modules/pam_pwhistory/pwhistory_helper.8.xml	2016-05-06 15:18:42.308637957 +0200
+@@ -0,0 +1,68 @@
++<?xml version="1.0" encoding='UTF-8'?>
++<!DOCTYPE refentry PUBLIC "-//OASIS//DTD DocBook XML V4.3//EN"
++	"http://www.oasis-open.org/docbook/xml/4.3/docbookx.dtd">
++
++<refentry id="pwhistory_helper">
++
++  <refmeta>
++    <refentrytitle>pwhistory_helper</refentrytitle>
++    <manvolnum>8</manvolnum>
++    <refmiscinfo class="sectdesc">Linux-PAM Manual</refmiscinfo>
++  </refmeta>
++
++  <refnamediv id="pwhistory_helper-name">
++    <refname>pwhistory_helper</refname>
++    <refpurpose>Helper binary that transfers password hashes from passwd or shadow to opasswd</refpurpose>
++  </refnamediv>
++
++  <refsynopsisdiv>
++    <cmdsynopsis id="pwhistory_helper-cmdsynopsis">
++      <command>pwhistory_helper</command>
++      <arg choice="opt">
++        ...
++      </arg>
++    </cmdsynopsis>
++  </refsynopsisdiv>
++
++  <refsect1 id="pwhistory_helper-description">
++
++    <title>DESCRIPTION</title>
++
++    <para>
++      <emphasis>pwhistory_helper</emphasis> is a helper program for the
++      <emphasis>pam_pwhistory</emphasis> module that transfers password hashes
++      from passwd or shadow file to the opasswd file and checks a password
++      supplied by user against the existing hashes in the opasswd file.
++    </para>
++
++    <para>
++      The purpose of the helper is to enable tighter confinement of
++      login and password changing services. The helper is thus called only
++      when SELinux is enabled on the system.
++    </para>
++
++    <para>
++      The interface of the helper - command line options, and input/output
++      data format are internal to the <emphasis>pam_pwhistory</emphasis>
++      module and it should not be called directly from applications.
++    </para>
++  </refsect1>
++
++  <refsect1 id='pwhistory_helper-see_also'>
++    <title>SEE ALSO</title>
++    <para>
++      <citerefentry>
++	<refentrytitle>pam_pwhistory</refentrytitle><manvolnum>8</manvolnum>
++      </citerefentry>
++    </para>
++  </refsect1>
++
++  <refsect1 id='pwhistory_helper-author'>
++    <title>AUTHOR</title>
++      <para>
++        Written by Tomas Mraz based on the code originally in
++        <emphasis>pam_pwhistory and pam_unix</emphasis> modules.
++      </para>
++  </refsect1>
++
++</refentry>

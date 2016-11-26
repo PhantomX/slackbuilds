@@ -1,0 +1,285 @@
+From 53782619bae773a4034bc53b3b0bd858f90190dc Mon Sep 17 00:00:00 2001
+From: Kamil Dudka <kdudka@redhat.com>
+Date: Thu, 27 Oct 2016 14:27:25 +0200
+Subject: [PATCH 1/4] nss: map CURL_SSLVERSION_DEFAULT to NSS default
+
+... but make sure we use at least TLSv1.0 according to libcurl API
+
+Reported-by: Cure53
+Reviewed-by: Ray Satiro
+
+Upstream-commit: 5d45ced7a45ea38e32f1cbf73d7c63a3e4f241e7
+Signed-off-by: Kamil Dudka <kdudka@redhat.com>
+---
+ lib/vtls/nss.c | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/lib/vtls/nss.c b/lib/vtls/nss.c
+index dff1575..5abb574 100644
+--- a/lib/vtls/nss.c
++++ b/lib/vtls/nss.c
+@@ -1489,10 +1489,18 @@ static CURLcode nss_init_sslver(SSLVersionRange *sslver,
+                                 struct Curl_easy *data)
+ {
+   switch(data->set.ssl.version) {
+-  default:
+   case CURL_SSLVERSION_DEFAULT:
++    /* map CURL_SSLVERSION_DEFAULT to NSS default */
++    if(SSL_VersionRangeGetDefault(ssl_variant_stream, sslver) != SECSuccess)
++      return CURLE_SSL_CONNECT_ERROR;
++    /* ... but make sure we use at least TLSv1.0 according to libcurl API */
++    if(sslver->min < SSL_LIBRARY_VERSION_TLS_1_0)
++      sslver->min = SSL_LIBRARY_VERSION_TLS_1_0;
++    return CURLE_OK;
++
+   case CURL_SSLVERSION_TLSv1:
+     sslver->min = SSL_LIBRARY_VERSION_TLS_1_0;
++    /* TODO: set sslver->max to SSL_LIBRARY_VERSION_TLS_1_3 once stable */
+ #ifdef SSL_LIBRARY_VERSION_TLS_1_2
+     sslver->max = SSL_LIBRARY_VERSION_TLS_1_2;
+ #elif defined SSL_LIBRARY_VERSION_TLS_1_1
+@@ -1532,6 +1540,10 @@ static CURLcode nss_init_sslver(SSLVersionRange *sslver,
+     return CURLE_OK;
+ #endif
+     break;
++
++  default:
++    /* unsupported SSL/TLS version */
++    break;
+   }
+ 
+   failf(data, "TLS minor version cannot be set");
+-- 
+2.7.4
+
+
+From 6a42abb03de6e5afe859313b236f2b776ca51722 Mon Sep 17 00:00:00 2001
+From: Kamil Dudka <kdudka@redhat.com>
+Date: Thu, 27 Oct 2016 14:57:11 +0200
+Subject: [PATCH 2/4] vtls: support TLS 1.3 via CURL_SSLVERSION_TLSv1_3
+
+Fully implemented with the NSS backend only for now.
+
+Reviewed-by: Ray Satiro
+
+Upstream-commit: 6ad3add60654182a747f5971afb40817488ef0e8
+Signed-off-by: Kamil Dudka <kdudka@redhat.com>
+---
+ docs/libcurl/opts/CURLOPT_SSLVERSION.3 | 2 ++
+ docs/libcurl/symbols-in-versions       | 1 +
+ include/curl/curl.h                    | 1 +
+ lib/vtls/nss.c                         | 8 ++++++++
+ 4 files changed, 12 insertions(+)
+
+diff --git a/docs/libcurl/opts/CURLOPT_SSLVERSION.3 b/docs/libcurl/opts/CURLOPT_SSLVERSION.3
+index 2f40e46..1854af0 100644
+--- a/docs/libcurl/opts/CURLOPT_SSLVERSION.3
++++ b/docs/libcurl/opts/CURLOPT_SSLVERSION.3
+@@ -48,6 +48,8 @@ TLSv1.0 (Added in 7.34.0)
+ TLSv1.1 (Added in 7.34.0)
+ .IP CURL_SSLVERSION_TLSv1_2
+ TLSv1.2 (Added in 7.34.0)
++.IP CURL_SSLVERSION_TLSv1_3
++TLSv1.3 (Added in 7.51.1)
+ .RE
+ .SH DEFAULT
+ CURL_SSLVERSION_DEFAULT
+diff --git a/docs/libcurl/symbols-in-versions b/docs/libcurl/symbols-in-versions
+index f6365ae..a77fde4 100644
+--- a/docs/libcurl/symbols-in-versions
++++ b/docs/libcurl/symbols-in-versions
+@@ -773,6 +773,7 @@ CURL_SSLVERSION_TLSv1           7.9.2
+ CURL_SSLVERSION_TLSv1_0         7.34.0
+ CURL_SSLVERSION_TLSv1_1         7.34.0
+ CURL_SSLVERSION_TLSv1_2         7.34.0
++CURL_SSLVERSION_TLSv1_3         7.51.1
+ CURL_TIMECOND_IFMODSINCE        7.9.7
+ CURL_TIMECOND_IFUNMODSINCE      7.9.7
+ CURL_TIMECOND_LASTMOD           7.9.7
+diff --git a/include/curl/curl.h b/include/curl/curl.h
+index 9c09cb9..03fcfeb 100644
+--- a/include/curl/curl.h
++++ b/include/curl/curl.h
+@@ -1805,6 +1805,7 @@ enum {
+   CURL_SSLVERSION_TLSv1_0,
+   CURL_SSLVERSION_TLSv1_1,
+   CURL_SSLVERSION_TLSv1_2,
++  CURL_SSLVERSION_TLSv1_3,
+ 
+   CURL_SSLVERSION_LAST /* never use, keep last */
+ };
+diff --git a/lib/vtls/nss.c b/lib/vtls/nss.c
+index 5abb574..5e52727 100644
+--- a/lib/vtls/nss.c
++++ b/lib/vtls/nss.c
+@@ -1541,6 +1541,14 @@ static CURLcode nss_init_sslver(SSLVersionRange *sslver,
+ #endif
+     break;
+ 
++  case CURL_SSLVERSION_TLSv1_3:
++#ifdef SSL_LIBRARY_VERSION_TLS_1_3
++    sslver->min = SSL_LIBRARY_VERSION_TLS_1_3;
++    sslver->max = SSL_LIBRARY_VERSION_TLS_1_3;
++    return CURLE_OK;
++#endif
++    break;
++
+   default:
+     /* unsupported SSL/TLS version */
+     break;
+-- 
+2.7.4
+
+
+From d930268ab522ac7ea7ccd83671d22f57148f3d21 Mon Sep 17 00:00:00 2001
+From: Kamil Dudka <kdudka@redhat.com>
+Date: Thu, 27 Oct 2016 14:58:43 +0200
+Subject: [PATCH 3/4] curl: introduce the --tlsv1.3 option to force TLS 1.3
+
+Fully implemented with the NSS backend only for now.
+
+Reviewed-by: Ray Satiro
+
+Upstream-commit: a110a03b43057879643046538c79cc9dd20d399a
+Signed-off-by: Kamil Dudka <kdudka@redhat.com>
+---
+ docs/curl.1         | 10 +++++++---
+ src/tool_getparam.c |  5 +++++
+ src/tool_help.c     |  1 +
+ src/tool_setopt.c   |  1 +
+ 4 files changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/docs/curl.1 b/docs/curl.1
+index f5375ed..e9c6150 100644
+--- a/docs/curl.1
++++ b/docs/curl.1
+@@ -176,9 +176,9 @@ HTTP 2 to negotiate HTTP 2 support with the server during https sessions.
+ .IP "-1, --tlsv1"
+ (SSL)
+ Forces curl to use TLS version 1.x when negotiating with a remote TLS server.
+-You can use options \fI--tlsv1.0\fP, \fI--tlsv1.1\fP, and \fI--tlsv1.2\fP to
+-control the TLS version more precisely (if the SSL backend in use supports such
+-a level of control).
++You can use options \fI--tlsv1.0\fP, \fI--tlsv1.1\fP, \fI--tlsv1.2\fP, and
++\fI--tlsv1.3\fP to control the TLS version more precisely (if the SSL backend
++in use supports such a level of control).
+ .IP "-2, --sslv2"
+ (SSL) Forces curl to use SSL version 2 when negotiating with a remote SSL
+ server. Sometimes curl is built without SSLv2 support. SSLv2 is widely
+@@ -1820,6 +1820,10 @@ Forces curl to use TLS version 1.1 when negotiating with a remote TLS server.
+ (SSL)
+ Forces curl to use TLS version 1.2 when negotiating with a remote TLS server.
+ (Added in 7.34.0)
++.IP "--tlsv1.3"
++(SSL)
++Forces curl to use TLS version 1.3 when negotiating with a remote TLS server.
++(Added in 7.51.1)
+ .IP "--tr-encoding"
+ (HTTP) Request a compressed Transfer-Encoding response using one of the
+ algorithms curl supports, and uncompress the data while receiving it.
+diff --git a/src/tool_getparam.c b/src/tool_getparam.c
+index 95dd455..2d16e06 100644
+--- a/src/tool_getparam.c
++++ b/src/tool_getparam.c
+@@ -190,6 +190,7 @@ static const struct LongShort aliases[]= {
+   {"10",  "tlsv1.0",                 FALSE},
+   {"11",  "tlsv1.1",                 FALSE},
+   {"12",  "tlsv1.2",                 FALSE},
++  {"13",  "tlsv1.3",                 FALSE},
+   {"2",  "sslv2",                    FALSE},
+   {"3",  "sslv3",                    FALSE},
+   {"4",  "ipv4",                     FALSE},
+@@ -1061,6 +1062,10 @@ ParameterError getparameter(char *flag,    /* f or -long-flag */
+         /* TLS version 1.2 */
+         config->ssl_version = CURL_SSLVERSION_TLSv1_2;
+         break;
++      case '3':
++        /* TLS version 1.3 */
++        config->ssl_version = CURL_SSLVERSION_TLSv1_3;
++        break;
+       }
+       break;
+     case '2':
+diff --git a/src/tool_help.c b/src/tool_help.c
+index fb428c9..9890cc8 100644
+--- a/src/tool_help.c
++++ b/src/tool_help.c
+@@ -232,6 +232,7 @@ static const char *const helptext[] = {
+   "     --tlsv1.0       Use TLSv1.0 (SSL)",
+   "     --tlsv1.1       Use TLSv1.1 (SSL)",
+   "     --tlsv1.2       Use TLSv1.2 (SSL)",
++  "     --tlsv1.3       Use TLSv1.3 (SSL)",
+   "     --trace FILE    Write a debug trace to FILE",
+   "     --trace-ascii FILE  Like --trace, but without hex output",
+   "     --trace-time    Add time stamps to trace/verbose output",
+diff --git a/src/tool_setopt.c b/src/tool_setopt.c
+index c854225..f3de09d 100644
+--- a/src/tool_setopt.c
++++ b/src/tool_setopt.c
+@@ -83,6 +83,7 @@ const NameValue setopt_nv_CURL_SSLVERSION[] = {
+   NV(CURL_SSLVERSION_TLSv1_0),
+   NV(CURL_SSLVERSION_TLSv1_1),
+   NV(CURL_SSLVERSION_TLSv1_2),
++  NV(CURL_SSLVERSION_TLSv1_3),
+   NVEND,
+ };
+ 
+-- 
+2.7.4
+
+
+From 2fce531638a12f44ea1fbc52e86ca795a3a4e4e2 Mon Sep 17 00:00:00 2001
+From: Kamil Dudka <kdudka@redhat.com>
+Date: Tue, 15 Nov 2016 12:21:00 +0100
+Subject: [PATCH 4/4] docs: the next release will be 7.52.0
+
+Upstream-commit: cfd69c133984a5df3de63b4f8c5f64885c6e33ae
+Signed-off-by: Kamil Dudka <kdudka@redhat.com>
+---
+ docs/curl.1                            | 2 +-
+ docs/libcurl/opts/CURLOPT_SSLVERSION.3 | 2 +-
+ docs/libcurl/symbols-in-versions       | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/docs/curl.1 b/docs/curl.1
+index e9c6150..05d1a8d 100644
+--- a/docs/curl.1
++++ b/docs/curl.1
+@@ -1823,7 +1823,7 @@ Forces curl to use TLS version 1.2 when negotiating with a remote TLS server.
+ .IP "--tlsv1.3"
+ (SSL)
+ Forces curl to use TLS version 1.3 when negotiating with a remote TLS server.
+-(Added in 7.51.1)
++(Added in 7.52.0)
+ .IP "--tr-encoding"
+ (HTTP) Request a compressed Transfer-Encoding response using one of the
+ algorithms curl supports, and uncompress the data while receiving it.
+diff --git a/docs/libcurl/opts/CURLOPT_SSLVERSION.3 b/docs/libcurl/opts/CURLOPT_SSLVERSION.3
+index 1854af0..77dfcd4 100644
+--- a/docs/libcurl/opts/CURLOPT_SSLVERSION.3
++++ b/docs/libcurl/opts/CURLOPT_SSLVERSION.3
+@@ -49,7 +49,7 @@ TLSv1.1 (Added in 7.34.0)
+ .IP CURL_SSLVERSION_TLSv1_2
+ TLSv1.2 (Added in 7.34.0)
+ .IP CURL_SSLVERSION_TLSv1_3
+-TLSv1.3 (Added in 7.51.1)
++TLSv1.3 (Added in 7.52.0)
+ .RE
+ .SH DEFAULT
+ CURL_SSLVERSION_DEFAULT
+diff --git a/docs/libcurl/symbols-in-versions b/docs/libcurl/symbols-in-versions
+index a77fde4..ef730c8 100644
+--- a/docs/libcurl/symbols-in-versions
++++ b/docs/libcurl/symbols-in-versions
+@@ -773,7 +773,7 @@ CURL_SSLVERSION_TLSv1           7.9.2
+ CURL_SSLVERSION_TLSv1_0         7.34.0
+ CURL_SSLVERSION_TLSv1_1         7.34.0
+ CURL_SSLVERSION_TLSv1_2         7.34.0
+-CURL_SSLVERSION_TLSv1_3         7.51.1
++CURL_SSLVERSION_TLSv1_3         7.52.0
+ CURL_TIMECOND_IFMODSINCE        7.9.7
+ CURL_TIMECOND_IFUNMODSINCE      7.9.7
+ CURL_TIMECOND_LASTMOD           7.9.7
+-- 
+2.7.4
+

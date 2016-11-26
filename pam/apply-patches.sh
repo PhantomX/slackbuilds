@@ -13,9 +13,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.3-nouserenv.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.5-limits-user.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.8-full-relro.patch
 # Upstreamed partially
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.8-pwhistory-helper.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.2.0-use-elinks.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.3.0-pwhistory-helper.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.1.8-audit-user-mgmt.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/pam-1.2.1-console-devname.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

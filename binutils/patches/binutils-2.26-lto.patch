@@ -556,58 +556,6 @@ diff -rup binutils-2.26.orig/bfd/section.c binutils-2.26/bfd/section.c
  .{* Pointer to the common section.  *}
  .#define bfd_com_section_ptr (&_bfd_std_section[0])
  .{* Pointer to the undefined section.  *}
-diff -rup binutils-2.26.orig/binutils/objcopy.c binutils-2.26/binutils/objcopy.c
---- binutils-2.26.orig/binutils/objcopy.c	2016-02-19 09:35:36.287000943 +0000
-+++ binutils-2.26/binutils/objcopy.c	2016-02-19 09:35:54.908106537 +0000
-@@ -1108,30 +1108,6 @@ is_specified_symbol (const char *name, h
-   return htab_find (htab, name) != NULL;
- }
- 
--/* Return a pointer to the symbol used as a signature for GROUP.  */
--
--static asymbol *
--group_signature (asection *group)
--{
--  bfd *abfd = group->owner;
--  Elf_Internal_Shdr *ghdr;
--
--  if (bfd_get_flavour (abfd) != bfd_target_elf_flavour)
--    return NULL;
--
--  ghdr = &elf_section_data (group)->this_hdr;
--  if (ghdr->sh_link < elf_numsections (abfd))
--    {
--      const struct elf_backend_data *bed = get_elf_backend_data (abfd);
--      Elf_Internal_Shdr *symhdr = elf_elfsections (abfd) [ghdr->sh_link];
--
--      if (symhdr->sh_type == SHT_SYMTAB
--	  && ghdr->sh_info < symhdr->sh_size / bed->s->sizeof_sym)
--	return isympp[ghdr->sh_info - 1];
--    }
--  return NULL;
--}
--
- /* Return TRUE if the section is a DWO section.  */
- 
- static bfd_boolean
-@@ -1237,7 +1213,7 @@ is_strip_section (bfd *abfd ATTRIBUTE_UN
-       /* PR binutils/3181
- 	 If we are going to strip the group signature symbol, then
- 	 strip the group section too.  */
--      gsym = group_signature (sec);
-+      gsym = bfd_group_signature (sec, isympp);
-       if (gsym != NULL)
- 	gname = gsym->name;
-       else
-@@ -3091,7 +3067,7 @@ setup_section (bfd *ibfd, sec_ptr isecti
- 
-   if ((isection->flags & SEC_GROUP) != 0)
-     {
--      asymbol *gsym = group_signature (isection);
-+      asymbol *gsym = bfd_group_signature (isection, isympp);
- 
-       if (gsym != NULL)
- 	{
 diff -rup binutils-2.26.orig/binutils/readelf.c binutils-2.26/binutils/readelf.c
 --- binutils-2.26.orig/binutils/readelf.c	2016-02-19 09:35:36.295000988 +0000
 +++ binutils-2.26/binutils/readelf.c	2016-02-19 09:35:54.911106554 +0000
@@ -724,8 +672,9 @@ diff -rup binutils-2.26.orig/ld/emultempl/armelf.em binutils-2.26/ld/emultempl/a
  
    if (thumb_entry_symbol)
      {
-@@ -730,4 +730,4 @@ LDEMUL_CREATE_OUTPUT_SECTION_STATEMENTS=
+@@ -730,5 +730,5 @@ LDEMUL_CREATE_OUTPUT_SECTION_STATEMENTS=
  LDEMUL_BEFORE_PARSE=gld"${EMULATION_NAME}"_before_parse
+ LDEMUL_SET_SYMBOLS=gld"${EMULATION_NAME}"_set_symbols
  
  # Call the extra arm-elf function
 -LDEMUL_FINISH=gld${EMULATION_NAME}_finish
@@ -998,17 +947,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
  #ifndef offsetof
  #define offsetof(TYPE, MEMBER) ((size_t) & (((TYPE*) 0)->MEMBER))
  #endif
-@@ -68,6 +72,9 @@ static lang_statement_list_type *stat_sa
- static lang_statement_list_type **stat_save_ptr = &stat_save[0];
- static struct unique_sections *unique_section_list;
- static struct asneeded_minfo *asneeded_list_head;
-+static cmdline_list_type cmdline_object_only_file_list;
-+static cmdline_list_type cmdline_object_only_archive_list;
-+static cmdline_list_type cmdline_temp_object_only_list;
- 
- /* Forward declarations.  */
- static void exp_init_os (etree_type *);
-@@ -86,6 +93,10 @@ static void lang_do_version_exports_sect
+@@ -86,6 +93,13 @@ static void lang_do_version_exports_sect
  static void lang_finalize_version_expr_head
    (struct bfd_elf_version_expr_head *);
  static void lang_do_memory_regions (void);
@@ -1016,6 +955,9 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +static void cmdline_get_object_only_input_files (void);
 +static void print_cmdline_list (cmdline_union_type *);
 +static bfd_boolean cmdline_on_object_only_archive_list_p (bfd *);
++static cmdline_list_type cmdline_object_only_file_list;
++static cmdline_list_type cmdline_object_only_archive_list;
++static cmdline_list_type cmdline_temp_object_only_list;
  
  /* Exported variables.  */
  const char *output_target;
@@ -1052,7 +994,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
  	      subsbfd = member;
  	      if (!(*link_info.callbacks
  		    ->add_archive_element) (&link_info, member,
-@@ -6780,7 +6800,38 @@ lang_process (void)
+@@ -6780,10 +6800,41 @@ lang_process (void)
  	  open_input_bfds (statement_list.head, OPEN_BFD_RESCAN);
  	}
      }
@@ -1089,9 +1031,12 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +	}
 +    }
  
+   /* Make sure that nobody has tried to add a symbol to this list
+      before now.  */
+   ASSERT (link_info.gc_sym_list == NULL);
+ 
    link_info.gc_sym_list = &entry_symbol;
-   if (entry_symbol.name == NULL)
-@@ -8275,3 +8326,965 @@ lang_print_memory_usage (void)
+@@ -8275,3 +8326,968 @@ lang_print_memory_usage (void)
        printf ("    %6.2f%%\n", percent);
      }
  }
@@ -1170,7 +1115,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +  bfd *archive, *obfd, *oarchive;
 +  ufile_ptr origin = abfd->origin;
 +
-+  archive = bfd_my_archive (abfd);
++  archive = abfd->my_archive;
 +  for (c = cmdline_object_only_archive_list.head; c != NULL; c = next)
 +    {
 +      if (c->header.type != cmdline_is_bfd_enum)
@@ -1178,7 +1123,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +
 +      next = c->header.next;
 +      obfd = c->abfd.abfd;
-+      oarchive = bfd_my_archive (obfd);
++      oarchive = obfd->my_archive;
 +
 +      /* The list is grouped by archive file name and sorted by member
 +	 origin.  */
@@ -1215,7 +1160,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +      abort ();
 +    case cmdline_is_bfd_enum:
 +      abfd = (bfd *) data;
-+      archive = bfd_my_archive (abfd);
++      archive = abfd->my_archive;
 +      if (archive)
 +	break;
 +    case cmdline_is_file_enum:
@@ -1248,7 +1193,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +      next = c->header.next;
 +
 +      obfd = c->abfd.abfd;
-+      oarchive = bfd_my_archive (obfd);
++      oarchive = abfd->my_archive;
 +
 +      if (strcmp (archive->filename, oarchive->filename) == 0)
 +	{
@@ -1281,7 +1226,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +		  break;
 +		}
 +
-+	      narchive = bfd_my_archive (nbfd);
++	      narchive = nbfd->my_archive;
 +	      if (strcmp (archive->filename, narchive->filename) != 0)
 +		{
 +		  /* Insert it befor NEXT.  */
@@ -1338,7 +1283,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +	break;
 +      case cmdline_is_bfd_enum:
 +	abfd = c->abfd.abfd;
-+	if (bfd_my_archive (abfd))
++	if (abfd->my_archive)
 +	  abort ();
 +	lang_add_input_file (abfd->filename,
 +			     lang_input_file_is_file_enum, NULL);
@@ -1354,7 +1299,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +      next = c->header.next;
 +
 +      abfd = c->abfd.abfd;
-+      archive = bfd_my_archive (abfd);
++      archive = abfd->my_archive;
 +
 +      /* Add the first archive of the archive member group.  */
 +      lang_add_input_file (archive->filename,
@@ -1373,7 +1318,7 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +	  if (!next)
 +	    break;
 +	  nbfd = next->abfd.abfd;
-+	  narchive = bfd_my_archive (nbfd);
++	  narchive = nbfd->my_archive;
 +	}
 +      while (strcmp (archive->filename, narchive->filename) == 0);
 +    }
@@ -1813,7 +1758,10 @@ diff -rup binutils-2.26.orig/ld/ldlang.c binutils-2.26/ld/ldlang.c
 +  if (obfd)
 +    bfd_close (obfd);
 +  if (ofilename)
-+    unlink (ofilename);
++    {
++      unlink (ofilename);
++      free (ofilename);
++    }
 +  einfo (_("%P%F: failed to add object-only section: %s\n"), err);
 +}
 +
@@ -2069,9 +2017,12 @@ diff -rup binutils-2.26.orig/ld/ldlang.h binutils-2.26/ld/ldlang.h
  extern void lang_finish
    (void);
  extern lang_memory_region_type * lang_memory_region_lookup
-@@ -693,4 +693,45 @@ lang_ld_feature (char *);
+@@ -693,7 +693,48 @@ lang_ld_feature (char *);
  extern void
  lang_print_memory_usage (void);
+ 
+ extern void
+ lang_add_gc_name (const char *);
  
 +typedef enum
 +{
@@ -2196,7 +2147,7 @@ diff -rup binutils-2.26.orig/ld/ldmain.c binutils-2.26/ld/ldmain.c
  
    /* Even if we're producing relocatable output, some non-fatal errors should
 @@ -465,6 +441,8 @@ main (int argc, char **argv)
-       if (! bfd_close (link_info.output_bfd))
+       if (!bfd_close (link_info.output_bfd))
  	einfo (_("%F%B: final close failed: %E\n"), link_info.output_bfd);
  
 +      link_info.output_bfd = NULL;
@@ -2318,7 +2269,7 @@ diff -rup binutils-2.26.orig/ld/plugin.c binutils-2.26/ld/plugin.c
 +
        /* Discard the real file's BFD and substitute the dummy one.  */
  
-       /* BFD archive handling caches elements so we can't call
+       /* We can't call bfd_close on archives.  BFD archive handling
 @@ -1227,14 +1233,17 @@ plugin_call_cleanup (void)
      {
        if (curplug->cleanup_handler && !curplug->cleanup_done)
@@ -2553,3 +2504,53 @@ diff -rup binutils-2.26.orig/ld/testsuite/ld-plugin/lto.exp binutils-2.26/ld/tes
  
  run_cc_link_tests $lto_link_symbol_tests
  
+--- /dev/null	2016-08-19 08:03:37.292222041 +0100
++++ binutils-2.27/ld/testsuite/ld-plugin/lto-4a.c	2016-08-19 12:14:15.685818046 +0100
+@@ -0,0 +1,7 @@
++extern void foo(void);
++
++int main(void)
++{
++  foo();
++  return 0;
++}
+--- /dev/null	2016-08-19 08:03:37.292222041 +0100
++++ binutils-2.27/ld/testsuite/ld-plugin/lto-4b.c	2016-08-19 12:14:19.603842115 +0100
+@@ -0,0 +1,9 @@
++#include <stdio.h>
++
++extern void bar (void);
++
++void foo(void)
++{
++  bar ();
++  printf ("hello foo\n");
++}
+--- /dev/null	2016-08-19 08:03:37.292222041 +0100
++++ binutils-2.27/ld/testsuite/ld-plugin/lto-4c.c	2016-08-19 12:14:21.987856760 +0100
+@@ -0,0 +1,6 @@
++#include <stdio.h>
++
++void bar (void)
++{
++  printf ("hello bar\n");
++}
+--- /dev/null	2016-08-19 08:03:37.292222041 +0100
++++ binutils-2.27/ld/testsuite/ld-plugin/lto-10a.c	2016-08-19 12:14:27.670891671 +0100
+@@ -0,0 +1,6 @@
++extern int foo(void);
++
++int main(void)
++{
++  return foo();
++}
+--- /dev/null	2016-08-19 08:03:37.292222041 +0100
++++ binutils-2.27/ld/testsuite/ld-plugin/lto-10b.c	2016-08-19 12:14:33.380926748 +0100
+@@ -0,0 +1,7 @@
++#include <stdio.h>
++
++int foo(void)
++{
++  printf ("hello\n");
++  return 0;
++}

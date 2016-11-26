@@ -28,7 +28,6 @@ ApplyPatch() {
 ApplyPatch binutils-2.20.51.0.2-libtool-lib64.patch
 ApplyPatch binutils-2.25-version.patch
 ApplyPatch binutils-2.25-set-long-long.patch
-ApplyPatch binutils-2.20.51.0.10-copy-osabi.patch
 ApplyPatch binutils-2.20.51.0.10-sec-merge-emit.patch
 ApplyPatch binutils-2.22.52.0.1-relro-on-by-default.patch
 ApplyPatch binutils-2.22.52.0.1-export-demangle.h.patch
@@ -38,19 +37,23 @@ ApplyPatch binutils-2.22.52.0.4-no-config-h-check.patch
 ApplyPatch binutils-2.23.52.0.1-addr2line-dynsymtab.patch
 
 ApplyPatch binutils-2.25.1-cleansweep.patch -p0
-ApplyPatch binutils-2.26-formatting.patch -p0
 ApplyPatch binutils-2.26-fix-compile-warnings.patch
-# Enable -Bsymbolic and -Bsymbolic-functions to PIE
-ApplyPatch binutils-2.26-Bsymbolic_PIE.patch
 # Import H.J.Lu's Kernel LTO patch.
 ApplyPatch binutils-2.26-lto.patch
-# Import fix for PR 19698
-ApplyPatch binutils-rh1312151.patch
-# Import fix for PR 19601
-ApplyPatch binutils-2.26-fix-GOT-offset-calculation.patch
-# Import fix for PR 19579
-ApplyPatch binutils-2.26-common-definitions.patch
-# Import fix for PR 19827
-ApplyPatch binutils-2.26-x86-PIE-relocations.patch
+# Fix computation of sh_info field for .dynsym sections
+ApplyPatch binutils-2.27-local-dynsym-count.patch
+# Put sections in a monotonically increasing order of file offset.
+ApplyPatch binutils-2.27-monotonic-section-offsets.patch
+# Make ARM and AArch64 ports properly support relro on by default.
+ApplyPatch binutils-2.27-arm-aarch64-default-relro.patch
+# Skip PR14918 linker test for ARM native targets.
+ApplyPatch binutils-2.27-skip-rp14918-test-for-arm.patch
+# Fix GOLD for ARM/AARCh64.
+ApplyPatch binutils-2.28-gold.patch
+# Improve objdump's disassembly of dynamic executables.
+ApplyPatch binutils-2.27-objdump-improvements.patch
+# Improve objdump's speed when mixing disassembly with source code
+ApplyPatch binutils-2.27-dwarf-parse-speedup.patch
+
 
 set +e +o pipefail

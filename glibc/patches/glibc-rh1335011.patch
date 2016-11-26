@@ -1,0 +1,176 @@
+Revert these two upstream commits, to unbreak ASAN:
+
+commit e91bd7465816f474617dcb4bbfe72f3594c5783c
+Author: Adhemerval Zanella <adhemerval.zanella@linaro.com>
+Date:   Thu Mar 31 10:51:51 2016 -0300
+
+    Fix tst-dlsym-error build
+    
+    This patch fixes the new test tst-dlsym-error build on aarch64
+    (and possible other architectures as well) due missing strchrnul
+    definition.
+    
+        * elf/tst-dlsym-error.c: Include <string.h> for strchrnul.
+
+commit 7d45c163d00c88d5875a112343c4ea3e61349e6b
+Author: Florian Weimer <fweimer@redhat.com>
+Date:   Thu Mar 31 11:26:55 2016 +0200
+
+    Report dlsym, dlvsym lookup errors using dlerror [BZ #19509]
+    
+        * elf/dl-lookup.c (_dl_lookup_symbol_x): Report error even if
+        skip_map != NULL.
+        * elf/tst-dlsym-error.c: New file.
+        * elf/Makefile (tests): Add tst-dlsym-error.
+        (tst-dlsym-error): Link against libdl.
+
+Index: b/elf/Makefile
+===================================================================
+--- a/elf/Makefile
++++ b/elf/Makefile
+@@ -149,7 +149,7 @@ tests += loadtest restest1 preloadtest l
+ 	 tst-nodelete) \
+ 	 tst-initorder tst-initorder2 tst-relsort1 tst-null-argv \
+ 	 tst-ptrguard1 tst-tlsalign tst-tlsalign-extern tst-nodelete-opened \
+-	 tst-nodelete2 tst-audit11 tst-audit12 tst-dlsym-error
++	 tst-nodelete2 tst-audit11 tst-audit12
+ #	 reldep9
+ ifeq ($(build-hardcoded-path-in-tests),yes)
+ tests += tst-dlopen-aout
+@@ -1258,5 +1258,3 @@ $(objpfx)tst-prelink-cmp.out: tst-prelin
+ $(objpfx)tst-ldconfig-X.out : tst-ldconfig-X.sh $(objpfx)ldconfig
+ 	$(SHELL) $< '$(common-objpfx)' '$(test-wrapper)' '$(test-wrapper-env)' > $@; \
+ 	$(evaluate-test)
+-
+-$(objpfx)tst-dlsym-error: $(libdl)
+Index: b/elf/dl-lookup.c
+===================================================================
+--- a/elf/dl-lookup.c
++++ b/elf/dl-lookup.c
+@@ -858,6 +858,7 @@ _dl_lookup_symbol_x (const char *undef_n
+   if (__glibc_unlikely (current_value.s == NULL))
+     {
+       if ((*ref == NULL || ELFW(ST_BIND) ((*ref)->st_info) != STB_WEAK)
++	  && skip_map == NULL
+ 	  && !(GLRO(dl_debug_mask) & DL_DEBUG_UNUSED))
+ 	{
+ 	  /* We could find no value for a strong reference.  */
+Index: b/elf/tst-dlsym-error.c
+===================================================================
+--- a/elf/tst-dlsym-error.c
++++ /dev/null
+@@ -1,114 +0,0 @@
+-/* Test error reporting for dlsym, dlvsym failures.
+-   Copyright (C) 2016 Free Software Foundation, Inc.
+-   This file is part of the GNU C Library.
+-
+-   The GNU C Library is free software; you can redistribute it and/or
+-   modify it under the terms of the GNU Lesser General Public
+-   License as published by the Free Software Foundation; either
+-   version 2.1 of the License, or (at your option) any later version.
+-
+-   The GNU C Library is distributed in the hope that it will be useful,
+-   but WITHOUT ANY WARRANTY; without even the implied warranty of
+-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-   Lesser General Public License for more details.
+-
+-   You should have received a copy of the GNU Lesser General Public
+-   License along with the GNU C Library; if not, see
+-   <http://www.gnu.org/licenses/>.  */
+-
+-#include <dlfcn.h>
+-#include <gnu/lib-names.h>
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <string.h>
+-
+-/* Used to disambiguate symbol names.  */
+-static int counter;
+-
+-static void
+-test_one (void *handle, const char *name, void *(func) (void *, const char *),
+-          const char *suffix)
+-{
+-  ++counter;
+-  char symbol[32];
+-  snprintf (symbol, sizeof (symbol), "no_such_symbol_%d", counter);
+-  char *expected_message;
+-  if (asprintf (&expected_message, ": undefined symbol: %s%s",
+-                symbol, suffix) < 0)
+-    {
+-      printf ("error: asprintf: %m\n");
+-      abort ();
+-    }
+-
+-  void *addr = func (handle, symbol);
+-  if (addr != NULL)
+-    {
+-      printf ("error: %s: found symbol \"no_such_symbol\"\n", name);
+-      abort ();
+-    }
+-  const char *message = dlerror ();
+-  if (message == NULL)
+-    {
+-      printf ("error: %s: missing error message\n", name);
+-      abort ();
+-    }
+-  const char *message_without_path = strchrnul (message, ':');
+-  if (strcmp (message_without_path, expected_message) != 0)
+-    {
+-      printf ("error: %s: unexpected error message: %s\n", name, message);
+-      abort ();
+-    }
+-  free (expected_message);
+-
+-  message = dlerror ();
+-  if (message != NULL)
+-    {
+-      printf ("error: %s: unexpected error message: %s\n", name, message);
+-      abort ();
+-    }
+-}
+-
+-static void
+-test_handles (const char *name, void *(func) (void *, const char *),
+-              const char *suffix)
+-{
+-  test_one (RTLD_DEFAULT, name, func, suffix);
+-  test_one (RTLD_NEXT, name, func, suffix);
+-
+-  void *handle = dlopen (LIBC_SO, RTLD_LAZY);
+-  if (handle == NULL)
+-    {
+-      printf ("error: cannot dlopen %s: %s\n", LIBC_SO, dlerror ());
+-      abort ();
+-    }
+-  test_one (handle, name, func, suffix);
+-  dlclose (handle);
+-}
+-
+-static void *
+-dlvsym_no_such_version (void *handle, const char *name)
+-{
+-  return dlvsym (handle, name, "NO_SUCH_VERSION");
+-}
+-
+-static void *
+-dlvsym_glibc_private (void *handle, const char *name)
+-{
+-  return dlvsym (handle, name, "GLIBC_PRIVATE");
+-}
+-
+-static int
+-do_test (void)
+-{
+-  test_handles ("dlsym", dlsym, "");
+-  test_handles ("dlvsym", dlvsym_no_such_version,
+-                ", version NO_SUCH_VERSION");
+-  test_handles ("dlvsym", dlvsym_glibc_private,
+-                ", version GLIBC_PRIVATE");
+-
+-  return 0;
+-}
+-
+-
+-#define TEST_FUNCTION do_test ()
+-#include "../test-skeleton.c"

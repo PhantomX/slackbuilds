@@ -1,0 +1,122 @@
+From 02bcb6f189c4ad8b2e73ce99cfa3c10f0c244a88 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Fri, 30 Sep 2016 12:29:09 +0200
+Subject: [PATCH xserver v2 7/7] xfree86: Try harder to find atleast 1 non GPU
+ Screen
+
+If we did not find any non GPU Screens, try again ignoring the notion
+of any video devices being the primary device. This fixes Xorg exiting
+with a "no screens found" error when using virtio-vga in a
+virtual-machine and when using a device driven by simpledrm.
+
+This is a somewhat ugly solution, but it is the best I can come up with
+without major surgery to the bus and probe code.
+
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+---
+ hw/xfree86/common/xf86.h            |  1 +
+ hw/xfree86/common/xf86Bus.c         | 26 +++++++++++++++++++++++---
+ hw/xfree86/common/xf86Globals.c     |  1 +
+ hw/xfree86/common/xf86pciBus.c      |  4 ++++
+ hw/xfree86/common/xf86platformBus.c |  4 ++++
+ 5 files changed, 33 insertions(+), 3 deletions(-)
+
+diff --git a/hw/xfree86/common/xf86.h b/hw/xfree86/common/xf86.h
+index e54c811..f724688 100644
+--- a/hw/xfree86/common/xf86.h
++++ b/hw/xfree86/common/xf86.h
+@@ -55,6 +55,7 @@
+ extern _X_EXPORT int xf86DoConfigure;
+ extern _X_EXPORT int xf86DoShowOptions;
+ extern _X_EXPORT Bool xf86DoConfigurePass1;
++extern _X_EXPORT Bool xf86ProbeIgnorePrimary;
+ extern _X_EXPORT Bool xorgHWAccess;
+ 
+ extern _X_EXPORT DevPrivateKeyRec xf86ScreenKeyRec;
+diff --git a/hw/xfree86/common/xf86Bus.c b/hw/xfree86/common/xf86Bus.c
+index a3a9898..9836803 100644
+--- a/hw/xfree86/common/xf86Bus.c
++++ b/hw/xfree86/common/xf86Bus.c
+@@ -117,14 +117,34 @@ xf86BusConfig(void)
+     int i, j;
+ 
+     /*
+-     * Now call each of the Probe functions.  Each successful probe will
+-     * result in an extra entry added to the xf86Screens[] list for each
+-     * instance of the hardware found.
++     * 3 step probe to (hopefully) ensure that we always find at least 1
++     * (non GPU) screen:
++     *
++     * 1. Call each drivers probe function normally,
++     *    Each successful probe will result in an extra entry added to the
++     *    xf86Screens[] list for each instance of the hardware found.
+      */
+     for (i = 0; i < xf86NumDrivers; i++) {
+         xf86CallDriverProbe(xf86DriverList[i], FALSE);
+     }
+ 
++    /*
++     * 2. If no Screens were found, call each drivers probe function with
++     *    ignorePrimary = TRUE, to ensure that we do actually get a
++     *    Screen if there is atleast one supported video card.
++     */
++    if (xf86NumScreens == 0) {
++        xf86ProbeIgnorePrimary = TRUE;
++        for (i = 0; i < xf86NumDrivers && xf86NumScreens == 0; i++) {
++            xf86CallDriverProbe(xf86DriverList[i], FALSE);
++        }
++        xf86ProbeIgnorePrimary = FALSE;
++    }
++
++    /*
++     * 3. Call xf86platformAddGPUDevices() to add any additional video cards as
++     *    GPUScreens (GPUScreens are only supported by platformBus drivers).
++     */
+     for (i = 0; i < xf86NumDrivers; i++) {
+         xf86platformAddGPUDevices(xf86DriverList[i]);
+     }
+diff --git a/hw/xfree86/common/xf86Globals.c b/hw/xfree86/common/xf86Globals.c
+index 07cfabf..e962b75 100644
+--- a/hw/xfree86/common/xf86Globals.c
++++ b/hw/xfree86/common/xf86Globals.c
+@@ -152,6 +152,7 @@ XF86ConfigPtr xf86configptr = NULL;
+ Bool xf86Resetting = FALSE;
+ Bool xf86Initialising = FALSE;
+ Bool xf86DoConfigure = FALSE;
++Bool xf86ProbeIgnorePrimary = FALSE;
+ Bool xf86DoShowOptions = FALSE;
+ DriverPtr *xf86DriverList = NULL;
+ int xf86NumDrivers = 0;
+diff --git a/hw/xfree86/common/xf86pciBus.c b/hw/xfree86/common/xf86pciBus.c
+index 8158c2b..9adfee5 100644
+--- a/hw/xfree86/common/xf86pciBus.c
++++ b/hw/xfree86/common/xf86pciBus.c
+@@ -352,6 +352,10 @@ xf86ComparePciBusString(const char *busID, int bus, int device, int func)
+ Bool
+ xf86IsPrimaryPci(struct pci_device *pPci)
+ {
++    /* Add max. 1 screen for the IgnorePrimary fallback path */
++    if (xf86ProbeIgnorePrimary && xf86NumScreens == 0)
++        return TRUE;
++
+     if (primaryBus.type == BUS_PCI)
+         return pPci == primaryBus.id.pci;
+ #ifdef XSERVER_PLATFORM_BUS
+diff --git a/hw/xfree86/common/xf86platformBus.c b/hw/xfree86/common/xf86platformBus.c
+index 8dd0d5d..063e81c 100644
+--- a/hw/xfree86/common/xf86platformBus.c
++++ b/hw/xfree86/common/xf86platformBus.c
+@@ -114,6 +114,10 @@ xf86_find_platform_device_by_devnum(int major, int minor)
+ static Bool
+ xf86IsPrimaryPlatform(struct xf86_platform_device *plat)
+ {
++    /* Add max. 1 screen for the IgnorePrimary fallback path */
++    if (xf86ProbeIgnorePrimary && xf86NumScreens == 0)
++        return TRUE;
++
+     if (primaryBus.type == BUS_PLATFORM)
+         return plat == primaryBus.id.plat;
+ #ifdef XSERVER_LIBPCIACCESS
+-- 
+2.9.3
+

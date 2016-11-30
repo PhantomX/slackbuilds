@@ -12,7 +12,6 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-softokn-add_encrypt_derive
 # nss
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/add-relro-linker-option.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/renegotiate-transitional.patch
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-enable-pem.patch
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-539183.patch
 # TODO: Remove this patch when the ocsp test are fixed
 patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/nss-3.14.0.0-disble-ocsp-test.patch

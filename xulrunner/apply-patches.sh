@@ -7,8 +7,8 @@ SB_PATCHDIR=${CWD}/patches
 
 # build patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/xulrunner-install-dir.patch
-patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-build-prbool.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-gcc-6.0.patch
 
 # Fedora specific patches
 patch -p2 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-193-pkgconfig.patch

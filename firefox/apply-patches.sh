@@ -24,6 +24,10 @@ if [ "${SB_UA}" = "YES" ] ;then
     ${SB_PATCHDIR}/firefox-chinfo-ua.patch | patch -p2 -E --backup --verbose
 fi
 
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/rhbz-1291190-appchooser-crash.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1170092.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1005640-accept-lang.patch
+
 ### OpenSUSE
 # http://www.rosenauer.org/hg/mozilla/
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/firefox-branded-icons.patch
@@ -33,6 +37,12 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-no-stdcxx-check.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-libproxy.patch
 
 # Upstream patches
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1253216.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-1196777.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-256180.patch
+
+# Debian patches
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/mozilla-440908.patch
 
 # OpenSuse kde integration support
 if [ "${SB_KDE}" = "YES" ] ;then

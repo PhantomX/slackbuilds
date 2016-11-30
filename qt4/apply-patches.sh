@@ -133,6 +133,12 @@ ApplyPatch qt-everywhere-opensource-src-4.8.6-QTBUG-38585.patch -p0
 # build against the system clucene09-core
 ApplyPatch qt-everywhere-opensource-src-4.8.6-system-clucene.patch
 
+# fix build issue(s) with gcc6
+ApplyPatch qt-everywhere-opensource-src-4.8.7-gcc6.patch
+
+# support alsa-1.1.x
+ApplyPatch qt-everywhere-opensource-src-4.8.7-alsa-1.1.patch
+
 ## upstream patches
 # adds debug support to webkit/JavaScriptCore
 # UPSTREAM ME

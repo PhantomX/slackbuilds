@@ -137,7 +137,6 @@ mkdir -p build
     -DMAN_INSTALL_DIR:PATH=/usr/man \
     -DCMAKE_BUILD_TYPE:STRING=Release \
     -DBUILD_SHARED_LIBS:BOOL=ON \
-    -DCMAKE_SKIP_RPATH:BOOL=ON \
     -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
     || exit $?
 

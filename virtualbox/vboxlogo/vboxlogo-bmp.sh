@@ -1,9 +1,9 @@
 #!/bin/sh
 #-- vboxlogo-bmp.sh --
 # Script by Phantom X <megaphantomx@bol.com.brg>
-# Suggested usage: $ vboxlogo-bmp.sh
+# Suggested usage: $ vboxlogo-bmp.sh imagefile
 #--
-# Copyright 2010 Phantom X, Goiania, Brazil.
+# Copyright 2010-2016 Phantom X, Goiania, Brazil.
 #
 # Redistribution and use of this script, with or without modification, is
 # permitted provided that the following conditions are met:
@@ -22,23 +22,31 @@
 #  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 #  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cwd=$(pwd)
+cwd="$(pwd)"
 
-for bin in pngtopnm ppmquant ppmtobmp ;do
+imgfile="$1"
+vboximage="${cwd}/vboxlogo.bmp"
+
+if [ -z "${imgfile}" ] ;then
+  echo "No image specified, using ${cwd}/vboxlogo.png..."
+  imgfile="${cwd}/vboxlogo.png"
+fi
+
+for bin in convert ;do
   command="$(which ${bin} 2>/dev/null)"
   if [ -z "${command}" ] && [ ! -x "${command}" ] ;then
-    echo "${bin} is missing. Please, install netbpm tools."
+    echo "${bin} is missing. Please, install ImageMagick."
     exit 1
   fi
 done
 
-if [ -r ${cwd}/vboxlogo.png ] ;then
-  echo "Coverting ${cwd}/vboxlogo.png"
-  pngtopnm ${cwd}/vboxlogo.png | ppmquant -fs 256 | ppmtobmp \
-    > ${cwd}/vboxlogo.bmp || exit 1
-  xz -9 ${cwd}/vboxlogo.bmp || exit 1
-  echo "${cwd}/vboxlogo.bmp.xz created"
+if [ -r "${imgfile}" ] ;then
+  echo "Converting ${imgfile}"
+  convert "${imgfile}" -colorspace RGB -filter Lanczos -resize 640x480 \
+    -depth 24 BMP3:"${vboximage}" || exit 1
+  xz -9 "${vboximage}" || exit 1
+  echo "${vboximage}.xz created"
 else
-  echo "No ${cwd}/vboxlogo.png"
+  echo "No ${imgfile}, exiting..."
   exit 1
 fi

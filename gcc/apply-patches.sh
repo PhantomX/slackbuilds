@@ -21,6 +21,8 @@ patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/gcc6-libgo-p224.patch
 
 # From Gentoo
 patch -p1 -E --backup -z .fortify --verbose -i ${SB_PATCHDIR}/10_all_default-fortify-source.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/11_all_default-warn-format-security.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/50_all_libiberty-asprintf.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/90_all_pr55930-dependency-tracking.patch
 
 set +e +o pipefail

@@ -39,6 +39,7 @@ fi
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-OSE-4.0.2-aiobug.patch
 # from Debian
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/02-gsoap-build-fix.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/smap.diff
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${PNAME}-5.1.0-revert-VBox.sh.patch
 
 set +e +o pipefail

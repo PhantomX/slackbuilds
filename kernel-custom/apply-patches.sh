@@ -216,8 +216,11 @@ ApplyPatch v3-vfio-pci-Fix-integer-overflows-bitmask-check.patch
 #rhbz 1325354
 ApplyPatch 0001-HID-input-ignore-System-Control-application-usages-i.patch
 
-#rhbz 1392885
-ApplyPatch 0001-drm-i915-Refresh-that-status-of-MST-capable-connecto.patch
+# CVE-2016-9755 rhbz 1400904 1400905
+ApplyPatch 0001-netfilter-ipv6-nf_defrag-drop-mangled-skb-on-ream-er.patch
+
+# CVE-2016-9588 rhbz 1404924 1404925
+ApplyPatch kvm-nVMX-allow-L1-to-intercept-software-exceptions.patch
 
 unset DRYRUN DRYRUN_OPT VERBOSE VERBOSE_OPT SVERBOSE
 

@@ -3,7 +3,7 @@
 # Build script by Phantom X <megaphantomx at bol.com.br>
 # Suggested usage: $ openssl.SlackBuild 2>&1 | tee build.log
 #--
-# Copyright 2008-2015 Phantom X, Goiania, Brazil.
+# Copyright 2008-2016 Phantom X, Goiania, Brazil.
 # Copyright 2006 Martijn Dekker, Groningen, Netherlands.
 #
 # Redistribution and use of this script, with or without modification, is
@@ -43,8 +43,8 @@ PKGF=${PKGF:-${TMP}/package-${NAME}}
 PKG=${PKGF}/${NAME}
 PKG2=${PKGF}/${NAME2}
 
-VERSION=${VERSION:-1.0.2d}
-SSLSOVER=$(echo ${VERSION} | cut -d. -f1)
+VERSION=${VERSION:-1.1.0c}
+SSLSOVER=$(echo ${VERSION} | cut -d. -f1-2)
 if [ "${SB_NATIVE}" = "YES" ] ;then
   ARCH=${ARCH:-$(uname -m)}
 else
@@ -106,7 +106,7 @@ fi
 if [ "${ARCH}" = "x86_64" ] ;then
   LIBDIRSUFFIX="64"
   SLKCFLAGS="${SLKCFLAGS} -fPIC"
-  ARCHOPTS="no-asm"
+  ARCHOPTS="no-asm 386 enable-ec_nistp_64_gcc_128"
 else
   LIBDIRSUFFIX=""
   ARCHOPTS=""
@@ -158,28 +158,24 @@ export SLKCFLAGS="${SLKCFLAGS} -Wa,--noexecstack -DPURIFY"
 ./config \
  --prefix=/usr \
  --openssldir=/etc/ssl \
- --enginesdir=/usr/lib${LIBDIRSUFFIX}/openssl/engines \
  --system-ciphers-file=/etc/crypto-policies/back-ends/openssl.config \
  zlib \
+ enable-camellia \
+ enable-seed \
+ enable-rfc3779 \
+ enable-sctp \
  enable-cms \
  enable-md2 \
- no-krb5 \
+ enable-ssl3 \
+ enable-ssl3-method \
+ no-weak-ssl-ciphers \
  no-idea \
  no-rc5 ${SSEOPT} ${ARCHOPTS} \
- shared || exit 1
+ shared ${SLKCFLAGS} ${SLKLDFLAGS} || exit $?
 
-if [ "${SLKLDFLAGS}" ] ;then
-  sed -i \
-      -e "/^LDFLAGS=/s|$| ${SLKLDFLAGS}|g" \
-      -e '/LDCMD/s|$${LDFLAGS}|\$(LDFLAGS)|g' \
-      Makefile.shared || exit 1
-  sed -i -e "/^SHARED_LDFLAGS=/s|$| ${SLKLDFLAGS}|g" Makefile Makefile.shared || exit 1
-fi
+make -j${NJOBS} depend || make depend || exit $?
 
-make depend || exit 1
-
-# Use -j1 here if you know what's good for you.
-make || exit 1
+make -j${NJOBS} || make || exit $?
 
 if [ "${SB_TEST}" = "YES" ] ;then
 echo '===========TESTING=============='
@@ -193,7 +189,7 @@ zcat ${CWD}/${NAME}-thread-test.c.gz > ${NAME}-thread-test.c || exit 1
     -I./include \
     ${SLKCFLAGS} \
     ${NAME}-thread-test.c \
-    -L. \
+    ${SLKLDFLAGS} -L. \
     -lssl -lcrypto \
     -lpthread -lz -ldl || exit 1
   ./openssl-thread-test --threads ${SB_THREADS} || exit 1
@@ -201,14 +197,11 @@ zcat ${CWD}/${NAME}-thread-test.c.gz > ${NAME}-thread-test.c || exit 1
 echo '=========TESTING ENDED==========='
 fi
 
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.0.0-beta4-ca-dir-slk.patch || exit 1
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openssl-1.1.0-ca-dir-slk.patch || exit 1
 
-make install INSTALL_PREFIX=${PKG} || exit 1
+make install DESTDIR=${PKG} || exit 1
 
-mkdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/openssl/engines
-mv ${PKG}/usr/lib${LIBDIRSUFFIX}/engines ${PKG}/usr/lib${LIBDIRSUFFIX}/openssl/|| exit 1
-
-chmod 0755 ${PKG}/usr/lib*/*.so.* ${PKG}/usr/lib${LIBDIRSUFFIX}/openssl/engines/*.so
+chmod 0755 ${PKG}/usr/lib*/*.so.* ${PKG}/usr/lib${LIBDIRSUFFIX}/engines*/*.so
 
 # Add a cron script to warn root if a certificate is going to expire soon:
 mkdir -p ${PKG}/etc/cron.daily
@@ -227,6 +220,10 @@ mkdir ${PKG}/etc/ssl/private
 chmod 0700 ${PKG}/etc/ssl/private
 mkdir -m755 ${PKG}/etc/ssl/crl
 mkdir -m755 ${PKG}/etc/ssl/newcerts
+
+# Move runable perl scripts to bindir
+mv ${PKG}/etc/ssl/misc/*.pl ${PKG}/usr/bin/
+mv ${PKG}/etc/ssl/misc/tsget ${PKG}/usr/bin/
 
 # Make sure we actually include the headers we built against.
 for header in ${PKG}/usr/include/openssl/* ; do
@@ -259,7 +256,10 @@ find ${PKG} | xargs file | grep -e "executable" -e "shared object" | grep ELF \
 
 chmod 755 ${PKG}/usr/lib${LIBDIRSUFFIX}/pkgconfig
 
-( cd ${PKG}/usr/lib${LIBDIRSUFFIX} ; /sbin/ldconfig -l * 2> /dev/null ) || exit 1
+( cd ${PKG}/usr/lib${LIBDIRSUFFIX}
+  rename so.${SSLSOVER} so.${VERSION} *.so.${SSLSOVER}
+  /sbin/ldconfig -l * 2> /dev/null
+) || exit 1
 
 mkdir -p ${PKG}/lib${LIBDIRSUFFIX}
 # Move the ncurses libraries into /lib, since they're important:
@@ -270,17 +270,10 @@ for libname in libcrypto libssl ;do
   ln -sf ${reldir}/$(basename ${oldlink}) ${PKG}/usr/lib${LIBDIRSUFFIX}/${libname}.so || exit 1
 done
 
-mv ${PKG}/etc/ssl/man ${PKG}/usr
-( cd ${PKG}/usr/man/man1 ; mv passwd.1 ssl_passwd.1 ) || exit 1
-( cd ${PKG}/usr/man/man3 
-  mv rand.3 ssl_rand.3 || exit 1
-  mv err.3 ssl_err.3 || exit 1
-) || exit 1
-
 # Make runtime package:
-mkdir -p ${PKG2}/usr/lib${LIBDIRSUFFIX}
-cp -a ${PKG}/usr/lib${LIBDIRSUFFIX}/lib*.so.*.*.* ${PKG2}/usr/lib${LIBDIRSUFFIX}/ || exit 1
-( cd ${PKG2}/usr/lib${LIBDIRSUFFIX} ; /sbin/ldconfig -l * ) || exit 1
+mkdir -p ${PKG2}/lib${LIBDIRSUFFIX}
+cp -a ${PKG}/lib${LIBDIRSUFFIX}/lib*.so.*.*.* ${PKG2}/lib${LIBDIRSUFFIX}/ || exit 1
+( cd ${PKG2}/lib${LIBDIRSUFFIX} ; /sbin/ldconfig -l * ) || exit 1
 mkdir -p ${PKG2}/etc
 cp -a ${PKG}/etc/ssl ${PKG2}/etc/ || exit 1
 
@@ -389,9 +382,8 @@ elif test "$(type -t fakeroot)" = 'file'; then
   echo ${ROOTCOMMANDS} | fakeroot
   echo ${ROOTCOMMANDS2} | fakeroot
 else
-  echo -e "\e[1mPlease enter your root password.\e[0m (Consider installing fakeroot.)"
-  /bin/su -c "${ROOTCOMMANDS}"
-  /bin/su -c "${ROOTCOMMANDS2}"
+  echo -e "\e[1mPlease preferably install fakeroot or run as root.\e[0m"
+  exit 5
 fi
 
 # Clean up the extra stuff:

@@ -49,11 +49,10 @@ ApplyPatch binutils-2.27-arm-aarch64-default-relro.patch
 # Skip PR14918 linker test for ARM native targets.
 ApplyPatch binutils-2.27-skip-rp14918-test-for-arm.patch
 # Fix GOLD for ARM/AARCh64.
-ApplyPatch binutils-2.28-gold.patch
+ApplyPatch binutils-2.28-gold.patch -p0
 # Improve objdump's disassembly of dynamic executables.
 ApplyPatch binutils-2.27-objdump-improvements.patch
 # Improve objdump's speed when mixing disassembly with source code
 ApplyPatch binutils-2.27-dwarf-parse-speedup.patch
-
 
 set +e +o pipefail

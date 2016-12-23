@@ -76,6 +76,11 @@ fi
   ApplyPatch 00_all_0027-gentoo-support-running-tests-under-sandbox.patch
   ApplyPatch 00_all_0028-sys-types.h-drop-sys-sysmacros.h-include.patch
   ApplyPatch 00_all_0029-configure-accept-__stack_chk_fail_local-for-ssp-supp.patch
+  ApplyPatch 00_all_0030-Fix-writes-past-the-allocated-array-bounds-in-execvp.patch
+  ApplyPatch 00_all_0031-MIPS-Add-.insn-to-ensure-a-text-label-is-defined-as-.patch
+  ApplyPatch 00_all_0032-x86_64-fix-static-build-of-__memcpy_chk-for-compiler.patch
+  ApplyPatch 00_all_0033-X86-64-Add-_dl_runtime_resolve_avx-512-_-opt-slow-BZ.patch
+  ApplyPatch 00_all_0034-X86-64-Add-_dl_runtime_resolve_avx-512-_-opt-slow-BZ.patch
 )
 
 ## Fedora
@@ -111,7 +116,7 @@ ApplyPatch glibc-dns-host-gcc5.patch
 ApplyPatch glibc-bug-regex-gcc5.patch
 
 # Add C.UTF-8 locale into /usr/lib/locale/
-ApplyPatch glibc-c-utf8-locale.patch
+#ApplyPatch glibc-c-utf8-locale.patch
 
 # http://sourceware.org/ml/libc-alpha/2012-12/msg00103.html
 ApplyPatch glibc-rh697421.patch

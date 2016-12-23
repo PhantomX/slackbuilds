@@ -1,0 +1,288 @@
+From 11f1fd4b0d1b3aef5c79b843d081dbb9bcd0b85f Mon Sep 17 00:00:00 2001
+From: Kurt Roeckx <kurt@roeckx.be>
+Date: Tue, 15 Nov 2016 18:58:52 +0100
+Subject: [PATCH] Make SSL_read and SSL_write return the old behaviour and
+ document it.
+
+Backport of beacb0f0c1ae7b0542fe053b95307f515b578eb7, revert of
+122580ef71e4e5f355a1a104c9bfb36feee43759
+
+Fixes: #1903
+
+Reviewed-by: Matt Caswell <matt@openssl.org>
+
+GH: #1966
+---
+ doc/ssl/SSL_get_error.pod | 22 +++++++++---------
+ doc/ssl/SSL_read.pod      | 29 +++++++++---------------
+ doc/ssl/SSL_write.pod     | 19 +++++++---------
+ ssl/record/rec_layer_s3.c | 14 ++++--------
+ test/asynciotest.c        | 57 ++++++++++++++++++++++++++++++++++-------------
+ 5 files changed, 75 insertions(+), 66 deletions(-)
+
+diff --git a/doc/ssl/SSL_get_error.pod b/doc/ssl/SSL_get_error.pod
+index ddd72f7..47d2358 100644
+--- a/doc/ssl/SSL_get_error.pod
++++ b/doc/ssl/SSL_get_error.pod
+@@ -38,12 +38,13 @@ if and only if B<ret E<gt> 0>.
+ 
+ =item SSL_ERROR_ZERO_RETURN
+ 
+-The TLS/SSL connection has been closed.  If the protocol version is SSL 3.0
+-or TLS 1.0, this result code is returned only if a closure
+-alert has occurred in the protocol, i.e. if the connection has been
+-closed cleanly. Note that in this case B<SSL_ERROR_ZERO_RETURN>
+-does not necessarily indicate that the underlying transport
+-has been closed.
++The TLS/SSL connection has been closed.
++If the protocol version is SSL 3.0 or higher, this result code is returned only
++if a closure alert has occurred in the protocol, i.e. if the connection has been
++closed cleanly.
++Note that in this case B<SSL_ERROR_ZERO_RETURN> does not necessarily
++indicate that the underlying transport has been closed.
++
+ 
+ =item SSL_ERROR_WANT_READ, SSL_ERROR_WANT_WRITE
+ 
+@@ -111,12 +112,9 @@ thread has completed.
+ 
+ =item SSL_ERROR_SYSCALL
+ 
+-Some I/O error occurred.  The OpenSSL error queue may contain more
+-information on the error.  If the error queue is empty
+-(i.e. ERR_get_error() returns 0), B<ret> can be used to find out more
+-about the error: If B<ret == 0>, an EOF was observed that violates
+-the protocol.  If B<ret == -1>, the underlying B<BIO> reported an
+-I/O error (for socket I/O on Unix systems, consult B<errno> for details).
++Some non-recoverable I/O error occurred.
++The OpenSSL error queue may contain more information on the error.
++For socket I/O on Unix systems, consult B<errno> for details.
+ 
+ =item SSL_ERROR_SSL
+ 
+diff --git a/doc/ssl/SSL_read.pod b/doc/ssl/SSL_read.pod
+index 8dff244..20ccf40 100644
+--- a/doc/ssl/SSL_read.pod
++++ b/doc/ssl/SSL_read.pod
+@@ -81,28 +81,21 @@ The following return values can occur:
+ 
+ =over 4
+ 
+-=item E<gt>0
++=item E<gt> 0
+ 
+-The read operation was successful; the return value is the number of
+-bytes actually read from the TLS/SSL connection.
++The read operation was successful.
++The return value is the number of bytes actually read from the TLS/SSL
++connection.
+ 
+-=item Z<>0
++=item Z<><= 0
+ 
+-The read operation was not successful. The reason may either be a clean
+-shutdown due to a "close notify" alert sent by the peer (in which case
+-the SSL_RECEIVED_SHUTDOWN flag in the ssl shutdown state is set
+-(see L<SSL_shutdown(3)>,
+-L<SSL_set_shutdown(3)>). It is also possible, that
+-the peer simply shut down the underlying transport and the shutdown is
+-incomplete. Call SSL_get_error() with the return value B<ret> to find out,
+-whether an error occurred or the connection was shut down cleanly
+-(SSL_ERROR_ZERO_RETURN).
++The read operation was not successful, because either the connection was closed,
++an error occurred or action must be taken by the calling process.
++Call L<SSL_get_error(3)> with the return value B<ret> to find out the reason.
+ 
+-=item E<lt>0
+-
+-The read operation was not successful, because either an error occurred
+-or action must be taken by the calling process. Call SSL_get_error() with the
+-return value B<ret> to find out the reason.
++Old documentation indicated a difference between 0 and -1, and that -1 was
++retryable.
++You should instead call SSL_get_error() to find out if it's retryable.
+ 
+ =back
+ 
+diff --git a/doc/ssl/SSL_write.pod b/doc/ssl/SSL_write.pod
+index 5ab0790..ef3b92a 100644
+--- a/doc/ssl/SSL_write.pod
++++ b/doc/ssl/SSL_write.pod
+@@ -74,23 +74,20 @@ The following return values can occur:
+ 
+ =over 4
+ 
+-=item E<gt>0
++=item E<gt> 0
+ 
+ The write operation was successful, the return value is the number of
+ bytes actually written to the TLS/SSL connection.
+ 
+-=item Z<>0
++=item Z<><= 0
+ 
+-The write operation was not successful. Probably the underlying connection
+-was closed. Call SSL_get_error() with the return value B<ret> to find out,
+-whether an error occurred or the connection was shut down cleanly
+-(SSL_ERROR_ZERO_RETURN).
++The write operation was not successful, because either the connection was
++closed, an error occurred or action must be taken by the calling process.
++Call SSL_get_error() with the return value B<ret> to find out the reason.
+ 
+-=item E<lt>0
+-
+-The write operation was not successful, because either an error occurred
+-or action must be taken by the calling process. Call SSL_get_error() with the
+-return value B<ret> to find out the reason.
++Old documentation indicated a difference between 0 and -1, and that -1 was
++retryable.
++You should instead call SSL_get_error() to find out if it's retryable.
+ 
+ =back
+ 
+diff --git a/ssl/record/rec_layer_s3.c b/ssl/record/rec_layer_s3.c
+index 28de7c3..1270a5f 100644
+--- a/ssl/record/rec_layer_s3.c
++++ b/ssl/record/rec_layer_s3.c
+@@ -178,10 +178,7 @@ const char *SSL_rstate_string(const SSL *s)
+ }
+ 
+ /*
+- * Return values are as per SSL_read(), i.e.
+- * >0 The number of read bytes
+- *  0 Failure (not retryable)
+- * <0 Failure (may be retryable)
++ * Return values are as per SSL_read()
+  */
+ int ssl3_read_n(SSL *s, int n, int max, int extend, int clearold)
+ {
+@@ -312,7 +309,7 @@ int ssl3_read_n(SSL *s, int n, int max, int extend, int clearold)
+             if (s->mode & SSL_MODE_RELEASE_BUFFERS && !SSL_IS_DTLS(s))
+                 if (len + left == 0)
+                     ssl3_release_read_buffer(s);
+-            return -1;
++            return i;
+         }
+         left += i;
+         /*
+@@ -882,10 +879,7 @@ int do_ssl3_write(SSL *s, int type, const unsigned char *buf,
+ 
+ /* if s->s3->wbuf.left != 0, we need to call this
+  *
+- * Return values are as per SSL_read(), i.e.
+- * >0 The number of read bytes
+- *  0 Failure (not retryable)
+- * <0 Failure (may be retryable)
++ * Return values are as per SSL_write()
+  */
+ int ssl3_write_pending(SSL *s, int type, const unsigned char *buf,
+                        unsigned int len)
+@@ -936,7 +930,7 @@ int ssl3_write_pending(SSL *s, int type, const unsigned char *buf,
+                  */
+                 SSL3_BUFFER_set_left(&wb[currbuf], 0);
+             }
+-            return -1;
++            return i;
+         }
+         SSL3_BUFFER_add_offset(&wb[currbuf], i);
+         SSL3_BUFFER_add_left(&wb[currbuf], -i);
+diff --git a/test/asynciotest.c b/test/asynciotest.c
+index 0d382d7..133e3d5 100644
+--- a/test/asynciotest.c
++++ b/test/asynciotest.c
+@@ -85,7 +85,7 @@ static int async_free(BIO *bio)
+ static int async_read(BIO *bio, char *out, int outl)
+ {
+     struct async_ctrs *ctrs;
+-    int ret = 0;
++    int ret = -1;
+     BIO *next = BIO_next(bio);
+ 
+     if (outl <= 0)
+@@ -120,7 +120,7 @@ static int async_read(BIO *bio, char *ou
+ static int async_write(BIO *bio, const char *in, int inl)
+ {
+     struct async_ctrs *ctrs;
+-    int ret = 0;
++    int ret = -1;
+     size_t written = 0;
+     BIO *next = BIO_next(bio);
+ 
+@@ -297,32 +297,59 @@ int main(int argc, char *argv[])
+          * we hit at least one async event in both reading and writing
+          */
+         for (j = 0; j < 2; j++) {
++            int len;
++
+             /*
+              * Write some test data. It should never take more than 2 attempts
+-             * (the first one might be a retryable fail). A zero return from
+-             * SSL_write() is a non-retryable failure, so fail immediately if
+-             * we get that.
++             * (the first one might be a retryable fail).
+              */
+-            for (ret = -1, i = 0; ret < 0 && i < 2 * sizeof(testdata); i++)
+-                ret = SSL_write(clientssl, testdata, sizeof(testdata));
+-            if (ret <= 0) {
+-                printf("Test %d failed: Failed to write app data\n", test);
++            for (ret = -1, i = 0, len = 0; len != sizeof(testdata) && i < 2;
++                i++) {
++                ret = SSL_write(clientssl, testdata + len,
++                    sizeof(testdata) - len);
++                if (ret > 0) {
++                    len += ret;
++                } else {
++                    int ssl_error = SSL_get_error(clientssl, ret);
++
++                    if (ssl_error == SSL_ERROR_SYSCALL ||
++                        ssl_error == SSL_ERROR_SSL) {
++                        printf("Test %d failed: Failed to write app data\n", test);
++                        err = -1;
++                        goto end;
++                    }
++                }
++            }
++            if (len != sizeof(testdata)) {
++                err = -1;
++                printf("Test %d failed: Failed to write all app data\n", test);
+                 goto end;
+             }
+             /*
+              * Now read the test data. It may take more attemps here because
+              * it could fail once for each byte read, including all overhead
+-             * bytes from the record header/padding etc. Fail immediately if we
+-             * get a zero return from SSL_read().
++             * bytes from the record header/padding etc.
+              */
+-            for (ret = -1, i = 0; ret < 0 && i < MAX_ATTEMPTS; i++)
+-                ret = SSL_read(serverssl, buf, sizeof(buf));
+-            if (ret <= 0) {
+-                printf("Test %d failed: Failed to read app data\n", test);
+-                goto end;
++            for (ret = -1, i = 0, len = 0; len != sizeof(testdata) &&
++                i < MAX_ATTEMPTS; i++)
++            {
++                ret = SSL_read(serverssl, buf + len, sizeof(buf) - len);
++                if (ret > 0) {
++                    len += ret;
++                } else {
++                    int ssl_error = SSL_get_error(serverssl, ret);
++
++                    if (ssl_error == SSL_ERROR_SYSCALL ||
++                        ssl_error == SSL_ERROR_SSL) {
++                        printf("Test %d failed: Failed to read app data\n", test);
++                        err = -1;
++                        goto end;
++                    }
++                }
+             }
+-            if (ret != sizeof(testdata)
++            if (len != sizeof(testdata)
+                     || memcmp(buf, testdata, sizeof(testdata)) != 0) {
++                err = -1;
+                 printf("Test %d failed: Unexpected app data received\n", test);
+                 goto end;
+             }
+-- 
+2.5.5
+

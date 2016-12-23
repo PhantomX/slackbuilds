@@ -51,4 +51,8 @@ ApplyOptionalPatch() {
 }
 ApplyPatch perf_timechart_fix_zero_timestamps.patch
 
+# https://bugzilla.kernel.org/show_bug.cgi?id=135391
+# https://bugzilla.kernel.org/attachment.cgi?id=228271&action=diff
+ApplyPatch cpupower-fix-governor-change.patch
+
 set +e +o pipefail

@@ -9,9 +9,6 @@ if [ "${PVER}" -ne 0 ] ; then
   bzcat ${SB_PATCHDIR}/updates/${PSRCARCHIVE} | patch -p1 --verbose
 fi
 
-# 5.9-20140524
-rm -f Ada95/src/library.gpr
-
 C=$(wc -l ${CWD}/${PSRCARCHIVES} | awk '{print $1}')
 if [ "$C" -gt 0 ]; then
   mkdir -p updates
@@ -28,6 +25,7 @@ fi
 
 zcat ${SB_PATCHDIR}/ncurses.mkhashsize.diff.gz | patch -p1 --verbose
 
+#patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-compheader.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-config.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-libs.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/ncurses-urxvt.patch

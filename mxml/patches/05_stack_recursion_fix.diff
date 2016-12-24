@@ -1,0 +1,146 @@
+Author: Alastair McKinstry <mckinstry@debian.org>
+Description: Fix for recursion errors:
+ CVE-2016-4570 Recursion using mxmlDelete at mxml-node.c:217 (stack-exhaustion-1.xml)
+ CVE-2016-4571 	Recursion using mxml_write_node at mxml-file.c:2739 (stack-exhaustion-2.xml
+Bug-Debian: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=825855
+Last-Updated: 2016-06-10
+Forwarded: yes 
+
+Index: mxml-2.9/mxml-node.c
+===================================================================
+--- mxml-2.9.orig/mxml-node.c
++++ mxml-2.9/mxml-node.c
+@@ -21,7 +21,7 @@
+ #include "config.h"
+ #include "mxml.h"
+ 
+-
++#include "mxml-private.h"
+ /*
+  * Local functions...
+  */
+@@ -174,12 +174,12 @@ mxmlAdd(mxml_node_t *parent,		/* I - Par
+  * node from its parent using the mxmlRemove() function.
+  */
+ 
+-void
+-mxmlDelete(mxml_node_t *node)		/* I - Node to delete */
++
++static void
++mxmlDeleteLimited(mxml_node_t *node, int max_depth)		/* I - Node to delete */
+ {
+   int	i;				/* Looping var */
+-
+-
++  
+ #ifdef DEBUG
+   fprintf(stderr, "mxmlDelete(node=%p)\n", node);
+ #endif /* DEBUG */
+@@ -201,9 +201,15 @@ mxmlDelete(mxml_node_t *node)		/* I - No
+   * Delete children...
+   */
+ 
+-  while (node->child)
+-    mxmlDelete(node->child);
+-
++  while (node->child) {
++    if (max_depth <= 0) {
++      mxml_error("Maximum recursion depth reached");
++      return;
++    } else {
++      mxmlDeleteLimited(node->child, max_depth-1);
++    }
++  }
++  
+  /*
+   * Now delete any node data...
+   */
+@@ -257,6 +263,11 @@ mxmlDelete(mxml_node_t *node)		/* I - No
+   free(node);
+ }
+ 
++void
++mxmlDelete(mxml_node_t *node)             /* I - Node to delete */
++{
++  mxmlDeleteLimited(node, MAX_DEPTH);
++}
+ 
+ /*
+  * 'mxmlGetRefCount()' - Get the current reference (use) count for a node.
+Index: mxml-2.9/mxml-file.c
+===================================================================
+--- mxml-2.9.orig/mxml-file.c
++++ mxml-2.9/mxml-file.c
+@@ -90,7 +90,8 @@ static int		mxml_write_name(const char *
+ static int		mxml_write_node(mxml_node_t *node, void *p,
+ 			                mxml_save_cb_t cb, int col,
+ 					_mxml_putc_cb_t putc_cb,
+-					_mxml_global_t *global);
++					_mxml_global_t *global,
++					int max_depth);
+ static int		mxml_write_string(const char *s, void *p,
+ 					  _mxml_putc_cb_t putc_cb);
+ static int		mxml_write_ws(mxml_node_t *node, void *p,
+@@ -290,7 +291,7 @@ mxmlSaveFd(mxml_node_t    *node,	/* I -
+   * Write the node...
+   */
+ 
+-  if ((col = mxml_write_node(node, &buf, cb, 0, mxml_fd_putc, global)) < 0)
++  if ((col = mxml_write_node(node, &buf, cb, 0, mxml_fd_putc, global,MAX_DEPTH)) < 0)
+     return (-1);
+ 
+   if (col > 0)
+@@ -329,7 +330,7 @@ mxmlSaveFile(mxml_node_t    *node,	/* I
+   * Write the node...
+   */
+ 
+-  if ((col = mxml_write_node(node, fp, cb, 0, mxml_file_putc, global)) < 0)
++  if ((col = mxml_write_node(node, fp, cb, 0, mxml_file_putc, global, MAX_DEPTH)) < 0)
+     return (-1);
+ 
+   if (col > 0)
+@@ -377,7 +378,7 @@ mxmlSaveString(mxml_node_t    *node,	/*
+   ptr[0] = buffer;
+   ptr[1] = buffer + bufsize;
+ 
+-  if ((col = mxml_write_node(node, ptr, cb, 0, mxml_string_putc, global)) < 0)
++  if ((col = mxml_write_node(node, ptr, cb, 0, mxml_string_putc, global, MAX_DEPTH)) < 0)
+     return (-1);
+ 
+   if (col > 0)
+@@ -2708,7 +2709,8 @@ mxml_write_node(mxml_node_t     *node,	/
+ 	        mxml_save_cb_t  cb,	/* I - Whitespace callback */
+ 		int             col,	/* I - Current column */
+ 		_mxml_putc_cb_t putc_cb,/* I - Output callback */
+-		_mxml_global_t  *global)/* I - Global data */
++		_mxml_global_t  *global,/* I - Global data */
++		int             max_depth)/*I - recursion limit */
+ {
+   int		i,			/* Looping var */
+ 		width;			/* Width of attr + value */
+@@ -2808,7 +2810,11 @@ mxml_write_node(mxml_node_t     *node,	/
+ 
+           for (child = node->child; child; child = child->next)
+ 	  {
+-	    if ((col = mxml_write_node(child, p, cb, col, putc_cb, global)) < 0)
++	    if (max_depth <= 0) {
++	      mxml_error("Recursion limit reached");
++	      return (-1);
++	    }
++	    if ((col = mxml_write_node(child, p, cb, col, putc_cb, global, max_depth-1)) < 0)
+ 	      return (-1);
+ 	  }
+ 
+Index: mxml-2.9/mxml-private.h
+===================================================================
+--- mxml-2.9.orig/mxml-private.h
++++ mxml-2.9/mxml-private.h
+@@ -22,6 +22,8 @@
+ #include "mxml.h"
+ 
+ 
++#define MAX_DEPTH   1000 /* Max. recursion depth */
++
+ /*
+  * Global, per-thread data...
+  */

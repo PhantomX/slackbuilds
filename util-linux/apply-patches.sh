@@ -10,7 +10,7 @@ SB_PATCHDIR=${CWD}/patches
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/util-linux-ng.fdisk-no-solaris.diff
 
 # 151635 - makeing /var/log/lastlog
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/2.23-login-lastlog-create.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/2.28-login-lastlog-create.patch
 
 ### Upstream Patches
 

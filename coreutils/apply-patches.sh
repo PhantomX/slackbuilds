@@ -31,13 +31,10 @@ if [ "${SB_RHUNAME}" = "YES" ] ;then
   ApplyPatch ${NAME}-8.2-uname-processortype.patch
 else
   # Slackware patch
-  ApplyPatch ${NAME}.uname.diff.gz
+  ApplyPatch ${NAME}.uname.diff
 fi
 
-# From upstream
-
 # Fedora patches
-ApplyPatch ${NAME}-6.10-configuration.patch
 # add note about no difference between binary/text mode on Linux - md5sum manpage
 ApplyPatch ${NAME}-6.10-manpages.patch
 #df --direct
@@ -71,12 +68,6 @@ ApplyPatch ${NAME}-getgrouplist.patch
 ApplyPatch ${NAME}-overflow.patch
 
 ### upstream 
-# fix 'sort -h -k' in locales that use blank as thousands separator (#1355780)
-ApplyPatch ${NAME}-8.25-sort-thousands-sep.patch
-# ls: allow interruption when reading slow directories (#1365933)
-ApplyPatch ${NAME}-8.25-ls-signal.patch
-# md5sum,sha*sum: fix --ignore-missing with checksums starting with 00
-ApplyPatch ${NAME}-8.25-sum-ignore-missing.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

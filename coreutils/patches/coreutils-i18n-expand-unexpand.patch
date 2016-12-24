@@ -1,4 +1,4 @@
-From 332e9adf944e4ea232a855b1bf75ea4ddfd7e794 Mon Sep 17 00:00:00 2001
+From e87ab5b991b08092a7e07af82b3ec822a8604151 Mon Sep 17 00:00:00 2001
 From: Ondrej Oprala <ooprala@redhat.com>
 Date: Wed, 5 Aug 2015 09:15:09 +0200
 Subject: [PATCH] expand,unexpand: add multibyte support
@@ -9,13 +9,7 @@ Content-Transfer-Encoding: 8bit
 * NEWS: Mention the changes.
 * bootstrap.conf: Add mbfile to the list of modules.
 * configure.ac: Properly initialize mbfile.
-* po/POTFILES.in: Add new source file.
-* src/expand-core.c: Move functions common to both expand and
-unexpand to this file.
-* src/expand-core.h: Add function prototypes from expand-core.c.
 * src/expand.c (expand): Iterate over multibyte characters properly.
-* src/local.mk: Add expand-core.c to the lists of source codes for
-expand and unexpand
 * src/unexpand.c (unexpand): Iterate over multibyte characters
 properly.
 * tests/local.mk: Add new tests.
@@ -28,29 +22,23 @@ Co-authored-by: Pádraig Brady <pbrady@redhat.com>
  lib/mbfile.c         |   3 +
  lib/mbfile.h         | 255 +++++++++++++++++++++++++++++++++++++++++++++++++++
  m4/mbfile.m4         |  14 +++
- po/POTFILES.in       |   1 +
- src/expand-core.c    | 150 ++++++++++++++++++++++++++++++
- src/expand-core.h    |  41 +++++++++
- src/expand.c         | 186 ++++++++-----------------------------
- src/local.mk         |   2 +
- src/unexpand.c       | 195 ++++++++++-----------------------------
+ src/expand.c         |  43 +++++----
+ src/unexpand.c       |  54 +++++++----
  tests/expand/mb.sh   |  98 ++++++++++++++++++++
  tests/local.mk       |   2 +
  tests/unexpand/mb.sh |  97 ++++++++++++++++++++
- 14 files changed, 750 insertions(+), 297 deletions(-)
+ 10 files changed, 535 insertions(+), 34 deletions(-)
  create mode 100644 lib/mbfile.c
  create mode 100644 lib/mbfile.h
  create mode 100644 m4/mbfile.m4
- create mode 100644 src/expand-core.c
- create mode 100644 src/expand-core.h
  create mode 100755 tests/expand/mb.sh
  create mode 100755 tests/unexpand/mb.sh
 
 diff --git a/bootstrap.conf b/bootstrap.conf
-index ef1c078..ea8cebc 100644
+index 8a0ff31..a1c78b2 100644
 --- a/bootstrap.conf
 +++ b/bootstrap.conf
-@@ -151,6 +151,7 @@ gnulib_modules="
+@@ -152,6 +152,7 @@ gnulib_modules="
    maintainer-makefile
    malloc-gnu
    manywarnings
@@ -59,10 +47,10 @@ index ef1c078..ea8cebc 100644
    mbrtowc
    mbsalign
 diff --git a/configure.ac b/configure.ac
-index 8dc2192..b8b5114 100644
+index 1e74b36..24c9725 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -425,6 +425,8 @@ fi
+@@ -427,6 +427,8 @@ fi
  # I'm leaving it here for now.  This whole thing needs to be modernized...
  gl_WINSIZE_IN_PTEM
  
@@ -71,1126 +59,6 @@ index 8dc2192..b8b5114 100644
  gl_HEADER_TIOCGWINSZ_IN_TERMIOS_H
  
  if test $gl_cv_sys_tiocgwinsz_needs_termios_h = no && \
-diff --git a/po/POTFILES.in b/po/POTFILES.in
-index b3fe668..c594d20 100644
---- a/po/POTFILES.in
-+++ b/po/POTFILES.in
-@@ -57,6 +57,7 @@ src/dirname.c
- src/du.c
- src/echo.c
- src/env.c
-+src/expand-core.c
- src/expand.c
- src/expr.c
- src/factor.c
-diff --git a/src/expand-core.c b/src/expand-core.c
-new file mode 100644
-index 0000000..c8445db
---- /dev/null
-+++ b/src/expand-core.c
-@@ -0,0 +1,150 @@
-+/* expand-core.c - elementary functions for the expand and unexpand utilities
-+   Copyright (C) 1989-2015 Free Software Foundation, Inc.
-+
-+   This program is free software: you can redistribute it and/or modify
-+   it under the terms of the GNU General Public License as published by
-+   the Free Software Foundation, either version 3 of the License, or
-+   (at your option) any later version.
-+
-+   This program is distributed in the hope that it will be useful,
-+   but WITHOUT ANY WARRANTY; without even the implied warranty of
-+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-+   GNU General Public License for more details.
-+
-+   You should have received a copy of the GNU General Public License
-+   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-+
-+#include <config.h>
-+
-+#include <stdio.h>
-+#include <sys/types.h>
-+
-+#include "system.h"
-+#include "error.h"
-+#include "fadvise.h"
-+#include "quote.h"
-+#include "xstrndup.h"
-+
-+#include "expand-core.h"
-+
-+/* Add the comma or blank separated list of tab stops STOPS
-+   to the list of tab stops.  */
-+
-+extern void
-+parse_tab_stops (char const *stops, void (*add_tab_stop)(uintmax_t))
-+{
-+  bool have_tabval = false;
-+  uintmax_t tabval IF_LINT ( = 0);
-+  char const *num_start IF_LINT ( = NULL);
-+  bool ok = true;
-+
-+  for (; *stops; stops++)
-+    {
-+      if (*stops == ',' || isblank (to_uchar (*stops)))
-+        {
-+          if (have_tabval)
-+            add_tab_stop (tabval);
-+          have_tabval = false;
-+        }
-+      else if (ISDIGIT (*stops))
-+        {
-+          if (!have_tabval)
-+            {
-+              tabval = 0;
-+              have_tabval = true;
-+              num_start = stops;
-+            }
-+
-+          /* Detect overflow.  */
-+          if (!DECIMAL_DIGIT_ACCUMULATE (tabval, *stops - '0', uintmax_t))
-+            {
-+              size_t len = strspn (num_start, "0123456789");
-+              char *bad_num = xstrndup (num_start, len);
-+              error (0, 0, _("tab stop is too large %s"), quote (bad_num));
-+              free (bad_num);
-+              ok = false;
-+              stops = num_start + len - 1;
-+            }
-+        }
-+      else
-+        {
-+          error (0, 0, _("tab size contains invalid character(s): %s"),
-+                 quote (stops));
-+          ok = false;
-+          break;
-+        }
-+    }
-+
-+  if (!ok)
-+    exit (EXIT_FAILURE);
-+
-+  if (have_tabval)
-+    add_tab_stop (tabval);
-+}
-+
-+/* Check that the list of tab stops TABS, with ENTRIES entries,
-+   contains only nonzero, ascending values.  */
-+
-+extern void
-+validate_tab_stops (uintmax_t const *tabs, size_t entries)
-+{
-+  uintmax_t prev_tab = 0;
-+  size_t i;
-+
-+  for (i = 0; i < entries; i++)
-+    {
-+      if (tabs[i] == 0)
-+        error (EXIT_FAILURE, 0, _("tab size cannot be 0"));
-+      if (tabs[i] <= prev_tab)
-+        error (EXIT_FAILURE, 0, _("tab sizes must be ascending"));
-+      prev_tab = tabs[i];
-+    }
-+}
-+
-+/* Close the old stream pointer FP if it is non-NULL,
-+   and return a new one opened to read the next input file.
-+   Open a filename of '-' as the standard input.
-+   Return NULL if there are no more input files.  */
-+
-+extern FILE *
-+next_file (FILE *fp)
-+{
-+  static char *prev_file;
-+  char *file;
-+
-+  if (fp)
-+    {
-+      if (ferror (fp))
-+        {
-+          error (0, errno, "%s", prev_file);
-+          exit_status = EXIT_FAILURE;
-+        }
-+      if (STREQ (prev_file, "-"))
-+        clearerr (fp);		/* Also clear EOF.  */
-+      else if (fclose (fp) != 0)
-+        {
-+          error (0, errno, "%s", prev_file);
-+          exit_status = EXIT_FAILURE;
-+        }
-+    }
-+
-+  while ((file = *file_list++) != NULL)
-+    {
-+      if (STREQ (file, "-"))
-+        {
-+          have_read_stdin = true;
-+          fp = stdin;
-+        }
-+      else
-+        fp = fopen (file, "r");
-+      if (fp)
-+        {
-+          prev_file = file;
-+          fadvise (fp, FADVISE_SEQUENTIAL);
-+          return fp;
-+        }
-+      error (0, errno, "%s", file);
-+      exit_status = EXIT_FAILURE;
-+    }
-+  return NULL;
-+}
-diff --git a/src/expand-core.h b/src/expand-core.h
-new file mode 100644
-index 0000000..2419407
---- /dev/null
-+++ b/src/expand-core.h
-@@ -0,0 +1,41 @@
-+/* expand-core.h - function prototypes for the expand and unexpand utilities
-+   Copyright (C) 1989-2015 Free Software Foundation, Inc.
-+
-+   This program is free software: you can redistribute it and/or modify
-+   it under the terms of the GNU General Public License as published by
-+   the Free Software Foundation, either version 3 of the License, or
-+   (at your option) any later version.
-+
-+   This program is distributed in the hope that it will be useful,
-+   but WITHOUT ANY WARRANTY; without even the implied warranty of
-+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-+   GNU General Public License for more details.
-+
-+   You should have received a copy of the GNU General Public License
-+   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-+
-+#ifndef EXPAND_CORE_H_
-+# define EXPAND_CORE_H_
-+
-+extern size_t first_free_tab;
-+
-+extern size_t n_tabs_allocated;
-+
-+extern uintmax_t *tab_list;
-+
-+extern int exit_status;
-+
-+extern char **file_list;
-+
-+extern bool have_read_stdin;
-+
-+void
-+parse_tab_stops (char const *stops, void (*add_tab_stop)(uintmax_t));
-+
-+void
-+validate_tab_stops (uintmax_t const *tabs, size_t entries);
-+
-+FILE *
-+next_file (FILE *fp);
-+
-+#endif /* EXPAND_CORE_H_ */
-diff --git a/src/expand.c b/src/expand.c
-index 0a40a1a..ed97fd4 100644
---- a/src/expand.c
-+++ b/src/expand.c
-@@ -37,12 +37,16 @@
- #include <stdio.h>
- #include <getopt.h>
- #include <sys/types.h>
-+
-+#include <mbfile.h>
-+
- #include "system.h"
- #include "error.h"
- #include "fadvise.h"
--#include "quote.h"
- #include "xstrndup.h"
- 
-+#include "expand-core.h"
-+
- /* The official name of this program (e.g., no 'g' prefix).  */
- #define PROGRAM_NAME "expand"
- 
-@@ -58,17 +62,17 @@ static uintmax_t tab_size;
- /* Array of the explicit column numbers of the tab stops;
-    after 'tab_list' is exhausted, each additional tab is replaced
-    by a space.  The first column is column 0.  */
--static uintmax_t *tab_list;
-+uintmax_t *tab_list;
- 
- /* The number of allocated entries in 'tab_list'.  */
--static size_t n_tabs_allocated;
-+size_t n_tabs_allocated;
- 
- /* The index of the first invalid element of 'tab_list',
-    where the next element can be added.  */
--static size_t first_free_tab;
-+size_t first_free_tab;
- 
- /* Null-terminated array of input filenames.  */
--static char **file_list;
-+char **file_list;
- 
- /* Default for 'file_list' if no files are given on the command line.  */
- static char *stdin_argv[] =
-@@ -77,10 +81,10 @@ static char *stdin_argv[] =
- };
- 
- /* True if we have ever read standard input.  */
--static bool have_read_stdin;
-+bool have_read_stdin;
- 
- /* The desired exit status.  */
--static int exit_status;
-+int exit_status;
- 
- static char const shortopts[] = "it:0::1::2::3::4::5::6::7::8::9::";
- 
-@@ -135,128 +139,6 @@ add_tab_stop (uintmax_t tabval)
-   tab_list[first_free_tab++] = tabval;
- }
- 
--/* Add the comma or blank separated list of tab stops STOPS
--   to the list of tab stops.  */
--
--static void
--parse_tab_stops (char const *stops)
--{
--  bool have_tabval = false;
--  uintmax_t tabval IF_LINT ( = 0);
--  char const *num_start IF_LINT ( = NULL);
--  bool ok = true;
--
--  for (; *stops; stops++)
--    {
--      if (*stops == ',' || isblank (to_uchar (*stops)))
--        {
--          if (have_tabval)
--            add_tab_stop (tabval);
--          have_tabval = false;
--        }
--      else if (ISDIGIT (*stops))
--        {
--          if (!have_tabval)
--            {
--              tabval = 0;
--              have_tabval = true;
--              num_start = stops;
--            }
--
--          /* Detect overflow.  */
--          if (!DECIMAL_DIGIT_ACCUMULATE (tabval, *stops - '0', uintmax_t))
--            {
--              size_t len = strspn (num_start, "0123456789");
--              char *bad_num = xstrndup (num_start, len);
--              error (0, 0, _("tab stop is too large %s"), quote (bad_num));
--              free (bad_num);
--              ok = false;
--              stops = num_start + len - 1;
--            }
--        }
--      else
--        {
--          error (0, 0, _("tab size contains invalid character(s): %s"),
--                 quote (stops));
--          ok = false;
--          break;
--        }
--    }
--
--  if (!ok)
--    exit (EXIT_FAILURE);
--
--  if (have_tabval)
--    add_tab_stop (tabval);
--}
--
--/* Check that the list of tab stops TABS, with ENTRIES entries,
--   contains only nonzero, ascending values.  */
--
--static void
--validate_tab_stops (uintmax_t const *tabs, size_t entries)
--{
--  uintmax_t prev_tab = 0;
--  size_t i;
--
--  for (i = 0; i < entries; i++)
--    {
--      if (tabs[i] == 0)
--        error (EXIT_FAILURE, 0, _("tab size cannot be 0"));
--      if (tabs[i] <= prev_tab)
--        error (EXIT_FAILURE, 0, _("tab sizes must be ascending"));
--      prev_tab = tabs[i];
--    }
--}
--
--/* Close the old stream pointer FP if it is non-NULL,
--   and return a new one opened to read the next input file.
--   Open a filename of '-' as the standard input.
--   Return NULL if there are no more input files.  */
--
--static FILE *
--next_file (FILE *fp)
--{
--  static char *prev_file;
--  char *file;
--
--  if (fp)
--    {
--      if (ferror (fp))
--        {
--          error (0, errno, "%s", quotef (prev_file));
--          exit_status = EXIT_FAILURE;
--        }
--      if (STREQ (prev_file, "-"))
--        clearerr (fp);		/* Also clear EOF.  */
--      else if (fclose (fp) != 0)
--        {
--          error (0, errno, "%s", quotef (prev_file));
--          exit_status = EXIT_FAILURE;
--        }
--    }
--
--  while ((file = *file_list++) != NULL)
--    {
--      if (STREQ (file, "-"))
--        {
--          have_read_stdin = true;
--          fp = stdin;
--        }
--      else
--        fp = fopen (file, "r");
--      if (fp)
--        {
--          prev_file = file;
--          fadvise (fp, FADVISE_SEQUENTIAL);
--          return fp;
--        }
--      error (0, errno, "%s", quotef (file));
--      exit_status = EXIT_FAILURE;
--    }
--  return NULL;
--}
--
- /* Change tabs to spaces, writing to stdout.
-    Read each file in 'file_list', in order.  */
- 
-@@ -265,19 +147,19 @@ expand (void)
- {
-   /* Input stream.  */
-   FILE *fp = next_file (NULL);
-+  mb_file_t mbf;
-+  mbf_char_t c;
- 
-   if (!fp)
-     return;
- 
-+  mbf_init (mbf, fp);
-+
-   while (true)
-     {
--      /* Input character, or EOF.  */
--      int c;
--
-       /* If true, perform translations.  */
-       bool convert = true;
- 
--
-       /* The following variables have valid values only when CONVERT
-          is true:  */
- 
-@@ -287,17 +169,23 @@ expand (void)
-       /* Index in TAB_LIST of next tab stop to examine.  */
-       size_t tab_index = 0;
- 
--
-       /* Convert a line of text.  */
- 
-       do
-         {
--          while ((c = getc (fp)) < 0 && (fp = next_file (fp)))
--            continue;
-+          do {
-+            mbf_getc (c, mbf);
-+            if (mb_iseof (c))
-+              {
-+                mbf_init (mbf, fp = next_file (fp));
-+                continue;
-+              }
-+            }
-+          while (false);
- 
-           if (convert)
-             {
--              if (c == '\t')
-+              if (mb_iseq (c, '\t'))
-                 {
-                   /* Column the next input tab stop is on.  */
-                   uintmax_t next_tab_column;
-@@ -328,32 +216,34 @@ expand (void)
-                     if (putchar (' ') < 0)
-                       error (EXIT_FAILURE, errno, _("write error"));
- 
--                  c = ' ';
-+                  mb_setascii (&c, ' ');
-                 }
--              else if (c == '\b')
-+              else if (mb_iseq (c, '\b'))
-                 {
-                   /* Go back one column, and force recalculation of the
-                      next tab stop.  */
-                   column -= !!column;
-                   tab_index -= !!tab_index;
-                 }
--              else
-+              /* A leading control character could make us trip over.  */
-+              else if (!mb_iscntrl (c))
-                 {
--                  column++;
-+                  column += mb_width (c);
-                   if (!column)
-                     error (EXIT_FAILURE, 0, _("input line is too long"));
-                 }
- 
--              convert &= convert_entire_line || !! isblank (c);
-+              convert &= convert_entire_line || mb_isblank (c);
-             }
- 
--          if (c < 0)
-+          if (mb_iseof (c))
-             return;
- 
--          if (putchar (c) < 0)
-+          mb_putc (c, stdout);
-+          if (ferror (stdout))
-             error (EXIT_FAILURE, errno, _("write error"));
-         }
--      while (c != '\n');
-+      while (!mb_iseq (c, '\n'));
-     }
- }
- 
-@@ -385,19 +275,19 @@ main (int argc, char **argv)
-           break;
- 
-         case 't':
--          parse_tab_stops (optarg);
-+          parse_tab_stops (optarg, add_tab_stop);
-           break;
- 
-         case '0': case '1': case '2': case '3': case '4':
-         case '5': case '6': case '7': case '8': case '9':
-           if (optarg)
--            parse_tab_stops (optarg - 1);
-+            parse_tab_stops (optarg - 1, add_tab_stop);
-           else
-             {
-               char tab_stop[2];
-               tab_stop[0] = c;
-               tab_stop[1] = '\0';
--              parse_tab_stops (tab_stop);
-+              parse_tab_stops (tab_stop, add_tab_stop);
-             }
-           break;
- 
-diff --git a/src/local.mk b/src/local.mk
-index 536b7cc..bfede88 100644
---- a/src/local.mk
-+++ b/src/local.mk
-@@ -361,6 +361,8 @@ src_coreutils_SOURCES = src/coreutils.c
- 
- src_cp_SOURCES = src/cp.c $(copy_sources) $(selinux_sources)
- src_dir_SOURCES = src/ls.c src/ls-dir.c
-+src_expand_SOURCES = src/expand.c src/expand-core.c
-+src_unexpand_SOURCES = src/unexpand.c src/expand-core.c
- src_vdir_SOURCES = src/ls.c src/ls-vdir.c
- src_id_SOURCES = src/id.c src/group-list.c
- src_groups_SOURCES = src/groups.c src/group-list.c
-diff --git a/src/unexpand.c b/src/unexpand.c
-index e0f7c22..48fbb32 100644
---- a/src/unexpand.c
-+++ b/src/unexpand.c
-@@ -38,12 +38,16 @@
- #include <stdio.h>
- #include <getopt.h>
- #include <sys/types.h>
-+
-+#include <mbfile.h>
-+
- #include "system.h"
- #include "error.h"
- #include "fadvise.h"
--#include "quote.h"
- #include "xstrndup.h"
- 
-+#include "expand-core.h"
-+
- /* The official name of this program (e.g., no 'g' prefix).  */
- #define PROGRAM_NAME "unexpand"
- 
-@@ -62,17 +66,17 @@ static size_t max_column_width;
- /* Array of the explicit column numbers of the tab stops;
-    after 'tab_list' is exhausted, the rest of the line is printed
-    unchanged.  The first column is column 0.  */
--static uintmax_t *tab_list;
-+uintmax_t *tab_list;
- 
- /* The number of allocated entries in 'tab_list'.  */
--static size_t n_tabs_allocated;
-+size_t n_tabs_allocated;
- 
- /* The index of the first invalid element of 'tab_list',
-    where the next element can be added.  */
--static size_t first_free_tab;
-+size_t first_free_tab;
- 
- /* Null-terminated array of input filenames.  */
--static char **file_list;
-+char **file_list;
- 
- /* Default for 'file_list' if no files are given on the command line.  */
- static char *stdin_argv[] =
-@@ -81,10 +85,10 @@ static char *stdin_argv[] =
- };
- 
- /* True if we have ever read standard input.  */
--static bool have_read_stdin;
-+bool have_read_stdin;
- 
- /* The desired exit status.  */
--static int exit_status;
-+int exit_status;
- 
- /* For long options that have no equivalent short option, use a
-    non-character as a pseudo short option, starting with CHAR_MAX + 1.  */
-@@ -154,128 +158,6 @@ add_tab_stop (uintmax_t tabval)
-     }
- }
- 
--/* Add the comma or blank separated list of tab stops STOPS
--   to the list of tab stops.  */
--
--static void
--parse_tab_stops (char const *stops)
--{
--  bool have_tabval = false;
--  uintmax_t tabval IF_LINT ( = 0);
--  char const *num_start IF_LINT ( = NULL);
--  bool ok = true;
--
--  for (; *stops; stops++)
--    {
--      if (*stops == ',' || isblank (to_uchar (*stops)))
--        {
--          if (have_tabval)
--            add_tab_stop (tabval);
--          have_tabval = false;
--        }
--      else if (ISDIGIT (*stops))
--        {
--          if (!have_tabval)
--            {
--              tabval = 0;
--              have_tabval = true;
--              num_start = stops;
--            }
--
--          /* Detect overflow.  */
--          if (!DECIMAL_DIGIT_ACCUMULATE (tabval, *stops - '0', uintmax_t))
--            {
--              size_t len = strspn (num_start, "0123456789");
--              char *bad_num = xstrndup (num_start, len);
--              error (0, 0, _("tab stop is too large %s"), quote (bad_num));
--              free (bad_num);
--              ok = false;
--              stops = num_start + len - 1;
--            }
--        }
--      else
--        {
--          error (0, 0, _("tab size contains invalid character(s): %s"),
--                 quote (stops));
--          ok = false;
--          break;
--        }
--    }
--
--  if (!ok)
--    exit (EXIT_FAILURE);
--
--  if (have_tabval)
--    add_tab_stop (tabval);
--}
--
--/* Check that the list of tab stops TABS, with ENTRIES entries,
--   contains only nonzero, ascending values.  */
--
--static void
--validate_tab_stops (uintmax_t const *tabs, size_t entries)
--{
--  uintmax_t prev_tab = 0;
--  size_t i;
--
--  for (i = 0; i < entries; i++)
--    {
--      if (tabs[i] == 0)
--        error (EXIT_FAILURE, 0, _("tab size cannot be 0"));
--      if (tabs[i] <= prev_tab)
--        error (EXIT_FAILURE, 0, _("tab sizes must be ascending"));
--      prev_tab = tabs[i];
--    }
--}
--
--/* Close the old stream pointer FP if it is non-NULL,
--   and return a new one opened to read the next input file.
--   Open a filename of '-' as the standard input.
--   Return NULL if there are no more input files.  */
--
--static FILE *
--next_file (FILE *fp)
--{
--  static char *prev_file;
--  char *file;
--
--  if (fp)
--    {
--      if (ferror (fp))
--        {
--          error (0, errno, "%s", quotef (prev_file));
--          exit_status = EXIT_FAILURE;
--        }
--      if (STREQ (prev_file, "-"))
--        clearerr (fp);		/* Also clear EOF.  */
--      else if (fclose (fp) != 0)
--        {
--          error (0, errno, "%s", quotef (prev_file));
--          exit_status = EXIT_FAILURE;
--        }
--    }
--
--  while ((file = *file_list++) != NULL)
--    {
--      if (STREQ (file, "-"))
--        {
--          have_read_stdin = true;
--          fp = stdin;
--        }
--      else
--        fp = fopen (file, "r");
--      if (fp)
--        {
--          prev_file = file;
--          fadvise (fp, FADVISE_SEQUENTIAL);
--          return fp;
--        }
--      error (0, errno, "%s", quotef (file));
--      exit_status = EXIT_FAILURE;
--    }
--  return NULL;
--}
--
- /* Change blanks to tabs, writing to stdout.
-    Read each file in 'file_list', in order.  */
- 
-@@ -284,11 +166,12 @@ unexpand (void)
- {
-   /* Input stream.  */
-   FILE *fp = next_file (NULL);
-+  mb_file_t mbf;
- 
-   /* The array of pending blanks.  In non-POSIX locales, blanks can
-      include characters other than spaces, so the blanks must be
-      stored, not merely counted.  */
--  char *pending_blank;
-+  mbf_char_t *pending_blank;
- 
-   if (!fp)
-     return;
-@@ -296,12 +179,14 @@ unexpand (void)
-   /* The worst case is a non-blank character, then one blank, then a
-      tab stop, then MAX_COLUMN_WIDTH - 1 blanks, then a non-blank; so
-      allocate MAX_COLUMN_WIDTH bytes to store the blanks.  */
--  pending_blank = xmalloc (max_column_width);
-+  pending_blank = xmalloc (max_column_width * sizeof (mbf_char_t));
-+
-+  mbf_init (mbf, fp);
- 
-   while (true)
-     {
-       /* Input character, or EOF.  */
--      int c;
-+      mbf_char_t c;
- 
-       /* If true, perform translations.  */
-       bool convert = true;
-@@ -335,12 +220,19 @@ unexpand (void)
- 
-       do
-         {
--          while ((c = getc (fp)) < 0 && (fp = next_file (fp)))
--            continue;
-+          do {
-+            mbf_getc (c, mbf);
-+            if (mb_iseof (c))
-+              {
-+                mbf_init (mbf, fp = next_file (fp));
-+                continue;
-+              }
-+            }
-+          while (false);
- 
-           if (convert)
-             {
--              bool blank = !! isblank (c);
-+              bool blank = mb_isblank (c);
- 
-               if (blank)
-                 {
-@@ -372,16 +264,16 @@ unexpand (void)
-                       if (next_tab_column < column)
-                         error (EXIT_FAILURE, 0, _("input line is too long"));
- 
--                      if (c == '\t')
-+                      if (mb_iseq (c, '\t'))
-                         {
-                           column = next_tab_column;
- 
-                           if (pending)
--                            pending_blank[0] = '\t';
-+                            mb_setascii (&pending_blank[0], '\t');
-                         }
-                       else
-                         {
--                          column++;
-+                          column += mb_width (c);
- 
-                           if (! (prev_blank && column == next_tab_column))
-                             {
-@@ -389,13 +281,14 @@ unexpand (void)
-                                  will be replaced by tabs.  */
-                               if (column == next_tab_column)
-                                 one_blank_before_tab_stop = true;
--                              pending_blank[pending++] = c;
-+                              mb_copy (&pending_blank[pending++], &c);
-                               prev_blank = true;
-                               continue;
-                             }
- 
-                           /* Replace the pending blanks by a tab or two.  */
--                          pending_blank[0] = c = '\t';
-+                          mb_setascii (&c, '\t');
-+                          mb_setascii (&pending_blank[0], '\t');
-                         }
- 
-                       /* Discard pending blanks, unless it was a single
-@@ -403,7 +296,7 @@ unexpand (void)
-                       pending = one_blank_before_tab_stop;
-                     }
-                 }
--              else if (c == '\b')
-+              else if (mb_iseq (c, '\b'))
-                 {
-                   /* Go back one column, and force recalculation of the
-                      next tab stop.  */
-@@ -413,7 +306,7 @@ unexpand (void)
-                 }
-               else
-                 {
--                  column++;
-+                  column += mb_width (c);
-                   if (!column)
-                     error (EXIT_FAILURE, 0, _("input line is too long"));
-                 }
-@@ -421,9 +314,13 @@ unexpand (void)
-               if (pending)
-                 {
-                   if (pending > 1 && one_blank_before_tab_stop)
--                    pending_blank[0] = '\t';
--                  if (fwrite (pending_blank, 1, pending, stdout) != pending)
-+                    mb_setascii (&pending_blank[0], '\t');
-+
-+                  for (int n = 0; n < pending; ++n)
-+                    mb_putc (pending_blank[n], stdout);
-+                  if (ferror (stdout))
-                     error (EXIT_FAILURE, errno, _("write error"));
-+
-                   pending = 0;
-                   one_blank_before_tab_stop = false;
-                 }
-@@ -432,16 +329,16 @@ unexpand (void)
-               convert &= convert_entire_line || blank;
-             }
- 
--          if (c < 0)
-+          if (mb_iseof (c))
-             {
-               free (pending_blank);
-               return;
-             }
--
--          if (putchar (c) < 0)
-+          mb_putc (c, stdout);
-+          if (ferror (stdout))
-             error (EXIT_FAILURE, errno, _("write error"));
-         }
--      while (c != '\n');
-+      while (!mb_iseq (c, '\n'));
-     }
- }
- 
-@@ -482,7 +379,7 @@ main (int argc, char **argv)
-           break;
-         case 't':
-           convert_entire_line = true;
--          parse_tab_stops (optarg);
-+          parse_tab_stops (optarg, add_tab_stop);
-           break;
-         case CONVERT_FIRST_ONLY_OPTION:
-           convert_first_only = true;
-diff --git a/tests/expand/mb.sh b/tests/expand/mb.sh
-new file mode 100755
-index 0000000..7971e18
---- /dev/null
-+++ b/tests/expand/mb.sh
-@@ -0,0 +1,98 @@
-+#!/bin/sh
-+
-+# Copyright (C) 2012-2015 Free Software Foundation, Inc.
-+
-+# This program is free software: you can redistribute it and/or modify
-+# it under the terms of the GNU General Public License as published by
-+# the Free Software Foundation, either version 3 of the License, or
-+# (at your option) any later version.
-+
-+# This program is distributed in the hope that it will be useful,
-+# but WITHOUT ANY WARRANTY; without even the implied warranty of
-+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-+# GNU General Public License for more details.
-+
-+# You should have received a copy of the GNU General Public License
-+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-+
-+. "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
-+print_ver_ expand
-+
-+export LC_ALL=en_US.UTF-8
-+
-+#input containing multibyte characters
-+cat <<\EOF > in || framework_failure_
-+1234567812345678123456781
-+.       .       .       .
-+a	b	c	d
-+.       .       .       .
-+ä	ö	ü	ß
-+.       .       .       .
-+EOF
-+env printf '   äöü\t.    öüä.   \tä xx\n' >> in || framework_failure_
-+
-+cat <<\EOF > exp || framework_failure_
-+1234567812345678123456781
-+.       .       .       .
-+a       b       c       d
-+.       .       .       .
-+ä       ö       ü       ß
-+.       .       .       .
-+   äöü  .    öüä.       ä xx
-+EOF
-+
-+expand < in > out || fail=1
-+compare exp out > /dev/null 2>&1 || fail=1
-+
-+#test characters with display widths != 1
-+env printf '12345678
-+e\t|ascii(1)
-+\u00E9\t|composed(1)
-+e\u0301\t|decomposed(1)
-+\u3000\t|ideo-space(2)
-+\uFF0D\t|full-hypen(2)
-+' > in || framework_failure_
-+
-+env printf '12345678
-+e       |ascii(1)
-+\u00E9       |composed(1)
-+e\u0301       |decomposed(1)
-+\u3000      |ideo-space(2)
-+\uFF0D      |full-hypen(2)
-+' > exp || framework_failure_
-+
-+expand < in > out || fail=1
-+compare exp out > /dev/null 2>&1 || fail=1
-+
-+#shouldn't fail with "input line too long"
-+#when a line starts with a control character
-+env printf '\n' > in || framework_failure_
-+
-+expand < in > out || fail=1
-+compare in out > /dev/null 2>&1 || fail=1
-+
-+#non-Unicode characters interspersed between Unicode ones
-+env printf '12345678
-+\t\xFF|
-+\xFF\t|
-+\t\xFFä|
-+ä\xFF\t|
-+\tä\xFF|
-+\xFF\tä|
-+äbcdef\xFF\t|
-+' > in || framework_failure_
-+
-+env printf '12345678
-+        \xFF|
-+\xFF       |
-+        \xFFä|
-+ä\xFF      |
-+        ä\xFF|
-+\xFF       ä|
-+äbcdef\xFF |
-+' > exp || framework_failure_
-+
-+expand < in > out || fail=1
-+compare exp out > /dev/null 2>&1 || fail=1
-+
-+exit $fail
-diff --git a/tests/local.mk b/tests/local.mk
-index 7df04da..d3462be 100644
---- a/tests/local.mk
-+++ b/tests/local.mk
-@@ -536,6 +536,7 @@ all_tests =					\
-   tests/du/threshold.sh				\
-   tests/du/trailing-slash.sh			\
-   tests/du/two-args.sh				\
-+  tests/expand/mb.sh				\
-   tests/id/gnu-zero-uids.sh			\
-   tests/id/no-context.sh			\
-   tests/id/context.sh				\
-@@ -674,6 +675,7 @@ all_tests =					\
-   tests/touch/read-only.sh			\
-   tests/touch/relative.sh			\
-   tests/touch/trailing-slash.sh			\
-+  tests/unexpand/mb.sh				\
-   $(all_root_tests)
- 
- # See tests/factor/create-test.sh.
-diff --git a/tests/unexpand/mb.sh b/tests/unexpand/mb.sh
-new file mode 100755
-index 0000000..60d4c1a
---- /dev/null
-+++ b/tests/unexpand/mb.sh
-@@ -0,0 +1,97 @@
-+#!/bin/sh
-+
-+# Copyright (C) 2012-2015 Free Software Foundation, Inc.
-+
-+# This program is free software: you can redistribute it and/or modify
-+# it under the terms of the GNU General Public License as published by
-+# the Free Software Foundation, either version 3 of the License, or
-+# (at your option) any later version.
-+
-+# This program is distributed in the hope that it will be useful,
-+# but WITHOUT ANY WARRANTY; without even the implied warranty of
-+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-+# GNU General Public License for more details.
-+
-+# You should have received a copy of the GNU General Public License
-+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-+
-+. "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
-+print_ver_ unexpand
-+
-+export LC_ALL=en_US.UTF-8
-+
-+#input containing multibyte characters
-+cat > in <<\EOF
-+1234567812345678123456781
-+.       .       .       .
-+a       b       c       d
-+.       .       .       .
-+ä       ö       ü       ß
-+.       .       .       .
-+   äöü  .    öüä.       ä xx
-+EOF
-+
-+cat > exp <<\EOF
-+1234567812345678123456781
-+.	.	.	.
-+a	b	c	d
-+.	.	.	.
-+ä	ö	ü	ß
-+.	.	.	.
-+   äöü	.    öüä.	ä xx
-+EOF
-+
-+unexpand -a < in > out || fail=1
-+compare exp out > /dev/null 2>&1 || fail=1
-+
-+#test characters with a display width larger than 1
-+
-+env printf '12345678
-+e       |ascii(1)
-+\u00E9       |composed(1)
-+e\u0301       |decomposed(1)
-+\u3000      |ideo-space(2)
-+\uFF0D      |full-hypen(2)
-+' > in || framework_failure_
-+
-+env printf '12345678
-+e\t|ascii(1)
-+\u00E9\t|composed(1)
-+e\u0301\t|decomposed(1)
-+\u3000\t|ideo-space(2)
-+\uFF0D\t|full-hypen(2)
-+' > exp || framework_failure_
-+
-+unexpand -a < in > out || fail=1
-+compare exp out > /dev/null 2>&1 || fail=1
-+
-+#test input where a blank of width > 1 is not being substituted
-+in="$(LC_ALL=en_US.UTF-8 printf ' \u3000  ö       ü       ß')"
-+exp=' 　  ö	     ü	     ß'
-+
-+unexpand -a < in > out || fail=1
-+compare exp out > /dev/null 2>&1 || fail=1
-+
-+#non-Unicode characters interspersed between Unicode ones
-+env printf '12345678
-+        \xFF|
-+\xFF       |
-+        \xFFä|
-+ä\xFF      |
-+        ä\xFF|
-+\xFF       ä|
-+äbcdef\xFF |
-+' > in || framework_failure_
-+
-+env printf '12345678
-+\t\xFF|
-+\xFF\t|
-+\t\xFFä|
-+ä\xFF\t|
-+\tä\xFF|
-+\xFF\tä|
-+äbcdef\xFF\t|
-+' > exp || framework_failure_
-+
-+unexpand -a < in > out || fail=1
-+compare exp out > /dev/null 2>&1 || fail=1
-diff --git a/m4/mbfile.m4 b/m4/mbfile.m4
-new file mode 100644
-index 0000000..8589902
---- /dev/null
-+++ b/m4/mbfile.m4
-@@ -0,0 +1,14 @@
-+# mbfile.m4 serial 7
-+dnl Copyright (C) 2005, 2008-2015 Free Software Foundation, Inc.
-+dnl This file is free software; the Free Software Foundation
-+dnl gives unlimited permission to copy and/or distribute it,
-+dnl with or without modifications, as long as this notice is preserved.
-+
-+dnl autoconf tests required for use of mbfile.h
-+dnl From Bruno Haible.
-+
-+AC_DEFUN([gl_MBFILE],
-+[
-+  AC_REQUIRE([AC_TYPE_MBSTATE_T])
-+  :
-+])
 diff --git a/lib/mbfile.c b/lib/mbfile.c
 new file mode 100644
 index 0000000..b0a468e
@@ -1461,6 +329,520 @@ index 0000000..11f1b12
 +_GL_INLINE_HEADER_BEGIN
 +
 +#endif /* _MBFILE_H */
+diff --git a/m4/mbfile.m4 b/m4/mbfile.m4
+new file mode 100644
+index 0000000..8589902
+--- /dev/null
++++ b/m4/mbfile.m4
+@@ -0,0 +1,14 @@
++# mbfile.m4 serial 7
++dnl Copyright (C) 2005, 2008-2015 Free Software Foundation, Inc.
++dnl This file is free software; the Free Software Foundation
++dnl gives unlimited permission to copy and/or distribute it,
++dnl with or without modifications, as long as this notice is preserved.
++
++dnl autoconf tests required for use of mbfile.h
++dnl From Bruno Haible.
++
++AC_DEFUN([gl_MBFILE],
++[
++  AC_REQUIRE([AC_TYPE_MBSTATE_T])
++  :
++])
+diff --git a/src/expand.c b/src/expand.c
+index 9fa2e10..380e020 100644
+--- a/src/expand.c
++++ b/src/expand.c
+@@ -37,6 +37,9 @@
+ #include <stdio.h>
+ #include <getopt.h>
+ #include <sys/types.h>
++
++#include <mbfile.h>
++
+ #include "system.h"
+ #include "die.h"
+ #include "xstrndup.h"
+@@ -100,19 +103,19 @@ expand (void)
+ {
+   /* Input stream.  */
+   FILE *fp = next_file (NULL);
++  mb_file_t mbf;
++  mbf_char_t c;
+ 
+   if (!fp)
+     return;
+ 
++  mbf_init (mbf, fp);
++
+   while (true)
+     {
+-      /* Input character, or EOF.  */
+-      int c;
+-
+       /* If true, perform translations.  */
+       bool convert = true;
+ 
+-
+       /* The following variables have valid values only when CONVERT
+          is true:  */
+ 
+@@ -122,17 +125,23 @@ expand (void)
+       /* Index in TAB_LIST of next tab stop to examine.  */
+       size_t tab_index = 0;
+ 
+-
+       /* Convert a line of text.  */
+ 
+       do
+         {
+-          while ((c = getc (fp)) < 0 && (fp = next_file (fp)))
+-            continue;
++          do {
++            mbf_getc (c, mbf);
++            if (mb_iseof (c))
++              {
++                mbf_init (mbf, fp = next_file (fp));
++                continue;
++              }
++            }
++          while (false);
+ 
+           if (convert)
+             {
+-              if (c == '\t')
++              if (mb_iseq (c, '\t'))
+                 {
+                   /* Column the next input tab stop is on.  */
+                   uintmax_t next_tab_column;
+@@ -151,32 +160,34 @@ expand (void)
+                     if (putchar (' ') < 0)
+                       die (EXIT_FAILURE, errno, _("write error"));
+ 
+-                  c = ' ';
++                  mb_setascii (&c, ' ');
+                 }
+-              else if (c == '\b')
++              else if (mb_iseq (c, '\b'))
+                 {
+                   /* Go back one column, and force recalculation of the
+                      next tab stop.  */
+                   column -= !!column;
+                   tab_index -= !!tab_index;
+                 }
+-              else
++              /* A leading control character could make us trip over.  */
++              else if (!mb_iscntrl (c))
+                 {
+-                  column++;
++                  column += mb_width (c);
+                   if (!column)
+                     die (EXIT_FAILURE, 0, _("input line is too long"));
+                 }
+ 
+-              convert &= convert_entire_line || !! isblank (c);
++              convert &= convert_entire_line || mb_isblank (c);
+             }
+ 
+-          if (c < 0)
++          if (mb_iseof (c))
+             return;
+ 
+-          if (putchar (c) < 0)
++          mb_putc (c, stdout);
++          if (ferror (stdout))
+             die (EXIT_FAILURE, errno, _("write error"));
+         }
+-      while (c != '\n');
++      while (!mb_iseq (c, '\n'));
+     }
+ }
+ 
+diff --git a/src/unexpand.c b/src/unexpand.c
+index 7801274..569a7ee 100644
+--- a/src/unexpand.c
++++ b/src/unexpand.c
+@@ -38,6 +38,9 @@
+ #include <stdio.h>
+ #include <getopt.h>
+ #include <sys/types.h>
++
++#include <mbfile.h>
++
+ #include "system.h"
+ #include "die.h"
+ #include "xstrndup.h"
+@@ -107,11 +110,12 @@ unexpand (void)
+ {
+   /* Input stream.  */
+   FILE *fp = next_file (NULL);
++  mb_file_t mbf;
+ 
+   /* The array of pending blanks.  In non-POSIX locales, blanks can
+      include characters other than spaces, so the blanks must be
+      stored, not merely counted.  */
+-  char *pending_blank;
++  mbf_char_t *pending_blank;
+ 
+   if (!fp)
+     return;
+@@ -119,12 +123,14 @@ unexpand (void)
+   /* The worst case is a non-blank character, then one blank, then a
+      tab stop, then MAX_COLUMN_WIDTH - 1 blanks, then a non-blank; so
+      allocate MAX_COLUMN_WIDTH bytes to store the blanks.  */
+-  pending_blank = xmalloc (max_column_width);
++  pending_blank = xmalloc (max_column_width * sizeof (mbf_char_t));
++
++  mbf_init (mbf, fp);
+ 
+   while (true)
+     {
+       /* Input character, or EOF.  */
+-      int c;
++      mbf_char_t c;
+ 
+       /* If true, perform translations.  */
+       bool convert = true;
+@@ -158,12 +164,19 @@ unexpand (void)
+ 
+       do
+         {
+-          while ((c = getc (fp)) < 0 && (fp = next_file (fp)))
+-            continue;
++          do {
++            mbf_getc (c, mbf);
++            if (mb_iseof (c))
++              {
++                mbf_init (mbf, fp = next_file (fp));
++                continue;
++              }
++            }
++          while (false);
+ 
+           if (convert)
+             {
+-              bool blank = !! isblank (c);
++              bool blank = mb_isblank (c);
+ 
+               if (blank)
+                 {
+@@ -180,16 +193,16 @@ unexpand (void)
+                       if (next_tab_column < column)
+                         die (EXIT_FAILURE, 0, _("input line is too long"));
+ 
+-                      if (c == '\t')
++                      if (mb_iseq (c, '\t'))
+                         {
+                           column = next_tab_column;
+ 
+                           if (pending)
+-                            pending_blank[0] = '\t';
++                            mb_setascii (&pending_blank[0], '\t');
+                         }
+                       else
+                         {
+-                          column++;
++                          column += mb_width (c);
+ 
+                           if (! (prev_blank && column == next_tab_column))
+                             {
+@@ -197,13 +210,14 @@ unexpand (void)
+                                  will be replaced by tabs.  */
+                               if (column == next_tab_column)
+                                 one_blank_before_tab_stop = true;
+-                              pending_blank[pending++] = c;
++                              mb_copy (&pending_blank[pending++], &c);
+                               prev_blank = true;
+                               continue;
+                             }
+ 
+                           /* Replace the pending blanks by a tab or two.  */
+-                          pending_blank[0] = c = '\t';
++                          mb_setascii (&c, '\t');
++                          mb_setascii (&pending_blank[0], '\t');
+                         }
+ 
+                       /* Discard pending blanks, unless it was a single
+@@ -211,7 +225,7 @@ unexpand (void)
+                       pending = one_blank_before_tab_stop;
+                     }
+                 }
+-              else if (c == '\b')
++              else if (mb_iseq (c, '\b'))
+                 {
+                   /* Go back one column, and force recalculation of the
+                      next tab stop.  */
+@@ -221,7 +235,7 @@ unexpand (void)
+                 }
+               else
+                 {
+-                  column++;
++                  column += mb_width (c);
+                   if (!column)
+                     die (EXIT_FAILURE, 0, _("input line is too long"));
+                 }
+@@ -229,8 +243,11 @@ unexpand (void)
+               if (pending)
+                 {
+                   if (pending > 1 && one_blank_before_tab_stop)
+-                    pending_blank[0] = '\t';
+-                  if (fwrite (pending_blank, 1, pending, stdout) != pending)
++                    mb_setascii (&pending_blank[0], '\t');
++
++                  for (int n = 0; n < pending; ++n)
++                    mb_putc (pending_blank[n], stdout);
++                  if (ferror (stdout))
+                     die (EXIT_FAILURE, errno, _("write error"));
+                   pending = 0;
+                   one_blank_before_tab_stop = false;
+@@ -240,16 +257,17 @@ unexpand (void)
+               convert &= convert_entire_line || blank;
+             }
+ 
+-          if (c < 0)
++          if (mb_iseof (c))
+             {
+               free (pending_blank);
+               return;
+             }
+ 
+-          if (putchar (c) < 0)
++          mb_putc (c, stdout);
++          if (ferror (stdout))
+             die (EXIT_FAILURE, errno, _("write error"));
+         }
+-      while (c != '\n');
++      while (!mb_iseq (c, '\n'));
+     }
+ }
+ 
+diff --git a/tests/expand/mb.sh b/tests/expand/mb.sh
+new file mode 100755
+index 0000000..7971e18
+--- /dev/null
++++ b/tests/expand/mb.sh
+@@ -0,0 +1,98 @@
++#!/bin/sh
++
++# Copyright (C) 2012-2015 Free Software Foundation, Inc.
++
++# This program is free software: you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation, either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++. "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
++print_ver_ expand
++
++export LC_ALL=en_US.UTF-8
++
++#input containing multibyte characters
++cat <<\EOF > in || framework_failure_
++1234567812345678123456781
++.       .       .       .
++a	b	c	d
++.       .       .       .
++ä	ö	ü	ß
++.       .       .       .
++EOF
++env printf '   äöü\t.    öüä.   \tä xx\n' >> in || framework_failure_
++
++cat <<\EOF > exp || framework_failure_
++1234567812345678123456781
++.       .       .       .
++a       b       c       d
++.       .       .       .
++ä       ö       ü       ß
++.       .       .       .
++   äöü  .    öüä.       ä xx
++EOF
++
++expand < in > out || fail=1
++compare exp out > /dev/null 2>&1 || fail=1
++
++#test characters with display widths != 1
++env printf '12345678
++e\t|ascii(1)
++\u00E9\t|composed(1)
++e\u0301\t|decomposed(1)
++\u3000\t|ideo-space(2)
++\uFF0D\t|full-hypen(2)
++' > in || framework_failure_
++
++env printf '12345678
++e       |ascii(1)
++\u00E9       |composed(1)
++e\u0301       |decomposed(1)
++\u3000      |ideo-space(2)
++\uFF0D      |full-hypen(2)
++' > exp || framework_failure_
++
++expand < in > out || fail=1
++compare exp out > /dev/null 2>&1 || fail=1
++
++#shouldn't fail with "input line too long"
++#when a line starts with a control character
++env printf '\n' > in || framework_failure_
++
++expand < in > out || fail=1
++compare in out > /dev/null 2>&1 || fail=1
++
++#non-Unicode characters interspersed between Unicode ones
++env printf '12345678
++\t\xFF|
++\xFF\t|
++\t\xFFä|
++ä\xFF\t|
++\tä\xFF|
++\xFF\tä|
++äbcdef\xFF\t|
++' > in || framework_failure_
++
++env printf '12345678
++        \xFF|
++\xFF       |
++        \xFFä|
++ä\xFF      |
++        ä\xFF|
++\xFF       ä|
++äbcdef\xFF |
++' > exp || framework_failure_
++
++expand < in > out || fail=1
++compare exp out > /dev/null 2>&1 || fail=1
++
++exit $fail
+diff --git a/tests/local.mk b/tests/local.mk
+index 192f776..8053397 100644
+--- a/tests/local.mk
++++ b/tests/local.mk
+@@ -544,6 +544,7 @@ all_tests =					\
+   tests/du/threshold.sh				\
+   tests/du/trailing-slash.sh			\
+   tests/du/two-args.sh				\
++  tests/expand/mb.sh				\
+   tests/id/gnu-zero-uids.sh			\
+   tests/id/no-context.sh			\
+   tests/id/context.sh				\
+@@ -684,6 +685,7 @@ all_tests =					\
+   tests/touch/read-only.sh			\
+   tests/touch/relative.sh			\
+   tests/touch/trailing-slash.sh			\
++  tests/unexpand/mb.sh				\
+   $(all_root_tests)
+ 
+ # See tests/factor/create-test.sh.
+diff --git a/tests/unexpand/mb.sh b/tests/unexpand/mb.sh
+new file mode 100755
+index 0000000..60d4c1a
+--- /dev/null
++++ b/tests/unexpand/mb.sh
+@@ -0,0 +1,97 @@
++#!/bin/sh
++
++# Copyright (C) 2012-2015 Free Software Foundation, Inc.
++
++# This program is free software: you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation, either version 3 of the License, or
++# (at your option) any later version.
++
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++. "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
++print_ver_ unexpand
++
++export LC_ALL=en_US.UTF-8
++
++#input containing multibyte characters
++cat > in <<\EOF
++1234567812345678123456781
++.       .       .       .
++a       b       c       d
++.       .       .       .
++ä       ö       ü       ß
++.       .       .       .
++   äöü  .    öüä.       ä xx
++EOF
++
++cat > exp <<\EOF
++1234567812345678123456781
++.	.	.	.
++a	b	c	d
++.	.	.	.
++ä	ö	ü	ß
++.	.	.	.
++   äöü	.    öüä.	ä xx
++EOF
++
++unexpand -a < in > out || fail=1
++compare exp out > /dev/null 2>&1 || fail=1
++
++#test characters with a display width larger than 1
++
++env printf '12345678
++e       |ascii(1)
++\u00E9       |composed(1)
++e\u0301       |decomposed(1)
++\u3000      |ideo-space(2)
++\uFF0D      |full-hypen(2)
++' > in || framework_failure_
++
++env printf '12345678
++e\t|ascii(1)
++\u00E9\t|composed(1)
++e\u0301\t|decomposed(1)
++\u3000\t|ideo-space(2)
++\uFF0D\t|full-hypen(2)
++' > exp || framework_failure_
++
++unexpand -a < in > out || fail=1
++compare exp out > /dev/null 2>&1 || fail=1
++
++#test input where a blank of width > 1 is not being substituted
++in="$(LC_ALL=en_US.UTF-8 printf ' \u3000  ö       ü       ß')"
++exp=' 　  ö	     ü	     ß'
++
++unexpand -a < in > out || fail=1
++compare exp out > /dev/null 2>&1 || fail=1
++
++#non-Unicode characters interspersed between Unicode ones
++env printf '12345678
++        \xFF|
++\xFF       |
++        \xFFä|
++ä\xFF      |
++        ä\xFF|
++\xFF       ä|
++äbcdef\xFF |
++' > in || framework_failure_
++
++env printf '12345678
++\t\xFF|
++\xFF\t|
++\t\xFFä|
++ä\xFF\t|
++\tä\xFF|
++\xFF\tä|
++äbcdef\xFF\t|
++' > exp || framework_failure_
++
++unexpand -a < in > out || fail=1
++compare exp out > /dev/null 2>&1 || fail=1
 -- 
-2.5.5
+2.7.4
 

@@ -1,0 +1,380 @@
+# HG changeset patch
+# User a4z <harald.achitz@gmail.com>
+# Date 1482002311 -3600
+# Node ID cdbbd177a6b80f8c1fad377ecd1f808a6ff4249c
+# Parent  dc45fedf048891192d866d16644fb7048470bb00
+exit bdtree on circular dependency, fixes #20
+
+diff --git a/CMake/setup_compiler.cmake b/CMake/setup_compiler.cmake
+--- a/CMake/setup_compiler.cmake
++++ b/CMake/setup_compiler.cmake
+@@ -2,6 +2,16 @@
+ 
+ if (NOT have_myCompilerSetup)
+ 
++ 
++    include(CheckCXXCompilerFlag)
++    CHECK_CXX_COMPILER_FLAG("-std=c++14" COMPILER_SUPPORTS_CXX14)
++    if(COMPILER_SUPPORTS_CXX14)
++    
++    else()
++            message(STATUS "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
++    endif()
++
++
+     if ( CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX )
+     
+         message(STATUS "set up defaults for gcc")
+@@ -15,7 +25,7 @@
+         FORCE )
+     
+         if (NOT CMAKE_CXX_FLAGS)
+-            SET (CMAKE_CXX_FLAGS "-Wall -Wextra -pedantic -std=c++1y -pipe -pthread")
++            SET (CMAKE_CXX_FLAGS "-Wall -Wextra -pedantic -std=c++14 -pipe -pthread")
+         endif(NOT CMAKE_CXX_FLAGS)
+     
+        SET (CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} CACHE STRING 
+@@ -48,7 +58,7 @@
+             FORCE )
+         
+             if (NOT CMAKE_CXX_FLAGS)
+-                SET (CMAKE_CXX_FLAGS "-std=c++0x -pipe -pthread ${MYCLANGWARNINGS}")
++                SET (CMAKE_CXX_FLAGS "-std=c++14 -pipe -pthread ${MYCLANGWARNINGS}")
+             endif(NOT CMAKE_CXX_FLAGS)
+         
+            SET (CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} CACHE STRING 
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -5,7 +5,7 @@
+ 
+ set(sbbdep_MAJOR_VERSION 0)
+ set(sbbdep_MINOR_VERSION 2)
+-set(sbbdep_PATCH_VERSION 6)
++set(sbbdep_PATCH_VERSION 7)
+ 
+ set(sbbdep_VERSION ${sbbdep_MAJOR_VERSION}.${sbbdep_MINOR_VERSION}.${sbbdep_PATCH_VERSION})
+ 
+@@ -18,6 +18,11 @@
+   "${sbbdep_SOURCE_DIR}/CMake"
+ )
+ 
++
++
++#optional enable personal test/trial dir
++include(CMakeLocalOpts.cmake OPTIONAL)
++
+ include( macros )
+ include( setup_compiler )
+ include( setup_buildtype )
+@@ -207,8 +212,6 @@
+ 
+ 
+ 
+-#optional enable personal test/trial dir
+-include(CMakeLocalOpts.cmake OPTIONAL)
+ if(EXISTS trials)
+     add_subdirectory(trials)  
+ endif(EXISTS trials)
+diff --git a/src/cli/report_bdtree.cpp b/src/cli/report_bdtree.cpp
+--- a/src/cli/report_bdtree.cpp
++++ b/src/cli/report_bdtree.cpp
+@@ -243,7 +243,8 @@
+           const ElfFile& elf,
+           int level,
+           Cache& cache,
+-          bool shortNames)
++          bool shortNames,
++		  bool cycle = false)
+ {
+ 
+   SBBASSERT (elf.isElf ()) ;
+@@ -253,11 +254,11 @@
+ 
+   for (int i = 0; i < level -1; ++i)
+     {
+-      indentDep.append ("|   ");
++      indentDep.append ("|    ");
+     }
+   std::string indentDepPkgs = indentDep ;
+-  indentDep.append ("|---" );
+-  indentDepPkgs.append ("|   " );
++  indentDep.append ("|----" );
++  indentDepPkgs.append ("|    " );
+ 
+   using namespace utils ;
+ 
+@@ -289,6 +290,8 @@
+   if (shortNames)
+     {
+       LogMsg () << indentDep << soname << " (" << pkgnames << ")" ;
++      if (cycle)
++    	  LogMsg ()<< indentDepPkgs<< "" << "| !! cycle detected !!";
+     }
+   else
+     {
+@@ -306,6 +309,8 @@
+          }
+       pkgnames = joinToString (pkgs, ", ") ;
+       LogMsg ()<< indentDepPkgs<< "" << "| (" << pkgnames << ")";
++      if (cycle)
++    	  LogMsg ()<< indentDepPkgs<< "" << "| !! cycle detected !!";
+     }
+ 
+ 
+@@ -313,11 +318,16 @@
+ //------------------------------------------------------------------------------
+ 
+ void
+-printElfs(const ElfFile& elf, int level, Cache& cache, bool shortNames)
++printElfs(const ElfFile& elf,
++		int level,
++		Cache& cache,
++		bool shortNames,
++		std::set<std::string> parents = {})
+ {
+   SBBASSERT (elf.isElf()) ;
+ 
+-
++  auto nextparent = parents ;
++  nextparent.insert(elf.soName()) ;
+ 
+   for (const auto& soname : elf.getNeeded ())
+     {
+@@ -341,10 +351,14 @@
+         }
+ 
+ 
+-      printElf(soname, soelf, level , cache, shortNames) ;
++      bool cycle = parents.find(soname) != parents.end() ;
++      printElf(soname, soelf, level , cache, shortNames, cycle) ;
++
++      if (cycle)
++    	continue ;
+ 
+       printElfs (ElfFile (soelf.getName ().getRealPath ()),
+-                 level + 1, cache, shortNames) ;
++                 level + 1, cache, shortNames, nextparent) ;
+ 
+     }
+ 
+diff --git a/tests/a4testing.cpp b/tests/a4testing.cpp
+--- a/tests/a4testing.cpp
++++ b/tests/a4testing.cpp
+@@ -1,5 +1,5 @@
+ /*
+---------------Copyright (c) 2009-2015 H a r a l d  A c h i t z---------------
++--------------Copyright (c) 2009-2016 H a r a l d  A c h i t z---------------
+ -----------< h a r a l d dot a c h i t z at g m a i l dot c o m >------------
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+@@ -38,12 +38,15 @@
+ 
+ #endif
+ 
++#include <boost/version.hpp>
++
+ 
+ #include "a4testing.hpp"
+ 
+ #include <set>
+ #include <map>
+ #include <tuple>
++#include <iostream>
+ #include <boost/algorithm/string.hpp>
+ #include <boost/algorithm/string/split.hpp>
+ 
+@@ -54,7 +57,7 @@
+ // off_suites are for the --off and the default disabled suites
+ // all_suites is the list of all suites
+ // xargs is for passing extra arguments to a list that can be accessed from tests.
+-//-----------------------------------------------------------------------------------------
++
+ 
+ 
+ namespace a4test {
+@@ -103,7 +106,6 @@
+ 
+ // testing implementation start
+ 
+-//--------------------------------------------------------------------------------------------------
+ 
+ SuiteBase::SuiteBase ( const std::string name, bool onoff )
+   : _suite ( nullptr )
+@@ -111,31 +113,42 @@
+ {
+   if( onoff == false )
+      off_suites().insert(name) ;
+-}//-------------------------------------------------------------------------------------------------
++}
+ 
+ auto
+ SuiteBase::createSuite() -> boostTestSuite*
+ {  
+   if ( _suite==nullptr )
+     {
+-      _suite = new boost::unit_test::test_suite ( _name );
++#if BOOST_VERSION >= 105900
++       _suite = new boost::unit_test::test_suite(_name, __FILE__ ,__LINE__);
++#else
++       _suite = new boost::unit_test::test_suite(_name);
++#endif
+ 
+-      AddCaseCall acc = [=]
+-          (const std::string name, TestFunction tc, unsigned expected_failures, unsigned timeout){
+-          _suite->add( boost::unit_test::make_test_case( tc, name ), expected_failures, timeout );      
+-      };
++       AddCaseCall acc = [=](const std::string name, 
++                            TestFunction tc, 
++                            unsigned expected_failures, 
++                            unsigned timeout){
++#if BOOST_VERSION >= 105900
++          (void)timeout;      
++          _suite->add(boost::unit_test::make_test_case(tc, name, __FILE__, __LINE__) , expected_failures, 0 );
++#else
++          _suite->add(boost::unit_test::make_test_case(tc, name), expected_failures, timeout);
++#endif
++       };
+       
+-      AddSubSuiteCall ass = [=]( boostTestSuite* bts, unsigned timeout)
+-      {
+-        _suite->add(bts, timeout);
+-      };
+-      
+-      assambleSuite( acc, ass ); // will also add child suit if there are some so change name ? 
++       AddSubSuiteCall ass = [=]( boostTestSuite* bts, unsigned timeout)
++       {
++         _suite->add(bts, timeout);
++       };
++       
++       assambleSuite( acc, ass ); // will also add child suit if there are some so change name ? 
+       
+     }
+ 
+   return _suite;
+-}//-------------------------------------------------------------------------------------------------
++}
+ 
+ 
+ 
+@@ -148,7 +161,7 @@
+ void RegisterSuite::add_global ( std::shared_ptr<SuiteBase> s )
+ {
+    all_suites().push_back(s);
+-}//-------------------------------------------------------------------------------------------------
++}
+ 
+ 
+ } // ns a4test
+@@ -240,14 +253,14 @@
+       if( on_suites().empty() )
+         {
+           if( off_suites().find( s->getName() ) == std::end( off_suites() ) ){
+-            std::cerr << "create suite " <<  s->getName() << "\n";
++           // std::cerr << "create suite " <<  s->getName() << "\n";
+             master.add( s->createSuite() );            
+           }
+         }
+       else
+         {
+           if( on_suites().find( s->getName() ) != std::end( on_suites() ) ) {
+-            std::cerr << "create suite " <<  s->getName() << "\n";
++           // std::cerr << "create suite " <<  s->getName() << "\n";
+             master.add( s->createSuite() );
+           }
+         }
+@@ -256,7 +269,11 @@
+   
+   for(auto& ft : free_tests())
+   {
+-    master.add(boost::unit_test::make_test_case( ft.second, ft.first ));
++#if BOOST_VERSION >= 105900
++    master.add(boost::unit_test::make_test_case( ft.second, ft.first , __FILE__, __LINE__));
++#else
++    master.add(boost::unit_test::make_test_case( ft.second, ft.first));
++#endif
+   }
+ }
+ 
+@@ -272,6 +289,9 @@
+   bool show_help_long =  false ;
+   bool show_help_short =  false ;
+ 
++  std::vector<char*> butargs ;
++  butargs.push_back(argv[0]);
++
+   for( int i = 1; i < argc; ++i ) // move this to a setup function thtat includes all required stuff...
+     {
+       bool haveopt ;
+@@ -334,6 +354,7 @@
+ 
+           continue ; 
+         }
++      butargs.push_back (argv[i]) ;
+ 
+     }
+ 
+@@ -372,8 +393,10 @@
+   
+   //for( auto& s : xArgs() ) std::cerr << "xa " << s.first << " = " << s.second << "\n" ;
+ 
+-  int result = ::boost::unit_test::unit_test_main( &init_unit_test, argc, argv );;
+-
++  //int result = ::boost::unit_test::unit_test_main( &init_unit_test, argc, argv);
++  
++  int  result = ::boost::unit_test::unit_test_main( &init_unit_test, butargs.size (), &butargs[0]);
++  
+   if( show_help_long ) //append my help to boost help ..
+     printHelp();
+ 
+diff --git a/tests/a4testing.hpp b/tests/a4testing.hpp
+--- a/tests/a4testing.hpp
++++ b/tests/a4testing.hpp
+@@ -1,5 +1,5 @@
+ /*
+---------------Copyright (c) 2009-2015 H a r a l d  A c h i t z---------------
++--------------Copyright (c) 2009-2016 H a r a l d  A c h i t z---------------
+ -----------< h a r a l d dot a c h i t z at g m a i l dot c o m >------------
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+@@ -41,8 +41,11 @@
+ namespace a4test {
+ 
+   static constexpr bool defaultOn{true} ;
+-  static constexpr bool defaultOff{false} ;  
+-  
++  static constexpr bool defaultOff{false} ;
++//	 static  const bool defaultOn{ true };
++//	 static  const bool defaultOff{false} ;
++
++
+   // helper, base to forwared boost stuff from here to the translation unit
+ class SuiteBase
+ {
+@@ -161,7 +164,7 @@
+   using internals = SuiteInternals<SuiteFixture>;
+ 
+   template<typename T> friend
+-  Suite<T> suite(const std::string, bool onoff );
++  Suite<T> suite(const std::string&, bool onoff );
+ 
+   Suite(const std::string name, bool onoff = defaultOn)
+   : SuiteInternals<SuiteFixture>(name, onoff)
+@@ -205,11 +208,16 @@
+ //-------------------------------------------------------------------------------------------------- 
+ 
+ template<typename SuiteFixture = SuiteBase::NoFixtureTag>
+-Suite<SuiteFixture> suite(const std::string name, bool onoff = defaultOn)
++Suite<SuiteFixture> suite(const std::string& name, bool onoff)
+ {
+   return Suite<SuiteFixture>(name, onoff); 
+ }
+  
++template<typename SuiteFixture = SuiteBase::NoFixtureTag>
++Suite<SuiteFixture> suite(const std::string& name)
++{
++  return suite<SuiteFixture>(name, true);
++}
+ 
+ 
+ //--------------------------------------------------------------------------------------------------

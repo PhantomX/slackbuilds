@@ -19,11 +19,10 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-2.05a-interpreter.patc
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-debuginfo.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-manso.patch.gz | patch -p1 -E --backup --verbose
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-pgrp_sync.patch.gz | patch -p1 -E --backup --verbose
-patch -p1 -E --backup -z .readline_oom --verbose -i ${SB_PATCHDIR}/bash-2.05b-readline-oom.patch
 zcat ${SB_PATCHDIR}/${NAME}-2.05b-xcc.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-3.2-audit.patch
 zcat ${SB_PATCHDIR}/${NAME}-3.2-ssh_source_bash.patch.gz | patch -p1 -E --backup --verbose
-zcat ${SB_PATCHDIR}/${NAME}-infotags.patch.gz | patch -p1 -E --backup --verbose
+patch -p1 -E --backup -z .infotags --verbose -i ${SB_PATCHDIR}/bash-infotags.patch
 patch -p1 -E --backup -z .requires --verbose -i ${SB_PATCHDIR}/bash-requires.patch
 zcat ${SB_PATCHDIR}/${NAME}-setlocale.patch.gz | patch -p1 -E --backup --verbose
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}-tty-tests.patch
@@ -47,15 +46,9 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-manpage_trap.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.2-size_type.patch
 # rhbz#1112710 - mention ulimit -c and -f POSIX block size
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-man-ulimit.patch
-# A series of patches emitted by upstream since 4.3-18
-patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-pathexp-globignore-delim.patch
 # rhbz#1102815 - fix double echoes in vi visual mode
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-noecho.patch
-# 1182278 - bash crashes on `select' if REPLY is readonly
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-select-readonly.patch
 #1241533,1224855 - bash leaks memory when LC_ALL set
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-memleak-lc_all.patch
-#1245233 - old memleak reappeared, taken from upstream
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/bash-4.3-old-memleak.patch
 
 set +e +o pipefail

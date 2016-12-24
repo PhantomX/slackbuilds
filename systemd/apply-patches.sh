@@ -38,15 +38,25 @@ ApplyPatch 60-cdrom_id.rules.diff -p0
     ApplyPatch ${commit}.patch
   done
 )
+ApplyPatch 3d4cf7de48a74726694abbaa09f9804b845ff3ba.patch
+
 
 ### Fedora
 
 ### Arch
+# https://github.com/systemd/systemd/issues/4789
+ApplyPatch 0001-nspawn-don-t-hide-bind-tmp-mounts.patch
+# these patches aren't upstream, but they make v232 more useable.
+# https://github.com/systemd/systemd/issues/4575
+ApplyPatch 0001-disable-RestrictAddressFamilies-on-i686.patch
+# https://github.com/systemd/systemd/issues/4595
+# https://github.com/systemd/systemd/issues/3826
+ApplyPatch 0001-Revert-nspawn-try-to-bind-mount-resolved-s-resolv.co.patch
 
 ### Debian
 ApplyPatch Don-t-enable-audit-by-default.patch
 
 # Set to YES if autogen is needed
-SB_AUTOGEN=NO
+SB_AUTOGEN=YES
 
 set +e +o pipefail

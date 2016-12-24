@@ -74,6 +74,8 @@ SB_PAM=${SB_PAM:-YES}
 SB_QR=${SB_QR:-NO}
 
 grep --quiet '^systemd-journal:' /etc/group && SB_HGROUP=1
+grep --quiet '^systemd-journal-upload:' /etc/group && SB_UHGROUP=1
+grep --quiet '^systemd-journal-upload:' /etc/group && SB_UHUSER=1
 
 if [ -d /etc/pki/tls ] ;then
   SB_CABDIR=/etc/pki/tls
@@ -95,6 +97,7 @@ DL_OPTS=${DL_OPTS:-"--timeout=${DL_TO}"}
 DL_URL="https://github.com/${NAME}/${NAME}/archive/${SRCARCHIVE}"
 PDL_URL="https://github.com/${NAME}/${NAME}/commit"
 
+SRCARCHIVE=${SRCDIR}.tar.gz
 # if source is not present, download in source rootdir if possible
 test -r ${CWD}/${SRCARCHIVE} || ${DL_PROG} ${DL_OPTS} ${DL_URL} -O ${CWD}/${SRCARCHIVE} || exit 1
 
@@ -112,7 +115,7 @@ if ! test -s ${CWD}/${SRCARCHIVE} ;then
   echo "Delete ${CWD}/${SRCARCHIVE}, check VERSION and try again."
   exit 1
 fi
-exit 20
+
 [ "$1" = "--dlsrc" ] && exit 0
 
 if [ "${SB_NATIVE}" = "YES" ] ;then
@@ -188,6 +191,8 @@ mkdir -p ${PKG}/run
 
 find . -name "*.[1-8]" -exec touch '{}' ';'
 
+cp -pf ${CWD}/systemd-user.m4 src/login/
+
 if [ ! -r configure ] || [ "${SB_AUTOGEN}" = "YES" ] ;then
   sh autogen.sh || exit $?
 fi
@@ -242,9 +247,6 @@ make install DESTDIR=${PKG} \
 
 rm -rf ${PKG}/etc/init.d
 rm -rf ${PKG}/etc/rc.d/init.d
-
-mv ${PKG}/usr/lib${LIBDIRSUFFIX}/libnss_{myhostname,resolve}.so.* \
-  ${PKG}/lib${LIBDIRSUFFIX}/ || exit 1
 
 rmdir -p ${PKG}/lib${LIBDIRSUFFIX}/security
 rmdir -p ${PKG}/usr/lib${LIBDIRSUFFIX}/security
@@ -373,7 +375,7 @@ touch ${PKG}/etc/udev/hwdb.bin.new
 touch ${PKG}/var/lib/systemd/random-seed.new
 touch ${PKG}/var/lib/systemd/clock.new
 
-for file in bootchart journald journal-remote journal-upload logind resolved system timesyncd user ;do
+for file in journald journal-remote journal-upload logind resolved system timesyncd user ;do
   mv ${PKG}/etc/systemd/${file}.conf ${PKG}/etc/systemd/${file}.conf.new || exit 1
 done
 
@@ -382,6 +384,13 @@ rm -f ${PKG}/usr/lib/sysctl.d/50-coredump.conf
 mkdir -p ${PKG}/usr/lib/firewalld/services
 install -pm0644 ${CWD}/config/firewalld/*.xml \
  ${PKG}/usr/lib/firewalld/services/ || exit 1
+
+mkdir -p ${PKG}/lib/systemd/system/systemd-udev-trigger.service.d
+cat > ${PKG}/lib/systemd/system/systemd-udev-trigger.service.d/systemd-udev-trigger-no-reload.conf <<'EOF'
+[Unit]
+# https://bugzilla.redhat.com/show_bug.cgi?id=1378974#c17
+RefuseManualStop=true
+EOF
 
 ################################ End of systemd ################################
 
@@ -804,25 +813,42 @@ ${CHROOT} /lib/systemd/systemd-random-seed save >/dev/null 2>&1 || :
 ${CHROOT} /bin/systemctl daemon-reexec > /dev/null 2>&1 || :
 sleep 1
 
-${CHROOT} /bin/systemctl stop systemd-udevd-control.socket systemd-udevd-kernel.socket systemd-udevd.service >/dev/null 2>&1 || :
 ${CHROOT} /bin/systemctl --system daemon-reload  >/dev/null 2>&1 || :
-${CHROOT} /bin/systemctl start systemd-udevd.service >/dev/null 2>&1 || :
 ${CHROOT} /sbin/udevadm hwdb --update >/dev/null 2>&1 || :
 ${CHROOT} /bin/journalctl --update-catalog >/dev/null 2>&1 || :
 ${CHROOT} /bin/systemd-tmpfiles --create >/dev/null 2>&1 || :
 
-if [ -f etc/nsswitch.conf ] ; then
+# sed-fu to add myhostanme to hosts line
+if [ -f /etc/nsswitch.conf ] ; then
+  # sed-fu to add myhostanme to hosts line
+  ${CHROOT} grep -v -E -q '^hosts:.* myhostname' /etc/nsswitch.conf &&
   ${CHROOT} sed -i.bak -e '
     /^hosts:/ !b
     /\<myhostname\>/ b
     s/[[:blank:]]*$/ myhostname/
-    ' /etc/nsswitch.conf >/dev/null 2>&1 || :
+    ' /etc/nsswitch.conf &>/dev/null
 
+  # remove mymachines from passwd and group lines of /etc/nsswitch.conf
+  # https://bugzilla.redhat.com/show_bug.cgi?id=1284325
+  # https://meetbot.fedoraproject.org/fedora-meeting/2015-11-25/fesco.2015-11-25-18.00.html
+  # To avoid the removal, e.g. add a space at the end of the line.
+  ${CHROOT} grep -E -q '^(passwd|group):.* mymachines$' /etc/nsswitch.conf &&
+  ${CHROOT} sed -i.bak -r -e '
+    s/^(passwd:.*) mymachines$/\1/;
+    s/^(group:.*) mymachines$/\1/;
+    ' /etc/nsswitch.conf &>/dev/null
+  
+  # Add [!UNAVAIL=return] after resolve
+  ${CHROOT} grep -E -q '^hosts:.*resolve[[:space:]]*($|[[:alpha:]])' /etc/nsswitch.conf &&
   ${CHROOT} sed -i.bak -e '
-    /^hosts:/ !b
-    /\<mymachines\>/ b
-    s/[[:blank:]]*$/ mymachines/
-    ' /etc/nsswitch.conf >/dev/null 2>&1 || :
+    /^hosts:/ { s/resolve/& [!UNAVAIL=return]/}
+    ' /etc/nsswitch.conf &>/dev/null
+  
+  # Add nss-systemd to passwd and group
+  ${CHROOT} grep -E -q '^(passwd|group):.* systemd' /etc/nsswitch.conf ||
+  ${CHROOT} sed -i.bak -r -e '
+    s/^(passwd|group):(.*)/\1: \2 systemd/
+    ' /etc/nsswitch.conf &>/dev/null
 fi
 
 # Make sure new journal files will be owned by the "systemd-journal" group
@@ -830,6 +856,7 @@ ${CHROOT} /bin/chgrp systemd-journal /run/log/journal/ >/dev/null 2>&1 || :
 ${CHROOT} /bin/chgrp systemd-journal /run/log/journal/$(cat /etc/machine-id) >/dev/null 2>&1 || :
 ${CHROOT} /bin/chgrp systemd-journal /var/log/journal/ >/dev/null 2>&1 || :
 ${CHROOT} /bin/chgrp systemd-journal /var/log/journal/$(cat /etc/machine-id) >/dev/null 2>&1 || :
+${CHROOT} /bin/chown systemd-journal-upload.systemd-journal-upload /var/lib/systemd/journal-upload >/dev/null 2>&1 || :
 ${CHROOT} /bin/chmod 2755 /var/log/journal/ >/dev/null 2>&1 || :
 ${CHROOT} /bin/chmod 2755 /var/log/journal/$(cat /etc/machine-id) >/dev/null 2>&1 || :
 
@@ -853,7 +880,7 @@ if [ "${SB_REP}" = "YES" ] ;then
   mkdir -p ${SBDIR}/patches
   install -m0644 ${CWD}/slack-desc ${CWD}/slack-required ${CWD}/ChangeLog.SB \
     ${CWD}/apply-patches.sh ${CWD}/var-*.mount ${CWD}/udev-fixed-devices.tar.gz \
-    ${SBDIR}/
+    ${CWD}/*.m4 ${SBDIR}/
   install -m0755 ${CWD}/${NAME}.SlackBuild \
     ${SBDIR}/${NAME}.SlackBuild
   install -m0644 ${CWD}/config/*.conf ${SBDIR}/config/
@@ -874,7 +901,8 @@ ROOTCOMMANDS="set -o errexit -o xtrace ; cd ${PKG} ;
   tar xvf ${CWD}/udev-fixed-devices.tar.gz -C ./ ;
   /bin/chown --recursive root:root .  ;
   [ \"${SB_HGROUP}\" = 1 ] && /bin/chgrp systemd-journal ./var/log/journal/ ;
-  [ \"${SB_HGROUP}\" = 1 ] && /bin/chmod 2755 ./var/log/journal/ ; "
+  [ \"${SB_HGROUP}\" = 1 ] && /bin/chmod 2755 ./var/log/journal/ ;
+  [ \"${SB_UHGROUP}\" = 1 ] && [ \"${SB_UHUSER}\" = 1 ] && /bin/chown systemd-journal-upload.systemd-journal-upload ./var/lib/systemd/journal-upload ; "
 
 ROOTCOMMANDS="${ROOTCOMMANDS}
   /sbin/makepkg --prepend --linkadd y --chown n ${PKGDEST}/${PKGNAME}.${PKGFORMAT} "

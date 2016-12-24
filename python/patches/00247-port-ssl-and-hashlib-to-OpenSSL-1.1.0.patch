@@ -1,0 +1,1088 @@
+
+# HG changeset patch
+# User Christian Heimes <christian@python.org>
+# Date 1473111433 -7200
+# Node ID 14b611ddaabe404c8cae84c35f553f50e3a068c9
+# Parent  4c91651912d1b3dbedcd8404c61f9e2a4094af93
+Issue #26470: Port ssl and hashlib module to OpenSSL 1.1.0.
+
+diff --git a/Doc/library/ssl.rst b/Doc/library/ssl.rst
+--- a/Doc/library/ssl.rst
++++ b/Doc/library/ssl.rst
+@@ -322,6 +322,16 @@ purposes.
+ Random generation
+ ^^^^^^^^^^^^^^^^^
+ 
++   .. deprecated::
++
++       2.7.13 OpenSSL has deprecated :func:`ssl.RAND_pseudo_bytes`, use
++       :func:`ssl.RAND_bytes` instead.
++
++   .. deprecated::
++
++       2.7.13 OpenSSL has deprecated :func:`ssl.RAND_pseudo_bytes`, use
++       :func:`ssl.RAND_bytes` instead.
++
+ .. function:: RAND_status()
+ 
+    Return ``True`` if the SSL pseudo-random number generator has been seeded
+@@ -340,7 +350,7 @@ Random generation
+    See http://egd.sourceforge.net/ or http://prngd.sourceforge.net/ for sources
+    of entropy-gathering daemons.
+ 
+-   Availability: not available with LibreSSL.
++   Availability: not available with LibreSSL and OpenSSL > 1.1.0
+ 
+ .. function:: RAND_add(bytes, entropy)
+ 
+@@ -444,6 +454,9 @@ Certificate handling
+    * :attr:`openssl_capath_env` - OpenSSL's environment key that points to a capath,
+    * :attr:`openssl_capath` - hard coded path to a capath directory
+ 
++   Availability: LibreSSL ignores the environment vars
++   :attr:`openssl_cafile_env` and :attr:`openssl_capath_env`
++
+    .. versionadded:: 2.7.9
+ 
+ .. function:: enum_certificates(store_name)
+@@ -561,11 +574,19 @@ Constants
+ 
+    .. versionadded:: 2.7.10
+ 
+-.. data:: PROTOCOL_SSLv23
++.. data:: PROTOCOL_TLS
+ 
+    Selects the highest protocol version that both the client and server support.
+    Despite the name, this option can select "TLS" protocols as well as "SSL".
+ 
++   .. versionadded:: 2.7.13
++
++.. data:: PROTOCOL_SSLv23
++
++   Alias for ``PROTOCOL_TLS``.
++
++   .. deprecated:: 2.7.13 Use ``PROTOCOL_TLS`` instead.
++
+ .. data:: PROTOCOL_SSLv2
+ 
+    Selects SSL version 2 as the channel encryption protocol.
+@@ -577,6 +598,8 @@ Constants
+ 
+       SSL version 2 is insecure.  Its use is highly discouraged.
+ 
++   .. deprecated:: 2.7.13 OpenSSL has removed support for SSLv2.
++
+ .. data:: PROTOCOL_SSLv3
+ 
+    Selects SSL version 3 as the channel encryption protocol.
+@@ -588,10 +611,20 @@ Constants
+ 
+       SSL version 3 is insecure.  Its use is highly discouraged.
+ 
++   .. deprecated:: 2.7.13
++
++      OpenSSL has deprecated all version specific protocols. Use the default
++      protocol with flags like ``OP_NO_SSLv3`` instead.
++
+ .. data:: PROTOCOL_TLSv1
+ 
+    Selects TLS version 1.0 as the channel encryption protocol.
+ 
++   .. deprecated:: 2.7.13
++
++      OpenSSL has deprecated all version specific protocols. Use the default
++      protocol with flags like ``OP_NO_SSLv3`` instead.
++
+ .. data:: PROTOCOL_TLSv1_1
+ 
+    Selects TLS version 1.1 as the channel encryption protocol.
+@@ -599,6 +632,11 @@ Constants
+ 
+    .. versionadded:: 2.7.9
+ 
++   .. deprecated:: 2.7.13
++
++      OpenSSL has deprecated all version specific protocols. Use the default
++      protocol with flags like ``OP_NO_SSLv3`` instead.
++
+ .. data:: PROTOCOL_TLSv1_2
+ 
+    Selects TLS version 1.2 as the channel encryption protocol. This is the
+@@ -607,6 +645,12 @@ Constants
+ 
+    .. versionadded:: 2.7.9
+ 
++   .. deprecated:: 2.7.13
++
++      OpenSSL has deprecated all version specific protocols. Use the default
++      protocol with flags like ``OP_NO_SSLv3`` instead.
++
++
+ .. data:: OP_ALL
+ 
+    Enables workarounds for various bugs present in other SSL implementations.
+@@ -1112,6 +1156,9 @@ to speed up repeated connections from th
+    This method will raise :exc:`NotImplementedError` if :data:`HAS_ALPN` is
+    False.
+ 
++   OpenSSL 1.1.0+ will abort the handshake and raise :exc:`SSLError` when
++   both sides support ALPN but cannot agree on a protocol.
++
+    .. versionadded:: 2.7.10
+ 
+ .. method:: SSLContext.set_npn_protocols(protocols)
+diff --git a/Lib/ssl.py b/Lib/ssl.py
+--- a/Lib/ssl.py
++++ b/Lib/ssl.py
+@@ -51,6 +51,7 @@ The following constants identify various
+ PROTOCOL_SSLv2
+ PROTOCOL_SSLv3
+ PROTOCOL_SSLv23
++PROTOCOL_TLS
+ PROTOCOL_TLSv1
+ PROTOCOL_TLSv1_1
+ PROTOCOL_TLSv1_2
+@@ -126,7 +127,10 @@ from _ssl import HAS_SNI, HAS_ECDH, HAS_
+ 
+ from _ssl import _OPENSSL_API_VERSION
+ 
+-_PROTOCOL_NAMES = {value: name for name, value in globals().items() if name.startswith('PROTOCOL_')}
++_PROTOCOL_NAMES = {value: name for name, value in globals().items()
++                   if name.startswith('PROTOCOL_')
++                       and name != 'PROTOCOL_SSLv23'}
++PROTOCOL_SSLv23 = PROTOCOL_TLS
+ 
+ try:
+     _SSLv2_IF_EXISTS = PROTOCOL_SSLv2
+@@ -408,7 +412,7 @@ def create_default_context(purpose=Purpo
+     if not isinstance(purpose, _ASN1Object):
+         raise TypeError(purpose)
+ 
+-    context = SSLContext(PROTOCOL_SSLv23)
++    context = SSLContext(PROTOCOL_TLS)
+ 
+     # SSLv2 considered harmful.
+     context.options |= OP_NO_SSLv2
+@@ -445,7 +449,7 @@ def create_default_context(purpose=Purpo
+         context.load_default_certs(purpose)
+     return context
+ 
+-def _create_unverified_context(protocol=PROTOCOL_SSLv23, cert_reqs=None,
++def _create_unverified_context(protocol=PROTOCOL_TLS, cert_reqs=None,
+                            check_hostname=False, purpose=Purpose.SERVER_AUTH,
+                            certfile=None, keyfile=None,
+                            cafile=None, capath=None, cadata=None):
+@@ -518,7 +522,7 @@ class SSLSocket(socket):
+ 
+     def __init__(self, sock=None, keyfile=None, certfile=None,
+                  server_side=False, cert_reqs=CERT_NONE,
+-                 ssl_version=PROTOCOL_SSLv23, ca_certs=None,
++                 ssl_version=PROTOCOL_TLS, ca_certs=None,
+                  do_handshake_on_connect=True,
+                  family=AF_INET, type=SOCK_STREAM, proto=0, fileno=None,
+                  suppress_ragged_eofs=True, npn_protocols=None, ciphers=None,
+@@ -920,7 +924,7 @@ class SSLSocket(socket):
+ 
+ def wrap_socket(sock, keyfile=None, certfile=None,
+                 server_side=False, cert_reqs=CERT_NONE,
+-                ssl_version=PROTOCOL_SSLv23, ca_certs=None,
++                ssl_version=PROTOCOL_TLS, ca_certs=None,
+                 do_handshake_on_connect=True,
+                 suppress_ragged_eofs=True,
+                 ciphers=None):
+@@ -989,7 +993,7 @@ def PEM_cert_to_DER_cert(pem_cert_string
+     d = pem_cert_string.strip()[len(PEM_HEADER):-len(PEM_FOOTER)]
+     return base64.decodestring(d.encode('ASCII', 'strict'))
+ 
+-def get_server_certificate(addr, ssl_version=PROTOCOL_SSLv23, ca_certs=None):
++def get_server_certificate(addr, ssl_version=PROTOCOL_TLS, ca_certs=None):
+     """Retrieve the certificate from the server at the specified address,
+     and return it as a PEM-encoded string.
+     If 'ca_certs' is specified, validate the server cert against it.
+diff --git a/Lib/test/test_ssl.py b/Lib/test/test_ssl.py
+--- a/Lib/test/test_ssl.py
++++ b/Lib/test/test_ssl.py
+@@ -26,6 +26,9 @@ ssl = support.import_module("ssl")
+ 
+ PROTOCOLS = sorted(ssl._PROTOCOL_NAMES)
+ HOST = support.HOST
++IS_LIBRESSL = ssl.OPENSSL_VERSION.startswith('LibreSSL')
++IS_OPENSSL_1_1 = not IS_LIBRESSL and ssl.OPENSSL_VERSION_INFO >= (1, 1, 0)
++
+ 
+ def data_file(*name):
+     return os.path.join(os.path.dirname(__file__), *name)
+@@ -164,7 +167,6 @@ class BasicSocketTests(unittest.TestCase
+         self.assertIn(ssl.HAS_SNI, {True, False})
+         self.assertIn(ssl.HAS_ECDH, {True, False})
+ 
+-
+     def test_random(self):
+         v = ssl.RAND_status()
+         if support.verbose:
+@@ -281,9 +283,9 @@ class BasicSocketTests(unittest.TestCase
+         self.assertGreaterEqual(status, 0)
+         self.assertLessEqual(status, 15)
+         # Version string as returned by {Open,Libre}SSL, the format might change
+-        if "LibreSSL" in s:
+-            self.assertTrue(s.startswith("LibreSSL {:d}.{:d}".format(major, minor)),
+-                            (s, t))
++        if IS_LIBRESSL:
++            self.assertTrue(s.startswith("LibreSSL {:d}".format(major)),
++                            (s, t, hex(n)))
+         else:
+             self.assertTrue(s.startswith("OpenSSL {:d}.{:d}.{:d}".format(major, minor, fix)),
+                             (s, t))
+@@ -742,15 +744,15 @@ class ContextTests(unittest.TestCase):
+     def test_options(self):
+         ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+         # OP_ALL | OP_NO_SSLv2 | OP_NO_SSLv3 is the default value
+-        self.assertEqual(ssl.OP_ALL | ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3,
+-                         ctx.options)
++        default = (ssl.OP_ALL | ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3)
++        if not IS_LIBRESSL and ssl.OPENSSL_VERSION_INFO >= (1, 1, 0):
++            default |= ssl.OP_NO_COMPRESSION
++        self.assertEqual(default, ctx.options)
+         ctx.options |= ssl.OP_NO_TLSv1
+-        self.assertEqual(ssl.OP_ALL | ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1,
+-                         ctx.options)
++        self.assertEqual(default | ssl.OP_NO_TLSv1, ctx.options)
+         if can_clear_options():
+-            ctx.options = (ctx.options & ~ssl.OP_NO_SSLv2) | ssl.OP_NO_TLSv1
+-            self.assertEqual(ssl.OP_ALL | ssl.OP_NO_TLSv1 | ssl.OP_NO_SSLv3,
+-                             ctx.options)
++            ctx.options = (ctx.options & ~ssl.OP_NO_TLSv1)
++            self.assertEqual(default, ctx.options)
+             ctx.options = 0
+             self.assertEqual(0, ctx.options)
+         else:
+@@ -1088,6 +1090,7 @@ class ContextTests(unittest.TestCase):
+         self.assertRaises(TypeError, ctx.load_default_certs, 'SERVER_AUTH')
+ 
+     @unittest.skipIf(sys.platform == "win32", "not-Windows specific")
++    @unittest.skipIf(IS_LIBRESSL, "LibreSSL doesn't support env vars")
+     def test_load_default_certs_env(self):
+         ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+         with support.EnvironmentVarGuard() as env:
+@@ -1534,7 +1537,6 @@ class NetworkedTests(unittest.TestCase):
+                         sys.stdout.write("%s\n" % x)
+                 else:
+                     self.fail("Got server certificate %s for %s:%s!" % (pem, host, port))
+-
+                 pem = ssl.get_server_certificate((host, port),
+                                                  ca_certs=cert)
+                 if not pem:
+@@ -2783,7 +2785,7 @@ else:
+                 with closing(context.wrap_socket(socket.socket())) as s:
+                     self.assertIs(s.version(), None)
+                     s.connect((HOST, server.port))
+-                    self.assertEqual(s.version(), "TLSv1")
++                    self.assertEqual(s.version(), 'TLSv1')
+                 self.assertIs(s.version(), None)
+ 
+         @unittest.skipUnless(ssl.HAS_ECDH, "test requires ECDH-enabled OpenSSL")
+@@ -2925,24 +2927,36 @@ else:
+                 (['http/3.0', 'http/4.0'], None)
+             ]
+             for client_protocols, expected in protocol_tests:
+-                server_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
++                server_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+                 server_context.load_cert_chain(CERTFILE)
+                 server_context.set_alpn_protocols(server_protocols)
+-                client_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
++                client_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+                 client_context.load_cert_chain(CERTFILE)
+                 client_context.set_alpn_protocols(client_protocols)
+-                stats = server_params_test(client_context, server_context,
+-                                           chatty=True, connectionchatty=True)
+-
+-                msg = "failed trying %s (s) and %s (c).\n" \
+-                      "was expecting %s, but got %%s from the %%s" \
+-                          % (str(server_protocols), str(client_protocols),
+-                             str(expected))
+-                client_result = stats['client_alpn_protocol']
+-                self.assertEqual(client_result, expected, msg % (client_result, "client"))
+-                server_result = stats['server_alpn_protocols'][-1] \
+-                    if len(stats['server_alpn_protocols']) else 'nothing'
+-                self.assertEqual(server_result, expected, msg % (server_result, "server"))
++
++                try:
++                    stats = server_params_test(client_context,
++                                               server_context,
++                                               chatty=True,
++                                               connectionchatty=True)
++                except ssl.SSLError as e:
++                    stats = e
++
++                if expected is None and IS_OPENSSL_1_1:
++                    # OpenSSL 1.1.0 raises handshake error
++                    self.assertIsInstance(stats, ssl.SSLError)
++                else:
++                    msg = "failed trying %s (s) and %s (c).\n" \
++                        "was expecting %s, but got %%s from the %%s" \
++                            % (str(server_protocols), str(client_protocols),
++                                str(expected))
++                    client_result = stats['client_alpn_protocol']
++                    self.assertEqual(client_result, expected,
++                                     msg % (client_result, "client"))
++                    server_result = stats['server_alpn_protocols'][-1] \
++                        if len(stats['server_alpn_protocols']) else 'nothing'
++                    self.assertEqual(server_result, expected,
++                                     msg % (server_result, "server"))
+ 
+         def test_selected_npn_protocol(self):
+             # selected_npn_protocol() is None unless NPN is used
+
+--- a/Modules/_hashopenssl.c
++++ b/Modules/_hashopenssl.c
+@@ -37,8 +37,10 @@
+ 
+ /* EVP is the preferred interface to hashing in OpenSSL */
+ #include <openssl/evp.h>
+-#include <openssl/hmac.h>
+ #include <openssl/err.h>
++/* We use the object interface to discover what hashes OpenSSL supports. */
++#include <openssl/objects.h>
++#include "openssl/err.h"
+ 
+ #define MUNCH_SIZE INT_MAX
+ 
+@@ -50,15 +52,26 @@
+ #define HASH_OBJ_CONSTRUCTOR 0
+ #endif
+ 
+-/* Minimum OpenSSL version needed to support sha224 and higher. */
+ #if defined(OPENSSL_VERSION_NUMBER) && (OPENSSL_VERSION_NUMBER >= 0x00908000)
+ #define _OPENSSL_SUPPORTS_SHA2
+ #endif
+ 
++#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
++/* OpenSSL < 1.1.0 */
++#define EVP_MD_CTX_new EVP_MD_CTX_create
++#define EVP_MD_CTX_free EVP_MD_CTX_destroy
++#define HAS_FAST_PKCS5_PBKDF2_HMAC 0
++#include <openssl/hmac.h>
++#else
++/* OpenSSL >= 1.1.0 */
++#define HAS_FAST_PKCS5_PBKDF2_HMAC 1
++#endif
++
++
+ typedef struct {
+     PyObject_HEAD
+     PyObject            *name;  /* name of this hash algorithm */
+-    EVP_MD_CTX          ctx;    /* OpenSSL message digest context */
++    EVP_MD_CTX          *ctx;   /* OpenSSL message digest context */
+ #ifdef WITH_THREAD
+     PyThread_type_lock  lock;   /* OpenSSL context lock */
+ #endif
+@@ -70,7 +83,6 @@ static PyTypeObject EVPtype;
+ 
+ #define DEFINE_CONSTS_FOR_NEW(Name)  \
+     static PyObject *CONST_ ## Name ## _name_obj = NULL; \
+-    static EVP_MD_CTX CONST_new_ ## Name ## _ctx; \
+     static EVP_MD_CTX *CONST_new_ ## Name ## _ctx_p = NULL;
+ 
+ DEFINE_CONSTS_FOR_NEW(md5)
+@@ -83,19 +95,56 @@ DEFINE_CONSTS_FOR_NEW(sha512)
+ #endif
+ 
+ 
++/* LCOV_EXCL_START */
++static PyObject *
++_setException(PyObject *exc)
++{
++    unsigned long errcode;
++    const char *lib, *func, *reason;
++
++    errcode = ERR_peek_last_error();
++    if (!errcode) {
++        PyErr_SetString(exc, "unknown reasons");
++        return NULL;
++    }
++    ERR_clear_error();
++
++    lib = ERR_lib_error_string(errcode);
++    func = ERR_func_error_string(errcode);
++    reason = ERR_reason_error_string(errcode);
++
++    if (lib && func) {
++        PyErr_Format(exc, "[%s: %s] %s", lib, func, reason);
++    }
++    else if (lib) {
++        PyErr_Format(exc, "[%s] %s", lib, reason);
++    }
++    else {
++        PyErr_SetString(exc, reason);
++    }
++    return NULL;
++}
++/* LCOV_EXCL_STOP */
++
+ static EVPobject *
+ newEVPobject(PyObject *name)
+ {
+     EVPobject *retval = (EVPobject *)PyObject_New(EVPobject, &EVPtype);
++    if (retval == NULL)
++        return NULL;
++
++    retval->ctx = EVP_MD_CTX_new();
++    if (retval->ctx == NULL) {
++        PyErr_NoMemory();
++        return NULL;
++    }
+ 
+     /* save the name for .name to return */
+-    if (retval != NULL) {
+-        Py_INCREF(name);
+-        retval->name = name;
++    Py_INCREF(name);
++    retval->name = name;
+ #ifdef WITH_THREAD
+-        retval->lock = NULL;
++    retval->lock = NULL;
+ #endif
+-    }
+ 
+     return retval;
+ }
+@@ -111,7 +160,7 @@ EVP_hash(EVPobject *self, const void *vp
+             process = MUNCH_SIZE;
+         else
+             process = Py_SAFE_DOWNCAST(len, Py_ssize_t, unsigned int);
+-        EVP_DigestUpdate(&self->ctx, (const void*)cp, process);
++        EVP_DigestUpdate(self->ctx, (const void*)cp, process);
+         len -= process;
+         cp += process;
+     }
+@@ -126,16 +175,20 @@ EVP_dealloc(EVPobject *self)
+     if (self->lock != NULL)
+         PyThread_free_lock(self->lock);
+ #endif
+-    EVP_MD_CTX_cleanup(&self->ctx);
++    EVP_MD_CTX_free(self->ctx);
+     Py_XDECREF(self->name);
+     PyObject_Del(self);
+ }
+ 
+-static void locked_EVP_MD_CTX_copy(EVP_MD_CTX *new_ctx_p, EVPobject *self)
++static int
++locked_EVP_MD_CTX_copy(EVP_MD_CTX *new_ctx_p, EVPobject *self)
+ {
++    int result;
+     ENTER_HASHLIB(self);
+-    EVP_MD_CTX_copy(new_ctx_p, &self->ctx);
++    /* XXX no error reporting */
++    result = EVP_MD_CTX_copy(new_ctx_p, self->ctx);
+     LEAVE_HASHLIB(self);
++    return result;
+ }
+ 
+ /* External methods for a hash object */
+@@ -151,7 +204,9 @@ EVP_copy(EVPobject *self, PyObject *unus
+     if ( (newobj = newEVPobject(self->name))==NULL)
+         return NULL;
+ 
+-    locked_EVP_MD_CTX_copy(&newobj->ctx, self);
++    if (!locked_EVP_MD_CTX_copy(newobj->ctx, self)) {
++        return _setException(PyExc_ValueError);
++    }
+     return (PyObject *)newobj;
+ }
+ 
+@@ -162,16 +217,24 @@ static PyObject *
+ EVP_digest(EVPobject *self, PyObject *unused)
+ {
+     unsigned char digest[EVP_MAX_MD_SIZE];
+-    EVP_MD_CTX temp_ctx;
++    EVP_MD_CTX *temp_ctx;
+     PyObject *retval;
+     unsigned int digest_size;
+ 
+-    locked_EVP_MD_CTX_copy(&temp_ctx, self);
+-    digest_size = EVP_MD_CTX_size(&temp_ctx);
+-    EVP_DigestFinal(&temp_ctx, digest, NULL);
++    temp_ctx = EVP_MD_CTX_new();
++    if (temp_ctx == NULL) {
++        PyErr_NoMemory();
++        return NULL;
++    }
++
++    if (!locked_EVP_MD_CTX_copy(temp_ctx, self)) {
++        return _setException(PyExc_ValueError);
++    }
++    digest_size = EVP_MD_CTX_size(temp_ctx);
++    EVP_DigestFinal(temp_ctx, digest, NULL);
+ 
+     retval = PyString_FromStringAndSize((const char *)digest, digest_size);
+-    EVP_MD_CTX_cleanup(&temp_ctx);
++    EVP_MD_CTX_free(temp_ctx);
+     return retval;
+ }
+ 
+@@ -182,17 +245,25 @@ static PyObject *
+ EVP_hexdigest(EVPobject *self, PyObject *unused)
+ {
+     unsigned char digest[EVP_MAX_MD_SIZE];
+-    EVP_MD_CTX temp_ctx;
++    EVP_MD_CTX *temp_ctx;
+     PyObject *retval;
+     char *hex_digest;
+     unsigned int i, j, digest_size;
+ 
++    temp_ctx = EVP_MD_CTX_new();
++    if (temp_ctx == NULL) {
++        PyErr_NoMemory();
++        return NULL;
++    }
++
+     /* Get the raw (binary) digest value */
+-    locked_EVP_MD_CTX_copy(&temp_ctx, self);
+-    digest_size = EVP_MD_CTX_size(&temp_ctx);
+-    EVP_DigestFinal(&temp_ctx, digest, NULL);
++    if (!locked_EVP_MD_CTX_copy(temp_ctx, self)) {
++        return _setException(PyExc_ValueError);
++    }
++    digest_size = EVP_MD_CTX_size(temp_ctx);
++    EVP_DigestFinal(temp_ctx, digest, NULL);
+ 
+-    EVP_MD_CTX_cleanup(&temp_ctx);
++    EVP_MD_CTX_free(temp_ctx);
+ 
+     /* Create a new string */
+     /* NOTE: not thread safe! modifying an already created string object */
+@@ -266,7 +337,7 @@ static PyObject *
+ EVP_get_block_size(EVPobject *self, void *closure)
+ {
+     long block_size;
+-    block_size = EVP_MD_CTX_block_size(&self->ctx);
++    block_size = EVP_MD_CTX_block_size(self->ctx);
+     return PyLong_FromLong(block_size);
+ }
+ 
+@@ -274,7 +345,7 @@ static PyObject *
+ EVP_get_digest_size(EVPobject *self, void *closure)
+ {
+     long size;
+-    size = EVP_MD_CTX_size(&self->ctx);
++    size = EVP_MD_CTX_size(self->ctx);
+     return PyLong_FromLong(size);
+ }
+ 
+@@ -338,7 +409,7 @@ EVP_tp_init(EVPobject *self, PyObject *a
+         PyBuffer_Release(&view);
+         return -1;
+     }
+-    EVP_DigestInit(&self->ctx, digest);
++    EVP_DigestInit(self->ctx, digest);
+ 
+     self->name = name_obj;
+     Py_INCREF(self->name);
+@@ -435,9 +506,9 @@ EVPnew(PyObject *name_obj,
+         return NULL;
+ 
+     if (initial_ctx) {
+-        EVP_MD_CTX_copy(&self->ctx, initial_ctx);
++        EVP_MD_CTX_copy(self->ctx, initial_ctx);
+     } else {
+-        EVP_DigestInit(&self->ctx, digest);
++        EVP_DigestInit(self->ctx, digest);
+     }
+ 
+     if (cp && len) {
+@@ -499,6 +570,7 @@ EVP_new(PyObject *self, PyObject *args, 
+ 
+ #define PY_PBKDF2_HMAC 1
+ 
++#if !HAS_FAST_PKCS5_PBKDF2_HMAC
+ /* Improved implementation of PKCS5_PBKDF2_HMAC()
+  *
+  * PKCS5_PBKDF2_HMAC_fast() hashes the password exactly one time instead of
+@@ -580,37 +652,8 @@ PKCS5_PBKDF2_HMAC_fast(const char *pass,
+     HMAC_CTX_cleanup(&hctx_tpl);
+     return 1;
+ }
++#endif
+ 
+-/* LCOV_EXCL_START */
+-static PyObject *
+-_setException(PyObject *exc)
+-{
+-    unsigned long errcode;
+-    const char *lib, *func, *reason;
+-
+-    errcode = ERR_peek_last_error();
+-    if (!errcode) {
+-        PyErr_SetString(exc, "unknown reasons");
+-        return NULL;
+-    }
+-    ERR_clear_error();
+-
+-    lib = ERR_lib_error_string(errcode);
+-    func = ERR_func_error_string(errcode);
+-    reason = ERR_reason_error_string(errcode);
+-
+-    if (lib && func) {
+-        PyErr_Format(exc, "[%s: %s] %s", lib, func, reason);
+-    }
+-    else if (lib) {
+-        PyErr_Format(exc, "[%s] %s", lib, reason);
+-    }
+-    else {
+-        PyErr_SetString(exc, reason);
+-    }
+-    return NULL;
+-}
+-/* LCOV_EXCL_STOP */
+ 
+ PyDoc_STRVAR(pbkdf2_hmac__doc__,
+ "pbkdf2_hmac(hash_name, password, salt, iterations, dklen=None) -> key\n\
+@@ -692,10 +735,17 @@ pbkdf2_hmac(PyObject *self, PyObject *ar
+     key = PyBytes_AS_STRING(key_obj);
+ 
+     Py_BEGIN_ALLOW_THREADS
++#if HAS_FAST_PKCS5_PBKDF2_HMAC
++    retval = PKCS5_PBKDF2_HMAC((char*)password.buf, (int)password.len,
++                               (unsigned char *)salt.buf, (int)salt.len,
++                               iterations, digest, dklen,
++                               (unsigned char *)key);
++#else
+     retval = PKCS5_PBKDF2_HMAC_fast((char*)password.buf, (int)password.len,
+                                     (unsigned char *)salt.buf, (int)salt.len,
+                                     iterations, digest, dklen,
+                                     (unsigned char *)key);
++#endif
+     Py_END_ALLOW_THREADS
+ 
+     if (!retval) {
+@@ -807,7 +857,7 @@ generate_hash_name_list(void)
+     if (CONST_ ## NAME ## _name_obj == NULL) { \
+     CONST_ ## NAME ## _name_obj = PyString_FromString(#NAME); \
+         if (EVP_get_digestbyname(#NAME)) { \
+-            CONST_new_ ## NAME ## _ctx_p = &CONST_new_ ## NAME ## _ctx; \
++            CONST_new_ ## NAME ## _ctx_p = EVP_MD_CTX_new(); \
+             EVP_DigestInit(CONST_new_ ## NAME ## _ctx_p, EVP_get_digestbyname(#NAME)); \
+         } \
+     } \
+diff --git a/Modules/_ssl.c b/Modules/_ssl.c
+--- a/Modules/_ssl.c
++++ b/Modules/_ssl.c
+@@ -52,6 +52,14 @@
+ #include <sys/poll.h>
+ #endif
+ 
++/* Don't warn about deprecated functions */
++#ifdef __GNUC__
++#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
++#endif
++#ifdef __clang__
++#pragma clang diagnostic ignored "-Wdeprecated-declarations"
++#endif
++
+ /* Include OpenSSL header files */
+ #include "openssl/rsa.h"
+ #include "openssl/crypto.h"
+@@ -87,6 +95,10 @@ struct py_ssl_library_code {
+ /* Include generated data (error codes) */
+ #include "_ssl_data.h"
+ 
++#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
++#  define OPENSSL_VERSION_1_1 1
++#endif
++
+ /* Openssl comes with TLSv1.1 and TLSv1.2 between 1.0.0h and 1.0.1
+     http://www.openssl.org/news/changelog.html
+  */
+@@ -110,6 +122,70 @@ struct py_ssl_library_code {
+ # define HAVE_ALPN
+ #endif
+ 
++#ifndef INVALID_SOCKET /* MS defines this */
++#define INVALID_SOCKET (-1)
++#endif
++
++#ifdef OPENSSL_VERSION_1_1
++/* OpenSSL 1.1.0+ */
++#ifndef OPENSSL_NO_SSL2
++#define OPENSSL_NO_SSL2
++#endif
++#else /* OpenSSL < 1.1.0 */
++#if defined(WITH_THREAD)
++#define HAVE_OPENSSL_CRYPTO_LOCK
++#endif
++
++#define TLS_method SSLv23_method
++
++static int X509_NAME_ENTRY_set(const X509_NAME_ENTRY *ne)
++{
++    return ne->set;
++}
++
++#ifndef OPENSSL_NO_COMP
++static int COMP_get_type(const COMP_METHOD *meth)
++{
++    return meth->type;
++}
++
++static const char *COMP_get_name(const COMP_METHOD *meth)
++{
++    return meth->name;
++}
++#endif
++
++static pem_password_cb *SSL_CTX_get_default_passwd_cb(SSL_CTX *ctx)
++{
++    return ctx->default_passwd_callback;
++}
++
++static void *SSL_CTX_get_default_passwd_cb_userdata(SSL_CTX *ctx)
++{
++    return ctx->default_passwd_callback_userdata;
++}
++
++static int X509_OBJECT_get_type(X509_OBJECT *x)
++{
++    return x->type;
++}
++
++static X509 *X509_OBJECT_get0_X509(X509_OBJECT *x)
++{
++    return x->data.x509;
++}
++
++static STACK_OF(X509_OBJECT) *X509_STORE_get0_objects(X509_STORE *store) {
++    return store->objs;
++}
++
++static X509_VERIFY_PARAM *X509_STORE_get0_param(X509_STORE *store)
++{
++    return store->param;
++}
++#endif /* OpenSSL < 1.1.0 or LibreSSL */
++
++
+ enum py_ssl_error {
+     /* these mirror ssl.h */
+     PY_SSL_ERROR_NONE,
+@@ -140,7 +216,7 @@ enum py_ssl_cert_requirements {
+ enum py_ssl_version {
+     PY_SSL_VERSION_SSL2,
+     PY_SSL_VERSION_SSL3=1,
+-    PY_SSL_VERSION_SSL23,
++    PY_SSL_VERSION_TLS,
+ #if HAVE_TLSv1_2
+     PY_SSL_VERSION_TLS1,
+     PY_SSL_VERSION_TLS1_1,
+@@ -681,7 +757,7 @@ static PyObject *
+ 
+         /* check to see if we've gotten to a new RDN */
+         if (rdn_level >= 0) {
+-            if (rdn_level != entry->set) {
++            if (rdn_level != X509_NAME_ENTRY_set(entry)) {
+                 /* yes, new RDN */
+                 /* add old RDN to DN */
+                 rdnt = PyList_AsTuple(rdn);
+@@ -698,7 +774,7 @@ static PyObject *
+                     goto fail0;
+             }
+         }
+-        rdn_level = entry->set;
++        rdn_level = X509_NAME_ENTRY_set(entry);
+ 
+         /* now add this attribute to the current RDN */
+         name = X509_NAME_ENTRY_get_object(entry);
+@@ -801,18 +877,18 @@ static PyObject *
+             goto fail;
+         }
+ 
+-        p = ext->value->data;
++        p = X509_EXTENSION_get_data(ext)->data;
+         if (method->it)
+             names = (GENERAL_NAMES*)
+               (ASN1_item_d2i(NULL,
+                              &p,
+-                             ext->value->length,
++                             X509_EXTENSION_get_data(ext)->length,
+                              ASN1_ITEM_ptr(method->it)));
+         else
+             names = (GENERAL_NAMES*)
+               (method->d2i(NULL,
+                            &p,
+-                           ext->value->length));
++                           X509_EXTENSION_get_data(ext)->length));
+ 
+         for(j = 0; j < sk_GENERAL_NAME_num(names); j++) {
+             /* get a rendering of each name in the set of names */
+@@ -1021,13 +1097,11 @@ static PyObject *
+     int i, j;
+     PyObject *lst, *res = NULL;
+ 
+-#if OPENSSL_VERSION_NUMBER < 0x10001000L
+-    dps = X509_get_ext_d2i(certificate, NID_crl_distribution_points, NULL, NULL);
+-#else
++#if OPENSSL_VERSION_NUMBER >= 0x10001000L
+     /* Calls x509v3_cache_extensions and sets up crldp */
+     X509_check_ca(certificate);
+-    dps = certificate->crldp;
+ #endif
++    dps = X509_get_ext_d2i(certificate, NID_crl_distribution_points, NULL, NULL);
+ 
+     if (dps == NULL)
+         return Py_None;
+@@ -1443,9 +1517,9 @@ static PyObject *PySSL_compression(PySSL
+     if (self->ssl == NULL)
+         Py_RETURN_NONE;
+     comp_method = SSL_get_current_compression(self->ssl);
+-    if (comp_method == NULL || comp_method->type == NID_undef)
++    if (comp_method == NULL || COMP_get_type(comp_method) == NID_undef)
+         Py_RETURN_NONE;
+-    short_name = OBJ_nid2sn(comp_method->type);
++    short_name = COMP_get_name(comp_method);
+     if (short_name == NULL)
+         Py_RETURN_NONE;
+     return PyBytes_FromString(short_name);
+@@ -1994,7 +2068,7 @@ context_new(PyTypeObject *type, PyObject
+ {
+     char *kwlist[] = {"protocol", NULL};
+     PySSLContext *self;
+-    int proto_version = PY_SSL_VERSION_SSL23;
++    int proto_version = PY_SSL_VERSION_TLS;
+     long options;
+     SSL_CTX *ctx = NULL;
+ 
+@@ -2020,8 +2094,8 @@ context_new(PyTypeObject *type, PyObject
+     else if (proto_version == PY_SSL_VERSION_SSL2)
+         ctx = SSL_CTX_new(SSLv2_method());
+ #endif
+-    else if (proto_version == PY_SSL_VERSION_SSL23)
+-        ctx = SSL_CTX_new(SSLv23_method());
++    else if (proto_version == PY_SSL_VERSION_TLS)
++        ctx = SSL_CTX_new(TLS_method());
+     else
+         proto_version = -1;
+     PySSL_END_ALLOW_THREADS
+@@ -2067,8 +2141,9 @@ context_new(PyTypeObject *type, PyObject
+ #ifndef OPENSSL_NO_ECDH
+     /* Allow automatic ECDH curve selection (on OpenSSL 1.0.2+), or use
+        prime256v1 by default.  This is Apache mod_ssl's initialization
+-       policy, so we should be safe. */
+-#if defined(SSL_CTX_set_ecdh_auto)
++       policy, so we should be safe. OpenSSL 1.1 has it enabled by default.
++     */
++#if defined(SSL_CTX_set_ecdh_auto) && !defined(OPENSSL_VERSION_1_1)
+     SSL_CTX_set_ecdh_auto(self->ctx, 1);
+ #else
+     {
+@@ -2336,10 +2411,12 @@ static PyObject *
+ get_verify_flags(PySSLContext *self, void *c)
+ {
+     X509_STORE *store;
++    X509_VERIFY_PARAM *param;
+     unsigned long flags;
+ 
+     store = SSL_CTX_get_cert_store(self->ctx);
+-    flags = X509_VERIFY_PARAM_get_flags(store->param);
++    param = X509_STORE_get0_param(store);
++    flags = X509_VERIFY_PARAM_get_flags(param);
+     return PyLong_FromUnsignedLong(flags);
+ }
+ 
+@@ -2347,22 +2424,24 @@ static int
+ set_verify_flags(PySSLContext *self, PyObject *arg, void *c)
+ {
+     X509_STORE *store;
++    X509_VERIFY_PARAM *param;
+     unsigned long new_flags, flags, set, clear;
+ 
+     if (!PyArg_Parse(arg, "k", &new_flags))
+         return -1;
+     store = SSL_CTX_get_cert_store(self->ctx);
+-    flags = X509_VERIFY_PARAM_get_flags(store->param);
++    param = X509_STORE_get0_param(store);
++    flags = X509_VERIFY_PARAM_get_flags(param);
+     clear = flags & ~new_flags;
+     set = ~flags & new_flags;
+     if (clear) {
+-        if (!X509_VERIFY_PARAM_clear_flags(store->param, clear)) {
++        if (!X509_VERIFY_PARAM_clear_flags(param, clear)) {
+             _setSSLError(NULL, 0, __FILE__, __LINE__);
+             return -1;
+         }
+     }
+     if (set) {
+-        if (!X509_VERIFY_PARAM_set_flags(store->param, set)) {
++        if (!X509_VERIFY_PARAM_set_flags(param, set)) {
+             _setSSLError(NULL, 0, __FILE__, __LINE__);
+             return -1;
+         }
+@@ -2537,8 +2616,8 @@ load_cert_chain(PySSLContext *self, PyOb
+     char *kwlist[] = {"certfile", "keyfile", "password", NULL};
+     PyObject *keyfile = NULL, *keyfile_bytes = NULL, *password = NULL;
+     char *certfile_bytes = NULL;
+-    pem_password_cb *orig_passwd_cb = self->ctx->default_passwd_callback;
+-    void *orig_passwd_userdata = self->ctx->default_passwd_callback_userdata;
++    pem_password_cb *orig_passwd_cb = SSL_CTX_get_default_passwd_cb(self->ctx);
++    void *orig_passwd_userdata = SSL_CTX_get_default_passwd_cb_userdata(self->ctx);
+     _PySSLPasswordInfo pw_info = { NULL, NULL, NULL, 0, 0 };
+     int r;
+ 
+@@ -2674,8 +2753,9 @@ static int
+             cert = d2i_X509_bio(biobuf, NULL);
+         } else {
+             cert = PEM_read_bio_X509(biobuf, NULL,
+-                                     self->ctx->default_passwd_callback,
+-                                     self->ctx->default_passwd_callback_userdata);
++                                     SSL_CTX_get_default_passwd_cb(self->ctx),
++                                     SSL_CTX_get_default_passwd_cb_userdata(self->ctx)
++                                    );
+         }
+         if (cert == NULL) {
+             break;
+@@ -3160,25 +3240,24 @@ static PyObject *
+ cert_store_stats(PySSLContext *self)
+ {
+     X509_STORE *store;
++    STACK_OF(X509_OBJECT) *objs;
+     X509_OBJECT *obj;
+-    int x509 = 0, crl = 0, pkey = 0, ca = 0, i;
++    int x509 = 0, crl = 0, ca = 0, i;
+ 
+     store = SSL_CTX_get_cert_store(self->ctx);
+-    for (i = 0; i < sk_X509_OBJECT_num(store->objs); i++) {
+-        obj = sk_X509_OBJECT_value(store->objs, i);
+-        switch (obj->type) {
++    objs = X509_STORE_get0_objects(store);
++    for (i = 0; i < sk_X509_OBJECT_num(objs); i++) {
++        obj = sk_X509_OBJECT_value(objs, i);
++        switch (X509_OBJECT_get_type(obj)) {
+             case X509_LU_X509:
+                 x509++;
+-                if (X509_check_ca(obj->data.x509)) {
++                if (X509_check_ca(X509_OBJECT_get0_X509(obj))) {
+                     ca++;
+                 }
+                 break;
+             case X509_LU_CRL:
+                 crl++;
+                 break;
+-            case X509_LU_PKEY:
+-                pkey++;
+-                break;
+             default:
+                 /* Ignore X509_LU_FAIL, X509_LU_RETRY, X509_LU_PKEY.
+                  * As far as I can tell they are internal states and never
+@@ -3204,6 +3283,7 @@ get_ca_certs(PySSLContext *self, PyObjec
+     char *kwlist[] = {"binary_form", NULL};
+     X509_STORE *store;
+     PyObject *ci = NULL, *rlist = NULL, *py_binary_mode = Py_False;
++    STACK_OF(X509_OBJECT) *objs;
+     int i;
+     int binary_mode = 0;
+ 
+@@ -3221,17 +3301,18 @@ get_ca_certs(PySSLContext *self, PyObjec
+     }
+ 
+     store = SSL_CTX_get_cert_store(self->ctx);
+-    for (i = 0; i < sk_X509_OBJECT_num(store->objs); i++) {
++    objs = X509_STORE_get0_objects(store);
++    for (i = 0; i < sk_X509_OBJECT_num(objs); i++) {
+         X509_OBJECT *obj;
+         X509 *cert;
+ 
+-        obj = sk_X509_OBJECT_value(store->objs, i);
+-        if (obj->type != X509_LU_X509) {
++        obj = sk_X509_OBJECT_value(objs, i);
++        if (X509_OBJECT_get_type(obj) != X509_LU_X509) {
+             /* not a x509 cert */
+             continue;
+         }
+         /* CA for any purpose */
+-        cert = obj->data.x509;
++        cert = X509_OBJECT_get0_X509(obj);
+         if (!X509_check_ca(cert)) {
+             continue;
+         }
+@@ -3842,10 +3923,12 @@ static PyMethodDef PySSL_methods[] = {
+ };
+ 
+ 
+-#ifdef WITH_THREAD
++#ifdef HAVE_OPENSSL_CRYPTO_LOCK
+ 
+ /* an implementation of OpenSSL threading operations in terms
+-   of the Python C thread library */
++ * of the Python C thread library
++ * Only used up to 1.0.2. OpenSSL 1.1.0+ has its own locking code.
++ */
+ 
+ static PyThread_type_lock *_ssl_locks = NULL;
+ 
+@@ -3926,7 +4009,7 @@ static int _setup_ssl_threads(void) {
+     return 1;
+ }
+ 
+-#endif  /* def HAVE_THREAD */
++#endif  /* HAVE_OPENSSL_CRYPTO_LOCK for WITH_THREAD && OpenSSL < 1.1.0 */
+ 
+ PyDoc_STRVAR(module_doc,
+ "Implementation module for SSL socket operations.  See the socket module\n\
+@@ -3979,11 +4062,16 @@ init_ssl(void)
+     SSL_load_error_strings();
+     SSL_library_init();
+ #ifdef WITH_THREAD
++#ifdef HAVE_OPENSSL_CRYPTO_LOCK
+     /* note that this will start threading if not already started */
+     if (!_setup_ssl_threads()) {
+         return;
+     }
++#elif OPENSSL_VERSION_1_1 && defined(OPENSSL_THREADS)
++    /* OpenSSL 1.1.0 builtin thread support is enabled */
++    _ssl_locks_count++;
+ #endif
++#endif  /* WITH_THREAD */
+     OpenSSL_add_all_algorithms();
+ 
+     /* Add symbols to module dict */
+@@ -4136,7 +4224,9 @@ init_ssl(void)
+                             PY_SSL_VERSION_SSL3);
+ #endif
+     PyModule_AddIntConstant(m, "PROTOCOL_SSLv23",
+-                            PY_SSL_VERSION_SSL23);
++                            PY_SSL_VERSION_TLS);
++    PyModule_AddIntConstant(m, "PROTOCOL_TLS",
++                            PY_SSL_VERSION_TLS);
+     PyModule_AddIntConstant(m, "PROTOCOL_TLSv1",
+                             PY_SSL_VERSION_TLS1);
+ #if HAVE_TLSv1_2
+
+# HG changeset patch
+# User Christian Heimes <christian@python.org>
+# Date 1473117039 -7200
+# Node ID 2593ed9a6a629b4fe3f77feb632c9584a3406201
+# Parent  fb74947843eb9f39f3a564022c9132a118dabbb0
+Issue #26470: Use short name rather than name for compression name to fix #27958.
+
+diff --git a/Modules/_ssl.c b/Modules/_ssl.c
+--- a/Modules/_ssl.c
++++ b/Modules/_ssl.c
+@@ -148,11 +148,6 @@ static int COMP_get_type(const COMP_METH
+ {
+     return meth->type;
+ }
+-
+-static const char *COMP_get_name(const COMP_METHOD *meth)
+-{
+-    return meth->name;
+-}
+ #endif
+ 
+ static pem_password_cb *SSL_CTX_get_default_passwd_cb(SSL_CTX *ctx)
+@@ -1519,7 +1514,7 @@ static PyObject *PySSL_compression(PySSL
+     comp_method = SSL_get_current_compression(self->ssl);
+     if (comp_method == NULL || COMP_get_type(comp_method) == NID_undef)
+         Py_RETURN_NONE;
+-    short_name = COMP_get_name(comp_method);
++    short_name = OBJ_nid2sn(COMP_get_type(comp_method));
+     if (short_name == NULL)
+         Py_RETURN_NONE;
+     return PyBytes_FromString(short_name);

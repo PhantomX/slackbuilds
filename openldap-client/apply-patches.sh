@@ -5,7 +5,6 @@ SB_PATCHDIR=${CWD}/patches
 
 # patch -p0 -E --backup --verbose -i ${SB_PATCHDIR}/${NAME}.patch
 # patches for 2.4
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-slapd-conf.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-manpages.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-sql-linking.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-reentrant-gethostby.patch
@@ -20,6 +19,7 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-nss-regex-search-hash
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-nss-ignore-certdb-type-prefix.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-nss-certs-from-certdb-fallback-pem.patch
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-nss-pk11-freeslot.patch
+patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/openldap-allop-overlay.patch
 # fix back_perl problems with lt_dlopen()
 # might cause crashes because of symbol collisions
 # the proper fix is to link all perl modules against libperl

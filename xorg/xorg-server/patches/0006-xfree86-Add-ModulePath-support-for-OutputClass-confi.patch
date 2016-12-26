@@ -1,0 +1,183 @@
+From b5dffbbac193aa640ffcfa0a431c21b862854e53 Mon Sep 17 00:00:00 2001
+From: Hans De Goede <hdegoede@redhat.com>
+Date: Mon, 12 Dec 2016 17:03:17 +0100
+Subject: [PATCH xserver 6/6] xfree86: Add ModulePath support for OutputClass
+ config Sections
+
+Allow OutputClass config snippets to modify the module-path.
+
+Note that any specified ModulePaths will be pre-pended to the normal
+ModulePath. The idea behind this is that any output hardware specific
+modules should have preference over the normal modules.
+
+One use-case for this is the nvidia binary driver, this allows a
+config snippet like this:
+
+Section "OutputClass"
+    MatchDriver "nvidia"
+    Modulepath "/usr/lib64/nvidia/modules"
+EndSection
+
+To get the nvidia glx specific glx module loaded, but only when the
+nvidia kernel driver is loaded.
+
+Together with the glvnd work done recently, this allows the nouveau
++ mesa and nvidia-binary userspace stacks to co-exist on the same
+system without any ldconfig / xorg.conf tweaking and the xserver will
+automatically do the right thing depending on which kernel driver
+(nouveau or nvidia) is loaded.
+
+Reviewed-by: Adam Jackson <ajax@redhat.com>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+---
+ hw/xfree86/common/xf86platformBus.c | 23 +++++++++++++++++++++++
+ hw/xfree86/loader/loadmod.c         |  1 +
+ hw/xfree86/man/xorg.conf.man        | 16 ++++++++++++++++
+ hw/xfree86/parser/OutputClass.c     | 15 +++++++++++++++
+ hw/xfree86/parser/xf86Parser.h      |  1 +
+ 5 files changed, 56 insertions(+)
+
+diff --git a/hw/xfree86/common/xf86platformBus.c b/hw/xfree86/common/xf86platformBus.c
+index fc17d15..0b5795f 100644
+--- a/hw/xfree86/common/xf86platformBus.c
++++ b/hw/xfree86/common/xf86platformBus.c
+@@ -40,6 +40,7 @@
+ #include "hotplug.h"
+ #include "systemd-logind.h"
+ 
++#include "loaderProcs.h"
+ #include "xf86.h"
+ #include "xf86_OSproc.h"
+ #include "xf86Priv.h"
+@@ -287,6 +288,7 @@ xf86platformProbe(void)
+     int i;
+     Bool pci = TRUE;
+     XF86ConfOutputClassPtr cl;
++    char *old_path, *path = NULL;
+ 
+     config_odev_probe(xf86PlatformDeviceProbe);
+ 
+@@ -300,8 +302,29 @@ xf86platformProbe(void)
+         if (pci && (strncmp(busid, "pci:", 4) == 0)) {
+             platform_find_pci_info(&xf86_platform_devices[i], busid);
+         }
++
++        /*
++         * Deal with OutputClass ModulePath directives, these must be
++         * processed before we do any module loading.
++         */
++        for (cl = xf86configptr->conf_outputclass_lst; cl; cl = cl->list.next) {
++            if (!OutputClassMatches(cl, &xf86_platform_devices[i]))
++                continue;
++
++            if (cl->modulepath && xf86ModPathFrom != X_CMDLINE) {
++                old_path = path;
++                XNFasprintf(&path, "%s,%s", cl->modulepath,
++                            path ? path : xf86ModulePath);
++                free(old_path);
++                xf86Msg(X_CONFIG, "OutputClass \"%s\" ModulePath extended to \"%s\"\n",
++                        cl->identifier, path);
++                LoaderSetPath(path);
++            }
++        }
+     }
+ 
++    free(path);
++
+     /* First see if there is an OutputClass match marking a device as primary */
+     for (i = 0; i < xf86_num_platform_devices; i++) {
+         struct xf86_platform_device *dev = &xf86_platform_devices[i];
+diff --git a/hw/xfree86/loader/loadmod.c b/hw/xfree86/loader/loadmod.c
+index 8bf6836..940f5fc 100644
+--- a/hw/xfree86/loader/loadmod.c
++++ b/hw/xfree86/loader/loadmod.c
+@@ -184,6 +184,7 @@ LoaderSetPath(const char *path)
+     if (!path)
+         return;
+ 
++    FreeStringList(defaultPathList);
+     defaultPathList = InitPathList(path);
+ }
+ 
+diff --git a/hw/xfree86/man/xorg.conf.man b/hw/xfree86/man/xorg.conf.man
+index 79b71a8..00ebf56 100644
+--- a/hw/xfree86/man/xorg.conf.man
++++ b/hw/xfree86/man/xorg.conf.man
+@@ -1300,6 +1300,22 @@ This option specifies that the matched device should be treated as the
+ primary GPU, replacing the selection of the GPU used as output by the
+ firmware. If multiple output devices match an OutputClass section with
+ the PrimaryGPU option set, the first one enumerated becomes the primary GPU.
++.PP
++A
++.B OutputClass
++Section may contain
++.B ModulePath
++entries. When an output device matches an
++.B OutputClass
++section, any
++.B ModulePath
++entries in that
++.B OutputClass
++are pre-pended to the search path for loadable Xorg server modules. See
++.B ModulePath
++in the
++.B Files
++section for more info.
+ .SH "DEVICE SECTION"
+ The config file may have multiple
+ .B Device
+diff --git a/hw/xfree86/parser/OutputClass.c b/hw/xfree86/parser/OutputClass.c
+index f813ee6..01b348f 100644
+--- a/hw/xfree86/parser/OutputClass.c
++++ b/hw/xfree86/parser/OutputClass.c
+@@ -36,6 +36,7 @@ static const xf86ConfigSymTabRec OutputClassTab[] = {
+     {ENDSECTION, "endsection"},
+     {IDENTIFIER, "identifier"},
+     {DRIVER, "driver"},
++    {MODULEPATH, "modulepath"},
+     {OPTION, "option"},
+     {MATCH_DRIVER, "matchdriver"},
+     {-1, ""},
+@@ -53,6 +54,7 @@ xf86freeOutputClassList(XF86ConfOutputClassPtr ptr)
+         TestFree(ptr->identifier);
+         TestFree(ptr->comment);
+         TestFree(ptr->driver);
++        TestFree(ptr->modulepath);
+ 
+         xorg_list_for_each_entry_safe(group, next, &ptr->match_driver, entry) {
+             xorg_list_del(&group->entry);
+@@ -115,6 +117,19 @@ xf86parseOutputClassSection(void)
+             else
+                 ptr->driver = xf86_lex_val.str;
+             break;
++        case MODULEPATH:
++            if (xf86getSubToken(&(ptr->comment)) != STRING)
++                Error(QUOTE_MSG, "ModulePath");
++            if (ptr->modulepath) {
++                char *path;
++                XNFasprintf(&path, "%s,%s", ptr->modulepath, xf86_lex_val.str);
++                free(xf86_lex_val.str);
++                free(ptr->modulepath);
++                ptr->modulepath = path;
++            } else {
++                ptr->modulepath = xf86_lex_val.str;
++            }
++            break;
+         case OPTION:
+             ptr->option_lst = xf86parseOption(ptr->option_lst);
+             break;
+diff --git a/hw/xfree86/parser/xf86Parser.h b/hw/xfree86/parser/xf86Parser.h
+index 897edab..e014048 100644
+--- a/hw/xfree86/parser/xf86Parser.h
++++ b/hw/xfree86/parser/xf86Parser.h
+@@ -337,6 +337,7 @@ typedef struct {
+     GenericListRec list;
+     char *identifier;
+     char *driver;
++    char *modulepath;
+     struct xorg_list match_driver;
+     XF86OptionPtr option_lst;
+     char *comment;
+-- 
+2.9.3
+

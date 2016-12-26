@@ -1,0 +1,138 @@
+http://sourceware.org/ml/gdb-patches/2016-10/msg00287.html
+Subject: Re: aarch64 regression: gdb.cp/nextoverthrow.exp [Re: [PATCH master+7.12] [AArch64] Match instruction "STP with base register" in prologue]
+
+Jan Kratochvil <jan.kratochvil@redhat.com> writes:
+
+>> Could you open a ticket in bugzilla for this error?  I am testing a patch.
+>
+> https://sourceware.org/bugzilla/show_bug.cgi?id=20682
+
+Thanks, here is the patch...
+
+-- 
+Yao (齐尧)
+
+>From 5794d10bcda63da8fc47d0a76c29669af83ed48b Mon Sep 17 00:00:00 2001
+From: Yao Qi <yao.qi@linaro.org>
+Date: Tue, 11 Oct 2016 12:12:46 +0100
+Subject: [PATCH] [AArch64] Track FP registers in prologue analyzer
+
+We don't track FP registers in aarch64 prologue analyzer, so this causes
+an internal error when FP registers are saved by "stp" instruction in
+prologue (stp	d8, d9, [sp,#128]),
+
+ tbreak _Unwind_RaiseException^M
+ aarch64-tdep.c:335: internal-error: CORE_ADDR aarch64_analyze_prologue(gdbarch*, CORE_ADDR, CORE_ADDR, aarch64_prologue_cache*): Assertion `inst.operands[0].type == AARCH64_OPND_Rt' failed.^M
+ A problem internal to GDB has been detected,
+
+This patch teaches GDB to track FP registers (D registers) in prologue
+analyzer.
+
+gdb:
+
+2016-10-12  Yao Qi  <yao.qi@linaro.org>
+
+	PR tdep/20682
+	* aarch64-tdep.c: Replace 32 with AARCH64_D_REGISTER_COUNT.
+	(aarch64_analyze_prologue): Extend array 'regs' for D registers.
+	Assert that operand 0 and 1 can be X or D registers.  Update
+	register number for D registers.  Update registers in frame
+	cache.
+	* aarch64-tdep.h (AARCH64_D_REGISTER_COUNT): New macro.
+
+diff --git a/gdb/aarch64-tdep.c b/gdb/aarch64-tdep.c
+index 16dd365..be72785 100644
+--- a/gdb/aarch64-tdep.c
++++ b/gdb/aarch64-tdep.c
+@@ -68,7 +68,7 @@
+ 
+ /* Pseudo register base numbers.  */
+ #define AARCH64_Q0_REGNUM 0
+-#define AARCH64_D0_REGNUM (AARCH64_Q0_REGNUM + 32)
++#define AARCH64_D0_REGNUM (AARCH64_Q0_REGNUM + AARCH64_D_REGISTER_COUNT)
+ #define AARCH64_S0_REGNUM (AARCH64_D0_REGNUM + 32)
+ #define AARCH64_H0_REGNUM (AARCH64_S0_REGNUM + 32)
+ #define AARCH64_B0_REGNUM (AARCH64_H0_REGNUM + 32)
+@@ -206,11 +206,12 @@ aarch64_analyze_prologue (struct gdbarch *gdbarch,
+ {
+   enum bfd_endian byte_order_for_code = gdbarch_byte_order_for_code (gdbarch);
+   int i;
+-  pv_t regs[AARCH64_X_REGISTER_COUNT];
++  /* Track X registers and D registers in prologue.  */
++  pv_t regs[AARCH64_X_REGISTER_COUNT + AARCH64_D_REGISTER_COUNT];
+   struct pv_area *stack;
+   struct cleanup *back_to;
+ 
+-  for (i = 0; i < AARCH64_X_REGISTER_COUNT; i++)
++  for (i = 0; i < AARCH64_X_REGISTER_COUNT + AARCH64_D_REGISTER_COUNT; i++)
+     regs[i] = pv_register (i, 0);
+   stack = make_pv_area (AARCH64_SP_REGNUM, gdbarch_addr_bit (gdbarch));
+   back_to = make_cleanup_free_pv_area (stack);
+@@ -328,13 +329,15 @@ aarch64_analyze_prologue (struct gdbarch *gdbarch,
+ 	       && strcmp ("stp", inst.opcode->name) == 0)
+ 	{
+ 	  /* STP with addressing mode Pre-indexed and Base register.  */
+-	  unsigned rt1 = inst.operands[0].reg.regno;
+-	  unsigned rt2 = inst.operands[1].reg.regno;
++	  unsigned rt1;
++	  unsigned rt2;
+ 	  unsigned rn = inst.operands[2].addr.base_regno;
+ 	  int32_t imm = inst.operands[2].addr.offset.imm;
+ 
+-	  gdb_assert (inst.operands[0].type == AARCH64_OPND_Rt);
+-	  gdb_assert (inst.operands[1].type == AARCH64_OPND_Rt2);
++	  gdb_assert (inst.operands[0].type == AARCH64_OPND_Rt
++		      || inst.operands[0].type == AARCH64_OPND_Ft);
++	  gdb_assert (inst.operands[1].type == AARCH64_OPND_Rt2
++		      || inst.operands[1].type == AARCH64_OPND_Ft2);
+ 	  gdb_assert (inst.operands[2].type == AARCH64_OPND_ADDR_SIMM7);
+ 	  gdb_assert (!inst.operands[2].addr.offset.is_reg);
+ 
+@@ -349,6 +352,17 @@ aarch64_analyze_prologue (struct gdbarch *gdbarch,
+ 					 pv_add_constant (regs[rn], imm + 8)))
+ 	    break;
+ 
++	  rt1 = inst.operands[0].reg.regno;
++	  rt2 = inst.operands[1].reg.regno;
++	  if (inst.operands[0].type == AARCH64_OPND_Ft)
++	    {
++	      /* Only bottom 64-bit of each V register (D register) need
++		 to be preserved.  */
++	      gdb_assert (inst.operands[0].qualifier == AARCH64_OPND_QLF_S_D);
++	      rt1 += AARCH64_X_REGISTER_COUNT;
++	      rt2 += AARCH64_X_REGISTER_COUNT;
++	    }
++
+ 	  pv_area_store (stack, pv_add_constant (regs[rn], imm), 8,
+ 			 regs[rt1]);
+ 	  pv_area_store (stack, pv_add_constant (regs[rn], imm + 8), 8,
+@@ -408,6 +422,16 @@ aarch64_analyze_prologue (struct gdbarch *gdbarch,
+ 	cache->saved_regs[i].addr = offset;
+     }
+ 
++  for (i = 0; i < AARCH64_D_REGISTER_COUNT; i++)
++    {
++      int regnum = gdbarch_num_regs (gdbarch);
++      CORE_ADDR offset;
++
++      if (pv_area_find_reg (stack, gdbarch, i + AARCH64_X_REGISTER_COUNT,
++			    &offset))
++	cache->saved_regs[i + regnum + AARCH64_D0_REGNUM].addr = offset;
++    }
++
+   do_cleanups (back_to);
+   return start;
+ }
+diff --git a/gdb/aarch64-tdep.h b/gdb/aarch64-tdep.h
+index a95b613..6252820 100644
+--- a/gdb/aarch64-tdep.h
++++ b/gdb/aarch64-tdep.h
+@@ -68,6 +68,8 @@ enum aarch64_regnum
+ 
+ /* Total number of general (X) registers.  */
+ #define AARCH64_X_REGISTER_COUNT 32
++/* Total number of D registers.  */
++#define AARCH64_D_REGISTER_COUNT 32
+ 
+ /* The maximum number of modified instructions generated for one
+    single-stepped instruction.  */

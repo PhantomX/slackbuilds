@@ -1,0 +1,1488 @@
+git diff --stat -p gdb/master...gdb/users/bheckel/fortran-vla-strings
+0ad7d8d1a3a36c6e04e3b6d37d8825f18d595723
+
+ gdb/NEWS                                  |   2 +
+ gdb/c-valprint.c                          |  22 +++++
+ gdb/dwarf2read.c                          | 158 +++++++++++++++++++++++++-----
+ gdb/f-typeprint.c                         |  93 +++++++++---------
+ gdb/gdbtypes.c                            |  44 ++++++++-
+ gdb/testsuite/gdb.cp/vla-cxx.cc           |   9 ++
+ gdb/testsuite/gdb.cp/vla-cxx.exp          |   9 ++
+ gdb/testsuite/gdb.fortran/pointers.exp    | 143 +++++++++++++++++++++++++++
+ gdb/testsuite/gdb.fortran/pointers.f90    | 109 +++++++++++++++++++++
+ gdb/testsuite/gdb.fortran/print_type.exp  | 100 +++++++++++++++++++
+ gdb/testsuite/gdb.fortran/vla-ptype.exp   |  12 +--
+ gdb/testsuite/gdb.fortran/vla-strings.exp | 103 +++++++++++++++++++
+ gdb/testsuite/gdb.fortran/vla-strings.f90 |  39 ++++++++
+ gdb/testsuite/gdb.fortran/vla-type.exp    |   7 +-
+ gdb/testsuite/gdb.fortran/vla-value.exp   |  12 ++-
+ gdb/testsuite/gdb.mi/mi-var-child-f.exp   |   7 +-
+ gdb/testsuite/gdb.mi/mi-vla-fortran.exp   |  27 ++---
+ gdb/typeprint.c                           |  19 ++++
+ gdb/valops.c                              |  16 ++-
+ gdb/valprint.c                            |   6 --
+ 20 files changed, 827 insertions(+), 110 deletions(-)
+
+Index: gdb-7.11.90.20160907/gdb/NEWS
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/NEWS	2016-09-07 21:52:10.273563060 +0200
++++ gdb-7.11.90.20160907/gdb/NEWS	2016-09-07 21:53:22.708210416 +0200
+@@ -1,6 +1,8 @@
+ 		What has changed in GDB?
+ 	     (Organized release by release)
+ 
++* Fortran: Support pointers to dynamic types.
++
+ *** Changes in GDB 7.12
+ 
+ * GDB and GDBserver now build with a C++ compiler by default.
+Index: gdb-7.11.90.20160907/gdb/c-valprint.c
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/c-valprint.c	2016-09-07 21:52:10.272563051 +0200
++++ gdb-7.11.90.20160907/gdb/c-valprint.c	2016-09-07 21:53:22.708210416 +0200
+@@ -645,6 +645,28 @@
+       else
+ 	{
+ 	  /* normal case */
++	  if (TYPE_CODE (type) == TYPE_CODE_PTR
++	      && 1 == is_dynamic_type (type))
++	    {
++	      CORE_ADDR addr;
++	      if (NULL != TYPE_DATA_LOCATION (TYPE_TARGET_TYPE (type)))
++		addr = value_address (val);
++	      else
++		addr = value_as_address (val);
++
++	      /* We resolve the target-type only when the
++	         pointer is associated.  */
++	      if ((addr != 0)
++		  && (0 == type_not_associated (type)))
++		  TYPE_TARGET_TYPE (type) =
++		      resolve_dynamic_type (TYPE_TARGET_TYPE (type),
++					    NULL, addr);
++	    }
++	  else
++	    {
++	      /* Do nothing. References are already resolved from the beginning,
++	         only pointers are resolved when we actual need the target.  */
++	    }
+ 	  fprintf_filtered (stream, "(");
+ 	  type_print (value_type (val), "", stream, -1);
+ 	  fprintf_filtered (stream, ") ");
+Index: gdb-7.11.90.20160907/gdb/dwarf2read.c
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/dwarf2read.c	2016-09-07 21:52:53.700951175 +0200
++++ gdb-7.11.90.20160907/gdb/dwarf2read.c	2016-09-07 21:54:02.140562825 +0200
+@@ -1764,7 +1764,8 @@
+ 
+ static int attr_to_dynamic_prop (const struct attribute *attr,
+ 				 struct die_info *die, struct dwarf2_cu *cu,
+-				 struct dynamic_prop *prop);
++				 struct dynamic_prop *prop, const gdb_byte *additional_data,
++				 int additional_data_size);
+ 
+ /* memory allocation interface */
+ 
+@@ -11446,7 +11447,7 @@
+     {
+       newobj->static_link
+ 	= XOBNEW (&objfile->objfile_obstack, struct dynamic_prop);
+-      attr_to_dynamic_prop (attr, die, cu, newobj->static_link);
++      attr_to_dynamic_prop (attr, die, cu, newobj->static_link, NULL, 0);
+     }
+ 
+   cu->list_in_scope = &local_symbols;
+@@ -14512,29 +14513,94 @@
+   struct gdbarch *gdbarch = get_objfile_arch (objfile);
+   struct type *type, *range_type, *index_type, *char_type;
+   struct attribute *attr;
+-  unsigned int length;
++  unsigned int length = UINT_MAX;
+ 
++  index_type = objfile_type (objfile)->builtin_int;
++  range_type = create_static_range_type (NULL, index_type, 1, length);
++
++  /* If DW_AT_string_length is defined, the length is stored in memory.  */
+   attr = dwarf2_attr (die, DW_AT_string_length, cu);
+   if (attr)
+     {
+-      length = DW_UNSND (attr);
++      if (attr_form_is_block (attr))
++	{
++	  struct attribute *byte_size, *bit_size;
++	  struct dynamic_prop high;
++
++	  byte_size = dwarf2_attr (die, DW_AT_byte_size, cu);
++	  bit_size = dwarf2_attr (die, DW_AT_bit_size, cu);
++
++	  /* DW_AT_byte_size should never occur in combination with
++	     DW_AT_bit_size.  */
++	  if (byte_size != NULL && bit_size != NULL)
++	    complaint (&symfile_complaints,
++		       _("DW_AT_byte_size AND "
++			 "DW_AT_bit_size found together at the same time."));
++
++	  /* If DW_AT_string_length AND DW_AT_byte_size exist together,
++	     DW_AT_byte_size describes the number of bytes that should be read
++	     from the length memory location.  */
++	  if (byte_size != NULL)
++	    {
++	      /* Build new dwarf2_locexpr_baton structure with additions to the
++		 data attribute, to reflect DWARF specialities to get address
++		 sizes.  */
++	      const gdb_byte append_ops[] =
++		{
++		/* DW_OP_deref_size: size of an address on the target machine
++		   (bytes), where the size will be specified by the next
++		   operand.  */
++		DW_OP_deref_size,
++		/* Operand for DW_OP_deref_size.  */
++		DW_UNSND(byte_size) };
++
++	      if (!attr_to_dynamic_prop (attr, die, cu, &high, append_ops,
++					 ARRAY_SIZE(append_ops)))
++		complaint (&symfile_complaints,
++			   _("Could not parse DW_AT_byte_size"));
++	    }
++	  else if (bit_size != NULL)
++	    complaint (&symfile_complaints,
++		       _("DW_AT_string_length AND "
++			 "DW_AT_bit_size found but not supported yet."));
++	  /* If DW_AT_string_length WITHOUT DW_AT_byte_size exist, the default
++	     is the address size of the target machine.  */
++	  else
++	    {
++	      const gdb_byte append_ops[] =
++		{ DW_OP_deref };
++
++	      if (!attr_to_dynamic_prop (attr, die, cu, &high, append_ops,
++					 ARRAY_SIZE(append_ops)))
++		complaint (&symfile_complaints,
++			   _("Could not parse DW_AT_string_length"));
++	    }
++
++	  TYPE_RANGE_DATA (range_type)->high = high;
++	}
++      else
++	{
++	  TYPE_HIGH_BOUND (range_type) = DW_UNSND(attr);
++	  TYPE_HIGH_BOUND_KIND (range_type) = PROP_CONST;
++	}
+     }
+   else
+     {
+-      /* Check for the DW_AT_byte_size attribute.  */
++      /* Check for the DW_AT_byte_size attribute, which represents the length
++	 in this case.  */
+       attr = dwarf2_attr (die, DW_AT_byte_size, cu);
+       if (attr)
+-        {
+-          length = DW_UNSND (attr);
+-        }
++	{
++	  TYPE_HIGH_BOUND (range_type) = DW_UNSND(attr);
++	  TYPE_HIGH_BOUND_KIND (range_type) = PROP_CONST;
++	}
+       else
+-        {
+-          length = 1;
+-        }
++	{
++	  TYPE_HIGH_BOUND (range_type) = 1;
++	  TYPE_HIGH_BOUND_KIND (range_type) = PROP_CONST;
++	}
+     }
+ 
+-  index_type = objfile_type (objfile)->builtin_int;
+-  range_type = create_static_range_type (NULL, index_type, 1, length);
+   char_type = language_string_char_type (cu->language_defn, gdbarch);
+   type = create_string_type (NULL, char_type, range_type);
+ 
+@@ -14864,7 +14930,8 @@
+ 
+ static int
+ attr_to_dynamic_prop (const struct attribute *attr, struct die_info *die,
+-		      struct dwarf2_cu *cu, struct dynamic_prop *prop)
++		      struct dwarf2_cu *cu, struct dynamic_prop *prop,
++		      const gdb_byte *additional_data, int additional_data_size)
+ {
+   struct dwarf2_property_baton *baton;
+   struct obstack *obstack = &cu->objfile->objfile_obstack;
+@@ -14874,14 +14941,33 @@
+ 
+   if (attr_form_is_block (attr))
+     {
+-      baton = XOBNEW (obstack, struct dwarf2_property_baton);
++      baton = XOBNEW(obstack, struct dwarf2_property_baton);
+       baton->referenced_type = NULL;
+       baton->locexpr.per_cu = cu->per_cu;
+-      baton->locexpr.size = DW_BLOCK (attr)->size;
+-      baton->locexpr.data = DW_BLOCK (attr)->data;
++
++      if (additional_data != NULL && additional_data_size > 0)
++	{
++	  gdb_byte *data;
++
++	  data = (gdb_byte *) obstack_alloc(
++	      &cu->objfile->objfile_obstack,
++	      DW_BLOCK (attr)->size + additional_data_size);
++	  memcpy (data, DW_BLOCK (attr)->data, DW_BLOCK (attr)->size);
++	  memcpy (data + DW_BLOCK (attr)->size, additional_data,
++		  additional_data_size);
++
++	  baton->locexpr.data = data;
++	  baton->locexpr.size = DW_BLOCK (attr)->size + additional_data_size;
++	}
++      else
++	{
++	  baton->locexpr.data = DW_BLOCK (attr)->data;
++	  baton->locexpr.size = DW_BLOCK (attr)->size;
++	}
++
+       prop->data.baton = baton;
+       prop->kind = PROP_LOCEXPR;
+-      gdb_assert (prop->data.baton != NULL);
++      gdb_assert(prop->data.baton != NULL);
+     }
+   else if (attr_form_is_ref (attr))
+     {
+@@ -14914,8 +15000,28 @@
+ 		baton = XOBNEW (obstack, struct dwarf2_property_baton);
+ 		baton->referenced_type = die_type (target_die, target_cu);
+ 		baton->locexpr.per_cu = cu->per_cu;
+-		baton->locexpr.size = DW_BLOCK (target_attr)->size;
+-		baton->locexpr.data = DW_BLOCK (target_attr)->data;
++
++		if (additional_data != NULL && additional_data_size > 0)
++		  {
++		    gdb_byte *data;
++
++		    data = (gdb_byte *) obstack_alloc (&cu->objfile->objfile_obstack,
++			    DW_BLOCK (target_attr)->size + additional_data_size);
++		    memcpy (data, DW_BLOCK (target_attr)->data,
++			    DW_BLOCK (target_attr)->size);
++		    memcpy (data + DW_BLOCK (target_attr)->size,
++			    additional_data, additional_data_size);
++
++		    baton->locexpr.data = data;
++		    baton->locexpr.size = (DW_BLOCK (target_attr)->size
++					   + additional_data_size);
++		  }
++		else
++		  {
++		    baton->locexpr.data = DW_BLOCK (target_attr)->data;
++		    baton->locexpr.size = DW_BLOCK (target_attr)->size;
++		  }
++
+ 		prop->data.baton = baton;
+ 		prop->kind = PROP_LOCEXPR;
+ 		gdb_assert (prop->data.baton != NULL);
+@@ -15027,24 +15133,24 @@
+ 
+   attr = dwarf2_attr (die, DW_AT_byte_stride, cu);
+   if (attr)
+-    if (!attr_to_dynamic_prop (attr, die, cu, &stride))
++    if (!attr_to_dynamic_prop (attr, die, cu, &stride, NULL, 0))
+         complaint (&symfile_complaints, _("Missing DW_AT_byte_stride "
+                   "- DIE at 0x%x [in module %s]"),
+              die->offset.sect_off, objfile_name (cu->objfile));
+ 
+   attr = dwarf2_attr (die, DW_AT_lower_bound, cu);
+   if (attr)
+-    attr_to_dynamic_prop (attr, die, cu, &low);
++    attr_to_dynamic_prop (attr, die, cu, &low, NULL, 0);
+   else if (!low_default_is_valid)
+     complaint (&symfile_complaints, _("Missing DW_AT_lower_bound "
+ 				      "- DIE at 0x%x [in module %s]"),
+ 	       die->offset.sect_off, objfile_name (cu->objfile));
+ 
+   attr = dwarf2_attr (die, DW_AT_upper_bound, cu);
+-  if (!attr_to_dynamic_prop (attr, die, cu, &high))
++  if (!attr_to_dynamic_prop (attr, die, cu, &high, NULL, 0))
+     {
+       attr = dwarf2_attr (die, DW_AT_count, cu);
+-      if (attr_to_dynamic_prop (attr, die, cu, &high))
++      if (attr_to_dynamic_prop (attr, die, cu, &high, NULL, 0))
+ 	{
+ 	  /* If bounds are constant do the final calculation here.  */
+ 	  if (low.kind == PROP_CONST && high.kind == PROP_CONST)
+@@ -22416,7 +22522,7 @@
+   attr = dwarf2_attr (die, DW_AT_allocated, cu);
+   if (attr_form_is_block (attr))
+     {
+-      if (attr_to_dynamic_prop (attr, die, cu, &prop))
++      if (attr_to_dynamic_prop (attr, die, cu, &prop, NULL, 0))
+         add_dyn_prop (DYN_PROP_ALLOCATED, prop, type, objfile);
+     }
+   else if (attr != NULL)
+@@ -22431,7 +22537,7 @@
+   attr = dwarf2_attr (die, DW_AT_associated, cu);
+   if (attr_form_is_block (attr))
+     {
+-      if (attr_to_dynamic_prop (attr, die, cu, &prop))
++      if (attr_to_dynamic_prop (attr, die, cu, &prop, NULL, 0))
+         add_dyn_prop (DYN_PROP_ASSOCIATED, prop, type, objfile);
+     }
+   else if (attr != NULL)
+@@ -22444,7 +22550,7 @@
+ 
+   /* Read DW_AT_data_location and set in type.  */
+   attr = dwarf2_attr (die, DW_AT_data_location, cu);
+-  if (attr_to_dynamic_prop (attr, die, cu, &prop))
++  if (attr_to_dynamic_prop (attr, die, cu, &prop, NULL, 0))
+     add_dyn_prop (DYN_PROP_DATA_LOCATION, prop, type, objfile);
+ 
+   if (dwarf2_per_objfile->die_type_hash == NULL)
+Index: gdb-7.11.90.20160907/gdb/f-typeprint.c
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/f-typeprint.c	2016-09-07 21:52:10.272563051 +0200
++++ gdb-7.11.90.20160907/gdb/f-typeprint.c	2016-09-07 21:53:22.713210461 +0200
+@@ -37,7 +37,7 @@
+ #endif
+ 
+ static void f_type_print_varspec_suffix (struct type *, struct ui_file *, int,
+-					 int, int, int);
++					 int, int, int, int);
+ 
+ void f_type_print_varspec_prefix (struct type *, struct ui_file *,
+ 				  int, int);
+@@ -54,18 +54,6 @@
+   enum type_code code;
+   int demangled_args;
+ 
+-  if (type_not_associated (type))
+-    {
+-      val_print_not_associated (stream);
+-      return;
+-    }
+-
+-  if (type_not_allocated (type))
+-    {
+-      val_print_not_allocated (stream);
+-      return;
+-    }
+-
+   f_type_print_base (type, stream, show, level);
+   code = TYPE_CODE (type);
+   if ((varstring != NULL && *varstring != '\0')
+@@ -87,7 +75,7 @@
+          so don't print an additional pair of ()'s.  */
+ 
+       demangled_args = varstring[strlen (varstring) - 1] == ')'; 
+-      f_type_print_varspec_suffix (type, stream, show, 0, demangled_args, 0);
++      f_type_print_varspec_suffix (type, stream, show, 0, demangled_args, 0, 0);
+    }
+ }
+ 
+@@ -157,7 +145,7 @@
+ static void
+ f_type_print_varspec_suffix (struct type *type, struct ui_file *stream,
+ 			     int show, int passed_a_ptr, int demangled_args,
+-			     int arrayprint_recurse_level)
++			     int arrayprint_recurse_level, int print_rank_only)
+ {
+   int upper_bound, lower_bound;
+ 
+@@ -181,34 +169,50 @@
+ 	fprintf_filtered (stream, "(");
+ 
+       if (type_not_associated (type))
+-        val_print_not_associated (stream);
++	print_rank_only = 1;
+       else if (type_not_allocated (type))
+-        val_print_not_allocated (stream);
++	print_rank_only = 1;
++      else if ((TYPE_ASSOCIATED_PROP (type)
++		&& PROP_CONST != TYPE_DYN_PROP_KIND (TYPE_ASSOCIATED_PROP (type)))
++	      || (TYPE_ALLOCATED_PROP (type)
++		&& PROP_CONST != TYPE_DYN_PROP_KIND (TYPE_ALLOCATED_PROP (type)))
++	      || (TYPE_DATA_LOCATION (type)
++		  && PROP_CONST != TYPE_DYN_PROP_KIND (TYPE_DATA_LOCATION (type))))
++	/* This case exist when we ptype a typename which has the
++	   dynamic properties but cannot be resolved as there is
++	   no object.  */
++	print_rank_only = 1;
++
++      if (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_ARRAY)
++	f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0,
++				     0, 0, arrayprint_recurse_level,
++				     print_rank_only);
++
++      if (print_rank_only == 1)
++	fprintf_filtered (stream, ":");
+       else
+-        {
+-          if (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_ARRAY)
+-            f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0,
+-                                        0, 0, arrayprint_recurse_level);
+-
+-          lower_bound = f77_get_lowerbound (type);
+-          if (lower_bound != 1)	/* Not the default.  */
+-            fprintf_filtered (stream, "%d:", lower_bound);
+-
+-          /* Make sure that, if we have an assumed size array, we
+-             print out a warning and print the upperbound as '*'.  */
+-
+-          if (TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (type))
+-            fprintf_filtered (stream, "*");
+-          else
+-            {
+-              upper_bound = f77_get_upperbound (type);
+-              fprintf_filtered (stream, "%d", upper_bound);
+-            }
+-
+-          if (TYPE_CODE (TYPE_TARGET_TYPE (type)) != TYPE_CODE_ARRAY)
+-            f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0,
+-                                        0, 0, arrayprint_recurse_level);
+-        }
++	{
++	  lower_bound = f77_get_lowerbound (type);
++	  if (lower_bound != 1)	/* Not the default.  */
++	    fprintf_filtered (stream, "%d:", lower_bound);
++
++	  /* Make sure that, if we have an assumed size array, we
++	       print out a warning and print the upperbound as '*'.  */
++
++	  if (TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (type))
++	    fprintf_filtered (stream, "*");
++	  else
++	    {
++	      upper_bound = f77_get_upperbound (type);
++	      fprintf_filtered (stream, "%d", upper_bound);
++	    }
++	}
++
++      if (TYPE_CODE (TYPE_TARGET_TYPE (type)) != TYPE_CODE_ARRAY)
++	f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0,
++				     0, 0, arrayprint_recurse_level,
++				     print_rank_only);
++
+       if (arrayprint_recurse_level == 1)
+ 	fprintf_filtered (stream, ")");
+       else
+@@ -219,13 +223,14 @@
+     case TYPE_CODE_PTR:
+     case TYPE_CODE_REF:
+       f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0, 1, 0,
+-				   arrayprint_recurse_level);
++				   arrayprint_recurse_level, 0);
+       fprintf_filtered (stream, ")");
+       break;
+ 
+     case TYPE_CODE_FUNC:
+       f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0,
+-				   passed_a_ptr, 0, arrayprint_recurse_level);
++				   passed_a_ptr, 0, arrayprint_recurse_level,
++				   0);
+       if (passed_a_ptr)
+ 	fprintf_filtered (stream, ")");
+ 
+@@ -376,7 +381,7 @@
+ 	      fputs_filtered (" :: ", stream);
+ 	      fputs_filtered (TYPE_FIELD_NAME (type, index), stream);
+ 	      f_type_print_varspec_suffix (TYPE_FIELD_TYPE (type, index),
+-					   stream, show - 1, 0, 0, 0);
++					   stream, show - 1, 0, 0, 0, 0);
+ 	      fputs_filtered ("\n", stream);
+ 	    }
+ 	  fprintfi_filtered (level, stream, "End Type ");
+Index: gdb-7.11.90.20160907/gdb/gdbtypes.c
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/gdbtypes.c	2016-09-07 21:52:53.703951202 +0200
++++ gdb-7.11.90.20160907/gdb/gdbtypes.c	2016-09-07 21:53:22.714210470 +0200
+@@ -1816,7 +1816,8 @@
+   type = check_typedef (type);
+ 
+   /* We only want to recognize references at the outermost level.  */
+-  if (top_level && TYPE_CODE (type) == TYPE_CODE_REF)
++  if (top_level &&
++      (TYPE_CODE (type) == TYPE_CODE_REF || TYPE_CODE (type) == TYPE_CODE_PTR))
+     type = check_typedef (TYPE_TARGET_TYPE (type));
+ 
+   /* Types that have a dynamic TYPE_DATA_LOCATION are considered
+@@ -1850,6 +1851,7 @@
+       }
+ 
+     case TYPE_CODE_ARRAY:
++    case TYPE_CODE_STRING:
+       {
+ 	gdb_assert (TYPE_NFIELDS (type) == 1);
+ 
+@@ -1962,7 +1964,8 @@
+   struct type *ary_dim;
+   struct dynamic_prop *prop;
+ 
+-  gdb_assert (TYPE_CODE (type) == TYPE_CODE_ARRAY);
++  gdb_assert (TYPE_CODE (type) == TYPE_CODE_ARRAY
++	      || TYPE_CODE (type) == TYPE_CODE_STRING);
+ 
+   type = copy_type (type);
+ 
+@@ -1987,13 +1990,17 @@
+ 
+   ary_dim = check_typedef (TYPE_TARGET_TYPE (elt_type));
+ 
+-  if (ary_dim != NULL && TYPE_CODE (ary_dim) == TYPE_CODE_ARRAY)
++  if (ary_dim != NULL && (TYPE_CODE (ary_dim) == TYPE_CODE_ARRAY
++      || TYPE_CODE (ary_dim) == TYPE_CODE_STRING))
+     elt_type = resolve_dynamic_array (ary_dim, addr_stack);
+   else
+     elt_type = TYPE_TARGET_TYPE (type);
+ 
+-  return create_array_type_with_stride (type, elt_type, range_type,
+-                                        TYPE_FIELD_BITSIZE (type, 0));
++  if (TYPE_CODE (type) == TYPE_CODE_STRING)
++    return create_string_type (type, elt_type, range_type);
++  else
++    return create_array_type_with_stride (type, elt_type, range_type,
++					  TYPE_FIELD_BITSIZE (type, 0));
+ }
+ 
+ /* Resolve dynamic bounds of members of the union TYPE to static
+@@ -2123,6 +2130,28 @@
+   return resolved_type;
+ }
+ 
++/* Worker for pointer types.  */
++
++static struct type *
++resolve_dynamic_pointer (struct type *type,
++			 struct property_addr_info *addr_stack)
++{
++  struct dynamic_prop *prop;
++  CORE_ADDR value;
++
++  type = copy_type (type);
++
++  /* Resolve associated property.  */
++  prop = TYPE_ASSOCIATED_PROP (type);
++  if (prop != NULL && dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
++    {
++      TYPE_DYN_PROP_ADDR (prop) = value;
++      TYPE_DYN_PROP_KIND (prop) = PROP_CONST;
++    }
++
++  return type;
++}
++
+ /* Worker for resolved_dynamic_type.  */
+ 
+ static struct type *
+@@ -2171,7 +2200,12 @@
+ 	    break;
+ 	  }
+ 
++        case TYPE_CODE_PTR:
++ 	  resolved_type = resolve_dynamic_pointer (type, addr_stack);
++ 	  break;
++
+ 	case TYPE_CODE_ARRAY:
++	case TYPE_CODE_STRING:
+ 	  resolved_type = resolve_dynamic_array (type, addr_stack);
+ 	  break;
+ 
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.cp/vla-cxx.cc
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/testsuite/gdb.cp/vla-cxx.cc	2016-09-07 21:52:10.272563051 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.cp/vla-cxx.cc	2016-09-07 21:53:22.714210470 +0200
+@@ -15,6 +15,10 @@
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+ 
++extern "C" {
++#include <stddef.h>
++}
++
+ struct container;
+ 
+ struct element
+@@ -40,11 +44,16 @@
+   typedef typeof (vla) &vlareftypedef;
+   vlareftypedef vlaref2 (vla);
+   container c;
++  typeof (vla) *ptr = NULL;
++
++  // Before pointer assignment
++  ptr = &vla;
+ 
+   for (int i = 0; i < z; ++i)
+     vla[i] = 5 + 2 * i;
+ 
+   // vlas_filled
+   vla[0] = 2 * vla[0];
++
+   return vla[2];
+ }
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.cp/vla-cxx.exp
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/testsuite/gdb.cp/vla-cxx.exp	2016-09-07 21:52:10.272563051 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.cp/vla-cxx.exp	2016-09-07 21:53:22.715210479 +0200
+@@ -23,6 +23,12 @@
+     return -1
+ }
+ 
++gdb_breakpoint [gdb_get_line_number "Before pointer assignment"]
++gdb_continue_to_breakpoint "Before pointer assignment"
++gdb_test "ptype ptr" "int \\(\\*\\)\\\[variable length\\\]" "ptype ptr, Before pointer assignment"
++gdb_test "print ptr" "\\(int \\(\\*\\)\\\[variable length\\\]\\) 0x0" "print ptr, Before pointer assignment"
++gdb_test "print *ptr" "Cannot access memory at address 0x0" "print *ptr, Before pointer assignment"
++
+ gdb_breakpoint [gdb_get_line_number "vlas_filled"]
+ gdb_continue_to_breakpoint "vlas_filled"
+ 
+@@ -33,3 +39,6 @@
+ # bug being tested, it's better not to depend on the exact spelling.
+ gdb_test "print vlaref2" " = \\(.*\\) @$hex: \\{5, 7, 9\\}"
+ gdb_test "print c" " = \\{e = \\{c = @$hex\\}\\}"
++gdb_test "ptype ptr" "int \\(\\*\\)\\\[3\\\]"
++gdb_test "print ptr" "\\(int \\(\\*\\)\\\[3\\\]\\) $hex"
++gdb_test "print *ptr" " = \\{5, 7, 9\\}"
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/pointers.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/pointers.exp	2016-09-07 21:53:22.715210479 +0200
+@@ -0,0 +1,143 @@
++# Copyright 2016 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++standard_testfile "pointers.f90"
++load_lib fortran.exp
++
++if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} \
++    {debug f90 quiet}] } {
++    return -1
++}
++
++if ![runto_main] {
++    untested "could not run to main"
++    return -1
++}
++
++# Depending on the compiler being used, the type names can be printed differently.
++set logical [fortran_logical4]
++set real [fortran_real4]
++set int [fortran_int4]
++set complex [fortran_complex4]
++
++
++gdb_breakpoint [gdb_get_line_number "Before pointer assignment"]
++gdb_continue_to_breakpoint "Before pointer assignment"
++gdb_test "print logp" "= \\(PTR TO -> \\( $logical \\)\\) 0x0" "print logp, not associated"
++gdb_test "print *logp" "Cannot access memory at address 0x0" "print *logp, not associated"
++gdb_test "print comp" "= \\(PTR TO -> \\( $complex \\)\\) 0x0" "print comp, not associated"
++gdb_test "print *comp" "Cannot access memory at address 0x0" "print *comp, not associated"
++gdb_test "print charp" "= \\(PTR TO -> \\( character\\*1 \\)\\) 0x0" "print charp, not associated"
++gdb_test "print *charp" "Cannot access memory at address 0x0" "print *charp, not associated"
++gdb_test "print charap" "= \\(PTR TO -> \\( character\\*3 \\)\\) 0x0" "print charap, not associated"
++gdb_test "print *charap" "Cannot access memory at address 0x0" "print *charap, not associated"
++gdb_test "print intp" "= \\(PTR TO -> \\( $int \\)\\) 0x0" "print intp, not associated"
++gdb_test "print *intp" "Cannot access memory at address 0x0" "print *intp, not associated"
++set test "print intap, not associated"
++gdb_test_multiple "print intap" $test {
++  -re " = \\(PTR TO -> \\( $int \\(:,:\\)\\)\\) <not associated>\r\n$gdb_prompt $" {
++    pass $test
++  }
++  -re " = <not associated>\r\n$gdb_prompt $" {
++    pass $test
++  }
++}
++gdb_test "print realp" "= \\(PTR TO -> \\( $real \\)\\) 0x0" "print realp, not associated"
++gdb_test "print *realp" "Cannot access memory at address 0x0" "print *realp, not associated"
++gdb_test "print \$my_var = intp" "= \\(PTR TO -> \\( $int \\)\\) 0x0"
++set test "print cyclicp1, not associated"
++gdb_test_multiple "print cyclicp1" $test {
++  -re "= \\( i = -?\\d+, p = 0x0 \\)\r\n$gdb_prompt $" {
++    pass $test
++  }
++  -re "= \\( i = -?\\d+, p = <not associated> \\)\r\n$gdb_prompt $" {
++    pass $test
++  }
++}
++set test "print cyclicp1%p, not associated"
++gdb_test_multiple "print cyclicp1%p" $test {
++  -re "= \\(PTR TO -> \\( Type typewithpointer \\)\\) 0x0\r\n$gdb_prompt $" {
++    pass $test
++  }
++  -re "= \\(PTR TO -> \\( Type typewithpointer \\)\\) <not associated>\r\n$gdb_prompt $" {
++    pass $test
++  }
++}
++
++
++gdb_breakpoint [gdb_get_line_number "Before value assignment"]
++gdb_continue_to_breakpoint "Before value assignment"
++gdb_test "print *(twop)%ivla2" "= <not allocated>"
++
++
++gdb_breakpoint [gdb_get_line_number "After value assignment"]
++gdb_continue_to_breakpoint "After value assignment"
++gdb_test "print logp" "= \\(PTR TO -> \\( $logical \\)\\) $hex\( <.*>\)?"
++gdb_test "print *logp" "= \\.TRUE\\."
++gdb_test "print comp" "= \\(PTR TO -> \\( $complex \\)\\) $hex\( <.*>\)?"
++gdb_test "print *comp" "= \\(1,2\\)"
++gdb_test "print charp" "= \\(PTR TO -> \\( character\\*1 \\)\\) $hex\( <.*>\)?"
++gdb_test "print *charp" "= 'a'"
++gdb_test "print charap" "= \\(PTR TO -> \\( character\\*3 \\)\\) $hex\( <.*>\)?"
++gdb_test "print *charap" "= 'abc'"
++gdb_test "print intp" "= \\(PTR TO -> \\( $int \\)\\) $hex\( <.*>\)?"
++gdb_test "print *intp" "= 10"
++set test_name "print intap, associated"
++gdb_test_multiple "print intap" $test_name {
++  -re "= \\(\\( 1, 1, 3(, 1){7}\\) \\( 1(, 1){9}\\) \\)\r\n$gdb_prompt $" {
++    pass $test_name
++  }
++  -re "= \\(PTR TO -> \\( $int \\(10,2\\)\\)\\) $hex\( <.*>\)?\r\n$gdb_prompt $" {
++    gdb_test "print *intap" "= \\(\\( 1, 1, 3(, 1){7}\\) \\( 1(, 1){9}\\) \\)"
++    pass $test_name
++  }
++}
++set test_name "print intvlap, associated"
++gdb_test_multiple "print intvlap" $test_name {
++  -re "= \\(2, 2, 2, 4(, 2){6}\\)\r\n$gdb_prompt $" {
++    pass $test_name
++  }
++  -re "= \\(PTR TO -> \\( $int \\(10\\)\\)\\) $hex\( <.*>\)?\r\n$gdb_prompt $" {
++    gdb_test "print *intvlap" "= \\(2, 2, 2, 4(, 2){6}\\)"
++    pass $test_name
++  }
++}
++gdb_test "print realp" "= \\(PTR TO -> \\( $real \\)\\) $hex\( <.*>\)?"
++gdb_test "print *realp" "= 3\\.14000\\d+"
++gdb_test "print arrayOfPtr(2)%p" "= \\(PTR TO -> \\( Type two \\)\\) $hex\( <.*>\)?"
++gdb_test "print *(arrayOfPtr(2)%p)" "= \\( ivla1 = \\(11, 12, 13\\), ivla2 = \\(\\( 211, 221\\) \\( 212, 222\\) \\) \\)"
++set test_name "print arrayOfPtr(3)%p"
++gdb_test_multiple $test_name $test_name {
++  -re "= \\(PTR TO -> \\( Type two \\)\\) <not associated>\r\n$gdb_prompt $" {
++    pass $test_name
++  }
++  -re "= \\(PTR TO -> \\( Type two \\)\\) 0x0\r\n$gdb_prompt $" {
++    pass $test_name
++  }
++}
++set test_name "print *(arrayOfPtr(3)%p), associated"
++gdb_test_multiple "print *(arrayOfPtr(3)%p)" $test_name {
++  -re "Cannot access memory at address 0x0\r\n$gdb_prompt $" {
++    pass $test_name
++  }
++  -re "Attempt to take contents of a not associated pointer.\r\n$gdb_prompt $" {
++    pass $test_name
++  }
++}
++gdb_test "print cyclicp1" "= \\( i = 1, p = $hex\( <.*>\)? \\)"
++gdb_test "print cyclicp1%p" "= \\(PTR TO -> \\( Type typewithpointer \\)\\) $hex\( <.*>\)?"
++gdb_test "print *((integer*) &inta + 2)" "= 3" "print temporary pointer, array"
++gdb_test "print *((integer*) &intvla + 3)" "= 4" "print temporary pointer, allocated vla"
++gdb_test "print \$pc" "= \\(PTR TO -> \\( void \\(\\)\\(\\)\\)\\) $hex <pointers\\+\\d+>" "Print program counter"
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/pointers.f90
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/pointers.f90	2016-09-07 21:53:22.715210479 +0200
+@@ -0,0 +1,109 @@
++! Copyright 2016 Free Software Foundation, Inc.
++!
++! This program is free software; you can redistribute it and/or modify
++! it under the terms of the GNU General Public License as published by
++! the Free Software Foundation; either version 3 of the License, or
++! (at your option) any later version.
++!
++! This program is distributed in the hope that it will be useful,
++! but WITHOUT ANY WARRANTY; without even the implied warranty of
++! MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++! GNU General Public License for more details.
++!
++! You should have received a copy of the GNU General Public License
++! along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++program pointers
++
++  type :: two
++    integer, allocatable :: ivla1 (:)
++    integer, allocatable :: ivla2 (:, :)
++  end type two
++
++  type :: typeWithPointer
++    integer i
++    type(typeWithPointer), pointer:: p
++  end type typeWithPointer
++
++  type :: twoPtr
++    type (two), pointer :: p
++  end type twoPtr
++
++  logical, target :: logv
++  complex, target :: comv
++  character, target :: charv
++  character (len=3), target :: chara
++  integer, target :: intv
++  integer, target, dimension (10,2) :: inta
++  integer, target, allocatable, dimension (:) :: intvla
++  real, target    :: realv
++  type(two), target  :: twov
++  type(twoPtr) :: arrayOfPtr (3)
++  type(typeWithPointer), target:: cyclicp1,cyclicp2
++
++  logical, pointer :: logp
++  complex, pointer :: comp
++  character, pointer:: charp
++  character (len=3), pointer:: charap
++  integer, pointer :: intp
++  integer, pointer, dimension (:,:) :: intap
++  integer, pointer, dimension (:) :: intvlap
++  real, pointer :: realp
++  type(two), pointer :: twop
++
++  nullify (logp)
++  nullify (comp)
++  nullify (charp)
++  nullify (charap)
++  nullify (intp)
++  nullify (intap)
++  nullify (intvlap)
++  nullify (realp)
++  nullify (twop)
++  nullify (arrayOfPtr(1)%p)
++  nullify (arrayOfPtr(2)%p)
++  nullify (arrayOfPtr(3)%p)
++  nullify (cyclicp1%p)
++  nullify (cyclicp2%p)
++
++  logp => logv    ! Before pointer assignment
++  comp => comv
++  charp => charv
++  charap => chara
++  intp => intv
++  intap => inta
++  intvlap => intvla
++  realp => realv
++  twop => twov
++  arrayOfPtr(2)%p => twov
++  cyclicp1%i = 1
++  cyclicp1%p => cyclicp2
++  cyclicp2%i = 2
++  cyclicp2%p => cyclicp1
++
++  logv = associated(logp)     ! Before value assignment
++  comv = cmplx(1,2)
++  charv = "a"
++  chara = "abc"
++  intv = 10
++  inta(:,:) = 1
++  inta(3,1) = 3
++  allocate (intvla(10))
++  intvla(:) = 2
++  intvla(4) = 4
++  intvlap => intvla
++  realv = 3.14
++
++  allocate (twov%ivla1(3))
++  allocate (twov%ivla2(2,2))
++  twov%ivla1(1) = 11
++  twov%ivla1(2) = 12
++  twov%ivla1(3) = 13
++  twov%ivla2(1,1) = 211
++  twov%ivla2(2,1) = 221
++  twov%ivla2(1,2) = 212
++  twov%ivla2(2,2) = 222
++
++  intv = intv + 1 ! After value assignment
++
++end program pointers
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/print_type.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/print_type.exp	2016-09-07 21:53:22.715210479 +0200
+@@ -0,0 +1,100 @@
++# Copyright 2016 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++standard_testfile "pointers.f90"
++load_lib fortran.exp
++
++if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} \
++    {debug f90 quiet}] } {
++    return -1
++}
++
++
++if ![runto_main] {
++    untested "could not run to main"
++    return -1
++}
++
++# Depending on the compiler being used, the type names can be printed differently.
++set logical [fortran_logical4]
++set real [fortran_real4]
++set int [fortran_int4]
++set complex [fortran_complex4]
++
++gdb_breakpoint [gdb_get_line_number "Before pointer assignment"]
++gdb_continue_to_breakpoint "Before pointer assignment"
++gdb_test "ptype logp" "type = PTR TO -> \\( $logical \\)" "ptype logp, not associated"
++gdb_test "ptype comp" "type = PTR TO -> \\( $complex \\)" "ptype comp, not associated"
++gdb_test "ptype charp" "type = PTR TO -> \\( character\\*1 \\)" "ptype charp, not associated"
++gdb_test "ptype charap" "type = PTR TO -> \\( character\\*3 \\)" "ptype charap, not associated"
++gdb_test "ptype intp" "type = PTR TO -> \\( $int \\)" "ptype intp, not associated"
++set test "ptype intap, not associated"
++gdb_test_multiple "ptype intap" $test {
++    -re "type = PTR TO -> \\( $int \\(:,:\\)\\)\r\n$gdb_prompt $" {
++        pass $test
++    }
++    -re "type = $int \\(:,:\\)\r\n$gdb_prompt $" {
++        pass $test
++    }
++}
++gdb_test "ptype realp" "type = PTR TO -> \\( $real \\)" "ptype realp, not associated"
++gdb_test "ptype twop" \
++    [multi_line "type = PTR TO -> \\( Type two" \
++                "    $int :: ivla1\\(:\\)" \
++                "    $int :: ivla2\\(:,:\\)" \
++                "End Type two \\)"] \
++    "ptype twop, not associated"
++gdb_test "ptype two" \
++    [multi_line "type = Type two" \
++                "    $int :: ivla1\\(:\\)" \
++                "    $int :: ivla2\\(:,:\\)" \
++                "End Type two"]
++
++
++gdb_breakpoint [gdb_get_line_number "Before value assignment"]
++gdb_continue_to_breakpoint "Before value assignment"
++gdb_test "ptype twop" \
++    [multi_line "type = PTR TO -> \\( Type two" \
++                "    $int :: ivla1\\(:\\)" \
++                "    $int :: ivla2\\(:,:\\)" \
++                "End Type two \\)"]
++
++
++gdb_breakpoint [gdb_get_line_number "After value assignment"]
++gdb_continue_to_breakpoint "After value assignment"
++gdb_test "ptype logv" "type = $logical"
++gdb_test "ptype comv" "type = $complex"
++gdb_test "ptype charv" "type = character\\*1"
++gdb_test "ptype chara" "type = character\\*3"
++gdb_test "ptype intv" "type = $int"
++gdb_test "ptype inta" "type = $int \\(10,2\\)"
++gdb_test "ptype realv" "type = $real"
++
++
++gdb_test "ptype logp" "type = PTR TO -> \\( $logical \\)"
++gdb_test "ptype comp" "type = PTR TO -> \\( $complex \\)"
++gdb_test "ptype charp" "type = PTR TO -> \\( character\\*1 \\)"
++gdb_test "ptype charap" "type = PTR TO -> \\( character\\*3 \\)"
++gdb_test "ptype intp" "type = PTR TO -> \\( $int \\)"
++set test "ptype intap"
++gdb_test_multiple $test $test {
++    -re "type = $int \\(10,2\\)\r\n$gdb_prompt $" {
++        pass $test
++    }
++    -re "type = PTR TO -> \\( $int \\(10,2\\)\\)\r\n$gdb_prompt $" {
++        pass $test
++    }
++}
++gdb_test "ptype realp" "type = PTR TO -> \\( $real \\)"
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-ptype.exp
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/testsuite/gdb.fortran/vla-ptype.exp	2016-09-07 21:52:53.705951220 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-ptype.exp	2016-09-07 21:53:22.715210479 +0200
+@@ -32,9 +32,9 @@
+ # Check the ptype of various VLA states and pointer to VLA's.
+ gdb_breakpoint [gdb_get_line_number "vla1-init"]
+ gdb_continue_to_breakpoint "vla1-init"
+-gdb_test "ptype vla1" "type = <not allocated>" "ptype vla1 not initialized"
+-gdb_test "ptype vla2" "type = <not allocated>" "ptype vla2 not initialized"
+-gdb_test "ptype pvla" "type = <not associated>" "ptype pvla not initialized"
++gdb_test "ptype vla1" "type = $real \\(:,:,:\\)" "ptype vla1 not initialized"
++gdb_test "ptype vla2" "type = $real \\(:,:,:\\)" "ptype vla2 not initialized"
++gdb_test "ptype pvla" "type = $real \\(:,:,:\\)" "ptype pvla not initialized"
+ gdb_test "ptype vla1(3, 6, 9)" "no such vector element \\\(vector not allocated\\\)" \
+   "ptype vla1(3, 6, 9) not initialized"
+ gdb_test "ptype vla2(5, 45, 20)" \
+@@ -81,20 +81,20 @@
+ 
+ gdb_breakpoint [gdb_get_line_number "pvla-deassociated"]
+ gdb_continue_to_breakpoint "pvla-deassociated"
+-gdb_test "ptype pvla" "type = <not associated>" "ptype pvla deassociated"
++gdb_test "ptype pvla" "type = $real \\(:,:,:\\)" "ptype pvla deassociated"
+ gdb_test "ptype pvla(5, 45, 20)" \
+   "no such vector element \\\(vector not associated\\\)" \
+   "ptype pvla(5, 45, 20) not associated"
+ 
+ gdb_breakpoint [gdb_get_line_number "vla1-deallocated"]
+ gdb_continue_to_breakpoint "vla1-deallocated"
+-gdb_test "ptype vla1" "type = <not allocated>" "ptype vla1 not allocated"
++gdb_test "ptype vla1" "type = $real \\(:,:,:\\)" "ptype vla1 not allocated"
+ gdb_test "ptype vla1(3, 6, 9)" "no such vector element \\\(vector not allocated\\\)" \
+   "ptype vla1(3, 6, 9) not allocated"
+ 
+ gdb_breakpoint [gdb_get_line_number "vla2-deallocated"]
+ gdb_continue_to_breakpoint "vla2-deallocated"
+-gdb_test "ptype vla2" "type = <not allocated>" "ptype vla2 not allocated"
++gdb_test "ptype vla2" "type = $real \\(:,:,:\\)" "ptype vla2 not allocated"
+ gdb_test "ptype vla2(5, 45, 20)" \
+   "no such vector element \\\(vector not allocated\\\)" \
+   "ptype vla2(5, 45, 20) not allocated"
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-strings.exp
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-strings.exp	2016-09-07 21:53:22.716210488 +0200
+@@ -0,0 +1,103 @@
++# Copyright 2016 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++standard_testfile ".f90"
++
++if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} \
++    {debug f90 quiet}] } {
++    return -1
++}
++
++# check that all fortran standard datatypes will be
++# handled correctly when using as VLA's
++
++if ![runto_main] {
++    untested "could not run to main"
++    return -1
++}
++
++gdb_breakpoint [gdb_get_line_number "var_char-allocated-1"]
++gdb_continue_to_breakpoint "var_char-allocated-1"
++set test "whatis var_char first time"
++gdb_test_multiple "whatis var_char" $test {
++    -re "type = PTR TO -> \\( character\\*10 \\)\r\n$gdb_prompt $" {
++	    pass $test
++    }
++    -re "type = character\\*10\r\n$gdb_prompt $" {
++	    pass $test
++    }
++}
++set test "ptype var_char first time"
++gdb_test_multiple "ptype var_char" $test {
++    -re "type = PTR TO -> \\( character\\*10 \\)\r\n$gdb_prompt $" {
++	    pass $test
++    }
++    -re "type = character\\*10\r\n$gdb_prompt $" {
++	    pass $test
++    }
++}
++
++
++gdb_test "next" "\\d+.*var_char = 'foo'.*" \
++  "next to allocation status of var_char"
++gdb_test "print l" " = \\.TRUE\\." "print allocation status first time"
++
++
++gdb_breakpoint [gdb_get_line_number "var_char-filled-1"]
++gdb_continue_to_breakpoint "var_char-filled-1"
++set test "print var_char, var_char-filled-1"
++gdb_test_multiple "print var_char" $test {
++    -re "= \\(PTR TO -> \\( character\\*3 \\)\\) $hex\r\n$gdb_prompt $" {
++        gdb_test "print *var_char" "= 'foo'" "print *var_char, var_char-filled-1"
++	    pass $test
++    }
++    -re "= 'foo'\r\n$gdb_prompt $" {
++	    pass $test
++    }
++}
++set test "ptype var_char, var_char-filled-1"
++gdb_test_multiple "ptype var_char" $test {
++    -re "type = PTR TO -> \\( character\\*3 \\)\r\n$gdb_prompt $" {
++	    pass $test
++    }
++    -re "type = character\\*3\r\n$gdb_prompt $" {
++	    pass $test
++    }
++}
++gdb_test "print var_char(1)" " = 102 'f'" "print var_char(1)"
++gdb_test "print var_char(3)" " = 111 'o'" "print var_char(3)"
++
++
++gdb_breakpoint [gdb_get_line_number "var_char-filled-2"]
++gdb_continue_to_breakpoint "var_char-filled-2"
++set test "print var_char, var_char-filled-2"
++gdb_test_multiple "print var_char" $test {
++    -re "= \\(PTR TO -> \\( character\\*6 \\)\\) $hex\r\n$gdb_prompt $" {
++        gdb_test "print *var_char" "= 'foobar'" "print *var_char, var_char-filled-2"
++	    pass $test
++    }
++    -re "= 'foobar'\r\n$gdb_prompt $" {
++	    pass $test
++    }
++}
++set test "ptype var_char, var_char-filled-2"
++gdb_test_multiple "ptype var_char" $test {
++    -re "type = PTR TO -> \\( character\\*6 \\)\r\n$gdb_prompt $" {
++	    pass $test
++    }
++    -re "type = character\\*6\r\n$gdb_prompt $" {
++	    pass $test
++    }
++}
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-strings.f90
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-strings.f90	2016-09-07 21:53:22.716210488 +0200
+@@ -0,0 +1,39 @@
++! Copyright 2016 Free Software Foundation, Inc.
++!
++! This program is free software; you can redistribute it and/or modify
++! it under the terms of the GNU General Public License as published by
++! the Free Software Foundation; either version 3 of the License, or
++! (at your option) any later version.
++!
++! This program is distributed in the hope that it will be useful,
++! but WITHOUT ANY WARRANTY; without even the implied warranty of
++! MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++! GNU General Public License for more details.
++!
++! You should have received a copy of the GNU General Public License
++! along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++program vla_strings
++  character(len=:), target, allocatable   :: var_char
++  character(len=:), pointer               :: var_char_p
++  logical                                 :: l
++
++  allocate(character(len=10) :: var_char)
++  l = allocated(var_char)                 ! var_char-allocated-1
++  var_char = 'foo'
++  deallocate(var_char)                    ! var_char-filled-1
++  l = allocated(var_char)                 ! var_char-deallocated
++  allocate(character(len=42) :: var_char)
++  l = allocated(var_char)
++  var_char = 'foobar'
++  var_char = ''                           ! var_char-filled-2
++  var_char = 'bar'                        ! var_char-empty
++  deallocate(var_char)
++  allocate(character(len=21) :: var_char)
++  l = allocated(var_char)                 ! var_char-allocated-3
++  var_char = 'johndoe'
++  var_char_p => var_char
++  l = associated(var_char_p)              ! var_char_p-associated
++  var_char_p => null()
++  l = associated(var_char_p)              ! var_char_p-not-associated
++end program vla_strings
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-type.exp
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/testsuite/gdb.fortran/vla-type.exp	2016-09-07 21:52:10.272563051 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-type.exp	2016-09-07 21:53:22.716210488 +0200
+@@ -132,7 +132,10 @@
+                      "End Type one" ]
+ 
+ # Check allocation status of dynamic array and it's dynamic members
+-gdb_test "ptype fivedynarr" "type = <not allocated>"
++gdb_test "ptype fivedynarr" \
++         [multi_line "type = Type five" \
++                     "    Type one :: tone" \
++                     "End Type five \\(:\\)" ]
+ gdb_test "next" ""
+ gdb_test "ptype fivedynarr(2)" \
+          [multi_line "type = Type five" \
+@@ -141,7 +144,7 @@
+          "ptype fivedynarr(2), tone is not allocated"
+ gdb_test "ptype fivedynarr(2)%tone" \
+          [multi_line "type = Type one" \
+-                     "    $int :: ivla\\(<not allocated>\\)" \
++                     "    $int :: ivla\\(:,:,:\\)" \
+                      "End Type one" ] \
+          "ptype fivedynarr(2)%tone, not allocated"
+ 
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-value.exp
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/testsuite/gdb.fortran/vla-value.exp	2016-09-07 21:52:10.272563051 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.fortran/vla-value.exp	2016-09-07 21:53:22.716210488 +0200
+@@ -14,6 +14,7 @@
+ # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ 
+ standard_testfile "vla.f90"
++load_lib "fortran.exp"
+ 
+ if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} \
+      {debug f90 quiet}] } {
+@@ -25,12 +26,15 @@
+     return -1
+ }
+ 
++# Depending on the compiler being used, the type names can be printed differently.
++set real [fortran_real4]
++
+ # Try to access values in non allocated VLA
+ gdb_breakpoint [gdb_get_line_number "vla1-init"]
+ gdb_continue_to_breakpoint "vla1-init"
+ gdb_test "print vla1" " = <not allocated>" "print non-allocated vla1"
+ gdb_test "print &vla1" \
+-  " = \\\(PTR TO -> \\\( real\\\(kind=4\\\) \\\(<not allocated>\\\)\\\)\\\) $hex" \
++  " = \\\(PTR TO -> \\\( $real \\\(:,:,:\\\)\\\)\\\) $hex" \
+   "print non-allocated &vla1"
+ gdb_test "print vla1(1,1,1)" "no such vector element \\\(vector not allocated\\\)" \
+   "print member in non-allocated vla1 (1)"
+@@ -51,7 +55,7 @@
+ 	"step over value assignment of vla1"
+ }
+ gdb_test "print &vla1" \
+-  " = \\\(PTR TO -> \\\( real\\\(kind=4\\\) \\\(10,10,10\\\)\\\)\\\) $hex" \
++  " = \\\(PTR TO -> \\\( $real \\\(10,10,10\\\)\\\)\\\) $hex" \
+   "print allocated &vla1"
+ gdb_test "print vla1(3, 6, 9)" " = 1311" "print allocated vla1(3,6,9)"
+ gdb_test "print vla1(1, 3, 8)" " = 1311" "print allocated vla1(1,3,8)"
+@@ -71,7 +75,7 @@
+ # Try to access values in undefined pointer to VLA (dangling)
+ gdb_test "print pvla" " = <not associated>" "print undefined pvla"
+ gdb_test "print &pvla" \
+-  " = \\\(PTR TO -> \\\( real\\\(kind=4\\\) \\\(<not associated>\\\)\\\)\\\) $hex" \
++  " = \\\(PTR TO -> \\\( $real \\\(:,:,:\\\)\\\)\\\) $hex" \
+   "print non-associated &pvla"
+ gdb_test "print pvla(1, 3, 8)" "no such vector element \\\(vector not associated\\\)" \
+   "print undefined pvla(1,3,8)"
+@@ -80,7 +84,7 @@
+ gdb_breakpoint [gdb_get_line_number "pvla-associated"]
+ gdb_continue_to_breakpoint "pvla-associated"
+ gdb_test "print &pvla" \
+-  " = \\\(PTR TO -> \\\( real\\\(kind=4\\\) \\\(10,10,10\\\)\\\)\\\) $hex" \
++  " = \\\(PTR TO -> \\\( $real \\\(10,10,10\\\)\\\)\\\) $hex" \
+   "print associated &pvla"
+ gdb_test "print pvla(3, 6, 9)" " = 42" "print associated pvla(3,6,9)"
+ gdb_test "print pvla(1, 3, 8)" " = 1001" "print associated pvla(1,3,8)"
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.mi/mi-var-child-f.exp
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/testsuite/gdb.mi/mi-var-child-f.exp	2016-09-07 21:52:10.272563051 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.mi/mi-var-child-f.exp	2016-09-07 21:53:22.716210488 +0200
+@@ -17,6 +17,7 @@
+ 
+ load_lib mi-support.exp
+ set MIFLAGS "-i=mi"
++load_lib "fortran.exp"
+ 
+ if { [skip_fortran_tests] } { return -1 }
+ 
+@@ -40,10 +41,8 @@
+ mi_create_varobj "array" "array" "create local variable array"
+ 
+ 
+-# Depending on the compiler version being used, the name of the 4-byte integer
+-# and real types can be printed differently.  For instance, gfortran-4.1 uses
+-# "int4" whereas gfortran-4.3 uses "integer(kind=4)".
+-set int4 "(int4|integer\\(kind=4\\))"
++# Depending on the compiler being used, the type names can be printed differently.
++set int4 [fortran_int4]
+ 
+ set children [list [list "array.-1" "-1" 2 "$int4 \\(2\\)"] \
+ 		  [list "array.0" "0" 2 "$int4 \\(2\\)"] \
+Index: gdb-7.11.90.20160907/gdb/testsuite/gdb.mi/mi-vla-fortran.exp
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/testsuite/gdb.mi/mi-vla-fortran.exp	2016-09-07 21:52:10.272563051 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.mi/mi-vla-fortran.exp	2016-09-07 21:53:22.716210488 +0200
+@@ -17,7 +17,9 @@
+ # Array (VLA).
+ 
+ load_lib mi-support.exp
++load_lib fortran.exp
+ set MIFLAGS "-i=mi"
++load_lib "fortran.exp"
+ 
+ gdb_exit
+ if [mi_gdb_start] {
+@@ -32,6 +34,9 @@
+      return -1
+ }
+ 
++# Depending on the compiler being used, the type names can be printed differently.
++set real [fortran_real4]
++
+ mi_delete_breakpoints
+ mi_gdb_reinitialize_dir $srcdir/$subdir
+ mi_gdb_load ${binfile}
+@@ -46,10 +51,10 @@
+ mi_gdb_test "500-data-evaluate-expression vla1" \
+   "500\\^done,value=\"<not allocated>\"" "evaluate not allocated vla"
+ 
+-mi_create_varobj_checked vla1_not_allocated vla1 "<not allocated>" \
++mi_create_varobj_checked vla1_not_allocated vla1 "$real \\(:\\)" \
+   "create local variable vla1_not_allocated"
+ mi_gdb_test "501-var-info-type vla1_not_allocated" \
+-  "501\\^done,type=\"<not allocated>\"" \
++  "501\\^done,type=\"$real \\(:\\)\"" \
+   "info type variable vla1_not_allocated"
+ mi_gdb_test "502-var-show-format vla1_not_allocated" \
+   "502\\^done,format=\"natural\"" \
+@@ -58,7 +63,7 @@
+   "503\\^done,value=\"\\\[0\\\]\"" \
+   "eval variable vla1_not_allocated"
+ mi_list_array_varobj_children_with_index "vla1_not_allocated" "0" "1" \
+-    "real\\\(kind=4\\\)" "get children of vla1_not_allocated"
++    "$real" "get children of vla1_not_allocated"
+ 
+ 
+ 
+@@ -71,10 +76,10 @@
+ mi_gdb_test "510-data-evaluate-expression vla1" \
+   "510\\^done,value=\"\\(.*\\)\"" "evaluate allocated vla"
+ 
+-mi_create_varobj_checked vla1_allocated vla1 "real\\\(kind=4\\\) \\\(5\\\)" \
++mi_create_varobj_checked vla1_allocated vla1 "$real \\\(5\\\)" \
+   "create local variable vla1_allocated"
+ mi_gdb_test "511-var-info-type vla1_allocated" \
+-  "511\\^done,type=\"real\\\(kind=4\\\) \\\(5\\\)\"" \
++  "511\\^done,type=\"$real \\\(5\\\)\"" \
+   "info type variable vla1_allocated"
+ mi_gdb_test "512-var-show-format vla1_allocated" \
+   "512\\^done,format=\"natural\"" \
+@@ -83,7 +88,7 @@
+   "513\\^done,value=\"\\\[5\\\]\"" \
+   "eval variable vla1_allocated"
+ mi_list_array_varobj_children_with_index "vla1_allocated" "5" "1" \
+-    "real\\\(kind=4\\\)" "get children of vla1_allocated"
++    "$real" "get children of vla1_allocated"
+ 
+ 
+ set bp_lineno [gdb_get_line_number "vla1-filled"]
+@@ -136,10 +141,10 @@
+     -re "580\\^done,value=\"<not associated>\".*${mi_gdb_prompt}$" {
+ 	pass $test
+ 
+-	mi_create_varobj_checked pvla2_not_associated pvla2 "<not associated>" \
++	mi_create_varobj_checked pvla2_not_associated pvla2 "$real \\(:,:\\)" \
+ 	    "create local variable pvla2_not_associated"
+ 	mi_gdb_test "581-var-info-type pvla2_not_associated" \
+-	    "581\\^done,type=\"<not associated>\"" \
++	    "581\\^done,type=\"$real \\(:,:\\)\"" \
+ 	    "info type variable pvla2_not_associated"
+ 	mi_gdb_test "582-var-show-format pvla2_not_associated" \
+ 	    "582\\^done,format=\"natural\"" \
+@@ -148,7 +153,7 @@
+ 	    "583\\^done,value=\"\\\[0\\\]\"" \
+ 	    "eval variable pvla2_not_associated"
+ 	mi_list_array_varobj_children_with_index "pvla2_not_associated" "0" "1" \
+-	    "real\\\(kind=4\\\)" "get children of pvla2_not_associated"
++	    "$real" "get children of pvla2_not_associated"
+     }
+     -re "580\\^error,msg=\"value contents too large \\(\[0-9\]+ bytes\\).*${mi_gdb_prompt}$" {
+ 	# Undefined behaviour in gfortran.
+@@ -173,9 +178,9 @@
+   "evaluate associated vla"
+ 
+ mi_create_varobj_checked pvla2_associated pvla2 \
+-  "real\\\(kind=4\\\) \\\(5,2\\\)" "create local variable pvla2_associated"
++  "$real \\\(5,2\\\)" "create local variable pvla2_associated"
+ mi_gdb_test "591-var-info-type pvla2_associated" \
+-  "591\\^done,type=\"real\\\(kind=4\\\) \\\(5,2\\\)\"" \
++  "591\\^done,type=\"$real \\\(5,2\\\)\"" \
+   "info type variable pvla2_associated"
+ mi_gdb_test "592-var-show-format pvla2_associated" \
+   "592\\^done,format=\"natural\"" \
+Index: gdb-7.11.90.20160907/gdb/typeprint.c
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/typeprint.c	2016-09-07 21:52:10.272563051 +0200
++++ gdb-7.11.90.20160907/gdb/typeprint.c	2016-09-07 21:53:22.717210497 +0200
+@@ -485,6 +485,25 @@
+       printf_filtered (" */\n");    
+     }
+ 
++  /* Resolve any dynamic target type, as we might print
++     additional information about the target.
++     For example, in Fortran and C we are printing the dimension of the
++     dynamic array the pointer is pointing to.  */
++  if (TYPE_CODE (type) == TYPE_CODE_PTR
++      && is_dynamic_type (type) == 1)
++    {
++      CORE_ADDR addr;
++      if (NULL != TYPE_DATA_LOCATION (TYPE_TARGET_TYPE(type)))
++	addr = value_address (val);
++      else
++	addr = value_as_address (val);
++
++      if (addr != 0
++	  && type_not_associated (type) == 0)
++	TYPE_TARGET_TYPE (type) = resolve_dynamic_type (TYPE_TARGET_TYPE (type),
++							NULL, addr);
++    }
++
+   LA_PRINT_TYPE (type, "", gdb_stdout, show, 0, &flags);
+   printf_filtered ("\n");
+ 
+Index: gdb-7.11.90.20160907/gdb/valops.c
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/valops.c	2016-09-07 21:52:53.707951238 +0200
++++ gdb-7.11.90.20160907/gdb/valops.c	2016-09-07 21:53:22.717210497 +0200
+@@ -1562,6 +1562,19 @@
+   if (TYPE_CODE (base_type) == TYPE_CODE_PTR)
+     {
+       struct type *enc_type;
++      CORE_ADDR addr;
++
++      if (type_not_associated (base_type))
++        error (_("Attempt to take contents of a not associated pointer."));
++
++      if (NULL != TYPE_DATA_LOCATION (TYPE_TARGET_TYPE (base_type)))
++	addr = value_address (arg1);
++      else
++	addr = value_as_address (arg1);
++
++      if (addr != 0)
++	TYPE_TARGET_TYPE (base_type) =
++	    resolve_dynamic_type (TYPE_TARGET_TYPE (base_type), NULL, addr);
+ 
+       /* We may be pointing to something embedded in a larger object.
+          Get the real type of the enclosing object.  */
+@@ -1577,8 +1590,7 @@
+       else
+ 	/* Retrieve the enclosing object pointed to.  */
+ 	arg2 = value_at_lazy (enc_type, 
+-			      (value_as_address (arg1)
+-			       - value_pointed_to_offset (arg1)));
++			      (addr - value_pointed_to_offset (arg1)));
+ 
+       enc_type = value_type (arg2);
+       return readjust_indirect_value_type (arg2, enc_type, base_type, arg1);
+Index: gdb-7.11.90.20160907/gdb/valprint.c
+===================================================================
+--- gdb-7.11.90.20160907.orig/gdb/valprint.c	2016-09-07 21:52:10.273563060 +0200
++++ gdb-7.11.90.20160907/gdb/valprint.c	2016-09-07 21:53:22.718210506 +0200
+@@ -1141,12 +1141,6 @@
+       return 0;
+     }
+ 
+-  if (type_not_associated (value_type (val)))
+-    {
+-      val_print_not_associated (stream);
+-      return 0;
+-    }
+-
+   if (type_not_allocated (value_type (val)))
+     {
+       val_print_not_allocated (stream);

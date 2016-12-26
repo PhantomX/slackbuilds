@@ -54,7 +54,6 @@ ApplyPatch cups-dnssd-deviceid.patch
 ApplyPatch cups-ricoh-deviceid-oid.patch
 [ "${SB_SYSTEMD}" = "YES" ] && ApplyPatch cups-systemd-socket.patch
 ApplyPatch cups-avahi-address.patch
-ApplyPatch cups-usblp-quirks.patch
 ApplyPatch cups-enum-all.patch
 ApplyPatch cups-dymo-deviceid.patch
 ApplyPatch cups-use-ipp1.1.patch
@@ -63,6 +62,7 @@ ApplyPatch cups-avahi-no-threaded.patch
 ApplyPatch cups-ipp-multifile.patch
 ApplyPatch cups-web-devices-timeout.patch
 ApplyPatch cups-synconclose.patch
+ApplyPatch cups-iso88591.patch
 
 ## SECURITY PATCHES:
 

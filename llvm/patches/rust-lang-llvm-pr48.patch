@@ -1,0 +1,84 @@
+From eee68eafa7e8e4ce996b49f5551636639a6c331a Mon Sep 17 00:00:00 2001
+From: David Majnemer <david.majnemer@gmail.com>
+Date: Mon, 29 Aug 2016 17:14:08 +0000
+Subject: [rust-lang/llvm#48] [SimplifyCFG] Hoisting invalidates metadata
+
+We forgot to remove optimization metadata when performing hosting during
+FoldTwoEntryPHINode.
+
+This fixes PR29163.
+
+git-svn-id: https://llvm.org/svn/llvm-project/llvm/trunk@279980 91177308-0d34-0410-b5e6-96231b3b80d8
+---
+ lib/Transforms/Utils/SimplifyCFG.cpp   | 10 ++++++++--
+ test/Transforms/SimplifyCFG/PR29163.ll | 31 +++++++++++++++++++++++++++++++
+ 2 files changed, 39 insertions(+), 2 deletions(-)
+ create mode 100644 test/Transforms/SimplifyCFG/PR29163.ll
+
+diff --git a/lib/Transforms/Utils/SimplifyCFG.cpp b/lib/Transforms/Utils/SimplifyCFG.cpp
+index 0504646c304e..c197317ac771 100644
+--- a/lib/Transforms/Utils/SimplifyCFG.cpp
++++ b/lib/Transforms/Utils/SimplifyCFG.cpp
+@@ -2024,14 +2024,20 @@ static bool FoldTwoEntryPHINode(PHINode *PN, const TargetTransformInfo &TTI,
+ 
+   // Move all 'aggressive' instructions, which are defined in the
+   // conditional parts of the if's up to the dominating block.
+-  if (IfBlock1)
++  if (IfBlock1) {
++    for (auto &I : *IfBlock1)
++      I.dropUnknownNonDebugMetadata();
+     DomBlock->getInstList().splice(InsertPt->getIterator(),
+                                    IfBlock1->getInstList(), IfBlock1->begin(),
+                                    IfBlock1->getTerminator()->getIterator());
+-  if (IfBlock2)
++  }
++  if (IfBlock2) {
++    for (auto &I : *IfBlock2)
++      I.dropUnknownNonDebugMetadata();
+     DomBlock->getInstList().splice(InsertPt->getIterator(),
+                                    IfBlock2->getInstList(), IfBlock2->begin(),
+                                    IfBlock2->getTerminator()->getIterator());
++  }
+ 
+   while (PHINode *PN = dyn_cast<PHINode>(BB->begin())) {
+     // Change the PHI node into a select instruction.
+diff --git a/test/Transforms/SimplifyCFG/PR29163.ll b/test/Transforms/SimplifyCFG/PR29163.ll
+new file mode 100644
+index 000000000000..65f9090dd135
+--- /dev/null
++++ b/test/Transforms/SimplifyCFG/PR29163.ll
+@@ -0,0 +1,31 @@
++; RUN: opt -S -simplifycfg < %s | FileCheck %s
++target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
++target triple = "x86_64-unknown-linux-gnu"
++
++@GV = external constant i64*
++
++define i64* @test1(i1 %cond, i8* %P) {
++entry:
++  br i1 %cond, label %if, label %then
++
++then:
++  %bc = bitcast i8* %P to i64*
++  br label %join
++
++if:
++  %load = load i64*, i64** @GV, align 8, !dereferenceable !0
++  br label %join
++
++join:
++  %phi = phi i64* [ %bc, %then ], [ %load, %if ]
++  ret i64* %phi
++}
++
++; CHECK-LABEL: define i64* @test1(
++; CHECK: %[[bc:.*]] = bitcast i8* %P to i64*
++; CHECK: %[[load:.*]] = load i64*, i64** @GV, align 8{{$}}
++; CHECK: %[[phi:.*]] = select i1 %cond, i64* %[[load]], i64* %[[bc]]
++; CHECK: ret i64* %[[phi]]
++
++
++!0 = !{i64 8}
+-- 
+2.7.4
+

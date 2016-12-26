@@ -1,0 +1,190 @@
+From 9cd3cc75269d9196898487b5712ee47b8291e077 Mon Sep 17 00:00:00 2001
+From: Hans De Goede <hdegoede@redhat.com>
+Date: Mon, 12 Dec 2016 17:03:14 +0100
+Subject: [PATCH xserver 3/6] xfree86: Add options support for OutputClass
+ Options
+
+Add support for setting options in OutputClass Sections and having these
+applied to any matching output devices.
+
+Reviewed-by: Adam Jackson <ajax@redhat.com>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+---
+ hw/xfree86/common/xf86Option.c      |  5 ++++-
+ hw/xfree86/common/xf86platformBus.c | 42 +++++++++++++++++++++++++++++++++++++
+ hw/xfree86/common/xf86platformBus.h |  2 ++
+ hw/xfree86/man/xorg.conf.man        | 10 +++++++++
+ hw/xfree86/parser/OutputClass.c     |  6 ++++++
+ hw/xfree86/parser/xf86Parser.h      |  1 +
+ 6 files changed, 65 insertions(+), 1 deletion(-)
+
+diff --git a/hw/xfree86/common/xf86Option.c b/hw/xfree86/common/xf86Option.c
+index 0e8bc1f..929724d 100644
+--- a/hw/xfree86/common/xf86Option.c
++++ b/hw/xfree86/common/xf86Option.c
+@@ -44,6 +44,7 @@
+ #include "xf86Xinput.h"
+ #include "xf86Optrec.h"
+ #include "xf86Parser.h"
++#include "xf86platformBus.h" /* For OutputClass functions */
+ #include "optionstr.h"
+ 
+ static Bool ParseOptionValue(int scrnIndex, XF86OptionPtr options,
+@@ -64,7 +65,7 @@ static Bool ParseOptionValue(int scrnIndex, XF86OptionPtr options,
+  *
+  * The order of precedence for options is:
+  *
+- *   extraOpts, display, confScreen, monitor, device
++ *   extraOpts, display, confScreen, monitor, device, outputClassOptions
+  */
+ 
+ void
+@@ -79,6 +80,8 @@ xf86CollectOptions(ScrnInfoPtr pScrn, XF86OptionPtr extraOpts)
+     pScrn->options = NULL;
+ 
+     for (i = pScrn->numEntities - 1; i >= 0; i--) {
++        xf86MergeOutputClassOptions(pScrn->entityList[i], &pScrn->options);
++
+         device = xf86GetDevFromEntity(pScrn->entityList[i],
+                                       pScrn->entityInstanceList[i]);
+         if (device && device->options) {
+diff --git a/hw/xfree86/common/xf86platformBus.c b/hw/xfree86/common/xf86platformBus.c
+index 25a9040..a698c6c 100644
+--- a/hw/xfree86/common/xf86platformBus.c
++++ b/hw/xfree86/common/xf86platformBus.c
+@@ -310,6 +310,48 @@ xf86platformProbe(void)
+     return 0;
+ }
+ 
++void
++xf86MergeOutputClassOptions(int entityIndex, void **options)
++{
++    const EntityPtr entity = xf86Entities[entityIndex];
++    struct xf86_platform_device *dev = NULL;
++    XF86ConfOutputClassPtr cl;
++    XF86OptionPtr classopts;
++    int i = 0;
++
++    switch (entity->bus.type) {
++    case BUS_PLATFORM:
++        dev = entity->bus.id.plat;
++        break;
++    case BUS_PCI:
++        for (i = 0; i < xf86_num_platform_devices; i++) {
++            if (MATCH_PCI_DEVICES(xf86_platform_devices[i].pdev,
++                                  entity->bus.id.pci)) {
++                dev = &xf86_platform_devices[i];
++                break;
++            }
++        }
++        break;
++    default:
++        xf86Msg(X_DEBUG, "xf86MergeOutputClassOptions unsupported bus type %d\n",
++                entity->bus.type);
++    }
++
++    if (!dev)
++        return;
++
++    for (cl = xf86configptr->conf_outputclass_lst; cl; cl = cl->list.next) {
++        if (!OutputClassMatches(cl, dev) || !cl->option_lst)
++            continue;
++
++        xf86Msg(X_INFO, "Applying OutputClass \"%s\" options to %s\n",
++                cl->identifier, dev->attribs->path);
++
++        classopts = xf86optionListDup(cl->option_lst);
++        *options = xf86optionListMerge(*options, classopts);
++    }
++}
++
+ static int
+ xf86ClaimPlatformSlot(struct xf86_platform_device * d, DriverPtr drvp,
+                   int chipset, GDevPtr dev, Bool active)
+diff --git a/hw/xfree86/common/xf86platformBus.h b/hw/xfree86/common/xf86platformBus.h
+index 0f5c0ef..70d9ec8 100644
+--- a/hw/xfree86/common/xf86platformBus.h
++++ b/hw/xfree86/common/xf86platformBus.h
+@@ -42,6 +42,7 @@ struct xf86_platform_device {
+ int xf86platformProbe(void);
+ int xf86platformProbeDev(DriverPtr drvp);
+ int xf86platformAddGPUDevices(DriverPtr drvp);
++void xf86MergeOutputClassOptions(int entityIndex, void **options);
+ 
+ extern int xf86_num_platform_devices;
+ extern struct xf86_platform_device *xf86_platform_devices;
+@@ -161,6 +162,7 @@ extern void xf86platformPrimary(void);
+ #else
+ 
+ static inline int xf86platformAddGPUDevices(DriverPtr drvp) { return FALSE; }
++static inline void xf86MergeOutputClassOptions(int index, void **options) {}
+ 
+ #endif
+ 
+diff --git a/hw/xfree86/man/xorg.conf.man b/hw/xfree86/man/xorg.conf.man
+index 7d0c524..8928a53 100644
+--- a/hw/xfree86/man/xorg.conf.man
++++ b/hw/xfree86/man/xorg.conf.man
+@@ -1280,6 +1280,16 @@ For example:
+ Check the case-sensitive string
+ .RI \*q matchdriver \*q
+ against the kernel driver of the device.
++.PP
++When an output device has been matched to the
++.B OutputClass
++section, any
++.B Option
++entries are applied to the device. See the
++.B Device
++section below for a description of the remaining
++.B Option
++entries.
+ .SH "DEVICE SECTION"
+ The config file may have multiple
+ .B Device
+diff --git a/hw/xfree86/parser/OutputClass.c b/hw/xfree86/parser/OutputClass.c
+index 8064e0c..f813ee6 100644
+--- a/hw/xfree86/parser/OutputClass.c
++++ b/hw/xfree86/parser/OutputClass.c
+@@ -36,6 +36,7 @@ static const xf86ConfigSymTabRec OutputClassTab[] = {
+     {ENDSECTION, "endsection"},
+     {IDENTIFIER, "identifier"},
+     {DRIVER, "driver"},
++    {OPTION, "option"},
+     {MATCH_DRIVER, "matchdriver"},
+     {-1, ""},
+ };
+@@ -60,6 +61,8 @@ xf86freeOutputClassList(XF86ConfOutputClassPtr ptr)
+             free(group);
+         }
+ 
++        xf86optionListFree(ptr->option_lst);
++
+         prev = ptr;
+         ptr = ptr->list.next;
+         free(prev);
+@@ -112,6 +115,9 @@ xf86parseOutputClassSection(void)
+             else
+                 ptr->driver = xf86_lex_val.str;
+             break;
++        case OPTION:
++            ptr->option_lst = xf86parseOption(ptr->option_lst);
++            break;
+         case MATCH_DRIVER:
+             if (xf86getSubToken(&(ptr->comment)) != STRING)
+                 Error(QUOTE_MSG, "MatchDriver");
+diff --git a/hw/xfree86/parser/xf86Parser.h b/hw/xfree86/parser/xf86Parser.h
+index 9c4b403..897edab 100644
+--- a/hw/xfree86/parser/xf86Parser.h
++++ b/hw/xfree86/parser/xf86Parser.h
+@@ -338,6 +338,7 @@ typedef struct {
+     char *identifier;
+     char *driver;
+     struct xorg_list match_driver;
++    XF86OptionPtr option_lst;
+     char *comment;
+ } XF86ConfOutputClassRec, *XF86ConfOutputClassPtr;
+ 
+-- 
+2.9.3
+

@@ -1,0 +1,162 @@
+Original message by Tom Tromey:
+
+  <https://sourceware.org/ml/gdb-patches/2012-03/msg00955.html>
+  Message-ID: <871uoc1va3.fsf@fleche.redhat.com>
+
+Comment from Sergio Durigan Junior:
+
+  In order to correctly test this patch, I wrote a testcase based on Jan
+  Kratochvil's <gdb/testsuite/gdb.base/gcore-excessive-memory.exp>.  The
+  testcase, which can be seen below, tests GDB in order to see if the
+  amount of memory being leaked is minimal, as requested in the bugzilla.
+  It is hard to define what "minimum" is, so I ran the testcase on all
+  supported RHEL architectures and came up with an average.
+
+commit cc0265cdda9dc7e8665e8bfcf5b4477489daf27c
+Author: Tom Tromey <tromey@redhat.com>
+Date:   Wed Mar 28 17:38:08 2012 +0000
+
+    	* python/py-inferior.c (infpy_read_memory): Remove cleanups and
+    	explicitly free 'buffer' on exit paths.  Decref 'membuf_object'
+    	before returning.
+
+Index: gdb-7.2/gdb/testsuite/gdb.python/py-gdb-rhbz1007614-memleak-infpy_read_memory.c
+===================================================================
+--- /dev/null
++++ gdb-7.2/gdb/testsuite/gdb.python/py-gdb-rhbz1007614-memleak-infpy_read_memory.c
+@@ -0,0 +1,27 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2014 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++static struct x
++  {
++    char unsigned u[4096];
++  } x, *px = &x;
++
++int
++main (int argc, char *argv[])
++{
++  return 0;
++}
+Index: gdb-7.2/gdb/testsuite/gdb.python/py-gdb-rhbz1007614-memleak-infpy_read_memory.exp
+===================================================================
+--- /dev/null
++++ gdb-7.2/gdb/testsuite/gdb.python/py-gdb-rhbz1007614-memleak-infpy_read_memory.exp
+@@ -0,0 +1,68 @@
++# Copyright 2014 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++set testfile py-gdb-rhbz1007614-memleak-infpy_read_memory
++set srcfile ${testfile}.c
++set binfile ${objdir}/${subdir}/${testfile}
++
++if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile}] } {
++    return -1
++}
++
++if { [skip_python_tests] } { continue }
++
++set pid_of_gdb [exp_pid -i [board_info host fileid]]
++
++proc memory_v_pages_get {} {
++    global pid_of_gdb
++    set fd [open "/proc/$pid_of_gdb/statm"]
++    gets $fd line
++    close $fd
++    # number of pages of virtual memory
++    scan $line "%d" drs
++    return $drs
++}
++
++if { ![runto_main] } {
++    untested $testfile.exp
++    return -1
++}
++
++set remote_python_file [remote_download host ${srcdir}/${subdir}/${testfile}.py]
++
++gdb_test "source ${remote_python_file}" ""
++
++gdb_test "hello-world" ""
++
++set kbytes_before [memory_v_pages_get]
++verbose -log "kbytes_before = $kbytes_before"
++
++gdb_test "hello-world" ""
++
++set kbytes_after [memory_v_pages_get]
++verbose -log "kbytes_after = $kbytes_after"
++
++set kbytes_diff [expr $kbytes_after - $kbytes_before]
++verbose -log "kbytes_diff = $kbytes_diff"
++
++# The value "1000" was calculated by running a few GDB sessions with this
++# testcase, and seeing how much (in average) the memory consumption
++# increased after the "hello-world" command issued above.  The average
++# was around 500 bytes, so I chose 1000 as a high estimate.
++if { $kbytes_diff > 1000 } {
++    fail "there is a memory leak on GDB (RHBZ 1007614)"
++} else {
++    pass "there is not a memory leak on GDB (RHBZ 1007614)"
++}
+Index: gdb-7.2/gdb/testsuite/gdb.python/py-gdb-rhbz1007614-memleak-infpy_read_memory.py
+===================================================================
+--- /dev/null
++++ gdb-7.2/gdb/testsuite/gdb.python/py-gdb-rhbz1007614-memleak-infpy_read_memory.py
+@@ -0,0 +1,30 @@
++# Copyright (C) 2014 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++class HelloWorld (gdb.Command):
++    """Greet the whole world."""
++
++    def __init__ (self):
++        super (HelloWorld, self).__init__ ("hello-world",
++                                           gdb.COMMAND_OBSCURE)
++
++    def invoke (self, arg, from_tty):
++        px = gdb.parse_and_eval("px")
++        core = gdb.inferiors()[0]
++        for i in range(256 * 1024):
++            chunk = core.read_memory(px, 4096)
++        print "Hello, World!"
++
++HelloWorld ()

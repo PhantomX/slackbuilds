@@ -1,0 +1,159 @@
+http://sourceware.org/ml/gdb-patches/2016-10/msg00207.html
+Subject: [patch+7.12.1 2/2] Fix TLS (such as 'errno') regression
+
+
+--3Pql8miugIZX0722
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline
+
+Hi,
+
+2273f0ac95a79ce29ef42025c63f90e82cf907d7 is the first bad commit
+commit 2273f0ac95a79ce29ef42025c63f90e82cf907d7
+Author: Tom Tromey <tromey@redhat.com>
+Date:   Tue Oct 15 13:28:57 2013 -0600
+    change minsyms not to be relocated at read-time
+[FYI v3 06/10] change minsyms not to be relocated at read-time
+Message-Id: <1393441273-32268-7-git-send-email-tromey@redhat.com>
+https://sourceware.org/ml/gdb-patches/2014-02/msg00798.html
+
+mv /usr/lib/debug /usr/lib/debug-x
+echo 'int main(){}'|gcc -pthread -x c -
+./gdb -q -ex start -ex 'set debug expr 1' -ex 'p errno' ./a.out 
+	    0  UNOP_MEMVAL_TLS       TLS type @0x35df7e0 (__thread /* "/lib64/libc.so.6" */ <thread local variable, no debug info>)
+	    4    OP_LONG               Type @0x35df850 (__CORE_ADDR), value 140737345728528 (0x7ffff77fb010)
+Cannot access memory at address 0xffffef7c9698
+->
+	    0  UNOP_MEMVAL_TLS       TLS type @0x3ad9520 (__thread /* "/lib64/libc.so.6" */ <thread local variable, no debug info>)
+	    4    OP_LONG               Type @0x3ad9590 (__CORE_ADDR), value 16 (0x10)
+$1 = 0
+
+With glibc debuginfo, that is without: mv /usr/lib/debug /usr/lib/debug-x
+	    0  OP_VAR_VALUE          Block @0x3b30e70, symbol @0x3b30d10 (errno)
+$1 = 0
+So such case is unrelated to this patch and the regression is not visible with
+glibc debuginfo installed.
+
+I guess all these issues will be solved by Gary Benson's Infinity.
+But at least for older non-Infinity glibcs GDB should not regress.
+
+For the testcase it is important the variable is in objfile with non-zero base
+address.  glibc is a shared library for 'errno' but I found easier for the
+testcase to use PIE instead of a shlib.  For TLS variables in PT_EXEC the
+regression obviously does not happen.
+
+It has been found by a more complete testcase present in Fedora, the fix there
+also solves more cases where FSF GDB currently cannot resolve 'errno':
+	http://pkgs.fedoraproject.org/cgit/rpms/gdb.git/tree/gdb-6.5-bz185337-resolve-tls-without-debuginfo-v2.patch
+	FAIL: gdb.dwarf2/dw2-errno2.exp: macros=N threads=Y: print errno for core
+
+No regressions on {x86_64,x86_64-m32,i686}-fedora26pre-linux-gnu.
+
+OK for check-in?
+
+
+Thanks,
+Jan
+
+--3Pql8miugIZX0722
+Content-Type: text/plain; charset=us-ascii
+Content-Disposition: inline; filename="tls1-2.patch"
+
+gdb/ChangeLog
+2016-10-09  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* parse.c (write_exp_msymbol): Fix ADDR computation.
+
+gdb/testsuite/ChangeLog
+2016-10-09  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.threads/tls-nodebug-pie.c: New file.
+	* gdb.threads/tls-nodebug-pie.exp: New file.
+
+--- a/gdb/parse.c
++++ b/gdb/parse.c
+@@ -480,13 +480,17 @@ write_exp_msymbol (struct parser_state *ps,
+   struct objfile *objfile = bound_msym.objfile;
+   struct gdbarch *gdbarch = get_objfile_arch (objfile);
+ 
+-  CORE_ADDR addr = BMSYMBOL_VALUE_ADDRESS (bound_msym);
+   struct obj_section *section = MSYMBOL_OBJ_SECTION (objfile, msymbol);
+   enum minimal_symbol_type type = MSYMBOL_TYPE (msymbol);
+-  CORE_ADDR pc;
++  CORE_ADDR addr, pc;
+   const int is_tls = (section != NULL
+ 		      && section->the_bfd_section->flags & SEC_THREAD_LOCAL);
+ 
++  if (is_tls)
++    addr = MSYMBOL_VALUE_RAW_ADDRESS (bound_msym.minsym);
++  else
++    addr = BMSYMBOL_VALUE_ADDRESS (bound_msym);
++
+   /* The minimal symbol might point to a function descriptor;
+      resolve it to the actual code address instead.  */
+   pc = gdbarch_convert_from_func_ptr_addr (gdbarch, addr, &current_target);
+--- /dev/null
++++ b/gdb/testsuite/gdb.threads/tls-nodebug-pie.c
+@@ -0,0 +1,27 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2016 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#include <pthread.h>
++
++__thread int thread_local = 42;
++
++int main(void)
++{
++  /* Ensure we link against pthreads even with --as-needed.  */
++  pthread_testcancel();
++  return 0;
++}
+--- /dev/null
++++ b/gdb/testsuite/gdb.threads/tls-nodebug-pie.exp
+@@ -0,0 +1,29 @@
++# Copyright 2016 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++standard_testfile
++
++if {[gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable \
++			  [list "additional_flags=-fPIE -pie"]] != "" } {
++    return -1
++}
++
++clean_restart ${binfile}
++if ![runto_main] then {
++   return 0
++}
++
++# Formerly: Cannot access memory at address 0xd5554d5216fc
++gdb_test "p thread_local" " = 42" "thread local storage"
+
+--3Pql8miugIZX0722--
+

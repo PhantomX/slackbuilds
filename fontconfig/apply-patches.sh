@@ -18,7 +18,6 @@ patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fontconfig.font.dir.list.diff
 
 ### Fedora
 patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fontconfig-2.8.0-sleep-less.patch
-patch -p1 -E --backup --verbose -i ${SB_PATCHDIR}/fontconfig-lock-cache.patch
 
 # Set to YES if autogen is needed
 SB_AUTOGEN=YES

@@ -97,6 +97,11 @@ else
   LIBDIRSUFFIX=""
 fi
 
+if test ${UID} != 0 && test "$(type -t fakeroot)" != 'file'; then
+  echo -e "\e[1mPlease preferably install fakeroot or run as root.\e[0m"
+  exit 5
+fi
+
 if [ ! -d ${TMP} ]; then
   mkdir -p ${TMP}
 fi
@@ -253,12 +258,9 @@ ROOTCOMMANDS="${ROOTCOMMANDS}
 if test ${UID} = 0; then
   eval ${ROOTCOMMANDS}
   set +o xtrace
-elif test "$(type -t fakeroot)" = 'file'; then
+else
   echo -e "\e[1mEntering fakeroot environment.\e[0m"
   echo ${ROOTCOMMANDS} | fakeroot
-else
-  echo -e "\e[1mPlease preferably install fakeroot or run as root.\e[0m"
-  exit 5
 fi
 
 # Clean up the extra stuff:

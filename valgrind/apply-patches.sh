@@ -35,10 +35,11 @@ ApplyPatch ${NAME}-3.9.0-cachegrind-improvements.patch
 # KDE#211352 - helgrind races in helgrind's own mythread_wrapper
 ApplyPatch ${NAME}-3.9.0-helgrind-race-supp.patch
 ApplyPatch ${NAME}-3.9.0-ldso-supp.patch
-# KDE#353083 arm64 doesn't implement various xattr system calls.
-ApplyPatch valgrind-3.11.0-arm64-xattr.patch
-# KDE#353084 arm64 doesn't support sigpending system call.
-ApplyPatch valgrind-3.11.0-arm64-sigpending.patch
+# KDE#371396 - workaround helgrind and drd pth_cond_destroy_busy testcase hangs
+ApplyPatch ${NAME}-3.12.0-skip-cond-var.patch
+# RHBZ#1390282 upstream svn r16134
+# Cleanup none/tests/nocwd.vgtest tmp dirs.
+ApplyPatch ${NAME}-3.12.0-nocwd-cleanup.patch
 
 ### Arch
 

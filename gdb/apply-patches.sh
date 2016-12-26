@@ -37,13 +37,14 @@ ApplyPatch gdb-archer.patch
 
 # Backported fixups post the source tarball.
 #Xdrop: Just backports.
-#ApplyPatch gdb-upstream.patch
+ApplyPatch gdb-upstream.patch
 
 # VLA (Fortran dynamic arrays) from Intel + archer-jankratochvil-vla tests.
-ApplyPatch gdb-vla-intel.patch
-ApplyPatch gdb-vla-intel-logical-not.patch
+ApplyPatch gdb-vla-intel-fortran-strides.patch
+ApplyPatch gdb-vla-intel-fortran-vla-strings.patch
 ApplyPatch gdb-vla-intel-stringbt-fix.patch
-ApplyPatch gdb-vla-intel-04of23-fix.patch
+ApplyPatch gdb-archer-vla-tests.patch
+ApplyPatch gdb-vla-intel-tests.patch
 
 # Work around out-of-date dejagnu that does not have KFAIL
 ApplyPatch gdb-6.3-rh-dummykfail-20041202.patch.gz
@@ -101,7 +102,7 @@ ApplyPatch gdb-6.5-bz185337-resolve-tls-without-debuginfo-v2.patch
 
 # Fix TLS symbols resolving for shared libraries with a relative pathname.
 # The testsuite needs `gdb-6.5-tls-of-separate-debuginfo.patch.gz'.
-ApplyPatch gdb-6.5-sharedlibrary-path.patch.gz
+ApplyPatch gdb-6.5-sharedlibrary-path.patch
 
 # Suggest fixing your target architecture for gdbserver(1) (BZ 190810).
 # FIXME: It could be autodetected.
@@ -113,19 +114,19 @@ ApplyPatch gdb-6.5-BEA-testsuite.patch
 # Testcase for deadlocking on last address space byte; for corrupted backtraces.
 ApplyPatch gdb-6.5-last-address-space-byte-test.patch.gz
 
-ApplyPatch gdb-6.5-readline-long-line-crash-test.patch.gz
+ApplyPatch gdb-6.5-readline-long-line-crash-test.patch
 
 # Fix bogus 0x0 unwind of the thread's topmost function clone(3) (BZ 216711).
 ApplyPatch gdb-6.5-bz216711-clone-is-outermost.patch
 
 # Try to reduce sideeffects of skipping ppc .so libs trampolines (BZ 218379).
-ApplyPatch gdb-6.5-bz218379-ppc-solib-trampoline-test.patch.gz
+ApplyPatch gdb-6.5-bz218379-ppc-solib-trampoline-test.patch
 
 # Fix lockup on trampoline vs. its function lookup; unreproducible (BZ 218379).
 ApplyPatch gdb-6.5-bz218379-solib-trampoline-lookup-lock-fix.patch
 
 # Find symbols properly at their original (included) file (BZ 109921).
-ApplyPatch gdb-6.5-bz109921-DW_AT_decl_file-test.patch.gz
+ApplyPatch gdb-6.5-bz109921-DW_AT_decl_file-test.patch
 
 # Update PPC unwinding patches to their upstream variants (BZ 140532).
 ApplyPatch gdb-6.3-bz140532-ppc-unwinding-test.patch
@@ -135,9 +136,6 @@ ApplyPatch gdb-6.3-bz202689-exec-from-pthread-test.patch
 
 # Testcase for PPC Power6/DFP instructions disassembly (BZ 230000).
 ApplyPatch gdb-6.6-bz230000-power6-disassembly-test.patch
-
-# Temporary support for shared libraries >2GB on 64bit hosts. (BZ 231832)
-ApplyPatch gdb-6.3-bz231832-obstack-2gb.patch
 
 # Allow running `/usr/bin/gcore' with provided but inaccessible tty (BZ 229517).
 ApplyPatch gdb-6.6-bz229517-gcore-without-terminal.patch
@@ -206,7 +204,7 @@ ApplyPatch gdb-6.8-bz442765-threaded-exec-test.patch
 ApplyPatch gdb-6.8-sparc64-silence-memcpy-check.patch
 
 # Test a crash on libraries missing the .text section.
-ApplyPatch gdb-6.5-section-num-fixup-test.patch.gz
+ApplyPatch gdb-6.5-section-num-fixup-test.patch
 
 # Fix register assignments with no GDB stack frames (BZ 436037).
 ApplyPatch gdb-6.8-bz436037-reg-no-longer-active.patch.gz
@@ -215,13 +213,13 @@ ApplyPatch gdb-6.8-bz436037-reg-no-longer-active.patch.gz
 ApplyPatch gdb-6.8-quit-never-aborts.patch
 
 # Test the watchpoints conditionals works.
-ApplyPatch gdb-6.8-watchpoint-conditionals-test.patch.gz
+ApplyPatch gdb-6.8-watchpoint-conditionals-test.patch
 
 # Fix resolving of variables at locations lists in prelinked libs (BZ 466901).
 ApplyPatch gdb-6.8-bz466901-backtrace-full-prelinked.patch
 
 # New test for step-resume breakpoint placed in multiple threads at once.
-ApplyPatch gdb-simultaneous-step-resume-breakpoint-test.patch.gz
+ApplyPatch gdb-simultaneous-step-resume-breakpoint-test.patch
 
 # Fix GNU/Linux core open: Can't read pathname for load map: Input/output error.
 ApplyPatch gdb-core-open-vdso-warning.patch
@@ -287,7 +285,14 @@ ApplyPatch gdb-test-dw2-aranges.patch
 # =fedoratest
 ApplyPatch gdb-test-expr-cumulative-archer.patch
 
+# Fix regressions on C++ names resolving (PR 11734, PR 12273, Keith Seitz).
+ApplyPatch gdb-physname-pr11734-test.patch
+ApplyPatch gdb-physname-pr12273-test.patch
+
 ApplyPatch gdb-7.2.50-sparc-add-workaround-to-broken-debug-files.patch
+
+# Test GDB opcodes/ disassembly of Intel Ivy Bridge instructions (BZ 696890).
+ApplyPatch gdb-test-ivy-bridge.patch
 
 # Work around PR libc/13097 "linux-vdso.so.1" warning message.
 #=push
@@ -332,7 +337,8 @@ ApplyPatch gdb-rhbz947564-findvar-assertion-frame-failed-testcase.patch
 # Fix crash of -readnow /usr/lib/debug/usr/bin/gnatbind.debug (BZ 1069211).
 ApplyPatch gdb-gnat-dwarf-crash-3of3.patch
 
-ApplyPatch gdb-archer-vla-tests.patch
+# Fix 'memory leak in infpy_read_memory()' (RH BZ 1007614)
+ApplyPatch gdb-rhbz1007614-memleak-infpy_read_memory-test.patch
 
 # Continue backtrace even if a frame filter throws an exception (Phil Muldoon).
 ApplyPatch gdb-btrobust.patch
@@ -343,8 +349,76 @@ ApplyPatch gdb-fortran-frame-string.patch
 # Fix Python GIL with gdb.execute("continue") (Phil Muldoon, BZ 1116957).
 ApplyPatch gdb-python-gil.patch
 
+# Testcase for '[SAP] Recursive dlopen causes SAP HANA installer to
+# crash.' (RH BZ 1156192).
+ApplyPatch gdb-rhbz1156192-recursive-dlopen-test.patch
+
 # Fix jit-reader.h for multi-lib.
 ApplyPatch gdb-jit-reader-multilib.patch
+
+# Fix '`catch syscall' doesn't work for parent after `fork' is called'
+# (Philippe Waroquiers, RH BZ 1149205).
+ApplyPatch gdb-rhbz1149205-catch-syscall-after-fork-test.patch
+
+# Fix 'backport GDB 7.4 fix to RHEL 6.6 GDB' [Original Sourceware bug
+# description: 'C++ (and objc): Internal error on unqualified name
+# re-set', PR 11657] (RH BZ 1186476).
+ApplyPatch gdb-rhbz1186476-internal-error-unqualified-name-re-set-test.patch
+
+# Test 'info type-printers' Python error (RH BZ 1350436).
+ApplyPatch gdb-rhbz1350436-type-printers-error.patch
+
+# Fix '[ppc64] and [s390x] wrong prologue skip on -O2 -g code' (Jan
+# Kratochvil, RH BZ 1084404).
+ApplyPatch gdb-rhbz1084404-ppc64-s390x-wrong-prologue-skip-O2-g-3of3.patch
+
+# Never kill PID on: gdb exec PID (Jan Kratochvil, RH BZ 1219747).
+ApplyPatch gdb-bz1219747-attach-kills.patch
+
+# Fix the pahole command breakage due to its Python3 port (RH BZ 1264532).
+ApplyPatch gdb-pahole-python2.patch
+
+# Force libncursesw over libncurses to match the includes (RH BZ 1270534).
+ApplyPatch gdb-fedora-libncursesw.patch
+
+# Test clflushopt instruction decode (for RH BZ 1262471).
+ApplyPatch gdb-opcodes-clflushopt-test.patch
+
+# [testsuite] Fix false selftest.exp FAIL from system readline-6.3+ (Patrick Palka).
+ApplyPatch gdb-testsuite-readline63-sigint.patch
+ApplyPatch gdb-testsuite-readline63-sigint-revert.patch
+
+# [aarch64] Fix hardware watchpoints (RH BZ 1261564).
+ApplyPatch gdb-rhbz1261564-aarch64-hw-watchpoint-test.patch 
+
+# Add messages suggesting more recent RHEL gdbserver (RH BZ 1321114).
+ApplyPatch gdb-container-rh-pkg.patch
+
+# New test for Python "Cannot locate object file for block" (for RH BZ 1325795).
+ApplyPatch gdb-rhbz1325795-framefilters-test.patch
+
+# [dts+el7] [x86*] Bundle linux_perf.h for libipt (RH BZ 1256513).
+ApplyPatch gdb-linux_perf-bundle.patch
+
+# [rhel6+7] Fix compatibility of bison <3.1 and gcc >=6.
+ApplyPatch gdb-bison-old.patch
+
+# [testsuite] More testsuite fixes.
+ApplyPatch gdb-testsuite-casts.patch
+ApplyPatch gdb-testsuite-m-static.patch
+
+# [aarch64] Fix gdb.cp/nextoverthrow.exp regression (Yao Qi).
+ApplyPatch gdb-aarch64-nextoverthrow.patch
+
+# Fix TLS (such as 'errno') regression.
+ApplyPatch gdb-tls-1of2.patch
+ApplyPatch gdb-tls-2of2.patch
+
+# [testsuite] Fix false FAIL for gdb.base/morestack.exp.
+ApplyPatch gdb-testsuite-morestack-gold.patch
+
+# Fix gdb-headless /usr/bin/ executables (BZ 1390251).
+ApplyPatch gdb-libexec-add-index.patch
 
 ### END Fedora
 

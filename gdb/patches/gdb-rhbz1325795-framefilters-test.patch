@@ -1,0 +1,162 @@
+--- /dev/null	2016-09-12 21:37:05.332693927 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.python/py-framefilter-thread.c	2016-09-12 21:43:56.448695513 +0200
+@@ -0,0 +1,39 @@
++/* This testcase is part of GDB, the GNU debugger.
++
++   Copyright 2016 Free Software Foundation, Inc.
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++
++#include <pthread.h>
++#include <assert.h>
++
++static void *
++start (void *arg)
++{
++  return arg; /* Backtrace end breakpoint */
++}
++
++int
++main (void)
++{
++  pthread_t thread1;
++  int i;
++
++  i = pthread_create (&thread1, NULL, start, NULL);
++  assert (i == 0);
++  i = pthread_join (thread1, NULL);
++  assert (i == 0);
++
++  return 0;
++}
+--- /dev/null	2016-09-12 21:37:05.332693927 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.python/py-framefilter-thread.exp	2016-09-12 21:46:54.623428493 +0200
+@@ -0,0 +1,54 @@
++# Copyright (C) 2016 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++load_lib gdb-python.exp
++
++standard_testfile
++
++if {[prepare_for_testing $testfile.exp $testfile $srcfile {debug pthreads}]} {
++    return -1
++}
++
++# Skip all tests if Python scripting is not enabled.
++if { [skip_python_tests] } { continue }
++
++if ![runto_main] then {
++    return
++}
++gdb_test_no_output "set python print-stack full" \
++    "Set python print-stack to full"
++
++# Load global frame-filters
++set remote_python_file [remote_download host ${srcdir}/${subdir}/${testfile}.py]
++gdb_test_no_output "python exec (open ('${remote_python_file}').read ())" \
++    "Load python file"
++
++gdb_breakpoint [gdb_get_line_number "Backtrace end breakpoint"]
++gdb_continue_to_breakpoint "Backtrace end breakpoint"
++
++# #2  0x00007ffff75f228d in clone () at ../sysdeps/unix/sysv/linux/x86_64/clone.S:113^M
++gdb_test "bt no-filters" " in (\\.?_*clone|thread_start) \[^\r\n\]*" "bt no-filters"
++
++# #2  0x00007ffff75f228d in 941595343737041 () at ../sysdeps/unix/sysv/linux/x86_64/clone.S:113^M
++# vs.
++# #2  0x00007ffff75f228d in 941595343737041Traceback (most recent call last):
++#   File "/home/jkratoch/redhat/rhel/gdb/rhel-7.3/gdb-7.6.1/gdb/testsuite/../data-directory/python/gdb/FrameDecorator.py", line 145, in frame_args
++#     return self._base.frame_args()
++#   File "/home/jkratoch/redhat/rhel/gdb/rhel-7.3/gdb-7.6.1/gdb/testsuite/../data-directory/python/gdb/FrameDecorator.py", line 152, in frame_args
++#     return args.fetch_frame_args()
++#   File "/home/jkratoch/redhat/rhel/gdb/rhel-7.3/gdb-7.6.1/gdb/testsuite/../data-directory/python/gdb/FrameDecorator.py", line 276, in fetch_frame_args
++#     block = self.frame.block()
++# RuntimeError: Cannot locate object file for block.
++gdb_test "bt" " in \[0-9\]+ \[^\r\n\]*" "bt with filters"
+--- /dev/null	2016-09-12 21:37:05.332693927 +0200
++++ gdb-7.11.90.20160907/gdb/testsuite/gdb.python/py-framefilter-thread.py	2016-09-12 21:49:16.150795235 +0200
+@@ -0,0 +1,60 @@
++# Copyright (C) 2016 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++# This file is part of the GDB testsuite.  It tests Python-based
++# frame-filters.
++
++# This test is specifically crafted for RH BZ 1197665.
++
++import gdb
++import itertools
++from gdb.FrameDecorator import FrameDecorator
++import copy
++
++class Reverse_Function (FrameDecorator):
++
++    def __init__(self, fobj):
++        super(Reverse_Function, self).__init__(fobj)
++        self.fobj = fobj
++
++    def function (self):
++        # This function call should not fail.
++        gdb.target_charset ()
++
++        fname = str (self.fobj.function())
++        if (fname == None or fname == ""):
++            return None
++        else:
++            fname = fname[::-1]
++        return fname
++
++class FrameFilter ():
++
++    def __init__ (self):
++        self.name = "Reverse"
++        self.priority = 100
++        self.enabled = True
++        gdb.frame_filters [self.name] = self
++
++    def filter (self, frame_iter):
++        # Python 3.x moved the itertools.imap functionality to map(),
++        # so check if it is available.
++        if hasattr(itertools, "imap"):
++            frame_iter = itertools.imap (Reverse_Function, frame_iter)
++        else:
++            frame_iter = map (Reverse_Function, frame_iter)
++        return frame_iter
++
++FrameFilter()

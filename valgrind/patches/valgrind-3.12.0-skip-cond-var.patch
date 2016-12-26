@@ -1,0 +1,190 @@
+commit 88cf06207b074f387c04de4938a0bb20366616b0
+Author: mjw <mjw@a5019735-40e9-0310-863c-91ae7b9d1cf9>
+Date:   Fri Oct 21 00:02:10 2016 +0000
+
+    Add libc_test to workaround pth_cond_destroy_busy test hangs.
+    
+    This is a workaround for bug #371396. It adds a new test program
+    that can be used skip tests given a specific libc implementation
+    and optionally a specific minimum version. Currently only glibc
+    is recognized. This is used for the drd and helgrind tests
+    pth_cond_destroy_busy to be skipped on glibc 2.24.90+.
+    
+    git-svn-id: svn://svn.valgrind.org/valgrind/trunk@16097 a5019735-40e9-0310-863c-91ae7b9d1cf9
+
+diff --git a/drd/tests/pth_cond_destroy_busy.vgtest b/drd/tests/pth_cond_destroy_busy.vgtest
+index eafbd74..f3cf778 100644
+--- a/drd/tests/pth_cond_destroy_busy.vgtest
++++ b/drd/tests/pth_cond_destroy_busy.vgtest
+@@ -1,2 +1,2 @@
+-prereq: ./supported_libpthread
++prereq: ./supported_libpthread && ! ../../tests/libc_test glibc 2.24.90
+ prog: pth_cond_destroy_busy
+diff --git a/helgrind/tests/pth_cond_destroy_busy.vgtest b/helgrind/tests/pth_cond_destroy_busy.vgtest
+index 45d7853..2957cc3 100644
+--- a/helgrind/tests/pth_cond_destroy_busy.vgtest
++++ b/helgrind/tests/pth_cond_destroy_busy.vgtest
+@@ -1,2 +1,2 @@
+-prereq: ! ../../tests/os_test darwin
++prereq: ! ../../tests/os_test darwin && ! ../../tests/libc_test glibc 2.24.90
+ prog: ../../drd/tests/pth_cond_destroy_busy
+diff --git a/tests/Makefile.am b/tests/Makefile.am
+index 9c0cc3a..7233626 100644
+--- a/tests/Makefile.am
++++ b/tests/Makefile.am
+@@ -44,6 +44,7 @@ noinst_HEADERS = \
+ check_PROGRAMS = \
+ 	arch_test \
+ 	os_test \
++	libc_test \
+ 	true \
+ 	x86_amd64_features \
+ 	s390x_features \
+diff --git a/tests/libc_test.c b/tests/libc_test.c
+new file mode 100644
+index 0000000..0de3d5d
+--- /dev/null
++++ b/tests/libc_test.c
+@@ -0,0 +1,78 @@
++// Compare given libc name and version number to system name and version.
++
++// Returns
++// - 0 if the libc name matches is at least the minimum version (if given).
++// - 1 if the libc name doesn't match or the version is lower than requested.
++// - 2 if the requested libc name isn't recognised.
++// - 3 if there was a usage error (it also prints an error message).
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#ifdef __GLIBC__
++#include <gnu/libc-version.h>
++#endif
++
++#define False  0
++#define True   1
++typedef int    Bool;
++
++/* Assumes the versions are x.y.z, with y and z optional. */
++static Bool matches_version(char *min_version) {
++   int a1=0, a2=0, a3=0, g1=0, g2=0, g3=0;  // 'a' = actual;  'g' = given
++   const char *aversion;
++
++   if (min_version == NULL)  return True;  // no version specified
++
++   // get actual version number
++#ifdef __GLIBC__
++   aversion = gnu_get_libc_version();
++#else
++   aversion = "unknown";
++#endif
++   // We expect at least one number.
++   if (sscanf(aversion, "%d.%d.%d", &a1, &a2, &a3) < 1) return False;
++
++   // parse given version number.
++   if (sscanf(min_version, "%d.%d.%d", &g1, &g2, &g3) < 1) return False;
++
++   if (a1 > g1) return True;
++   if (a1 < g1) return False;
++   if (a2 > g2) return True;
++   if (a2 < g2) return False;
++   if (a3 >= g3) return True;
++
++   return False;
++}
++
++static Bool go(char* libc, char *min_version)
++{
++#ifdef __GLIBC__
++   if ( 0 == strcmp( libc, "glibc" )
++	&& matches_version( min_version ))
++      return True;
++#endif
++
++   return False;
++}
++
++//---------------------------------------------------------------------------
++// main
++//---------------------------------------------------------------------------
++int main(int argc, char **argv)
++{
++   if ( argc < 2 ) {
++      fprintf( stderr, "usage: libc_test <libc-name> [<min-version>]\n" );
++      exit(3);             // Usage error.
++   }
++   if (go( argv[1], argv[2] )) {
++      return 0;            // Matched.
++   }
++
++   if ( 0 == strcmp ( argv[1], "glibc" ) ) {
++     return 1;             // Requested libc name known, but this isn't it.
++                           // Or it wasn't the minimum requested version.
++   }
++   return 2;               // Didn't match any known libc name.
++}
+Only in valgrind-3.12.0.RC2: autom4te.cache
+diff -ur valgrind-3.12.0.RC2.orig/tests/Makefile.in valgrind-3.12.0.RC2/tests/Makefile.in
+--- valgrind-3.12.0.RC2.orig/tests/Makefile.in	2016-10-21 02:10:24.283643034 +0200
++++ valgrind-3.12.0.RC2/tests/Makefile.in	2016-10-21 02:11:09.668003685 +0200
+@@ -121,10 +121,11 @@
+ @COMPILER_IS_CLANG_TRUE@	-Wno-uninitialized -Wno-unused-value # \
+ @COMPILER_IS_CLANG_TRUE@	clang 3.0.0
+ @COMPILER_IS_CLANG_TRUE@am__append_7 = -Wno-unused-private-field    # drd/tests/tsan_unittest.cpp
+-check_PROGRAMS = arch_test$(EXEEXT) os_test$(EXEEXT) true$(EXEEXT) \
+-	x86_amd64_features$(EXEEXT) s390x_features$(EXEEXT) \
+-	mips_features$(EXEEXT) power_insn_available$(EXEEXT) \
+-	is_ppc64_BE$(EXEEXT) min_power_isa$(EXEEXT)
++check_PROGRAMS = arch_test$(EXEEXT) os_test$(EXEEXT) \
++	libc_test$(EXEEXT) true$(EXEEXT) x86_amd64_features$(EXEEXT) \
++	s390x_features$(EXEEXT) mips_features$(EXEEXT) \
++	power_insn_available$(EXEEXT) is_ppc64_BE$(EXEEXT) \
++	min_power_isa$(EXEEXT)
+ subdir = tests
+ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
+ am__aclocal_m4_deps = $(top_srcdir)/configure.ac
+@@ -142,6 +143,9 @@
+ is_ppc64_BE_SOURCES = is_ppc64_BE.c
+ is_ppc64_BE_OBJECTS = is_ppc64_BE.$(OBJEXT)
+ is_ppc64_BE_LDADD = $(LDADD)
++libc_test_SOURCES = libc_test.c
++libc_test_OBJECTS = libc_test.$(OBJEXT)
++libc_test_LDADD = $(LDADD)
+ min_power_isa_SOURCES = min_power_isa.c
+ min_power_isa_OBJECTS = min_power_isa-min_power_isa.$(OBJEXT)
+ min_power_isa_LDADD = $(LDADD)
+@@ -201,10 +205,10 @@
+ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
+ am__v_CCLD_0 = @echo "  CCLD    " $@;
+ am__v_CCLD_1 = 
+-SOURCES = arch_test.c is_ppc64_BE.c min_power_isa.c mips_features.c \
+-	os_test.c power_insn_available.c s390x_features.c true.c \
+-	x86_amd64_features.c
+-DIST_SOURCES = arch_test.c is_ppc64_BE.c min_power_isa.c \
++SOURCES = arch_test.c is_ppc64_BE.c libc_test.c min_power_isa.c \
++	mips_features.c os_test.c power_insn_available.c \
++	s390x_features.c true.c x86_amd64_features.c
++DIST_SOURCES = arch_test.c is_ppc64_BE.c libc_test.c min_power_isa.c \
+ 	mips_features.c os_test.c power_insn_available.c \
+ 	s390x_features.c true.c x86_amd64_features.c
+ am__can_run_installinfo = \
+@@ -681,6 +685,10 @@
+ 	@rm -f is_ppc64_BE$(EXEEXT)
+ 	$(AM_V_CCLD)$(LINK) $(is_ppc64_BE_OBJECTS) $(is_ppc64_BE_LDADD) $(LIBS)
+ 
++libc_test$(EXEEXT): $(libc_test_OBJECTS) $(libc_test_DEPENDENCIES) $(EXTRA_libc_test_DEPENDENCIES) 
++	@rm -f libc_test$(EXEEXT)
++	$(AM_V_CCLD)$(LINK) $(libc_test_OBJECTS) $(libc_test_LDADD) $(LIBS)
++
+ min_power_isa$(EXEEXT): $(min_power_isa_OBJECTS) $(min_power_isa_DEPENDENCIES) $(EXTRA_min_power_isa_DEPENDENCIES) 
+ 	@rm -f min_power_isa$(EXEEXT)
+ 	$(AM_V_CCLD)$(min_power_isa_LINK) $(min_power_isa_OBJECTS) $(min_power_isa_LDADD) $(LIBS)
+@@ -717,6 +725,7 @@
+ 
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/arch_test.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/is_ppc64_BE.Po@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libc_test.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/min_power_isa-min_power_isa.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mips_features.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/os_test.Po@am__quote@

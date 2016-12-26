@@ -33,8 +33,11 @@ ApplyPatch 0001-docs-fix-cmake-code-block-warning.patch
 ApplyPatch 0001-cmake-Install-CheckAtomic.cmake-needed-by-lldb.patch
 # backports cribbed from https://github.com/rust-lang/llvm/
 ApplyPatch rust-lang-llvm-pr47.patch
+ApplyPatch rust-lang-llvm-pr48.patch
 ApplyPatch rust-lang-llvm-pr51.patch
 ApplyPatch rust-lang-llvm-pr53.patch
 ApplyPatch rust-lang-llvm-pr54.patch
+ApplyPatch rust-lang-llvm-pr55.patch
+ApplyPatch rust-lang-llvm-pr57.patch
 
 set +e +o pipefail

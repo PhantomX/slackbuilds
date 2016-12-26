@@ -1,0 +1,73 @@
+From: Simon McVittie <smcv@debian.org>
+Date: Mon, 3 Feb 2014 01:14:45 +0000
+Subject: [PATCH] Do not attempt to autolaunch a session dbus-daemon with no
+ DISPLAY
+
+The two known use-cases for autolaunching are:
+
+* X-forwarding: "ssh -Y myhost myapp" resulting in a
+  session bus on myhost but an X server on the original host
+
+* Legacy desktop environments on OSs without D-Bus integration:
+  e.g. running a single GNOME or KDE app under fvwm or something,
+  without a session dbus-daemon being started by either systemd,
+  gnome-session, or OS integration scripts analogous to Debian's
+  /etc/X11/Xsession.d/75dbus_dbus-launch
+
+In either case, an X11 DISPLAY is also needed.
+
+"dbus-launch --autolaunch" doesn't do anything useful when unable
+to connect to an X11 display; this has been the case since the feature
+was added in 2006, and is useful to avoid "split brain" situations in
+which two processes that ought to be part of the same session end up
+on separate session buses. Since dbus commit 407c111 in 2011,
+libdbus hasn't even attempted to run "dbus-launch --autolaunch"
+unless getenv("DISPLAY") returns non-null in the parent: this avoids
+doing a relatively complicated fork-and-exec that is clearly not
+going to lead to success. This commit gives GDBus the same policy.
+
+In Debian, I've encountered GLib test failures in
+gio/tests/gapplication.c which appear to be related to the
+fork-and-exec for dbus-launch (Debian bug #737380). Specifically,
+one test-case ends by calling g_test_dbus_unset(), and the next
+test-case tries to access the session bus with DBUS_SESSION_BUS_ADDRESS
+unset, resulting in an attempt to autolaunch. Checking for DISPLAY
+avoids this attempt to autolaunch, since g_test_dbus_unset() also
+unsets DISPLAY. It seems likely that there is some orthogonal bug here,
+perhaps involving g_spawn_sync() in the GDBus thread racing with
+g_spawn_async_with_pipes() in the main thread, but GApplication is
+probably not the ideal place to debug that.
+
+In my opinion as D-Bus maintainer, "dbus-launch --autolaunch" should
+be considered to be an X11 feature, and any future D-Bus enhancements
+(e.g. kdbus) or successors for X11 (e.g. Wayland, Mir) should obtain
+a session bus address by other means - either a session manager
+such as "systemd --user", gnome-session or Upstart, or a wrapper
+for the user session like dbus-run-session(1).
+
+Related to dbus bug <https://bugs.freedesktop.org/show_bug.cgi?id=19997>.
+
+Bug: https://bugzilla.gnome.org/show_bug.cgi?id=723506
+Bug-Debian: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=737380
+---
+ gio/gdbusaddress.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+Index: b/gio/gdbusaddress.c
+===================================================================
+--- a/gio/gdbusaddress.c
++++ b/gio/gdbusaddress.c
+@@ -1079,6 +1079,13 @@
+       goto out;
+     }
+ 
++  if (g_getenv ("DISPLAY") == NULL)
++    {
++      g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
++                   _("Cannot autolaunch D-Bus without X11 $DISPLAY"));
++      goto out;
++    }
++
+   /* We're using private libdbus facilities here. When everything
+    * (X11, Mac OS X, Windows) is spec'ed out correctly (not even the
+    * X11 property is correctly documented right now) we should

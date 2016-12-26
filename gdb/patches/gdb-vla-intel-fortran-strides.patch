@@ -1,0 +1,1977 @@
+git diff --stat -p gdb/master...gdb/users/bheckel/fortran-strides
+dbfd7140bf4c0500d1f5d192be781f83f78f7922
+
+ gdb/dwarf2loc.c                             |  46 ++-
+ gdb/dwarf2loc.h                             |   6 +
+ gdb/dwarf2read.c                            |  13 +-
+ gdb/eval.c                                  | 391 +++++++++++++++++++++-----
+ gdb/expprint.c                              |  20 +-
+ gdb/expression.h                            |  18 +-
+ gdb/f-exp.y                                 |  42 ++-
+ gdb/f-valprint.c                            |   8 +-
+ gdb/gdbtypes.c                              |  34 ++-
+ gdb/gdbtypes.h                              |  18 +-
+ gdb/parse.c                                 |  24 +-
+ gdb/rust-exp.y                              |  12 +-
+ gdb/rust-lang.c                             |  17 +-
+ gdb/testsuite/gdb.fortran/static-arrays.exp | 421 ++++++++++++++++++++++++++++
+ gdb/testsuite/gdb.fortran/static-arrays.f90 |  55 ++++
+ gdb/testsuite/gdb.fortran/vla-ptype.exp     |   4 +
+ gdb/testsuite/gdb.fortran/vla-sizeof.exp    |   4 +
+ gdb/testsuite/gdb.fortran/vla-stride.exp    |  44 +++
+ gdb/testsuite/gdb.fortran/vla-stride.f90    |  29 ++
+ gdb/testsuite/gdb.fortran/vla.f90           |  10 +
+ gdb/valarith.c                              |  10 +-
+ gdb/valops.c                                | 197 +++++++++++--
+ gdb/value.h                                 |   2 +
+ 23 files changed, 1242 insertions(+), 183 deletions(-)
+
+diff --git a/gdb/dwarf2loc.c b/gdb/dwarf2loc.c
+index 548e468..560e16f 100644
+--- a/gdb/dwarf2loc.c
++++ b/gdb/dwarf2loc.c
+@@ -2601,11 +2601,14 @@ dwarf2_locexpr_baton_eval (const struct dwarf2_locexpr_baton *dlbaton,
+ /* See dwarf2loc.h.  */
+ 
+ int
+-dwarf2_evaluate_property (const struct dynamic_prop *prop,
++dwarf2_evaluate_property_signed (const struct dynamic_prop *prop,
+ 			  struct frame_info *frame,
+ 			  struct property_addr_info *addr_stack,
+-			  CORE_ADDR *value)
++			  CORE_ADDR *value,
++			  int is_signed)
+ {
++  int rc = 0;
++
+   if (prop == NULL)
+     return 0;
+ 
+@@ -2629,7 +2632,7 @@ dwarf2_evaluate_property (const struct dynamic_prop *prop,
+ 
+ 		*value = value_as_address (val);
+ 	      }
+-	    return 1;
++	    rc = 1;
+ 	  }
+       }
+       break;
+@@ -2651,7 +2654,7 @@ dwarf2_evaluate_property (const struct dynamic_prop *prop,
+ 	    if (!value_optimized_out (val))
+ 	      {
+ 		*value = value_as_address (val);
+-		return 1;
++		rc = 1;
+ 	      }
+ 	  }
+       }
+@@ -2659,8 +2662,8 @@ dwarf2_evaluate_property (const struct dynamic_prop *prop,
+ 
+     case PROP_CONST:
+       *value = prop->data.const_val;
+-      return 1;
+-
++      rc = 1;
++      break;
+     case PROP_ADDR_OFFSET:
+       {
+ 	struct dwarf2_property_baton *baton
+@@ -2681,11 +2684,38 @@ dwarf2_evaluate_property (const struct dynamic_prop *prop,
+ 	  val = value_at (baton->offset_info.type,
+ 			  pinfo->addr + baton->offset_info.offset);
+ 	*value = value_as_address (val);
+-	return 1;
++	rc = 1;
+       }
++      break;
+     }
+ 
+-  return 0;
++  if (rc == 1 && is_signed == 1)
++    {
++      /* If we have a valid return candidate and it's value is signed,
++         we have to sign-extend the value because CORE_ADDR on 64bit machine has
++         8 bytes but address size of an 32bit application is 4 bytes.  */
++      struct gdbarch * gdbarch = target_gdbarch ();
++      const int addr_bit = gdbarch_addr_bit (gdbarch);
++      const CORE_ADDR neg_mask = ((~0) <<  (addr_bit - 1));
++
++      /* Check if signed bit is set and sign-extend values.  */
++      if (*value & (neg_mask))
++	*value |= (neg_mask );
++    }
++  return rc;
++}
++
++int
++dwarf2_evaluate_property (const struct dynamic_prop *prop,
++			  struct frame_info *frame,
++			  struct property_addr_info *addr_stack,
++			  CORE_ADDR *value)
++{
++  return dwarf2_evaluate_property_signed (prop,
++				   frame,
++				   addr_stack,
++				   value,
++				   0);
+ }
+ 
+ /* See dwarf2loc.h.  */
+diff --git a/gdb/dwarf2loc.h b/gdb/dwarf2loc.h
+index fa83459..da6b9cd 100644
+--- a/gdb/dwarf2loc.h
++++ b/gdb/dwarf2loc.h
+@@ -138,6 +138,12 @@ int dwarf2_evaluate_property (const struct dynamic_prop *prop,
+ 			      struct property_addr_info *addr_stack,
+ 			      CORE_ADDR *value);
+ 
++int dwarf2_evaluate_property_signed (const struct dynamic_prop *prop,
++			      struct frame_info *frame,
++			      struct property_addr_info *addr_stack,
++			      CORE_ADDR *value,
++			      int is_signed);
++
+ /* A helper for the compiler interface that compiles a single dynamic
+    property to C code.
+ 
+diff --git a/gdb/dwarf2read.c b/gdb/dwarf2read.c
+index 6658a38..a1ac659 100644
+--- a/gdb/dwarf2read.c
++++ b/gdb/dwarf2read.c
+@@ -14952,7 +14952,7 @@ read_subrange_type (struct die_info *die, struct dwarf2_cu *cu)
+   struct type *base_type, *orig_base_type;
+   struct type *range_type;
+   struct attribute *attr;
+-  struct dynamic_prop low, high;
++  struct dynamic_prop low, high, stride;
+   int low_default_is_valid;
+   int high_bound_is_count = 0;
+   const char *name;
+@@ -14972,7 +14972,9 @@ read_subrange_type (struct die_info *die, struct dwarf2_cu *cu)
+ 
+   low.kind = PROP_CONST;
+   high.kind = PROP_CONST;
++  stride.kind = PROP_CONST;
+   high.data.const_val = 0;
++  stride.data.const_val = 0;
+ 
+   /* Set LOW_DEFAULT_IS_VALID if current language and DWARF version allow
+      omitting DW_AT_lower_bound.  */
+@@ -15006,6 +15008,13 @@ read_subrange_type (struct die_info *die, struct dwarf2_cu *cu)
+       break;
+     }
+ 
++  attr = dwarf2_attr (die, DW_AT_byte_stride, cu);
++  if (attr)
++    if (!attr_to_dynamic_prop (attr, die, cu, &stride))
++        complaint (&symfile_complaints, _("Missing DW_AT_byte_stride "
++                  "- DIE at 0x%x [in module %s]"),
++             die->offset.sect_off, objfile_name (cu->objfile));
++
+   attr = dwarf2_attr (die, DW_AT_lower_bound, cu);
+   if (attr)
+     attr_to_dynamic_prop (attr, die, cu, &low);
+@@ -15082,7 +15091,7 @@ read_subrange_type (struct die_info *die, struct dwarf2_cu *cu)
+       && !TYPE_UNSIGNED (base_type) && (high.data.const_val & negative_mask))
+     high.data.const_val |= negative_mask;
+ 
+-  range_type = create_range_type (NULL, orig_base_type, &low, &high);
++  range_type = create_range_type (NULL, orig_base_type, &low, &high, &stride);
+ 
+   if (high_bound_is_count)
+     TYPE_RANGE_DATA (range_type)->flag_upper_bound_is_count = 1;
+diff --git a/gdb/eval.c b/gdb/eval.c
+index 00a107c..91d8a03 100644
+--- a/gdb/eval.c
++++ b/gdb/eval.c
+@@ -399,29 +399,325 @@ init_array_element (struct value *array, struct value *element,
+   return index;
+ }
+ 
++/* Evaluates any operation on Fortran arrays or strings with at least
++   one user provided parameter.  Expects the input ARRAY to be either
++   an array, or a string.  Evaluates EXP by incrementing POS, and
++   writes the content from the elt stack into a local struct.  NARGS
++   specifies number of literal or range arguments the user provided.
++   NARGS must be the same number as ARRAY has dimensions.  */
++
+ static struct value *
+-value_f90_subarray (struct value *array,
+-		    struct expression *exp, int *pos, enum noside noside)
++value_f90_subarray (struct value *array, struct expression *exp,
++		    int *pos, int nargs, enum noside noside)
+ {
+-  int pc = (*pos) + 1;
++  int i, dim_count = 0;
+   LONGEST low_bound, high_bound;
+-  struct type *range = check_typedef (TYPE_INDEX_TYPE (value_type (array)));
+-  enum range_type range_type
+-    = (enum range_type) longest_to_int (exp->elts[pc].longconst);
+- 
+-  *pos += 3;
+-
+-  if (range_type == LOW_BOUND_DEFAULT || range_type == BOTH_BOUND_DEFAULT)
+-    low_bound = TYPE_LOW_BOUND (range);
+-  else
+-    low_bound = value_as_long (evaluate_subexp (NULL_TYPE, exp, pos, noside));
++  struct value *new_array = array;
++  struct type *array_type = check_typedef (value_type (new_array));
++  struct type *elt_type;
++
++  typedef struct subscript_range
++  {
++    enum range_type f90_range_type;
++    LONGEST low, high, stride;
++  } subscript_range;
++
++  typedef enum subscript_kind
++  {
++    SUBSCRIPT_RANGE,    /* e.g. "(lowbound:highbound)"  */
++    SUBSCRIPT_INDEX    /* e.g. "(literal)"  */
++  } kind;
++
++  /* Local struct to hold user data for Fortran subarray dimensions.  */
++  struct subscript_store
++  {
++    /* For every dimension, we are either working on a range or an index
++       expression, so we store this info separately for later.  */
++    enum subscript_kind kind;
++
++    /* We also store either the lower and upper bound info, or the index
++       number.  Before evaluation of the input values, we do not know if we are
++       actually working on a range of ranges, or an index in a range.  So as a
++       first step we store all input in a union.  The array calculation itself
++       deals with this later on.  */
++    union element_range
++    {
++      subscript_range range;
++      LONGEST number;
++    } U;
++  } *subscript_array;
++
++  /* Check if the number of arguments provided by the user matches
++     the number of dimension of the array.  A string has only one
++     dimension.  */
++  if (nargs != calc_f77_array_dims (value_type (new_array)))
++    error (_("Wrong number of subscripts"));
++
++  subscript_array = (struct subscript_store*) alloca (sizeof (*subscript_array) * nargs);
++
++  /* Parse the user input into the SUBSCRIPT_ARRAY to store it.  We need
++     to evaluate it first, as the input is from left-to-right.  The
++     array is stored from right-to-left.  So we have to use the user
++     input in reverse order.  Later on, we need the input information to
++     re-calculate the output array.  For multi-dimensional arrays, we
++     can be dealing with any possible combination of ranges and indices
++     for every dimension.  */
++  for (i = 0; i < nargs; i++)
++    {
++      struct subscript_store *index = &subscript_array[i];
+ 
+-  if (range_type == HIGH_BOUND_DEFAULT || range_type == BOTH_BOUND_DEFAULT)
+-    high_bound = TYPE_HIGH_BOUND (range);
+-  else
+-    high_bound = value_as_long (evaluate_subexp (NULL_TYPE, exp, pos, noside));
++      /* The user input is a range, with or without lower and upper bound.
++	 E.g.: "p arry(2:5)", "p arry( :5)", "p arry( : )", etc.  */
++      if (exp->elts[*pos].opcode == OP_RANGE)
++	{
++	  int pc = (*pos) + 1;
++	  subscript_range *range;
++
++	  index->kind = SUBSCRIPT_RANGE;
++	  range = &index->U.range;
++
++	  *pos += 3;
++	  range->f90_range_type = (enum range_type) exp->elts[pc].longconst;
++
++	  /* If a lower bound was provided by the user, the bit has been
++	     set and we can assign the value from the elt stack.  Same for
++	     upper bound.  */
++	  if ((range->f90_range_type & SUBARRAY_LOW_BOUND)
++	      == SUBARRAY_LOW_BOUND)
++	    range->low = value_as_long (evaluate_subexp (NULL_TYPE, exp,
++							 pos, noside));
++	  if ((range->f90_range_type & SUBARRAY_HIGH_BOUND)
++	      == SUBARRAY_HIGH_BOUND)
++	    range->high = value_as_long (evaluate_subexp (NULL_TYPE, exp,
++							  pos, noside));
++
++	  /* Assign the user's stride value if provided.  */
++	  if ((range->f90_range_type & SUBARRAY_STRIDE) == SUBARRAY_STRIDE)
++	    range->stride = value_as_long (evaluate_subexp (NULL_TYPE, exp,
++							     pos, noside));
++
++	  /* Assign the default stride value '1'.  */
++	  else
++	    range->stride = 1;
++
++	  /* Check the provided stride value is illegal, aka '0'.  */
++	  if (range->stride == 0)
++	    error (_("Stride must not be 0"));
++	}
++      /* User input is an index.  E.g.: "p arry(5)".  */
++      else
++	{
++	  struct value *val;
++
++	  index->kind = SUBSCRIPT_INDEX;
++
++	  /* Evaluate each subscript; it must be a legal integer in F77.  This
++	     ensures the validity of the provided index.  */
++	  val = evaluate_subexp_with_coercion (exp, pos, noside);
++	  index->U.number = value_as_long (val);
++	}
++
++    }
++
++  /* Traverse the array from right to left and set the high and low bounds
++     for later use.  */
++  for (i = nargs - 1; i >= 0; i--)
++    {
++      struct subscript_store *index = &subscript_array[i];
++      struct type *index_type = TYPE_INDEX_TYPE (array_type);
++
++      switch (index->kind)
++	{
++	case SUBSCRIPT_RANGE:
++	  {
++
++	    /* When we hit the first range specified by the user, we must
++	       treat any subsequent user entry as a range.  We simply
++	       increment DIM_COUNT which tells us how many times we are
++	       calling VALUE_SLICE_1.  */
++	    subscript_range *range = &index->U.range;
++
++	    /* If no lower bound was provided by the user, we take the
++	       default boundary.  Same for the high bound.  */
++	    if ((range->f90_range_type & SUBARRAY_LOW_BOUND) == 0)
++	      range->low = TYPE_LOW_BOUND (index_type);
++
++	    if ((range->f90_range_type & SUBARRAY_HIGH_BOUND) == 0)
++	      range->high = TYPE_HIGH_BOUND (index_type);
++
++	    /* Both user provided low and high bound have to be inside the
++	       array bounds.  Throw an error if not.  */
++	    if (range->low < TYPE_LOW_BOUND (index_type)
++		|| range->low > TYPE_HIGH_BOUND (index_type)
++		|| range->high < TYPE_LOW_BOUND (index_type)
++		|| range->high > TYPE_HIGH_BOUND (index_type))
++	      error (_("provided bound(s) outside array bound(s)"));
++
++	    /* For a negative stride the lower boundary must be larger than the
++	       upper boundary.
++	       For a positive stride the lower boundary must be smaller than the
++	       upper boundary.  */
++	    if ((range->stride < 0 && range->low < range->high)
++		|| (range->stride > 0 && range->low > range->high))
++	      error (_("Wrong value provided for stride and boundaries"));
++
++	  }
++	  break;
++
++	case SUBSCRIPT_INDEX:
++	  break;
++
++	}
++
++       array_type = TYPE_TARGET_TYPE (array_type);
++    }
++
++  /* Reset ARRAY_TYPE before slicing.*/
++  array_type = check_typedef (value_type (new_array));
++
++  /* Traverse the array from right to left and evaluate each corresponding
++     user input.  VALUE_SUBSCRIPT is called for every index, until a range
++     expression is evaluated.  After a range expression has been evaluated,
++     every subsequent expression is also treated as a range.  */
++  for (i = nargs - 1; i >= 0; i--)
++    {
++      struct subscript_store *index = &subscript_array[i];
++      struct type *index_type = TYPE_INDEX_TYPE (array_type);
++
++      switch (index->kind)
++	{
++	case SUBSCRIPT_RANGE:
++	  {
++
++	    /* When we hit the first range specified by the user, we must
++	       treat any subsequent user entry as a range.  We simply
++	       increment DIM_COUNT which tells us how many times we are
++	       calling VALUE_SLICE_1.  */
++	    subscript_range *range = &index->U.range;
++
++	    /* DIM_COUNT counts every user argument that is treated as a range.
++	       This is necessary for expressions like 'print array(7, 8:9).
++	       Here the first argument is a literal, but must be treated as a
++	       range argument to allow the correct output representation.  */
++	    dim_count++;
++
++	    new_array
++	      = value_slice_1 (new_array, range->low,
++			       range->high - range->low + 1,
++			       range->stride, dim_count);
++	  }
++	  break;
++
++	case SUBSCRIPT_INDEX:
++	  {
++	    /* DIM_COUNT only stays '0' when no range argument was processed
++	       before, starting from the last dimension.  This way we can
++	       reduce the number of dimensions from the result array.
++	       However, if a range has been processed before an index, we
++	       treat the index like a range with equal low- and high bounds
++	       to get the value offset right.  */
++	    if (dim_count == 0)
++	      new_array
++	        = value_subscripted_rvalue (new_array, index->U.number,
++					    f77_get_lowerbound (value_type
++								  (new_array)));
++	    else
++	      {
++		dim_count++;
++
++		/* We might end up here, because we have to treat the provided
++		   index like a range. But now VALUE_SUBSCRIPTED_RVALUE
++		   cannot do the range checks for us. So we have to make sure
++		   ourselves that the user provided index is inside the
++		   array bounds.  Throw an error if not.  */
++		if (index->U.number < TYPE_LOW_BOUND (index_type)
++		    && index->U.number > TYPE_HIGH_BOUND (index_type))
++		  error (_("provided bound(s) outside array bound(s)"));
++
++		if (index->U.number > TYPE_LOW_BOUND (index_type)
++		    && index->U.number > TYPE_HIGH_BOUND (index_type))
++		  error (_("provided bound(s) outside array bound(s)"));
++
++		new_array = value_slice_1 (new_array,
++					   index->U.number,
++					   1, /* COUNT is '1' element  */
++					   1, /* STRIDE set to '1'  */
++					   dim_count);
++	      }
++
++	  }
++	  break;
++	}
++      array_type = TYPE_TARGET_TYPE (array_type);
++    }
++
++  /* With DIM_COUNT > 1 we currently have a one dimensional array, but expect
++     an array of arrays, depending on how many ranges have been provided by
++     the user.  So we need to rebuild the array dimensions for printing it
++     correctly.
++     Starting from right to left in the user input, after we hit the first
++     range argument every subsequent argument is also treated as a range.
++     E.g.:
++     "p ary(3, 7, 2:15)" in Fortran has only 1 dimension, but we calculated 3
++     ranges.
++     "p ary(3, 7:12, 4)" in Fortran has only 1 dimension, but we calculated 2
++     ranges.
++     "p ary(2:4, 5, 7)" in Fortran has only 1 dimension, and we calculated 1
++     range.  */
++  if (dim_count > 1)
++    {
++      struct value *v = NULL;
++
++      elt_type = TYPE_TARGET_TYPE (value_type (new_array));
++
++      /* Every SUBSCRIPT_RANGE in the user input signifies an actual range in
++	 the output array.  So we traverse the SUBSCRIPT_ARRAY again, looking
++	 for a range entry.  When we find one, we use the range info to create
++	 an additional range_type to set the correct bounds and dimensions for
++	 the output array.  In addition, we may have a stride value that is not
++	 '1', forcing us to adjust the number of elements in a range, according
++	 to the stride value.  */
++      for (i = 0; i < nargs; i++)
++	{
++	  struct subscript_store *index = &subscript_array[i];
++
++	  if (index->kind == SUBSCRIPT_RANGE)
++	    {
++	      struct type *range_type, *interim_array_type;
++
++	      int new_length;
+ 
+-  return value_slice (array, low_bound, high_bound - low_bound + 1);
++	      /* The length of a sub-dimension with all elements between the
++		 bounds plus the start element itself.  It may be modified by
++		 a user provided stride value.  */
++	      new_length = index->U.range.high - index->U.range.low;
++
++	      new_length /= index->U.range.stride;
++
++	      range_type
++		= create_static_range_type (NULL,
++					    elt_type,
++					    index->U.range.low,
++					    index->U.range.low + new_length);
++
++	      interim_array_type = create_array_type (NULL,
++						      elt_type,
++						      range_type);
++
++	      TYPE_CODE (interim_array_type)
++		= TYPE_CODE (value_type (new_array));
++
++	      v = allocate_value (interim_array_type);
++
++	      elt_type = value_type (v);
++	    }
++
++	}
++      value_contents_copy (v, 0, new_array, 0, TYPE_LENGTH (elt_type));
++      return v;
++    }
++
++  return new_array;
+ }
+ 
+ 
+@@ -1810,19 +2106,8 @@ evaluate_subexp_standard (struct type *expect_type,
+       switch (code)
+ 	{
+ 	case TYPE_CODE_ARRAY:
+-	  if (exp->elts[*pos].opcode == OP_RANGE)
+-	    return value_f90_subarray (arg1, exp, pos, noside);
+-	  else
+-	    goto multi_f77_subscript;
+-
+ 	case TYPE_CODE_STRING:
+-	  if (exp->elts[*pos].opcode == OP_RANGE)
+-	    return value_f90_subarray (arg1, exp, pos, noside);
+-	  else
+-	    {
+-	      arg2 = evaluate_subexp_with_coercion (exp, pos, noside);
+-	      return value_subscript (arg1, value_as_long (arg2));
+-	    }
++	  return value_f90_subarray (arg1, exp, pos, nargs, noside);
+ 
+ 	case TYPE_CODE_PTR:
+ 	case TYPE_CODE_FUNC:
+@@ -2223,49 +2508,6 @@ evaluate_subexp_standard (struct type *expect_type,
+ 	}
+       return (arg1);
+ 
+-    multi_f77_subscript:
+-      {
+-	LONGEST subscript_array[MAX_FORTRAN_DIMS];
+-	int ndimensions = 1, i;
+-	struct value *array = arg1;
+-
+-	if (nargs > MAX_FORTRAN_DIMS)
+-	  error (_("Too many subscripts for F77 (%d Max)"), MAX_FORTRAN_DIMS);
+-
+-	ndimensions = calc_f77_array_dims (type);
+-
+-	if (nargs != ndimensions)
+-	  error (_("Wrong number of subscripts"));
+-
+-	gdb_assert (nargs > 0);
+-
+-	/* Now that we know we have a legal array subscript expression 
+-	   let us actually find out where this element exists in the array.  */
+-
+-	/* Take array indices left to right.  */
+-	for (i = 0; i < nargs; i++)
+-	  {
+-	    /* Evaluate each subscript; it must be a legal integer in F77.  */
+-	    arg2 = evaluate_subexp_with_coercion (exp, pos, noside);
+-
+-	    /* Fill in the subscript array.  */
+-
+-	    subscript_array[i] = value_as_long (arg2);
+-	  }
+-
+-	/* Internal type of array is arranged right to left.  */
+-	for (i = nargs; i > 0; i--)
+-	  {
+-	    struct type *array_type = check_typedef (value_type (array));
+-	    LONGEST index = subscript_array[i - 1];
+-
+-	    array = value_subscripted_rvalue (array, index,
+-					      f77_get_lowerbound (array_type));
+-	  }
+-
+-	return array;
+-      }
+-
+     case BINOP_LOGICAL_AND:
+       arg1 = evaluate_subexp (NULL_TYPE, exp, pos, noside);
+       if (noside == EVAL_SKIP)
+@@ -3123,6 +3365,9 @@ calc_f77_array_dims (struct type *array_type)
+   int ndimen = 1;
+   struct type *tmp_type;
+ 
++  if (TYPE_CODE (array_type) == TYPE_CODE_STRING)
++    return 1;
++
+   if ((TYPE_CODE (array_type) != TYPE_CODE_ARRAY))
+     error (_("Can't get dimensions for a non-array type"));
+ 
+diff --git a/gdb/expprint.c b/gdb/expprint.c
+index c37ecb0..214d58e 100644
+--- a/gdb/expprint.c
++++ b/gdb/expprint.c
+@@ -568,12 +568,10 @@ print_subexp_standard (struct expression *exp, int *pos,
+ 	*pos += 2;
+ 
+ 	fputs_filtered ("RANGE(", stream);
+-	if (range_type == HIGH_BOUND_DEFAULT
+-	    || range_type == NONE_BOUND_DEFAULT)
++	if ((range_type & SUBARRAY_LOW_BOUND) == SUBARRAY_LOW_BOUND)
+ 	  print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
+ 	fputs_filtered ("..", stream);
+-	if (range_type == LOW_BOUND_DEFAULT
+-	    || range_type == NONE_BOUND_DEFAULT)
++	if ((range_type & SUBARRAY_HIGH_BOUND) == SUBARRAY_HIGH_BOUND)
+ 	  print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
+ 	fputs_filtered (")", stream);
+ 	return;
+@@ -1055,16 +1053,16 @@ dump_subexp_body_standard (struct expression *exp,
+ 
+ 	switch (range_type)
+ 	  {
+-	  case BOTH_BOUND_DEFAULT:
++	  case SUBARRAY_NONE_BOUND:
+ 	    fputs_filtered ("Range '..'", stream);
+ 	    break;
+-	  case LOW_BOUND_DEFAULT:
++	  case SUBARRAY_HIGH_BOUND:
+ 	    fputs_filtered ("Range '..EXP'", stream);
+ 	    break;
+-	  case HIGH_BOUND_DEFAULT:
++	  case SUBARRAY_LOW_BOUND:
+ 	    fputs_filtered ("Range 'EXP..'", stream);
+ 	    break;
+-	  case NONE_BOUND_DEFAULT:
++	  case (SUBARRAY_LOW_BOUND | SUBARRAY_HIGH_BOUND):
+ 	    fputs_filtered ("Range 'EXP..EXP'", stream);
+ 	    break;
+ 	  default:
+@@ -1072,11 +1070,9 @@ dump_subexp_body_standard (struct expression *exp,
+ 	    break;
+ 	  }
+ 
+-	if (range_type == HIGH_BOUND_DEFAULT
+-	    || range_type == NONE_BOUND_DEFAULT)
++	if ((range_type & SUBARRAY_LOW_BOUND) == SUBARRAY_LOW_BOUND)
+ 	  elt = dump_subexp (exp, stream, elt);
+-	if (range_type == LOW_BOUND_DEFAULT
+-	    || range_type == NONE_BOUND_DEFAULT)
++	if ((range_type & SUBARRAY_HIGH_BOUND) == SUBARRAY_HIGH_BOUND)
+ 	  elt = dump_subexp (exp, stream, elt);
+       }
+       break;
+diff --git a/gdb/expression.h b/gdb/expression.h
+index 4952d84..34ca54b 100644
+--- a/gdb/expression.h
++++ b/gdb/expression.h
+@@ -152,17 +152,17 @@ extern void dump_raw_expression (struct expression *,
+ 				 struct ui_file *, char *);
+ extern void dump_prefix_expression (struct expression *, struct ui_file *);
+ 
+-/* In an OP_RANGE expression, either bound could be empty, indicating
+-   that its value is by default that of the corresponding bound of the
+-   array or string.  So we have four sorts of subrange.  This
+-   enumeration type is to identify this.  */
+-   
++/* In an OP_RANGE expression, either bound can be provided by the user, or not.
++   In addition to this, the user can also specify a stride value to indicated
++   only certain elements of the array.  This enumeration type is to identify
++   this.  */
++
+ enum range_type
+   {
+-    BOTH_BOUND_DEFAULT,		/* "(:)"  */
+-    LOW_BOUND_DEFAULT,		/* "(:high)"  */
+-    HIGH_BOUND_DEFAULT,		/* "(low:)"  */
+-    NONE_BOUND_DEFAULT		/* "(low:high)"  */
++    SUBARRAY_NONE_BOUND = 0x0,		/* "( : )"  */
++    SUBARRAY_LOW_BOUND = 0x1,		/* "(low:)"  */
++    SUBARRAY_HIGH_BOUND = 0x2,		/* "(:high)"  */
++    SUBARRAY_STRIDE = 0x4		/* "(::stride)"  */
+   };
+ 
+ #endif /* !defined (EXPRESSION_H) */
+diff --git a/gdb/f-exp.y b/gdb/f-exp.y
+index e3148a3..71f1823 100644
+--- a/gdb/f-exp.y
++++ b/gdb/f-exp.y
+@@ -253,31 +253,63 @@ arglist :	subrange
+    
+ arglist	:	arglist ',' exp   %prec ABOVE_COMMA
+ 			{ arglist_len++; }
++	|	arglist ',' subrange	%prec ABOVE_COMMA
++			{ arglist_len++; }
+ 	;
+ 
+ /* There are four sorts of subrange types in F90.  */
+ 
+ subrange:	exp ':' exp	%prec ABOVE_COMMA
+-			{ write_exp_elt_opcode (pstate, OP_RANGE); 
+-			  write_exp_elt_longcst (pstate, NONE_BOUND_DEFAULT);
++			{ write_exp_elt_opcode (pstate, OP_RANGE);
++			  write_exp_elt_longcst (pstate,
++						 SUBARRAY_LOW_BOUND | SUBARRAY_HIGH_BOUND);
+ 			  write_exp_elt_opcode (pstate, OP_RANGE); }
+ 	;
+ 
+ subrange:	exp ':'	%prec ABOVE_COMMA
+ 			{ write_exp_elt_opcode (pstate, OP_RANGE);
+-			  write_exp_elt_longcst (pstate, HIGH_BOUND_DEFAULT);
++			  write_exp_elt_longcst (pstate, SUBARRAY_LOW_BOUND);
+ 			  write_exp_elt_opcode (pstate, OP_RANGE); }
+ 	;
+ 
+ subrange:	':' exp	%prec ABOVE_COMMA
+ 			{ write_exp_elt_opcode (pstate, OP_RANGE);
+-			  write_exp_elt_longcst (pstate, LOW_BOUND_DEFAULT);
++			  write_exp_elt_longcst (pstate, SUBARRAY_HIGH_BOUND);
+ 			  write_exp_elt_opcode (pstate, OP_RANGE); }
+ 	;
+ 
+ subrange:	':'	%prec ABOVE_COMMA
+ 			{ write_exp_elt_opcode (pstate, OP_RANGE);
+-			  write_exp_elt_longcst (pstate, BOTH_BOUND_DEFAULT);
++			  write_exp_elt_longcst (pstate, SUBARRAY_NONE_BOUND);
++			  write_exp_elt_opcode (pstate, OP_RANGE); }
++	;
++
++/* Each subrange type can have a stride argument.  */
++subrange:	exp ':' exp ':' exp %prec ABOVE_COMMA
++			{ write_exp_elt_opcode (pstate, OP_RANGE);
++			  write_exp_elt_longcst (pstate, SUBARRAY_LOW_BOUND
++						 | SUBARRAY_HIGH_BOUND
++						 | SUBARRAY_STRIDE);
++			  write_exp_elt_opcode (pstate, OP_RANGE); }
++	;
++
++subrange:	exp ':' ':' exp %prec ABOVE_COMMA
++			{ write_exp_elt_opcode (pstate, OP_RANGE);
++			  write_exp_elt_longcst (pstate, SUBARRAY_LOW_BOUND
++						 | SUBARRAY_STRIDE);
++			  write_exp_elt_opcode (pstate, OP_RANGE); }
++	;
++
++subrange:	':' exp ':' exp %prec ABOVE_COMMA
++			{ write_exp_elt_opcode (pstate, OP_RANGE);
++			  write_exp_elt_longcst (pstate, SUBARRAY_HIGH_BOUND
++						 | SUBARRAY_STRIDE);
++			  write_exp_elt_opcode (pstate, OP_RANGE); }
++	;
++
++subrange:	':' ':' exp %prec ABOVE_COMMA
++			{ write_exp_elt_opcode (pstate, OP_RANGE);
++			  write_exp_elt_longcst (pstate, SUBARRAY_STRIDE);
+ 			  write_exp_elt_opcode (pstate, OP_RANGE); }
+ 	;
+ 
+diff --git a/gdb/f-valprint.c b/gdb/f-valprint.c
+index 08215e2..e6eca6a 100644
+--- a/gdb/f-valprint.c
++++ b/gdb/f-valprint.c
+@@ -121,8 +121,14 @@ f77_print_array_1 (int nss, int ndimensions, struct type *type,
+ 
+   if (nss != ndimensions)
+     {
+-      size_t dim_size = TYPE_LENGTH (TYPE_TARGET_TYPE (type));
++      size_t dim_size;
+       size_t offs = 0;
++      LONGEST byte_stride = abs (TYPE_BYTE_STRIDE (range_type));
++
++      if (byte_stride)
++        dim_size = byte_stride;
++      else
++        dim_size = TYPE_LENGTH (TYPE_TARGET_TYPE (type));
+ 
+       for (i = lowerbound;
+ 	   (i < upperbound + 1 && (*elts) < options->print_max);
+diff --git a/gdb/gdbtypes.c b/gdb/gdbtypes.c
+index ec5c17a..eb83791 100644
+--- a/gdb/gdbtypes.c
++++ b/gdb/gdbtypes.c
+@@ -836,7 +836,8 @@ allocate_stub_method (struct type *type)
+ struct type *
+ create_range_type (struct type *result_type, struct type *index_type,
+ 		   const struct dynamic_prop *low_bound,
+-		   const struct dynamic_prop *high_bound)
++		   const struct dynamic_prop *high_bound,
++		   const struct dynamic_prop *stride)
+ {
+   if (result_type == NULL)
+     result_type = alloc_type_copy (index_type);
+@@ -851,6 +852,7 @@ create_range_type (struct type *result_type, struct type *index_type,
+     TYPE_ZALLOC (result_type, sizeof (struct range_bounds));
+   TYPE_RANGE_DATA (result_type)->low = *low_bound;
+   TYPE_RANGE_DATA (result_type)->high = *high_bound;
++  TYPE_RANGE_DATA (result_type)->stride = *stride;
+ 
+   if (low_bound->kind == PROP_CONST && low_bound->data.const_val >= 0)
+     TYPE_UNSIGNED (result_type) = 1;
+@@ -879,7 +881,7 @@ struct type *
+ create_static_range_type (struct type *result_type, struct type *index_type,
+ 			  LONGEST low_bound, LONGEST high_bound)
+ {
+-  struct dynamic_prop low, high;
++  struct dynamic_prop low, high, stride;
+ 
+   low.kind = PROP_CONST;
+   low.data.const_val = low_bound;
+@@ -887,7 +889,11 @@ create_static_range_type (struct type *result_type, struct type *index_type,
+   high.kind = PROP_CONST;
+   high.data.const_val = high_bound;
+ 
+-  result_type = create_range_type (result_type, index_type, &low, &high);
++  stride.kind = PROP_CONST;
++  stride.data.const_val = 0;
++
++  result_type = create_range_type (result_type, index_type,
++                                   &low, &high, &stride);
+ 
+   return result_type;
+ }
+@@ -1084,16 +1090,20 @@ create_array_type_with_stride (struct type *result_type,
+       && (!type_not_associated (result_type)
+ 	  && !type_not_allocated (result_type)))
+     {
+-      LONGEST low_bound, high_bound;
++      LONGEST low_bound, high_bound, byte_stride;
+ 
+       if (get_discrete_bounds (range_type, &low_bound, &high_bound) < 0)
+ 	low_bound = high_bound = 0;
+       element_type = check_typedef (element_type);
++      byte_stride = abs (TYPE_BYTE_STRIDE (range_type));
++
+       /* Be careful when setting the array length.  Ada arrays can be
+ 	 empty arrays with the high_bound being smaller than the low_bound.
+ 	 In such cases, the array length should be zero.  */
+       if (high_bound < low_bound)
+ 	TYPE_LENGTH (result_type) = 0;
++      else if (byte_stride > 0)
++	TYPE_LENGTH (result_type) = byte_stride * (high_bound - low_bound + 1);
+       else if (bit_stride > 0)
+ 	TYPE_LENGTH (result_type) =
+ 	  (bit_stride * (high_bound - low_bound + 1) + 7) / 8;
+@@ -1888,12 +1898,12 @@ resolve_dynamic_range (struct type *dyn_range_type,
+   CORE_ADDR value;
+   struct type *static_range_type, *static_target_type;
+   const struct dynamic_prop *prop;
+-  struct dynamic_prop low_bound, high_bound;
++  struct dynamic_prop low_bound, high_bound, stride;
+ 
+   gdb_assert (TYPE_CODE (dyn_range_type) == TYPE_CODE_RANGE);
+ 
+   prop = &TYPE_RANGE_DATA (dyn_range_type)->low;
+-  if (dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
++  if (dwarf2_evaluate_property_signed (prop, NULL, addr_stack, &value, 1))
+     {
+       low_bound.kind = PROP_CONST;
+       low_bound.data.const_val = value;
+@@ -1905,7 +1915,7 @@ resolve_dynamic_range (struct type *dyn_range_type,
+     }
+ 
+   prop = &TYPE_RANGE_DATA (dyn_range_type)->high;
+-  if (dwarf2_evaluate_property (prop, NULL, addr_stack, &value))
++  if (dwarf2_evaluate_property_signed (prop, NULL, addr_stack, &value, 1))
+     {
+       high_bound.kind = PROP_CONST;
+       high_bound.data.const_val = value;
+@@ -1920,12 +1930,20 @@ resolve_dynamic_range (struct type *dyn_range_type,
+       high_bound.data.const_val = 0;
+     }
+ 
++  prop = &TYPE_RANGE_DATA (dyn_range_type)->stride;
++  if (dwarf2_evaluate_property_signed (prop, NULL, addr_stack, &value, 1))
++    {
++      stride.kind = PROP_CONST;
++      stride.data.const_val = value;
++    }
++
+   static_target_type
+     = resolve_dynamic_type_internal (TYPE_TARGET_TYPE (dyn_range_type),
+ 				     addr_stack, 0);
+   static_range_type = create_range_type (copy_type (dyn_range_type),
+ 					 static_target_type,
+-					 &low_bound, &high_bound);
++					 &low_bound, &high_bound, &stride);
++
+   TYPE_RANGE_DATA (static_range_type)->flag_bound_evaluated = 1;
+   return static_range_type;
+ }
+diff --git a/gdb/gdbtypes.h b/gdb/gdbtypes.h
+index 2dda074..bcc9200 100644
+--- a/gdb/gdbtypes.h
++++ b/gdb/gdbtypes.h
+@@ -577,6 +577,10 @@ struct range_bounds
+ 
+   struct dynamic_prop high;
+ 
++  /* * Stride of range.  */
++
++  struct dynamic_prop stride;
++
+   /* True if HIGH range bound contains the number of elements in the
+      subrange. This affects how the final hight bound is computed.  */
+ 
+@@ -739,7 +743,6 @@ struct main_type
+     /* * Union member used for range types.  */
+ 
+     struct range_bounds *bounds;
+-
+   } flds_bnds;
+ 
+   /* * Slot to point to additional language-specific fields of this
+@@ -1255,6 +1258,15 @@ extern void allocate_gnat_aux_type (struct type *);
+   TYPE_RANGE_DATA(range_type)->high.kind
+ #define TYPE_LOW_BOUND_KIND(range_type) \
+   TYPE_RANGE_DATA(range_type)->low.kind
++#define TYPE_BYTE_STRIDE(range_type) \
++  TYPE_RANGE_DATA(range_type)->stride.data.const_val
++#define TYPE_BYTE_STRIDE_BLOCK(range_type) \
++  TYPE_RANGE_DATA(range_type)->stride.data.locexpr
++#define TYPE_BYTE_STRIDE_LOCLIST(range_type) \
++  TYPE_RANGE_DATA(range_type)->stride.data.loclist
++#define TYPE_BYTE_STRIDE_KIND(range_type) \
++  TYPE_RANGE_DATA(range_type)->stride.kind
++
+ 
+ /* Property accessors for the type data location.  */
+ #define TYPE_DATA_LOCATION(thistype) \
+@@ -1289,6 +1301,9 @@ extern void allocate_gnat_aux_type (struct type *);
+    TYPE_HIGH_BOUND_UNDEFINED(TYPE_INDEX_TYPE(arraytype))
+ #define TYPE_ARRAY_LOWER_BOUND_IS_UNDEFINED(arraytype) \
+    TYPE_LOW_BOUND_UNDEFINED(TYPE_INDEX_TYPE(arraytype))
++#define TYPE_ARRAY_STRIDE_IS_UNDEFINED(arraytype) \
++   (TYPE_BYTE_STRIDE(TYPE_INDEX_TYPE(arraytype)) == 0)
++
+ 
+ #define TYPE_ARRAY_UPPER_BOUND_VALUE(arraytype) \
+    (TYPE_HIGH_BOUND(TYPE_INDEX_TYPE((arraytype))))
+@@ -1783,6 +1798,7 @@ extern struct type *create_array_type_with_stride
+ 
+ extern struct type *create_range_type (struct type *, struct type *,
+ 				       const struct dynamic_prop *,
++				       const struct dynamic_prop *,
+ 				       const struct dynamic_prop *);
+ 
+ extern struct type *create_array_type (struct type *, struct type *,
+diff --git a/gdb/parse.c b/gdb/parse.c
+index 2b00708..992af87 100644
+--- a/gdb/parse.c
++++ b/gdb/parse.c
+@@ -1006,22 +1006,20 @@ operator_length_standard (const struct expression *expr, int endpos,
+ 
+     case OP_RANGE:
+       oplen = 3;
++      args = 0;
+       range_type = (enum range_type)
+ 	longest_to_int (expr->elts[endpos - 2].longconst);
+ 
+-      switch (range_type)
+-	{
+-	case LOW_BOUND_DEFAULT:
+-	case HIGH_BOUND_DEFAULT:
+-	  args = 1;
+-	  break;
+-	case BOTH_BOUND_DEFAULT:
+-	  args = 0;
+-	  break;
+-	case NONE_BOUND_DEFAULT:
+-	  args = 2;
+-	  break;
+-	}
++      /* Increment the argument counter for each argument
++	 provided by the user.  */
++      if ((range_type & SUBARRAY_LOW_BOUND) == SUBARRAY_LOW_BOUND)
++	args++;
++
++      if ((range_type & SUBARRAY_HIGH_BOUND) == SUBARRAY_HIGH_BOUND)
++	args++;
++
++      if ((range_type & SUBARRAY_STRIDE) == SUBARRAY_STRIDE)
++	args++;
+ 
+       break;
+ 
+diff --git a/gdb/rust-exp.y b/gdb/rust-exp.y
+index aeb6058..b1b9633 100644
+--- a/gdb/rust-exp.y
++++ b/gdb/rust-exp.y
+@@ -2429,23 +2429,17 @@ convert_ast_to_expression (struct parser_state *state,
+ 
+     case OP_RANGE:
+       {
+-	enum range_type kind = BOTH_BOUND_DEFAULT;
++	enum range_type kind = SUBARRAY_NONE_BOUND;
+ 
+ 	if (operation->left.op != NULL)
+ 	  {
+ 	    convert_ast_to_expression (state, operation->left.op, top);
+-	    kind = HIGH_BOUND_DEFAULT;
++	    kind = SUBARRAY_LOW_BOUND;
+ 	  }
+ 	if (operation->right.op != NULL)
+ 	  {
+ 	    convert_ast_to_expression (state, operation->right.op, top);
+-	    if (kind == BOTH_BOUND_DEFAULT)
+-	      kind = LOW_BOUND_DEFAULT;
+-	    else
+-	      {
+-		gdb_assert (kind == HIGH_BOUND_DEFAULT);
+-		kind = NONE_BOUND_DEFAULT;
+-	      }
++	    kind = (range_type) (kind | SUBARRAY_HIGH_BOUND);
+ 	  }
+ 	write_exp_elt_opcode (state, OP_RANGE);
+ 	write_exp_elt_longcst (state, kind);
+diff --git a/gdb/rust-lang.c b/gdb/rust-lang.c
+index 17b20c6..295002f 100644
+--- a/gdb/rust-lang.c
++++ b/gdb/rust-lang.c
+@@ -1241,9 +1241,9 @@ rust_range (struct expression *exp, int *pos, enum noside noside)
+   kind = (enum range_type) longest_to_int (exp->elts[*pos + 1].longconst);
+   *pos += 3;
+ 
+-  if (kind == HIGH_BOUND_DEFAULT || kind == NONE_BOUND_DEFAULT)
++  if ((kind & SUBARRAY_LOW_BOUND) == SUBARRAY_LOW_BOUND)
+     low = evaluate_subexp (NULL_TYPE, exp, pos, noside);
+-  if (kind == LOW_BOUND_DEFAULT || kind == NONE_BOUND_DEFAULT)
++  if ((kind & SUBARRAY_HIGH_BOUND) == SUBARRAY_HIGH_BOUND)
+     high = evaluate_subexp (NULL_TYPE, exp, pos, noside);
+ 
+   if (noside == EVAL_SKIP)
+@@ -1332,7 +1332,7 @@ rust_compute_range (struct type *type, struct value *range,
+ 
+   *low = 0;
+   *high = 0;
+-  *kind = BOTH_BOUND_DEFAULT;
++  *kind = SUBARRAY_NONE_BOUND;
+ 
+   if (TYPE_NFIELDS (type) == 0)
+     return;
+@@ -1340,15 +1340,14 @@ rust_compute_range (struct type *type, struct value *range,
+   i = 0;
+   if (strcmp (TYPE_FIELD_NAME (type, 0), "start") == 0)
+     {
+-      *kind = HIGH_BOUND_DEFAULT;
++      *kind = SUBARRAY_LOW_BOUND;
+       *low = value_as_long (value_field (range, 0));
+       ++i;
+     }
+   if (TYPE_NFIELDS (type) > i
+       && strcmp (TYPE_FIELD_NAME (type, i), "end") == 0)
+     {
+-      *kind = (*kind == BOTH_BOUND_DEFAULT
+-	       ? LOW_BOUND_DEFAULT : NONE_BOUND_DEFAULT);
++      *kind = (range_type) (*kind | SUBARRAY_HIGH_BOUND);
+       *high = value_as_long (value_field (range, i));
+     }
+ }
+@@ -1363,7 +1362,7 @@ rust_subscript (struct expression *exp, int *pos, enum noside noside,
+   struct type *rhstype;
+   LONGEST low, high_bound;
+   /* Initialized to appease the compiler.  */
+-  enum range_type kind = BOTH_BOUND_DEFAULT;
++  enum range_type kind = SUBARRAY_NONE_BOUND;
+   LONGEST high = 0;
+   int want_slice = 0;
+ 
+@@ -1425,7 +1424,7 @@ rust_subscript (struct expression *exp, int *pos, enum noside noside,
+ 	error (_("Cannot subscript non-array type"));
+ 
+       if (want_slice
+-	  && (kind == BOTH_BOUND_DEFAULT || kind == LOW_BOUND_DEFAULT))
++	  && ((kind & SUBARRAY_LOW_BOUND) != SUBARRAY_LOW_BOUND))
+ 	low = low_bound;
+       if (low < 0)
+ 	error (_("Index less than zero"));
+@@ -1443,7 +1442,7 @@ rust_subscript (struct expression *exp, int *pos, enum noside noside,
+ 	  CORE_ADDR addr;
+ 	  struct value *addrval, *tem;
+ 
+-	  if (kind == BOTH_BOUND_DEFAULT || kind == HIGH_BOUND_DEFAULT)
++	  if ((kind & SUBARRAY_HIGH_BOUND) != SUBARRAY_HIGH_BOUND)
+ 	    high = high_bound;
+ 	  if (high < 0)
+ 	    error (_("High index less than zero"));
+diff --git a/gdb/testsuite/gdb.fortran/static-arrays.exp b/gdb/testsuite/gdb.fortran/static-arrays.exp
+new file mode 100644
+index 0000000..cc9ecc0
+--- /dev/null
++++ b/gdb/testsuite/gdb.fortran/static-arrays.exp
+@@ -0,0 +1,421 @@
++# Copyright 2015 Free Software Foundation, Inc.
++#
++# Contributed by Intel Corp. <christoph.t.weinmann@intel.com>
++#
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++standard_testfile static-arrays.f90
++
++if { [prepare_for_testing $testfile.exp $testfile $srcfile {debug f90}] } {
++    return -1
++}
++
++if ![runto MAIN__] then {
++    perror "couldn't run to breakpoint MAIN__"
++    continue
++}
++
++gdb_breakpoint [gdb_get_line_number "BP1"]
++gdb_continue_to_breakpoint "BP1" ".*BP1.*"
++
++# Tests subarrays of one dimensional arrays with subrange variations
++gdb_test "print ar1" "\\$\[0-9\]+ = \\(1, 2, 3, 4, 5, 6, 7, 8, 9\\)" \
++		"print ar1."
++gdb_test "print ar1\(4:7\)" "\\$\[0-9\]+ = \\(4, 5, 6, 7\\)" \
++		"print ar1\(4:7\)"
++gdb_test "print ar1\(8:\)" "\\$\[0-9\]+ = \\(8, 9\\).*" \
++		"print ar1\(8:\)"
++gdb_test "print ar1\(:3\)" "\\$\[0-9\]+ = \\(1, 2, 3\\).*" \
++		"print ar1\(:3\)"
++gdb_test "print ar1\(:\)" "\\$\[0-9\]+ = \\(1, 2, 3, 4, 5, 6, 7, 8, 9\\)" \
++		"print ar1\(:\)"
++
++# Check assignment
++gdb_test_no_output "set \$my_ary = ar1\(3:8\)"
++gdb_test "print \$my_ary" \
++		"\\$\[0-9\]+ = \\(3, 4, 5, 6, 7, 8\\)" \
++		"Assignment of subarray to variable"
++gdb_test_no_output "set ar1\(5\) = 42"
++		gdb_test "print ar1\(3:8\)" \
++		"\\$\[0-9\]+ = \\(3, 4, 42, 6, 7, 8\\)" \
++		"print ar1\(3:8\) after assignment"
++gdb_test "print \$my_ary" \
++		"\\$\[0-9\]+ = \\(3, 4, 5, 6, 7, 8\\)" \
++		"Assignment of subarray to variable after original array changed"
++
++# Test for subarrays of one dimensional arrays with literals
++		gdb_test "print ar1\(3\)" "\\$\[0-9\]+ = 3" \
++		"print ar1\(3\)"
++
++# Tests for subranges of 2 dimensional arrays with subrange variations
++gdb_test "print ar2\(2:3, 3:4\)" \
++		"\\$\[0-9\]+ = \\(\\( 23, 33\\) \\( 24, 34\\) \\)" \
++		"print ar2\(2:3, 3:4\)."
++gdb_test "print ar2\(8:9,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( 88, 98\\) \\( 89, 99\\) \\)" \
++		"print ar2\(8:9,8:\)"
++gdb_test "print ar2\(8:9,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( 81, 91\\) \\( 82, 92\\) \\)" \
++		"print ar2\(8:9,:2\)"
++
++gdb_test "print ar2\(8:,8:9\)" \
++		"\\$\[0-9\]+ = \\(\\( 88, 98\\) \\( 89, 99\\) \\)" \
++		"print ar2\(8:,8:9\)"
++gdb_test "print ar2\(8:,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( 88, 98\\) \\( 89, 99\\) \\)" \
++		"print ar2\(8:,8:\)"
++gdb_test "print ar2\(8:,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( 81, 91\\) \\( 82, 92\\) \\)" \
++		"print ar2\(8:,:2\)"
++
++gdb_test "print ar2\(:2,2:3\)" \
++		"\\$\[0-9\]+ = \\(\\( 12, 22\\) \\( 13, 23\\) \\)" \
++		"print ar2\(:2,2:3\)"
++gdb_test "print ar2\(:2,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( 18, 28\\) \\( 19, 29\\) \\)" \
++		"print ar2\(:2,8:\)"
++gdb_test "print ar2\(:2,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( 11, 21\\) \\( 12, 22\\) \\)" \
++		"print ar2\(:2,:2\)"
++
++# Test subranges of 2 dimensional arrays with literals and subrange variations
++gdb_test "print ar2\(7, 3:6\)" \
++		"\\$\[0-9\]+ = \\(73, 74, 75, 76\\)" \
++		"print ar2\(7, 3:6\)"
++gdb_test "print ar2\(7,8:\)" \
++		"\\$\[0-9\]+ = \\(78, 79\\)" \
++		"print ar2\(7,8:\)"
++gdb_test "print ar2\(7,:2\)" \
++		"\\$\[0-9\]+ = \\(71, 72\\)" \
++		"print ar2\(7,:2\)"
++
++gdb_test "print ar2\(7:8,4\)" \
++		"\\$\[0-9\]+ = \\(74, 84\\)" \
++		"print ar2(7:8,4\)"
++gdb_test "print ar2\(8:,4\)" \
++		"\\$\[0-9\]+ = \\(84, 94\\)" \
++		"print ar2\(8:,4\)"
++gdb_test "print ar2\(:2,4\)" \
++		"\\$\[0-9\]+ = \\(14, 24\\)" \
++		"print ar2\(:2,4\)"
++gdb_test "print ar2\(3,4\)" \
++		"\\$\[0-9\]+ = 34" \
++		"print ar2\(3,4\)"
++
++# Test subarrays of 3 dimensional arrays with literals and subrange variations
++gdb_test "print ar3\(2:4,3:4,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 237, 337, 437\\) \\( 247, 347, 447\\)\
++		 \\) \\( \\( 238, 338, 438\\) \\( 248, 348, 448\\) \\) \\)" \
++		"print ar3\(2:4,3:4,7:8\)"
++gdb_test "print ar3\(2:3,4:5,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 248, 348\\) \\( 258, 358\\) \\) \\(\
++		 \\( 249, 349\\) \\( 259, 359\\) \\) \\)" \
++		"print ar3\(2:3,4:5,8:\)"
++gdb_test "print ar3\(2:3,4:5,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 241, 341\\) \\( 251, 351\\) \\) \\(\
++		 \\( 242, 342\\) \\( 252, 352\\) \\) \\)" \
++		"print ar3\(2:3,4:5,:2\)"
++
++gdb_test "print ar3\(2:3,8:,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 287, 387\\) \\( 297, 397\\) \\) \\(\
++		 \\( 288, 388\\) \\( 298, 398\\) \\) \\)" \
++		"print ar3\(2:3,8:,7:8\)"
++gdb_test "print ar3\(2:3,8:,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 288, 388\\) \\( 298, 398\\) \\) \\(\
++		 \\( 289, 389\\) \\( 299, 399\\) \\) \\)" \
++		"print ar3\(2:3,8:,8:\)"
++gdb_test "print ar3\(2:3,8:,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 281, 381\\) \\( 291, 391\\) \\) \\(\
++		 \\( 282, 382\\) \\( 292, 392\\) \\) \\)" \
++		"print ar3\(2:3,8:,:2\)"
++
++gdb_test "print ar3\(2:3,:2,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 217, 317\\) \\( 227, 327\\) \\) \\(\
++		 \\( 218, 318\\) \\( 228, 328\\) \\) \\)" \
++		"print ar3\(2:3,:2,7:8\)"
++gdb_test "print ar3\(2:3,:2,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 218, 318\\) \\( 228, 328\\) \\) \\(\
++		 \\( 219, 319\\) \\( 229, 329\\) \\) \\)" \
++		"print ar3\(2:3,:2,8:\)"
++gdb_test "print ar3\(2:3,:2,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 211, 311\\) \\( 221, 321\\) \\) \\(\
++		 \\( 212, 312\\) \\( 222, 322\\) \\) \\)" \
++		"print ar3\(2:3,:2,:2\)"
++
++gdb_test "print ar3\(8:,3:4,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 837, 937\\) \\( 847, 947\\) \\) \\(\
++		 \\( 838, 938\\) \\( 848, 948\\) \\) \\)" \
++		"print ar3\(8:,3:4,7:8\)"
++gdb_test "print ar3\(8:,4:5,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 848, 948\\) \\( 858, 958\\) \\) \\(\
++		 \\( 849, 949\\) \\( 859, 959\\) \\) \\)" \
++		"print ar3\(8:,4:5,8:\)"
++gdb_test "print ar3\(8:,4:5,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 841, 941\\) \\( 851, 951\\) \\) \\(\
++		 \\( 842, 942\\) \\( 852, 952\\) \\) \\)" \
++		"print ar3\(8:,4:5,:2\)"
++
++gdb_test "print ar3\(8:,8:,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 887, 987\\) \\( 897, 997\\) \\) \\(\
++		 \\( 888, 988\\) \\( 898, 998\\) \\) \\)" \
++		"print ar3\(8:,8:,7:8\)"
++gdb_test "print ar3\(8:,8:,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 888, 988\\) \\( 898, 998\\) \\) \\(\
++		 \\( 889, 989\\) \\( 899, 999\\) \\) \\)" \
++		"print ar3\(8:,8:,8:\)"
++gdb_test "print ar3\(8:,8:,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 881, 981\\) \\( 891, 991\\) \\) \\(\
++		 \\( 882, 982\\) \\( 892, 992\\) \\) \\)" \
++		"print ar3\(8:,8:,:2\)"
++
++gdb_test "print ar3\(8:,:2,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 817, 917\\) \\( 827, 927\\) \\) \\(\
++		 \\( 818, 918\\) \\( 828, 928\\) \\) \\)" \
++		"print ar3\(8:,:2,7:8\)"
++gdb_test "print ar3\(8:,:2,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 818, 918\\) \\( 828, 928\\) \\) \\(\
++		 \\( 819, 919\\) \\( 829, 929\\) \\) \\)" \
++		"print ar3\(8:,:2,8:\)"
++gdb_test "print ar3\(8:,:2,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 811, 911\\) \\( 821, 921\\) \\) \\(\
++		 \\( 812, 912\\) \\( 822, 922\\) \\) \\)" \
++		"print ar3\(8:,:2,:2\)"
++
++
++gdb_test "print ar3\(:2,3:4,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 137, 237\\) \\( 147, 247\\) \\) \\(\
++		 \\( 138, 238\\) \\( 148, 248\\) \\) \\)" \
++		"print ar3 \(:2,3:4,7:8\)."
++gdb_test "print ar3\(:2,3:4,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 138, 238\\) \\( 148, 248\\) \\) \\(\
++		 \\( 139, 239\\) \\( 149, 249\\) \\) \\)" \
++		"print ar3\(:2,3:4,8:\)"
++gdb_test "print ar3\(:2,3:4,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 131, 231\\) \\( 141, 241\\) \\) \\(\
++		 \\( 132, 232\\) \\( 142, 242\\) \\) \\)" \
++		"print ar3\(:2,3:4,:2\)"
++
++gdb_test "print ar3\(:2,8:,7:8\)" "\\$\[0-9\]+ = \\(\\( \\( 187, 287\\) \\(\
++		 197, 297\\) \\) \\( \\( 188, 288\\) \\( 198, 298\\) \\) \\)" \
++		"print ar3\(:2,8:,7:8\)"
++gdb_test "print ar3\(:2,8:,8:\)" "\\$\[0-9\]+ = \\(\\( \\( 188, 288\\) \\( 198,\
++		 298\\) \\) \\( \\( 189, 289\\) \\( 199, 299\\) \\) \\)" \
++		"print ar3\(:2,8:,8:\)"
++gdb_test "print ar3\(:2,8:,:2\)" "\\$\[0-9\]+ = \\(\\( \\( 181, 281\\) \\( 191,\
++		 291\\) \\) \\( \\( 182, 282\\) \\( 192, 292\\) \\) \\)" \
++		"print ar3\(:2,8:,:2\)"
++
++gdb_test "print ar3\(:2,:2,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 117, 217\\) \\( 127, 227\\) \\) \\(\
++		 \\( 118, 218\\) \\( 128, 228\\) \\) \\)" \
++		"print ar3\(:2,:2,7:8\)"
++gdb_test "print ar3\(:2,:2,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 118, 218\\) \\( 128, 228\\) \\) \\(\
++		 \\( 119, 219\\) \\( 129, 229\\) \\) \\)" \
++		"print ar3\(:2,:2,8:\)"
++gdb_test "print ar3\(:2,:2,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 111, 211\\) \\( 121, 221\\) \\) \\(\
++		 \\( 112, 212\\) \\( 122, 222\\) \\) \\)" \
++		"print ar3\(:2,:2,:2\)"
++
++#Tests for subarrays of 3 dimensional arrays with literals and subranges
++gdb_test "print ar3\(3,3:4,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( 337, 347\\) \\( 338, 348\\) \\)" \
++		"print ar3\(3,3:4,7:8\)"
++gdb_test "print ar3\(3,4:5,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( 348, 358\\) \\( 349, 359\\) \\)" \
++		"print ar3\(3,4:5,8:\)"
++gdb_test "print ar3\(3,4:5,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( 341, 351\\) \\( 342, 352\\) \\)" \
++		"print ar3\(3,4:5,:2\)"
++gdb_test "print ar3\(3,4:5,3\)" \
++		"\\$\[0-9\]+ = \\(343, 353\\)" \
++		"print ar3\(3,4:5,3\)"
++
++gdb_test "print ar3\(2,8:,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( 287, 297\\) \\( 288, 298\\) \\)" \
++		"print ar3\(2,8:,7:8\)"
++gdb_test "print ar3\(2,8:,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( 288, 298\\) \\( 289, 299\\) \\)" \
++		"print ar3\(2,8:,8:\)"
++gdb_test "print ar3\(2,8:,:2\)"\
++		"\\$\[0-9\]+ = \\(\\( 281, 291\\) \\( 282, 292\\) \\)" \
++		"print ar3\(2,8:,:2\)"
++gdb_test "print ar3\(2,8:,3\)" \
++		"\\$\[0-9\]+ = \\(283, 293\\)" \
++		"print ar3\(2,8:,3\)"
++
++gdb_test "print ar3\(2,:2,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( 217, 227\\) \\( 218, 228\\) \\)" \
++		"print ar3\(2,:2,7:8\)"
++gdb_test "print ar3\(2,:2,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( 218, 228\\) \\( 219, 229\\) \\)" \
++		"print ar3\(2,:2,8:\)"
++gdb_test "print ar3\(2,:2,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( 211, 221\\) \\( 212, 222\\) \\)" \
++		"print ar3\(2,:2,:2\)"
++gdb_test "print ar3\(2,:2,3\)" \
++		"\\$\[0-9\]+ = \\(213, 223\\)" \
++		"print ar3\(2,:2,3\)"
++
++gdb_test "print ar3\(3,4,7:8\)" \
++		"\\$\[0-9\]+ = \\(347, 348\\)" \
++		"print ar3\(3,4,7:8\)"
++gdb_test "print ar3\(3,4,8:\)" \
++		"\\$\[0-9\]+ = \\(348, 349\\)" \
++i		"print ar3\(3,4,8:\)"
++gdb_test "print ar3\(3,4,:2\)" \
++		"\\$\[0-9\]+ = \\(341, 342\\)" \
++		"print ar3\(3,4,:2\)"
++gdb_test "print ar3\(5,6,7\)" \
++		"\\$\[0-9\]+ = 567" \
++		"print ar3\(5,6,7\)"
++
++gdb_test "print ar3\(3:4,6,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( 367, 467\\) \\( 368, 468\\) \\)" \
++		"print ar3\(3:4,6,7:8\)"
++gdb_test "print ar3\(3:4,6,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( 368, 468\\) \\( 369, 469\\) \\)" \
++		"print ar3\(3:4,6,8:\)"
++gdb_test "print ar3\(3:4,6,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( 361, 461\\) \\( 362, 462\\) \\)" \
++		"print ar3\(3:4,6,:2\)"
++gdb_test "print ar3\(3:4,6,5\)" \
++		"\\$\[0-9\]+ = \\(365, 465\\)" \
++		"print ar3\(3:4,6,5\)"
++
++gdb_test "print ar3\(8:,6,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( 867, 967\\) \\( 868, 968\\) \\)" \
++		"print ar3\(8:,6,7:8\)"
++gdb_test "print ar3\(8:,6,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( 868, 968\\) \\( 869, 969\\) \\)" \
++		"print ar3\(8:,6,8:\)"
++gdb_test "print ar3\(8:,6,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( 861, 961\\) \\( 862, 962\\) \\)" \
++		"print ar3\(8:,6,:2\)"
++gdb_test "print ar3\(8:,6,5\)" \
++		"\\$\[0-9\]+ = \\(865, 965\\)" \
++		"print ar3\(8:,6,5\)"
++
++gdb_test "print ar3\(:2,6,7:8\)" \
++		"\\$\[0-9\]+ = \\(\\( 167, 267\\) \\( 168, 268\\) \\)" \
++		"print ar3\(:2,6,7:8\)"
++gdb_test "print ar3\(:2,6,8:\)" \
++		"\\$\[0-9\]+ = \\(\\( 168, 268\\) \\( 169, 269\\) \\)" \
++		"print ar3\(:2,6,8:\)"
++gdb_test "print ar3\(:2,6,:2\)" \
++		"\\$\[0-9\]+ = \\(\\( 161, 261\\) \\( 162, 262\\) \\)" \
++		"print ar3\(:2,6,:2\)"
++gdb_test "print ar3\(:2,6,5\)" \
++		"\\$\[0-9\]+ = \\(165, 265\\)" \
++		"print ar3\(:2,6,5\)"
++
++gdb_test "print ar3\(3:4,5:6,4\)" \
++		"\\$\[0-9\]+ = \\(\\( 354, 454\\) \\( 364, 464\\) \\)" \
++		"print ar2\(3:4,5:6,4\)"
++gdb_test "print ar3\(8:,5:6,4\)" \
++		"\\$\[0-9\]+ = \\(\\( 854, 954\\) \\( 864, 964\\) \\)" \
++		"print ar2\(8:,5:6,4\)"
++gdb_test "print ar3\(:2,5:6,4\)" \
++		"\\$\[0-9\]+ = \\(\\( 154, 254\\) \\( 164, 264\\) \\)" \
++		"print ar2\(:2,5:6,4\)"
++
++# Stride > 1
++gdb_test "print ar1\(2:6:2\)" \
++		"\\$\[0-9\]+ = \\(2, 4, 6\\)" \
++		"print ar1\(2:6:2\)"
++gdb_test "print ar2\(2:6:2,3:4\)" \
++		"\\$\[0-9\]+ = \\(\\( 23, 43, 63\\) \\( 24, 44, 64\\) \\)" \
++		"print ar2\(2:6:2,3:4\)"
++gdb_test "print ar2\(2:6:2,3\)" \
++		"\\$\[0-9\]+ = \\(23, 43, 63\\)" \
++		"print ar2\(2:6:2,3\)"
++gdb_test "print ar3\(2:6:2,3:5:2,4:7:3\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 234, 434, 634\\) \\( 254, 454, 654\\)\
++		 \\) \\( \\( 237, 437, 637\\) \\( 257, 457, 657\\) \\) \\)" \
++		"print ar3\(2:6:2,3:5:2,4:7:3\)"
++gdb_test "print ar3\(2:6:2,5,4:7:3\)" \
++		"\\$\[0-9\]+ = \\(\\( 254, 454, 654\\) \\( 257, 457, 657\\)\
++		 \\)" \
++		"print ar3\(2:6:2,5,4:7:3\)"
++
++# Stride < 0
++gdb_test "print ar1\(8:2:-2\)" \
++		"\\$\[0-9\]+ = \\(8, 6, 4, 2\\)" \
++		"print ar1\(8:2:-2\)"
++gdb_test "print ar2\(8:2:-2,3:4\)" \
++		"\\$\[0-9\]+ = \\(\\( 83, 63, 43, 23\\) \\( 84, 64, 44, 24\\)\
++		 \\)" \
++		"print ar2\(8:2:-2,3:4\)"
++gdb_test "print ar2\(2:6:2,3\)" \
++		"\\$\[0-9\]+ = \\(23, 43, 63\\)" \
++		"print ar2\(2:6:2,3\)"
++gdb_test "print ar3\(2:3,7:3:-4,4:7:3\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 274, 374\\) \\( 234, 334\\) \\) \\(\
++		 \\( 277, 377\\) \\( 237, 337\\) \\) \\)" \
++		"print ar3\(2:3,7:3:-4,4:7:3\)"
++gdb_test "print ar3\(2:6:2,5,7:4:-3\)" \
++		"\\$\[0-9\]+ = \\(\\( 257, 457, 657\\) \\( 254, 454, 654\\)\
++		 \\)" \
++		"print ar3\(2:6:2,5,7:4:-3\)"
++
++# Tests with negative and mixed indices
++gdb_test "p ar4\(2:4, -2:1, -15:-14\)" \
++		"\\$\[0-9\]+ = \\(\\( \\( 261, 361, 461\\) \\( 271, 371, 471\\)\
++		 \\( 281, 381, 481\\) \\( 291, 391, 491\\) \\) \\( \\( 262,\
++		 362, 462\\) \\( 272, 372, 472\\) \\( 282, 382, 482\\) \\( 292,\
++		 392, 492\\) \\) \\)" \
++		"print ar4(2:4, -2:1, -15:-14)"
++
++gdb_test "p ar4\(7,-6:2:3,-7\)" \
++                "\\$\[0-9\]+ = \\(729, 759, 789\\)" \
++                "print ar4(7,-6:2:3,-7)"
++
++gdb_test "p ar4\(9:2:-2, -6:2:3, -6:-15:-3\)" \
++                "\\$\[0-9\]+ = \\(\\( \\( 930, 730, 530, 330\\) \\( 960, 760,\
++		 560, 360\\) \\( 990, 790, 590, 390\\) \\) \\( \\( 927, 727,\
++		 527, 327\\) \\( 957, 757, 557, 357\\) \\( 987, 787, 587,\
++		 387\\) \\) \\( \\( 924, 724, 524, 324\\) \\( 954, 754, 554,\
++		 354\\) \\( 984, 784, 584, 384\\) \\) \\( \\( 921, 721, 521,\
++		 321\\) \\( 951, 751, 551, 351\\) \\( 981, 781, 581, 381\\) \\)\
++		 \\)" \
++                "print ar4(9:2:-2, -6:2:3, -6:-15:-3)"
++
++gdb_test "p ar4\(:,:,:\)" \
++                "\\$\[0-9\]+ = \\(\\( \\( 111, 211, 311, 411, 511, 611, 711,\
++		 811, .*" \
++                "print ar4(:,:,:)"
++
++# Provoke error messages for bad user input
++gdb_test "print ar1\(0:4\)" \
++		"provided bound\\(s\\) outside array bound\\(s\\)" \
++		"print ar1\(0:4\)"
++gdb_test "print ar1\(8:12\)" \
++		"provided bound\\(s\\) outside array bound\\(s\\)" \
++		"print ar1\(8:12\)"
++gdb_test "print ar1\(8:2:\)" \
++		"A syntax error in expression, near `\\)'." \
++		"print ar1\(8:2:\)"
++gdb_test "print ar1\(8:2:2\)" \
++		"Wrong value provided for stride and boundaries" \
++		"print ar1\(8:2:2\)"
++gdb_test "print ar1\(2:8:-2\)" \
++		"Wrong value provided for stride and boundaries" \
++		"print ar1\(2:8:-2\)"
++gdb_test "print ar1\(2:7:0\)" \
++		"Stride must not be 0" \
++		"print ar1\(2:7:0\)"
++gdb_test "print ar1\(3:7\) = 42" \
++		"Invalid cast." \
++		"Assignment of value to subarray"
+diff --git a/gdb/testsuite/gdb.fortran/static-arrays.f90 b/gdb/testsuite/gdb.fortran/static-arrays.f90
+new file mode 100644
+index 0000000..f22fcbe
+--- /dev/null
++++ b/gdb/testsuite/gdb.fortran/static-arrays.f90
+@@ -0,0 +1,55 @@
++! Copyright 2015 Free Software Foundation, Inc.
++!
++! Contributed by Intel Corp. <christoph.t.weinmann@intel.com>
++!
++! This program is free software; you can redistribute it and/or modify
++! it under the terms of the GNU General Public License as published by
++! the Free Software Foundation; either version 3 of the License, or
++! (at your option) any later version.
++!
++! This program is distributed in the hope that it will be useful,
++! but WITHOUT ANY WARRANTY; without even the implied warranty of
++! MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++! GNU General Public License for more details.
++!
++! You should have received a copy of the GNU General Public License
++! along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++subroutine sub
++  integer, dimension(9) :: ar1
++  integer, dimension(9,9) :: ar2
++  integer, dimension(9,9,9) :: ar3
++  integer, dimension(10,-7:3, -15:-5) :: ar4
++  integer :: i,j,k
++
++  ar1 = 1
++  ar2 = 1
++  ar3 = 1
++  ar4 = 4
++
++  ! Resulting array ar3 looks like ((( 111, 112, 113, 114,...)))
++  do i = 1, 9, 1
++    ar1(i) = i
++    do j = 1, 9, 1
++      ar2(i,j) = i*10 + j
++      do k = 1, 9, 1
++        ar3(i,j,k) = i*100 + j*10 + k
++      end do
++    end do
++  end do
++
++  do i = 1, 10, 1
++    do j = -7, 3, 1
++      do k = -15, -5, 1
++        ar4(i,j,k) = i*100 + (j+8)*10 + (k+16)
++      end do
++    end do
++  end do
++
++  ar1(1) = 11  !BP1
++  return
++end
++
++program testprog
++  call sub
++end
+diff --git a/gdb/testsuite/gdb.fortran/vla-ptype.exp b/gdb/testsuite/gdb.fortran/vla-ptype.exp
+index 175661f..544d40a 100644
+--- a/gdb/testsuite/gdb.fortran/vla-ptype.exp
++++ b/gdb/testsuite/gdb.fortran/vla-ptype.exp
+@@ -98,3 +98,7 @@ gdb_test "ptype vla2" "type = <not allocated>" "ptype vla2 not allocated"
+ gdb_test "ptype vla2(5, 45, 20)" \
+   "no such vector element \\\(vector not allocated\\\)" \
+   "ptype vla2(5, 45, 20) not allocated"
++
++gdb_breakpoint [gdb_get_line_number "vla1-neg-bounds"]
++gdb_continue_to_breakpoint "vla1-neg-bounds"
++gdb_test "ptype vla1" "type = $real \\(-2:1,-5:4,-3:-1\\)" "ptype vla1 negative bounds"
+diff --git a/gdb/testsuite/gdb.fortran/vla-sizeof.exp b/gdb/testsuite/gdb.fortran/vla-sizeof.exp
+index 8010c0a..f8258a1 100644
+--- a/gdb/testsuite/gdb.fortran/vla-sizeof.exp
++++ b/gdb/testsuite/gdb.fortran/vla-sizeof.exp
+@@ -44,3 +44,7 @@ gdb_test "print sizeof(pvla)" " = 0" "print sizeof non-associated pvla"
+ gdb_breakpoint [gdb_get_line_number "pvla-associated"]
+ gdb_continue_to_breakpoint "pvla-associated"
+ gdb_test "print sizeof(pvla)" " = 4000" "print sizeof associated pvla"
++
++gdb_breakpoint [gdb_get_line_number "vla1-neg-bounds"]
++gdb_continue_to_breakpoint "vla1-neg-bounds"
++gdb_test "print sizeof(vla1)" " = 480" "print sizeof vla1 negative bounds"
+diff --git a/gdb/testsuite/gdb.fortran/vla-stride.exp b/gdb/testsuite/gdb.fortran/vla-stride.exp
+new file mode 100644
+index 0000000..dcf15e5
+--- /dev/null
++++ b/gdb/testsuite/gdb.fortran/vla-stride.exp
+@@ -0,0 +1,44 @@
++# Copyright 2016 Free Software Foundation, Inc.
++
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; either version 3 of the License, or
++# (at your option) any later version.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++standard_testfile ".f90"
++
++if { [prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} \
++    {debug f90 quiet}] } {
++    return -1
++}
++
++if ![runto MAIN__] then {
++    perror "couldn't run to breakpoint MAIN__"
++    continue
++}
++
++gdb_breakpoint [gdb_get_line_number "re-reverse-elements"]
++gdb_continue_to_breakpoint "re-reverse-elements"
++gdb_test "print pvla" " = \\\(1, 2, 3, 4, 5, 6, 7, 8, 9, 10\\\)" \
++  "print re-reverse-elements"
++gdb_test "print pvla(1)" " = 1" "print first re-reverse-element"
++gdb_test "print pvla(10)" " = 10" "print last re-reverse-element"
++
++gdb_breakpoint [gdb_get_line_number "odd-elements"]
++gdb_continue_to_breakpoint "odd-elements"
++gdb_test "print pvla" " = \\\(1, 3, 5, 7, 9\\\)" "print odd-elements"
++gdb_test "print pvla(1)" " = 1" "print first odd-element"
++gdb_test "print pvla(5)" " = 9" "print last odd-element"
++
++gdb_breakpoint [gdb_get_line_number "single-element"]
++gdb_continue_to_breakpoint "single-element"
++gdb_test "print pvla" " = \\\(5\\\)" "print single-element"
++gdb_test "print pvla(1)" " = 5" "print one single-element"
+diff --git a/gdb/testsuite/gdb.fortran/vla-stride.f90 b/gdb/testsuite/gdb.fortran/vla-stride.f90
+new file mode 100644
+index 0000000..8d24252
+--- /dev/null
++++ b/gdb/testsuite/gdb.fortran/vla-stride.f90
+@@ -0,0 +1,29 @@
++! Copyright 2016 Free Software Foundation, Inc.
++!
++! This program is free software; you can redistribute it and/or modify
++! it under the terms of the GNU General Public License as published by
++! the Free Software Foundation; either version 3 of the License, or
++! (at your option) any later version.
++!
++! This program is distributed in the hope that it will be useful,
++! but WITHOUT ANY WARRANTY; without even the implied warranty of
++! MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++! GNU General Public License for more details.
++!
++! You should have received a copy of the GNU General Public License
++! along with this program.  If not, see <http://www.gnu.org/licenses/>.
++
++program vla_stride
++  integer, target, allocatable :: vla (:)
++  integer, pointer :: pvla (:)
++
++  allocate(vla(10))
++  vla = (/ (I, I = 1,10) /)
++
++  pvla => vla(10:1:-1)
++  pvla => pvla(10:1:-1)
++  pvla => vla(1:10:2)   ! re-reverse-elements
++  pvla => vla(5:4:-2)   ! odd-elements
++
++  pvla => null()        ! single-element
++end program vla_stride
+diff --git a/gdb/testsuite/gdb.fortran/vla.f90 b/gdb/testsuite/gdb.fortran/vla.f90
+index c76d24c..ef307b7 100644
+--- a/gdb/testsuite/gdb.fortran/vla.f90
++++ b/gdb/testsuite/gdb.fortran/vla.f90
+@@ -54,4 +54,14 @@ program vla
+ 
+   allocate (vla3 (2,2))               ! vla2-deallocated
+   vla3(:,:) = 13
++
++  allocate (vla1 (-2:1, -5:4, -3:-1))
++  l = allocated(vla1)
++
++  vla1(:, :, :) = 1
++  vla1(-2, -3, -1) = -231
++
++  deallocate (vla1)                   ! vla1-neg-bounds
++  l = allocated(vla1)
++
+ end program vla
+diff --git a/gdb/valarith.c b/gdb/valarith.c
+index de6fcfd..9753506 100644
+--- a/gdb/valarith.c
++++ b/gdb/valarith.c
+@@ -193,11 +193,17 @@ value_subscripted_rvalue (struct value *array, LONGEST index, int lowerbound)
+   struct type *array_type = check_typedef (value_type (array));
+   struct type *elt_type = check_typedef (TYPE_TARGET_TYPE (array_type));
+   ULONGEST elt_size = type_length_units (elt_type);
+-  ULONGEST elt_offs = elt_size * (index - lowerbound);
++  LONGEST elt_offs = index - lowerbound;
++  LONGEST elt_stride = TYPE_BYTE_STRIDE (TYPE_INDEX_TYPE (array_type));
+   struct value *v;
+ 
++  if (elt_stride != 0)
++    elt_offs *= elt_stride;
++  else
++    elt_offs *= elt_size;
++
+   if (index < lowerbound || (!TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (array_type)
+-			     && elt_offs >= type_length_units (array_type)))
++			     && abs (elt_offs) >= type_length_units (array_type)))
+     {
+       if (type_not_associated (array_type))
+         error (_("no such vector element (vector not associated)"));
+diff --git a/gdb/valops.c b/gdb/valops.c
+index 40392e8..24ffacb 100644
+--- a/gdb/valops.c
++++ b/gdb/valops.c
+@@ -3775,56 +3775,191 @@ value_of_this_silent (const struct language_defn *lang)
+ struct value *
+ value_slice (struct value *array, int lowbound, int length)
+ {
++  /* Pass unaltered arguments to VALUE_SLICE_1, plus a default stride
++     value of '1', which returns every element between LOWBOUND and
++     (LOWBOUND + LENGTH).  We also provide a default CALL_COUNT of '1'
++     as we are only considering the highest dimension, or we are
++     working on a one dimensional array.  So we call VALUE_SLICE_1
++     exactly once.  */
++  return value_slice_1 (array, lowbound, length, 1, 1);
++}
++
++/* VALUE_SLICE_1 is called for each array dimension to calculate the number
++   of elements as defined by the subscript expression.
++   CALL_COUNT is used to determine if we are calling the function once, e.g.
++   we are working on the current dimension of ARRAY, or if we are calling
++   the function repeatedly.  In the later case we need to take elements
++   from the TARGET_TYPE of ARRAY.
++   With a CALL_COUNT greater than 1 we calculate the offsets for every element
++   that should be in the result array.  Then we fetch the contents and then
++   copy them into the result array.  The result array will have one dimension
++   less than the input array, so later on we need to recreate the indices and
++   ranges in the calling function.  */
++
++struct value *
++value_slice_1 (struct value *array, int lowbound, int length,
++	       int stride_length, int call_count)
++{
+   struct type *slice_range_type, *slice_type, *range_type;
+-  LONGEST lowerbound, upperbound;
+-  struct value *slice;
+-  struct type *array_type;
++  struct type *array_type = check_typedef (value_type (array));
++  struct type *elt_type = check_typedef (TYPE_TARGET_TYPE (array_type));
++  unsigned int elt_size, elt_offs;
++  LONGEST ary_high_bound, ary_low_bound;
++  struct value *v;
++  int slice_range_size, i = 0, row_count = 1, elem_count = 1;
+ 
+-  array_type = check_typedef (value_type (array));
++  /* Check for legacy code if we are actually dealing with an array or
++     string.  */
+   if (TYPE_CODE (array_type) != TYPE_CODE_ARRAY
+       && TYPE_CODE (array_type) != TYPE_CODE_STRING)
+     error (_("cannot take slice of non-array"));
+ 
+-  range_type = TYPE_INDEX_TYPE (array_type);
+-  if (get_discrete_bounds (range_type, &lowerbound, &upperbound) < 0)
+-    error (_("slice from bad array or bitstring"));
++  ary_low_bound = TYPE_LOW_BOUND (TYPE_INDEX_TYPE (array_type));
++  ary_high_bound = TYPE_HIGH_BOUND (TYPE_INDEX_TYPE (array_type));
++
++  /* When we are working on a multi-dimensional array, we need to get the
++     attributes of the underlying type.  */
++  if (call_count > 1)
++    {
++      ary_low_bound = TYPE_LOW_BOUND (TYPE_INDEX_TYPE (elt_type));
++      ary_high_bound = TYPE_HIGH_BOUND (TYPE_INDEX_TYPE (elt_type));
++      elt_type = check_typedef (TYPE_TARGET_TYPE (elt_type));
++      row_count = TYPE_LENGTH (array_type)
++		    / TYPE_LENGTH (TYPE_TARGET_TYPE (array_type));
++    }
++
++  /* With a stride of '1', the number of elements per result row is equal to
++     the LENGTH of the subarray.  With non-default stride values, we skip
++     elements, but have to add the start element to the total number of
++     elements per row.  */
++  if (stride_length == 1)
++    elem_count = length;
++  else
++    elem_count = ((length - 1) / stride_length) + 1;
++
++  elt_size = TYPE_LENGTH (elt_type);
++  elt_offs = lowbound - ary_low_bound;
+ 
+-  if (lowbound < lowerbound || length < 0
+-      || lowbound + length - 1 > upperbound)
+-    error (_("slice out of range"));
++  elt_offs *= elt_size;
++
++  /* Check for valid user input.  In case of Fortran this was already done
++     in the calling function.  */
++  if (call_count == 1
++	&& (!TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (array_type)
++	      && elt_offs >= TYPE_LENGTH (array_type)))
++    error (_("no such vector element"));
++
++  /* CALL_COUNT is 1 when we are dealing either with the highest dimension
++     of the array, or a one dimensional array.  Set RANGE_TYPE accordingly.
++     In both cases we calculate how many rows/elements will be in the output
++     array by setting slice_range_size.  */
++  if (call_count == 1)
++    {
++      range_type = TYPE_INDEX_TYPE (array_type);
++      slice_range_size = ary_low_bound + elem_count - 1;
++
++      /* Check if the array bounds are valid.  */
++      if (get_discrete_bounds (range_type, &ary_low_bound, &ary_high_bound) < 0)
++	error (_("slice from bad array or bitstring"));
++    }
++  /* When CALL_COUNT is greater than 1, we are dealing with an array of arrays.
++     So we need to get the type below the current one and set the RANGE_TYPE
++     accordingly.  */
++  else
++    {
++      range_type = TYPE_INDEX_TYPE (TYPE_TARGET_TYPE (array_type));
++      slice_range_size = ary_low_bound + (row_count * elem_count) - 1;
++      ary_low_bound = TYPE_LOW_BOUND (range_type);
++    }
+ 
+   /* FIXME-type-allocation: need a way to free this type when we are
+-     done with it.  */
+-  slice_range_type = create_static_range_type ((struct type *) NULL,
+-					       TYPE_TARGET_TYPE (range_type),
+-					       lowbound,
+-					       lowbound + length - 1);
++      done with it.  */
+ 
++  slice_range_type = create_static_range_type (NULL, TYPE_TARGET_TYPE (range_type),
++					       ary_low_bound, slice_range_size);
+   {
+-    struct type *element_type = TYPE_TARGET_TYPE (array_type);
+-    LONGEST offset
+-      = (lowbound - lowerbound) * TYPE_LENGTH (check_typedef (element_type));
++    struct type *element_type;
++
++    /* When both CALL_COUNT and STRIDE_LENGTH equal 1, we can use the legacy
++       code for subarrays.  */
++    if (call_count == 1 && stride_length == 1)
++      {
++	element_type = TYPE_TARGET_TYPE (array_type);
++
++	slice_type = create_array_type (NULL, element_type, slice_range_type);
+ 
+-    slice_type = create_array_type ((struct type *) NULL,
+-				    element_type,
+-				    slice_range_type);
+-    TYPE_CODE (slice_type) = TYPE_CODE (array_type);
++	TYPE_CODE (slice_type) = TYPE_CODE (array_type);
+ 
+-    if (VALUE_LVAL (array) == lval_memory && value_lazy (array))
+-      slice = allocate_value_lazy (slice_type);
++	if (VALUE_LVAL (array) == lval_memory && value_lazy (array))
++	  v = allocate_value_lazy (slice_type);
++	else
++	  {
++	    v = allocate_value (slice_type);
++	    value_contents_copy (v,
++				 value_embedded_offset (v),
++				 array,
++				 value_embedded_offset (array) + elt_offs,
++				 elt_size * longest_to_int (length));
++	  }
++
++      }
++    /* With a CALL_COUNT or STRIDE_LENGTH are greater than 1 we are working
++       on a range of ranges.  So we copy the relevant elements into the
++       new array we return.  */
+     else
+       {
+-	slice = allocate_value (slice_type);
+-	value_contents_copy (slice, 0, array, offset,
+-			     type_length_units (slice_type));
++	int j, offs_store = elt_offs;
++	LONGEST dst_offset = 0;
++	LONGEST src_row_length = TYPE_LENGTH (TYPE_TARGET_TYPE (array_type));
++
++	if (call_count == 1)
++	  {
++	    /* When CALL_COUNT is equal to 1 we are working on the current range
++	       and use these elements directly.  */
++	    element_type = TYPE_TARGET_TYPE (array_type);
++	  }
++	else
++	  {
++	    /* Working on an array of arrays, the type of the elements is the type
++	       of the subarrays' type.  */
++	    element_type = TYPE_TARGET_TYPE (TYPE_TARGET_TYPE (array_type));
++	  }
++
++	slice_type = create_array_type (NULL, element_type, slice_range_type);
++
++	 /* If we have a one dimensional array, we copy its TYPE_CODE.  For a
++	    multi dimensional array we copy the embedded type's TYPE_CODE.  */
++	if (call_count == 1)
++	  TYPE_CODE (slice_type) = TYPE_CODE (array_type);
++	else
++	  TYPE_CODE (slice_type) = TYPE_CODE (TYPE_TARGET_TYPE (array_type));
++
++	v = allocate_value (slice_type);
++
++	/* Iterate through the rows of the outer array and set the new offset
++	   for each row.  */
++	for (i = 0; i < row_count; i++)
++	  {
++	    elt_offs = offs_store + i * src_row_length;
++
++	    /* Iterate through the elements in each row to copy only those.  */
++	    for (j = 1; j <= elem_count; j++)
++	      {
++		/* Fetches the contents of ARRAY and copies them into V.  */
++		value_contents_copy (v, dst_offset, array, elt_offs, elt_size);
++		elt_offs += elt_size * stride_length;
++		dst_offset += elt_size;
++	      }
++	  }
+       }
+ 
+-    set_value_component_location (slice, array);
+-    VALUE_FRAME_ID (slice) = VALUE_FRAME_ID (array);
+-    set_value_offset (slice, value_offset (array) + offset);
++    set_value_component_location (v, array);
++    VALUE_REGNUM (v) = VALUE_REGNUM (array);
++    VALUE_FRAME_ID (v) = VALUE_FRAME_ID (array);
++    set_value_offset (v, value_offset (array) + elt_offs);
+   }
+ 
+-  return slice;
++  return v;
+ }
+ 
+ /* Create a value for a FORTRAN complex number.  Currently most of the
+diff --git a/gdb/value.h b/gdb/value.h
+index 0b417b4..9c37713 100644
+--- a/gdb/value.h
++++ b/gdb/value.h
+@@ -1057,6 +1057,8 @@ extern struct value *varying_to_slice (struct value *);
+ 
+ extern struct value *value_slice (struct value *, int, int);
+ 
++extern struct value *value_slice_1 (struct value *, int, int, int, int);
++
+ extern struct value *value_literal_complex (struct value *, struct value *,
+ 					    struct type *);
+ 
